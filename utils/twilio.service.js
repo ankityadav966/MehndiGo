@@ -2,6 +2,8 @@
 const twilio =
   require("twilio");
 
+
+
 const client =
   twilio(
 
@@ -14,42 +16,29 @@ const client =
 
 
 
-async function sendOtp(
+async function
+sendOtp(
   phone,
   otp
 ) {
 
-  // development mode
+  return await client
+    .messages
+    .create({
 
-  console.log(
-    "OTP IS =>",
-    otp
-  );
+      body:
+        `Your OTP is ${otp}`,
 
+      from:
+        process.env
+          .TWILIO_PHONE_NUMBER,
 
-
-  // comment for testing
-
-  return true;
-
-
-
-  // production code
-
-  // return await client
-  //   .messages
-  //   .create({
-
-  //     body:
-  //       `Your MehndiGo OTP is ${otp}`,
-
-  //     from:
-  //       process.env
-  //       .TWILIO_PHONE_NUMBER,
-
-  //     to: phone,
-  //   });
+      to:
+        phone,
+    });
 }
+
+
 
 module.exports = {
   sendOtp,
