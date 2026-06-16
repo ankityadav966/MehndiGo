@@ -3,27 +3,30 @@ const { UserRepository, OtpRepository } = require("../repositories/index");
 const AppError = require("../utils/errors/app.error");
 
 const { generateToken } = require("../utils/jwt");
-const { sendOtp, sendEmail } = require("../utils/twilio.service");
+const { sendOtp } = require("../utils/twilio.service");
 const UserRepositor = new UserRepository();
 const OtpRepositor = new OtpRepository();
 
 class UserService {
   async sendOtp(data) {
-    const { name, email, role, phone } = data;
+    console.log("Data received in service:", data);
 
-    if (!email) {
-      throw new AppError("Email required", 400);
+    const { name, phone, role } = data;
+
+    if (!phone) {
+      throw new AppError("Phone number required", 400);
     }
 
     let user = await UserRepositor.getOne({
-      email,
+      phone,
     });
 
     if (!user) {
       user = await UserRepositor.create({
         name,
-        email,
+
         phone,
+
         role: role || "USER",
       });
     }
@@ -32,21 +35,20 @@ class UserService {
 
     await OtpRepositor.create({
       user_id: user.id,
-      email,
-      otp,
+
       phone,
+
+      otp,
+
       expires_at: new Date(Date.now() + 5 * 60 * 1000),
     });
 
-    await sendEmail(
-      email,
-      "Your OTP Code",
-      `Your OTP is ${otp}. It will expire in 5 minutes.`,
-    );
+    await sendOtp(phone, otp);
 
     return {
-      email,
+      phone,
       role: user.role,
+      otp,
     };
   }
 
@@ -90,42 +92,6 @@ class UserService {
         phone: user.phone,
         role: user.role,
       },
-    };
-  }
-
-  async login(data) {
-    const { phone } = data;
-
-    if (!phone) {
-      throw new AppError("Phone number required", 400);
-    }
-
-    const user = await UserRepositor.getOne({
-      phone,
-    });
-
-    if (!user) {
-      throw new AppError("User not found", 404);
-    }
-
-    const otp = Math.floor(100000 + Math.random() * 900000);
-
-    await OtpRepositor.create({
-      user_id: user.id,
-
-      phone,
-
-      otp,
-
-      expires_at: new Date(Date.now() + 5 * 60 * 1000),
-    });
-
-    await sendOtp(phone, otp);
-
-    return {
-      phone,
-
-      otp,
     };
   }
 
