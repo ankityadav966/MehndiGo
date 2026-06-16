@@ -9,21 +9,24 @@ const OtpRepositor = new OtpRepository();
 
 class UserService {
   async sendOtp(data) {
-    const { name, email, role, phone } = data;
+    console.log("Data received in service:", data);
 
-    if (!email) {
-      throw new AppError("Email required", 400);
+    const { name, phone, role } = data;
+
+    if (!phone) {
+      throw new AppError("Phone number required", 400);
     }
 
     let user = await UserRepositor.getOne({
-      email,
+      phone,
     });
 
     if (!user) {
       user = await UserRepositor.create({
         name,
-        email,
+
         phone,
+
         role: role || "USER",
       });
     }
@@ -32,21 +35,20 @@ class UserService {
 
     await OtpRepositor.create({
       user_id: user.id,
-      email,
-      otp,
+
       phone,
+
+      otp,
+
       expires_at: new Date(Date.now() + 5 * 60 * 1000),
     });
 
-    await sendEmail(
-      email,
-      "Your OTP Code",
-      `Your OTP is ${otp}. It will expire in 5 minutes.`,
-    );
+    await sendOtp(phone, otp);
 
     return {
-      email,
+      phone,
       role: user.role,
+      otp,
     };
   }
 
