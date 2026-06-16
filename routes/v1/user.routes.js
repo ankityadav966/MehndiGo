@@ -14,6 +14,12 @@ router.post(
   "/verify-otp",
   UserController.verifyOtp
 );
+
+router.post(
+  "/login",
+  UserController.login
+);
+
 router.get( "/artists", UserController.getArtists );
 
 module.exports = router;
