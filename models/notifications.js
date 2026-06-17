@@ -30,12 +30,7 @@ module.exports = (sequelize, DataTypes) => {
       },
 
       type: {
-        type: DataTypes.ENUM(
-          "BOOKING",
-          "PAYMENT",
-          "SYSTEM",
-          "PROMOTION"
-        ),
+        type: DataTypes.ENUM("BOOKING", "PAYMENT", "SYSTEM", "PROMOTION"),
         allowNull: false,
       },
 
@@ -50,8 +45,8 @@ module.exports = (sequelize, DataTypes) => {
       modelName: "Notification",
       tableName: "Notifications",
       timestamps: true,
-      underscored: true
-    }
+      underscored: true,
+    },
   );
 
   return Notification;

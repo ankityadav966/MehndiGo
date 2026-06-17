@@ -38,7 +38,7 @@ router.post(
   ArtistController.createPortfolio,
 );
 
-router.get("/all", ArtistController.getArtists);
+router.get("/all",authenticate, ArtistController.getArtists);
 router.get("/:id", ArtistController.getArtistDetails);
 // service routes
 router.post("/service", authenticate, ArtistController.createService);

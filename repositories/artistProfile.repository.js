@@ -39,27 +39,32 @@ class ArtistProfileRepository extends CrudRepository {
     );
   }
 
-  async getArtists({ page = 1, limit = 10, search = "" }) {
-    const offset = (page - 1) * limit;
-    const where = { verification_status: "APPROVED" };
-    if (search) {
-      where.bio = { [Op.iLike]: `%${search}%` };
-    }
-    const artists = await db.ArtistProfile.findAndCountAll({
-      where,
-      limit: Number(limit),
-      offset: Number(offset),
+  async getArtistByUserId(
+  userId
+) {
+
+  return await db.ArtistProfile
+    .findOne({
+
+      where: {
+        user_id: userId,
+      },
+
       include: [
+
         {
           model: db.User,
           as: "user",
-          attributes: ["id", "name", "phone", "profile_image"],
+          attributes: [
+            "id",
+            "name",
+            "phone",
+            "profile_image",
+          ],
         },
       ],
-      order: [["createdAt", "DESC"]],
     });
-    return artists;
-  }
+}
   async getArtistDetails(id) {
     return await db.ArtistProfile.findByPk(id, {
       include: [

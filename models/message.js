@@ -1,122 +1,75 @@
-
 "use strict";
 
-const {
-  Model,
-} = require(
-  "sequelize"
-);
-
-
+const { Model } = require("sequelize");
 
 module.exports = (
-
   sequelize,
 
-  DataTypes
-
+  DataTypes,
 ) => {
-
   class Message extends Model {
-
-    static associate(
-      models
-    ) {
-
+    static associate(models) {
       Message.belongsTo(
         models.User,
 
         {
-          foreignKey:
-            "sender_id",
+          foreignKey: "sender_id",
 
           as: "sender",
-        }
+        },
       );
-
-
 
       Message.belongsTo(
         models.User,
 
         {
-          foreignKey:
-            "receiver_id",
+          foreignKey: "receiver_id",
 
           as: "receiver",
-        }
+        },
       );
     }
   }
 
-
-
   Message.init(
-
     {
-
       sender_id: {
+        type: DataTypes.INTEGER,
 
-        type:
-          DataTypes.INTEGER,
-
-        allowNull:
-          false,
+        allowNull: false,
       },
-
-
 
       receiver_id: {
+        type: DataTypes.INTEGER,
 
-        type:
-          DataTypes.INTEGER,
-
-        allowNull:
-          false,
+        allowNull: false,
       },
-
-
 
       message: {
+        type: DataTypes.TEXT,
 
-        type:
-          DataTypes.TEXT,
-
-        allowNull:
-          false,
+        allowNull: false,
       },
 
-
-
       is_read: {
+        type: DataTypes.BOOLEAN,
 
-        type:
-          DataTypes.BOOLEAN,
-
-        defaultValue:
-          false,
+        defaultValue: false,
       },
     },
 
     {
-
       sequelize,
 
-      modelName:
-        "Message",
+      modelName: "Message",
 
-      tableName:
-        "Messages",
+      tableName: "Messages",
 
-      timestamps:
-        true,
+      timestamps: true,
 
-      underscored:
-        true,
-    }
+      underscored: true,
+    },
   );
-
-
 
   return Message;
 };

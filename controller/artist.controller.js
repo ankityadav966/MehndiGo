@@ -31,19 +31,33 @@ async function createPortfolio(req, res) {
 }
 async function getArtists(req, res) {
   try {
-    const response = await ArtistService.getArtists(req.query);
-    return res.status(200).json(
-      SuccessResponse("Artists fetched", {
-        total: response.count,
-        totalPages: Math.ceil(response.count / (req.query.limit || 10)),
-        currentPage: Number(req.query.page || 1),
-        artists: response.rows,
-      }),
-    );
-  } catch (error) {
+
+    const response =
+      await ArtistService.getArtists(
+        req.user.id
+      );
+
     return res
-      .status(error.statusCode || 500)
-      .json(ErrorResponse(error.message, error));
+      .status(200)
+      .json(
+        SuccessResponse(
+          "Artist fetched",
+          response
+        )
+      );
+
+  } catch (error) {
+
+    return res
+      .status(
+        error.statusCode || 500
+      )
+      .json(
+        ErrorResponse(
+          error.message,
+          error
+        )
+      );
   }
 }
 async function getArtistDetails(req, res) {

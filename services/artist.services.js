@@ -62,10 +62,13 @@ class ArtistService {
     return profile;
   }
 
-  async getArtists(query) {
-    const { page, limit, q } = query;
-    return await ArtistProfileRepositor.getArtists({ page, limit, search: q });
-  }
+  async getArtists(userId) {
+
+  return await ArtistProfileRepositor
+    .getArtistByUserId(
+      userId
+    );
+}
   async getArtistDetails(id) {
     const artist = await ArtistProfileRepositor.getArtistDetails(id);
     if (!artist) {
