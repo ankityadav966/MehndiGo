@@ -17,19 +17,30 @@ class UserService {
       throw new AppError("Phone number required", 400);
     }
 
-    let user = await UserRepositor.getOne({
-      phone,
-    });
+  
+let user = await UserRepositor.getOne({
+  phone,
+});
 
-    if (!user) {
-      user = await UserRepositor.create({
-        name,
+if (user) {
 
-        phone,
+  if (user.role !== role) {
 
-        role: role || "USER",
-      });
-    }
+    throw new AppError(
+      `This phone number is already registered as ${user.role}`,
+      400
+    );
+  }
+
+} else {
+
+  user = await UserRepositor.create({
+    name,
+    phone,
+    role: role || "USER",
+  });
+}
+
 
     const otp = Math.floor(100000 + Math.random() * 900000);
 
@@ -53,7 +64,7 @@ class UserService {
   }
 
   async verifyOtp(data) {
-    const { phone, otp } = data;
+    const { phone, otp, role } = data;
 
     const otpData = await OtpRepositor.getOne({
       phone,
@@ -76,12 +87,37 @@ class UserService {
     });
 
     const user = await UserRepositor.getOne({ phone });
+    
+if (!user) {
+
+  throw new AppError(
+    "User not found",
+    404
+  );
+}
+
+if (user.role !== role) {
+
+  throw new AppError(
+    `This number belongs to ${user.role}`,
+    400
+  );
+}
+
 
     await UserRepositor.update(user.id, {
       last_login_at: new Date(),
     });
 
-    const token = generateToken(user);
+
+const token =
+  generateToken({
+
+    id: user.id,
+
+    role: user.role,
+  });
+
 
     return {
       token,
@@ -94,15 +130,13 @@ class UserService {
       },
     };
   }
-async login(
-  data
-) {
+
+async login(data) {
 
   const {
-    phone
+    phone,
+    role,
   } = data;
-
-
 
   if (!phone) {
 
@@ -112,15 +146,18 @@ async login(
     );
   }
 
+  if (!role) {
 
+    throw new AppError(
+      "Role required",
+      400
+    );
+  }
 
   const user =
-    await UserRepositor
-      .getOne({
-        phone,
-      });
-
-
+    await UserRepositor.getOne({
+      phone,
+    });
 
   if (!user) {
 
@@ -130,7 +167,15 @@ async login(
     );
   }
 
+  if (
+    user.role !== role
+  ) {
 
+    throw new AppError(
+      `This number is registered as ${user.role}`,
+      400
+    );
+  }
 
   const otp =
     Math.floor(
@@ -139,39 +184,32 @@ async login(
       900000
     );
 
+  await OtpRepositor.create({
 
+    user_id:
+      user.id,
 
-  await OtpRepositor
-    .create({
+    phone,
 
-      user_id:
-        user.id,
+    otp,
 
-      phone,
-
-      otp,
-
-      expires_at:
-        new Date(
-          Date.now() +
-          5 * 60 * 1000
-        ),
-    });
-
-
+    expires_at:
+      new Date(
+        Date.now() +
+        5 * 60 * 1000
+      ),
+  });
 
   await sendOtp(
     phone,
     otp
   );
 
-
-
   return {
 
     phone,
 
-    otp,
+    role,
   };
 }
 
