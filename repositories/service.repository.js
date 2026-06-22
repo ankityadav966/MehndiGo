@@ -17,53 +17,44 @@ class ServiceRepository
 
 
 
-  async createService(
-    data
-  ) {
+  async createService(data) {
 
-    const service =
-      await db.Service.create(
-        data
-      );
+  const service =
+    await db.Service.create(data);
 
-    return await db.Service
-      .findByPk(
-        service.id,
+  return await db.Service.findByPk(
+    service.id,
+
+    {
+      include: [
 
         {
+          model:
+            db.ArtistProfile,
+
+          as: "artist",
+
           include: [
 
             {
               model:
-                db.ArtistProfile,
+                db.User,
 
-              as: "artist",
+              as: "user",
 
-              include: [
-
-                {
-                  model:
-                    db.User,
-
-                  as: "user",
-
-                  attributes: [
-
-                    "id",
-
-                    "name",
-
-                    "phone",
-
-                    "role",
-                  ],
-                },
+              attributes: [
+                "id",
+                "name",
+                "phone",
+                "role",
               ],
             },
           ],
-        }
-      );
-  }
+        },
+      ],
+    }
+  );
+}
 
 
 

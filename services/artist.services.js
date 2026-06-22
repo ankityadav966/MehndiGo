@@ -78,23 +78,65 @@ class ArtistService {
   }
 
   async createService(data) {
-    const { artist_id, name, price } = data;
-    const artist = await ArtistProfileRepositor.getOne({ user_id: artist_id });
-    if (!artist) {
-      throw new AppError("Artist profile not found", 404);
-    }
-    if (!name) {
-      throw new AppError("Service name required", 400);
-    }
-    if (!price) {
-      throw new AppError("Price required", 400);
-    }
-    const service = await ServiceRepositor.createService({
-      ...data,
-      artist_id: artist.id,
+
+  const {
+    artist_id,
+
+    specialization_name,
+
+    minimum_price,
+
+    category,
+  } = data;
+
+  const artist =
+    await ArtistProfileRepositor.getOne({
+      user_id: artist_id,
     });
-    return service;
+
+  if (!artist) {
+
+    throw new AppError(
+      "Artist profile not found",
+      404
+    );
   }
+
+  if (!specialization_name) {
+
+    throw new AppError(
+      "Specialization name required",
+      400
+    );
+  }
+
+  if (!category) {
+
+    throw new AppError(
+      "Category required",
+      400
+    );
+  }
+
+  if (!minimum_price) {
+
+    throw new AppError(
+      "Minimum price required",
+      400
+    );
+  }
+
+  const service =
+    await ServiceRepositor.createService({
+
+      ...data,
+
+      artist_id:
+        artist.id,
+    });
+
+  return service;
+}
 
   async getMyServices(artist_id) {
     const artist = await ArtistProfileRepositor.getOne({ user_id: artist_id });

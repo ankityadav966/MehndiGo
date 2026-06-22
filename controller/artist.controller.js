@@ -5,28 +5,75 @@ const { SuccessResponse, ErrorResponse } = require("../utils/common");
 // Artist profile management
 async function createPortfolio(req, res) {
   try {
-    console.log("Creating portfolio with body:", req.body); // Debug log
-    console.log("Creating portfolio with files:", req.files); // Debug log
+
     const data = {
       user_id: req.user.id,
+
       bio: req.body.bio,
-      price_start: req.body.price_start,
-      experience_years: req.body.experience_years,
-      home_service: req.body.home_service,
-      salon_service: req.body.salon_service,
-      aadhaar_front: req.files?.aadhaar_front?.[0]?.path || null,
-      aadhaar_back: req.files?.aadhaar_back?.[0]?.path || null,
-      selfie_image: req.files?.selfie_image?.[0]?.path || null,
+
+      experience_years:
+        req.body.experience_years,
+
+      home_service:
+        req.body.home_service === "true",
+
+      salon_service:
+        req.body.salon_service === "true",
+
+      location:
+        req.body.location,
+
+      city:
+        req.body.city,
+
+      state:
+        req.body.state,
+
+      pincode:
+        req.body.pincode,
+
+      latitude:
+        req.body.latitude,
+
+      longitude:
+        req.body.longitude,
+
+      last_location_update:
+        new Date(),
+
+      aadhaar_front:
+        req.files?.aadhaar_front?.[0]?.path || null,
+
+      aadhaar_back:
+        req.files?.aadhaar_back?.[0]?.path || null,
+
+      selfie_image:
+        req.files?.selfie_image?.[0]?.path || null,
     };
-    console.log("Creating portfolio with data:", data); // Debug log
-    const response = await ArtistService.createArtistProfile(data);
+
+    const response =
+      await ArtistService
+        .createArtistProfile(data);
+
     return res
       .status(201)
-      .json(SuccessResponse("Artist profile created", response));
+      .json(
+        SuccessResponse(
+          "Artist profile created",
+          response
+        )
+      );
+
   } catch (error) {
+
     return res
       .status(error.statusCode || 500)
-      .json(ErrorResponse(error.message, error));
+      .json(
+        ErrorResponse(
+          error.message,
+          error
+        )
+      );
   }
 }
 async function getArtists(req, res) {
@@ -74,13 +121,38 @@ async function getArtistDetails(req, res) {
 
 async function createService(req, res) {
   try {
-    const data = { ...req.body, artist_id: req.user.id };
-    const response = await ArtistService.createService(data);
-    return res.status(201).json(SuccessResponse("Service created", response));
+
+    const data = {
+      ...req.body,
+
+      artist_id: req.user.id,
+
+      service_image:
+        req.file?.path || null,
+    };
+
+    const response =
+      await ArtistService.createService(data);
+
+    return res
+      .status(201)
+      .json(
+        SuccessResponse(
+          "Service created",
+          response
+        )
+      );
+
   } catch (error) {
+
     return res
       .status(error.statusCode || 500)
-      .json(ErrorResponse(error.message, error));
+      .json(
+        ErrorResponse(
+          error.message,
+          error
+        )
+      );
   }
 }
 async function getMyServices(req, res) {

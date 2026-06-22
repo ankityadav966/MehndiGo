@@ -152,23 +152,44 @@ class UserRepository extends CrudRepository {
       ],
     });
   }
-  async getUsers({ page = 1, limit = 10 }) {
-    const offset = (page - 1) * limit;
+  
+async getUsers({
+  page = 1,
+  limit = 10,
+}) {
 
-    return await db.User.findAndCountAll({
+  const offset =
+    (page - 1) * limit;
+
+  const data =  await db.User
+    .findAndCountAll({
+
       where: {
         role: "USER",
       },
 
-      attributes: ["id", "name", "phone", "profile_image"],
+      attributes: [
+        "id",
+        "name",
+        "phone",
+        "profile_image",
+        "role",
+      ],
 
-      limit: Number(limit),
+      limit:
+        Number(limit),
 
-      offset: Number(offset),
+      offset:
+        Number(offset),
 
-      order: [["createdAt", "DESC"]],
+      order: [
+        ["id", "DESC"],
+      ],
     });
-  }
+    console.log(data)
+    return data;
+}
+
 }
 
 module.exports = UserRepository;

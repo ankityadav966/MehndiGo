@@ -1,53 +1,21 @@
+const multer = require("multer");
 
-const multer =
-  require("multer");
+const { CloudinaryStorage } = require("multer-storage-cloudinary");
 
-const {
+const cloudinary = require("../config/cloudinary");
 
-  CloudinaryStorage
+const storage = new CloudinaryStorage({
+  cloudinary,
 
-} = require(
-  "multer-storage-cloudinary"
-);
+  params: async (req, file) => ({
+    folder: "mehndigo",
 
-const cloudinary =
-  require(
-    "../config/cloudinary"
-  );
+    allowed_formats: ["jpg", "png", "jpeg"],
+  }),
+});
 
+const upload = multer({
+  storage,
+});
 
-
-const storage =
-  new CloudinaryStorage({
-
-    cloudinary,
-
-    params: async (
-      req,
-      file
-    ) => ({
-
-      folder:
-        "mehndigo",
-
-      allowed_formats: [
-
-        "jpg",
-
-        "png",
-
-        "jpeg",
-      ],
-    }),
-  });
-
-
-
-const upload =
-  multer({
-
-    storage,
-  });
-
-module.exports =
-  upload;
+module.exports = upload;

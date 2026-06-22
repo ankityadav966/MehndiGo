@@ -13,8 +13,6 @@ router.post(
 
   authenticate,
 
-  authorize("ARTIST"),
-
   upload.fields([
     {
       name: "aadhaar_front",
@@ -41,8 +39,18 @@ router.post(
 router.get("/all",authenticate, ArtistController.getArtists);
 router.get("/:id", ArtistController.getArtistDetails);
 // service routes
-router.post("/service", authenticate, ArtistController.createService);
-router.get("/services", authenticate, ArtistController.getMyServices);
+router.post(
+  "/service",
+
+  authenticate,
+
+  upload.single("service_image"),
+
+  ArtistController.createService
+);
+router.put("/getallservicesdata",
+   authenticate,
+    ArtistController.getMyServices);
 router.put("/service/:id", authenticate, ArtistController.updateService);
 router.delete("/service/:id", authenticate, ArtistController.deleteService);
 // slot routes
