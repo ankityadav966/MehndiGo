@@ -1,33 +1,53 @@
+
 "use strict";
 
 const { Model } = require("sequelize");
 
-module.exports = (sequelize, DataTypes) => {
+module.exports = (
+  sequelize,
+  DataTypes
+) => {
   class ArtistProfile extends Model {
     static associate(models) {
+
       ArtistProfile.belongsTo(
         models.User,
         {
           foreignKey: "user_id",
           as: "user",
-        },
+        }
+      );
 
-        ArtistProfile.hasMany(models.Service, {
+      ArtistProfile.hasMany(
+        models.Service,
+        {
           foreignKey: "artist_id",
           as: "services",
-        }),
-        ArtistProfile.hasMany(models.Portfolio, {
+        }
+      );
+
+      ArtistProfile.hasMany(
+        models.Portfolio,
+        {
           foreignKey: "artist_id",
           as: "portfolio",
-        }),
-        ArtistProfile.hasMany(models.AvailabilitySlot, {
+        }
+      );
+
+      ArtistProfile.hasMany(
+        models.AvailabilitySlot,
+        {
           foreignKey: "artist_id",
           as: "slots",
-        }),
-        ArtistProfile.hasMany(models.Review, {
+        }
+      );
+
+      ArtistProfile.hasMany(
+        models.Review,
+        {
           foreignKey: "artist_id",
           as: "reviews",
-        }),
+        }
       );
     }
   }
@@ -50,12 +70,6 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         defaultValue: 0,
       },
-
-      price_start: {
-        type: DataTypes.INTEGER,
-        allowNull: false,
-      },
-
       home_service: {
         type: DataTypes.BOOLEAN,
         allowNull: false,
@@ -108,29 +122,48 @@ module.exports = (sequelize, DataTypes) => {
       },
 
       verification_status: {
-        type: DataTypes.ENUM("PENDING", "APPROVED", "REJECTED"),
-        allowNull: false,
+        type: DataTypes.ENUM(
+          "PENDING",
+          "APPROVED",
+          "REJECTED"
+        ),
         defaultValue: "PENDING",
       },
 
       rejection_reason: {
         type: DataTypes.TEXT,
-        allowNull: true,
+      },
+
+      specialization: {
+        type: DataTypes.STRING,
+      },
+
+      location: {
+        type: DataTypes.STRING,
+      },
+
+      city: {
+        type: DataTypes.STRING,
+      },
+
+      state: {
+        type: DataTypes.STRING,
+      },
+
+      pincode: {
+        type: DataTypes.STRING,
       },
 
       latitude: {
         type: DataTypes.DECIMAL(10, 8),
-        allowNull: true,
       },
 
       longitude: {
         type: DataTypes.DECIMAL(11, 8),
-        allowNull: true,
       },
 
       last_location_update: {
         type: DataTypes.DATE,
-        allowNull: true,
       },
     },
     {
@@ -139,7 +172,7 @@ module.exports = (sequelize, DataTypes) => {
       tableName: "artist_profiles",
       timestamps: true,
       underscored: true,
-    },
+    }
   );
 
   return ArtistProfile;

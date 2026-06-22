@@ -1,3 +1,4 @@
+
 "use strict";
 
 const { Model } = require("sequelize");
@@ -5,27 +6,30 @@ const { Model } = require("sequelize");
 module.exports = (sequelize, DataTypes) => {
   class Service extends Model {
     static associate(models) {
-      Service.belongsTo(models.ArtistProfile, {
-        foreignKey: "artist_id",
-        as: "artist",
-      });
+
+      Service.belongsTo(
+        models.ArtistProfile,
+        {
+          foreignKey: "artist_id",
+          as: "artist",
+        }
+      );
     }
   }
 
   Service.init(
     {
-      // id: {
-      //   type: DataTypes.INTEGER,
-      //   autoIncrement: true,
-      //   primaryKey: true,
-      // },
-
       artist_id: {
         type: DataTypes.INTEGER,
         allowNull: false,
       },
 
-      name: {
+      specialization_name: {
+        type: DataTypes.STRING(150),
+        allowNull: false,
+      },
+
+      category: {
         type: DataTypes.STRING(100),
         allowNull: false,
       },
@@ -35,9 +39,14 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
       },
 
-      price: {
+      minimum_price: {
         type: DataTypes.INTEGER,
         allowNull: false,
+      },
+
+      maximum_price: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
       },
 
       duration_minutes: {
@@ -45,9 +54,21 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
       },
 
-      category: {
-        type: DataTypes.STRING(100),
+      service_image: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
+
+      is_home_service: {
+        type: DataTypes.BOOLEAN,
         allowNull: false,
+        defaultValue: true,
+      },
+
+      is_salon_service: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
       },
 
       is_active: {
@@ -61,7 +82,7 @@ module.exports = (sequelize, DataTypes) => {
       modelName: "Service",
       tableName: "Services",
       timestamps: true,
-      underscored: true
+      underscored: true,
     }
   );
 

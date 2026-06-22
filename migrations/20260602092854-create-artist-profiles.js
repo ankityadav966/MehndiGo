@@ -33,10 +33,6 @@ module.exports = {
         defaultValue: 0,
       },
 
-      price_start: {
-        type: Sequelize.INTEGER,
-        allowNull: false,
-      },
 
       home_service: {
         type: Sequelize.BOOLEAN,
@@ -104,6 +100,26 @@ module.exports = {
         allowNull: true,
       },
 
+      location: {
+        type: Sequelize.STRING,
+        allowNull: true,
+      },
+
+      city: {
+        type: Sequelize.STRING,
+        allowNull: true,
+      },
+
+      state: {
+        type: Sequelize.STRING,
+        allowNull: true,
+      },
+
+      pincode: {
+        type: Sequelize.STRING,
+        allowNull: true,
+      },
+
       latitude: {
         type: Sequelize.DECIMAL(10, 8),
         allowNull: true,
@@ -122,18 +138,26 @@ module.exports = {
       created_at: {
         allowNull: false,
         type: Sequelize.DATE,
-        defaultValue: Sequelize.literal("CURRENT_TIMESTAMP"),
+        defaultValue:
+          Sequelize.literal(
+            "CURRENT_TIMESTAMP"
+          ),
       },
 
       updated_at: {
-  allowNull: false,
-  type: Sequelize.DATE,
-  defaultValue: Sequelize.NOW,
-},
+        allowNull: false,
+        type: Sequelize.DATE,
+        defaultValue:
+          Sequelize.literal(
+            "CURRENT_TIMESTAMP"
+          ),
+      },
     });
   },
 
   async down(queryInterface) {
-    await queryInterface.dropTable("artist_profiles");
+    await queryInterface.dropTable(
+      "artist_profiles"
+    );
   },
 };

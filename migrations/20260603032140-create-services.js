@@ -1,3 +1,4 @@
+
 "use strict";
 
 module.exports = {
@@ -21,7 +22,12 @@ module.exports = {
         onUpdate: "CASCADE",
       },
 
-      name: {
+      specialization_name: {
+        type: Sequelize.STRING(150),
+        allowNull: false,
+      },
+
+      category: {
         type: Sequelize.STRING(100),
         allowNull: false,
       },
@@ -31,9 +37,14 @@ module.exports = {
         allowNull: true,
       },
 
-      price: {
+      minimum_price: {
         type: Sequelize.INTEGER,
         allowNull: false,
+      },
+
+      maximum_price: {
+        type: Sequelize.INTEGER,
+        allowNull: true,
       },
 
       duration_minutes: {
@@ -41,9 +52,21 @@ module.exports = {
         allowNull: false,
       },
 
-      category: {
-        type: Sequelize.STRING(100),
+      service_image: {
+        type: Sequelize.STRING,
+        allowNull: true,
+      },
+
+      is_home_service: {
+        type: Sequelize.BOOLEAN,
         allowNull: false,
+        defaultValue: true,
+      },
+
+      is_salon_service: {
+        type: Sequelize.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
       },
 
       is_active: {
@@ -55,14 +78,20 @@ module.exports = {
       created_at: {
         allowNull: false,
         type: Sequelize.DATE,
-        defaultValue: Sequelize.literal("CURRENT_TIMESTAMP"),
+        defaultValue:
+          Sequelize.literal(
+            "CURRENT_TIMESTAMP"
+          ),
       },
 
-     updated_at: {
-  allowNull: false,
-  type: Sequelize.DATE,
-  defaultValue: Sequelize.NOW,
-},
+      updated_at: {
+        allowNull: false,
+        type: Sequelize.DATE,
+        defaultValue:
+          Sequelize.literal(
+            "CURRENT_TIMESTAMP"
+          ),
+      },
     });
   },
 
