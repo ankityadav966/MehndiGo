@@ -133,11 +133,6 @@ module.exports = (
       rejection_reason: {
         type: DataTypes.TEXT,
       },
-
-      specialization: {
-        type: DataTypes.STRING,
-      },
-
       location: {
         type: DataTypes.STRING,
       },

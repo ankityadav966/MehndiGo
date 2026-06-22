@@ -51,9 +51,22 @@ async function getArtists(req, res) {
   }
 }
 
+async function getArtistsBY(req, res) {
+  try {
+    const response = await UserService.getListing(req.user.id, req.query);
+
+    return res.status(200).json(SuccessResponse("Data fetched", response));
+  } catch (error) {
+    return res
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
+  }
+}
+
 module.exports = {
   sendOtp,
   verifyOtp,
   getArtists,
   login,
+  getArtistsBY,
 };

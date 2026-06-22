@@ -9,91 +9,91 @@ class UserRepository extends CrudRepository {
     super(db.User);
   }
 
-  async getArtists(query) {
-    const {
-      page = 1,
+  // async getArtists(query) {
+  //   const {
+  //     page = 1,
 
-      limit = 10,
+  //     limit = 10,
 
-      search = "",
+  //     search = "",
 
-      category,
+  //     category,
 
-      min_price,
+  //     min_price,
 
-      max_price,
+  //     max_price,
 
-      sort,
-    } = query;
+  //     sort,
+  //   } = query;
 
-    const offset = (page - 1) * limit;
+  //   const offset = (page - 1) * limit;
 
-    const where = {
-      verification_status: "APPROVED",
-    };
+  //   const where = {
+  //     verification_status: "APPROVED",
+  //   };
 
-    // search
+  //   // search
 
-    if (search) {
-      where.bio = {
-        [Op.iLike]: `%${search}%`,
-      };
-    }
+  //   if (search) {
+  //     where.bio = {
+  //       [Op.iLike]: `%${search}%`,
+  //     };
+  //   }
 
-    // price filter
+  //   // price filter
 
-    if (min_price && max_price) {
-      where.price_start = {
-        [Op.between]: [min_price, max_price],
-      };
-    }
+  //   if (min_price && max_price) {
+  //     where.price_start = {
+  //       [Op.between]: [min_price, max_price],
+  //     };
+  //   }
 
-    // sorting
+  //   // sorting
 
-    let order = [["created_at", "DESC"]];
+  //   let order = [["created_at", "DESC"]];
 
-    if (sort === "rating") {
-      order = [["avg_rating", "DESC"]];
-    }
+  //   if (sort === "rating") {
+  //     order = [["avg_rating", "DESC"]];
+  //   }
 
-    if (sort === "price_low") {
-      order = [["price_start", "ASC"]];
-    }
+  //   if (sort === "price_low") {
+  //     order = [["price_start", "ASC"]];
+  //   }
 
-    return await db.ArtistProfile.findAndCountAll({
-      where,
+  //   return await db.ArtistProfile.findAndCountAll({
+  //     where,
 
-      limit: Number(limit),
+  //     limit: Number(limit),
 
-      offset: Number(offset),
+  //     offset: Number(offset),
 
-      order,
+  //     order,
 
-      include: [
-        {
-          model: db.User,
+  //     include: [
+  //       {
+  //         model: db.User,
 
-          as: "user",
+  //         as: "user",
 
-          attributes: ["id", "name", "phone", "profile_image"],
-        },
+  //         attributes: ["id", "name", "phone", "profile_image"],
+  //       },
 
-        {
-          model: db.Service,
+  //       {
+  //         model: db.Service,
 
-          as: "services",
+  //         as: "services",
 
-          where: category
-            ? {
-                category,
-              }
-            : undefined,
+  //         where: category
+  //           ? {
+  //               category,
+  //             }
+  //           : undefined,
 
-          required: false,
-        },
-      ],
-    });
-  }
+  //         required: false,
+  //       },
+  //     ],
+  //   });
+  // }
 
   async getArtistDetails(id) {
     return await db.ArtistProfile.findOne({
@@ -150,6 +150,23 @@ class UserRepository extends CrudRepository {
           required: false,
         },
       ],
+    });
+  }
+  async getUsers({ page = 1, limit = 10 }) {
+    const offset = (page - 1) * limit;
+
+    return await db.User.findAndCountAll({
+      where: {
+        role: "USER",
+      },
+
+      attributes: ["id", "name", "phone", "profile_image"],
+
+      limit: Number(limit),
+
+      offset: Number(offset),
+
+      order: [["createdAt", "DESC"]],
     });
   }
 }

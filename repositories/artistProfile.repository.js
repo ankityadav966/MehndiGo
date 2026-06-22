@@ -39,32 +39,21 @@ class ArtistProfileRepository extends CrudRepository {
     );
   }
 
-  async getArtistByUserId(
-  userId
-) {
-
-  return await db.ArtistProfile
-    .findOne({
-
+  async getArtistByUserId(userId) {
+    return await db.ArtistProfile.findOne({
       where: {
         user_id: userId,
       },
 
       include: [
-
         {
           model: db.User,
           as: "user",
-          attributes: [
-            "id",
-            "name",
-            "phone",
-            "profile_image",
-          ],
+          attributes: ["id", "name", "phone", "profile_image"],
         },
       ],
     });
-}
+  }
   async getArtistDetails(id) {
     return await db.ArtistProfile.findByPk(id, {
       include: [
@@ -101,6 +90,54 @@ class ArtistProfileRepository extends CrudRepository {
   async getArtistById(id) {
     return await db.ArtistProfile.findByPk(id, {
       include: [{ model: db.User, as: "user" }],
+    });
+  }
+  async getArtists({ location, page = 1, limit = 10 }) {
+    const offset = (page - 1) * limit;
+
+    return await db.ArtistProfile.findAndCountAll({
+      where: {
+        verification_status: "APPROVED",
+      },
+
+      include: [
+        {
+          model: db.User,
+          as: "user",
+          attributes: ["id", "name", "phone", "profile_image"],
+        },
+
+        {
+          model: db.Service,
+          as: "services",
+        },
+
+        {
+          model: db.Portfolio,
+          as: "portfolio",
+        },
+      ],
+
+      order: [
+        [
+          db.sequelize.literal(`
+            CASE
+              WHEN location = '${location}'
+              THEN 0
+              ELSE 1
+            END
+          `),
+          "ASC",
+        ],
+
+        ["avg_rating", "DESC"],
+
+        ["total_bookings", "DESC"],
+      ],
+
+      limit: Number(limit),
+
+      offset: Number(offset),
     });
   }
 }

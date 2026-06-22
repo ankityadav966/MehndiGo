@@ -1,4 +1,8 @@
-const { UserRepository, OtpRepository } = require("../repositories/index");
+const {
+  UserRepository,
+  OtpRepository,
+  ArtistProfileRepository,
+} = require("../repositories/index");
 
 const AppError = require("../utils/errors/app.error");
 
@@ -6,6 +10,7 @@ const { generateToken } = require("../utils/jwt");
 const { sendOtp } = require("../utils/twilio.service");
 const UserRepositor = new UserRepository();
 const OtpRepositor = new OtpRepository();
+const ArtistProfileRepositor = new ArtistProfileRepository();
 
 class UserService {
   async sendOtp(data) {
@@ -17,30 +22,24 @@ class UserService {
       throw new AppError("Phone number required", 400);
     }
 
-  
-let user = await UserRepositor.getOne({
-  phone,
-});
+    let user = await UserRepositor.getOne({
+      phone,
+    });
 
-if (user) {
-
-  if (user.role !== role) {
-
-    throw new AppError(
-      `This phone number is already registered as ${user.role}`,
-      400
-    );
-  }
-
-} else {
-
-  user = await UserRepositor.create({
-    name,
-    phone,
-    role: role || "USER",
-  });
-}
-
+    if (user) {
+      if (user.role !== role) {
+        throw new AppError(
+          `This phone number is already registered as ${user.role}`,
+          400,
+        );
+      }
+    } else {
+      user = await UserRepositor.create({
+        name,
+        phone,
+        role: role || "USER",
+      });
+    }
 
     const otp = Math.floor(100000 + Math.random() * 900000);
 
@@ -87,37 +86,24 @@ if (user) {
     });
 
     const user = await UserRepositor.getOne({ phone });
-    
-if (!user) {
 
-  throw new AppError(
-    "User not found",
-    404
-  );
-}
+    if (!user) {
+      throw new AppError("User not found", 404);
+    }
 
-if (user.role !== role) {
-
-  throw new AppError(
-    `This number belongs to ${user.role}`,
-    400
-  );
-}
-
+    if (user.role !== role) {
+      throw new AppError(`This number belongs to ${user.role}`, 400);
+    }
 
     await UserRepositor.update(user.id, {
       last_login_at: new Date(),
     });
 
+    const token = generateToken({
+      id: user.id,
 
-const token =
-  generateToken({
-
-    id: user.id,
-
-    role: user.role,
-  });
-
+      role: user.role,
+    });
 
     return {
       token,
@@ -131,88 +117,49 @@ const token =
     };
   }
 
-async login(data) {
+  async login(data) {
+    const { phone, role } = data;
 
-  const {
-    phone,
-    role,
-  } = data;
+    if (!phone) {
+      throw new AppError("Phone number required", 400);
+    }
 
-  if (!phone) {
+    if (!role) {
+      throw new AppError("Role required", 400);
+    }
 
-    throw new AppError(
-      "Phone number required",
-      400
-    );
-  }
-
-  if (!role) {
-
-    throw new AppError(
-      "Role required",
-      400
-    );
-  }
-
-  const user =
-    await UserRepositor.getOne({
+    const user = await UserRepositor.getOne({
       phone,
     });
 
-  if (!user) {
+    if (!user) {
+      throw new AppError("User not found", 404);
+    }
 
-    throw new AppError(
-      "User not found",
-      404
-    );
+    if (user.role !== role) {
+      throw new AppError(`This number is registered as ${user.role}`, 400);
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000);
+
+    await OtpRepositor.create({
+      user_id: user.id,
+
+      phone,
+
+      otp,
+
+      expires_at: new Date(Date.now() + 5 * 60 * 1000),
+    });
+
+    await sendOtp(phone, otp);
+
+    return {
+      phone,
+
+      role,
+    };
   }
-
-  if (
-    user.role !== role
-  ) {
-
-    throw new AppError(
-      `This number is registered as ${user.role}`,
-      400
-    );
-  }
-
-  const otp =
-    Math.floor(
-      100000 +
-      Math.random() *
-      900000
-    );
-
-  await OtpRepositor.create({
-
-    user_id:
-      user.id,
-
-    phone,
-
-    otp,
-
-    expires_at:
-      new Date(
-        Date.now() +
-        5 * 60 * 1000
-      ),
-  });
-
-  await sendOtp(
-    phone,
-    otp
-  );
-
-  return {
-
-    phone,
-
-    role,
-  };
-}
-
 
   async getProfile(id) {
     const user = await UserRepositor.getById(id);
@@ -225,6 +172,33 @@ async login(data) {
   }
   async getArtists(query) {
     return await UserRepositor.getArtists(query);
+  }
+
+  async getListing(userId, query) {
+    const user = await UserRepositor.getById(userId);
+
+    if (!user) {
+      throw new AppError("User not found", 404);
+    }
+
+    // USER LOGIN
+    if (user.role === "USER") {
+      return await ArtistProfileRepositor.getArtists({
+        location: user.location,
+        page: query.page,
+        limit: query.limit,
+      });
+    }
+
+    // ARTIST LOGIN
+    if (user.role === "ARTIST") {
+      return await UserRepositor.getUsers({
+        page: query.page,
+        limit: query.limit,
+      });
+    }
+
+    throw new AppError("Invalid role", 400);
   }
 }
 
