@@ -38,17 +38,16 @@ class AvailabilitySlotRepository extends CrudRepository {
   }
 
   async findArtistSlots(artist_id) {
-    return await db.AvailabilitySlot.findAll({
-      where: {
-        artist_id,
-      },
+  return await db.AvailabilitySlot.findAll({
+    where: {
+      artist_id,
+    },
 
-      order: [
-        ["date", "ASC"],
-        ["start_time", "ASC"],
-      ],
-    });
-  }
+    order: [
+      ["start_time", "DESC"],
+    ],
+  });
+}
   
 async checkOverlap(
   artist_id,

@@ -109,7 +109,7 @@ async function getArtists(req, res) {
 }
 async function getArtistDetails(req, res) {
   try {
-    const response = await ArtistService.getArtistDetails(req.params.id);
+    const response = await ArtistService.getArtistDetails(req.user.id);
     return res.status(200).json(SuccessResponse("Artist fetched", response));
   } catch (error) {
     return res
@@ -296,12 +296,35 @@ async function getArtistBookings(req, res) {
 }
 async function cancelBooking(req, res) {
   try {
-    await ArtistService.cancelBooking(req.params.id, req.user.id);
-    return res.status(200).json(SuccessResponse("Booking cancelled"));
-  } catch (error) {
+
+    const response =
+      await ArtistService.cancelBooking(
+        req.params.id,
+        req.user.id,
+        req.body.cancel_reason
+      );
+
     return res
-      .status(error.statusCode || 500)
-      .json(ErrorResponse(error.message, error));
+      .status(200)
+      .json(
+        SuccessResponse(
+          "Booking cancelled",
+          response
+        )
+      );
+
+  } catch (error) {
+
+    return res
+      .status(
+        error.statusCode || 500
+      )
+      .json(
+        ErrorResponse(
+          error.message,
+          error
+        )
+      );
   }
 }
 

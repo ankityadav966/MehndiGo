@@ -8,7 +8,7 @@ const {
   PaymentRepository,
   ReviewRepository,
   NotificationRepository,
-  MessageRepository
+  MessageRepository,
 } = require("../repositories");
 
 const AppError = require("../utils/errors/app.error");
@@ -23,7 +23,6 @@ const BookingRepositor = new BookingRepository();
 const PaymentRepositor = new PaymentRepository();
 const ReviewRepositor = new ReviewRepository();
 const NotificationRepositor = new NotificationRepository();
-
 
 const crypto = require("crypto");
 
@@ -63,80 +62,92 @@ class ArtistService {
   }
 
   async getArtists(userId) {
-
-  return await ArtistProfileRepositor
-    .getArtistByUserId(
-      userId
-    );
-}
-  async getArtistDetails(id) {
-    const artist = await ArtistProfileRepositor.getArtistDetails(id);
-    if (!artist) {
-      throw new AppError("Artist not found", 404);
-    }
-    return artist;
+    return await ArtistProfileRepositor.getArtistByUserId(userId);
   }
-
-  async createService(data) {
-
-  const {
-    artist_id,
-
-    specialization_name,
-
-    minimum_price,
-
-    category,
-  } = data;
+  async getArtistDetails(id) {
 
   const artist =
-    await ArtistProfileRepositor.getOne({
-      user_id: artist_id,
-    });
+    await ArtistProfileRepositor
+      .getArtistDetails(id);
 
   if (!artist) {
-
     throw new AppError(
-      "Artist profile not found",
+      "Artist not found",
       404
     );
   }
 
-  if (!specialization_name) {
+  const reviews =
+    artist.reviews || [];
 
-    throw new AppError(
-      "Specialization name required",
-      400
-    );
-  }
+  const average_rating =
+    reviews.length > 0
+      ? Number(
+          (
+            reviews.reduce(
+              (sum, item) =>
+                sum + item.rating,
+              0
+            ) / reviews.length
+          ).toFixed(1)
+        )
+      : 0;
 
-  if (!category) {
+  const artistData =
+    artist.toJSON();
 
-    throw new AppError(
-      "Category required",
-      400
-    );
-  }
+  delete artistData.avg_rating;
+  delete artistData.total_reviews;
 
-  if (!minimum_price) {
+  return {
+    ...artistData,
 
-    throw new AppError(
-      "Minimum price required",
-      400
-    );
-  }
+    average_rating,
 
-  const service =
-    await ServiceRepositor.createService({
+    review_count:
+      reviews.length,
+  };
+}
 
-      ...data,
+  async createService(data) {
+    const {
+      artist_id,
 
-      artist_id:
-        artist.id,
+      specialization_name,
+
+      minimum_price,
+
+      category,
+    } = data;
+
+    const artist = await ArtistProfileRepositor.getOne({
+      user_id: artist_id,
     });
 
-  return service;
-}
+    if (!artist) {
+      throw new AppError("Artist profile not found", 404);
+    }
+
+    if (!specialization_name) {
+      throw new AppError("Specialization name required", 400);
+    }
+
+    if (!category) {
+      throw new AppError("Category required", 400);
+    }
+
+    if (!minimum_price) {
+      throw new AppError("Minimum price required", 400);
+    }
+
+    const service = await ServiceRepositor.createService({
+      ...data,
+
+      artist_id: artist.id,
+    });
+
+    return service;
+  }
 
   async getMyServices(artist_id) {
     const artist = await ArtistProfileRepositor.getOne({ user_id: artist_id });
@@ -171,19 +182,7 @@ class ArtistService {
   }
 
   async createSlot(data) {
-    console.log("Creating slot with data:", data);
-
-    const {
-      artist_id,
-
-      date,
-
-      start_time,
-
-      end_time,
-    } = data;
-
-    // artist exists
+    const { artist_id, date, start_time, end_time } = data;
 
     const artist = await ArtistProfileRepositor.getOne({
       user_id: artist_id,
@@ -193,7 +192,9 @@ class ArtistService {
       throw new AppError("Artist profile not found", 404);
     }
 
-    // validations
+    if (!artist.is_available) {
+      throw new AppError("Artist is currently unavailable", 400);
+    }
 
     if (!date) {
       throw new AppError("Date is required", 400);
@@ -207,13 +208,9 @@ class ArtistService {
       throw new AppError("End time required", 400);
     }
 
-    // create proper datetime
+    const startDateTime = new Date(`${date}T${start_time}`);
 
-    const startDateTime = new Date(`${date} ${start_time}`);
-
-    const endDateTime = new Date(`${date} ${end_time}`);
-
-    // invalid date check
+    const endDateTime = new Date(`${date}T${end_time}`);
 
     if (isNaN(startDateTime.getTime())) {
       throw new AppError("Invalid start time", 400);
@@ -223,23 +220,13 @@ class ArtistService {
       throw new AppError("Invalid end time", 400);
     }
 
-    // end > start
-
     if (endDateTime <= startDateTime) {
-      throw new AppError(
-        "End time must be greater than start time",
-
-        400,
-      );
+      throw new AppError("End time must be greater than start time", 400);
     }
-
-    // overlap check
 
     const overlap = await SlotRepositor.checkOverlap(
       artist.id,
-
       startDateTime,
-
       endDateTime,
     );
 
@@ -247,14 +234,11 @@ class ArtistService {
       throw new AppError("Slot already overlaps", 400);
     }
 
-    // create slot
-
     const slot = await SlotRepositor.createSlot({
       artist_id: artist.id,
-
       start_time: startDateTime,
-
       end_time: endDateTime,
+      is_booked: false,
     });
 
     return slot;
@@ -330,96 +314,118 @@ class ArtistService {
   // Booking management
 
   async createBooking(data) {
-    const {
-      user_id,
 
-      artist_id,
+  const {
+    user_id,
+    artist_id,
+    service_id,
+    slot_id,
+    address,
+    notes,
+  } = data;
 
-      service_id,
+  const user =
+    await UserRepositor.getById(user_id);
 
-      slot_id,
+  if (!user) {
+    throw new AppError(
+      "User not found",
+      404
+    );
+  }
 
-      address,
-    } = data;
+  if (user.role !== "USER") {
+    throw new AppError(
+      "Only users can create bookings",
+      403
+    );
+  }
 
-    // user exists
+  const artist =
+    await ArtistProfileRepositor.getById(
+      artist_id
+    );
 
-    const user = await UserRepositor.getById(user_id);
+  if (!artist) {
+    throw new AppError(
+      "Artist not found",
+      404
+    );
+  }
 
-    if (!user) {
-      throw new AppError("User not found", 404);
-    }
+  const service =
+    await ServiceRepositor.getById(
+      service_id
+    );
 
-    // artist exists
+  if (!service) {
+    throw new AppError(
+      "Service not found",
+      404
+    );
+  }
 
-    const artist = await ArtistProfileRepositor.getById(artist_id);
+  if (
+    service.artist_id !== artist.id
+  ) {
+    throw new AppError(
+      "Invalid service",
+      400
+    );
+  }
 
-    if (!artist) {
-      throw new AppError("Artist not found", 404);
-    }
+  const slot =
+    await SlotRepositor.getById(
+      slot_id
+    );
 
-    // service exists
+  if (!slot) {
+    throw new AppError(
+      "Slot not found",
+      404
+    );
+  }
 
-    const service = await ServiceRepositor.getById(service_id);
+  if (
+    slot.artist_id !== artist.id
+  ) {
+    throw new AppError(
+      "Invalid slot",
+      400
+    );
+  }
 
-    if (!service) {
-      throw new AppError("Service not found", 404);
-    }
+  if (slot.is_booked) {
+    throw new AppError(
+      "Slot already booked",
+      400
+    );
+  }
 
-    // slot exists
+  const booking_code =
+    `BOOK-${Date.now()}`;
 
-    const slot = await SlotRepositor.getById(slot_id);
+  const total_price =
+    service.minimum_price;
 
-    if (!slot) {
-      throw new AppError("Slot not found", 404);
-    }
+  const advance_paid = 0;
 
-    // already booked
+  const remaining_amount =
+    total_price -
+    advance_paid;
 
-    if (slot.is_booked) {
-      throw new AppError("Slot already booked", 400);
-    }
-
-    // booking code
-
-    const booking_code = `BOOK-${Date.now()}`;
-
-    // total price
-
-    const total_price = service.price;
-
-    // advance payment
-
-    const advance_paid = 0;
-
-    // remaining amount
-
-    const remaining_amount = total_price - advance_paid;
-
-    // booking date
-
-    const booking_date = slot.start_time;
-
-    // create booking
-
-    const booking = await BookingRepositor.createBooking({
-      user_id,
-
-      artist_id,
-
-      service_id,
-
-      slot_id,
-
-      address,
+  const booking =
+    await BookingRepositor.createBooking({
 
       booking_code,
 
-      booking_date,
+      user_id,
 
-      start_time: slot.start_time,
+      artist_id,
 
-      end_time: slot.end_time,
+      service_id,
+
+      slot_id,
 
       total_price,
 
@@ -427,38 +433,203 @@ class ArtistService {
 
       remaining_amount,
 
-      booking_status: "PENDING",
+      booking_status:
+        "PENDING",
 
-      payment_status: "PENDING",
+      payment_status:
+        "PENDING",
+
+      address,
+
+      notes,
     });
-    await NotificationService
-  .createNotification({
 
-    user_id:
-      artist.user_id,
+  // Notification
 
-    title:
-      "New Booking",
+  await NotificationRepositor
+    .createNotification({
 
-    message:
-      `New booking received from ${user.name}`,
+      user_id:
+        artist.user_id,
 
-    type:
-      "BOOKING_CREATED",
-  });
+      title:
+        "New Booking",
 
-    // update slot
+      message:
+        `New booking received from ${user.name}`,
 
-    await SlotRepositor.update(
-      slot_id,
+      type:
+        "BOOKING", // 👈 yaha apna enum check karna
+    });
 
-      {
-        is_booked: true,
-      },
+  await SlotRepositor.update(
+    slot_id,
+    {
+      is_booked: true,
+    }
+  );
+
+  return booking;
+}
+
+async getMyBookings(user_id) {
+
+  const user =
+    await UserRepositor.getById(
+      user_id
     );
 
-    return booking;
+  if (!user) {
+    throw new AppError(
+      "User not found",
+      404
+    );
   }
+
+  // USER LOGIN
+  if (user.role === "USER") {
+
+    return await BookingRepositor
+      .getUserBookings(
+        user_id
+      );
+  }
+
+  // ARTIST LOGIN
+  if (user.role === "ARTIST") {
+
+    const artist =
+      await ArtistProfileRepositor.getOne({
+        user_id,
+      });
+
+    if (!artist) {
+      throw new AppError(
+        "Artist profile not found",
+        404
+      );
+    }
+
+    return await BookingRepositor
+      .getArtistBookings(
+        artist.id
+      );
+  }
+
+  throw new AppError(
+    "Invalid role",
+    400
+  );
+}
+async getArtistBookings(user_id) {
+
+  const user =
+    await UserRepositor.getById(
+      user_id
+    );
+
+  if (!user) {
+    throw new AppError(
+      "User not found",
+      404
+    );
+  }
+
+  if (
+    user.role !== "ARTIST"
+  ) {
+    throw new AppError(
+      "Only artist can access bookings",
+      403
+    );
+  }
+
+  const artist =
+    await ArtistProfileRepositor.getOne({
+      user_id,
+    });
+
+  if (!artist) {
+    throw new AppError(
+      "Artist profile not found",
+      404
+    );
+  }
+
+  return await BookingRepositor
+    .getArtistBookings(
+      artist.id
+    );
+}
+async cancelBooking(
+  booking_id,
+  user_id,
+  cancel_reason
+) {
+
+  const booking =
+    await BookingRepositor.getById(
+      booking_id
+    );
+
+  if (!booking) {
+    throw new AppError(
+      "Booking not found",
+      404
+    );
+  }
+
+  if (
+    booking.user_id !== user_id
+  ) {
+    throw new AppError(
+      "Unauthorized",
+      403
+    );
+  }
+
+  if (
+    booking.booking_status ===
+    "CANCELLED"
+  ) {
+    throw new AppError(
+      "Booking already cancelled",
+      400
+    );
+  }
+
+  if (!cancel_reason) {
+    throw new AppError(
+      "Cancel reason required",
+      400
+    );
+  }
+
+  await BookingRepositor.update(
+    booking_id,
+    {
+      booking_status:
+        "CANCELLED",
+
+      cancel_reason,
+    }
+  );
+
+  if (booking.slot_id) {
+
+    await SlotRepositor.update(
+      booking.slot_id,
+      {
+        is_booked: false,
+      }
+    );
+  }
+
+  return await BookingRepositor.getById(
+    booking_id
+  );
+}
+
 
   async createOrder(booking_id) {
     const booking = await BookingRepositor.getById(booking_id);
@@ -514,86 +685,205 @@ class ArtistService {
         payment_status: "PAID",
       });
     }
-    await NotificationService
-  .createNotification({
+    await NotificationService.createNotification({
+      user_id: booking.artist_id,
 
-    user_id:
-      booking.artist_id,
+      title: "Payment Success",
 
-    title:
-      "Payment Success",
+      message: "Booking payment completed",
 
-    message:
-      "Booking payment completed",
-
-    type:
-      "PAYMENT_SUCCESS",
-  });
+      type: "PAYMENT_SUCCESS",
+    });
     return { success: true };
   }
 
-  async createReview(data) {
-    const { booking_id, artist_id, user_id, rating, review } = data;
-    const booking = await BookingRepositor.getById(booking_id);
-    if (!booking) {
-      throw new AppError("Booking not found", 404);
-    }
-    if (booking.user_id !== user_id) {
-      throw new AppError("Unauthorized", 403);
-    }
-    if (booking.booking_status !== "COMPLETED") {
-      throw new AppError("Review allowed only after completed booking", 400);
-    }
-    const existingReview = await ReviewRepositor.findBookingReview(booking_id);
-    if (existingReview) {
-      throw new AppError("Review already submitted", 400);
-    }
-    if (!rating) {
-      throw new AppError("Rating required", 400);
-    }
-    const newReview = await ReviewRepositor.createReview({
+async createReview(data) {
+
+  const {
+    booking_id,
+    user_id,
+    rating,
+    review,
+  } = data;
+
+  const booking =
+    await BookingRepositor.getById(
+      booking_id
+    );
+
+  if (!booking) {
+    throw new AppError(
+      "Booking not found",
+      404
+    );
+  }
+
+  if (
+    booking.user_id !== user_id
+  ) {
+    throw new AppError(
+      "Unauthorized",
+      403
+    );
+  }
+
+  if (
+    booking.booking_status !==
+    "COMPLETED"
+  ) {
+    throw new AppError(
+      "Review allowed only after completed booking",
+      400
+    );
+  }
+
+  const existingReview =
+    await ReviewRepositor.findBookingReview(
+      booking_id
+    );
+
+  if (existingReview) {
+    throw new AppError(
+      "Review already submitted",
+      400
+    );
+  }
+
+  if (!rating) {
+    throw new AppError(
+      "Rating required",
+      400
+    );
+  }
+
+  if (
+    rating < 1 ||
+    rating > 5
+  ) {
+    throw new AppError(
+      "Rating must be between 1 and 5",
+      400
+    );
+  }
+
+  const artist_id =
+    booking.artist_id;
+
+  const artist =
+    await ArtistProfileRepositor.getById(
+      artist_id
+    );
+
+  const newReview =
+    await ReviewRepositor.createReview({
+
       booking_id,
+
       artist_id,
+
       user_id,
+
       rating,
+
       review,
     });
 
-    await NotificationService
-  .createNotification({
+  await NotificationRepositor.createNotification({
 
     user_id:
-      artist_id,
+      artist.user_id,
 
     title:
       "New Review",
 
     message:
-      "You received a new review",
+      `You received a ${rating} star review`,
 
     type:
-      "REVIEW_RECEIVED",
-  });cd
+      "SYSTEM",
+  });
 
+  const allReviews =
+    await ReviewRepositor.getArtistReviews(
+      artist_id
+    );
 
-    const allReviews = await ReviewRepositor.getArtistReviews(artist_id);
-    const totalReviews = allReviews.length;
-    const totalRating = allReviews.reduce((sum, item) => sum + item.rating, 0);
-    const avgRating = totalRating / totalReviews;
-    await ArtistProfileRepositor.update(artist_id, {
-      avg_rating: avgRating,
-      total_reviews: totalReviews,
-    });
+  const totalReviews =
+    allReviews.length;
 
-    return newReview;
-  }
+  const totalRating =
+    allReviews.reduce(
+      (sum, item) =>
+        sum + item.rating,
+      0
+    );
+
+  const avgRating =
+    totalRating /
+    totalReviews;
+
+  await ArtistProfileRepositor.update(
+    artist_id,
+    {
+      avg_rating:
+        Number(
+          avgRating.toFixed(1)
+        ),
+
+      total_reviews:
+        totalReviews,
+    }
+  );
+
+  return newReview;
+}
+
   async getArtistReviews(artist_id) {
-    const reviews = await ReviewRepositor.getArtistReviews(artist_id);
-    const totalReviews = reviews.length;
-    const totalRating = reviews.reduce((sum, item) => sum + item.rating, 0);
-    const avgRating = totalReviews > 0 ? totalRating / totalReviews : 0;
-    return { avg_rating: avgRating, total_reviews: totalReviews, reviews };
+
+  const artist =
+    await ArtistProfileRepositor.getById(
+      artist_id
+    );
+
+  if (!artist) {
+    throw new AppError(
+      "Artist not found",
+      404
+    );
   }
+
+  const reviews =
+    await ReviewRepositor.getArtistReviews(
+      artist_id
+    );
+
+  const totalReviews =
+    reviews.length;
+
+  const totalRating =
+    reviews.reduce(
+      (sum, item) =>
+        sum + item.rating,
+      0
+    );
+
+  const avgRating =
+    totalReviews > 0
+      ? Number(
+          (
+            totalRating /
+            totalReviews
+          ).toFixed(1)
+        )
+      : 0;
+
+  return {
+    artist_id,
+    avg_rating: avgRating,
+    total_reviews: totalReviews,
+    reviews,
+  };
+}
 
   // notification management
   async createNotification(data) {

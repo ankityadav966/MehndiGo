@@ -60,21 +60,7 @@ module.exports = {
         onUpdate: "CASCADE",
       },
 
-      booking_date: {
-        type: Sequelize.DATEONLY,
-        allowNull: false,
-      },
-
-      start_time: {
-        type: Sequelize.DATE,
-        allowNull: false,
-      },
-
-      end_time: {
-        type: Sequelize.DATE,
-        allowNull: false,
-      },
-
+    
       total_price: {
         type: Sequelize.INTEGER,
         allowNull: false,
@@ -112,6 +98,7 @@ module.exports = {
         allowNull: false,
         defaultValue: "PENDING",
       },
+      
 
       address: {
         type: Sequelize.TEXT,

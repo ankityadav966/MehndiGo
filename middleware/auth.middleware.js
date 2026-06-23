@@ -10,9 +10,6 @@ async function authenticate(
 ) {
 
   try {
-console.log('====================================');
-console.log(req.headers.authorization,"HIt HUI : : : : : ");
-console.log('====================================');
     const authHeader =
       req.headers.authorization;
 

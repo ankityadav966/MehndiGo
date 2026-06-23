@@ -64,41 +64,35 @@ class ReviewRepository
   // artist reviews
 
   async getArtistReviews(
-    artist_id
-  ) {
+  artist_id
+) {
 
-    return await db
-      .Review
-      .findAll({
+  return await db.Review.findAll({
 
-        where: {
-          artist_id,
-        },
+    where: {
+      artist_id,
+    },
 
-        include: [
+    include: [
+      {
+        model: db.User,
 
-          {
-            model:
-              db.User,
+        as: "user",
 
-            as: "user",
-
-            attributes: [
-
-              "id",
-
-              "name",
-
-              "phone",
-            ],
-          },
+        attributes: [
+          "id",
+          "name",
+          "phone",
+          "profile_image",
         ],
+      },
+    ],
 
-        order: [
-          ["createdAt", "DESC"],
-        ],
-      });
-  }
+    order: [
+      ["created_at", "DESC"],
+    ],
+  });
+}
 
 
 

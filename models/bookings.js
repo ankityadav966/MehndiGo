@@ -55,20 +55,7 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
       },
 
-      booking_date: {
-        type: DataTypes.DATEONLY,
-        allowNull: false,
-      },
-
-      start_time: {
-        type: DataTypes.DATE,
-        allowNull: false,
-      },
-
-      end_time: {
-        type: DataTypes.DATE,
-        allowNull: false,
-      },
+    
 
       total_price: {
         type: DataTypes.INTEGER,
@@ -107,6 +94,7 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         defaultValue: "PENDING",
       },
+      
 
       address: {
         type: DataTypes.TEXT,

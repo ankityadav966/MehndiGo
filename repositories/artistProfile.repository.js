@@ -54,25 +54,65 @@ class ArtistProfileRepository extends CrudRepository {
       ],
     });
   }
-  async getArtistDetails(id) {
-    return await db.ArtistProfile.findByPk(id, {
-      include: [
-        {
-          model: db.User,
-          as: "user",
-          attributes: ["id", "name", "phone", "profile_image"],
-        },
-        { model: db.Service, as: "services" },
-        { model: db.Portfolio, as: "portfolio" },
-        {
-          model: db.AvailabilitySlot,
-          as: "slots",
-          where: { is_booked: false },
-          required: false,
-        },
-      ],
-    });
-  }
+  async getArtistDetails(userId) {
+
+  return await db.ArtistProfile.findOne({
+
+    where: {
+      user_id: userId,
+    },
+
+    include: [
+
+      {
+        model: db.User,
+        as: "user",
+        attributes: [
+          "id",
+          "name",
+          "phone",
+          "profile_image",
+          "email"
+        ],
+      },
+
+      {
+        model: db.Service,
+        as: "services",
+      },
+
+      {
+        model: db.Portfolio,
+        as: "portfolio",
+        required: false,
+      },
+
+      {
+        model: db.AvailabilitySlot,
+        as: "slots",
+        required: false,
+      },
+
+      {
+        model: db.Review,
+        as: "reviews",
+        required: false,
+
+        include: [
+          {
+            model: db.User,
+            as: "user",
+            attributes: [
+              "id",
+              "name",
+              "profile_image"
+            ],
+          },
+        ],
+      },
+    ],
+  });
+}
 
   async getPendingArtists() {
     return await db.ArtistProfile.findAll({
