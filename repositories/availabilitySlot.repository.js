@@ -49,51 +49,23 @@ class AvailabilitySlotRepository extends CrudRepository {
   });
 }
   
-async checkOverlap(
-  artist_id,
-  start_time,
-  end_time
-) {
-
-  return await db
-    .AvailabilitySlot
-    .findOne({
-
+  async checkOverlap(
+    artist_id,
+    start_time,
+    end_time
+  ) {
+    return await db.AvailabilitySlot.findOne({
       where: {
-
         artist_id,
-
-        [Op.or]: [
-
-          {
-
-            start_time: {
-
-              [Op.between]: [
-
-                start_time,
-
-                end_time,
-              ],
-            },
-          },
-
-          {
-
-            end_time: {
-
-              [Op.between]: [
-
-                start_time,
-
-                end_time,
-              ],
-            },
-          },
-        ],
+        start_time: {
+          [Op.lt]: end_time,
+        },
+        end_time: {
+          [Op.gt]: start_time,
+        },
       },
     });
-}
+  }
 
 }
 

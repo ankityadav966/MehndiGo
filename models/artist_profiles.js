@@ -133,6 +133,14 @@ module.exports = (
       rejection_reason: {
         type: DataTypes.TEXT,
       },
+      dob: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+      aadhaar_number: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
       location: {
         type: DataTypes.STRING,
       },

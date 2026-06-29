@@ -9,91 +9,51 @@ class UserRepository extends CrudRepository {
     super(db.User);
   }
 
-  // async getArtists(query) {
-  //   const {
-  //     page = 1,
+  async getArtists(query) {
+    const {
+      page = 1,
+      limit = 10,
+      search = "",
+      sort,
+    } = query;
 
-  //     limit = 10,
+    const offset = (page - 1) * limit;
 
-  //     search = "",
+    const where = {
+      verification_status: "APPROVED",
+    };
 
-  //     category,
+    if (search) {
+      where.bio = {
+        [Op.iLike || Op.like]: `%${search}%`,
+      };
+    }
 
-  //     min_price,
+    let order = [["createdAt", "DESC"]];
 
-  //     max_price,
+    if (sort === "rating") {
+      order = [["avg_rating", "DESC"]];
+    }
 
-  //     sort,
-  //   } = query;
-
-  //   const offset = (page - 1) * limit;
-
-  //   const where = {
-  //     verification_status: "APPROVED",
-  //   };
-
-  //   // search
-
-  //   if (search) {
-  //     where.bio = {
-  //       [Op.iLike]: `%${search}%`,
-  //     };
-  //   }
-
-  //   // price filter
-
-  //   if (min_price && max_price) {
-  //     where.price_start = {
-  //       [Op.between]: [min_price, max_price],
-  //     };
-  //   }
-
-  //   // sorting
-
-  //   let order = [["created_at", "DESC"]];
-
-  //   if (sort === "rating") {
-  //     order = [["avg_rating", "DESC"]];
-  //   }
-
-  //   if (sort === "price_low") {
-  //     order = [["price_start", "ASC"]];
-  //   }
-
-  //   return await db.ArtistProfile.findAndCountAll({
-  //     where,
-
-  //     limit: Number(limit),
-
-  //     offset: Number(offset),
-
-  //     order,
-
-  //     include: [
-  //       {
-  //         model: db.User,
-
-  //         as: "user",
-
-  //         attributes: ["id", "name", "phone", "profile_image"],
-  //       },
-
-  //       {
-  //         model: db.Service,
-
-  //         as: "services",
-
-  //         where: category
-  //           ? {
-  //               category,
-  //             }
-  //           : undefined,
-
-  //         required: false,
-  //       },
-  //     ],
-  //   });
-  // }
+    return await db.ArtistProfile.findAndCountAll({
+      where,
+      limit: Number(limit),
+      offset: Number(offset),
+      order,
+      include: [
+        {
+          model: db.User,
+          as: "user",
+          attributes: ["id", "name", "phone", "profile_image"],
+        },
+        {
+          model: db.Service,
+          as: "services",
+          required: false,
+        },
+      ],
+    });
+  }
 
   async getArtistDetails(id) {
     return await db.ArtistProfile.findOne({

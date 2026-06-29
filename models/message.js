@@ -66,8 +66,6 @@ module.exports = (
       tableName: "Messages",
 
       timestamps: true,
-
-      underscored: true,
     },
   );
 

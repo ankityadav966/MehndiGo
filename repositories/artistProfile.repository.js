@@ -1,6 +1,6 @@
 const db = require("../models");
-
 const CrudRepository = require("./crud.repository");
+const { Op } = require("sequelize");
 
 class ArtistProfileRepository extends CrudRepository {
   constructor() {
@@ -132,51 +132,89 @@ class ArtistProfileRepository extends CrudRepository {
       include: [{ model: db.User, as: "user" }],
     });
   }
-  async getArtists({ location, page = 1, limit = 10 }) {
+  async getArtists({ latitude, longitude, radius, search, sort, page = 1, limit = 10 }) {
     const offset = (page - 1) * limit;
 
-    return await db.ArtistProfile.findAndCountAll({
-      where: {
-        verification_status: "APPROVED",
-      },
+    let attributes = {
+      include: []
+    };
+    let order = [
+      ["avg_rating", "DESC"],
+      ["total_bookings", "DESC"]
+    ];
+    let where = {
+      verification_status: "APPROVED",
+    };
 
+    if (search) {
+      const searchPattern = `%${search}%`;
+      where[Op.or] = [
+        { bio: { [Op.iLike || Op.like]: searchPattern } },
+        { city: { [Op.iLike || Op.like]: searchPattern } },
+        { state: { [Op.iLike || Op.like]: searchPattern } },
+        { pincode: { [Op.iLike || Op.like]: searchPattern } }
+      ];
+    }
+
+    if (latitude && longitude) {
+      const lat = Number(latitude);
+      const lng = Number(longitude);
+      
+      where.latitude = { [Op.ne]: null };
+      where.longitude = { [Op.ne]: null };
+
+      const distanceSql = `(6371 * acos(cos(radians(${lat})) * cos(radians(latitude::double precision)) * cos(radians(longitude::double precision) - radians(${lng})) + sin(radians(${lat})) * sin(radians(latitude::double precision))))`;
+      
+      attributes.include.push([db.sequelize.literal(distanceSql), "distance"]);
+      
+      if (radius) {
+        where[Op.and] = [
+          db.sequelize.where(db.sequelize.literal(distanceSql), "<=", Number(radius))
+        ];
+      }
+
+      if (sort === "distance") {
+        order = [
+          [db.sequelize.literal(distanceSql), "ASC"],
+          ["avg_rating", "DESC"]
+        ];
+      } else {
+        order = [
+          ["avg_rating", "DESC"],
+          [db.sequelize.literal(distanceSql), "ASC"],
+          ["total_bookings", "DESC"]
+        ];
+      }
+    } else {
+      if (sort === "rating") {
+        order = [["avg_rating", "DESC"]];
+      } else if (sort === "latest") {
+        order = [["createdAt", "DESC"]];
+      }
+    }
+
+    return await db.ArtistProfile.findAndCountAll({
+      where,
+      attributes,
       include: [
         {
           model: db.User,
           as: "user",
           attributes: ["id", "name", "phone", "profile_image"],
         },
-
         {
           model: db.Service,
           as: "services",
+          required: false,
         },
-
         {
           model: db.Portfolio,
           as: "portfolio",
+          required: false,
         },
       ],
-
-      order: [
-        [
-          db.sequelize.literal(`
-            CASE
-              WHEN location = '${location}'
-              THEN 0
-              ELSE 1
-            END
-          `),
-          "ASC",
-        ],
-
-        ["avg_rating", "DESC"],
-
-        ["total_bookings", "DESC"],
-      ],
-
+      order,
       limit: Number(limit),
-
       offset: Number(offset),
     });
   }

@@ -39,7 +39,7 @@ class MessageRepository {
         },
       ],
 
-      order: [["created_at", "ASC"]],
+      order: [["createdAt", "ASC"]],
     });
   }
 }

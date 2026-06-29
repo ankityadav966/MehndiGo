@@ -5,106 +5,58 @@ const { SuccessResponse, ErrorResponse } = require("../utils/common");
 // Artist profile management
 async function createPortfolio(req, res) {
   try {
-
     const data = {
       user_id: req.user.id,
 
       bio: req.body.bio,
 
-      experience_years:
-        req.body.experience_years,
+      experience_years: req.body.experience_years,
 
-      home_service:
-        req.body.home_service === "true",
+      home_service: req.body.home_service === "true",
 
-      salon_service:
-        req.body.salon_service === "true",
+      salon_service: req.body.salon_service === "true",
 
-      location:
-        req.body.location,
+      location: req.body.location,
 
-      city:
-        req.body.city,
+      city: req.body.city,
 
-      state:
-        req.body.state,
+      state: req.body.state,
 
-      pincode:
-        req.body.pincode,
+      pincode: req.body.pincode,
 
-      latitude:
-        req.body.latitude,
+      latitude: req.body.latitude,
 
-      longitude:
-        req.body.longitude,
+      longitude: req.body.longitude,
 
-      last_location_update:
-        new Date(),
+      last_location_update: new Date(),
 
-      aadhaar_front:
-        req.files?.aadhaar_front?.[0]?.path || null,
+      aadhaar_front: req.files?.aadhaar_front?.[0]?.path || null,
 
-      aadhaar_back:
-        req.files?.aadhaar_back?.[0]?.path || null,
+      aadhaar_back: req.files?.aadhaar_back?.[0]?.path || null,
 
-      selfie_image:
-        req.files?.selfie_image?.[0]?.path || null,
+      selfie_image: req.files?.selfie_image?.[0]?.path || null,
     };
 
-    const response =
-      await ArtistService
-        .createArtistProfile(data);
+    const response = await ArtistService.createArtistProfile(data);
 
     return res
       .status(201)
-      .json(
-        SuccessResponse(
-          "Artist profile created",
-          response
-        )
-      );
-
+      .json(SuccessResponse("Artist profile created", response));
   } catch (error) {
-
     return res
       .status(error.statusCode || 500)
-      .json(
-        ErrorResponse(
-          error.message,
-          error
-        )
-      );
+      .json(ErrorResponse(error.message, error));
   }
 }
 async function getArtists(req, res) {
   try {
+    const response = await ArtistService.getArtists(req.user.id);
 
-    const response =
-      await ArtistService.getArtists(
-        req.user.id
-      );
-
-    return res
-      .status(200)
-      .json(
-        SuccessResponse(
-          "Artist fetched",
-          response
-        )
-      );
-
+    return res.status(200).json(SuccessResponse("Artist fetched", response));
   } catch (error) {
-
     return res
-      .status(
-        error.statusCode || 500
-      )
-      .json(
-        ErrorResponse(
-          error.message,
-          error
-        )
-      );
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
   }
 }
 async function getArtistDetails(req, res) {
@@ -121,38 +73,21 @@ async function getArtistDetails(req, res) {
 
 async function createService(req, res) {
   try {
-
     const data = {
       ...req.body,
 
       artist_id: req.user.id,
 
-      service_image:
-        req.file?.path || null,
+      service_image: req.file?.path || null,
     };
 
-    const response =
-      await ArtistService.createService(data);
+    const response = await ArtistService.createService(data);
 
-    return res
-      .status(201)
-      .json(
-        SuccessResponse(
-          "Service created",
-          response
-        )
-      );
-
+    return res.status(201).json(SuccessResponse("Service created", response));
   } catch (error) {
-
     return res
       .status(error.statusCode || 500)
-      .json(
-        ErrorResponse(
-          error.message,
-          error
-        )
-      );
+      .json(ErrorResponse(error.message, error));
   }
 }
 async function getMyServices(req, res) {
@@ -237,8 +172,6 @@ async function deleteSlot(req, res) {
   }
 }
 
-
-
 async function getMyPortfolio(req, res) {
   try {
     const response = await ArtistService.getMyPortfolio(req.user.id);
@@ -294,37 +227,21 @@ async function getArtistBookings(req, res) {
       .json(ErrorResponse(error.message, error));
   }
 }
-async function cancelBooking(req, res) {
+async function updateBookingStatus(req, res) {
   try {
-
-    const response =
-      await ArtistService.cancelBooking(
-        req.params.id,
-        req.user.id,
-        req.body.cancel_reason
-      );
+    const response = await ArtistService.updateBookingStatus(
+      req.params.id,
+      req.user.id,
+      req.body,
+    );
 
     return res
       .status(200)
-      .json(
-        SuccessResponse(
-          "Booking cancelled",
-          response
-        )
-      );
-
+      .json(SuccessResponse("Booking status updated", response));
   } catch (error) {
-
     return res
-      .status(
-        error.statusCode || 500
-      )
-      .json(
-        ErrorResponse(
-          error.message,
-          error
-        )
-      );
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
   }
 }
 
@@ -375,7 +292,7 @@ async function getArtistReviews(req, res) {
 // notification management
 async function getMyNotifications(req, res) {
   console.log("NOTIFICATION ROUTE HIT");
-
+  console.log;
   try {
     const response = await ArtistService.getMyNotifications(req.user.id);
 
@@ -399,11 +316,58 @@ async function markAsRead(req, res) {
   }
 }
 
+async function getArtistDetailsById(req, res) {
+  try {
+    const id = req.params.id;
+    if (!id || id === "undefined" || isNaN(parseInt(id))) {
+      return res.status(400).json({ success: false, message: "Invalid artist ID" });
+    }
+    const response = await ArtistService.getArtistDetailsById(id);
+    return res.status(200).json(SuccessResponse("Artist fetched", response));
+  } catch (error) {
+    return res
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
+  }
+}
+
+async function uploadPortfolioImage(req, res) {
+  try {
+    const data = {
+      artist_id: req.user.id,
+      image_url: req.file?.path || null,
+      caption: req.body.caption || null,
+    };
+    if (!data.image_url) {
+      return res.status(400).json(ErrorResponse("Portfolio image is required"));
+    }
+    const response = await ArtistService.createPortfolio(data);
+    return res.status(201).json(SuccessResponse("Portfolio image uploaded", response));
+  } catch (error) {
+    return res
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
+  }
+}
+
+async function updateProfile(req, res) {
+  try {
+    const response = await ArtistService.updateArtistProfile(req.user.id, req.body);
+    return res.status(200).json(SuccessResponse("Artist profile updated", response));
+  } catch (error) {
+    return res
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
+  }
+}
+
 module.exports = {
   // Artist profile management
   createPortfolio,
   getArtists,
   getArtistDetails,
+  getArtistDetailsById,
+  updateProfile,
   // Service management
   createService,
   getMyServices,
@@ -417,11 +381,12 @@ module.exports = {
   // Portfolio management
   getMyPortfolio,
   deletePortfolio,
+  uploadPortfolioImage,
   // Booking management
   createBooking,
   getMyBookings,
   getArtistBookings,
-  cancelBooking,
+  updateBookingStatus,
   // Payment management
   createOrder,
   verifyPayment,

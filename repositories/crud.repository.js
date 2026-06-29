@@ -39,6 +39,12 @@ class CrudRepository {
       where: { id },
     });
   }
+
+  async count(filter = {}) {
+    return await this.model.count({
+      where: filter,
+    });
+  }
 }
 
 module.exports = CrudRepository;

@@ -35,9 +35,11 @@ router.post(
 
   ArtistController.createPortfolio,
 );
+router.put("/profile", authenticate, ArtistController.updateProfile);
 
 router.get("/all",authenticate, ArtistController.getArtists);
 router.get("/artistdetails", authenticate,ArtistController.getArtistDetails);
+router.get("/artistdetails/:id", ArtistController.getArtistDetailsById);
 // service routes
 router.post(
   "/service",
@@ -48,7 +50,7 @@ router.post(
 
   ArtistController.createService
 );
-router.put("/getallservicesdata",
+router.get("/getallservicesdata",
    authenticate,
     ArtistController.getMyServices);
 router.put("/service/:id", authenticate,upload.single("service_image"), ArtistController.updateService);
@@ -59,7 +61,7 @@ router.get("/slots", authenticate, ArtistController.getMySlots);
 router.put("/slot/:id", authenticate, ArtistController.updateSlot);
 router.delete("/slot/:id", authenticate, ArtistController.deleteSlot);
 // portfolio routes
-router.post("/portfolio", authenticate, ArtistController.createPortfolio);
+router.post("/portfolio", authenticate, upload.single("portfolio_image"), ArtistController.uploadPortfolioImage);
 router.get("/portfolio", authenticate, ArtistController.getMyPortfolio);
 router.delete("/portfolio/:id", authenticate, ArtistController.deletePortfolio);
 // booking routes
@@ -70,7 +72,11 @@ router.get(
   authenticate,
   ArtistController.getArtistBookings,
 );
-router.delete("/booking/:id", authenticate, ArtistController.cancelBooking);
+router.put(
+  "/booking/:id",
+  authenticate,
+  ArtistController.updateBookingStatus
+);
 
 // payment routes
 router.post("/create-order", authenticate, ArtistController.createOrder);

@@ -1,52 +1,26 @@
-version: '3.9'
+version: "3.9"
 
 services:
-
-  backend:
-    build: .
-    container_name: node_backend
-
-    restart: always
-
-    ports:
-      - "3000:3000"
-
-    volumes:
-      - .:/app
-      - /app/node_modules
-
-    depends_on:
-      - postgres
-
-    environment:
-      PORT: 3000
-
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USER: ankit
-      DB_PASSWORD: 123456
-      DB_NAME: myappdb
-
   postgres:
     image: postgres:16
-    container_name: postgres_db
+    container_name: mehndigo_postgres
 
     restart: always
 
     environment:
       POSTGRES_USER: ankit
       POSTGRES_PASSWORD: 123456
-      POSTGRES_DB: myappdb
+      POSTGRES_DB: mehndigo_db
 
     ports:
-      - "5432:5432"
+      - "5433:5432"
 
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
   pgadmin:
     image: dpage/pgadmin4
-    container_name: pgadmin
+    container_name: mehndigo_pgadmin
 
     restart: always
 

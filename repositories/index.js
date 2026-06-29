@@ -11,7 +11,5 @@ module.exports = {
     PortfolioRepository:require("./portfolio.repository"),
     ReviewRepository:require("./review.repository"),
     ServiceRepository:require("./service.repository"),
-    
-
-
+    MessageRepository:require("./message.repository"),
 }
