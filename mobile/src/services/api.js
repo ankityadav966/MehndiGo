@@ -4,12 +4,8 @@ import { Platform } from "react-native";
 import { router } from "expo-router";
 
 // Use process.env.EXPO_PUBLIC_API_URL for physical devices (e.g., http://192.168.1.5:8000/api/v1/mehndigo)
-// Fallback to 10.0.2.2 for Android emulator, otherwise localhost for iOS/Web
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || (
-  Platform.OS === "android"
-    ? "http://10.0.2.2:8000/api/v1/mehndigo"
-    : "http://localhost:8000/api/v1/mehndigo"
-);
+// Default to the live backend server
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "http://98.70.11.123:8000/api/v1/mehndigo";
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,

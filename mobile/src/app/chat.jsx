@@ -8,7 +8,7 @@ import { Colors } from '../theme/colors';
 import { chatService, adminService, artistService } from '../services/api';
 import { Send, User, ChevronLeft, MessageSquare } from 'lucide-react-native';
 
-const SOCKET_URL = Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://localhost:3000';
+const SOCKET_URL = 'http://98.70.11.123:8000';
 
 export default function ChatScreen() {
   const { user, theme } = useAuth();
