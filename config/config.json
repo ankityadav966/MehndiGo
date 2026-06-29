@@ -1,28 +1,26 @@
 {
   "development": {
-    "username": "ankit",
-    "password": "123456",
-    "database": "mehndigo_db",
-    "host": "127.0.0.1",
+    "username": "admin",
+    "password": "password@Secret#2190",
+    "database": "mehandigoapp",
+    "host": "98.70.11.123",
     "port": 5432,
     "dialect": "postgres"
   },
-
   "test": {
-    "username": "ankit",
-    "password": "123456",
-    "database": "mehndigo_db_test",
-    "host": "127.0.0.1",
+    "username": "admin",
+    "password": "password@Secret#2190",
+    "database": "mehandigoapp",
+    "host": "98.70.11.123",
     "port": 5432,
     "dialect": "postgres"
   },
-
   "production": {
-    "username": "ankit",
-    "password": "123456",
-    "database": "mehndigo_db",
-    "host": "127.0.0.1",
+    "username": "admin",
+    "password": "password@Secret#2190",
+    "database": "mehandigoapp",
+    "host": "98.70.11.123",
     "port": 5432,
     "dialect": "postgres"
   }
-} 
+}
