@@ -6,6 +6,7 @@ import {
   addNotificationResponseReceivedListener,
   registerForPushNotificationsAsync,
   removeNotificationToken,
+  sendNotificationTokenToServer,
   clearBadge,
   getLastNotificationResponse,
 } from "../services/notification";
@@ -42,9 +43,12 @@ export function NotificationProvider({ children, navigationRef }) {
 
     const setupNotifications = async () => {
       try {
-        await registerForPushNotificationsAsync();
-      } catch (_) {
-        // Notification registration failed, non-critical
+        const token = await registerForPushNotificationsAsync();
+        if (token) {
+          await sendNotificationTokenToServer(token);
+        }
+      } catch (err) {
+        console.log("Notification setup error:", err.message);
       }
     };
 

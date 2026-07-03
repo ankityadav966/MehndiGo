@@ -59,6 +59,14 @@ const NOTIFICATION_ROUTES = {
       promotional_offer: { screen: "Coupons" },
     },
   },
+  chat: {
+    customer: {
+      new_message: { screen: "ChatRoom", params: { bookingId: ":bookingId" } },
+    },
+    artist: {
+      new_message: { screen: "ChatRoom", params: { bookingId: ":bookingId" } },
+    },
+  },
 };
 
 export function resolveNotificationRoute(notification, role) {
@@ -85,12 +93,15 @@ export function resolveNotificationRoute(notification, role) {
     resolvedParams.id = resolvedParams.id.replace(":leadId", leadId || "");
     resolvedParams.id = resolvedParams.id.replace(":refundId", refundId || "");
   }
+  if (resolvedParams.bookingId) {
+    resolvedParams.bookingId = resolvedParams.bookingId.replace(":bookingId", bookingId || "");
+  }
 
   return { screen: route.screen, params: resolvedParams };
 }
 
 export const linkingConfig = {
-  prefixes: ["mehendigoo://", "https://mehendigoo.com"],
+  prefixes: ["mehendigoo://", "https://mehendigoo.com", "https://mehendigo.app", "https://www.mehendigo.app"],
   config: {
     screens: {
       Splash: "splash",
@@ -119,6 +130,9 @@ export const linkingConfig = {
           Coupons: "coupons",
           Support: "support",
           Settings: "settings",
+          ReferralDashboard: "invite",
+          ArtistProfile: "artist/:artistId",
+          ChatRoom: "chat/:roomId",
         },
       },
       ArtistStack: {

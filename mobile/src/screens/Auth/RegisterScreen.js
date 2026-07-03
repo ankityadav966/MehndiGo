@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -10,6 +10,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import Colors from "../../constants/Colors";
 import { sendOtp } from "../../services/auth";
 
@@ -23,6 +24,22 @@ export default function RegisterScreen({ navigation }) {
   const [emailError, setEmailError] = useState("");
   const [mobileError, setMobileError] = useState("");
   const [apiError, setApiError] = useState("");
+  const [referralCode, setReferralCode] = useState("");
+
+  useEffect(() => {
+    const checkReferral = async () => {
+      try {
+        const AsyncStorage = require("@react-native-async-storage/async-storage").default;
+        const code = await AsyncStorage.getItem("pendingReferralCode");
+        if (code) {
+          setReferralCode(code);
+        }
+      } catch (err) {
+        console.log("Error reading referral code:", err.message);
+      }
+    };
+    checkReferral();
+  }, []);
 
   const handleRegister = async () => {
     setNameError("");
@@ -62,6 +79,7 @@ export default function RegisterScreen({ navigation }) {
         email: trimmedEmail,
         role,
         otp,
+        referralCode: referralCode || "",
       });
     } catch (error) {
       console.log("Register Screen sendOtp error:", error);
@@ -83,6 +101,13 @@ export default function RegisterScreen({ navigation }) {
       >
         <Text style={styles.title}>Create Account</Text>
         <Text style={styles.subtitle}>Register to continue</Text>
+
+        {referralCode ? (
+          <View style={styles.referralBadge}>
+            <Ionicons name="gift-outline" size={16} color={Colors.primary} style={{ marginRight: 6 }} />
+            <Text style={styles.referralBadgeText}>Referral Code Applied: {referralCode}</Text>
+          </View>
+        ) : null}
 
         <View style={[styles.inputContainer, nameError ? styles.inputError : null]}>
           <TextInput
@@ -215,6 +240,22 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginTop: 6,
     marginBottom: 35,
+  },
+  referralBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFF0F5",
+    borderColor: Colors.primary,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginBottom: 20,
+  },
+  referralBadgeText: {
+    fontSize: 13,
+    color: Colors.primary,
+    fontWeight: "600",
   },
   inputContainer: {
     height: 58,

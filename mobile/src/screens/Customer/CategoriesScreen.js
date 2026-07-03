@@ -13,21 +13,25 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import Colors from "../../constants/Colors";
-import { getCategories } from "../../services/customer";
+import { getLiveCategories } from "../../services/category";
+import { SkeletonGrid } from "../../components/LoadingSkeleton";
 
 export default function CategoriesScreen({ navigation }) {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState(null);
 
   const [imageErrors, setImageErrors] = useState({});
 
   const fetchCategories = React.useCallback(async () => {
     try {
-      const data = await getCategories();
+      setError(null);
+      const data = await getLiveCategories();
       setCategories(data || []);
     } catch (err) {
       console.log("Failed to fetch categories:", err.message);
+      setError("Failed to load categories. Please tap to retry.");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -114,9 +118,45 @@ const getCategoryImage = (item) => {
 
   if (loading) {
     return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-      </View>
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor={Colors.white} />
+        <View style={styles.headerRow}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+            <Ionicons name="chevron-back" size={22} color={Colors.text} />
+          </TouchableOpacity>
+          <View>
+            <Text style={styles.header}>All Categories</Text>
+            <Text style={styles.subHeader}>Choose your Mehendi style</Text>
+          </View>
+        </View>
+        <View style={{ padding: 20 }}>
+          <SkeletonGrid count={8} columns={2} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (error) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor={Colors.white} />
+        <View style={styles.headerRow}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+            <Ionicons name="chevron-back" size={22} color={Colors.text} />
+          </TouchableOpacity>
+          <View>
+            <Text style={styles.header}>All Categories</Text>
+            <Text style={styles.subHeader}>Choose your Mehendi style</Text>
+          </View>
+        </View>
+        <View style={styles.centerContainer}>
+          <Ionicons name="alert-circle-outline" size={54} color={Colors.error || "#FF3B30"} />
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={fetchCategories}>
+            <Text style={styles.retryBtnText}>Tap to Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
     );
   }
 
@@ -224,4 +264,22 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: Colors.text,
   },
+  errorText: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    marginTop: 12,
+    marginBottom: 20,
+    textAlign: "center"
+  },
+  retryBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: Colors.primary
+  },
+  retryBtnText: {
+    fontSize: 14,
+    color: Colors.white,
+    fontWeight: "700"
+  }
 });

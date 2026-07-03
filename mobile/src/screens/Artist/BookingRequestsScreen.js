@@ -99,10 +99,25 @@ export default function BookingRequestsScreen({ navigation }) {
   const formatTime = (timeVal) => {
     if (!timeVal) return "";
     const moment = require("moment");
+    const getMoment = () => {
+      return typeof moment === "function" ? moment : (moment.default || moment);
+    };
+    const localMoment = getMoment();
+    
+    const formats = [
+      "YYYY-MM-DD HH:mm:ss",
+      "YYYY-MM-DDTHH:mm:ssZ",
+      "YYYY-MM-DDTHH:mm:ss.SSSZ",
+      "HH:mm:ss",
+      "HH:mm",
+      "hh:mm A",
+      "hh:mm"
+    ];
+
     if (String(timeVal).includes("T") || (String(timeVal).includes("-") && String(timeVal).includes(":"))) {
-      return moment(timeVal).format("hh:mm A");
+      return localMoment(timeVal, formats).format("hh:mm A");
     }
-    return moment(timeVal, ["HH:mm:ss", "HH:mm", "hh:mm A", "hh:mm"]).format("hh:mm A");
+    return localMoment(timeVal, formats).format("hh:mm A");
   };
 
   const renderItem = ({ item }) => {

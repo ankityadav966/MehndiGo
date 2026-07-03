@@ -730,12 +730,23 @@ async updateBookingStatus(
   await BookingRepositor.update(booking_id, updateData);
 
   // Notify user about booking status change
-  await NotificationRepositor.createNotification({
-    user_id: booking.user_id,
-    title: `Booking ${booking_status}`,
-    message: `Your booking has been ${booking_status.toLowerCase()}`,
-    type: "BOOKING",
-  });
+  try {
+    const NotificationService = require("./notification.services");
+    await NotificationService.sendToUser(
+      booking.user_id,
+      `Booking ${booking_status}`,
+      `Your booking has been ${booking_status.toLowerCase()}`,
+      { type: "BOOKING", bookingId: booking.id }
+    );
+  } catch (err) {
+    console.log("Failed to send push notification on booking update:", err.message);
+    await NotificationRepositor.createNotification({
+      user_id: booking.user_id,
+      title: `Booking ${booking_status}`,
+      message: `Your booking has been ${booking_status.toLowerCase()}`,
+      type: "BOOKING",
+    });
+  }
 
   // Real-time Socket.IO alert
   try {

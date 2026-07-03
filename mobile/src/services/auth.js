@@ -77,13 +77,14 @@ export async function sendOtp(name, email, phone, role) {
   return data;
 }
 
-export async function verifyUserOtp(phone, otp, role, name, email) {
+export async function verifyUserOtp(phone, otp, role, name, email, referralCode = "") {
   const data = await apiRequest("POST", "/api/v1/mehndigo/user/verify-otp", {
     phone,
     otp,
     role,
     name: name || "",
     email: email || "",
+    referralCode,
   });
   return persistAuthData(data);
 }

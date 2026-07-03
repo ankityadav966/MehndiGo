@@ -32,13 +32,31 @@ async function getChatAuthContext(userId, bookingId) {
 
   if (!isCustomer && !isArtist) return null;
 
+  const otherUser = isCustomer ? booking.artist?.user : booking.user;
+
+  // Check if blocked by either user
+  let isBlocked = false;
+  if (otherUser) {
+    const blockedCheck = await db.BlockedUser.findOne({
+      where: {
+        [Op.or]: [
+          { blocker_id: userId, blocked_id: otherUser.id },
+          { blocker_id: otherUser.id, blocked_id: userId }
+        ]
+      }
+    });
+    if (blockedCheck) {
+      isBlocked = true;
+    }
+  }
+
   const status = booking.detailed_status || booking.booking_status;
-  const allowedStatuses = ["CONFIRMED", "ARTIST_ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED"];
+  const allowedStatuses = ["PENDING", "CONFIRMED", "ARTIST_ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED", "RESCHEDULED"];
   const isConfirmed = allowedStatuses.includes(status);
   const isCompleted = status === "COMPLETED";
 
-  let active = isConfirmed;
-  if (isCompleted) {
+  let active = isConfirmed && !isBlocked;
+  if (isCompleted && !isBlocked) {
     const completionTime = new Date(booking.updatedAt).getTime();
     const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
     if (Date.now() - completionTime < sevenDaysMs) {
@@ -46,15 +64,14 @@ async function getChatAuthContext(userId, bookingId) {
     }
   }
 
-  const otherUser = isCustomer ? booking.artist?.user : booking.user;
-
   return {
     booking,
     isCustomer,
     isArtist,
     otherUserId: otherUser?.id,
     otherUser,
-    active
+    active,
+    isBlocked
   };
 }
 

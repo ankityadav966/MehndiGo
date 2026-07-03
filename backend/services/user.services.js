@@ -82,14 +82,12 @@ class UserService {
   }
 
   async verifyOtp(data) {
-    let { phone, otp, role } = data;
+    let { phone, otp, role, referralCode } = data;
     phone = sanitizePhone(phone);
 
     const otpData = await OtpRepositor.getOne({
       phone,
-
       otp: String(otp),
-
       verified: false,
     });
 
@@ -115,13 +113,23 @@ class UserService {
       throw new AppError(`This number belongs to ${user.role}`, 400);
     }
 
+    const isFirstLogin = !user.last_login_at;
+
     await UserRepositor.update(user.id, {
       last_login_at: new Date(),
     });
 
+    if (isFirstLogin && referralCode) {
+      try {
+        const ReferralService = require("./referral.services");
+        await ReferralService.recordReferralSignup(user.id, referralCode);
+      } catch (err) {
+        console.log("[Referral] Signup recording failed in verifyOtp:", err.message);
+      }
+    }
+
     const token = generateToken({
       id: user.id,
-
       role: user.role,
     });
 

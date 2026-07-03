@@ -424,7 +424,7 @@ const getCategoryImage = (item) => {
           <FlatList
             ref={bannerFlatListRef}
             data={offers}
-            keyExtractor={(item) => item.id}
+            keyExtractor={(item) => String(item.id)}
             horizontal
             pagingEnabled
             showsHorizontalScrollIndicator={false}
@@ -470,7 +470,7 @@ const getCategoryImage = (item) => {
       </View>
       <FlatList
         data={categories}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => String(item.id)}
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ paddingLeft: 16, paddingBottom: 8 }}

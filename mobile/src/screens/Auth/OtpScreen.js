@@ -17,7 +17,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useArtistOnboarding } from "../../context/ArtistOnboardingContext";
 
 export default function OtpScreen({ navigation, route }) {
-  const { phone, name, email, role, otp: initialOtp } = route.params || {};
+  const { phone, name, email, role, otp: initialOtp, referralCode } = route.params || {};
   const [otp, setOtp] = useState(initialOtp ? initialOtp.split("") : ["", "", "", "", "", ""]);
   const inputRefs = useRef([]);
   const { dispatch } = useAuth();
@@ -81,7 +81,13 @@ export default function OtpScreen({ navigation, route }) {
 
     setLoading(true);
     try {
-      const data = await verifyUserOtp(phone, otpStr, role, name, email);
+      const data = await verifyUserOtp(phone, otpStr, role, name, email, referralCode);
+      try {
+        const AsyncStorage = require("@react-native-async-storage/async-storage").default;
+        await AsyncStorage.removeItem("pendingReferralCode");
+      } catch (err) {
+        console.log("Failed to clear stored referral code:", err.message);
+      }
       const token = await secureStorage.getAccessToken();
       console.log("Verify OTP Response Token:", token);
       console.log("Verify OTP Response Data:", JSON.stringify(data, null, 2));

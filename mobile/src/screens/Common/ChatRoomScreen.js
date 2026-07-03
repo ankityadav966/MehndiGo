@@ -103,6 +103,15 @@ export default function ChatRoomScreen({ route, navigation }) {
     }
   }, [bookingId]);
 
+  const isChatExpired = useCallback(() => {
+    if (booking?.booking_status === "COMPLETED") {
+      const completionTime = new Date(booking.updatedAt || booking.createdAt).getTime();
+      const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+      return Date.now() - completionTime > sevenDaysMs;
+    }
+    return false;
+  }, [booking]);
+
   useEffect(() => {
     if (!bookingId) {
       Alert.alert("Error", "Missing booking ID parameter.");
@@ -708,37 +717,48 @@ export default function ChatRoomScreen({ route, navigation }) {
         )}
 
         {/* Footer Text Inputs panel */}
-        <View style={styles.footerInputBar}>
-          <TouchableOpacity
-            style={styles.attachBtn}
-            onPress={() => setAttachmentVisible(true)}
-          >
-            <Ionicons name="add-circle" size={28} color={Colors.primary} />
-          </TouchableOpacity>
-
-          <TextInput
-            placeholder="Type your message here..."
-            placeholderTextColor={Colors.placeholder}
-            style={styles.chatInput}
-            value={inputText}
-            onChangeText={handleTextChange}
-            multiline
-          />
-
-          {inputText.trim().length > 0 || editingMessage ? (
-            <TouchableOpacity style={styles.sendBtn} onPress={handleSend}>
-              <Ionicons name="send" size={20} color={Colors.white} />
-            </TouchableOpacity>
-          ) : (
+        {["CANCELLED", "REJECTED"].includes(booking?.booking_status) || isChatExpired() ? (
+          <View style={styles.closedChatBar}>
+            <Ionicons name="lock-closed-outline" size={18} color={Colors.textSecondary || "#6B7280"} style={{ marginRight: 8 }} />
+            <Text style={styles.closedChatText}>
+              {isChatExpired()
+                ? "This chat has been archived (active chat is only available for 7 days post completion)."
+                : "This chat is closed because the booking is cancelled or rejected."}
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.footerInputBar}>
             <TouchableOpacity
-              style={[styles.sendBtn, isRecording && styles.recordingActiveBtn]}
-              onLongPress={startRecording}
-              onPressOut={stopRecordingAndSend}
+              style={styles.attachBtn}
+              onPress={() => setAttachmentVisible(true)}
             >
-              <Ionicons name="mic" size={20} color={Colors.white} />
+              <Ionicons name="add-circle" size={28} color={Colors.primary} />
             </TouchableOpacity>
-          )}
-        </View>
+
+            <TextInput
+              placeholder="Type your message here..."
+              placeholderTextColor={Colors.placeholder}
+              style={styles.chatInput}
+              value={inputText}
+              onChangeText={handleTextChange}
+              multiline
+            />
+
+            {inputText.trim().length > 0 || editingMessage ? (
+              <TouchableOpacity style={styles.sendBtn} onPress={handleSend}>
+                <Ionicons name="send" size={20} color={Colors.white} />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.sendBtn, isRecording && styles.recordingActiveBtn]}
+                onLongPress={startRecording}
+                onPressOut={stopRecordingAndSend}
+              >
+                <Ionicons name="mic" size={20} color={Colors.white} />
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
 
         {isRecording && (
           <View style={styles.recordingOverlayBar}>
@@ -1066,7 +1086,24 @@ const styles = StyleSheet.create({
   reportBtnSecondary: { paddingVertical: 10, paddingHorizontal: 16, marginRight: 8 },
   reportBtnTextSecondary: { color: Colors.textSecondary, fontWeight: "600" },
   reportBtnPrimary: { backgroundColor: Colors.primary, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 20 },
-  reportBtnTextPrimary: { color: Colors.white, fontWeight: "700" }
+  reportBtnTextPrimary: { color: Colors.white, fontWeight: "700" },
+  closedChatBar: {
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    backgroundColor: "#F3F4F6",
+    borderTopWidth: 1,
+    borderColor: Colors.border,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  closedChatText: {
+    fontSize: 12,
+    color: "#6B7280",
+    textAlign: "center",
+    flex: 1,
+    lineHeight: 18,
+  }
 });
 
 const getNow = () => Date.now();

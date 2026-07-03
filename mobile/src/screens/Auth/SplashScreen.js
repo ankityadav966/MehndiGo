@@ -6,7 +6,7 @@ import Colors from "../../constants/Colors";
 export default function SplashScreen({ navigation }) {
   useEffect(() => {
     const timeout = setTimeout(() => {
-      navigation.replace("Onboarding1");
+      navigation.replace("Onboarding3");
     }, 1500);
 
     return () => clearTimeout(timeout);
@@ -17,7 +17,7 @@ export default function SplashScreen({ navigation }) {
       <StatusBar barStyle="dark-content" backgroundColor={Colors.white} />
       <View style={styles.content}>
         <Image
-          source={require("../../assets/images/splash.png")}
+          source={require("../../assets/images/spll.png")}
           style={styles.splashImage}
           resizeMode="cover"
         />

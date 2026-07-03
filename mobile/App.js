@@ -19,12 +19,56 @@ Alert.alert = AlertMock.alert;
 
 SplashScreen.preventAutoHideAsync();
 
+import { useEffect } from "react";
+import { linkingConfig } from "./src/services/deepLink";
+
 const navigationRef = createNavigationContainerRef();
 
 export default function App() {
   const [fontsLoaded, fontError] = useFonts({
     Poppins: Poppins_400Regular,
   });
+
+  useEffect(() => {
+    const handleDeepLink = async (url) => {
+      if (!url) return;
+      try {
+        const Linking = require("expo-linking");
+        const parsed = Linking.parse(url);
+        
+        let referralCode = parsed.queryParams?.ref || parsed.queryParams?.referralCode;
+        
+        if (!referralCode && parsed.path && parsed.path.includes("invite/")) {
+          referralCode = parsed.path.split("invite/")[1];
+        }
+
+        if (referralCode) {
+          const AsyncStorage = require("@react-native-async-storage/async-storage").default;
+          await AsyncStorage.setItem("pendingReferralCode", referralCode);
+          console.log("[DeepLink] Stored pending referral code:", referralCode);
+        }
+      } catch (err) {
+        console.log("[DeepLink] Error handling url:", err.message);
+      }
+    };
+
+    const checkInitialUrl = async () => {
+      const Linking = require("expo-linking");
+      const url = await Linking.getInitialURL();
+      handleDeepLink(url);
+    };
+
+    checkInitialUrl();
+
+    const Linking = require("expo-linking");
+    const subscription = Linking.addEventListener("url", (event) => {
+      handleDeepLink(event.url);
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
 
   const onLayoutRootView = useCallback(async () => {
     if (fontsLoaded || fontError) {
@@ -46,7 +90,7 @@ export default function App() {
             <ArtistOnboardingProvider>
               <PortfolioProvider>
                 <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-                <NavigationContainer ref={navigationRef}>
+                <NavigationContainer ref={navigationRef} linking={linkingConfig}>
                   <RootNavigator />
                 </NavigationContainer>
               </PortfolioProvider>

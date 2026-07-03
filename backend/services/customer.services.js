@@ -30,8 +30,19 @@ const trendingSearchesList = [
   "Delhi",
 ];
 
-class CustomerService {
   async getCategories() {
+    try {
+      const db = require("../models");
+      const list = await db.Category.findAll({
+        where: { status: "ACTIVE" },
+        order: [["sort_order", "ASC"]]
+      });
+      if (list && list.length > 0) {
+        return list;
+      }
+    } catch (err) {
+      console.log("Error fetching dynamic categories from DB:", err.message);
+    }
     return categoriesList;
   }
 
