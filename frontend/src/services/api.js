@@ -38,8 +38,6 @@ apiClient.interceptors.response.use(
 );
 
 export const authService = {
-  registerSendOtp: (data) => apiClient.post("/user/register-send-otp", data),
-  registerVerifyOtp: (data) => apiClient.post("/user/register-verify-otp", data),
   sendOtp: (data) => apiClient.post("/user/send-otp", data),
   verifyOtp: (data) => apiClient.post("/user/verify-otp", data),
   login: (data) => apiClient.post("/user/login", data),
@@ -100,6 +98,24 @@ export const adminService = {
   getNotifications: () => apiClient.get("/admin/notifications"),
   sendSystemNotification: (data) => apiClient.post("/admin/notifications", data),
   getChats: () => apiClient.get("/admin/chats"),
+  getCoupons: () => apiClient.get("/admin/coupons"),
+  createCoupon: (data) => apiClient.post("/admin/coupon", data),
+  updateCoupon: (id, data) => apiClient.put(`/admin/coupon/${id}`, data),
+  deleteCoupon: (id) => apiClient.delete(`/admin/coupon/${id}`),
+  getReferralCampaigns: () => apiClient.get("/admin/referral/campaigns"),
+  createReferralCampaign: (data) => apiClient.post("/admin/referral/campaign", data),
+  getReferralAnalytics: () => apiClient.get("/admin/referral/analytics"),
+  getAnalyticsDashboard: (params) => apiClient.get("/analytics/dashboard", { params }),
+  getAnalyticsRevenue: (params) => apiClient.get("/analytics/revenue", { params }),
+  getAnalyticsBookings: (params) => apiClient.get("/analytics/bookings", { params }),
+  getAnalyticsCustomers: (params) => apiClient.get("/analytics/customers", { params }),
+  getAnalyticsArtists: (params) => apiClient.get("/analytics/artists", { params }),
+  exportAnalyticsCSV: (params) => apiClient.get("/analytics/export", { params, responseType: "blob" }),
+  getSecurityLogs: () => apiClient.get("/security/logs"),
+  getAuditLogs: () => apiClient.get("/security/audit"),
+  blockUser: (data) => apiClient.post("/security/block-user", data),
+  unblockUser: (data) => apiClient.post("/security/unblock-user", data),
+  getSystemHealth: () => apiClient.get("/security/health")
 };
 
 export const chatService = {

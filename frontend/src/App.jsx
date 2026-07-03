@@ -3,13 +3,11 @@ import { BrowserRouter as Router, Routes, Route, Link, Navigate } from "react-ro
 import { useAuth } from "./context/AuthContext";
 import LandingPage from "./pages/LandingPage";
 import LoginPage from "./pages/LoginPage";
-import RegisterPage from "./pages/RegisterPage";
 import UserDashboard from "./pages/UserDashboard";
 import ArtistDashboard from "./pages/ArtistDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
 import ChatPage from "./pages/ChatPage";
 import SecretAdminLogin from "./pages/SecretAdminLogin";
-import NotificationDropdown from "./components/NotificationDropdown";
 import { Moon, Sun, MessageSquare, ShieldAlert, Award, User, LogIn, Sparkles } from "lucide-react";
 
 // Protected Route wrapper component
@@ -66,7 +64,7 @@ function App() {
             <button
               onClick={toggleTheme}
               className="btn btn-secondary"
-              style={{ padding: "0.4rem", borderRadius: "50%", display: "flex", border: "none", background: "transparent" }}
+              style={{ padding: "0.4rem", borderRadius: "50%", display: "flex" }}
               title="Toggle theme"
             >
               {theme === "dark" ? (
@@ -77,12 +75,9 @@ function App() {
             </button>
 
             {isAuthenticated ? (
-              <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-                <NotificationDropdown showToast={showToast} />
-                <button onClick={logout} className="btn btn-secondary" style={{ padding: "0.5rem 1rem" }}>
-                  Sign Out
-                </button>
-              </div>
+              <button onClick={logout} className="btn btn-secondary" style={{ padding: "0.5rem 1rem" }}>
+                Sign Out
+              </button>
             ) : (
               <Link to="/login" className="btn btn-primary" style={{ textDecoration: "none" }}>
                 <LogIn style={{ width: "16px" }} /> Sign In
@@ -134,7 +129,6 @@ function App() {
           <Routes>
             <Route path="/" element={<LandingPage showToast={showToast} />} />
             <Route path="/login" element={<LoginPage showToast={showToast} />} />
-            <Route path="/register" element={<RegisterPage showToast={showToast} />} />
             <Route path="/secret-admin-login" element={<SecretAdminLogin showToast={showToast} />} />
             
             <Route

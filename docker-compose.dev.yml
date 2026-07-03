@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: mehndigo_dev_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ankit
+      POSTGRES_PASSWORD: 123456
+      POSTGRES_DB: mehndigo_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - pg_dev_data:/var/lib/postgresql/data
+    networks:
+      - mehndigo_dev_network
+
+  pgadmin:
+    image: dpage/pgadmin4:8.0
+    container_name: mehndigo_dev_pgadmin
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@gmail.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    networks:
+      - mehndigo_dev_network
+
+volumes:
+  pg_dev_data:
+
+networks:
+  mehndigo_dev_network:
+    driver: bridge

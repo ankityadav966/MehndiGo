@@ -1,0 +1,51 @@
+name: MehandiGo CI/CD Production Deployment
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/workers-node@v4
+        with:
+          node-version: 18
+          cache: 'npm'
+
+      - name: Install Backend Dependencies
+        run: |
+          cd backend
+          npm ci
+
+      - name: Install Frontend Dependencies & Build
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+  deploy:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to AWS EC2 via SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd /home/ec2-user/mehendiGo
+            git pull origin main
+            
+            # Rebuild and restart production containers
+            docker compose -f docker-compose.prod.yml down
+            docker compose -f docker-compose.prod.yml up -d --build
+            
+            # Clean unused images
+            docker image prune -f

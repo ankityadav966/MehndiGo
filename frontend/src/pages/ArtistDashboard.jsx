@@ -1,9 +1,10 @@
+
 import React, { useState, useEffect } from "react";
 import { artistService } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { io } from "socket.io-client";
-import { Plus, Trash2, Calendar, Check, X, FileText, Bell, BarChart2, DollarSign, Award, Clock, Image, Settings, Activity } from "lucide-react";
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from "recharts";
+import { Plus, Trash2, Calendar, Check, X, FileText, Bell, BarChart2, DollarSign, Award, Clock, Image, Settings } from "lucide-react";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { useNavigate } from "react-router-dom";
 
 const ArtistDashboard = ({ showToast }) => {
@@ -347,35 +348,17 @@ const ArtistDashboard = ({ showToast }) => {
     }
   };
 
-  // Process revenue data
-  const paidBookings = bookings.filter((b) => b.booking_status === "COMPLETED" || b.payment_status === "PAID");
-  
-  const totalEarnings = paidBookings.reduce((sum, b) => sum + b.total_price, 0);
-  
-  const now = new Date();
-  const weeklyEarnings = paidBookings
-    .filter(b => (now - new Date(b.updatedAt)) / (1000 * 60 * 60 * 24) <= 7)
+  // Prepare chart data (mock mapping of bookings revenue over dates)
+  const chartData = bookings
+    .filter((b) => b.booking_status === "COMPLETED" || b.payment_status === "PAID")
+    .map((b) => ({
+      date: new Date(b.createdAt).toLocaleDateString([], { month: "short", day: "numeric" }),
+      earnings: b.total_price,
+    }));
+
+  const totalEarnings = bookings
+    .filter((b) => b.booking_status === "COMPLETED" || b.payment_status === "PAID")
     .reduce((sum, b) => sum + b.total_price, 0);
-
-  const monthlyEarnings = paidBookings
-    .filter(b => {
-      const d = new Date(b.updatedAt);
-      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-    })
-    .reduce((sum, b) => sum + b.total_price, 0);
-
-  const sortedPaidBookings = [...paidBookings].sort((a, b) => new Date(a.updatedAt) - new Date(b.updatedAt));
-  const sortedChartDataMap = {};
-  sortedPaidBookings.forEach(b => {
-    const date = new Date(b.updatedAt).toLocaleDateString([], { month: "short", day: "numeric" });
-    if (!sortedChartDataMap[date]) sortedChartDataMap[date] = 0;
-    sortedChartDataMap[date] += b.total_price;
-  });
-
-  const chartData = Object.keys(sortedChartDataMap).map(date => ({
-    date,
-    earnings: sortedChartDataMap[date]
-  }));
 
   return (
     <div className="dashboard-layout">
@@ -567,53 +550,20 @@ const ArtistDashboard = ({ showToast }) => {
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2rem" }}>
-              {/* Activity Timeline */}
               <div className="glass-panel" style={{ padding: "1.5rem" }}>
-                <h3 style={{ marginBottom: "1.5rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                  <Activity style={{ width: "20px" }} /> Recent Client Activity
-                </h3>
-                <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-                  {bookings.slice(0, 3).map((booking, idx, arr) => (
-                    <div key={booking.id} style={{ display: "flex", gap: "1rem", alignItems: "flex-start", position: "relative" }}>
-                      {idx !== arr.length - 1 && <div style={{ position: "absolute", left: "15px", top: "30px", bottom: "-15px", width: "2px", background: "var(--border-color)", zIndex: 0 }}></div>}
-                      <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: booking.booking_status === "PENDING" ? "rgba(241, 196, 15, 0.2)" : "rgba(0, 184, 148, 0.2)", color: booking.booking_status === "PENDING" ? "var(--warning-color)" : "#00b894", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1 }}>
-                        <Calendar style={{ width: "16px" }} />
-                      </div>
-                      <div>
-                        <div style={{ fontWeight: 600 }}>Booking {booking.booking_status.toLowerCase()}</div>
-                        <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "0.2rem" }}>
-                          {booking.user?.name || "A client"} has a {booking.booking_status.toLowerCase()} booking with you.
-                        </div>
-                        <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.4rem", display: "flex", alignItems: "center", gap: "0.2rem" }}>
-                          <Clock style={{ width: "12px" }} /> {new Date(booking.updatedAt).toLocaleDateString()}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  {bookings.length === 0 && <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>No recent client activity.</p>}
+                <h3 style={{ marginBottom: "1rem" }}>Profile Completion</h3>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                  <span>Setup Complete</span>
+                  <span>100%</span>
+                </div>
+                <div style={{ height: "10px", background: "var(--background-alt)", borderRadius: "5px", overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: "100%", background: "var(--success-color)" }}></div>
                 </div>
               </div>
 
-              {/* Enhanced Chart */}
               <div className="glass-panel" style={{ padding: "1.5rem" }}>
-                <h3 style={{ marginBottom: "1.5rem" }}>Earnings & Projections</h3>
-                {chartData.length === 0 ? (
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "150px", color: "var(--text-secondary)" }}>
-                    No earnings data to display yet.
-                  </div>
-                ) : (
-                  <div style={{ height: "250px" }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={chartData.slice(-7)}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
-                        <XAxis dataKey="date" stroke="var(--text-secondary)" />
-                        <YAxis stroke="var(--text-secondary)" />
-                        <RechartsTooltip contentStyle={{ backgroundColor: 'var(--bg-secondary)', border: 'none', borderRadius: '8px' }} />
-                        <Bar dataKey="earnings" fill="var(--accent-color)" radius={[4, 4, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
+                <h3 style={{ marginBottom: "1rem" }}>Unread Notifications</h3>
+                <div style={{ fontSize: "2.5rem", fontWeight: 800 }}>{notifications.filter(n => !n.is_read).length}</div>
               </div>
             </div>
           </div>
@@ -847,23 +797,7 @@ const ArtistDashboard = ({ showToast }) => {
           // Analytics charts tab
           <div>
             <h1 style={{ fontSize: "2rem", fontWeight: 800, marginBottom: "2rem" }}>Revenue Analytics</h1>
-            
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1.5rem", marginBottom: "2rem" }}>
-              <div className="glass-panel" style={{ padding: "1.5rem", textAlign: "center" }}>
-                <h3 style={{ fontSize: "1.1rem", color: "var(--text-secondary)", marginBottom: "0.5rem" }}>Total Revenue</h3>
-                <div style={{ fontSize: "2rem", fontWeight: 800, color: "var(--success-color)" }}>₹{totalEarnings}</div>
-              </div>
-              <div className="glass-panel" style={{ padding: "1.5rem", textAlign: "center" }}>
-                <h3 style={{ fontSize: "1.1rem", color: "var(--text-secondary)", marginBottom: "0.5rem" }}>Monthly Revenue</h3>
-                <div style={{ fontSize: "2rem", fontWeight: 800, color: "var(--accent-color)" }}>₹{monthlyEarnings}</div>
-              </div>
-              <div className="glass-panel" style={{ padding: "1.5rem", textAlign: "center" }}>
-                <h3 style={{ fontSize: "1.1rem", color: "var(--text-secondary)", marginBottom: "0.5rem" }}>Weekly Revenue</h3>
-                <div style={{ fontSize: "2rem", fontWeight: 800, color: "var(--info-color)" }}>₹{weeklyEarnings}</div>
-              </div>
-            </div>
-
-            <div className="glass-panel" style={{ padding: "2rem", height: "400px", marginBottom: "2rem" }}>
+            <div className="glass-panel" style={{ padding: "2rem", height: "400px" }}>
               {chartData.length === 0 ? (
                 <div style={{ display: "flex", alignItems: "center", justifyItems: "center", height: "100%", justifyContent: "center", color: "var(--text-secondary)" }}>
                   Completing a paid service updates the analytics charts automatically.
@@ -871,43 +805,13 @@ const ArtistDashboard = ({ showToast }) => {
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" />
                     <XAxis dataKey="date" stroke="var(--text-secondary)" />
                     <YAxis stroke="var(--text-secondary)" />
-                    <RechartsTooltip contentStyle={{ backgroundColor: 'var(--bg-secondary)', border: 'none', borderRadius: '8px' }} />
+                    <Tooltip contentStyle={{ background: "var(--bg-secondary)", borderColor: "var(--border-color)", color: "var(--text-primary)" }} />
                     <Line type="monotone" dataKey="earnings" stroke="var(--accent-color)" strokeWidth={3} dot={{ r: 6 }} />
                   </LineChart>
                 </ResponsiveContainer>
-              )}
-            </div>
-
-            <div className="glass-panel" style={{ padding: "2rem" }}>
-              <h3 style={{ marginBottom: "1.5rem" }}>Recent Earnings History</h3>
-              {paidBookings.length === 0 ? (
-                <p style={{ color: "var(--text-secondary)" }}>No earnings history available.</p>
-              ) : (
-                <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                    <thead>
-                      <tr style={{ borderBottom: "1px solid var(--border-color)", textAlign: "left" }}>
-                        <th style={{ padding: "1rem", color: "var(--text-secondary)" }}>Date</th>
-                        <th style={{ padding: "1rem", color: "var(--text-secondary)" }}>Client</th>
-                        <th style={{ padding: "1rem", color: "var(--text-secondary)" }}>Service</th>
-                        <th style={{ padding: "1rem", color: "var(--text-secondary)" }}>Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sortedPaidBookings.slice().reverse().map(b => (
-                        <tr key={b.id} style={{ borderBottom: "1px solid var(--border-color)" }}>
-                          <td style={{ padding: "1rem" }}>{new Date(b.updatedAt).toLocaleDateString()}</td>
-                          <td style={{ padding: "1rem" }}>{b.user?.name || "Guest"}</td>
-                          <td style={{ padding: "1rem" }}>{b.service?.specialization_name || "Mehndi Service"}</td>
-                          <td style={{ padding: "1rem", fontWeight: 700, color: "var(--accent-color)" }}>₹{b.total_price}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
               )}
             </div>
           </div>

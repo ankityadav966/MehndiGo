@@ -5,10 +5,11 @@ import {
   Search,
   Star,
   MapPin,
-  BookOpen
+  Calendar,
+  Clock,
+  BookOpen,
+  ShieldCheck,
 } from "lucide-react";
-import ArtistProfileModal from "../components/ArtistProfileModal";
-import BookingModal from "../components/BookingModal";
 
 const LandingPage = ({ showToast }) => {
   const { isAuthenticated, user } = useAuth();
@@ -530,32 +531,662 @@ const LandingPage = ({ showToast }) => {
           )}
 
           {/* Booking Modal */}
-          <BookingModal
-            artist={selectedArtist}
-            onClose={() => setSelectedArtist(null)}
-            selectedService={selectedService}
-            setSelectedService={setSelectedService}
-            selectedSlot={selectedSlot}
-            setSelectedSlot={setSelectedSlot}
-            address={address}
-            setAddress={setAddress}
-            eventType={eventType}
-            setEventType={setEventType}
-            budget={budget}
-            setBudget={setBudget}
-            notes={notes}
-            setNotes={setNotes}
-            onSubmit={handleBookingSubmit}
-            loading={bookingLoading}
-          />
+          {selectedArtist && (
+            <div
+              style={{
+                position: "fixed",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: "rgba(0,0,0,0.6)",
+                zIndex: 1000,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "1rem",
+              }}
+            >
+              <div
+                className="glass-panel"
+                style={{
+                  width: "100%",
+                  maxWidth: "600px",
+                  background: "var(--bg-secondary)",
+                  padding: "2rem",
+                  maxHeight: "90vh",
+                  overflowY: "auto",
+                  position: "relative",
+                }}
+              >
+                <button
+                  onClick={() => setSelectedArtist(null)}
+                  style={{
+                    position: "absolute",
+                    top: "1.5rem",
+                    right: "1.5rem",
+                    background: "none",
+                    border: "none",
+                    fontSize: "1.5rem",
+                    cursor: "pointer",
+                    color: "var(--text-secondary)",
+                  }}
+                >
+                  &times;
+                </button>
+                <h2 style={{ marginBottom: "1rem" }}>
+                  Book appointment with {selectedArtist.user?.name}
+                </h2>
+
+                <form onSubmit={handleBookingSubmit}>
+                  {/* Select Service */}
+                  <h4 style={{ marginBottom: "0.5rem", fontWeight: 600 }}>
+                    1. Select a Mehndi Service
+                  </h4>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "0.5rem",
+                      marginBottom: "1.5rem",
+                    }}
+                  >
+                    {selectedArtist.services?.length === 0 ? (
+                      <p
+                        style={{
+                          color: "var(--text-secondary)",
+                          fontSize: "0.9rem",
+                        }}
+                      >
+                        No services listed by this artist.
+                      </p>
+                    ) : (
+                      selectedArtist.services?.map((svc) => (
+                        <label
+                          key={svc.id}
+                          style={{
+                            padding: "0.8rem",
+                            border:
+                              selectedService?.id === svc.id
+                                ? "2px solid var(--accent-color)"
+                                : "1px solid var(--border-color)",
+                            borderRadius: "10px",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            background:
+                              selectedService?.id === svc.id
+                                ? "var(--bg-tertiary)"
+                                : "none",
+                          }}
+                        >
+                          <input
+                            type="radio"
+                            name="service"
+                            style={{ display: "none" }}
+                            onChange={() => setSelectedService(svc)}
+                          />
+                          <div>
+                            <div style={{ fontWeight: 600 }}>
+                              {svc.specialization_name} ({svc.category})
+                            </div>
+                            <div
+                              style={{
+                                fontSize: "0.85rem",
+                                color: "var(--text-secondary)",
+                              }}
+                            >
+                              {svc.description}
+                            </div>
+                          </div>
+                          <div
+                            style={{
+                              fontWeight: 700,
+                              color: "var(--accent-color)",
+                            }}
+                          >
+                            ₹{svc.minimum_price}
+                          </div>
+                        </label>
+                      ))
+                    )}
+                  </div>
+
+                  {/* Select Slot */}
+                  <h4 style={{ marginBottom: "0.5rem", fontWeight: 600 }}>
+                    2. Choose Available Time Slot
+                  </h4>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: "0.5rem",
+                      marginBottom: "1.5rem",
+                    }}
+                  >
+                    {selectedArtist.slots?.length === 0 ? (
+                      <p
+                        style={{
+                          color: "var(--text-secondary)",
+                          fontSize: "0.9rem",
+                        }}
+                      >
+                        No availability slots set up by this artist.
+                      </p>
+                    ) : (
+                      selectedArtist.slots?.map((slot) => {
+                        const start = new Date(slot.start_time);
+                        const isSelected = selectedSlot?.id === slot.id;
+                        return (
+                          <label
+                            key={slot.id}
+                            style={{
+                              padding: "0.5rem 1rem",
+                              border: isSelected
+                                ? "2px solid var(--accent-color)"
+                                : "1px solid var(--border-color)",
+                              borderRadius: "20px",
+                              cursor: "pointer",
+                              fontSize: "0.85rem",
+                              background: isSelected
+                                ? "var(--bg-tertiary)"
+                                : "var(--bg-primary)",
+                              color: isSelected
+                                ? "var(--accent-color)"
+                                : "var(--text-primary)",
+                              fontWeight: isSelected ? 600 : 500,
+                            }}
+                          >
+                            <input
+                              type="radio"
+                              name="slot"
+                              style={{ display: "none" }}
+                              onChange={() => setSelectedSlot(slot)}
+                            />
+                            <Calendar
+                              style={{ width: "12px", marginRight: "3px" }}
+                            />
+                            {start.toLocaleDateString()} -{" "}
+                            <Clock style={{ width: "12px", margin: "0 3px" }} />
+                            {start.toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  {/* Address */}
+                  <div className="form-group">
+                    <label className="form-label">
+                      Event Location (Address)
+                    </label>
+                    <textarea
+                      className="form-control"
+                      rows="2"
+                      placeholder="Enter full address for the venue..."
+                      value={address}
+                      onChange={(e) => setAddress(e.target.value)}
+                      required
+                    />
+                  </div>
+
+                  {/* Event Type & Budget */}
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: "1rem",
+                    }}
+                  >
+                    <div className="form-group">
+                      <label className="form-label">Event Type</label>
+                      <select
+                        className="form-control"
+                        value={eventType}
+                        onChange={(e) => setEventType(e.target.value)}
+                      >
+                        <option value="Wedding">Wedding</option>
+                        <option value="Birthday">Birthday</option>
+                        <option value="Festival">Festival</option>
+                        <option value="Concert">Concert/Gig</option>
+                        <option value="Corporate">Corporate Event</option>
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Event Budget (INR)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        className="form-control"
+                        placeholder="e.g. 5000"
+                        value={budget}
+                        onChange={(e) => setBudget(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {/* Notes */}
+                  <div className="form-group">
+                    <label className="form-label">
+                      Special Notes / Requests (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. Arabic theme, bridal patterns, specific hands height..."
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    style={{
+                      width: "100%",
+                      justifyContent: "center",
+                      marginTop: "1rem",
+                    }}
+                    disabled={bookingLoading}
+                  >
+                    {bookingLoading ? "Reserving slot..." : "Confirm Booking"}
+                  </button>
+                </form>
+              </div>
+            </div>
+          )}
 
           {/* Artist Profile Details Modal */}
-          <ArtistProfileModal
-            artist={selectedArtistForDetails}
-            onClose={() => setSelectedArtistForDetails(null)}
-            onBook={(artist) => openBookingModal(artist)}
-            setPreviewImage={setPreviewImage}
-          />
+          {selectedArtistForDetails && (
+            <div
+              style={{
+                position: "fixed",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: "rgba(0,0,0,0.6)",
+                zIndex: 1000,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "1rem",
+              }}
+            >
+              <div
+                className="glass-panel"
+                style={{
+                  width: "100%",
+                  maxWidth: "700px",
+                  background: "var(--bg-secondary)",
+                  padding: "2rem",
+                  maxHeight: "90vh",
+                  overflowY: "auto",
+                  position: "relative",
+                }}
+              >
+                <button
+                  onClick={() => setSelectedArtistForDetails(null)}
+                  style={{
+                    position: "absolute",
+                    top: "1.5rem",
+                    right: "1.5rem",
+                    background: "none",
+                    border: "none",
+                    fontSize: "1.5rem",
+                    cursor: "pointer",
+                    color: "var(--text-secondary)",
+                  }}
+                >
+                  &times;
+                </button>
+
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "1.5rem",
+                    alignItems: "center",
+                    marginBottom: "1.5rem",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <img
+                    src={
+                      selectedArtistForDetails.user?.profile_image ||
+                      "https://images.unsplash.com/photo-1590502593747-42a996133562?q=80&w=400"
+                    }
+                    alt={selectedArtistForDetails.user?.name}
+                    style={{
+                      width: "90px",
+                      height: "90px",
+                      borderRadius: "50%",
+                      objectFit: "cover",
+                      border: "3px solid var(--accent-color)",
+                    }}
+                  />
+                  <div>
+                    <h2 style={{ fontSize: "1.8rem", fontWeight: 800 }}>
+                      {selectedArtistForDetails.user?.name}
+                    </h2>
+                    <p
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.3rem",
+                        fontSize: "0.9rem",
+                        color: "var(--text-secondary)",
+                        marginTop: "0.25rem",
+                      }}
+                    >
+                      <MapPin style={{ width: "14px" }} />{" "}
+                      {selectedArtistForDetails.city},{" "}
+                      {selectedArtistForDetails.state} (
+                      {selectedArtistForDetails.pincode})
+                    </p>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: "1rem",
+                        alignItems: "center",
+                        marginTop: "0.5rem",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "0.25rem",
+                          color: "#ffb300",
+                        }}
+                      >
+                        <Star style={{ fill: "#ffb300", width: "16px" }} />
+                        <span
+                          style={{
+                            fontWeight: 700,
+                            color: "var(--text-primary)",
+                          }}
+                        >
+                          {selectedArtistForDetails.average_rating || "New"}
+                        </span>
+                      </div>
+                      <span
+                        style={{
+                          fontSize: "0.85rem",
+                          color: "var(--text-secondary)",
+                        }}
+                      >
+                        •
+                      </span>
+                      <span
+                        style={{
+                          fontSize: "0.9rem",
+                          fontWeight: 600,
+                          color: "var(--text-secondary)",
+                        }}
+                      >
+                        {selectedArtistForDetails.experience_years} Years Exp.
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    background: "var(--bg-primary)",
+                    padding: "1.25rem",
+                    borderRadius: "12px",
+                    marginBottom: "1.5rem",
+                  }}
+                >
+                  <h4 style={{ marginBottom: "0.4rem", fontWeight: 700 }}>
+                    About the Artist
+                  </h4>
+                  <p
+                    style={{
+                      fontSize: "0.95rem",
+                      color: "var(--text-secondary)",
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {selectedArtistForDetails.bio}
+                  </p>
+                </div>
+
+                {/* Services catalog */}
+                <h4 style={{ marginBottom: "0.75rem", fontWeight: 700 }}>
+                  Mehndi Services Offered
+                </h4>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "0.5rem",
+                    marginBottom: "1.5rem",
+                  }}
+                >
+                  {selectedArtistForDetails.services?.length === 0 ? (
+                    <p
+                      style={{
+                        color: "var(--text-secondary)",
+                        fontSize: "0.9rem",
+                      }}
+                    >
+                      No services listed by this artist.
+                    </p>
+                  ) : (
+                    selectedArtistForDetails.services?.map((svc) => (
+                      <div
+                        key={svc.id}
+                        style={{
+                          padding: "0.8rem 1rem",
+                          border: "1px solid var(--border-color)",
+                          borderRadius: "10px",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          background: "var(--bg-primary)",
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontWeight: 700 }}>
+                            {svc.specialization_name} ({svc.category})
+                          </div>
+                          <div
+                            style={{
+                              fontSize: "0.85rem",
+                              color: "var(--text-secondary)",
+                            }}
+                          >
+                            {svc.description}
+                          </div>
+                        </div>
+                        <div
+                          style={{
+                            fontWeight: 800,
+                            color: "var(--accent-color)",
+                          }}
+                        >
+                          ₹{svc.minimum_price}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Portfolio gallery view */}
+                <h4 style={{ marginBottom: "0.75rem", fontWeight: 700 }}>
+                  Portfolio Work Gallery
+                </h4>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns:
+                      "repeat(auto-fill, minmax(130px, 1fr))",
+                    gap: "0.75rem",
+                    marginBottom: "1.5rem",
+                  }}
+                >
+                  {selectedArtistForDetails.portfolio?.length === 0 ? (
+                    <p
+                      style={{
+                        color: "var(--text-secondary)",
+                        fontSize: "0.9rem",
+                        gridColumn: "1 / -1",
+                      }}
+                    >
+                      No portfolio images uploaded by this artist.
+                    </p>
+                  ) : (
+                    selectedArtistForDetails.portfolio?.map((item) => (
+                      <div
+                        key={item.id}
+                        style={{
+                          position: "relative",
+                          borderRadius: "8px",
+                          overflow: "hidden",
+                          aspectRatio: "1",
+                          cursor: "pointer",
+                          border: "1px solid var(--border-color)",
+                        }}
+                        onClick={() => setPreviewImage(item.image_url)}
+                      >
+                        <img
+                          src={item.image_url}
+                          alt={item.caption || "Mehndi design work"}
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            objectFit: "cover",
+                          }}
+                        />
+                        {item.caption && (
+                          <div
+                            style={{
+                              position: "absolute",
+                              bottom: 0,
+                              left: 0,
+                              right: 0,
+                              background: "rgba(0,0,0,0.6)",
+                              color: "#fff",
+                              fontSize: "0.75rem",
+                              padding: "0.3rem",
+                              textAlign: "center",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {item.caption}
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Reviews view */}
+                <h4 style={{ marginBottom: "0.75rem", fontWeight: 700 }}>
+                  Customer Reviews
+                </h4>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "0.75rem",
+                    marginBottom: "1.5rem",
+                  }}
+                >
+                  {selectedArtistForDetails.reviews?.length === 0 ? (
+                    <p
+                      style={{
+                        color: "var(--text-secondary)",
+                        fontSize: "0.9rem",
+                      }}
+                    >
+                      No reviews submitted yet.
+                    </p>
+                  ) : (
+                    selectedArtistForDetails.reviews?.map((r) => (
+                      <div
+                        key={r.id}
+                        style={{
+                          borderBottom: "1px solid var(--border-color)",
+                          paddingBottom: "0.75rem",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            marginBottom: "0.25rem",
+                          }}
+                        >
+                          <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>
+                            {r.user?.name || "Client"}
+                          </span>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "0.2",
+                              color: "#ffb300",
+                            }}
+                          >
+                            <Star style={{ fill: "#ffb300", width: "14px" }} />
+                            <span
+                              style={{
+                                fontWeight: 600,
+                                fontSize: "0.85rem",
+                                color: "var(--text-primary)",
+                              }}
+                            >
+                              {r.rating}
+                            </span>
+                          </div>
+                        </div>
+                        <p
+                          style={{
+                            fontSize: "0.85rem",
+                            color: "var(--text-secondary)",
+                          }}
+                        >
+                          {r.comment}
+                        </p>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <div
+                  style={{ display: "flex", gap: "1rem", marginTop: "1rem" }}
+                >
+                  <button
+                    className="btn btn-secondary"
+                    style={{ flexGrow: 1, justifyContent: "center" }}
+                    onClick={() => setSelectedArtistForDetails(null)}
+                  >
+                    Close Profile
+                  </button>
+                  <button
+                    className="btn btn-primary"
+                    style={{ flexGrow: 1, justifyContent: "center" }}
+                    onClick={() => {
+                      setSelectedArtistForDetails(null);
+                      openBookingModal(selectedArtistForDetails);
+                    }}
+                  >
+                    Book Session Now
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Nested Portfolio Image Preview Lightbox Modal */}
           {previewImage && (
