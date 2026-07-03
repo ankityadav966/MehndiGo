@@ -110,7 +110,16 @@ export default function BookingDetailsScreen({ route, navigation }) {
   const handleDownloadInvoice = async () => {
     try {
       const inv = await getInvoice(bookingId);
-      Alert.alert("Invoice Downloaded", `Invoice URL: ${inv.invoice_url}`);
+      if (inv && inv.invoice_url) {
+        let url = inv.invoice_url;
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+          const { BASE_URL } = require("../../services/api");
+          url = `${BASE_URL}${url.startsWith("/") ? "" : "/"}${url}`;
+        }
+        await Linking.openURL(url);
+      } else {
+        Alert.alert("Error", "Invoice link is not available.");
+      }
     } catch (err) {
       Alert.alert("Error", "Invoice document is not generated yet. Payment is required.");
     }
@@ -146,6 +155,16 @@ export default function BookingDetailsScreen({ route, navigation }) {
       return moment(timeVal).format("hh:mm A");
     }
     return moment(timeVal, ["HH:mm:ss", "HH:mm", "hh:mm A", "hh:mm"]).format("hh:mm A");
+  };
+
+  const formatDate = (dateVal) => {
+    if (!dateVal) return "TBD";
+    try {
+      const moment = require("moment");
+      return moment(dateVal).format("DD MMM YYYY (dddd)");
+    } catch (e) {
+      return dateVal;
+    }
   };
 
   return (
@@ -240,7 +259,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
             <DetailRow
               icon="calendar-outline"
               label="Date"
-              value={booking.slot?.date || booking.reschedule_date || "TBD"}
+              value={formatDate(booking.slot?.date || booking.reschedule_date)}
             />
              <DetailRow
               icon="time-outline"

@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
-import moment from "moment";
+const moment = require("moment");
 import { getBookingHistory } from "../../services/booking";
 
 export default function MyBookingsScreen({ navigation }) {
@@ -68,23 +68,25 @@ export default function MyBookingsScreen({ navigation }) {
 
   const formatTime = (timeVal) => {
     if (!timeVal) return "";
+    const localMoment = require("moment");
     if (String(timeVal).includes("T") || (String(timeVal).includes("-") && String(timeVal).includes(":"))) {
-      return moment(timeVal).format("hh:mm A");
+      return localMoment(timeVal).format("hh:mm A");
     }
-    return moment(timeVal, ["HH:mm:ss", "HH:mm", "hh:mm A", "hh:mm"]).format("hh:mm A");
+    return localMoment(timeVal, ["HH:mm:ss", "HH:mm", "hh:mm A", "hh:mm"]).format("hh:mm A");
   };
 
   const renderBooking = ({ item }) => {
     const status = item.detailed_status || item.booking_status || "PENDING";
+    const localMoment = require("moment");
     
     // Resolve clean slot date
     let dateStr = "Today";
     if (item.slot?.date) {
-      dateStr = moment(item.slot.date).format("YYYY/MM/DD");
+      dateStr = localMoment(item.slot.date).format("DD MMM YYYY");
     } else if (item.slot?.start_time) {
-      dateStr = moment(item.slot.start_time).format("YYYY/MM/DD");
+      dateStr = localMoment(item.slot.start_time).format("DD MMM YYYY");
     } else if (item.reschedule_date) {
-      dateStr = moment(item.reschedule_date).format("YYYY/MM/DD");
+      dateStr = localMoment(item.reschedule_date).format("DD MMM YYYY");
     }
 
     // Resolve clean time slot

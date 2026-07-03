@@ -539,8 +539,8 @@ export default function ArtistProfileScreen({ route, navigation }) {
           {reviewsData.reviews.length === 0 ? (
             <Text style={styles.emptyText}>Be the first to review this artist!</Text>
           ) : (
-            reviewsData.reviews.slice(0, 3).map((item) => (
-              <View key={item.id} style={styles.reviewCard}>
+            reviewsData.reviews.slice(0, 3).map((item, index) => (
+              <View key={item.id ? `review-${item.id}` : `review-idx-${index}`} style={styles.reviewCard}>
                 <View style={styles.reviewerHeader}>
                   <Image
                     source={{ uri: item.user?.profile_image || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=150" }}

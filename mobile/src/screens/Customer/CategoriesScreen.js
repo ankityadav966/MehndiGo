@@ -20,6 +20,8 @@ export default function CategoriesScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  const [imageErrors, setImageErrors] = useState({});
+
   const fetchCategories = React.useCallback(async () => {
     try {
       const data = await getCategories();
@@ -56,6 +58,9 @@ const CATEGORY_IMAGES = {
 };
 
 const getCategoryImage = (item) => {
+  const name = (item.name || "").toLowerCase();
+  const slug = (item.slug || "").toLowerCase();
+
   const isUrlValid = item.image && 
     (item.image.startsWith("http://") || item.image.startsWith("https://")) &&
     !item.image.includes("localhost") &&
@@ -65,29 +70,47 @@ const getCategoryImage = (item) => {
     return { uri: item.image };
   }
 
-  const slug = item.slug || item.name?.toLowerCase().replace(/\s+/g, "") || "custom";
-  const fallbackUrl = CATEGORY_IMAGES[slug] || CATEGORY_IMAGES.custom;
+  let key = "custom";
+  if (slug.includes("bridal") || name.includes("bridal")) key = "bridal";
+  else if (slug.includes("arabic") || name.includes("arabic")) key = "arabic";
+  else if (slug.includes("royal") || name.includes("royal")) key = "royal";
+  else if (slug.includes("portrait") || name.includes("portrait")) key = "portrait";
+  else if (slug.includes("engagement") || name.includes("engagement")) key = "engagement";
+  else if (slug.includes("festival") || name.includes("festival")) key = "festival";
+  else if (slug.includes("kid") || name.includes("kid")) key = "kids";
+
+  const fallbackUrl = CATEGORY_IMAGES[key] || CATEGORY_IMAGES.custom;
   return { uri: fallbackUrl };
 };
 
-  const renderItem = ({ item }) => (
-    <TouchableOpacity
-      style={styles.card}
-      activeOpacity={0.8}
-      onPress={() =>
-        navigation.navigate("ArtistListing", {
-          category: item.name,
-        })
-      }
-    >
-      <Image source={getCategoryImage(item)} style={styles.image} resizeMode="cover" />
+  const renderItem = ({ item }) => {
+    const hasError = !!imageErrors[item.id];
+    return (
+      <TouchableOpacity
+        style={styles.card}
+        activeOpacity={0.8}
+        onPress={() =>
+          navigation.navigate("ArtistListing", {
+            category: item.name,
+          })
+        }
+      >
+        <Image
+          source={hasError ? require("../../../assets/images/logo.jpg") : getCategoryImage(item)}
+          onError={() => {
+            setImageErrors((prev) => ({ ...prev, [item.id]: true }));
+          }}
+          style={styles.image}
+          resizeMode="cover"
+        />
 
       <View style={styles.cardFooter}>
         <Ionicons name={item.icon || "flower-outline"} size={16} color={Colors.primary} style={{ marginRight: 6 }} />
         <Text style={styles.cardTitle} numberOfLines={1}>{item.name}</Text>
       </View>
     </TouchableOpacity>
-  );
+    );
+  };
 
   if (loading) {
     return (

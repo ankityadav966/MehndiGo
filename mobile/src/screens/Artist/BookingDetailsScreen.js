@@ -158,6 +158,16 @@ export default function BookingDetailsScreen({ route, navigation }) {
     return moment(timeVal, ["HH:mm:ss", "HH:mm", "hh:mm A", "hh:mm"]).format("hh:mm A");
   };
 
+  const formatDate = (dateVal) => {
+    if (!dateVal) return "TBD";
+    try {
+      const moment = require("moment");
+      return moment(dateVal).format("DD MMM YYYY (dddd)");
+    } catch (e) {
+      return dateVal;
+    }
+  };
+
   const renderStatusFooter = () => {
     if (currentDetailedStatus === "PENDING") {
       return (
@@ -270,7 +280,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
           <View style={styles.divider} />
 
           <InfoRow icon="brush-outline" label="Design Type" value={booking.service?.specialization_name || "Custom design"} />
-          <InfoRow icon="calendar-outline" label="Date" value={booking.slot?.date ? require("moment")(booking.slot.date).format("YYYY/MM/DD") : (booking.reschedule_date ? require("moment")(booking.reschedule_date).format("YYYY/MM/DD") : "Today")} />
+          <InfoRow icon="calendar-outline" label="Date" value={formatDate(booking.slot?.date || booking.reschedule_date)} />
           <InfoRow icon="time-outline" label="Time Slot" value={booking.slot ? `${formatTime(booking.slot.start_time)} - ${formatTime(booking.slot.end_time)}` : (booking.reschedule_time ? formatTime(booking.reschedule_time) : "TBD")} />
           <InfoRow icon="location-outline" label="Location" value={booking.address} />
           {booking.landmark && (

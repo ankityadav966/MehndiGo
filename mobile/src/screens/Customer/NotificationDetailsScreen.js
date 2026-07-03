@@ -82,15 +82,29 @@ export default function NotificationDetailsScreen({ route, navigation }) {
     }
 
     const type = notification.type ? notification.type.toLowerCase() : "";
-    const event = meta.event || "";
+    const title = (notification.title || "").toLowerCase();
+    const message = (notification.message || "").toLowerCase();
+
+    const bookingId = meta.bookingId || meta.booking_id;
+    const isBooking = type === "booking" || title.includes("booking") || message.includes("booking");
+    const isWallet = type === "wallet" || title.includes("wallet") || title.includes("cashback") || message.includes("wallet") || message.includes("cashback");
+    const isChat = type === "chat" || title.includes("message") || message.includes("message");
 
     // Execute Deep Links Redirection mapping rules
-    if (type === "booking" && meta.bookingId) {
-      navigation.navigate("BookingDetails", { id: meta.bookingId });
-    } else if (type === "chat" && meta.bookingId) {
-      navigation.navigate("ChatRoom", { bookingId: meta.bookingId });
-    } else if (type === "wallet") {
-      navigation.navigate("Wallet");
+    if (isBooking) {
+      if (bookingId) {
+        navigation.navigate("BookingDetails", { bookingId: bookingId });
+      } else {
+        navigation.navigate("CustomerTabs", { screen: "Bookings" });
+      }
+    } else if (isChat) {
+      if (bookingId) {
+        navigation.navigate("ChatRoom", { bookingId: bookingId });
+      } else {
+        navigation.navigate("CustomerTabs", { screen: "Home" });
+      }
+    } else if (isWallet) {
+      navigation.navigate("CustomerTabs", { screen: "Wallet" });
     } else if (meta.file_url) {
       Linking.openURL(meta.file_url);
     } else {
@@ -115,13 +129,21 @@ export default function NotificationDetailsScreen({ route, navigation }) {
   // Determine if action button should render
   let hasAction = false;
   let actionLabel = "Back";
-  if (typeKey === "booking") {
+
+  const notifTitle = (notification.title || "").toLowerCase();
+  const notifMessage = (notification.message || "").toLowerCase();
+
+  const isBooking = typeKey === "booking" || notifTitle.includes("booking") || notifMessage.includes("booking");
+  const isWallet = typeKey === "wallet" || notifTitle.includes("wallet") || notifTitle.includes("cashback") || notifMessage.includes("wallet") || notifMessage.includes("cashback");
+  const isChat = typeKey === "chat" || notifTitle.includes("message") || notifMessage.includes("message");
+
+  if (isBooking) {
     hasAction = true;
     actionLabel = "View Booking Details";
-  } else if (typeKey === "chat") {
+  } else if (isChat) {
     hasAction = true;
     actionLabel = "Open Conversation";
-  } else if (typeKey === "wallet") {
+  } else if (isWallet) {
     hasAction = true;
     actionLabel = "View Wallet Details";
   }

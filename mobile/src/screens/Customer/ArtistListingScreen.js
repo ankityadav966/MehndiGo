@@ -124,7 +124,8 @@ export default function ArtistListingScreen({ route, navigation }) {
         setArtists((prev) => [...prev, ...rows]);
       }
 
-      setHasMore(artists.length + rows.length < total);
+      const hasMoreData = rows.length === 8 && (artists.length + rows.length < total);
+      setHasMore(hasMoreData);
       setPage(pageNum);
     } catch (err) {
       console.log("Failed to load artists listing:", err.message);
@@ -135,12 +136,33 @@ export default function ArtistListingScreen({ route, navigation }) {
     }
   };
 
+  // Sync route params when screen parameters update
+  useEffect(() => {
+    if (route.params) {
+      const { category, searchQuery, filter } = route.params;
+
+      if (searchQuery !== undefined && searchQuery !== query) {
+        setQuery(searchQuery || "");
+      }
+      if (category !== undefined && category !== selectedCategory) {
+        setSelectedCategory(category || "");
+      }
+      if (filter === "popular" && sort !== "trending") {
+        setSort("trending");
+      } else if (filter === "featured" && sort !== "highest_rated") {
+        setSort("highest_rated");
+      } else if (filter === "nearest" && sort !== "nearest") {
+        setSort("nearest");
+      }
+    }
+  }, [route.params]);
+
   useEffect(() => {
     const timer = setTimeout(() => {
       fetchArtistsList(1);
     }, 0);
     return () => clearTimeout(timer);
-  }, [sort, selectedCategory, gender, language]);
+  }, [query, sort, selectedCategory, gender, language]);
 
   const handleRefresh = () => {
     setRefreshing(true);

@@ -18,7 +18,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import Colors from "../../constants/Colors";
 import LoadingSkeleton from "../../components/LoadingSkeleton";
 import { useAuth } from "../../context/AuthContext";
-import { getHomeDashboard, getNearbyArtists, getCustomerProfile } from "../../services/customer";
+import { getHomeDashboard, getNearbyArtists, getCustomerProfile, getFavorites, addFavorite, removeFavorite } from "../../services/customer";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -47,6 +47,7 @@ export default function HomeScreen({ navigation }) {
 
   // Favorites Map state (local toggle)
   const [favorites, setFavorites] = useState({});
+  const [imageErrors, setImageErrors] = useState({});
 
   // Carousel slider state
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
@@ -66,6 +67,19 @@ export default function HomeScreen({ navigation }) {
       setOffers(data?.offers || []);
       setFeaturedArtists(data?.featuredArtists || []);
       setPopularArtists(data?.popularArtists || []);
+      
+      // Load favorites from database
+      try {
+        const favs = await getFavorites();
+        const favMap = {};
+        (favs || []).forEach((artist) => {
+          favMap[artist.id] = true;
+        });
+        setFavorites(favMap);
+      } catch (favErr) {
+        console.log("Failed to load favorites on dashboard:", favErr.message);
+      }
+
       setError(null);
     } catch (err) {
       console.log("Failed to load dashboard:", err.message);
@@ -90,7 +104,7 @@ export default function HomeScreen({ navigation }) {
         setNearbyArtists((prev) => [...prev, ...list]);
       }
 
-      setHasMoreNearby(nearbyArtists.length + list.length < total);
+      setHasMoreNearby(list.length === 6 && nearbyArtists.length + list.length < total);
       setNearbyPage(page);
     } catch (err) {
       console.log("Failed to load nearby artists:", err.message);
@@ -165,11 +179,27 @@ export default function HomeScreen({ navigation }) {
   }, [offers, activeBannerIndex]);
 
   // Toggle favorite
-  const toggleFavorite = (artistId) => {
+  const toggleFavorite = async (artistId) => {
+    const isFav = !!favorites[artistId];
+    // Optimistic UI update
     setFavorites((prev) => ({
       ...prev,
-      [artistId]: !prev[artistId]
+      [artistId]: !isFav
     }));
+    try {
+      if (isFav) {
+        await removeFavorite(artistId);
+      } else {
+        await addFavorite(artistId);
+      }
+    } catch (err) {
+      console.log("Failed to persist favorite:", err.message);
+      // Rollback
+      setFavorites((prev) => ({
+        ...prev,
+        [artistId]: isFav
+      }));
+    }
   };
 
 const CATEGORY_IMAGES = {
@@ -184,6 +214,9 @@ const CATEGORY_IMAGES = {
 };
 
 const getCategoryImage = (item) => {
+  const name = (item.name || "").toLowerCase();
+  const slug = (item.slug || "").toLowerCase();
+
   const isUrlValid = item.image && 
     (item.image.startsWith("http://") || item.image.startsWith("https://")) &&
     !item.image.includes("localhost") &&
@@ -193,27 +226,41 @@ const getCategoryImage = (item) => {
     return { uri: item.image };
   }
 
-  const slug = item.slug || item.name?.toLowerCase().replace(/\s+/g, "") || "custom";
-  const fallbackUrl = CATEGORY_IMAGES[slug] || CATEGORY_IMAGES.custom;
+  let key = "custom";
+  if (slug.includes("bridal") || name.includes("bridal")) key = "bridal";
+  else if (slug.includes("arabic") || name.includes("arabic")) key = "arabic";
+  else if (slug.includes("royal") || name.includes("royal")) key = "royal";
+  else if (slug.includes("portrait") || name.includes("portrait")) key = "portrait";
+  else if (slug.includes("engagement") || name.includes("engagement")) key = "engagement";
+  else if (slug.includes("festival") || name.includes("festival")) key = "festival";
+  else if (slug.includes("kid") || name.includes("kid")) key = "kids";
+
+  const fallbackUrl = CATEGORY_IMAGES[key] || CATEGORY_IMAGES.custom;
   return { uri: fallbackUrl };
 };
 
   // Render a Category card item
-  const renderCategoryItem = ({ item }) => (
-    <TouchableOpacity
-      style={styles.categoryCard}
-      onPress={() => navigation.navigate("ArtistListing", { category: item.name })}
-    >
-      <View style={[styles.categoryIcon, { overflow: "hidden" }]}>
-        <Image
-          source={getCategoryImage(item)}
-          style={{ width: "100%", height: "100%" }}
-          resizeMode="cover"
-        />
-      </View>
-      <Text style={styles.categoryText} numberOfLines={1}>{item.name}</Text>
-    </TouchableOpacity>
-  );
+  const renderCategoryItem = ({ item }) => {
+    const hasError = !!imageErrors[item.id];
+    return (
+      <TouchableOpacity
+        style={styles.categoryCard}
+        onPress={() => navigation.navigate("ArtistListing", { category: item.name })}
+      >
+        <View style={[styles.categoryIcon, { overflow: "hidden" }]}>
+          <Image
+            source={hasError ? require("../../../assets/images/logo.jpg") : getCategoryImage(item)}
+            onError={() => {
+              setImageErrors((prev) => ({ ...prev, [item.id]: true }));
+            }}
+            style={{ width: "100%", height: "100%" }}
+            resizeMode="cover"
+          />
+        </View>
+        <Text style={styles.categoryText} numberOfLines={1}>{item.name}</Text>
+      </TouchableOpacity>
+    );
+  };
 
   // Render a banner item
   const renderBannerItem = ({ item }) => (
@@ -526,6 +573,27 @@ const getCategoryImage = (item) => {
     return null;
   };
 
+  const processedNearbyArtists = React.useMemo(() => {
+    let result = [...nearbyArtists];
+
+    if (selectedFilter === "Nearest") {
+      result.sort((a, b) => (Number(a.distance) || 0) - (Number(b.distance) || 0));
+    } else if (selectedFilter === "Top Rated") {
+      result.sort((a, b) => (Number(b.avg_rating) || 0) - (Number(a.avg_rating) || 0));
+    } else if (selectedFilter === "Price Low-High") {
+      result.sort((a, b) => {
+        const priceA = a.services?.[0]?.minimum_price || 1500;
+        const priceB = b.services?.[0]?.minimum_price || 1500;
+        return priceA - priceB;
+      });
+    } else if (selectedFilter === "5+ Exp Years") {
+      result = result.filter(item => (item.experience_years || 0) >= 5);
+      result.sort((a, b) => (b.experience_years || 0) - (a.experience_years || 0));
+    }
+
+    return result;
+  }, [nearbyArtists, selectedFilter]);
+
   if (dashboardLoading) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
@@ -542,7 +610,7 @@ const getCategoryImage = (item) => {
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <FlatList
-        data={nearbyArtists}
+        data={processedNearbyArtists}
         keyExtractor={(item) => String(item.id)}
         renderItem={renderNearbyArtistItem}
         ListHeaderComponent={renderListHeader}
