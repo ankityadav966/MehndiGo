@@ -12,8 +12,8 @@ import { fetchArtistAvailability } from "../../services/customer";
 export default function SelectDateScreen({ route, navigation }) {
   const { artistId, serviceId, selectedDate: initialDate, selectedTimeSlot } = route.params || {};
 
-  const [selectedDate, setSelectedDate] = useState(
-    initialDate || new Date().toISOString().split("T")[0]
+  const [selectedDates, setSelectedDates] = useState(
+    initialDate ? [initialDate] : [new Date().toISOString().split("T")[0]]
   );
   const [availabilityDates, setAvailabilityDates] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -46,7 +46,7 @@ export default function SelectDateScreen({ route, navigation }) {
     navigation.navigate("SelectTimeSlot", {
       artistId,
       serviceId,
-      selectedDate,
+      selectedDates,
       selectedTimeSlot
     });
   };
@@ -63,13 +63,15 @@ export default function SelectDateScreen({ route, navigation }) {
       };
     });
 
-    // Mark the selected date
-    marked[selectedDate] = {
-      ...marked[selectedDate],
-      selected: true,
-      selectedColor: Colors.primary,
-      selectedTextColor: Colors.white
-    };
+    // Mark the selected dates
+    selectedDates.forEach(date => {
+      marked[date] = {
+        ...marked[date],
+        selected: true,
+        selectedColor: Colors.primary,
+        selectedTextColor: Colors.white
+      };
+    });
 
     return marked;
   };
@@ -93,8 +95,17 @@ export default function SelectDateScreen({ route, navigation }) {
         ) : (
           <>
             <Calendar
-              current={selectedDate}
-              onDayPress={(day) => setSelectedDate(day.dateString)}
+              current={selectedDates[0]}
+              onDayPress={(day) => {
+                const dateStr = day.dateString;
+                if (selectedDates.includes(dateStr)) {
+                  if (selectedDates.length > 1) {
+                    setSelectedDates(prev => prev.filter(d => d !== dateStr));
+                  }
+                } else {
+                  setSelectedDates(prev => [...prev, dateStr]);
+                }
+              }}
               hideExtraDays
               enableSwipeMonths
               minDate={new Date().toISOString().split("T")[0]}

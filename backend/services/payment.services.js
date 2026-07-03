@@ -124,7 +124,7 @@ class PaymentService {
     await db.Invoice.create({
       booking_id: tx.booking_id,
       invoice_number: invoiceNum,
-      invoice_url: `https://mehndigo.com/invoices/${invoiceNum}.pdf`
+      invoice_url: `/payment/receipt/${tx.booking_id}`
     });
 
     // Dispatch Notifications to customer, artist, and admin
@@ -438,6 +438,65 @@ class PaymentService {
 
   async retryPayment(bookingId, userId) {
     return await this.createOrder(bookingId, userId);
+  }
+
+  async payWithWallet(bookingId, userId) {
+    const booking = await db.Booking.findByPk(bookingId);
+    if (!booking) {
+      throw new AppError("Booking not found", 404);
+    }
+
+    const WalletService = require("./wallet.services");
+    const wallet = await WalletService.getOrCreateWallet(userId);
+    
+    // Allow negative wallet balance: "wallet me bhi mines me honachaye"
+    const newBalance = wallet.balance - Number(booking.final_amount);
+    await wallet.update({ balance: newBalance });
+
+    // 1. Create Wallet Transaction
+    await db.WalletTransaction.create({
+      wallet_id: wallet.id,
+      transaction_type: "DEBIT",
+      amount: Number(booking.final_amount),
+      status: "SUCCESS",
+      booking_id: booking.id,
+      description: `Deducted for booking #${booking.booking_code} (Wallet Checkout)`
+    });
+
+    // 2. Create online payment transaction simulation
+    await db.Transaction.create({
+      booking_id: booking.id,
+      amount: Number(booking.final_amount),
+      payment_method: "WALLET",
+      status: "SUCCESS",
+      razorpay_order_id: `wallet_mock_${Date.now()}`,
+      razorpay_payment_id: `wallet_pay_${Date.now()}`
+    });
+
+    // 3. Update Booking
+    await booking.update({
+      payment_status: "PAID",
+      booking_status: "CONFIRMED",
+      detailed_status: "CONFIRMED"
+    });
+
+    // 4. Booking status history
+    await db.BookingStatusHistory.create({
+      booking_id: booking.id,
+      status: "CONFIRMED",
+      changed_by: userId,
+      notes: "Paid via MehndiGo Wallet. Booking confirmed."
+    });
+
+    // 5. Create Invoice record
+    const invoiceNum = `INV-${Date.now()}`;
+    await db.Invoice.create({
+      booking_id: booking.id,
+      invoice_number: invoiceNum,
+      invoice_url: `/payment/receipt/${booking.id}`
+    });
+
+    return booking;
   }
 }
 

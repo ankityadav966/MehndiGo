@@ -103,15 +103,14 @@ export default function WishlistScreen({ navigation }) {
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
           <Ionicons name="chevron-back" size={22} color={Colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Wishlist</Text>
-        <Text style={styles.headerSubTitle}>Your favorite mehndi artists</Text>
+        <Text style={styles.headerTitle}>Favorite Mehndi Artists</Text>
       </View>
 
       {wishlist.length > 0 ? (
         <FlatList
           data={wishlist}
           renderItem={renderItem}
-          keyExtractor={(item) => item.id.toString()}
+          keyExtractor={(item, index) => item?.id ? item.id.toString() : index.toString()}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={fetchWishlist} colors={[Colors.primary]} />
           }

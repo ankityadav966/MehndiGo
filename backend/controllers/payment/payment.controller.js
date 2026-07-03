@@ -87,6 +87,170 @@ async function retryPayment(req, res) {
   }
 }
 
+async function getReceiptHTML(req, res) {
+  try {
+    const { bookingId } = req.params;
+    const BookingService = require("../../services/booking.services");
+    
+    let inv;
+    try {
+      inv = await BookingService.getInvoice(bookingId);
+    } catch (e) {}
+    
+    const booking = await BookingService.getBookingDetails(bookingId, null, null);
+    if (!booking) {
+      return res.status(404).send("Booking not found");
+    }
+    
+    const invoiceNum = inv ? inv.invoice_number : `INV-${Date.now()}`;
+    const dateStr = booking.createdAt ? new Date(booking.createdAt).toLocaleDateString("en-US", {
+      year: 'numeric', month: 'long', day: 'numeric'
+    }) : new Date().toLocaleDateString("en-US", {
+      year: 'numeric', month: 'long', day: 'numeric'
+    });
+    
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MehndiGo Receipt - Invoice</title>
+  <style>
+    body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333; margin: 0; padding: 20px; background-color: #f9f9f9; }
+    .invoice-box { max-width: 800px; margin: auto; padding: 30px; border: 1px solid #eee; box-shadow: 0 0 10px rgba(0, 0, 0, 0.15); background: #fff; border-radius: 12px; }
+    .header { display: flex; justify-content: space-between; border-bottom: 2px solid #ff7e5f; padding-bottom: 20px; margin-bottom: 20px; }
+    .logo { font-size: 24px; font-weight: 800; color: #ff7e5f; }
+    .company-details { text-align: right; font-size: 12px; color: #777; }
+    .invoice-details { margin-bottom: 20px; font-size: 13px; color: #555; line-height: 1.6; }
+    .billing-section { display: flex; justify-content: space-between; margin-bottom: 30px; gap: 15px; }
+    .billing-col { width: 48%; }
+    .billing-title { font-weight: 700; color: #ff7e5f; border-bottom: 1px dashed #eee; padding-bottom: 5px; margin-bottom: 10px; font-size: 14px; }
+    .billing-text { font-size: 13px; line-height: 1.6; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+    th { background: #fdf5f2; color: #ff7e5f; text-align: left; padding: 12px; font-size: 13px; font-weight: 700; border-bottom: 2px solid #eee; }
+    td { padding: 12px; border-bottom: 1px solid #eee; font-size: 13px; }
+    .totals { display: flex; justify-content: flex-end; }
+    .totals-table { width: 300px; margin-top: 10px; }
+    .totals-table td { border-bottom: none; padding: 6px 12px; }
+    .grand-total { font-weight: 800; color: #ff7e5f; font-size: 16px; border-top: 2px solid #eee; }
+    .footer { text-align: center; margin-top: 40px; font-size: 12px; color: #aaa; border-top: 1px solid #eee; padding-top: 20px; }
+    @media (max-width: 600px) {
+      .header { flex-direction: column; text-align: center; gap: 10px; }
+      .company-details { text-align: center; }
+      .billing-section { flex-direction: column; gap: 20px; }
+      .billing-col { width: 100%; }
+      .totals { justify-content: center; }
+      .totals-table { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="invoice-box">
+    <div class="header">
+      <div class="logo">MehndiGo</div>
+      <div class="company-details">
+        <strong>MehndiGo Technologies Pvt. Ltd.</strong><br>
+        info@mehndigo.com<br>
+        www.mehndigo.com
+      </div>
+    </div>
+    
+    <div class="invoice-details">
+      <strong>Receipt Number:</strong> ${invoiceNum}<br>
+      <strong>Date:</strong> ${dateStr}<br>
+      <strong>Booking Code:</strong> ${booking.booking_code}<br>
+      <strong>Status:</strong> ${booking.payment_status || 'PAID'}
+    </div>
+    
+    <div class="billing-section">
+      <div class="billing-col">
+        <div class="billing-title">Customer Details</div>
+        <div class="billing-text">
+          <strong>${booking.user?.name || 'Customer'}</strong><br>
+          Phone: ${booking.user?.phone || 'N/A'}<br>
+          Email: ${booking.user?.email || 'N/A'}<br>
+          Address: ${booking.address || 'N/A'}
+        </div>
+      </div>
+      <div class="billing-col">
+        <div class="billing-title">Artist Details</div>
+        <div class="billing-text">
+          <strong>${booking.artist?.user?.name || 'Artist'}</strong><br>
+          Phone: ${booking.artist?.user?.phone || 'N/A'}<br>
+          Email: ${booking.artist?.user?.email || 'N/A'}
+        </div>
+      </div>
+    </div>
+    
+    <table>
+      <thead>
+        <tr>
+          <th>Service Name</th>
+          <th>Rate</th>
+          <th>Travel</th>
+          <th>GST</th>
+          <th>Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>${booking.service?.specialization_name || 'Henna Styling'}</td>
+          <td>₹${booking.total_price}</td>
+          <td>₹${booking.travel_charges}</td>
+          <td>₹${booking.gst}</td>
+          <td>₹${booking.final_amount}</td>
+        </tr>
+      </tbody>
+    </table>
+    
+    <div class="totals">
+      <table class="totals-table">
+        <tr>
+          <td>Subtotal:</td>
+          <td style="text-align: right;">₹${booking.total_price + booking.travel_charges}</td>
+        </tr>
+        <tr>
+          <td>GST (18%):</td>
+          <td style="text-align: right;">₹${booking.gst}</td>
+        </tr>
+        ${booking.coupon_discount > 0 ? `
+        <tr style="color: #ff7e5f;">
+          <td>Discount:</td>
+          <td style="text-align: right;">-₹${booking.coupon_discount}</td>
+        </tr>
+        ` : ''}
+        <tr class="grand-total">
+          <td>Grand Total:</td>
+          <td style="text-align: right;">₹${booking.final_amount}</td>
+        </tr>
+      </table>
+    </div>
+    
+    <div class="footer">
+      Thank you for choosing MehndiGo. This is a computer generated invoice and does not require physical signature.
+    </div>
+  </div>
+</body>
+</html>
+    `;
+    res.setHeader("Content-Type", "text/html");
+    return res.status(200).send(html);
+  } catch (error) {
+    return res.status(500).send("Error generating receipt html");
+  }
+}
+
+async function payWithWallet(req, res) {
+  try {
+    const { bookingId } = req.body;
+    const response = await PaymentService.payWithWallet(bookingId, req.user.id);
+    return res.status(200).json(SuccessResponse("Payment completed using MehndiGo Wallet", response));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
 module.exports = {
   createOrder,
   verifyPayment,
@@ -96,5 +260,7 @@ module.exports = {
   initiateRefund,
   getRefundHistory,
   getInvoiceByBooking,
-  retryPayment
+  retryPayment,
+  getReceiptHTML,
+  payWithWallet
 };

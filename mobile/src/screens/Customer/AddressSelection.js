@@ -52,12 +52,51 @@ export default function AddressSelection({ route, navigation }) {
     return () => clearTimeout(timer);
   }, [fetchSavedAddresses]);
 
-  const handleUseCurrentLocation = () => {
-    setLatitude(26.9124);
-    setLongitude(75.7873);
-    setManualAddress("Ahinsa Circle, C Scheme, Jaipur, Rajasthan 302001");
-    setUseManual(true);
-    Alert.alert("Location Resolved", "Mock GPS coordinates mapped successfully.");
+  const handleUseCurrentLocation = async () => {
+    try {
+      setLoading(true);
+      const Location = require("expo-location");
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission Denied", "GPS access permission was denied. Please write your address manually.");
+        setLoading(false);
+        return;
+      }
+
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const lat = loc.coords.latitude;
+      const lng = loc.coords.longitude;
+      setLatitude(lat);
+      setLongitude(lng);
+
+      const geocode = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
+      if (geocode && geocode.length > 0) {
+        const g = geocode[0];
+        const addrParts = [
+          g.name,
+          g.street,
+          g.district,
+          g.city,
+          g.region,
+          g.postalCode
+        ].filter(Boolean);
+        setManualAddress(addrParts.join(", "));
+      } else {
+        setManualAddress(`Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}`);
+      }
+      setUseManual(true);
+      Alert.alert("Location Resolved", "Your current location has been updated successfully.");
+    } catch (err) {
+      console.log("Error getting live location:", err.message);
+      // Fallback
+      setLatitude(26.9124);
+      setLongitude(75.7873);
+      setManualAddress("Ahinsa Circle, C Scheme, Jaipur, Rajasthan 302001");
+      setUseManual(true);
+      Alert.alert("Location Resolved", "Mock location coordinates mapped successfully.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleContinue = () => {
@@ -114,7 +153,7 @@ export default function AddressSelection({ route, navigation }) {
 
         <TouchableOpacity style={styles.locationButton} onPress={handleUseCurrentLocation}>
           <Ionicons name="location" size={16} color={Colors.primary} />
-          <Text style={styles.locationText}>Use Current Location (Mock GPS)</Text>
+          <Text style={styles.locationText}>Use Current GPS Location</Text>
         </TouchableOpacity>
 
         <View style={styles.toggleRow}>

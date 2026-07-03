@@ -100,16 +100,7 @@ export const Alert = {
       }
 
       // Format clean message for Toast (omit title if redundant or join with colon)
-      let toastMessage = "";
-      if (title && message) {
-        if (title.toLowerCase() === "error" || title.toLowerCase() === "success") {
-          toastMessage = message;
-        } else {
-          toastMessage = `${title}: ${message}`;
-        }
-      } else {
-        toastMessage = title || message || "";
-      }
+      let toastMessage = message || title || "";
 
       if (global.showToast) {
         global.showToast(toastMessage, type);

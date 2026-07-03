@@ -9,11 +9,9 @@ export default function SettingsScreen({ navigation }) {
   const { logout, user } = useAuth();
   const settingsOptions = [
     { icon: "notifications-outline", label: "Notifications", route: "NotificationCenter", color: Colors.warning },
-    ...(user?.role !== "ARTIST" ? [{ icon: "lock-closed-outline", label: "Change Password", route: "ChangePassword", color: Colors.info }] : []),
     { icon: "shield-checkmark-outline", label: "Privacy Policy", route: "PrivacyPolicy", color: Colors.success },
     { icon: "document-text-outline", label: "Terms & Conditions", route: "TermsConditions", color: Colors.primary },
     { icon: "help-circle-outline", label: "Help & Support", route: "Support", color: Colors.textSecondary },
-    { icon: "trash-outline", label: "Delete Account", route: "DeleteAccount", color: Colors.error },
     { icon: "log-out-outline", label: "Logout", action: "logout", color: Colors.error },
   ];
 

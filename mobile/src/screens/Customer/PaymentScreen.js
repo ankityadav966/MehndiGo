@@ -14,7 +14,7 @@ import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import CustomButton from "../../components/CustomButton";
-import { createPaymentOrder, verifyPaymentSignature } from "../../services/payment";
+import { createPaymentOrder, verifyPaymentSignature, payWithWallet } from "../../services/payment";
 
 export default function PaymentScreen({ route, navigation }) {
   const { bookingId, bookingCode, finalAmount } = route.params || {};
@@ -49,7 +49,19 @@ export default function PaymentScreen({ route, navigation }) {
     return () => clearTimeout(timer);
   }, [bookingId, initiateOrder, navigation]);
 
-  const handlePay = () => {
+  const handlePay = async () => {
+    if (selectedMethod === "wallet") {
+      setLoading(true);
+      try {
+        await payWithWallet(bookingId);
+        navigation.replace("BookingSuccess", { bookingCode: bookingCode || `BK-${Math.floor(100000 + Math.random() * 900000)}` });
+      } catch (err) {
+        setLoading(false);
+        navigation.navigate("PaymentFailed", { bookingId, finalAmount });
+      }
+      return;
+    }
+
     if (!orderId) {
       Alert.alert("Error", "Razorpay order not initialized yet.");
       return;

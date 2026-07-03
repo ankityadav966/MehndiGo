@@ -12,7 +12,10 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
-const moment = require("moment");
+const getMoment = () => {
+  const m = require("moment");
+  return typeof m === "function" ? m : (m.default || m);
+};
 import { getBookingHistory } from "../../services/booking";
 
 export default function MyBookingsScreen({ navigation }) {
@@ -68,16 +71,22 @@ export default function MyBookingsScreen({ navigation }) {
 
   const formatTime = (timeVal) => {
     if (!timeVal) return "";
-    const localMoment = require("moment");
-    if (String(timeVal).includes("T") || (String(timeVal).includes("-") && String(timeVal).includes(":"))) {
-      return localMoment(timeVal).format("hh:mm A");
-    }
-    return localMoment(timeVal, ["HH:mm:ss", "HH:mm", "hh:mm A", "hh:mm"]).format("hh:mm A");
+    const localMoment = getMoment();
+    const formats = [
+      "YYYY-MM-DD HH:mm:ss",
+      "YYYY-MM-DDTHH:mm:ssZ",
+      "YYYY-MM-DDTHH:mm:ss.SSSZ",
+      "HH:mm:ss",
+      "HH:mm",
+      "hh:mm A",
+      "hh:mm"
+    ];
+    return localMoment(timeVal, formats).format("hh:mm A");
   };
 
   const renderBooking = ({ item }) => {
     const status = item.detailed_status || item.booking_status || "PENDING";
-    const localMoment = require("moment");
+    const localMoment = getMoment();
     
     // Resolve clean slot date
     let dateStr = "Today";
@@ -115,9 +124,40 @@ export default function MyBookingsScreen({ navigation }) {
             </View>
           </View>
           
-          <Text style={styles.service}>Code: {item.booking_code}</Text>
+          <Text style={styles.service}>Code: {status === "CANCELLED" ? `${item.booking_code} (Expired)` : item.booking_code}</Text>
           <Text style={styles.date}>📅 {dateStr} • {timeStr}</Text>
           <Text style={styles.price}>💰 ₹{item.final_amount || item.remaining_amount}</Text>
+
+          {["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED"].includes(status) && (
+            <View style={{ flexDirection: "row", marginTop: 8 }}>
+              <TouchableOpacity
+                style={{ flex: 1, flexDirection: "row", height: 32, backgroundColor: Colors.primary, borderRadius: 6, justifyContent: "center", alignItems: "center" }}
+                onPress={() => {
+                  const phone = item.artist?.user?.phone || "9999999999";
+                  const { Linking } = require("react-native");
+                  Linking.openURL(`tel:${phone}`);
+                }}
+              >
+                <Ionicons name="call" size={12} color={Colors.white} />
+                <Text style={{ color: Colors.white, fontSize: 11, fontWeight: "700", marginLeft: 4 }}>Call</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={{ flex: 1, flexDirection: "row", height: 32, backgroundColor: Colors.success, borderRadius: 6, justifyContent: "center", alignItems: "center", marginLeft: 8 }}
+                onPress={() => {
+                  navigation.navigate("ChatRoom", {
+                    bookingId: item.id,
+                    receiverId: item.artist?.user_id || item.artist_id,
+                    receiverName: item.artist?.user?.name || "Artist",
+                    receiverImage: item.artist?.user?.profile_image
+                  });
+                }}
+              >
+                <Ionicons name="chatbubbles" size={12} color={Colors.white} />
+                <Text style={{ color: Colors.white, fontSize: 11, fontWeight: "700", marginLeft: 4 }}>Chat</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           <TouchableOpacity
             style={styles.detailsBtn}

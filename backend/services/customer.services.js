@@ -78,12 +78,13 @@ class CustomerService {
     };
 
     if (filters.category) {
+      const normalizedCategory = filters.category.toLowerCase().replace(/\s+mehndi/g, "").replace(/\s+design/g, "").trim();
       where[Op.and] = where[Op.and] || [];
       where[Op.and].push(
         db.sequelize.literal(`EXISTS (
           SELECT 1 FROM "Services" AS s 
           WHERE s.artist_id = "ArtistProfile".id 
-          AND s.category Ilike '%${filters.category}%'
+          AND (s.category Ilike '%${normalizedCategory}%' OR s.specialization_name Ilike '%${normalizedCategory}%')
         )`)
       );
     }

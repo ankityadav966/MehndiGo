@@ -57,31 +57,58 @@ export default function SelectService({ route, navigation }) {
     });
   };
 
-  const renderItem = ({ item }) => (
-    <TouchableOpacity
-      style={[
-        styles.serviceCard,
-        selectedServiceId === item.id && styles.selectedCard
-      ]}
-      onPress={() => setSelectedServiceId(item.id)}
-    >
-      <View style={{ flex: 1, marginRight: 8 }}>
-        <Text style={styles.serviceName}>{item.specialization_name || item.name}</Text>
-        <Text style={styles.serviceDesc} numberOfLines={2}>
-          {item.description || "Beautiful professional mehndi design customization."}
-        </Text>
-      </View>
-      <View style={styles.rightSection}>
-        <Text style={styles.price}>₹{item.minimum_price}</Text>
-        <View
-          style={[
-            styles.radio,
-            selectedServiceId === item.id && styles.radioActive
-          ]}
-        />
-      </View>
-    </TouchableOpacity>
-  );
+  const renderItem = ({ item }) => {
+    const isSelected = selectedServiceId === item.id;
+    return (
+      <TouchableOpacity
+        activeOpacity={0.9}
+        style={[
+          styles.serviceCard,
+          isSelected && styles.selectedCard
+        ]}
+        onPress={() => setSelectedServiceId(item.id)}
+      >
+        <View style={styles.cardHeader}>
+          <View style={styles.tagRow}>
+            <View style={styles.categoryTag}>
+              <Text style={styles.categoryTagText}>{item.category || "Mehndi"}</Text>
+            </View>
+            <View style={styles.durationTag}>
+              <Ionicons name="time-outline" size={10} color={Colors.textSecondary} />
+              <Text style={styles.durationTagText}> {item.duration_minutes || 60} mins</Text>
+            </View>
+          </View>
+          
+          <View style={styles.cardBody}>
+            <View style={{ flex: 1, paddingRight: 8 }}>
+              <Text style={styles.serviceName}>{item.specialization_name || item.name}</Text>
+              <Text style={styles.serviceDesc} numberOfLines={3}>
+                {item.description || "Beautiful custom mehndi design and premium styling."}
+              </Text>
+            </View>
+            
+            <View style={styles.priceContainer}>
+              <Text style={styles.priceLabel}>Starting from</Text>
+              <Text style={styles.priceValue}>₹{item.minimum_price}</Text>
+            </View>
+          </View>
+
+          <View style={styles.cardFooter}>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <Ionicons name="home-outline" size={12} color={Colors.textSecondary} />
+              <Text style={styles.serviceMetaText}> Home Service Available</Text>
+            </View>
+            <View style={styles.selectIndicator}>
+              <Ionicons name={isSelected ? "checkmark-circle" : "ellipse-outline"} size={16} color={isSelected ? Colors.primary : Colors.textTertiary} />
+              <Text style={[styles.selectIndicatorText, isSelected ? styles.selectIndicatorTextActive : null]}>
+                {isSelected ? "Selected" : "Select"}
+              </Text>
+            </View>
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -134,23 +161,35 @@ const styles = StyleSheet.create({
   listContainer: { paddingHorizontal: 16, paddingBottom: 40 },
   serviceCard: {
     padding: 16,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: Colors.border,
-    borderRadius: 14,
-    marginBottom: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    borderRadius: 16,
+    marginBottom: 16,
     backgroundColor: Colors.white,
-    elevation: 2
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
-  selectedCard: { borderColor: Colors.primary, backgroundColor: Colors.primaryLight + "15" },
-  serviceName: { fontSize: 14, fontWeight: "700", color: Colors.text },
-  serviceDesc: { fontSize: 11, color: Colors.textSecondary, marginTop: 4 },
-  rightSection: { flexDirection: "row", alignItems: "center" },
-  price: { fontSize: 14, fontWeight: "700", color: Colors.primary, marginRight: 12 },
-  radio: { width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: Colors.border },
-  radioActive: { borderColor: Colors.primary, backgroundColor: Colors.primary },
+  selectedCard: { borderColor: Colors.primary, backgroundColor: Colors.primaryLight + "08" },
+  cardHeader: { width: "100%" },
+  tagRow: { flexDirection: "row", marginBottom: 8, gap: 8 },
+  categoryTag: { backgroundColor: Colors.primary + "10", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  categoryTagText: { fontSize: 10, color: Colors.primary, fontWeight: "700" },
+  durationTag: { backgroundColor: Colors.inputBackground, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, flexDirection: "row", alignItems: "center" },
+  durationTagText: { fontSize: 10, color: Colors.textSecondary },
+  cardBody: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginVertical: 4 },
+  serviceName: { fontSize: 15, fontWeight: "700", color: Colors.text },
+  serviceDesc: { fontSize: 12, color: Colors.textSecondary, marginTop: 4, lineHeight: 16 },
+  priceContainer: { alignItems: "flex-end", minWidth: 90 },
+  priceLabel: { fontSize: 9, color: Colors.textTertiary, textTransform: "uppercase" },
+  priceValue: { fontSize: 18, fontWeight: "850", color: Colors.primary, marginTop: 2 },
+  cardFooter: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderTopWidth: 1, borderTopColor: Colors.border, marginTop: 12, paddingTop: 10 },
+  serviceMetaText: { fontSize: 11, color: Colors.textSecondary },
+  selectIndicator: { flexDirection: "row", alignItems: "center", gap: 4 },
+  selectIndicatorText: { fontSize: 12, color: Colors.textSecondary, fontWeight: "600" },
+  selectIndicatorTextActive: { color: Colors.primary, fontWeight: "700" },
   bottom: { padding: 16, backgroundColor: Colors.white, borderTopWidth: 1, borderTopColor: Colors.border },
   continueBtn: { height: 48, backgroundColor: Colors.primary, borderRadius: 12, justifyContent: "center", alignItems: "center" },
   disabledBtn: { backgroundColor: Colors.textTertiary },

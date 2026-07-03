@@ -39,3 +39,8 @@ export async function getInvoiceDetails(bookingId) {
   const res = await apiRequest("GET", `/payment/invoice/${bookingId}`, null, true);
   return res?.data || res;
 }
+
+export async function payWithWallet(bookingId) {
+  const res = await apiRequest("POST", "/payment/wallet-pay", { bookingId }, true);
+  return res?.data || res;
+}

@@ -90,8 +90,13 @@ export default function ArtistProfileScreen({ route, navigation }) {
 
       // Default date select
       if (avail && avail.length > 0) {
-        const distinctDates = [...new Set(avail.map((s) => s.date))];
-        setSelectedDate(distinctDates[0]);
+        const moment = require("moment");
+        const distinctDates = [...new Set(avail.map((s) => s?.date).filter(Boolean))].filter((date) => {
+          return moment(date, ["YYYY-MM-DD", "YYYY-MM-DDTHH:mm:ss.SSSZ", "YYYY-MM-DDTHH:mm:ssZ"]).isValid();
+        });
+        if (distinctDates.length > 0) {
+          setSelectedDate(distinctDates[0]);
+        }
       }
     } catch (e) {
       console.log("Error loading artist details:", e.message);
@@ -261,8 +266,11 @@ export default function ArtistProfileScreen({ route, navigation }) {
     : ["https://images.unsplash.com/photo-1590012357675-bc55909793fb?q=80&w=800"];
 
   // Distinct dates in availability slots
-  const availableDates = [...new Set(availability.map((slot) => slot.date))];
-  const timeSlotsForSelectedDate = availability.filter((slot) => slot.date === selectedDate);
+  const availableDates = [...new Set(availability.map((slot) => slot?.date).filter(Boolean))].filter((date) => {
+    const moment = require("moment");
+    return moment(date, ["YYYY-MM-DD", "YYYY-MM-DDTHH:mm:ss.SSSZ", "YYYY-MM-DDTHH:mm:ssZ"]).isValid();
+  });
+  const timeSlotsForSelectedDate = availability.filter((slot) => slot?.date === selectedDate);
 
   return (
     <View style={styles.container}>
@@ -391,7 +399,7 @@ export default function ArtistProfileScreen({ route, navigation }) {
             <Text style={styles.emptyText}>No services listed by this artist.</Text>
           ) : (
             services.map((item, index) => (
-              <View key={item.id ? `service-${item.id}` : `service-idx-${index}`} style={styles.serviceRow}>
+              <View key={`service-${item.id || 'idx'}-${index}`} style={styles.serviceRow}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.serviceName}>{item.specialization_name}</Text>
                   <Text style={styles.serviceCategory}>{item.category} • ⏱️ {item.duration_minutes || 60} mins</Text>
@@ -420,7 +428,7 @@ export default function ArtistProfileScreen({ route, navigation }) {
             <View style={styles.portfolioGrid}>
               {portfolio.map((item, index) => (
                 <TouchableOpacity
-                  key={item.id ? `portfolio-${item.id}` : `portfolio-idx-${index}`}
+                  key={`portfolio-${item.id || 'idx'}-${index}`}
                   style={styles.portfolioGridItem}
                   onPress={() => {
                     setZoomImageIndex(index);
@@ -448,12 +456,13 @@ export default function ArtistProfileScreen({ route, navigation }) {
             <View>
               <Text style={styles.subHeading}>Available Dates</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 8 }}>
-                {availableDates.map((date) => {
-                  const dateObj = new Date(date);
+                {availableDates.map((date, index) => {
+                  const moment = require("moment");
+                  const dateObj = moment(date, ["YYYY-MM-DD", "YYYY-MM-DDTHH:mm:ss.SSSZ", "YYYY-MM-DDTHH:mm:ssZ"]);
                   const isSelected = selectedDate === date;
                   return (
                     <TouchableOpacity
-                      key={date}
+                      key={`avail-date-${date}-${index}`}
                       style={[
                         styles.dateChip,
                         isSelected ? styles.activeDateChip : null
@@ -464,10 +473,10 @@ export default function ArtistProfileScreen({ route, navigation }) {
                       }}
                     >
                       <Text style={[styles.dateDayText, isSelected ? styles.activeDateText : null]}>
-                        {dateObj.toLocaleDateString("en-US", { weekday: "short" })}
+                        {dateObj.format("ddd")}
                       </Text>
                       <Text style={[styles.dateNumText, isSelected ? styles.activeDateText : null]}>
-                        {dateObj.getDate()}
+                        {dateObj.format("DD")}
                       </Text>
                     </TouchableOpacity>
                   );
@@ -479,11 +488,14 @@ export default function ArtistProfileScreen({ route, navigation }) {
                 {timeSlotsForSelectedDate.length === 0 ? (
                   <Text style={styles.holidayText}>🌴 Artist on Holiday / Fully Booked on this date</Text>
                 ) : (
-                  timeSlotsForSelectedDate.map((slot) => {
+                  timeSlotsForSelectedDate.map((slot, index) => {
                     const isSelected = selectedTimeSlot === slot.id;
+                    const moment = require("moment");
+                    const startLabel = moment(slot.start_time).format("hh:mm A");
+                    const endLabel = moment(slot.end_time).format("hh:mm A");
                     return (
                       <TouchableOpacity
-                        key={slot.id}
+                        key={`avail-slot-${slot.id || 'idx'}-${index}`}
                         style={[
                           styles.slotChip,
                           isSelected ? styles.activeSlotChip : null
@@ -491,7 +503,7 @@ export default function ArtistProfileScreen({ route, navigation }) {
                         onPress={() => setSelectedTimeSlot(slot.id)}
                       >
                         <Text style={[styles.slotText, isSelected ? styles.activeSlotText : null]}>
-                          🕒 {slot.start_time} - {slot.end_time}
+                          🕒 {startLabel} - {endLabel}
                         </Text>
                       </TouchableOpacity>
                     );
@@ -518,49 +530,74 @@ export default function ArtistProfileScreen({ route, navigation }) {
               <Text style={styles.ratingSubLabel}>{profile.total_reviews || 0} reviews</Text>
             </View>
             <View style={styles.distCol}>
-              {[5, 4, 3, 2, 1].map((stars) => {
-                const total = reviewsData.reviews.length || 1;
-                const count = reviewsData.distribution[stars] || 0;
-                const pct = (count / total) * 100;
-                return (
-                  <View key={stars} style={styles.distRow}>
-                    <Text style={styles.distStarText}>{stars} ⭐</Text>
-                    <View style={styles.distTrack}>
-                      <View style={[styles.distFill, { width: `${pct}%` }]} />
-                    </View>
-                    <Text style={styles.distCountText}>{count}</Text>
-                  </View>
-                );
-              })}
+              <View style={styles.distRow}>
+                <Text style={styles.distStarText}>5 ★</Text>
+                <View style={styles.distTrack}>
+                  <View style={[styles.distFill, { width: `${reviewsData.reviews.length ? (reviewsData.distribution[5] / reviewsData.reviews.length) * 100 : 0}%` }]} />
+                </View>
+                <Text style={styles.distCountText}>{reviewsData.distribution[5] || 0}</Text>
+              </View>
+              <View style={styles.distRow}>
+                <Text style={styles.distStarText}>4 ★</Text>
+                <View style={styles.distTrack}>
+                  <View style={[styles.distFill, { width: `${reviewsData.reviews.length ? (reviewsData.distribution[4] / reviewsData.reviews.length) * 100 : 0}%` }]} />
+                </View>
+                <Text style={styles.distCountText}>{reviewsData.distribution[4] || 0}</Text>
+              </View>
+              <View style={styles.distRow}>
+                <Text style={styles.distStarText}>3 ★</Text>
+                <View style={styles.distTrack}>
+                  <View style={[styles.distFill, { width: `${reviewsData.reviews.length ? (reviewsData.distribution[3] / reviewsData.reviews.length) * 100 : 0}%` }]} />
+                </View>
+                <Text style={styles.distCountText}>{reviewsData.distribution[3] || 0}</Text>
+              </View>
+              <View style={styles.distRow}>
+                <Text style={styles.distStarText}>2 ★</Text>
+                <View style={styles.distTrack}>
+                  <View style={[styles.distFill, { width: `${reviewsData.reviews.length ? (reviewsData.distribution[2] / reviewsData.reviews.length) * 100 : 0}%` }]} />
+                </View>
+                <Text style={styles.distCountText}>{reviewsData.distribution[2] || 0}</Text>
+              </View>
+              <View style={styles.distRow}>
+                <Text style={styles.distStarText}>1 ★</Text>
+                <View style={styles.distTrack}>
+                  <View style={[styles.distFill, { width: `${reviewsData.reviews.length ? (reviewsData.distribution[1] / reviewsData.reviews.length) * 100 : 0}%` }]} />
+                </View>
+                <Text style={styles.distCountText}>{reviewsData.distribution[1] || 0}</Text>
+              </View>
             </View>
           </View>
 
           {/* Individual Reviews Rows */}
           {reviewsData.reviews.length === 0 ? (
-            <Text style={styles.emptyText}>Be the first to review this artist!</Text>
+            <Text style={styles.emptyText}>No reviews submitted yet.</Text>
           ) : (
-            reviewsData.reviews.slice(0, 3).map((item, index) => (
-              <View key={item.id ? `review-${item.id}` : `review-idx-${index}`} style={styles.reviewCard}>
+            reviewsData.reviews.map((rev, index) => (
+              <View key={`review-${rev.id || 'idx'}-${index}`} style={styles.reviewCard}>
                 <View style={styles.reviewerHeader}>
                   <Image
-                    source={{ uri: item.user?.profile_image || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=150" }}
+                    source={{ uri: rev.reviewer?.profile_image || "https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=150" }}
                     style={styles.reviewerAvatar}
                   />
-                  <View style={{ flex: 1, marginLeft: 10 }}>
-                    <Text style={styles.reviewerName}>{item.user?.name || "Customer"}</Text>
-                    <View style={{ flexDirection: "row", alignItems: "center" }}>
-                      <Text style={styles.reviewerStars}>{"⭐".repeat(item.rating)}</Text>
-                      <Text style={styles.reviewDate}>• {new Date(item.createdAt).toLocaleDateString()}</Text>
+                  <View style={{ marginLeft: 10, flex: 1 }}>
+                    <Text style={styles.reviewerName}>{rev.reviewer?.name || "Customer"}</Text>
+                    <View style={{ flexDirection: "row", marginTop: 2 }}>
+                      {Array.from({ length: rev.rating || 5 }).map((_, i) => (
+                        <Ionicons key={`star-${rev.id || index}-${i}`} name="star" size={10} color="#FFB800" />
+                      ))}
                     </View>
                   </View>
+                  <Text style={styles.reviewDate}>
+                    {rev.createdAt ? new Date(rev.createdAt).toLocaleDateString() : ""}
+                  </Text>
                 </View>
-                <Text style={styles.reviewContent}>{item.review_text}</Text>
+                <Text style={styles.reviewContent}>{rev.review_text}</Text>
                 
                 {/* Artist Reply */}
-                {item.reply_text && (
+                {rev.reply_text && (
                   <View style={styles.replyBox}>
-                    <Text style={styles.replyHeader}>Reply from {profile.user?.name || "Artist"}:</Text>
-                    <Text style={styles.replyText}>{item.reply_text}</Text>
+                    <Text style={styles.replyHeader}>Artist Reply:</Text>
+                    <Text style={styles.replyText}>{rev.reply_text}</Text>
                   </View>
                 )}
               </View>
@@ -570,23 +607,23 @@ export default function ArtistProfileScreen({ route, navigation }) {
 
         {/* Section: Related Artists */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Similar Artists</Text>
+          <Text style={styles.sectionTitle}>You May Also Like</Text>
           {similar.length === 0 ? (
-            <Text style={styles.emptyText}>No similar artists nearby.</Text>
+            <Text style={styles.emptyText}>No similar artists found nearby.</Text>
           ) : (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 10 }}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 8 }}>
               {similar.map((item, index) => (
                 <TouchableOpacity
-                  key={item.id ? `similar-${item.id}` : `similar-idx-${index}`}
+                  key={`similar-${item.id || 'idx'}-${index}`}
                   style={styles.relatedCard}
-                  onPress={() => navigation.push("ArtistProfile", { artistId: item.id })}
+                  onPress={() => navigation.navigate("ArtistProfile", { artistId: item.id })}
                 >
                   <Image
                     source={{ uri: item.user?.profile_image || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=300" }}
                     style={styles.relatedImage}
                   />
                   <Text style={styles.relatedName} numberOfLines={1}>{item.user?.name || "Artist"}</Text>
-                  <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
                     <Ionicons name="star" size={12} color="#FFB800" />
                     <Text style={styles.relatedRating}>{Number(item.avg_rating || 0).toFixed(1)}</Text>
                   </View>
@@ -599,11 +636,6 @@ export default function ArtistProfileScreen({ route, navigation }) {
 
       {/* Sticky Bottom Booking Section */}
       <View style={styles.stickyFooter}>
-        <TouchableOpacity style={styles.chatFooterBtn} onPress={handleMessageArtist}>
-          <Ionicons name="chatbubble-ellipses-outline" size={22} color={Colors.primary} />
-          <Text style={styles.chatFooterBtnText}>Chat</Text>
-        </TouchableOpacity>
-        
         <TouchableOpacity style={styles.bookFooterBtn} onPress={handleBookNow}>
           <Text style={styles.bookFooterBtnText}>Book Appointment</Text>
           <Ionicons name="arrow-forward" size={16} color={Colors.white} style={{ marginLeft: 6 }} />

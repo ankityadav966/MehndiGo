@@ -45,9 +45,11 @@ export default function BookingSummaryScreen({ route, navigation }) {
 
   const fetchPricingAndArtist = async (couponCode = null) => {
     try {
+      const slotIds = Array.isArray(slotId) ? slotId : (slotId ? [slotId] : []);
+      const slotCount = slotIds.length > 0 ? slotIds.length : 1;
       const [artistData, pricing] = await Promise.all([
         getArtistById(artistId),
-        getPriceDetails(serviceId, couponCode)
+        getPriceDetails(serviceId, couponCode, slotCount)
       ]);
       setArtist(artistData);
       setPriceDetails(pricing);

@@ -149,20 +149,31 @@ export default function BookingDetailsScreen({ route, navigation }) {
   const activeStepIndex = STEPS.findIndex((s) => s.key === currentDetailedStatus);
   const canChat = ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED"].includes(currentDetailedStatus);
 
+  const getMoment = () => {
+    const m = require("moment");
+    return typeof m === "function" ? m : (m.default || m);
+  };
+
   const formatTime = (timeVal) => {
     if (!timeVal) return "";
-    const moment = require("moment");
-    if (String(timeVal).includes("T") || (String(timeVal).includes("-") && String(timeVal).includes(":"))) {
-      return moment(timeVal).format("hh:mm A");
-    }
-    return moment(timeVal, ["HH:mm:ss", "HH:mm", "hh:mm A", "hh:mm"]).format("hh:mm A");
+    const localMoment = getMoment();
+    const formats = [
+      "YYYY-MM-DD HH:mm:ss",
+      "YYYY-MM-DDTHH:mm:ssZ",
+      "YYYY-MM-DDTHH:mm:ss.SSSZ",
+      "HH:mm:ss",
+      "HH:mm",
+      "hh:mm A",
+      "hh:mm"
+    ];
+    return localMoment(timeVal, formats).format("hh:mm A");
   };
 
   const formatDate = (dateVal) => {
     if (!dateVal) return "TBD";
     try {
-      const moment = require("moment");
-      return moment(dateVal).format("DD MMM YYYY (dddd)");
+      const localMoment = getMoment();
+      return localMoment(dateVal).format("DD MMM YYYY (dddd)");
     } catch (e) {
       return dateVal;
     }

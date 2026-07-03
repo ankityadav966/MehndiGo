@@ -5,18 +5,17 @@ const razorpay = require("../utils/razorpay");
 const crypto = require("crypto");
 
 class BookingService {
-  async calculatePriceDetails(serviceId, couponCode = null, userId = null) {
+  async calculatePriceDetails(serviceId, couponCode = null, userId = null, slotCount = 1) {
     const service = await db.Service.findByPk(serviceId);
     if (!service) {
       throw new AppError("Service not found", 404);
     }
 
     const servicePrice = service.minimum_price || 1500;
-    const travelCharges = 150; // Flat travel fee
-    const platformFee = 50; // Flat booking platform fee
+    const travelCharges = 150 * slotCount; // 150 INR flat per slot trip
+    const platformFee = 50; // platform fee per booking transaction
 
-    // Check discount offer price if available
-    const basePrice = servicePrice;
+    const basePrice = servicePrice * slotCount;
     let couponDiscount = 0;
 
     if (couponCode) {
@@ -44,7 +43,7 @@ class BookingService {
     const finalAmount = taxableAmount + gst;
 
     return {
-      servicePrice,
+      servicePrice: basePrice,
       travelCharges,
       couponDiscount,
       platformFee,
@@ -56,47 +55,59 @@ class BookingService {
   async createBooking(userId, data) {
     const { serviceId, artistId, slotId, address, landmark, notes, couponCode, latitude, longitude, selectedDate, timeLabel } = data;
 
+    const slotIds = Array.isArray(slotId) ? slotId : (slotId ? [slotId] : []);
+    const slotCount = slotIds.length > 0 ? slotIds.length : 1;
+
     const bookingResult = await db.sequelize.transaction(async (t) => {
-      let finalSlotId = slotId;
+      let finalSlotId = slotIds[0] || null;
 
       // Handle placeholder/dummy slot creations
-      if (!finalSlotId && selectedDate && timeLabel) {
-        let startTime = new Date(`${selectedDate}T10:00:00.000Z`);
-        let endTime = new Date(`${selectedDate}T13:00:00.000Z`);
-        if (String(timeLabel).includes("02:00 PM") || String(timeLabel).includes("14:00")) {
-          startTime = new Date(`${selectedDate}T14:00:00.000Z`);
-          endTime = new Date(`${selectedDate}T17:00:00.000Z`);
-        } else if (String(timeLabel).includes("06:00 PM") || String(timeLabel).includes("18:00")) {
-          startTime = new Date(`${selectedDate}T18:00:00.000Z`);
-          endTime = new Date(`${selectedDate}T21:00:00.000Z`);
-        }
+      if (slotIds.length === 0 && selectedDate && timeLabel) {
+        const dates = String(selectedDate).split(",");
+        const labels = String(timeLabel).split(",");
+        
+        for (let i = 0; i < dates.length; i++) {
+          const d = dates[i].trim();
+          const lbl = labels[i] ? labels[i].trim() : timeLabel;
+          
+          let startTime = new Date(`${d}T10:00:00.000Z`);
+          let endTime = new Date(`${d}T13:00:00.000Z`);
+          if (lbl.includes("02:00 PM") || lbl.includes("14:00")) {
+            startTime = new Date(`${d}T14:00:00.000Z`);
+            endTime = new Date(`${d}T17:00:00.000Z`);
+          } else if (lbl.includes("06:00 PM") || lbl.includes("18:00")) {
+            startTime = new Date(`${d}T18:00:00.000Z`);
+            endTime = new Date(`${d}T21:00:00.000Z`);
+          }
 
-        const newSlot = await db.AvailabilitySlot.create({
-          artist_id: artistId,
-          start_time: startTime,
-          end_time: endTime,
-          is_booked: false
-        }, { transaction: t });
-        finalSlotId = newSlot.id;
+          const newSlot = await db.AvailabilitySlot.create({
+            artist_id: artistId,
+            start_time: startTime,
+            end_time: endTime,
+            is_booked: true
+          }, { transaction: t });
+          
+          if (i === 0) {
+            finalSlotId = newSlot.id;
+          }
+        }
+      } else {
+        // Mark all real slots as booked
+        for (const id of slotIds) {
+          const slot = await db.AvailabilitySlot.findByPk(id, {
+            transaction: t,
+            lock: t.LOCK.UPDATE
+          });
+          if (slot) {
+            if (slot.is_booked) {
+              throw new AppError("One or more selected slots are already booked", 400);
+            }
+            await slot.update({ is_booked: true }, { transaction: t });
+          }
+        }
       }
 
-      // Verify slot is available with row lock
-      if (finalSlotId) {
-        const slot = await db.AvailabilitySlot.findByPk(finalSlotId, {
-          transaction: t,
-          lock: t.LOCK.UPDATE
-        });
-        if (!slot) {
-          throw new AppError("Availability slot not found", 404);
-        }
-        if (slot.is_booked) {
-          throw new AppError("Time slot already booked", 400);
-        }
-        // Mark slot occupied
-        await slot.update({ is_booked: true }, { transaction: t });
-      }
-
-      const pricing = await this.calculatePriceDetails(serviceId, couponCode, userId);
+      const pricing = await this.calculatePriceDetails(serviceId, couponCode, userId, slotCount);
       const bookingCode = `BK-${Math.floor(100000 + Math.random() * 900000)}`;
 
       const booking = await db.Booking.create({
@@ -120,9 +131,9 @@ class BookingService {
         coupon_code: couponCode || null,
         address,
         landmark: landmark || null,
-        notes: notes || null,
-        latitude: latitude || null,
-        longitude: longitude || null
+        notes: notes || `Total Booked Slots: ${slotCount}`,
+        latitude: latitude || 26.9124,
+        longitude: longitude || 75.7873
       }, { transaction: t });
 
       // Log initial history
@@ -130,7 +141,7 @@ class BookingService {
         booking_id: booking.id,
         status: "PENDING",
         changed_by: userId,
-        notes: "Booking requested by customer"
+        notes: `Booking requested by customer for ${slotCount} slots`
       }, { transaction: t });
 
       return booking;
@@ -358,7 +369,7 @@ class BookingService {
     await db.Invoice.create({
       booking_id: tx.booking_id,
       invoice_number: invoiceNum,
-      invoice_url: `https://mehndigo.com/invoices/${invoiceNum}.pdf`
+      invoice_url: `/payment/receipt/${tx.booking_id}`
     });
 
     return await this.getBookingDetails(tx.booking_id, userId, "CUSTOMER");
@@ -419,7 +430,7 @@ class BookingService {
               await db.Invoice.create({
                 booking_id: booking.id,
                 invoice_number: invoiceNum,
-                invoice_url: `https://mehndigo.com/invoices/${invoiceNum}.pdf`
+                invoice_url: `/payment/receipt/${booking.id}`
               });
               console.log(`[Invoice] Generated completion invoice ${invoiceNum} for booking #${booking.booking_code}`);
             }
@@ -464,9 +475,20 @@ class BookingService {
   }
 
   async getInvoice(bookingId) {
-    const invoice = await db.Invoice.findOne({
+    let invoice = await db.Invoice.findOne({
       where: { booking_id: bookingId }
     });
+    if (!invoice) {
+      const booking = await db.Booking.findByPk(bookingId);
+      if (booking && (booking.payment_status === "PAID" || booking.payment_status === "SUCCESS")) {
+        const invoiceNum = `INV-${Date.now()}`;
+        invoice = await db.Invoice.create({
+          booking_id: bookingId,
+          invoice_number: invoiceNum,
+          invoice_url: `/payment/receipt/${bookingId}`
+        });
+      }
+    }
     if (!invoice) {
       throw new AppError("Invoice not found", 404);
     }

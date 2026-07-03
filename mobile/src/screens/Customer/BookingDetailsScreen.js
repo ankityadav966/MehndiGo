@@ -125,14 +125,31 @@ export default function BookingDetailsScreen({ route, navigation }) {
     }
   };
 
-  const handleSubmitReview = () => {
+  const handleSubmitReview = async () => {
+    if (!rating) {
+      Alert.alert("Required", "Please select a rating star first.");
+      return;
+    }
     setSubmittingReview(true);
-    // Simulating submitting review to backend
-    setTimeout(() => {
+    try {
+      const { createNewReview } = require("../../services/review");
+      await createNewReview({
+        booking_id: bookingId,
+        artist_id: booking.artist_id,
+        rating,
+        review_text: reviewText
+      });
       setSubmittingReview(false);
       setReviewModalVisible(false);
-      Alert.alert("Review Published", "Thank you for reviewing Priya Mehendi Artist!");
-    }, 1000);
+      const artistName = booking.artist?.user?.name || "the artist";
+      Alert.alert(
+        "Review Published",
+        `Thank you for reviewing ${artistName}! Your feedback has been shared.`
+      );
+    } catch (err) {
+      setSubmittingReview(false);
+      Alert.alert("Error", err.message || "Failed to submit review.");
+    }
   };
 
   if (loading || !booking) {
@@ -146,22 +163,33 @@ export default function BookingDetailsScreen({ route, navigation }) {
   const currentDetailedStatus = booking.detailed_status || booking.booking_status || "PENDING";
   const activeStepIndex = STEPS.findIndex((s) => s.key === currentDetailedStatus);
 
-  const canChat = ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED"].includes(currentDetailedStatus);
+  const canChat = ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED", "COMPLETED"].includes(currentDetailedStatus);
+
+  const getMoment = () => {
+    const m = require("moment");
+    return typeof m === "function" ? m : (m.default || m);
+  };
 
   const formatTime = (timeVal) => {
     if (!timeVal) return "";
-    const moment = require("moment");
-    if (String(timeVal).includes("T") || (String(timeVal).includes("-") && String(timeVal).includes(":"))) {
-      return moment(timeVal).format("hh:mm A");
-    }
-    return moment(timeVal, ["HH:mm:ss", "HH:mm", "hh:mm A", "hh:mm"]).format("hh:mm A");
+    const localMoment = getMoment();
+    const formats = [
+      "YYYY-MM-DD HH:mm:ss",
+      "YYYY-MM-DDTHH:mm:ssZ",
+      "YYYY-MM-DDTHH:mm:ss.SSSZ",
+      "HH:mm:ss",
+      "HH:mm",
+      "hh:mm A",
+      "hh:mm"
+    ];
+    return localMoment(timeVal, formats).format("hh:mm A");
   };
 
   const formatDate = (dateVal) => {
     if (!dateVal) return "TBD";
     try {
-      const moment = require("moment");
-      return moment(dateVal).format("DD MMM YYYY (dddd)");
+      const localMoment = getMoment();
+      return localMoment(dateVal).format("DD MMM YYYY (dddd)");
     } catch (e) {
       return dateVal;
     }
@@ -228,7 +256,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
 
         <View style={styles.content}>
           <View style={styles.statusRow}>
-            <Text style={styles.bookingId}>Code: {booking.booking_code}</Text>
+            <Text style={styles.bookingId}>Code: {currentDetailedStatus === "CANCELLED" ? `${booking.booking_code} (Expired)` : booking.booking_code}</Text>
             <View
               style={[
                 styles.statusBadge,
@@ -310,35 +338,33 @@ export default function BookingDetailsScreen({ route, navigation }) {
           </View>
 
           {/* Action options */}
-          <View style={styles.actionsPanel}>
-            {/* Call artist */}
-            <TouchableOpacity
-              style={styles.actionBtn}
-              onPress={() => Linking.openURL(`tel:${booking.artist?.user?.phone || "9999999999"}`)}
-            >
-              <Ionicons name="call" size={16} color={Colors.white} />
-              <Text style={styles.actionBtnText}>Call Artist</Text>
-            </TouchableOpacity>
+          {canChat && (
+            <View style={styles.actionsPanel}>
+              {/* Call artist */}
+              <TouchableOpacity
+                style={styles.actionBtn}
+                onPress={() => Linking.openURL(`tel:${booking.artist?.user?.phone || "9999999999"}`)}
+              >
+                <Ionicons name="call" size={16} color={Colors.white} />
+                <Text style={styles.actionBtnText}>Call Artist</Text>
+              </TouchableOpacity>
 
-            {/* Message Chat artist */}
-            <TouchableOpacity
-              style={[styles.actionBtn, !canChat && styles.disabledActionBtn, { backgroundColor: Colors.success }]}
-              onPress={() => {
-                if (!canChat) {
-                  Alert.alert("Denied", "You can only chat after payment and booking confirmation.");
-                  return;
-                }
-                navigation.navigate("ChatRoom", {
-                  receiverId: booking.artist?.user_id,
-                  receiverName: booking.artist?.user?.name,
-                  receiverImage: booking.artist?.user?.profile_image
-                });
-              }}
-            >
-              <Ionicons name="chatbubbles" size={16} color={Colors.white} />
-              <Text style={styles.actionBtnText}>Message Artist</Text>
-            </TouchableOpacity>
-          </View>
+              {/* Message Chat artist */}
+              <TouchableOpacity
+                style={[styles.actionBtn, { backgroundColor: Colors.success }]}
+                onPress={() => {
+                  navigation.navigate("ChatRoom", {
+                    receiverId: booking.artist?.user_id,
+                    receiverName: booking.artist?.user?.name,
+                    receiverImage: booking.artist?.user?.profile_image
+                  });
+                }}
+              >
+                <Ionicons name="chatbubbles" size={16} color={Colors.white} />
+                <Text style={styles.actionBtnText}>Message Artist</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* Reschedule option */}
           {["PENDING", "CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED"].includes(currentDetailedStatus) && (

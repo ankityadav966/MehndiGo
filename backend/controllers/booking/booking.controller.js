@@ -3,8 +3,9 @@ const { SuccessResponse, ErrorResponse } = require("../../utils/common");
 
 async function calculatePriceDetails(req, res) {
   try {
-    const { serviceId, couponCode } = req.query;
-    const response = await BookingService.calculatePriceDetails(serviceId, couponCode, req.user ? req.user.id : null);
+    const { serviceId, couponCode, slotCount } = req.query;
+    const count = slotCount ? parseInt(slotCount) : 1;
+    const response = await BookingService.calculatePriceDetails(serviceId, couponCode, req.user ? req.user.id : null, count);
     return res.status(200).json(SuccessResponse("Pricing details calculated successfully", response));
   } catch (error) {
     return res
