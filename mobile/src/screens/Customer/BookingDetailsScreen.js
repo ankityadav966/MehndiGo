@@ -364,6 +364,10 @@ export default function BookingDetailsScreen({ route, navigation }) {
           </Text>
 
           <View style={styles.card}>
+            <DetailRow icon="person-outline" label="Artist ID" value={`ART-${booking.artist_id}`} />
+            <DetailRow icon="bookmark-outline" label="Booking ID" value={`#${booking.booking_code}`} />
+            <DetailRow icon="information-circle-outline" label="Booking Status" value={currentDetailedStatus} />
+            <DetailRow icon="cash-outline" label="Payment Status" value={booking.payment_status} />
             <DetailRow
               icon="calendar-outline"
               label="Date"
@@ -377,6 +381,9 @@ export default function BookingDetailsScreen({ route, navigation }) {
             <DetailRow icon="location-outline" label="Location" value={booking.address} />
             {booking.landmark && (
               <DetailRow icon="pin-outline" label="Landmark" value={booking.landmark} />
+            )}
+            {booking.cancel_reason && (
+              <DetailRow icon="close-circle-outline" label="Rejection Reason" value={booking.cancel_reason} />
             )}
             <DetailRow
               icon="wallet-outline"

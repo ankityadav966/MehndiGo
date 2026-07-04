@@ -152,6 +152,42 @@ class BookingService {
       return booking;
     });
 
+    // Notify artist and trigger real-time updates
+    try {
+      const artist = await db.ArtistProfile.findByPk(artistId);
+      if (artist) {
+        const slot = bookingResult.slot_id ? await db.AvailabilitySlot.findByPk(bookingResult.slot_id) : null;
+        const dateStr = slot?.date ? new Date(slot.date).toLocaleDateString() : (bookingResult.reschedule_date || "TBD");
+        
+        const customer = await db.User.findByPk(userId);
+        const customerName = customer?.name || "A customer";
+
+        await db.Notification.create({
+          user_id: artist.user_id,
+          title: "New Booking Request",
+          message: `You have received a new booking request from ${customerName}.`,
+          type: "BOOKING",
+          data: JSON.stringify({
+            bookingId: bookingResult.id,
+            booking_id: bookingResult.id,
+            customerName: customerName,
+            bookingDate: dateStr,
+            bookingTime: bookingResult.slot_id ? "Scheduled slot" : (bookingResult.reschedule_time || "TBD")
+          })
+        });
+
+        // Emit real-time booking event to the artist's socket room
+        const { getIO } = require("../sockets/socket");
+        const io = getIO();
+        io.to(artist.user_id.toString()).emit("booking_created", {
+          bookingId: bookingResult.id,
+          bookingCode: bookingResult.booking_code
+        });
+      }
+    } catch (err) {
+      console.error("Error in createBooking real-time notification dispatch:", err.message);
+    }
+
     return await this.getBookingDetails(bookingResult.id, userId, "CUSTOMER");
   }
 
@@ -353,20 +389,23 @@ class BookingService {
       status: "SUCCESS"
     });
 
+    const bookingBefore = await db.Booking.findByPk(tx.booking_id);
+    const isCompletedBooking = bookingBefore && (bookingBefore.booking_status === "COMPLETED" || ["CASH_DISPUTED", "AWAITING_CASH_CONFIRMATION"].includes(bookingBefore.detailed_status));
+
     await db.Booking.update(
       {
         payment_status: "PAID",
-        booking_status: "CONFIRMED",
-        detailed_status: "CONFIRMED"
+        booking_status: isCompletedBooking ? "COMPLETED" : "CONFIRMED",
+        detailed_status: isCompletedBooking ? "COMPLETED" : "CONFIRMED"
       },
       { where: { id: tx.booking_id } }
     );
 
     await db.BookingStatusHistory.create({
       booking_id: tx.booking_id,
-      status: "CONFIRMED",
+      status: isCompletedBooking ? "COMPLETED" : "CONFIRMED",
       changed_by: userId,
-      notes: "Payment verified successfully. Booking confirmed."
+      notes: "Payment verified successfully. Booking updated."
     });
 
     // Create Invoice record
@@ -379,6 +418,27 @@ class BookingService {
 
     const booking = await db.Booking.findByPk(tx.booking_id);
     if (booking) {
+      // 1. Notify artist
+      const artistProfile = await db.ArtistProfile.findByPk(booking.artist_id);
+      if (artistProfile) {
+        await db.Notification.create({
+          user_id: artistProfile.user_id,
+          title: "Payment Received Successfully",
+          message: `The customer has completed the online payment for Booking #${booking.booking_code}.`,
+          type: "PAYMENT",
+          data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
+        });
+      }
+
+      // 2. Notify customer
+      await db.Notification.create({
+        user_id: booking.user_id,
+        title: "Payment Verified",
+        message: `Your payment of ₹${booking.final_amount} for Booking #${booking.booking_code} has been verified successfully.`,
+        type: "PAYMENT",
+        data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
+      });
+
       const PaymentService = require("./payment.services");
       try {
         await PaymentService.processPaymentDistribution(booking);
@@ -486,11 +546,39 @@ class BookingService {
       : booking.user_id;
 
     if (userToNotify) {
+      let notificationTitle = `Booking Update: ${newStatus}`;
+      let notificationMessage = `Booking #${booking.booking_code} status has been updated to ${newStatus}`;
+      let notificationType = "SYSTEM";
+      let notificationData = { bookingId: booking.id, booking_id: booking.id };
+
+      if (newStatus === "CANCELLED" && role !== "CUSTOMER") {
+        const artist = await db.ArtistProfile.findOne({
+          where: { id: booking.artist_id },
+          include: [{ model: db.User, as: "user", attributes: ["name"] }]
+        });
+        const artistName = artist?.user?.name || "The artist";
+        
+        notificationTitle = "Booking Update";
+        notificationMessage = "Your booking/payment request has been rejected by the artist. Please review the booking and complete the payment again if required.";
+        notificationType = "BOOKING";
+        
+        notificationData = {
+          bookingId: booking.id,
+          booking_id: booking.id,
+          artistId: booking.artist_id,
+          artistName: artistName,
+          bookingDate: booking.slot_id ? (await db.AvailabilitySlot.findByPk(booking.slot_id))?.date : null,
+          paymentStatus: booking.payment_status,
+          rejectionReason: extraData.cancelReason || "Rejected by artist"
+        };
+      }
+
       await db.Notification.create({
         user_id: userToNotify,
-        title: `Booking Update: ${newStatus}`,
-        message: `Booking #${booking.booking_code} status has been updated to ${newStatus}`,
-        type: "SYSTEM"
+        title: notificationTitle,
+        message: notificationMessage,
+        type: notificationType,
+        data: JSON.stringify(notificationData)
       });
     }
 
@@ -535,6 +623,7 @@ class BookingService {
     }
 
     await booking.update({
+      booking_status: "COMPLETED",
       detailed_status: "AWAITING_CASH_CONFIRMATION"
     });
 

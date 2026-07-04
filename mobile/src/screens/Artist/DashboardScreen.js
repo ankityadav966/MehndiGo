@@ -15,8 +15,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import Colors from "../../constants/Colors";
 import { useAuth } from "../../context/AuthContext";
+import { useSocket } from "../../context/SocketContext";
 import { getArtistDashboardData } from "../../services/artist";
-import { confirmCashPayment, rejectCashPayment } from "../../services/booking";
+import { confirmCashPayment, rejectCashPayment, acceptBooking, rejectBooking } from "../../services/booking";
 import Alert from "../../utils/Alert";
 
 export default function ArtistDashboardScreen({ navigation }) {
@@ -56,6 +57,22 @@ export default function ArtistDashboardScreen({ navigation }) {
       setRefreshing(false);
     }
   }, [user]);
+
+  const { socket } = useSocket();
+
+  useEffect(() => {
+    if (socket) {
+      const handleBookingUpdate = () => {
+        fetchDashboardDetails();
+      };
+      socket.on("booking_created", handleBookingUpdate);
+      socket.on("new_notification", handleBookingUpdate);
+      return () => {
+        socket.off("booking_created", handleBookingUpdate);
+        socket.off("new_notification", handleBookingUpdate);
+      };
+    }
+  }, [socket]);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -199,6 +216,90 @@ export default function ArtistDashboardScreen({ navigation }) {
             </TouchableOpacity>
           ))}
         </ScrollView>
+
+        {/* Pending Bookings Section */}
+        {dashboard?.recentBookings?.filter(b => b.booking_status === "PENDING").length > 0 && (
+          <View style={styles.cashSection}>
+            <Text style={styles.sectionTitle}>Pending Bookings</Text>
+            {dashboard.recentBookings.filter(b => b.booking_status === "PENDING").map((item) => {
+              const paymentRecord = item.payments && item.payments[0];
+              const paymentMethod = paymentRecord?.payment_method || "Online";
+              const paymentStatus = paymentRecord?.status || item.payment_status || "PENDING";
+              const slotDate = item.slot?.date ? new Date(item.slot.date).toLocaleDateString() : (item.reschedule_date || "TBD");
+              const slotTime = item.slot ? `${new Date(item.slot.start_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - ${new Date(item.slot.end_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` : (item.reschedule_time || "TBD");
+              
+              return (
+                <View key={item.id} style={styles.cashConfirmCard}>
+                  <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
+                    <Image 
+                      source={{ uri: item.user?.profile_image || "https://picsum.photos/200" }} 
+                      style={{ width: 40, height: 40, borderRadius: 20, marginRight: 10 }}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.cashCustomer} numberOfLines={1} adjustsFontSizeToFit={true}>Customer Name: {item.user?.name || "Client"}</Text>
+                      <Text style={styles.cashBookingCode} numberOfLines={1} adjustsFontSizeToFit={true}>Service Name: {item.service?.specialization_name || "Mehndi Design"}</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.cashBookingCode} numberOfLines={1} adjustsFontSizeToFit={true}>Booking ID: #{item.booking_code}</Text>
+                  <Text style={styles.cashBookingCode} numberOfLines={1} adjustsFontSizeToFit={true}>Booking Date: {slotDate}</Text>
+                  <Text style={styles.cashBookingCode} numberOfLines={1} adjustsFontSizeToFit={true}>Booking Time: {slotTime}</Text>
+                  <Text style={styles.cashBookingCode} numberOfLines={1} adjustsFontSizeToFit={true}>Booking Amount: ₹{item.final_amount}</Text>
+                  <Text style={styles.cashBookingCode} numberOfLines={1} adjustsFontSizeToFit={true}>Payment Method: {paymentMethod}</Text>
+                  <Text style={styles.cashBookingCode} numberOfLines={1} adjustsFontSizeToFit={true}>Booking Status: {item.booking_status}</Text>
+                  <Text style={styles.cashBookingCode} numberOfLines={1} adjustsFontSizeToFit={true}>Payment Status: {paymentStatus}</Text>
+                  
+                  <View style={styles.cashActionsRow}>
+                    <TouchableOpacity
+                      style={[styles.cashBtn, { backgroundColor: Colors.success }]}
+                      onPress={async () => {
+                        try {
+                          setLoading(true);
+                          await acceptBooking(item.id);
+                          Alert.alert("Success", "Booking request accepted successfully!");
+                          fetchDashboardDetails();
+                        } catch (err) {
+                          Alert.alert("Error", err.message || "Failed to accept booking.");
+                          setLoading(false);
+                        }
+                      }}
+                    >
+                      <Text style={styles.cashBtnText} numberOfLines={1} adjustsFontSizeToFit={true}>✅ Accept Booking</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.cashBtn, { backgroundColor: "#EF4444" }]}
+                      onPress={() => {
+                        Alert.alert(
+                          "Decline Booking",
+                          "Are you sure you want to decline this booking request?",
+                          [
+                            { text: "Cancel", style: "cancel" },
+                            {
+                              text: "Decline",
+                              style: "destructive",
+                              onPress: async () => {
+                                try {
+                                  setLoading(true);
+                                  await rejectBooking(item.id, "Declined by artist");
+                                  Alert.alert("Declined", "Booking request declined.");
+                                  fetchDashboardDetails();
+                                } catch (err) {
+                                  Alert.alert("Error", err.message || "Failed to decline booking.");
+                                  setLoading(false);
+                                }
+                              }
+                            }
+                          ]
+                        );
+                      }}
+                    >
+                      <Text style={styles.cashBtnText} numberOfLines={1} adjustsFontSizeToFit={true}>❌ Decline Booking</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
 
         {/* Pending Cash Payment Requests Section */}
         {dashboard?.recentBookings?.filter(b => b.detailed_status === "AWAITING_CASH_CONFIRMATION" || b.booking_status === "AWAITING_CASH_CONFIRMATION").length > 0 && (

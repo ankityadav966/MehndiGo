@@ -18,7 +18,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.sonuy123.mehendigoo"
+      "package": "com.sonuy123.mehendigoo",
+      "usesCleartextTraffic": true
     },
     "plugins": [
       [

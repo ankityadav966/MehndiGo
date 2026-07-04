@@ -65,7 +65,29 @@ export default function NotificationsScreen({ navigation }) {
           prev.map((n) => (n.id === item.id ? { ...n, is_read: true } : n))
         );
       }
-      navigation.navigate("NotificationDetails", { id: item.id, notification: item });
+      
+      let meta = {};
+      if (item.data) {
+        try {
+          meta = typeof item.data === "string" ? JSON.parse(item.data) : item.data;
+        } catch (e) {}
+      }
+
+      const type = item.type ? item.type.toLowerCase() : "";
+      const title = (item.title || "").toLowerCase();
+      const message = (item.message || "").toLowerCase();
+      const bookingId = meta.bookingId || meta.booking_id;
+
+      const isCashRequest = title.includes("cash") || message.includes("cash") || type === "cash_request";
+      const isBooking = type === "booking" || title.includes("booking") || message.includes("booking");
+
+      if (isCashRequest) {
+        navigation.navigate("ArtistTabs", { screen: "Dashboard" });
+      } else if (isBooking && bookingId) {
+        navigation.navigate("BookingDetails", { bookingId: bookingId });
+      } else {
+        navigation.navigate("NotificationDetails", { id: item.id, notification: item });
+      }
     } catch (err) {
       navigation.navigate("NotificationDetails", { id: item.id, notification: item });
     }

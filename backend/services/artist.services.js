@@ -1240,11 +1240,13 @@ async createReview(data) {
 
     const recentBookings = await db.Booking.findAll({
       where: { artist_id: artist.id },
-      limit: 5,
+      limit: 20,
       order: [["createdAt", "DESC"]],
       include: [
-        { model: db.User, as: "user", attributes: ["name"] },
-        { model: db.Service, as: "service", attributes: ["specialization_name"] }
+        { model: db.User, as: "user", attributes: ["name", "profile_image"] },
+        { model: db.Service, as: "service", attributes: ["specialization_name"] },
+        { model: db.AvailabilitySlot, as: "slot", attributes: ["date", "start_time", "end_time"] },
+        { model: db.Payment, as: "payments", attributes: ["payment_method", "status"] }
       ]
     });
 
