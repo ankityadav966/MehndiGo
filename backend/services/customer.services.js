@@ -30,6 +30,7 @@ const trendingSearchesList = [
   "Delhi",
 ];
 
+class CustomerService {
   async getCategories() {
     try {
       const db = require("../models");
