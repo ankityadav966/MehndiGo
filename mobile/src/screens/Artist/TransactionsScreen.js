@@ -11,7 +11,7 @@ export default function TransactionsScreen({ navigation }) {
     { id: "1", title: "Booking Payment", date: "24 May 2024", amount: "+₹10,000", type: "Income" },
     { id: "2", title: "Advance Received", date: "20 May 2024", amount: "+₹2,000", type: "Income" },
     { id: "3", title: "Withdrawal", date: "18 May 2024", amount: "-₹5,000", type: "Expense" },
-    { id: "4", title: "Refund", date: "15 May 2024", amount: "-₹1,000", type: "Expense" },
+    { id: "4", title: "Refund", date: "15 May 2025", amount: "-₹1,000", type: "Expense" },
   ];
 
   const filteredData = selectedTab === "All" ? transactions : transactions.filter((item) => item.type === selectedTab);
