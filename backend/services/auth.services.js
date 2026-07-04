@@ -158,6 +158,12 @@ class AuthService {
         last_login_at: new Date()
       });
     } else {
+      const isNewDay = !user.last_login_at || new Date(user.last_login_at).toDateString() !== new Date().toDateString();
+      if (isNewDay) {
+        const xpService = require("./xp.services");
+        await xpService.awardXp(user.id, 20, "Daily Login Bonus");
+      }
+
       const updateData = {
         is_verified: true,
         last_login_at: new Date()

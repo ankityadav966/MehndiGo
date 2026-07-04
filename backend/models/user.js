@@ -29,6 +29,21 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: "user_id",
         as: "addresses"
       });
+
+      User.hasMany(models.XpLog, {
+        foreignKey: "user_id",
+        as: "xpLogs"
+      });
+
+      User.hasMany(models.UserBadge, {
+        foreignKey: "user_id",
+        as: "badges"
+      });
+
+      User.hasMany(models.RewardClaim, {
+        foreignKey: "user_id",
+        as: "rewardClaims"
+      });
     }
   }
 
@@ -108,6 +123,35 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.BOOLEAN,
         allowNull: false,
         defaultValue: false,
+      },
+      current_level: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 1
+      },
+      current_xp: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0
+      },
+      lifetime_xp: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0
+      },
+      ambassador_tier: {
+        type: DataTypes.ENUM("BEGINNER", "BRONZE", "SILVER", "GOLD", "PLATINUM", "DIAMOND", "ELITE"),
+        allowNull: false,
+        defaultValue: "BEGINNER"
+      },
+      ambassador_score: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0
+      },
+      device_uuid: {
+        type: DataTypes.STRING,
+        allowNull: true
       },
     },
     {

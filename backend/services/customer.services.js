@@ -705,31 +705,74 @@ class CustomerService {
   }
 
   async getDashboard(userId) {
-    const user = await db.User.findByPk(userId, {
-      attributes: ["id", "name", "phone", "email", "profile_image", "createdAt"]
-    });
-    if (!user) throw new Error("User not found");
-
-    const wallet = await db.Wallet.findOne({ where: { user_id: userId } });
-
-    const totalBookings = await db.Booking.count({ where: { user_id: userId } });
-    const recentBookings = await db.Booking.findAll({
-      where: { user_id: userId },
-      limit: 3,
-      order: [["createdAt", "DESC"]],
-      include: [
-        {
-          model: db.ArtistProfile,
-          as: "artist",
-          include: [{ model: db.User, as: "user", attributes: ["name", "profile_image"] }]
+    const [user, wallet, totalBookings, recentBookings, pendingReviewBooking, pendingSettlementBooking] = await Promise.all([
+      db.User.findByPk(userId, {
+        attributes: ["id", "name", "phone", "email", "profile_image", "createdAt"]
+      }),
+      db.Wallet.findOne({ where: { user_id: userId } }),
+      db.Booking.count({ where: { user_id: userId } }),
+      db.Booking.findAll({
+        where: { user_id: userId },
+        limit: 3,
+        order: [["createdAt", "DESC"]],
+        include: [
+          {
+            model: db.ArtistProfile,
+            as: "artist",
+            include: [{ model: db.User, as: "user", attributes: ["name", "profile_image"] }]
+          },
+          {
+            model: db.Service,
+            as: "service",
+            attributes: ["specialization_name", "minimum_price"]
+          }
+        ]
+      }),
+      db.Booking.findOne({
+        where: {
+          user_id: userId,
+          booking_status: "COMPLETED",
+          payment_status: "PAID",
+          review_skipped: false
         },
-        {
-          model: db.Service,
-          as: "service",
-          attributes: ["specialization_name", "minimum_price"]
-        }
-      ]
-    });
+        include: [
+          {
+            model: db.ArtistProfile,
+            as: "artist",
+            include: [{ model: db.User, as: "user", attributes: ["name", "profile_image"] }]
+          },
+          {
+            model: db.Service,
+            as: "service",
+            attributes: ["specialization_name", "minimum_price"]
+          }
+        ],
+        order: [["updatedAt", "DESC"]]
+      }),
+      db.Booking.findOne({
+        where: {
+          user_id: userId,
+          booking_status: "COMPLETED",
+          payment_status: "PENDING",
+          detailed_status: { [db.Sequelize.Op.notIn]: ["COMPLETED_CLOSED", "CASH_DISPUTED"] }
+        },
+        include: [
+          {
+            model: db.ArtistProfile,
+            as: "artist",
+            include: [{ model: db.User, as: "user", attributes: ["name", "profile_image"] }]
+          },
+          {
+            model: db.Service,
+            as: "service",
+            attributes: ["specialization_name", "minimum_price"]
+          }
+        ],
+        order: [["updatedAt", "DESC"]]
+      })
+    ]);
+
+    if (!user) throw new Error("User not found");
 
     let filledFields = 0;
     const totalFields = 4;
@@ -738,6 +781,14 @@ class CustomerService {
     if (user.email) filledFields++;
     if (user.profile_image) filledFields++;
     const profileCompletion = Math.round((filledFields / totalFields) * 100);
+
+    let finalPendingReviewBooking = null;
+    if (pendingReviewBooking) {
+      const isReviewed = await db.Review.findOne({ where: { booking_id: pendingReviewBooking.id } });
+      if (!isReviewed) {
+        finalPendingReviewBooking = pendingReviewBooking;
+      }
+    }
 
     return {
       user: {
@@ -752,7 +803,9 @@ class CustomerService {
       },
       walletBalance: wallet ? wallet.balance : 0,
       totalBookings,
-      recentBookings
+      recentBookings,
+      pendingReviewBooking: finalPendingReviewBooking,
+      pendingSettlementBooking: pendingSettlementBooking
     };
   }
 

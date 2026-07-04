@@ -49,6 +49,8 @@ const ReferralController = require("../../controllers/referral/referral.controll
 router.get("/referral/campaigns", authenticate, authorize("ADMIN"), ReferralController.adminGetCampaigns);
 router.post("/referral/campaign", authenticate, authorize("ADMIN"), ReferralController.adminCreateCampaign);
 router.get("/referral/analytics", authenticate, authorize("ADMIN"), ReferralController.adminGetAnalytics);
+router.get("/referral/config", authenticate, authorize("ADMIN"), ReferralController.adminGetConfig);
+router.post("/referral/config", authenticate, authorize("ADMIN"), ReferralController.adminUpdateConfig);
 
 // Withdrawal Requests Management
 router.get("/withdrawals", authenticate, authorize("ADMIN"), AdminController.getAllWithdrawals);

@@ -84,6 +84,51 @@ class ReviewService {
     });
 
     await this.recalculateArtistRating(booking.artist_id);
+
+    // Update booking status to COMPLETED_CLOSED
+    await booking.update({ detailed_status: "COMPLETED_CLOSED" });
+
+    // Send notifications
+    try {
+      // Notify Artist about review
+      const artistProfile = await db.ArtistProfile.findByPk(booking.artist_id);
+      if (artistProfile) {
+        await db.Notification.create({
+          user_id: artistProfile.user_id,
+          title: "New Review Received! ⭐️",
+          message: `Congratulations! A customer left a ${rating}-star review for booking #${booking.booking_code}.`,
+          type: "SYSTEM"
+        });
+      }
+
+      // Notify Customer & Artist about Chat & Booking Closure
+      await db.Notification.create({
+        user_id: userId,
+        title: "Booking Closed & Chat Session Terminated 🔒",
+        message: `Your booking #${booking.booking_code} lifecycle is now fully closed. Chat history is preserved as read-only.`,
+        type: "SYSTEM"
+      });
+
+      if (artistProfile) {
+        await db.Notification.create({
+          user_id: artistProfile.user_id,
+          title: "Booking Closed & Chat Session Terminated 🔒",
+          message: `Booking #${booking.booking_code} lifecycle is now fully closed. Chat history is preserved as read-only.`,
+          type: "SYSTEM"
+        });
+      }
+    } catch (notifErr) {
+      console.error("[Review Notifications] Error creating closure notifications:", notifErr.message);
+    }
+
+    // Award review creation XP (+50 XP)
+    try {
+      const xpService = require("./xp.services");
+      await xpService.awardXp(userId, 50, "Submitted a Review", review.id);
+    } catch (e) {
+      console.error("[Review XP] Error awarding review XP:", e.message);
+    }
+
     return review;
   }
 

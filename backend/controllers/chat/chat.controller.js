@@ -59,13 +59,23 @@ async function getChatAuthContext(userId, bookingId) {
   const isConfirmed = allowedStatuses.includes(status);
   const isCompleted = status === "COMPLETED";
 
-  // Check 7 days completion grace period
+  const reviewCount = await db.Review.count({ where: { booking_id: bookingId } });
+  const hasReviewed = reviewCount > 0;
+  const isSkipped = booking.review_skipped || false;
+
+  // Check 7 days completion grace period or review completion
   let active = isConfirmed && !isUserBlocked;
   if (isCompleted && !isUserBlocked) {
-    const completionTime = new Date(booking.updatedAt).getTime();
-    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
-    if (Date.now() - completionTime < sevenDaysMs) {
-      active = true;
+    if (hasReviewed || isSkipped) {
+      active = false;
+    } else {
+      const completionTime = new Date(booking.updatedAt).getTime();
+      const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+      if (Date.now() - completionTime < sevenDaysMs) {
+        active = true;
+      } else {
+        active = false;
+      }
     }
   }
 
@@ -144,8 +154,16 @@ async function getChatList(req, res) {
       const status = b.detailed_status || b.booking_status;
       const isCompleted = status === "COMPLETED";
 
-      // 7 days completion grace check
+      // 7 days completion grace check & review check
       if (isCompleted) {
+        const reviewCount = await db.Review.count({ where: { booking_id: b.id } });
+        const hasReviewed = reviewCount > 0;
+        const isSkipped = b.review_skipped || false;
+
+        if (hasReviewed || isSkipped) {
+          continue; // Skip closed chats
+        }
+
         const completionTime = new Date(b.updatedAt).getTime();
         const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
         if (Date.now() - completionTime >= sevenDaysMs) {
@@ -456,6 +474,11 @@ async function deleteMessage(req, res) {
       return res.status(404).json(ErrorResponse("Message not found"));
     }
 
+    const auth = await getChatAuthContext(userId, message.booking_id);
+    if (!auth || !auth.active) {
+      return res.status(400).json(ErrorResponse("This chat session is closed. Message deletion is disabled."));
+    }
+
     if (delete_type === "everyone") {
       if (message.sender_id !== userId) {
         return res.status(403).json(ErrorResponse("You can only delete your own messages for everyone"));
@@ -671,6 +694,11 @@ async function editMessage(req, res) {
     const msg = await db.Message.findByPk(messageId);
     if (!msg) {
       return res.status(404).json(ErrorResponse("Message not found"));
+    }
+
+    const auth = await getChatAuthContext(userId, msg.booking_id);
+    if (!auth || !auth.active) {
+      return res.status(400).json(ErrorResponse("This chat session is closed. Message editing is disabled."));
     }
 
     if (msg.sender_id !== userId) {

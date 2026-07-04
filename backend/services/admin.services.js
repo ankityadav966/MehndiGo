@@ -111,6 +111,14 @@ class AdminService {
         type: "SYSTEM"
       });
     } catch (e) {}
+    // Trigger referred artist milestones evaluation
+    try {
+      const xpService = require("./xp.services");
+      await xpService.evaluateArtistMilestone(artist.user_id);
+    } catch (err) {
+      console.error("[Milestones Trigger] Error evaluating milestones on approval:", err.message);
+    }
+
     return true;
   }
 

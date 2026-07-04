@@ -95,6 +95,15 @@ class ArtistService {
     };
     
     await ArtistProfileRepositor.update(artist.id, allowedUpdates);
+
+    // Trigger referred artist milestones evaluation
+    try {
+      const xpService = require("./xp.services");
+      await xpService.evaluateArtistMilestone(userId);
+    } catch (err) {
+      console.error("[Milestones Trigger] Error evaluating milestones on profile update:", err.message);
+    }
+
     return await ArtistProfileRepositor.getArtistDetails(userId);
   }
 
@@ -1198,11 +1207,36 @@ async createReview(data) {
       });
     }
 
-    const pendingRequests = await db.Booking.count({
-      where: { artist_id: artist.id, booking_status: "PENDING" }
-    });
+    const [
+      pendingRequests,
+      upcomingBookingsCount,
+      acceptedBookingsCount,
+      ongoingBookingsCount,
+      completedBookingsCount,
+      awaitingSettlementCount,
+      pendingCashApprovalCount,
+      cancelledBookingsCount,
+      wallet
+    ] = await Promise.all([
+      db.Booking.count({ where: { artist_id: artist.id, booking_status: "PENDING" } }),
+      db.Booking.count({ where: { artist_id: artist.id, booking_status: "CONFIRMED" } }),
+      db.Booking.count({ where: { artist_id: artist.id, detailed_status: "ARTIST_ACCEPTED" } }),
+      db.Booking.count({ where: { artist_id: artist.id, detailed_status: "SERVICE_STARTED" } }),
+      db.Booking.count({ where: { artist_id: artist.id, booking_status: "COMPLETED" } }),
+      db.Booking.count({
+        where: {
+          artist_id: artist.id,
+          booking_status: "COMPLETED",
+          detailed_status: { [db.Sequelize.Op.ne]: "COMPLETED_CLOSED" },
+          payment_status: "PENDING"
+        }
+      }),
+      db.Booking.count({ where: { artist_id: artist.id, detailed_status: "AWAITING_CASH_CONFIRMATION" } }),
+      db.Booking.count({ where: { artist_id: artist.id, booking_status: "CANCELLED" } }),
+      db.Wallet.findOne({ where: { user_id: userId } })
+    ]);
 
-    const wallet = await db.Wallet.findOne({ where: { user_id: userId } });
+    const pendingBookingsCount = pendingRequests;
 
     const recentBookings = await db.Booking.findAll({
       where: { artist_id: artist.id },
@@ -1228,7 +1262,17 @@ async createReview(data) {
       todayEarnings: todayEarnings || 0,
       pendingRequests,
       walletBalance: wallet ? wallet.balance : 0,
-      recentBookings
+      recentBookings,
+      bookingCounts: {
+        PENDING: pendingBookingsCount,
+        UPCOMING: upcomingBookingsCount,
+        ACCEPTED: acceptedBookingsCount,
+        ONGOING: ongoingBookingsCount,
+        COMPLETED: completedBookingsCount,
+        AWAITING_SETTLEMENT: awaitingSettlementCount,
+        PENDING_CASH_APPROVAL: pendingCashApprovalCount,
+        CANCELLED: cancelledBookingsCount
+      }
     };
   }
 

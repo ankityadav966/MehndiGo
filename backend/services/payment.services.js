@@ -103,20 +103,28 @@ class PaymentService {
     );
 
     // Update booking status
-    await db.Booking.update(
-      {
-        payment_status: "PAID",
-        booking_status: "CONFIRMED",
-        detailed_status: "CONFIRMED"
-      },
-      { where: { id: tx.booking_id } }
-    );
+    const bookingObj = await db.Booking.findByPk(tx.booking_id);
+    if (!bookingObj) {
+      throw new AppError("Booking not found", 404);
+    }
+
+    const isCompleted = bookingObj.booking_status === "COMPLETED";
+    const targetBookingStatus = isCompleted ? "COMPLETED" : "CONFIRMED";
+    const targetDetailedStatus = isCompleted ? "COMPLETED" : "CONFIRMED";
+
+    await bookingObj.update({
+      payment_status: "PAID",
+      booking_status: targetBookingStatus,
+      detailed_status: targetDetailedStatus
+    });
 
     await db.BookingStatusHistory.create({
       booking_id: tx.booking_id,
-      status: "CONFIRMED",
+      status: targetBookingStatus,
       changed_by: userId,
-      notes: "Payment verified successfully. Booking confirmed."
+      notes: isCompleted 
+        ? "Payment verified successfully for completed booking. Settlement complete." 
+        : "Payment verified successfully. Booking confirmed."
     });
 
     // Create Invoice record
@@ -146,31 +154,14 @@ class PaymentService {
         });
         console.log(`[WalletTx] Logged payment transaction of ₹${booking.final_amount} for booking #${booking.booking_code}`);
 
-        // Artist Wallet Credit and WalletTransaction logging
+        // Artist Wallet Escrow Credit and Platform Commission splitting
         try {
-          const artistProfile = await db.ArtistProfile.findByPk(booking.artist_id);
-          if (artistProfile) {
-            const [artistWallet] = await db.Wallet.findOrCreate({
-              where: { user_id: artistProfile.user_id },
-              defaults: { balance: 0 }
-            });
-            const creditAmount = booking.final_amount;
-            await artistWallet.increment('balance', { by: creditAmount });
-            
-            const customerUser = await db.User.findByPk(booking.user_id);
-            const customerName = customerUser ? customerUser.name : "Client";
-            await db.WalletTransaction.create({
-              wallet_id: artistWallet.id,
-              booking_id: booking.id,
-              transaction_type: "PAYMENT",
-              amount: creditAmount,
-              status: "SUCCESS",
-              description: `Payment from ${customerName} (#${booking.booking_code})`
-            });
-            console.log(`[WalletTx] Credited ₹${creditAmount} to artist user ID ${artistProfile.user_id} wallet`);
+          await this.processPaymentDistribution(booking);
+          if (booking.booking_status === "COMPLETED") {
+            await this.completeBookingSettlement(booking.id);
           }
         } catch (artistTxErr) {
-          console.error("Error updating artist wallet/creating transaction log:", artistTxErr.message);
+          console.error("Error running payment distribution on verification:", artistTxErr.message);
         }
       } catch (walletTxErr) {
         console.error("Error creating WalletTransaction log:", walletTxErr.message);
@@ -187,11 +178,19 @@ class PaymentService {
       // Notify artist
       const artist = await db.ArtistProfile.findByPk(booking.artist_id);
       if (artist) {
+        const notifTitle = booking.booking_status === "COMPLETED"
+          ? "Payment Received Successfully"
+          : "New Booking Confirmed 📅";
+        const notifMessage = booking.booking_status === "COMPLETED"
+          ? `The customer has successfully completed the online payment for Booking #${booking.booking_code}.`
+          : `Mehndi booking request #${booking.booking_code} has been paid and confirmed.`;
+
         await db.Notification.create({
           user_id: artist.user_id,
-          title: "New Booking Confirmed 📅",
-          message: `Mehndi booking request #${booking.booking_code} has been paid and confirmed.`,
-          type: "SYSTEM"
+          title: notifTitle,
+          message: notifMessage,
+          type: "BOOKING",
+          data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
         });
       }
     }
@@ -224,7 +223,19 @@ class PaymentService {
       if (tx && tx.status !== "SUCCESS") {
         await tx.update({ status: "SUCCESS", razorpay_payment_id: paymentId });
         await db.Payment.update({ status: "SUCCESS", razorpay_payment_id: paymentId, paid_at: new Date() }, { where: { razorpay_order_id: orderId } });
-        await db.Booking.update({ payment_status: "PAID", booking_status: "CONFIRMED", detailed_status: "CONFIRMED" }, { where: { id: tx.booking_id } });
+        const booking = await db.Booking.findByPk(tx.booking_id);
+        if (booking) {
+          const isCompleted = booking.booking_status === "COMPLETED";
+          await booking.update({
+            payment_status: "PAID",
+            booking_status: isCompleted ? "COMPLETED" : "CONFIRMED",
+            detailed_status: isCompleted ? "COMPLETED" : "CONFIRMED"
+          });
+          await this.processPaymentDistribution(booking);
+          if (isCompleted) {
+            await this.completeBookingSettlement(booking.id);
+          }
+        }
       }
     } else if (event === "payment.failed") {
       const orderId = payload.payload.payment.entity.order_id;
@@ -456,7 +467,7 @@ class PaymentService {
     // 1. Create Wallet Transaction
     await db.WalletTransaction.create({
       wallet_id: wallet.id,
-      transaction_type: "DEBIT",
+      transaction_type: "PAYMENT",
       amount: Number(booking.final_amount),
       status: "SUCCESS",
       booking_id: booking.id,
@@ -474,18 +485,19 @@ class PaymentService {
     });
 
     // 3. Update Booking
+    const isCompleted = booking.booking_status === "COMPLETED";
     await booking.update({
       payment_status: "PAID",
-      booking_status: "CONFIRMED",
-      detailed_status: "CONFIRMED"
+      booking_status: isCompleted ? "COMPLETED" : "CONFIRMED",
+      detailed_status: isCompleted ? "COMPLETED" : "CONFIRMED"
     });
 
     // 4. Booking status history
     await db.BookingStatusHistory.create({
       booking_id: booking.id,
-      status: "CONFIRMED",
+      status: isCompleted ? "COMPLETED" : "CONFIRMED",
       changed_by: userId,
-      notes: "Paid via MehndiGo Wallet. Booking confirmed."
+      notes: isCompleted ? "Paid via MehndiGo Wallet. Booking settled." : "Paid via MehndiGo Wallet. Booking confirmed."
     });
 
     // 5. Create Invoice record
@@ -496,7 +508,139 @@ class PaymentService {
       invoice_url: `/payment/receipt/${booking.id}`
     });
 
+    // Apply payment distribution automatically
+    await this.processPaymentDistribution(booking);
+    if (isCompleted) {
+      await this.completeBookingSettlement(booking.id);
+    }
+
     return booking;
+  }
+
+  async processPaymentDistribution(booking) {
+    try {
+      const commissionSetting = await db.SystemSetting.findOne({ where: { key: "COMMISSION_PERCENTAGE" } });
+      const commissionPercentage = commissionSetting ? parseInt(commissionSetting.value) : 10;
+
+      const totalAmount = Number(booking.final_amount);
+      const commissionAmount = Math.round(totalAmount * (commissionPercentage / 100));
+      const artistAmount = totalAmount - commissionAmount;
+
+      // Admin Wallet Commission credit
+      let adminUser = await db.User.findOne({ where: { role: "ADMIN" } });
+      if (!adminUser) {
+        adminUser = await db.User.create({
+          name: "System Admin",
+          phone: "9999900000",
+          email: "admin@mehndigo.com",
+          role: "ADMIN",
+          password: "system_generated_hash"
+        });
+      }
+
+      const [adminWallet] = await db.Wallet.findOrCreate({
+        where: { user_id: adminUser.id },
+        defaults: { balance: 0, pending_balance: 0, lifetime_earnings: 0, total_commission_earned: 0, total_withdrawals: 0 }
+      });
+
+      await adminWallet.increment({
+        balance: commissionAmount,
+        total_commission_earned: commissionAmount,
+        lifetime_earnings: commissionAmount
+      });
+
+      await db.WalletTransaction.create({
+        wallet_id: adminWallet.id,
+        booking_id: booking.id,
+        transaction_type: "COMMISSION",
+        amount: commissionAmount,
+        status: "SUCCESS",
+        description: `Commission from booking #${booking.booking_code}`
+      });
+
+      // Log SettlementHistory initially as PENDING
+      await db.SettlementHistory.create({
+        booking_id: booking.id,
+        artist_id: booking.artist_id,
+        total_amount: totalAmount,
+        commission_amount: commissionAmount,
+        artist_amount: artistAmount,
+        status: "PENDING"
+      });
+
+      // Credit 90% to Artist Escrow / Pending balance
+      const artistProfile = await db.ArtistProfile.findByPk(booking.artist_id);
+      if (artistProfile) {
+        const [artistWallet] = await db.Wallet.findOrCreate({
+          where: { user_id: artistProfile.user_id },
+          defaults: { balance: 0, pending_balance: 0, lifetime_earnings: 0, total_commission_earned: 0, total_withdrawals: 0 }
+        });
+
+        await artistWallet.increment({
+          pending_balance: artistAmount
+        });
+
+        await db.EscrowRecord.create({
+          booking_id: booking.id,
+          artist_id: artistProfile.user_id,
+          amount: artistAmount,
+          status: "HELD"
+        });
+
+        const customerUser = await db.User.findByPk(booking.user_id);
+        const customerName = customerUser ? customerUser.name : "Client";
+
+        await db.WalletTransaction.create({
+          wallet_id: artistWallet.id,
+          booking_id: booking.id,
+          transaction_type: "PAYMENT",
+          amount: artistAmount,
+          status: "PENDING",
+          description: `Escrow payment held from ${customerName} (#${booking.booking_code})`
+        });
+      }
+    } catch (err) {
+      console.error("Payment distribution process failed:", err.message);
+    }
+  }
+
+  async completeBookingSettlement(bookingId) {
+    try {
+      const booking = await db.Booking.findByPk(bookingId);
+      if (!booking) return;
+
+      const settlement = await db.SettlementHistory.findOne({ where: { booking_id: bookingId } });
+      if (settlement && settlement.status !== "COMPLETED") {
+        const artistProfile = await db.ArtistProfile.findByPk(booking.artist_id);
+        if (artistProfile) {
+          const artistWallet = await db.Wallet.findOne({ where: { user_id: artistProfile.user_id } });
+          if (artistWallet) {
+            const escrow = await db.EscrowRecord.findOne({ where: { booking_id: bookingId, status: "HELD" } });
+            if (escrow) {
+              await artistWallet.decrement("pending_balance", { by: escrow.amount });
+              await artistWallet.increment({
+                balance: escrow.amount,
+                lifetime_earnings: escrow.amount
+              });
+
+              await escrow.update({ status: "RELEASED" });
+
+              await db.WalletTransaction.create({
+                wallet_id: artistWallet.id,
+                booking_id: booking.id,
+                transaction_type: "SETTLEMENT",
+                amount: escrow.amount,
+                status: "SUCCESS",
+                description: `Settlement for booking #${booking.booking_code} released from escrow`
+              });
+            }
+          }
+          await settlement.update({ status: "COMPLETED" });
+        }
+      }
+    } catch (err) {
+      console.error("Complete booking settlement failed:", err.message);
+    }
   }
 }
 

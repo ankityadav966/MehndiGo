@@ -48,6 +48,7 @@ app.use("/notification", require("./routes/notification.routes"));
 app.use("/payment", require("./routes/payment.routes"));
 app.use("/referral", require("./routes/referral.routes"));
 app.use("/category", require("./routes/category.routes"));
+app.use("/reward", require("./routes/reward.routes"));
 app.use("/reviews", require("./routes/review.routes"));
 app.use("/wallet", require("./routes/wallet.routes"));
 app.use("/transactions", require("./routes/wallet.routes"));

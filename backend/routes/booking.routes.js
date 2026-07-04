@@ -10,6 +10,7 @@ router.get("/price-details", authenticate, BookingController.calculatePriceDetai
 router.post("/create", authenticate, BookingController.createBooking);
 router.get("/details/:id", authenticate, BookingController.getBookingDetails);
 router.get("/history", authenticate, BookingController.getBookingHistory);
+router.get("/check-restricted", authenticate, BookingController.checkRestrictedBooking);
 
 // Status update actions
 router.put("/cancel", authenticate, BookingController.cancelBooking);
@@ -18,6 +19,10 @@ router.put("/accept", authenticate, BookingController.acceptBooking);
 router.put("/reject", authenticate, BookingController.rejectBooking);
 router.put("/start", authenticate, BookingController.startService);
 router.put("/complete", authenticate, BookingController.completeService);
+router.put("/skip-review", authenticate, BookingController.skipReview);
+router.put("/select-cash", authenticate, BookingController.selectCashPayment);
+router.put("/confirm-cash", authenticate, BookingController.confirmCashPayment);
+router.put("/reject-cash", authenticate, BookingController.rejectCashPayment);
 
 // Coupon validations
 router.post("/apply-coupon", authenticate, BookingController.applyCoupon);

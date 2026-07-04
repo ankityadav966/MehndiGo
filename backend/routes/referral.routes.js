@@ -7,5 +7,6 @@ const { authenticate } = require("../middleware/auth.middleware");
 router.get("/", authenticate, ReferralController.getReferralDashboard);
 router.get("/history", authenticate, ReferralController.getReferralHistory);
 router.get("/rewards", authenticate, ReferralController.getRewardsHistory);
+router.get("/leaderboard", authenticate, ReferralController.getLeaderboard);
 
 module.exports = router;

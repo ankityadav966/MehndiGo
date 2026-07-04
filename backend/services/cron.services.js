@@ -1,8 +1,13 @@
 const db = require("../models");
 const { Op } = require("sequelize");
 
+const reminderWorker = require("./reminder.worker");
+
 async function checkAndSendScheduledNotifications() {
   try {
+    // Run background reminders
+    await reminderWorker.checkAndSendReminders();
+
     const now = new Date();
 
     // Find all pending notifications scheduled for now or earlier

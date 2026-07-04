@@ -167,6 +167,23 @@ class ReferralService {
         reward_status: "CREDITED"
       });
 
+      // Award XP & Points to Referrer & Referred Friend
+      const xpService = require("./xp.services");
+      const referredUser = await db.User.findByPk(referredUserId);
+      const isArtistReferral = referredUser?.role === "ARTIST";
+
+      const xpUserConf = await xpService.getSetting("XP_USER_REFERRAL", 300);
+      const xpArtistConf = await xpService.getSetting("XP_ARTIST_REFERRAL", 500);
+      const pointsUserConf = await xpService.getSetting("POINTS_USER_REFERRAL", 1);
+      const pointsArtistConf = await xpService.getSetting("POINTS_ARTIST_VERIFIED", 3);
+
+      const xpAmount = isArtistReferral ? parseInt(xpArtistConf) : parseInt(xpUserConf);
+      const pointsAmount = isArtistReferral ? parseInt(pointsArtistConf) : parseInt(pointsUserConf);
+
+      await xpService.awardXp(referrerId, xpAmount, `Referral Completed: ${referredUser?.name || "Friend"}`, referredUserId);
+      await xpService.awardAmbassadorScore(referrerId, pointsAmount, `Referral Completed: ${referredUser?.name || "Friend"}`);
+      await xpService.awardXp(referredUserId, 100, "Referral Welcome Bonus", referrerId);
+
       // Notify Referrer
       await db.Notification.create({
         user_id: referrerId,
