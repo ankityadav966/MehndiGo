@@ -40,11 +40,14 @@ async function sendSms(phone, message) {
       from: process.env.TWILIO_PHONE_NUMBER,
       to: phone,
     });
+
   } catch (error) {
+
     console.error("Twilio SMS send failed, falling back to mock:", error.message);
     return { sid: "mock_sid_fallback", to: phone, body: message, error: error.message };
   }
 }
+
 
 module.exports = {
   sendOtp,

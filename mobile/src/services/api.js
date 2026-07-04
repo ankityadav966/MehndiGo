@@ -5,7 +5,7 @@ const getBaseUrl = () => {
   if (envUrl) {
     return envUrl.endsWith("/") ? envUrl.slice(0, -1) : envUrl;
   }
-  return "https://mehandigo-api.globalrns.com";
+  return "http://192.168.1.9:8000";
 };
 
 export const BASE_URL = getBaseUrl();
