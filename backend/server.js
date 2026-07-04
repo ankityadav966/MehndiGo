@@ -60,10 +60,6 @@ app.use((req, res) => {
     message: "Route Not Found",
   });
 });
-
-console.log('====================================');
-console.log("testing : ");
-console.log('====================================');
 app.use((error, req, res, next) => {
   return res.status(error.statusCode || 500).json({
     success: false,
