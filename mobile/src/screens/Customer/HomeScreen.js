@@ -12,13 +12,14 @@ import {
   RefreshControl,
   ActivityIndicator,
   Animated,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import Colors from "../../constants/Colors";
 import LoadingSkeleton from "../../components/LoadingSkeleton";
 import { useAuth } from "../../context/AuthContext";
-import { getHomeDashboard, getNearbyArtists, getCustomerProfile, getFavorites, addFavorite, removeFavorite } from "../../services/customer";
+import { getHomeDashboard, getNearbyArtists, getCustomerProfile, getFavorites, addFavorite, removeFavorite, getCustomerDashboard } from "../../services/customer";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -78,6 +79,28 @@ export default function HomeScreen({ navigation }) {
         setFavorites(favMap);
       } catch (favErr) {
         console.log("Failed to load favorites on dashboard:", favErr.message);
+      }
+
+      // Check for pending unreviewed or unpaid completed bookings!
+      try {
+        const custDash = await getCustomerDashboard();
+        if (custDash?.pendingSettlementBooking) {
+          const pending = custDash.pendingSettlementBooking;
+          navigation.navigate("BookingSettlement", {
+            bookingId: pending.id
+          });
+        } else if (custDash?.pendingReviewBooking) {
+          const pending = custDash.pendingReviewBooking;
+          // Navigate to ReviewSubmission screen
+          navigation.navigate("ReviewSubmission", {
+            bookingId: pending.id,
+            artistName: pending.artist?.user?.name,
+            artistImage: pending.artist?.user?.profile_image,
+            specializationName: pending.service?.specialization_name
+          });
+        }
+      } catch (dashErr) {
+        console.log("Failed to check pending reviews/settlements on startup:", dashErr.message);
       }
 
       setError(null);
@@ -615,6 +638,10 @@ const getCategoryImage = (item) => {
         renderItem={renderNearbyArtistItem}
         ListHeaderComponent={renderListHeader}
         ListFooterComponent={renderListFooter}
+        initialNumToRender={5}
+        maxToRenderPerBatch={10}
+        windowSize={10}
+        removeClippedSubviews={Platform.OS === "android"}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}

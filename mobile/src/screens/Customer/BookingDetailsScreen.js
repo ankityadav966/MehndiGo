@@ -17,7 +17,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Calendar } from "react-native-calendars";
 import Colors from "../../constants/Colors";
 import CustomButton from "../../components/CustomButton";
-import { getBookingDetails, cancelBooking, rescheduleBooking, getInvoice } from "../../services/booking";
+import { getBookingDetails, cancelBooking, rescheduleBooking, getInvoice, selectCashPayment } from "../../services/booking";
 
 // Visual mapping for timeline checkpoints
 const STEPS = [
@@ -255,6 +255,86 @@ export default function BookingDetailsScreen({ route, navigation }) {
         />
 
         <View style={styles.content}>
+          {booking.payment_status === "PENDING" && currentDetailedStatus !== "CANCELLED" && (() => {
+            const isCompletedOrDisputed = booking.booking_status === "COMPLETED" || ["CASH_DISPUTED", "AWAITING_CASH_CONFIRMATION", "CASH_PAYMENT_PENDING"].includes(currentDetailedStatus);
+            return (
+              <View style={styles.paymentPendingCard}>
+                <View style={styles.paymentPendingHeader}>
+                  <Ionicons name="warning-outline" size={20} color="#D97706" />
+                  <Text style={styles.paymentPendingTitle}>Payment Pending</Text>
+                </View>
+                <Text style={styles.paymentPendingMsg}>
+                  {currentDetailedStatus === "AWAITING_CASH_CONFIRMATION"
+                    ? "This booking is awaiting the artist's confirmation of cash payment."
+                    : currentDetailedStatus === "CASH_DISPUTED"
+                      ? "A cash payment issue has been flagged. Admin is reviewing the dispute."
+                      : currentDetailedStatus === "CASH_PAYMENT_PENDING"
+                        ? "Cash payment selected. Please pay the artist in hand upon service completion."
+                        : "Your payment for this booking is pending. Please complete the checkout."}
+                </Text>
+                {isCompletedOrDisputed ? (
+                  <View style={styles.retryBtnRow}>
+                    <TouchableOpacity
+                      style={[styles.retryBtn, { backgroundColor: Colors.primary }]}
+                      onPress={() => {
+                        navigation.navigate("Payment", {
+                          bookingId: booking.id,
+                          bookingCode: booking.booking_code,
+                          finalAmount: booking.final_amount,
+                          isSettlement: true
+                        });
+                      }}
+                    >
+                      <Ionicons name="card-outline" size={16} color={Colors.white} />
+                      <Text style={styles.retryBtnText}>Pay Online</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.retryBtn, { backgroundColor: Colors.success }]}
+                      onPress={async () => {
+                        try {
+                          setLoading(true);
+                          await selectCashPayment(booking.id);
+                          Alert.alert(
+                            "Success",
+                            "Your cash payment request has been sent to the artist again. Please pay the artist ₹" + booking.final_amount + " in cash.",
+                            [
+                              {
+                                text: "OK",
+                                onPress: () => {
+                                  loadDetails();
+                                }
+                              }
+                            ]
+                          );
+                        } catch (err) {
+                          Alert.alert("Error", err.message || "Failed to select cash payment.");
+                          setLoading(false);
+                        }
+                      }}
+                    >
+                      <Ionicons name="cash-outline" size={16} color={Colors.white} />
+                      <Text style={styles.retryBtnText}>Pay Cash</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.payNowBtn}
+                    onPress={() => {
+                      navigation.navigate("Payment", {
+                        bookingId: booking.id,
+                        bookingCode: booking.booking_code,
+                        finalAmount: booking.final_amount
+                      });
+                    }}
+                  >
+                    <Text style={styles.payNowText}>Pay Now</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            );
+          })()}
+
           <View style={styles.statusRow}>
             <Text style={styles.bookingId}>Code: {currentDetailedStatus === "CANCELLED" ? `${booking.booking_code} (Expired)` : booking.booking_code}</Text>
             <View
@@ -534,6 +614,15 @@ function DetailRow({ icon, label, value }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.white },
   centerContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
+  paymentPendingCard: { backgroundColor: "#FEF3C7", borderRadius: 14, padding: 14, marginVertical: 10, borderWidth: 1, borderColor: "#F59E0B" },
+  paymentPendingHeader: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
+  paymentPendingTitle: { marginLeft: 8, fontSize: 13, fontWeight: "700", color: "#D97706" },
+  paymentPendingMsg: { fontSize: 12, color: "#92400E", lineHeight: 18 },
+  payNowBtn: { marginTop: 10, backgroundColor: "#D97706", borderRadius: 8, paddingVertical: 8, alignItems: "center" },
+  payNowText: { color: Colors.white, fontWeight: "700", fontSize: 12 },
+  retryBtnRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 14, width: "100%" },
+  retryBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", height: 40, borderRadius: 8, marginHorizontal: 4 },
+  retryBtnText: { color: Colors.white, fontWeight: "700", fontSize: 12, marginLeft: 6 },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12 },
   backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.background, justifyContent: "center", alignItems: "center" },
   headerTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },

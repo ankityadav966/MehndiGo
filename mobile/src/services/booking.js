@@ -39,6 +39,26 @@ export async function verifyPayment(paymentDetails) {
   return res?.data || res;
 }
 
+export async function checkRestrictedBooking() {
+  const res = await apiRequest("GET", "/booking/check-restricted", null, true);
+  return res?.data || res;
+}
+
+export async function selectCashPayment(bookingId) {
+  const res = await apiRequest("PUT", "/booking/select-cash", { bookingId }, true);
+  return res?.data || res;
+}
+
+export async function confirmCashPayment(bookingId) {
+  const res = await apiRequest("PUT", "/booking/confirm-cash", { bookingId }, true);
+  return res?.data || res;
+}
+
+export async function rejectCashPayment(bookingId) {
+  const res = await apiRequest("PUT", "/booking/reject-cash", { bookingId }, true);
+  return res?.data || res;
+}
+
 export async function cancelBooking(bookingId, cancelReason) {
   const res = await apiRequest("PUT", "/booking/cancel", { bookingId, cancelReason }, true);
   return res?.data || res;

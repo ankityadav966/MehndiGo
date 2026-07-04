@@ -87,9 +87,9 @@ export default function BookingRequestsScreen({ navigation }) {
       if (activeTab === "Pending") {
         return status === "PENDING";
       } else if (activeTab === "Accepted") {
-        return ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED", "RESCHEDULED"].includes(status);
+        return ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED", "RESCHEDULED", "CASH_PAYMENT_PENDING", "CASH_DISPUTED"].includes(status);
       } else {
-        return ["COMPLETED", "CANCELLED"].includes(status);
+        return ["COMPLETED", "CANCELLED", "AWAITING_CASH_CONFIRMATION", "COMPLETED_CLOSED"].includes(status);
       }
     });
   };

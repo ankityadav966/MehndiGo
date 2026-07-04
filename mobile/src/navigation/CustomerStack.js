@@ -14,6 +14,7 @@ import ArtistListingScreen from "../screens/Customer/ArtistListingScreen";
 import ArtistProfileScreen from "../screens/Customer/ArtistProfileScreen";
 import BookingCancellationScreen from "../screens/Customer/BookingCancellationScreen";
 import BookingDetailsScreen from "../screens/Customer/BookingDetailsScreen";
+import BookingSettlementScreen from "../screens/Customer/BookingSettlementScreen";
 import BookingSuccessScreen from "../screens/Customer/BookingSuccessScreen";
 import BookingSummaryScreen from "../screens/Customer/BookingSummaryScreen";
 import CategoriesScreen from "../screens/Customer/CategoriesScreen";
@@ -33,6 +34,8 @@ import SelectDateScreen from "../screens/Customer/SelectDateScreen";
 import SelectService from "../screens/Customer/SelectService";
 import SelectTimeSlotScreen from "../screens/Customer/SelectTimeSlotScreen";
 import ReferralDashboardScreen from "../screens/Customer/ReferralDashboardScreen";
+import LeaderboardScreen from "../screens/Customer/LeaderboardScreen";
+import RewardStoreScreen from "../screens/Customer/RewardStoreScreen";
 import SupportTicketScreen from "../screens/Customer/SupportTicketScreen";
 import SupportTicketDetailsScreen from "../screens/Common/SupportTicketDetailsScreen";
 
@@ -48,6 +51,8 @@ export default function CustomerStack() {
       <Stack.Screen name="CustomerTabs" component={BottomTab} initialParams={{ role: "customer" }} />
       <Stack.Screen name="ChatList" component={ChatListScreen} />
       <Stack.Screen name="ChatRoom" component={ChatRoomScreen} />
+      <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />
+      <Stack.Screen name="RewardStore" component={RewardStoreScreen} />
       <Stack.Screen name="ArtistProfile" component={ArtistProfileScreen} />
       <Stack.Screen name="Search" component={SearchScreen} />
       <Stack.Screen name="Categories" component={CategoriesScreen} />
@@ -67,6 +72,7 @@ export default function CustomerStack() {
       <Stack.Screen name="Settings" component={SettingsScreen} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
       <Stack.Screen name="BookingDetails" component={BookingDetailsScreen} />
+      <Stack.Screen name="BookingSettlement" component={BookingSettlementScreen} />
       <Stack.Screen name="NotificationCenter" component={NotificationCenterScreen} />
       <Stack.Screen name="NotificationDetails" component={NotificationDetailsScreen} />
       <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />

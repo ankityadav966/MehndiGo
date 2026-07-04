@@ -156,6 +156,7 @@ const LoginPage = ({ showToast }) => {
                 >
                   <option value="USER">Customer / Client</option>
                   <option value="ARTIST">Talent / Artist</option>
+                  <option value="ADMIN">ADMIN</option>
                 </select>
               </div>
             </div>

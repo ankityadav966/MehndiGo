@@ -13,7 +13,8 @@ import {
   TextInput,
   ScrollView,
   Dimensions,
-  Share
+  Share,
+  Platform
 } from "react-native";
 import Colors from "../../constants/Colors";
 import LoadingSkeleton from "../../components/LoadingSkeleton";
@@ -484,6 +485,10 @@ export default function ArtistListingScreen({ route, navigation }) {
           keyExtractor={(item) => String(item.id)}
           renderItem={layoutMode === "grid" ? renderGridArtistCard : renderListArtistCard}
           columnWrapperStyle={layoutMode === "grid" ? styles.gridRowWrapper : null}
+          initialNumToRender={6}
+          maxToRenderPerBatch={10}
+          windowSize={10}
+          removeClippedSubviews={Platform.OS === "android"}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}

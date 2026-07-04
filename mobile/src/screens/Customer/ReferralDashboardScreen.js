@@ -140,6 +140,63 @@ export default function ReferralDashboardScreen({ navigation }) {
               </Text>
             </View>
 
+            {/* Level & XP Card */}
+            <View style={styles.xpCard}>
+              <View style={styles.xpHeader}>
+                <View>
+                  <Text style={styles.levelLabel}>Level {dashboardData?.xp?.level || 1}</Text>
+                  <Text style={styles.tierTagText}>{dashboardData?.xp?.tier || "BEGINNER"} AMBASSADOR</Text>
+                </View>
+                <View style={styles.rankBadge}>
+                  <Text style={styles.rankLabel}>RANK</Text>
+                  <Text style={styles.rankValText}>#{dashboardData?.xp?.rank || "--"}</Text>
+                </View>
+              </View>
+
+              <View style={styles.progressBarBg}>
+                <View style={[styles.progressBarFill, { width: `${Math.min(100, ((dashboardData?.xp?.currentXp || 0) / (dashboardData?.xp?.nextLevelXp || 500)) * 100)}%` }]} />
+              </View>
+
+              <View style={styles.xpFooter}>
+                <Text style={styles.xpFooterText}>{dashboardData?.xp?.currentXp || 0} / {dashboardData?.xp?.nextLevelXp || 500} XP</Text>
+                <Text style={styles.xpTodayText}>+{dashboardData?.xp?.todayXp || 0} XP Today</Text>
+              </View>
+            </View>
+
+            {/* Navigation Quick Links */}
+            <View style={styles.navigationRow}>
+              <TouchableOpacity style={styles.navBtn} onPress={() => navigation.navigate("Leaderboard")}>
+                <Ionicons name="trophy-outline" size={20} color={Colors.primary} />
+                <Text style={styles.navBtnText}>Leaderboard</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.navBtn} onPress={() => navigation.navigate("RewardStore")}>
+                <Ionicons name="gift-outline" size={20} color={Colors.primary} />
+                <Text style={styles.navBtnText}>Reward Store</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Badges Earned */}
+            {dashboardData?.badges?.length > 0 && (
+              <View style={styles.badgesSection}>
+                <Text style={styles.badgeSectionTitle}>My Unlocked Badges ({dashboardData.badges.length})</Text>
+                <FlatList
+                  horizontal
+                  data={dashboardData.badges}
+                  showsHorizontalScrollIndicator={false}
+                  keyExtractor={(item) => item.id.toString()}
+                  renderItem={({ item }) => (
+                    <View style={styles.badgeItemCard}>
+                      <View style={styles.badgeIconWrapper}>
+                        <Ionicons name={item.iconName || "ribbon"} size={22} color={Colors.primary} />
+                      </View>
+                      <Text style={styles.badgeItemName} numberOfLines={1}>{item.name}</Text>
+                    </View>
+                  )}
+                  contentContainerStyle={{ paddingHorizontal: 16, gap: 10 }}
+                />
+              </View>
+            )}
+
             {/* Code Box */}
             <View style={styles.shareContainer}>
               <Text style={styles.shareLabel}>YOUR UNIQUE REFERRAL CODE</Text>
@@ -189,6 +246,133 @@ export default function ReferralDashboardScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
+  xpCard: {
+    backgroundColor: Colors.white,
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    elevation: 1
+  },
+  xpHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12
+  },
+  levelLabel: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: Colors.text
+  },
+  tierTagText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: Colors.primary,
+    marginTop: 2
+  },
+  rankBadge: {
+    alignItems: "flex-end"
+  },
+  rankLabel: {
+    fontSize: 8,
+    color: Colors.textSecondary,
+    fontWeight: "700"
+  },
+  rankValText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: Colors.text
+  },
+  progressBarBg: {
+    height: 8,
+    backgroundColor: "#F3F4F6",
+    borderRadius: 4,
+    overflow: "hidden",
+    marginVertical: 4
+  },
+  progressBarFill: {
+    height: "100%",
+    backgroundColor: Colors.primary,
+    borderRadius: 4
+  },
+  xpFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 6
+  },
+  xpFooterText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: Colors.textSecondary
+  },
+  xpTodayText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#2E7D32"
+  },
+  navigationRow: {
+    flexDirection: "row",
+    marginHorizontal: 16,
+    marginTop: 12,
+    gap: 12
+  },
+  navBtn: {
+    flex: 1,
+    backgroundColor: Colors.white,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    height: 48,
+    gap: 8
+  },
+  navBtnText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: Colors.text
+  },
+  badgesSection: {
+    marginTop: 16
+  },
+  badgeSectionTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: Colors.text,
+    marginHorizontal: 16,
+    marginBottom: 10
+  },
+  badgeItemCard: {
+    backgroundColor: Colors.white,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    alignItems: "center",
+    width: 100,
+    borderWidth: 1,
+    borderColor: Colors.border
+  },
+  badgeIconWrapper: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.primaryLight + "15",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 6
+  },
+  badgeItemName: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: Colors.textSecondary,
+    textAlign: "center",
+    width: "100%"
+  },
   centerContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12 },
   backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.white, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: Colors.border },

@@ -8,6 +8,7 @@ import Colors from "../../constants/Colors";
 import CustomButton from "../../components/CustomButton";
 import moment from "moment";
 import { fetchArtistAvailability } from "../../services/customer";
+import { checkRestrictedBooking } from "../../services/booking";
 
 export default function SelectDateScreen({ route, navigation }) {
   const { artistId, serviceId, selectedDate: initialDate, selectedTimeSlot } = route.params || {};
@@ -25,7 +26,49 @@ export default function SelectDateScreen({ route, navigation }) {
       return;
     }
 
+    const checkRestrictions = async () => {
+      try {
+        const check = await checkRestrictedBooking();
+        if (check?.hasRestricted) {
+          Alert.alert(
+            "Pending Booking Payment",
+            "You have a previous booking that still requires payment completion or artist confirmation.\n\nPlease complete that booking before creating a new one.",
+            [
+              {
+                text: "Complete Payment",
+                onPress: () => {
+                  navigation.navigate("BookingSettlement", { bookingId: check.bookingId });
+                }
+              },
+              {
+                text: "View Booking",
+                onPress: () => {
+                  navigation.navigate("BookingDetails", { bookingId: check.bookingId });
+                }
+              },
+              {
+                text: "Cancel",
+                style: "cancel",
+                onPress: () => {
+                  navigation.goBack();
+                }
+              }
+            ],
+            { cancelable: false }
+          );
+          return false;
+        }
+        return true;
+      } catch (err) {
+        console.log("Failed to check booking restrictions:", err.message);
+        return true;
+      }
+    };
+
     const loadArtistAvailability = async () => {
+      const isAllowed = await checkRestrictions();
+      if (!isAllowed) return;
+
       try {
         const slots = await fetchArtistAvailability(artistId);
         const dates = (slots || [])

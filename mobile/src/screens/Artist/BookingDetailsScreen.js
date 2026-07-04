@@ -14,7 +14,7 @@ import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import CustomButton from "../../components/CustomButton";
-import { getBookingDetails, acceptBooking, rejectBooking, startService, completeService } from "../../services/booking";
+import { getBookingDetails, acceptBooking, rejectBooking, startService, completeService, confirmCashPayment, rejectCashPayment } from "../../services/booking";
 
 // Stepper steps for artist tracking
 const STEPS = [
@@ -137,6 +137,30 @@ export default function BookingDetailsScreen({ route, navigation }) {
     }
   };
 
+  const handleConfirmCash = async () => {
+    setLoading(true);
+    try {
+      await confirmCashPayment(bookingId);
+      Alert.alert("Payment Confirmed", "You confirmed that cash payment was received. Booking completed & settled.");
+      loadDetails();
+    } catch (err) {
+      Alert.alert("Error", err.message || "Failed to confirm cash payment.");
+      setLoading(false);
+    }
+  };
+
+  const handleRejectCash = async () => {
+    setLoading(true);
+    try {
+      await rejectCashPayment(bookingId);
+      Alert.alert("Dispute Logged", "You reported that cash payment was not received. Admin has been notified.");
+      loadDetails();
+    } catch (err) {
+      Alert.alert("Error", err.message || "Failed to reject cash payment.");
+      setLoading(false);
+    }
+  };
+
   if (loading || !booking) {
     return (
       <View style={styles.centerContainer}>
@@ -213,6 +237,19 @@ export default function BookingDetailsScreen({ route, navigation }) {
       return (
         <View style={styles.footerSingle}>
           <CustomButton title="Complete Service" onPress={handleCompleteService} />
+        </View>
+      );
+    }
+
+    if (currentDetailedStatus === "AWAITING_CASH_CONFIRMATION") {
+      return (
+        <View style={styles.footerActions}>
+          <TouchableOpacity style={[styles.footerBtn, { backgroundColor: Colors.success }]} onPress={handleConfirmCash}>
+            <Text style={styles.footerBtnText}>Payment Received</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.footerBtn, { backgroundColor: "#EF4444" }]} onPress={handleRejectCash}>
+            <Text style={styles.footerBtnText}>Payment Not Received</Text>
+          </TouchableOpacity>
         </View>
       );
     }
@@ -398,10 +435,10 @@ const styles = StyleSheet.create({
   customerName: { fontSize: 16, fontWeight: "800", color: Colors.text },
   bookingCode: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
   divider: { height: 1, backgroundColor: Colors.border, width: "100%", marginVertical: 14 },
-  infoRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 8, width: "100%" },
+  infoRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", paddingVertical: 8, width: "100%" },
   infoLeft: { flexDirection: "row", alignItems: "center" },
   infoLabel: { marginLeft: 8, fontSize: 12, color: Colors.textSecondary },
-  infoValue: { fontSize: 12, color: Colors.text, fontWeight: "600", flex: 1, textAlign: "right", marginLeft: 16 },
+  infoValue: { fontSize: 12, color: Colors.text, fontWeight: "600", flex: 1, textAlign: "right", marginLeft: 16, flexWrap: "wrap" },
   card: { marginHorizontal: 16, marginBottom: 12, backgroundColor: Colors.white, borderRadius: 14, padding: 14, elevation: 1 },
   row: { flexDirection: "row", justifyContent: "space-between", marginVertical: 4 },
   label: { fontSize: 12, color: Colors.textSecondary },

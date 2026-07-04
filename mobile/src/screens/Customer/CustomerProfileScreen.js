@@ -119,9 +119,19 @@ export default function CustomerProfileScreen({ navigation }) {
           </View>
 
           <Text style={styles.name}>{profile.name}</Text>
-          <View style={styles.badgeContainer}>
-            <Ionicons name="ribbon-outline" size={14} color={Colors.primary} />
-            <Text style={styles.badgeText}>{profile.memberBadge}</Text>
+          <View style={styles.badgeRow}>
+            {profile.current_level !== undefined && (
+              <View style={[styles.badgeContainer, { backgroundColor: "#FFE5EC", borderColor: Colors.primary, borderWidth: 1, marginBottom: 8 }]}>
+                <Ionicons name="sparkles-outline" size={12} color={Colors.primary} />
+                <Text style={[styles.badgeText, { color: Colors.primary }]}>Level {profile.current_level}</Text>
+              </View>
+            )}
+            {profile.ambassador_tier && (
+              <View style={[styles.badgeContainer, { backgroundColor: "#FFF8E1", borderColor: "#FFA000", borderWidth: 1, marginBottom: 8 }]}>
+                <Ionicons name="trophy-outline" size={12} color="#FFA000" />
+                <Text style={[styles.badgeText, { color: "#FFA000" }]}>{profile.ambassador_tier} Tier</Text>
+              </View>
+            )}
           </View>
           <Text style={styles.contactDetails}>{profile.phone || "No Mobile"}{profile.email ? ` • ${profile.email}` : ""}</Text>
 
@@ -210,5 +220,6 @@ const styles = StyleSheet.create({
   menuIconWrap: { width: 32, height: 32, borderRadius: 8, backgroundColor: "#FFF0F4", justifyContent: "center", alignItems: "center", marginRight: 12 },
   menuLabel: { fontSize: 13, fontWeight: "700", color: Colors.text },
   logoutButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: Colors.white, marginHorizontal: 16, marginBottom: 40, height: 48, borderRadius: 14, borderWidth: 1, borderColor: Colors.error },
-  logoutText: { fontSize: 13, fontWeight: "800", color: Colors.error, marginLeft: 8 }
+  logoutText: { fontSize: 13, fontWeight: "800", color: Colors.error, marginLeft: 8 },
+  badgeRow: { flexDirection: "row", gap: 8, justifyContent: "center", alignItems: "center" }
 });

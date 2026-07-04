@@ -104,6 +104,9 @@ export default function ChatRoomScreen({ route, navigation }) {
   }, [bookingId]);
 
   const isChatExpired = useCallback(() => {
+    if (booking?.detailed_status === "COMPLETED_CLOSED" || booking?.review_skipped) {
+      return true;
+    }
     if (booking?.booking_status === "COMPLETED") {
       const completionTime = new Date(booking.updatedAt || booking.createdAt).getTime();
       const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
@@ -721,9 +724,11 @@ export default function ChatRoomScreen({ route, navigation }) {
           <View style={styles.closedChatBar}>
             <Ionicons name="lock-closed-outline" size={18} color={Colors.textSecondary || "#6B7280"} style={{ marginRight: 8 }} />
             <Text style={styles.closedChatText}>
-              {isChatExpired()
-                ? "This chat has been archived (active chat is only available for 7 days post completion)."
-                : "This chat is closed because the booking is cancelled or rejected."}
+              {booking?.detailed_status === "COMPLETED_CLOSED" || booking?.review_skipped
+                ? "This chat is now closed and read-only since the booking review lifecycle is completed."
+                : isChatExpired()
+                  ? "This chat has been archived (active chat is only available for 7 days post completion)."
+                  : "This chat is closed because the booking is cancelled or rejected."}
             </Text>
           </View>
         ) : (

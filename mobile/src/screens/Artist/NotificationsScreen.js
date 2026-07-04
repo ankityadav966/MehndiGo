@@ -65,9 +65,9 @@ export default function NotificationsScreen({ navigation }) {
           prev.map((n) => (n.id === item.id ? { ...n, is_read: true } : n))
         );
       }
-      navigation.navigate("NotificationDetails", { id: item.id });
+      navigation.navigate("NotificationDetails", { id: item.id, notification: item });
     } catch (err) {
-      navigation.navigate("NotificationDetails", { id: item.id });
+      navigation.navigate("NotificationDetails", { id: item.id, notification: item });
     }
   };
 

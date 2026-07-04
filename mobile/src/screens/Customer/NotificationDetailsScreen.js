@@ -93,7 +93,12 @@ export default function NotificationDetailsScreen({ route, navigation }) {
     // Execute Deep Links Redirection mapping rules
     if (isBooking) {
       if (bookingId) {
-        navigation.navigate("BookingDetails", { bookingId: bookingId });
+        const isPaymentRejected = title.includes("reject") || message.includes("not received");
+        if (isPaymentRejected) {
+          navigation.navigate("BookingSettlement", { bookingId: bookingId });
+        } else {
+          navigation.navigate("BookingDetails", { bookingId: bookingId });
+        }
       } else {
         navigation.navigate("CustomerTabs", { screen: "Bookings" });
       }
@@ -139,7 +144,8 @@ export default function NotificationDetailsScreen({ route, navigation }) {
 
   if (isBooking) {
     hasAction = true;
-    actionLabel = "View Booking Details";
+    const isPaymentRejected = notifTitle.includes("reject") || notifMessage.includes("not received");
+    actionLabel = isPaymentRejected ? "Complete Payment Now" : "View Booking Details";
   } else if (isChat) {
     hasAction = true;
     actionLabel = "Open Conversation";

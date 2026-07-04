@@ -57,3 +57,8 @@ export async function getArtistReviewsAnalytics() {
   const res = await apiRequest("GET", "/artist/reviews/analytics", null, true);
   return res?.data || res;
 }
+
+export async function skipReview(bookingId) {
+  const res = await apiRequest("PUT", "/booking/skip-review", { bookingId }, true);
+  return res?.data || res;
+}

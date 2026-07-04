@@ -16,6 +16,8 @@ import { useFocusEffect } from "@react-navigation/native";
 import Colors from "../../constants/Colors";
 import { useAuth } from "../../context/AuthContext";
 import { getArtistDashboardData } from "../../services/artist";
+import { confirmCashPayment, rejectCashPayment } from "../../services/booking";
+import Alert from "../../utils/Alert";
 
 export default function ArtistDashboardScreen({ navigation }) {
   const { user } = useAuth();
@@ -163,6 +165,26 @@ export default function ArtistDashboardScreen({ navigation }) {
           </View>
         </View>
 
+        {/* Booking Performance Breakdown Section */}
+        <Text style={styles.sectionTitle}>Booking Performance Breakdown</Text>
+        <View style={styles.statsContainer}>
+          {[
+            { label: "Pending Requests", value: dashboard?.bookingCounts?.PENDING || 0, color: Colors.primary },
+            { label: "Upcoming Bookings", value: dashboard?.bookingCounts?.UPCOMING || 0, color: Colors.info },
+            { label: "Accepted Bookings", value: dashboard?.bookingCounts?.ACCEPTED || 0, color: Colors.success },
+            { label: "Ongoing Bookings", value: dashboard?.bookingCounts?.ONGOING || 0, color: Colors.warning },
+            { label: "Completed Bookings", value: dashboard?.bookingCounts?.COMPLETED || 0, color: "#10B981" },
+            { label: "Awaiting Settlement", value: dashboard?.bookingCounts?.AWAITING_SETTLEMENT || 0, color: "#EF4444" },
+            { label: "Pending Cash Confirm", value: dashboard?.bookingCounts?.PENDING_CASH_APPROVAL || 0, color: "#F59E0B" },
+            { label: "Cancelled Bookings", value: dashboard?.bookingCounts?.CANCELLED || 0, color: "#6B7280" }
+          ].map((item, idx) => (
+            <View key={idx} style={[styles.statCard, { borderLeftColor: item.color }]}>
+              <Text style={styles.statValue}>{item.value}</Text>
+              <Text style={styles.statLabel}>{item.label}</Text>
+            </View>
+          ))}
+        </View>
+
         {/* Quick Actions List Grid */}
         <Text style={styles.sectionTitle}>Quick Management Control</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.actionsRow}>
@@ -177,6 +199,60 @@ export default function ArtistDashboardScreen({ navigation }) {
             </TouchableOpacity>
           ))}
         </ScrollView>
+
+        {/* Pending Cash Payment Requests Section */}
+        {dashboard?.recentBookings?.filter(b => b.detailed_status === "AWAITING_CASH_CONFIRMATION" || b.booking_status === "AWAITING_CASH_CONFIRMATION").length > 0 && (
+          <View style={styles.cashSection}>
+            <Text style={styles.sectionTitle}>Pending Cash Payment Requests</Text>
+            {dashboard.recentBookings.filter(b => b.detailed_status === "AWAITING_CASH_CONFIRMATION" || b.booking_status === "AWAITING_CASH_CONFIRMATION").map((item) => (
+              <View key={item.id} style={styles.cashConfirmCard}>
+                <View style={styles.cashHeader}>
+                  <Text style={styles.cashCustomer} numberOfLines={1} adjustsFontSizeToFit={true}>Customer Name: {item.user?.name || "Client"}</Text>
+                  <Text style={styles.cashAmount} numberOfLines={1} adjustsFontSizeToFit={true}>Booking Amount: ₹{item.final_amount}</Text>
+                </View>
+                <Text style={styles.cashBookingCode} numberOfLines={1} adjustsFontSizeToFit={true}>Booking ID: #{item.booking_code}</Text>
+                <Text style={styles.cashBookingCode} numberOfLines={1} adjustsFontSizeToFit={true}>Booking Date: {item.slot?.date ? new Date(item.slot.date).toLocaleDateString() : (item.reschedule_date || "TBD")}</Text>
+                <Text style={styles.cashBookingCode} numberOfLines={1} adjustsFontSizeToFit={true}>Payment Method: Cash</Text>
+                <Text style={styles.cashBookingCode} numberOfLines={1} adjustsFontSizeToFit={true}>Payment Status: Pending Cash Confirmation</Text>
+                
+                <View style={styles.cashActionsRow}>
+                  <TouchableOpacity
+                    style={[styles.cashBtn, { backgroundColor: Colors.success }]}
+                    onPress={async () => {
+                      try {
+                        setLoading(true);
+                        await confirmCashPayment(item.id);
+                        Alert.alert("Success", "Cash payment approved successfully!");
+                        fetchDashboardDetails();
+                      } catch (err) {
+                        Alert.alert("Error", err.message);
+                        setLoading(false);
+                      }
+                    }}
+                  >
+                    <Text style={styles.cashBtnText} numberOfLines={1} adjustsFontSizeToFit={true}>✅ Approve Payment</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.cashBtn, { backgroundColor: "#EF4444" }]}
+                    onPress={async () => {
+                      try {
+                        setLoading(true);
+                        await rejectCashPayment(item.id);
+                        Alert.alert("Success", "Cash payment rejected.");
+                        fetchDashboardDetails();
+                      } catch (err) {
+                        Alert.alert("Error", err.message);
+                        setLoading(false);
+                      }
+                    }}
+                  >
+                    <Text style={styles.cashBtnText} numberOfLines={1} adjustsFontSizeToFit={true}>❌ Reject Payment</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
 
         {/* Recent booking request cards list */}
         <View style={styles.sectionHeader}>
@@ -249,5 +325,14 @@ const styles = StyleSheet.create({
   customerName: { fontSize: 13, fontWeight: "700", color: Colors.text },
   serviceName: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
   bookingDate: { fontSize: 10, color: Colors.textTertiary, marginTop: 4 },
-  emptyText: { fontSize: 11, color: Colors.textSecondary, textAlign: "center", marginVertical: 32 }
+  emptyText: { fontSize: 11, color: Colors.textSecondary, textAlign: "center", marginVertical: 32 },
+  cashSection: { paddingHorizontal: 16, marginVertical: 10 },
+  cashConfirmCard: { backgroundColor: Colors.white, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.border, elevation: 1 },
+  cashHeader: { flexDirection: "column", justifyContent: "flex-start", alignItems: "flex-start", marginBottom: 6 },
+  cashCustomer: { fontSize: 13, fontWeight: "700", color: Colors.text },
+  cashAmount: { fontSize: 13, fontWeight: "800", color: Colors.primary, marginTop: 2 },
+  cashBookingCode: { fontSize: 11, color: Colors.textSecondary, marginTop: 4, width: "100%" },
+  cashActionsRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 12, width: "100%" },
+  cashBtn: { flex: 1, height: 38, borderRadius: 8, justifyContent: "center", alignItems: "center", marginHorizontal: 4, paddingHorizontal: 4 },
+  cashBtnText: { color: Colors.white, fontWeight: "700", fontSize: 10, textAlign: "center" }
 });

@@ -15,18 +15,30 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import CustomButton from "../../components/CustomButton";
 import { createPaymentOrder, verifyPaymentSignature, payWithWallet } from "../../services/payment";
+import { getBookingDetails, selectCashPayment } from "../../services/booking";
 
 export default function PaymentScreen({ route, navigation }) {
-  const { bookingId, bookingCode, finalAmount } = route.params || {};
+  const { bookingId, bookingCode, finalAmount, isSettlement } = route.params || {};
 
+  const [booking, setBooking] = useState(null);
   const [selectedMethod, setSelectedMethod] = useState("upi");
   const [loading, setLoading] = useState(false);
   const [orderId, setOrderId] = useState("");
   const [checkoutModalVisible, setCheckoutModalVisible] = useState(false);
 
+  const loadBookingDetails = React.useCallback(async () => {
+    try {
+      const details = await getBookingDetails(bookingId);
+      setBooking(details);
+    } catch (err) {
+      console.log("Failed to fetch booking details in PaymentScreen:", err.message);
+    }
+  }, [bookingId]);
+
   const initiateOrder = React.useCallback(async () => {
     setLoading(true);
     try {
+      await loadBookingDetails();
       const order = await createPaymentOrder(bookingId);
       setOrderId(order.id);
     } catch (err) {
@@ -35,7 +47,7 @@ export default function PaymentScreen({ route, navigation }) {
     } finally {
       setLoading(false);
     }
-  }, [bookingId, navigation]);
+  }, [bookingId, navigation, loadBookingDetails]);
 
   useEffect(() => {
     if (!bookingId) {
@@ -50,11 +62,44 @@ export default function PaymentScreen({ route, navigation }) {
   }, [bookingId, initiateOrder, navigation]);
 
   const handlePay = async () => {
+    if (selectedMethod === "cash") {
+      setLoading(true);
+      try {
+        await selectCashPayment(bookingId);
+        setLoading(false);
+        Alert.alert(
+          "Cash Payment Selected",
+          "Please pay the artist in hand. The booking is now awaiting the artist's payment confirmation.",
+          [
+            {
+              text: "OK",
+              onPress: () => {
+                navigation.replace("BookingSuccess", { bookingCode: bookingCode || booking?.booking_code || `BK-${Math.floor(100000 + Math.random() * 900000)}` });
+              }
+            }
+          ]
+        );
+      } catch (err) {
+        setLoading(false);
+        Alert.alert("Cash Selection Failed", err.message || "Failed to confirm cash option selection.");
+      }
+      return;
+    }
+
     if (selectedMethod === "wallet") {
       setLoading(true);
       try {
         await payWithWallet(bookingId);
-        navigation.replace("BookingSuccess", { bookingCode: bookingCode || `BK-${Math.floor(100000 + Math.random() * 900000)}` });
+        if (isSettlement) {
+          navigation.replace("ReviewSubmission", {
+            bookingId: bookingId,
+            artistName: booking?.artist?.user?.name,
+            artistImage: booking?.artist?.user?.profile_image,
+            specializationName: booking?.service?.specialization_name
+          });
+        } else {
+          navigation.replace("BookingSuccess", { bookingCode: bookingCode || booking?.booking_code || `BK-${Math.floor(100000 + Math.random() * 900000)}` });
+        }
       } catch (err) {
         setLoading(false);
         navigation.navigate("PaymentFailed", { bookingId, finalAmount });
@@ -79,7 +124,16 @@ export default function PaymentScreen({ route, navigation }) {
         razorpay_signature: `sig_${Math.random().toString(36).substring(2, 10)}`
       };
       await verifyPaymentSignature(verifyData);
-      navigation.replace("BookingSuccess", { bookingCode: bookingCode || `BK-${Math.floor(100000 + Math.random() * 900000)}` });
+      if (isSettlement) {
+        navigation.replace("ReviewSubmission", {
+          bookingId: bookingId,
+          artistName: booking?.artist?.user?.name,
+          artistImage: booking?.artist?.user?.profile_image,
+          specializationName: booking?.service?.specialization_name
+        });
+      } else {
+        navigation.replace("BookingSuccess", { bookingCode: bookingCode || booking?.booking_code || `BK-${Math.floor(100000 + Math.random() * 900000)}` });
+      }
     } catch (err) {
       setLoading(false);
       navigation.navigate("PaymentFailed", { bookingId, finalAmount });
@@ -101,6 +155,7 @@ export default function PaymentScreen({ route, navigation }) {
     { id: "card", title: "Credit / Debit Card", subtitle: "Visa, Mastercard, RuPay", icon: "card-outline" },
     { id: "netbanking", title: "Net Banking", subtitle: "SBI, HDFC, ICICI, Axis", icon: "business-outline" },
     { id: "wallet", title: "MehndiGo Wallet & Paytm", subtitle: "Pay via standard online wallets", icon: "wallet-outline" },
+    { id: "cash", title: "Cash Payment (Pay Artist in Hand)", subtitle: "Awaiting artist payment confirmation", icon: "cash-outline" },
     { id: "emi", title: "EMI / Pay Later", subtitle: "Simpl, LazyPay, Credit Card EMI", icon: "hourglass-outline" }
   ];
 
@@ -124,9 +179,43 @@ export default function PaymentScreen({ route, navigation }) {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        {booking && (
+          <View style={styles.detailsCard}>
+            <Text style={styles.detailsCardTitle}>Booking Summary Details</Text>
+            <View style={styles.detailsRow}>
+              <Text style={styles.detailsLabel}>Booking Code</Text>
+              <Text style={styles.detailsValue}>#{booking.booking_code}</Text>
+            </View>
+            <View style={styles.detailsRow}>
+              <Text style={styles.detailsLabel}>Artist Name</Text>
+              <Text style={styles.detailsValue}>{booking.artist?.user?.name || "Professional Specialist"}</Text>
+            </View>
+            <View style={styles.detailsRow}>
+              <Text style={styles.detailsLabel}>Booking Date</Text>
+              <Text style={styles.detailsValue}>{booking.slot?.date ? new Date(booking.slot.date).toLocaleDateString() : (booking.reschedule_date || "TBD")}</Text>
+            </View>
+            <View style={styles.detailsRow}>
+              <Text style={styles.detailsLabel}>Base Booking Amount</Text>
+              <Text style={styles.detailsValue}>₹{booking.total_price}</Text>
+            </View>
+            <View style={styles.detailsRow}>
+              <Text style={styles.detailsLabel}>Platform Commission Fee</Text>
+              <Text style={styles.detailsValue}>₹{booking.platform_fee}</Text>
+            </View>
+            <View style={styles.detailsRow}>
+              <Text style={styles.detailsLabel}>Payment Status</Text>
+              <Text style={styles.detailsValue}>{booking.payment_status}</Text>
+            </View>
+            <View style={styles.detailsRow}>
+              <Text style={styles.detailsLabel}>Payment Method</Text>
+              <Text style={styles.detailsValue}>{booking.payment_method || "Selection Required"}</Text>
+            </View>
+          </View>
+        )}
+
         <View style={styles.amountCard}>
           <Text style={styles.amountLabel}>Total Payable Amount (incl. GST)</Text>
-          <Text style={styles.amount}>₹{finalAmount || "TBD"}</Text>
+          <Text style={styles.amount}>₹{finalAmount || booking?.final_amount || "TBD"}</Text>
         </View>
 
         <Text style={styles.sectionTitle}>Select Payment Method</Text>
@@ -187,6 +276,11 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   centerContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
   loaderText: { marginTop: 12, color: Colors.textSecondary, fontSize: 13, fontWeight: "600" },
+  detailsCard: { margin: 16, marginBottom: 4, backgroundColor: Colors.white, borderRadius: 16, padding: 18, elevation: 1 },
+  detailsCardTitle: { fontSize: 13, fontWeight: "700", color: Colors.text, marginBottom: 12 },
+  detailsRow: { flexDirection: "row", justifyContent: "space-between", marginVertical: 4 },
+  detailsLabel: { fontSize: 11, color: Colors.textSecondary },
+  detailsValue: { fontSize: 11, fontWeight: "600", color: Colors.text },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12, backgroundColor: Colors.white },
   backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.background, justifyContent: "center", alignItems: "center" },
   title: { fontSize: 18, fontWeight: "700", color: Colors.text },
