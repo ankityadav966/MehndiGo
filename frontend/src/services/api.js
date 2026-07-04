@@ -1,6 +1,8 @@
 import axios from "axios";
 
-const API_BASE_URL = "http://localhost:8000/api/v1/mehndigo";
+const API_BASE_URL = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" || window.location.hostname.startsWith("192."))
+  ? "http://localhost:8000/api/v1/mehndigo"
+  : "https://mehandigo-api.globalrns.com/api/v1/mehndigo";
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
