@@ -225,7 +225,7 @@ export default function ArtistDashboardScreen({ navigation }) {
               const paymentRecord = item.payments && item.payments[0];
               const paymentMethod = paymentRecord?.payment_method || "Online";
               const paymentStatus = paymentRecord?.status || item.payment_status || "PENDING";
-              const slotDate = item.slot?.date ? new Date(item.slot.date).toLocaleDateString() : (item.reschedule_date || "TBD");
+              const slotDate = item.slot?.start_time ? new Date(item.slot.start_time).toLocaleDateString() : (item.reschedule_date || "TBD");
               const slotTime = item.slot ? `${new Date(item.slot.start_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - ${new Date(item.slot.end_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` : (item.reschedule_time || "TBD");
               
               return (
@@ -312,7 +312,7 @@ export default function ArtistDashboardScreen({ navigation }) {
                   <Text style={styles.cashAmount} numberOfLines={1} adjustsFontSizeToFit={true}>Booking Amount: ₹{item.final_amount}</Text>
                 </View>
                 <Text style={styles.cashBookingCode} numberOfLines={1} adjustsFontSizeToFit={true}>Booking ID: #{item.booking_code}</Text>
-                <Text style={styles.cashBookingCode} numberOfLines={1} adjustsFontSizeToFit={true}>Booking Date: {item.slot?.date ? new Date(item.slot.date).toLocaleDateString() : (item.reschedule_date || "TBD")}</Text>
+                <Text style={styles.cashBookingCode} numberOfLines={1} adjustsFontSizeToFit={true}>Booking Date: {item.slot?.start_time ? new Date(item.slot.start_time).toLocaleDateString() : (item.reschedule_date || "TBD")}</Text>
                 <Text style={styles.cashBookingCode} numberOfLines={1} adjustsFontSizeToFit={true}>Payment Method: Cash</Text>
                 <Text style={styles.cashBookingCode} numberOfLines={1} adjustsFontSizeToFit={true}>Payment Status: Pending Cash Confirmation</Text>
                 

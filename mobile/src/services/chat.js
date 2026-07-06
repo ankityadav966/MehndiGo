@@ -26,7 +26,7 @@ export async function deleteMessage(messageId, deleteType = "me") {
 
 // Upload file to Cloudinary via REST API
 export async function uploadChatMedia(fileUri, fileType, fileName) {
-  const FileSystem = require("expo-file-system");
+  const FileSystem = require("expo-file-system/legacy");
   const { UploadType } = require("expo-file-system");
   const name = fileName || fileUri.split("/").pop();
   let type = "image/jpeg";
