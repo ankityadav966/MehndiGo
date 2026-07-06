@@ -21,12 +21,12 @@ jobs:
       - name: Install Backend Dependencies
         run: |
           cd backend
-          npm ci
+          npm ci --legacy-peer-deps
 
       - name: Install Frontend Dependencies & Build
         run: |
           cd frontend
-          npm ci
+          npm ci --legacy-peer-deps
           npm run build
 
   deploy:
