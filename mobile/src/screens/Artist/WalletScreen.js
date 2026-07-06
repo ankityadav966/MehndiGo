@@ -26,6 +26,7 @@ import {
 
 export default function WalletScreen({ navigation }) {
   const [balance, setBalance] = useState(0);
+  const [walletData, setWalletData] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [withdraws, setWithdraws] = useState([]);
   const [bankAccount, setBankAccount] = useState(null);
@@ -52,6 +53,7 @@ export default function WalletScreen({ navigation }) {
   const loadWalletDataset = React.useCallback(async () => {
     try {
       const wallet = await getUserWallet();
+      setWalletData(wallet);
       setBalance(wallet?.balance || 0);
 
       const history = await getWalletHistory();
@@ -209,6 +211,17 @@ export default function WalletScreen({ navigation }) {
               <Text style={styles.available}>Processed and ready for bank payout</Text>
             </View>
 
+            <View style={styles.statsContainer}>
+              <View style={styles.miniCard}>
+                <Text style={styles.miniLabel}>Total Earnings</Text>
+                <Text style={styles.miniValue}>₹{(walletData?.lifetime_earnings || 0).toLocaleString()}</Text>
+              </View>
+              <View style={styles.miniCard}>
+                <Text style={styles.miniLabel}>Pending Earnings</Text>
+                <Text style={styles.miniValue}>₹{(walletData?.pending_balance || 0).toLocaleString()}</Text>
+              </View>
+            </View>
+
             <View style={styles.tabContainer}>
               <TouchableOpacity
                 style={[styles.tab, activeTab === "Withdraw" && styles.activeTab]}
@@ -324,6 +337,10 @@ export default function WalletScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   centerContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
+  statsContainer: { flexDirection: "row", justifyContent: "space-between", marginHorizontal: 12, marginTop: 12 },
+  miniCard: { flex: 1, backgroundColor: Colors.white, borderRadius: 14, padding: 12, marginHorizontal: 4, alignItems: "center", borderWidth: 1, borderColor: Colors.border, elevation: 1 },
+  miniLabel: { fontSize: 10, fontWeight: "700", color: Colors.textSecondary, marginBottom: 4 },
+  miniValue: { fontSize: 14, fontWeight: "800", color: Colors.text },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12, backgroundColor: Colors.white, borderBottomWidth: 1, borderBottomColor: Colors.border },
   backButton: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.background, justifyContent: "center", alignItems: "center" },
   headerTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },

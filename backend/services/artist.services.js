@@ -1443,12 +1443,12 @@ async createReview(data) {
     if (!artist) throw new AppError("Artist profile not found", 404);
 
     await artist.update({
-      bio: data.bio || artist.bio,
-      experience_years: data.experience_years !== undefined ? Number(data.experience_years) : artist.experience_years,
-      location: data.location || artist.location,
-      city: data.city || artist.city,
-      state: data.state || artist.state,
-      pincode: data.pincode || artist.pincode,
+      bio: data.bio !== undefined ? data.bio : artist.bio,
+      experience_years: data.experience_years !== undefined ? Number(data.experience_years) : (data.experience !== undefined ? Number(data.experience) : artist.experience_years),
+      location: data.location !== undefined ? data.location : artist.location,
+      city: data.city !== undefined ? data.city : artist.city,
+      state: data.state !== undefined ? data.state : artist.state,
+      pincode: data.pincode !== undefined ? data.pincode : artist.pincode,
       cover_image: data.coverImage !== undefined ? data.coverImage : (data.cover_image !== undefined ? data.cover_image : artist.cover_image),
       languages: data.languages !== undefined ? data.languages : artist.languages
     });
@@ -1456,8 +1456,8 @@ async createReview(data) {
     const user = await db.User.findByPk(userId);
     if (user) {
       await user.update({
-        name: data.name || user.name,
-        profile_image: data.profileImage || user.profile_image
+        name: data.name !== undefined ? data.name : user.name,
+        profile_image: data.profileImage !== undefined ? data.profileImage : (data.profile_image !== undefined ? data.profile_image : user.profile_image)
       });
     }
 
