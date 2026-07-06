@@ -613,7 +613,10 @@ class PaymentService {
       if (settlement && settlement.status !== "COMPLETED") {
         const artistProfile = await db.ArtistProfile.findByPk(booking.artist_id);
         if (artistProfile) {
-          const artistWallet = await db.Wallet.findOne({ where: { user_id: artistProfile.user_id } });
+          const [artistWallet] = await db.Wallet.findOrCreate({
+            where: { user_id: artistProfile.user_id },
+            defaults: { balance: 0, pending_balance: 0, lifetime_earnings: 0, total_commission_earned: 0, total_withdrawals: 0 }
+          });
           if (artistWallet) {
             const escrow = await db.EscrowRecord.findOne({ where: { booking_id: bookingId, status: "HELD" } });
             if (escrow) {

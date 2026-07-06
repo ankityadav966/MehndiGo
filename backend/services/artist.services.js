@@ -1195,16 +1195,21 @@ async createReview(data) {
       where: { artist_id: artist.id, createdAt: { [db.Sequelize.Op.gte]: today } }
     });
 
-    const artistWallet = await db.Wallet.findOne({ where: { user_id: userId } });
+    const [artistWallet] = await db.Wallet.findOrCreate({
+      where: { user_id: userId },
+      defaults: { balance: 0, pending_balance: 0, lifetime_earnings: 0, total_commission_earned: 0, total_withdrawals: 0 }
+    });
+
     let todayEarnings = 0;
     if (artistWallet) {
       todayEarnings = await db.WalletTransaction.sum("amount", {
         where: {
           wallet_id: artistWallet.id,
           status: "SUCCESS",
+          transaction_type: { [db.Sequelize.Op.in]: ["SETTLEMENT", "RECHARGE", "REFUND", "MANUAL_CREDIT"] },
           createdAt: { [db.Sequelize.Op.gte]: today }
         }
-      });
+      }) || 0;
     }
 
     const [
@@ -1215,8 +1220,7 @@ async createReview(data) {
       completedBookingsCount,
       awaitingSettlementCount,
       pendingCashApprovalCount,
-      cancelledBookingsCount,
-      wallet
+      cancelledBookingsCount
     ] = await Promise.all([
       db.Booking.count({ where: { artist_id: artist.id, booking_status: "PENDING" } }),
       db.Booking.count({ where: { artist_id: artist.id, booking_status: "CONFIRMED" } }),
@@ -1232,8 +1236,7 @@ async createReview(data) {
         }
       }),
       db.Booking.count({ where: { artist_id: artist.id, detailed_status: "AWAITING_CASH_CONFIRMATION" } }),
-      db.Booking.count({ where: { artist_id: artist.id, booking_status: "CANCELLED" } }),
-      db.Wallet.findOne({ where: { user_id: userId } })
+      db.Booking.count({ where: { artist_id: artist.id, booking_status: "CANCELLED" } })
     ]);
 
     const pendingBookingsCount = pendingRequests;
@@ -1263,7 +1266,7 @@ async createReview(data) {
       todayBookings,
       todayEarnings: todayEarnings || 0,
       pendingRequests,
-      walletBalance: wallet ? wallet.balance : 0,
+      walletBalance: artistWallet ? artistWallet.balance : 0,
       recentBookings,
       bookingCounts: {
         PENDING: pendingBookingsCount,
