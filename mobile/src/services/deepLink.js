@@ -72,29 +72,56 @@ const NOTIFICATION_ROUTES = {
 export function resolveNotificationRoute(notification, role) {
   const data = notification?.data || notification?.request?.content?.data || {};
 
-  const { type, event, bookingId, leadId, refundId } = data;
+  let { type, event, bookingId, leadId, refundId } = data;
+
+  // Normalize socket.io notification structures
+  if (!type && data.type) type = data.type;
+  
+  // Map type to lowercase to match config keys (e.g. "BOOKING" -> "booking")
+  if (type) type = type.toLowerCase();
+
+  // If event is missing, map it using type
+  if (type && !event) {
+    if (type === "booking") {
+      event = role === "ARTIST" ? "new_booking_request" : "booking_confirmed";
+    } else if (type === "payment") {
+      event = role === "ARTIST" ? "payment_received" : "payment_success";
+    } else if (type === "wallet") {
+      event = "wallet_credit";
+    } else if (type === "review") {
+      event = role === "ARTIST" ? "new_review" : "review_reminder";
+    } else if (type === "chat") {
+      event = "new_message";
+    }
+  }
+
+  // Fallback to Notifications/NotificationCenter
+  const fallbackScreen = role === "ARTIST" ? "Notifications" : "NotificationCenter";
 
   if (!type || !event) {
-    return { screen: "NotificationCenter" };
+    return { screen: fallbackScreen };
   }
 
   const typeRoutes = NOTIFICATION_ROUTES[type];
-  if (!typeRoutes) return { screen: "NotificationCenter" };
+  if (!typeRoutes) return { screen: fallbackScreen };
 
   const roleRoutes = typeRoutes[role];
-  if (!roleRoutes) return { screen: "NotificationCenter" };
+  if (!roleRoutes) return { screen: fallbackScreen };
 
   const route = roleRoutes[event];
-  if (!route) return { screen: "NotificationCenter" };
+  if (!route) return { screen: fallbackScreen };
 
   const resolvedParams = { ...route.params };
   if (resolvedParams.id) {
-    resolvedParams.id = resolvedParams.id.replace(":bookingId", bookingId || "");
-    resolvedParams.id = resolvedParams.id.replace(":leadId", leadId || "");
-    resolvedParams.id = resolvedParams.id.replace(":refundId", refundId || "");
+    // Fallback to id or booking_id keys if bookingId is missing
+    const bid = bookingId || data.bookingId || data.id || data.booking_id || "";
+    resolvedParams.id = resolvedParams.id.replace(":bookingId", bid);
+    resolvedParams.id = resolvedParams.id.replace(":leadId", leadId || data.leadId || data.id || "");
+    resolvedParams.id = resolvedParams.id.replace(":refundId", refundId || data.refundId || data.id || "");
   }
   if (resolvedParams.bookingId) {
-    resolvedParams.bookingId = resolvedParams.bookingId.replace(":bookingId", bookingId || "");
+    const bid = bookingId || data.bookingId || data.id || data.booking_id || "";
+    resolvedParams.bookingId = resolvedParams.bookingId.replace(":bookingId", bid);
   }
 
   return { screen: route.screen, params: resolvedParams };

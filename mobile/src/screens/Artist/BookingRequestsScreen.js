@@ -15,8 +15,14 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import { getBookingHistory, acceptBooking, rejectBooking } from "../../services/booking";
 
-export default function BookingRequestsScreen({ navigation }) {
+export default function BookingRequestsScreen({ route, navigation }) {
   const [activeTab, setActiveTab] = useState("Pending");
+
+  useEffect(() => {
+    if (route.params?.initialTab) {
+      setActiveTab(route.params.initialTab);
+    }
+  }, [route.params?.initialTab]);
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);

@@ -123,7 +123,7 @@ export async function createPortfolioItem(itemData) {
   const hasLocalMedia = (itemData.image_url && isLocal(itemData.image_url)) || (itemData.video_url && isLocal(itemData.video_url));
 
   if (hasLocalMedia) {
-    const FileSystem = require("expo-file-system/legacy");
+    const FileSystem = require("expo-file-system");
     const { UploadType } = require("expo-file-system");
     const isVideo = itemData.video_url && isLocal(itemData.video_url);
     const mediaUri = isVideo ? itemData.video_url : itemData.image_url;
@@ -180,7 +180,7 @@ export async function deletePortfolioItem(id) {
 }
 
 export async function uploadPortfolioMedia(mediaFiles) {
-  const FileSystem = require("expo-file-system/legacy");
+  const FileSystem = require("expo-file-system");
   const { UploadType } = require("expo-file-system");
   const token = await secureStorage.getAccessToken();
   const results = [];

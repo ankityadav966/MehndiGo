@@ -1438,7 +1438,25 @@ async createReview(data) {
       include: [{ model: db.User, as: "user", attributes: ["name", "phone", "email", "profile_image"] }]
     });
     if (!artist) throw new AppError("Artist profile not found", 404);
-    return artist;
+
+    const [totalBookings, completedBookings, pendingBookings, cancelledBookings, rejectedBookings] = await Promise.all([
+      db.Booking.count({ where: { artist_id: artist.id } }),
+      db.Booking.count({ where: { artist_id: artist.id, booking_status: "COMPLETED" } }),
+      db.Booking.count({ where: { artist_id: artist.id, booking_status: "PENDING" } }),
+      db.Booking.count({ where: { artist_id: artist.id, booking_status: "CANCELLED", detailed_status: { [db.Sequelize.Op.ne]: "REJECTED" } } }),
+      db.Booking.count({ where: { artist_id: artist.id, detailed_status: "REJECTED" } })
+    ]);
+
+    const artistJSON = artist.toJSON();
+    artistJSON.bookingStats = {
+      total: totalBookings,
+      completed: completedBookings,
+      pending: pendingBookings,
+      cancelled: cancelledBookings,
+      rejected: rejectedBookings
+    };
+
+    return artistJSON;
   }
 
   async updateProfileDetails(userId, data) {

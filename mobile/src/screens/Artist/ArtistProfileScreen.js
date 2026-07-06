@@ -474,18 +474,19 @@ export default function ArtistProfileScreen({ navigation }) {
 
           {/* Stats Bar */}
           <View style={styles.statsBar}>
-            <View style={styles.statsDividerItem}>
+            <TouchableOpacity 
+              style={styles.statsDividerItem}
+              onPress={() => navigation.navigate("BookingRequests", { initialTab: "Pending" })}
+            >
               <Text style={styles.statValue}>
-                {profile?.totalBookings ??
-                  profile?.bookings ??
-                  "0"}
+                {profile?.bookingStats?.total ?? "0"}
               </Text>
               <Text style={styles.statLabel}>Bookings</Text>
-            </View>
+            </TouchableOpacity>
             <View style={styles.statsSeparator} />
             <View style={styles.statsDividerItem}>
               <Text style={styles.statValue}>
-                {profile?.experience ?? profile?.experienceYears ?? "0"}
+                {profile?.experience_years ?? profile?.experience ?? profile?.experienceYears ?? "0"}
               </Text>
               <Text style={styles.statLabel}>Experience</Text>
             </View>
@@ -494,6 +495,50 @@ export default function ArtistProfileScreen({ navigation }) {
               <Text style={styles.statValue}>{portfolioItems.length || portfolios.length}</Text>
               <Text style={styles.statLabel}>Posts</Text>
             </View>
+          </View>
+
+          {/* Booking Analytics Section */}
+          <Text style={[styles.sectionTitle, { marginHorizontal: 16, marginTop: 20, marginBottom: 8, fontSize: 13, fontWeight: "700", color: Colors.textSecondary }]}>Booking Analytics</Text>
+          <View style={styles.analyticsGrid}>
+            <TouchableOpacity 
+              style={styles.analyticsCard} 
+              onPress={() => navigation.navigate("BookingRequests", { initialTab: "Completed" })}
+            >
+              <Text style={styles.analyticsValue}>{profile?.bookingStats?.total ?? 0}</Text>
+              <Text style={styles.analyticsLabel}>Total Bookings</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.analyticsCard} 
+              onPress={() => navigation.navigate("BookingRequests", { initialTab: "Pending" })}
+            >
+              <Text style={[styles.analyticsValue, { color: Colors.primary }]}>{profile?.bookingStats?.pending ?? 0}</Text>
+              <Text style={styles.analyticsLabel}>Pending</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.analyticsCard} 
+              onPress={() => navigation.navigate("BookingRequests", { initialTab: "Accepted" })}
+            >
+              <Text style={[styles.analyticsValue, { color: Colors.success }]}>{profile?.bookingStats?.completed ?? 0}</Text>
+              <Text style={styles.analyticsLabel}>Completed</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.analyticsCard} 
+              onPress={() => navigation.navigate("BookingRequests", { initialTab: "Completed" })}
+            >
+              <Text style={[styles.analyticsValue, { color: Colors.error }]}>{profile?.bookingStats?.cancelled ?? 0}</Text>
+              <Text style={styles.analyticsLabel}>Cancelled</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.analyticsCard} 
+              onPress={() => navigation.navigate("BookingRequests", { initialTab: "Completed" })}
+            >
+              <Text style={[styles.analyticsValue, { color: "#6B7280" }]}>{profile?.bookingStats?.rejected ?? 0}</Text>
+              <Text style={styles.analyticsLabel}>Rejected</Text>
+            </TouchableOpacity>
           </View>
 
           <View style={styles.actionRow}>
@@ -1047,5 +1092,36 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: Colors.white,
+  },
+  analyticsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "flex-start",
+    marginHorizontal: 12,
+    marginBottom: 8,
+  },
+  analyticsCard: {
+    backgroundColor: Colors.white,
+    borderRadius: 12,
+    padding: 10,
+    width: "30%",
+    marginHorizontal: "1.5%",
+    marginBottom: 10,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: Colors.border,
+    elevation: 1,
+  },
+  analyticsValue: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: Colors.text,
+  },
+  analyticsLabel: {
+    fontSize: 9,
+    fontWeight: "700",
+    color: Colors.textSecondary,
+    marginTop: 4,
+    textAlign: "center",
   },
 });
