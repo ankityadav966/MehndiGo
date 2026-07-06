@@ -1248,7 +1248,7 @@ async createReview(data) {
       include: [
         { model: db.User, as: "user", attributes: ["name", "profile_image"] },
         { model: db.Service, as: "service", attributes: ["specialization_name"] },
-        { model: db.AvailabilitySlot, as: "slot", attributes: ["date", "start_time", "end_time"] },
+        { model: db.AvailabilitySlot, as: "slot", attributes: ["start_time", "end_time"] },
         { model: db.Payment, as: "payments", attributes: ["payment_method", "status"] }
       ]
     });

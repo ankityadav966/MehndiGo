@@ -567,7 +567,7 @@ class BookingService {
           booking_id: booking.id,
           artistId: booking.artist_id,
           artistName: artistName,
-          bookingDate: booking.slot_id ? (await db.AvailabilitySlot.findByPk(booking.slot_id))?.date : null,
+          bookingDate: booking.slot_id ? (await db.AvailabilitySlot.findByPk(booking.slot_id))?.start_time : null,
           paymentStatus: booking.payment_status,
           rejectionReason: extraData.cancelReason || "Rejected by artist"
         };
