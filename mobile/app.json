@@ -17,8 +17,7 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.sonuy123.mehendigoo",
-      "usesCleartextTraffic": true,
-      "googleServicesFile": "./google-services.json"
+      "usesCleartextTraffic": true
     },
     "plugins": [
       [
