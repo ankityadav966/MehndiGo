@@ -14,7 +14,7 @@ import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import CustomButton from "../../components/CustomButton";
-import { getBookingDetails, acceptBooking, rejectBooking, startService, completeService, confirmCashPayment, rejectCashPayment } from "../../services/booking";
+import { getBookingDetails, acceptBooking, rejectBooking, updateOnTheWay, startService, completeService, confirmCashPayment, rejectCashPayment } from "../../services/booking";
 
 // Stepper steps for artist tracking
 const STEPS = [
@@ -95,18 +95,12 @@ export default function BookingDetailsScreen({ route, navigation }) {
 
   const handleStartTravel = async () => {
     setLoading(true);
-    // Simulating moving status to ON_THE_WAY using local update status wrapper
     try {
-      const BookingService = require("../../services/booking");
-      await BookingService.cancelBooking(bookingId, "Artist On The Way"); // Let's call startService or completeService instead
-      // Wait, we can call PUT /booking/start or create custom status update in customer.js? Let's check:
-      // We have startService(bookingId) in booking.js. Let's call it!
-      await startService(bookingId);
+      await updateOnTheWay(bookingId);
       Alert.alert("Travel Started", "You are now on the way to the customer location!");
       loadDetails();
     } catch (err) {
-      // Fallback
-      Alert.alert("Error", "Failed to update travel status.");
+      Alert.alert("Error", err.message || "Failed to update travel status.");
       setLoading(false);
     }
   };

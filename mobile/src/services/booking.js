@@ -79,6 +79,11 @@ export async function rejectBooking(bookingId, rejectReason) {
   return res?.data || res;
 }
 
+export async function updateOnTheWay(bookingId) {
+  const res = await apiRequest("PUT", "/booking/on-the-way", { bookingId }, true);
+  return res?.data || res;
+}
+
 export async function startService(bookingId) {
   const res = await apiRequest("PUT", "/booking/start", { bookingId }, true);
   return res?.data || res;

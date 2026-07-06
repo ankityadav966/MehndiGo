@@ -17,6 +17,7 @@ router.put("/cancel", authenticate, BookingController.cancelBooking);
 router.put("/reschedule", authenticate, BookingController.rescheduleBooking);
 router.put("/accept", authenticate, BookingController.acceptBooking);
 router.put("/reject", authenticate, BookingController.rejectBooking);
+router.put("/on-the-way", authenticate, BookingController.onTheWayBooking);
 router.put("/start", authenticate, BookingController.startService);
 router.put("/complete", authenticate, BookingController.completeService);
 router.put("/skip-review", authenticate, BookingController.skipReview);

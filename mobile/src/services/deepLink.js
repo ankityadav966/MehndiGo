@@ -80,23 +80,25 @@ export function resolveNotificationRoute(notification, role) {
   // Map type to lowercase to match config keys (e.g. "BOOKING" -> "booking")
   if (type) type = type.toLowerCase();
 
+  const normalizedRole = String(role || "").toLowerCase();
+
   // If event is missing, map it using type
   if (type && !event) {
     if (type === "booking") {
-      event = role === "ARTIST" ? "new_booking_request" : "booking_confirmed";
+      event = normalizedRole === "artist" ? "new_booking_request" : "booking_confirmed";
     } else if (type === "payment") {
-      event = role === "ARTIST" ? "payment_received" : "payment_success";
+      event = normalizedRole === "artist" ? "payment_received" : "payment_success";
     } else if (type === "wallet") {
       event = "wallet_credit";
     } else if (type === "review") {
-      event = role === "ARTIST" ? "new_review" : "review_reminder";
+      event = normalizedRole === "artist" ? "new_review" : "review_reminder";
     } else if (type === "chat") {
       event = "new_message";
     }
   }
 
   // Fallback to Notifications/NotificationCenter
-  const fallbackScreen = role === "ARTIST" ? "Notifications" : "NotificationCenter";
+  const fallbackScreen = normalizedRole === "artist" ? "Notifications" : "NotificationCenter";
 
   if (!type || !event) {
     return { screen: fallbackScreen };
@@ -105,7 +107,7 @@ export function resolveNotificationRoute(notification, role) {
   const typeRoutes = NOTIFICATION_ROUTES[type];
   if (!typeRoutes) return { screen: fallbackScreen };
 
-  const roleRoutes = typeRoutes[role];
+  const roleRoutes = typeRoutes[normalizedRole];
   if (!roleRoutes) return { screen: fallbackScreen };
 
   const route = roleRoutes[event];

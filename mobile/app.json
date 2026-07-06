@@ -17,7 +17,8 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.sonuy123.mehendigoo",
-      "usesCleartextTraffic": true
+      "usesCleartextTraffic": true,
+      "googleServicesFile": "./google-services.json"
     },
     "plugins": [
       [
@@ -29,10 +30,17 @@
           "resizeMode": "contain"
         }
       ],
-      "expo-image"
+      "expo-image",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#FF4D6D"
+        }
+      ]
     ],
     "experiments": {
       "reactCompiler": true
     }
   }
-} 
+}

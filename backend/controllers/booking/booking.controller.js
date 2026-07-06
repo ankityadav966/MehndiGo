@@ -272,6 +272,18 @@ async function checkRestrictedBooking(req, res) {
   }
 }
 
+async function onTheWayBooking(req, res) {
+  try {
+    const { bookingId } = req.body;
+    const response = await BookingService.updateBookingStatus(bookingId, req.user.id, req.user.role, "ARTIST_ON_THE_WAY");
+    return res.status(200).json(SuccessResponse("Artist is on the way", response));
+  } catch (error) {
+    return res
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
+  }
+}
+
 module.exports = {
   calculatePriceDetails,
   createBooking,
@@ -286,6 +298,7 @@ module.exports = {
   rejectBooking,
   startService,
   completeService,
+  onTheWayBooking,
   getInvoice,
   skipReview,
   selectCashPayment,
