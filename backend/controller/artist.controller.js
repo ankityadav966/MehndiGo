@@ -391,13 +391,38 @@ async function uploadPortfolioImage(req, res) {
 
 async function uploadPortfolioMedia(req, res) {
   try {
-    // Return paths of all uploaded files (multer array)
     const files = req.files || [];
-    const mediaList = files.map((file) => ({
-      url: file.path,
-      type: file.mimetype.startsWith("video") ? "video" : "image"
-    }));
-    return res.status(201).json(SuccessResponse("Media files uploaded successfully", mediaList));
+    const mediaList = [];
+    const db = require("../models");
+
+    // Fetch the artist profile of the logged-in user if it exists
+    const artist = await db.ArtistProfile.findOne({ where: { user_id: req.user.id } });
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const isVideo = file.mimetype.startsWith("video");
+      const path = file.path;
+
+      const item = {
+        url: path,
+        type: isVideo ? "video" : "image"
+      };
+
+      if (artist) {
+        // If the user has an artist profile, automatically create a Portfolio record
+        const data = {
+          artist_id: req.user.id,
+          image_url: path,
+          video_url: isVideo ? path : null
+        };
+        const portfolioItem = await ArtistService.createPortfolio(data);
+        item.portfolio_id = portfolioItem.id;
+      }
+
+      mediaList.push(item);
+    }
+
+    return res.status(201).json(SuccessResponse("Media files uploaded and stored successfully", mediaList));
   } catch (error) {
     return res
       .status(500)
