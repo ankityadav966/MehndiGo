@@ -1,9 +1,11 @@
-import apiRequest, { BASE_URL } from "./api";
+import apiRequest, { getNormalizedUrl } from "./api";
 import { secureStorage } from "../utils/storage";
 
 export async function createPortfolio(formData) {
   const token = await secureStorage.getAccessToken();
-  const response = await fetch(`${BASE_URL}/api/v1/mehndigo/artist/service`, {
+  const url = getNormalizedUrl("/api/v1/mehndigo/artist/service");
+  console.log(`[API REQUEST] POST (fetch) -> ${url}`);
+  const response = await fetch(url, {
     method: "POST",
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: formData,
@@ -34,7 +36,9 @@ export async function getAllPortfolios() {
 
 export async function updatePortfolio(id, formData) {
   const token = await secureStorage.getAccessToken();
-  const response = await fetch(`${BASE_URL}/api/v1/mehndigo/artist/service/${id}`, {
+  const url = getNormalizedUrl(`/api/v1/mehndigo/artist/service/${id}`);
+  console.log(`[API REQUEST] PUT (fetch) -> ${url}`);
+  const response = await fetch(url, {
     method: "PUT",
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: formData,

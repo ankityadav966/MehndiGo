@@ -34,7 +34,7 @@ async function authenticate(
 
         token,
 
-        process.env.JWT_SECRET
+        process.env.JWT_SECRET || "Live credentials"
       );
 
     req.user = decoded;

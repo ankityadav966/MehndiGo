@@ -1,4 +1,4 @@
-import apiRequest, { BASE_URL } from "./api";
+import apiRequest, { getNormalizedUrl } from "./api";
 import { secureStorage } from "../utils/storage";
 
 export async function getArtistDetails() {
@@ -72,7 +72,9 @@ export async function createArtistProfile(profileData) {
 
   const token = await secureStorage.getAccessToken();
   console.log("createArtistProfile FormData parts:", formData._parts);
-  const response = await fetch(`${BASE_URL}/api/v1/mehndigo/artist/profile`, {
+  const url = getNormalizedUrl("/api/v1/mehndigo/artist/profile");
+  console.log(`[API REQUEST] POST (fetch) -> ${url}`);
+  const response = await fetch(url, {
     method: "POST",
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: formData,
@@ -135,8 +137,10 @@ export async function createPortfolioItem(itemData) {
     });
 
     const token = await secureStorage.getAccessToken();
+    const url = getNormalizedUrl("/api/v1/mehndigo/artist/portfolio");
+    console.log(`[API REQUEST] POST (uploadAsync) -> ${url}`);
     const response = await FileSystem.uploadAsync(
-      `${BASE_URL}/api/v1/mehndigo/artist/portfolio`,
+      url,
       mediaUri,
       {
         fieldName: "portfolio_image",
@@ -194,8 +198,10 @@ export async function uploadPortfolioMedia(mediaFiles) {
     const name = file?.name || `media_${index}_${Date.now()}.${type === "video/mp4" ? "mp4" : "jpg"}`;
     
     if (uri.startsWith("file://") || uri.startsWith("content://")) {
+      const url = getNormalizedUrl("/api/v1/mehndigo/artist/portfolio/upload");
+      console.log(`[API REQUEST] POST (uploadAsync) -> ${url}`);
       const response = await FileSystem.uploadAsync(
-        `${BASE_URL}/api/v1/mehndigo/artist/portfolio/upload`,
+        url,
         uri,
         {
           fieldName: "media",

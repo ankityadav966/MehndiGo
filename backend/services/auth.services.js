@@ -23,7 +23,7 @@ function hashPassword(password) {
 function generateAccessToken(user) {
   return jwt.sign(
     { id: user.id, role: user.role },
-    process.env.JWT_SECRET,
+    process.env.JWT_SECRET || "Live credentials",
     { expiresIn: "1h" }
   );
 }
@@ -31,7 +31,7 @@ function generateAccessToken(user) {
 function generateRefreshToken(user) {
   return jwt.sign(
     { id: user.id, role: user.role },
-    process.env.JWT_SECRET,
+    process.env.JWT_SECRET || "Live credentials",
     { expiresIn: "7d" }
   );
 }
@@ -306,7 +306,7 @@ class AuthService {
     }
 
     try {
-      const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
+      const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET || "Live credentials");
       const user = await UserRepositor.getById(decoded.id);
 
       if (!user || user.refresh_token !== refreshToken) {

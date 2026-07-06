@@ -28,6 +28,9 @@ services:
       DB_PASS: 123456
       DB_NAME: mehndigo_staging_db
       JWT_SECRET: staging_super_secret_secret
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
+      TWILIO_PHONE_NUMBER: ${TWILIO_PHONE_NUMBER}
     ports:
       - "3000:3000"
     depends_on:

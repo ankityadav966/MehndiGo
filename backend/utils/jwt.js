@@ -6,7 +6,7 @@ function generateToken(user) {
       id: user.id,
       role: user.role,
     },
-    process.env.JWT_SECRET,
+    process.env.JWT_SECRET || "Live credentials",
     { expiresIn: "7d" }
   );
 }

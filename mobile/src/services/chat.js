@@ -1,4 +1,4 @@
-import apiRequest, { BASE_URL } from "./api";
+import apiRequest, { getNormalizedUrl } from "./api";
 
 // Fetch chat room listings for active bookings
 export async function getChatList() {
@@ -34,7 +34,8 @@ export async function uploadChatMedia(fileUri, fileType, fileName) {
   else if (fileType === "pdf") type = "application/pdf";
   else if (fileType === "voice") type = "audio/m4a";
 
-  const url = `${BASE_URL}/chat/upload`;
+  const url = getNormalizedUrl("/chat/upload");
+  console.log(`[API REQUEST] POST (uploadAsync) -> ${url}`);
   const token = await require("../utils/storage").secureStorage.getAccessToken();
 
   const response = await FileSystem.uploadAsync(url, fileUri, {

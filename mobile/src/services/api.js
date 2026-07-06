@@ -5,13 +5,58 @@ const getBaseUrl = () => {
   if (envUrl) {
     return envUrl.endsWith("/") ? envUrl.slice(0, -1) : envUrl;
   }
-  return "http://192.168.1.9:8000";
+  return "https://mehandigo-api.globalrns.com/api/v1";
 };
 
 export const BASE_URL = getBaseUrl();
 
+export function getNormalizedUrl(endpoint) {
+  let baseUrl = BASE_URL;
+  let cleanEndpoint = endpoint;
+
+  // Ensure endpoint starts with a slash
+  if (!cleanEndpoint.startsWith("/")) {
+    cleanEndpoint = "/" + cleanEndpoint;
+  }
+
+  // Normalize endpoints to avoid double prefixing and handle root vs /api/v1 namespaces
+  if (cleanEndpoint.startsWith("/api/v1/")) {
+    if (baseUrl.endsWith("/api/v1")) {
+      cleanEndpoint = cleanEndpoint.substring(7); // strip /api/v1 from endpoint
+    }
+  } else {
+    // Root level endpoints (e.g. /wallet, /auth/login) shouldn't be prefixed with /api/v1
+    if (baseUrl.endsWith("/api/v1")) {
+      baseUrl = baseUrl.substring(0, baseUrl.length - 7);
+    }
+  }
+
+  // Construct URL
+  if (baseUrl.endsWith("/")) {
+    baseUrl = baseUrl.slice(0, -1);
+  }
+  let url = `${baseUrl}${cleanEndpoint}`;
+
+  // Normalize and replace any dev local URL / IP
+  if (url.includes("192.168.1.9")) {
+    url = url.replace(/http:\/\/192\.168\.1\.9:\d+/g, "https://mehandigo-api.globalrns.com");
+    url = url.replace(/192\.168\.1\.9:\d+/g, "mehandigo-api.globalrns.com");
+    url = url.replace(/192\.168\.1\.9/g, "mehandigo-api.globalrns.com");
+  }
+
+  // Force HTTPS schema
+  if (url.startsWith("http://")) {
+    url = "https://" + url.substring(7);
+  }
+
+  return url;
+}
+
 async function apiRequest(method, endpoint, body = null, auth = false) {
-  const url = `${BASE_URL}${endpoint}`;
+  const url = getNormalizedUrl(endpoint);
+
+  // Log the exact URL before request
+  console.log(`[API REQUEST] ${method} -> ${url}`);
 
   const headers = { "Content-Type": "application/json" };
 
