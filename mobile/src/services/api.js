@@ -44,8 +44,9 @@ export function getNormalizedUrl(endpoint) {
     url = url.replace(/192\.168\.1\.9/g, "mehandigo-api.globalrns.com");
   }
 
-  // Force HTTPS schema
-  if (url.startsWith("http://")) {
+  // Force HTTPS schema unless it is a local address (localhost, 127.0.0.1, or local IP networks)
+  const isLocalAddress = url.includes("localhost") || url.includes("127.0.0.1") || url.includes("192.") || url.includes("10.");
+  if (url.startsWith("http://") && !isLocalAddress) {
     url = "https://" + url.substring(7);
   }
 

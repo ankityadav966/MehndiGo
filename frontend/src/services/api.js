@@ -28,13 +28,13 @@ apiClient.interceptors.response.use(
   (response) => response.data,
   (error) => {
     const errMsg = error.response?.data?.message || "An unexpected error occurred";
-    
+
     // Auto logout on token authentication failures
     if (error.response?.status === 401) {
       localStorage.removeItem("token");
       window.location.href = "/login";
     }
-    
+
     return Promise.reject(new Error(errMsg));
   }
 );
