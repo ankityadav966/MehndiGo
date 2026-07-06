@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { useAuth } from "./AuthContext";
+import { useSocket } from "./SocketContext";
 import {
   addNotificationReceivedListener,
   addNotificationResponseReceivedListener,
@@ -9,6 +10,7 @@ import {
   sendNotificationTokenToServer,
   clearBadge,
   getLastNotificationResponse,
+  scheduleLocalNotification,
 } from "../services/notification";
 import { resolveNotificationRoute } from "../services/deepLink";
 
@@ -16,7 +18,38 @@ const NotificationContext = createContext(null);
 
 export function NotificationProvider({ children, navigationRef }) {
   const { isAuthenticated, role } = useAuth();
+  const { socket } = useSocket();
   const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    if (!isAuthenticated || !socket) return;
+
+    const handleNewNotification = (notification) => {
+      scheduleLocalNotification({
+        title: notification.title,
+        body: notification.message,
+        data: notification
+      });
+      setUnreadCount((prev) => prev + 1);
+    };
+
+    const handleBookingCreated = (booking) => {
+      scheduleLocalNotification({
+        title: "New Booking Request 🌸",
+        body: `You received a new booking request #${booking.bookingCode || ""}`,
+        data: booking
+      });
+      setUnreadCount((prev) => prev + 1);
+    };
+
+    socket.on("new_notification", handleNewNotification);
+    socket.on("booking_created", handleBookingCreated);
+
+    return () => {
+      socket.off("new_notification", handleNewNotification);
+      socket.off("booking_created", handleBookingCreated);
+    };
+  }, [isAuthenticated, socket]);
   const [lastNotification, setLastNotification] = useState(null);
   const notificationListener = useRef(null);
   const responseListener = useRef(null);

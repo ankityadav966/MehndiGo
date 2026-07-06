@@ -13,9 +13,13 @@ const PORT = process.env.PORT || 3000;
 app.use(helmet());
 app.use(cors({ origin: "*" }));
 
+// Enable trust proxy to correctly read X-Forwarded-For headers from Nginx proxy
+app.set("trust proxy", 1);
+
+const maxRequests = process.env.RATE_LIMIT_MAX ? parseInt(process.env.RATE_LIMIT_MAX) : 2000;
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: maxRequests,
   standardHeaders: true,
   legacyHeaders: false,
   message: {

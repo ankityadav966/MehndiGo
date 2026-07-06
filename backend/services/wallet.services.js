@@ -177,13 +177,16 @@ class WalletService {
     
     let account = await db.BankAccount.findOne({ where: { user_id: userId } });
     if (account) {
-      await account.update({
+      const updates = {
         account_holder_name: accountHolderName,
-        account_number: accountNumber,
         ifsc_code: ifscCode,
         bank_name: bankName,
         upi_id: upiId || null
-      });
+      };
+      if (accountNumber && !accountNumber.includes("*")) {
+        updates.account_number = accountNumber;
+      }
+      await account.update(updates);
     } else {
       account = await db.BankAccount.create({
         user_id: userId,

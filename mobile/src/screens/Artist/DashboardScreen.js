@@ -127,7 +127,7 @@ export default function ArtistDashboardScreen({ navigation }) {
       >
         {/* Header Profile Photo info */}
         <View style={styles.header}>
-          <View style={styles.headerProfile}>
+          <TouchableOpacity style={styles.headerProfile} onPress={() => navigation.navigate("Profile")}>
             <Image source={{ uri: resolveImage(artist.profile_image) || "https://picsum.photos/200" }} style={styles.headerAvatar} />
             <View style={styles.headerTextContainer}>
               <Text style={styles.headerGreeting}>Hi, {artist.name || "Artist"} 👋</Text>
@@ -142,7 +142,7 @@ export default function ArtistDashboardScreen({ navigation }) {
                 </Text>
               </View>
             </View>
-          </View>
+          </TouchableOpacity>
           <TouchableOpacity style={styles.notificationBtn} onPress={() => navigation.navigate("Notifications")}>
             <Ionicons name="notifications-outline" size={20} color={Colors.text} />
           </TouchableOpacity>
