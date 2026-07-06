@@ -11,6 +11,17 @@ class WalletService {
     return wallet;
   }
 
+  async getWalletSummary(userId) {
+    const wallet = await this.getOrCreateWallet(userId);
+    return {
+      balance: wallet.balance || 0,
+      pending_balance: wallet.pending_balance || 0,
+      lifetime_earnings: wallet.lifetime_earnings || 0,
+      total_withdrawals: wallet.total_withdrawals || 0,
+      withdrawable_balance: wallet.balance || 0
+    };
+  }
+
   async getTransactions(userId) {
     const wallet = await this.getOrCreateWallet(userId);
     const history = await db.WalletTransaction.findAll({

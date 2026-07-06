@@ -472,6 +472,36 @@ class BookingService {
           { where: { id: booking.slot_id } }
         );
       }
+
+      // Rollback escrow pending balance on the artist's wallet if it is an online payment booking
+      try {
+        const escrow = await db.EscrowRecord.findOne({ where: { booking_id: bookingId, status: "HELD" } });
+        if (escrow) {
+          const artistProfile = await db.ArtistProfile.findByPk(booking.artist_id);
+          if (artistProfile) {
+            const [artistWallet] = await db.Wallet.findOrCreate({
+              where: { user_id: artistProfile.user_id },
+              defaults: { balance: 0, pending_balance: 0, lifetime_earnings: 0, total_commission_earned: 0, total_withdrawals: 0 }
+            });
+            
+            // Decrement pending balance since the booking is cancelled
+            await artistWallet.decrement("pending_balance", { by: escrow.amount });
+            
+            // Update escrow record status
+            await escrow.update({ status: "CANCELLED", updated_at: new Date() });
+            
+            // Update the WalletTransaction status from PENDING to CANCELLED
+            const tx = await db.WalletTransaction.findOne({
+              where: { wallet_id: artistWallet.id, booking_id: booking.id, transaction_type: "PAYMENT", status: "PENDING" }
+            });
+            if (tx) {
+              await tx.update({ status: "CANCELLED", description: `Transaction cancelled due to booking cancellation` });
+            }
+          }
+        }
+      } catch (escrowErr) {
+        console.error("Failed to rollback escrow on booking cancellation:", escrowErr.message);
+      }
     } else if (newStatus === "COMPLETED") {
       const paymentRecord = await db.Payment.findOne({ where: { booking_id: bookingId } });
       const isCashBooking = paymentRecord && paymentRecord.payment_method === "CASH";

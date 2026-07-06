@@ -3,7 +3,7 @@ const { SuccessResponse, ErrorResponse } = require("../../utils/common");
 
 async function getWallet(req, res) {
   try {
-    const response = await WalletService.getOrCreateWallet(req.user.id);
+    const response = await WalletService.getWalletSummary(req.user.id);
     return res.status(200).json(SuccessResponse("Wallet data fetched successfully", response));
   } catch (error) {
     return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));

@@ -1195,21 +1195,22 @@ async createReview(data) {
       where: { artist_id: artist.id, createdAt: { [db.Sequelize.Op.gte]: today } }
     });
 
-    const [artistWallet] = await db.Wallet.findOrCreate({
-      where: { user_id: userId },
-      defaults: { balance: 0, pending_balance: 0, lifetime_earnings: 0, total_commission_earned: 0, total_withdrawals: 0 }
-    });
+    const WalletService = require("./wallet.services");
+    const walletSummary = await WalletService.getWalletSummary(userId);
 
     let todayEarnings = 0;
-    if (artistWallet) {
-      todayEarnings = await db.WalletTransaction.sum("amount", {
-        where: {
-          wallet_id: artistWallet.id,
-          status: "SUCCESS",
-          transaction_type: { [db.Sequelize.Op.in]: ["SETTLEMENT", "RECHARGE", "REFUND", "MANUAL_CREDIT"] },
-          createdAt: { [db.Sequelize.Op.gte]: today }
-        }
-      }) || 0;
+    if (walletSummary) {
+      const wallet = await db.Wallet.findOne({ where: { user_id: userId } });
+      if (wallet) {
+        todayEarnings = await db.WalletTransaction.sum("amount", {
+          where: {
+            wallet_id: wallet.id,
+            status: "SUCCESS",
+            transaction_type: { [db.Sequelize.Op.in]: ["SETTLEMENT", "RECHARGE", "REFUND", "MANUAL_CREDIT"] },
+            createdAt: { [db.Sequelize.Op.gte]: today }
+          }
+        }) || 0;
+      }
     }
 
     const [
@@ -1266,7 +1267,9 @@ async createReview(data) {
       todayBookings,
       todayEarnings: todayEarnings || 0,
       pendingRequests,
-      walletBalance: artistWallet ? artistWallet.balance : 0,
+      walletBalance: walletSummary.balance,
+      pendingEarnings: walletSummary.pending_balance,
+      lifetimeEarnings: walletSummary.lifetime_earnings,
       recentBookings,
       bookingCounts: {
         PENDING: pendingBookingsCount,
