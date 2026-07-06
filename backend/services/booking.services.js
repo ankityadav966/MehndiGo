@@ -157,7 +157,7 @@ class BookingService {
       const artist = await db.ArtistProfile.findByPk(artistId);
       if (artist) {
         const slot = bookingResult.slot_id ? await db.AvailabilitySlot.findByPk(bookingResult.slot_id) : null;
-        const dateStr = slot?.date ? new Date(slot.date).toLocaleDateString() : (bookingResult.reschedule_date || "TBD");
+        const dateStr = slot?.start_time ? new Date(slot.start_time).toLocaleDateString() : (bookingResult.reschedule_date || "TBD");
         
         const customer = await db.User.findByPk(userId);
         const customerName = customer?.name || "A customer";

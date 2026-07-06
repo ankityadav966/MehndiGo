@@ -192,7 +192,7 @@ export default function PaymentScreen({ route, navigation }) {
             </View>
             <View style={styles.detailsRow}>
               <Text style={styles.detailsLabel}>Booking Date</Text>
-              <Text style={styles.detailsValue}>{booking.slot?.date ? new Date(booking.slot.date).toLocaleDateString() : (booking.reschedule_date || "TBD")}</Text>
+              <Text style={styles.detailsValue}>{booking.slot?.start_time || booking.slot?.date ? new Date(booking.slot.start_time || booking.slot.date).toLocaleDateString() : (booking.reschedule_date || "TBD")}</Text>
             </View>
             <View style={styles.detailsRow}>
               <Text style={styles.detailsLabel}>Base Booking Amount</Text>

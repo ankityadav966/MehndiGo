@@ -113,7 +113,7 @@ export default function BookingSettlementScreen({ route, navigation }) {
           <View style={styles.row}>
             <Text style={styles.label}>Booking Date</Text>
             <Text style={styles.value}>
-              {booking.slot?.date ? new Date(booking.slot.date).toLocaleDateString() : (booking.reschedule_date || "TBD")}
+              {booking.slot?.start_time || booking.slot?.date ? new Date(booking.slot.start_time || booking.slot.date).toLocaleDateString() : (booking.reschedule_date || "TBD")}
             </Text>
           </View>
           
