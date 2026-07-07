@@ -56,9 +56,9 @@ export default function MyBookingsScreen({ navigation }) {
     return bookings.filter((item) => {
       const status = item.detailed_status || item.booking_status;
       if (selectedTab === "Pending") {
-        return status === "PENDING";
+        return ["PENDING", "VIEWED", "CONFIRMED"].includes(status);
       } else if (selectedTab === "Accepted") {
-        return ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED", "RESCHEDULED"].includes(status);
+        return ["ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED", "RESCHEDULED"].includes(status);
       } else if (selectedTab === "Completed") {
         return status === "COMPLETED";
       } else {
@@ -85,13 +85,19 @@ export default function MyBookingsScreen({ navigation }) {
   };
 
   const resolveImage = (uri) => {
-    if (!uri) return "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=300";
+    const placeholder = "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=300";
+    if (!uri) return placeholder;
     if (uri.startsWith("http://") || uri.startsWith("https://") || uri.startsWith("file://") || uri.startsWith("content://")) {
       return uri;
     }
     const cleanUri = uri.startsWith("/") ? uri : `/${uri}`;
     const { SOCKET_URL } = require("../../services/api");
-    return `${SOCKET_URL}${cleanUri}`;
+    if (!SOCKET_URL) return placeholder;
+    const finalUrl = `${SOCKET_URL}${cleanUri}`;
+    if (!finalUrl.startsWith("http://") && !finalUrl.startsWith("https://")) {
+      return placeholder;
+    }
+    return finalUrl;
   };
 
   const renderBooking = ({ item }) => {

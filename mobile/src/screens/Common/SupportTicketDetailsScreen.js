@@ -127,10 +127,16 @@ export default function SupportTicketDetailsScreen({ route, navigation }) {
   };
 
   const resolveImageUrl = (url) => {
-    if (!url) return null;
+    const placeholder = "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=300";
+    if (!url) return placeholder;
     if (url.startsWith("http")) return url;
     const { SOCKET_URL } = require("../../services/api");
-    return `${SOCKET_URL}${url.startsWith("/") ? url : `/${url}`}`;
+    if (!SOCKET_URL) return placeholder;
+    const finalUrl = `${SOCKET_URL}${url.startsWith("/") ? url : `/${url}`}`;
+    if (!finalUrl.startsWith("http://") && !finalUrl.startsWith("https://")) {
+      return placeholder;
+    }
+    return finalUrl;
   };
 
   if (loading || !ticket) {

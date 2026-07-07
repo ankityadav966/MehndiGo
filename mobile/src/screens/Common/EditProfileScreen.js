@@ -45,6 +45,22 @@ export default function EditProfileScreen({ navigation }) {
   const [coverImageUri, setCoverImageUri] = useState("");
   const [languages, setLanguages] = useState("");
 
+  const resolveImage = (uri) => {
+    const placeholder = "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=300";
+    if (!uri) return placeholder;
+    if (uri.startsWith("http://") || uri.startsWith("https://") || uri.startsWith("file://") || uri.startsWith("content://")) {
+      return uri;
+    }
+    const cleanUri = uri.startsWith("/") ? uri : `/${uri}`;
+    const { SOCKET_URL } = require("../../services/api");
+    if (!SOCKET_URL) return placeholder;
+    const finalUrl = `${SOCKET_URL}${cleanUri}`;
+    if (!finalUrl.startsWith("http://") && !finalUrl.startsWith("https://")) {
+      return placeholder;
+    }
+    return finalUrl;
+  };
+
   const loadProfileData = useCallback(async () => {
     setLoading(true);
     try {
@@ -53,21 +69,21 @@ export default function EditProfileScreen({ navigation }) {
         setFullName(data.user?.name || "");
         setEmail(data.user?.email || "");
         setPhone(data.user?.phone || "");
-        setAvatarUri(data.user?.profile_image || "");
+        setAvatarUri(resolveImage(data.user?.profile_image));
         setBio(data.bio || "");
         setExperience(data.experience_years ? String(data.experience_years) : "");
         setLocation(data.location || "");
         setCity(data.city || "");
         setState(data.state || "");
         setPincode(data.pincode || "");
-        setCoverImageUri(data.cover_image || "");
+        setCoverImageUri(resolveImage(data.cover_image));
         setLanguages(data.languages || "");
       } else {
         const data = await getCustomerProfile();
         setFullName(data.name || "");
         setEmail(data.email || "");
         setPhone(data.phone || "");
-        setAvatarUri(data.profile_image || "");
+        setAvatarUri(resolveImage(data.profile_image));
       }
     } catch (err) {
       console.log("Failed to load profile data:", err);

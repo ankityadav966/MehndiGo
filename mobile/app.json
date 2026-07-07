@@ -39,7 +39,7 @@
       ]
     ],
     "experiments": {
-      "reactCompiler": true
+      "reactCompiler": false
     }
   }
 }

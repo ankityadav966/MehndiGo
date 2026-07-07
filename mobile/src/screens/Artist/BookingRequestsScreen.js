@@ -142,13 +142,19 @@ export default function BookingRequestsScreen({ route, navigation }) {
   };
 
   const resolveImage = (uri) => {
-    if (!uri) return "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=300";
+    const placeholder = "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=300";
+    if (!uri) return placeholder;
     if (uri.startsWith("http://") || uri.startsWith("https://") || uri.startsWith("file://") || uri.startsWith("content://")) {
       return uri;
     }
     const cleanUri = uri.startsWith("/") ? uri : `/${uri}`;
     const { SOCKET_URL } = require("../../services/api");
-    return `${SOCKET_URL}${cleanUri}`;
+    if (!SOCKET_URL) return placeholder;
+    const finalUrl = `${SOCKET_URL}${cleanUri}`;
+    if (!finalUrl.startsWith("http://") && !finalUrl.startsWith("https://")) {
+      return placeholder;
+    }
+    return finalUrl;
   };
 
   const renderItem = ({ item }) => {
