@@ -49,11 +49,12 @@ async function checkAndSendReminders() {
           message = `Please submit a review or skip feedback for booking #${booking.booking_code} to settle and close it.`;
         }
 
-        await db.Notification.create({
+         await db.Notification.create({
           user_id: userToNotify,
           title,
           message,
-          type: "SYSTEM"
+          type: "SYSTEM",
+          data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
         });
 
         if (lastLog) {

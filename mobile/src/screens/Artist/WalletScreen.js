@@ -24,7 +24,7 @@ import {
   saveBankAccountDetails
 } from "../../services/wallet";
 
-export default function WalletScreen({ navigation }) {
+export default function WalletScreen({ route, navigation }) {
   const [balance, setBalance] = useState(0);
   const [walletData, setWalletData] = useState(null);
   const [transactions, setTransactions] = useState([]);
@@ -32,6 +32,12 @@ export default function WalletScreen({ navigation }) {
   const [bankAccount, setBankAccount] = useState(null);
 
   const [activeTab, setActiveTab] = useState("Withdraw"); // Withdraw, Transactions
+
+  useEffect(() => {
+    if (route?.params?.initialTab) {
+      setActiveTab(route.params.initialTab);
+    }
+  }, [route?.params?.initialTab]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 

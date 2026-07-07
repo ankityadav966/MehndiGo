@@ -18,9 +18,15 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import Colors from "../../constants/Colors";
 import { getLeads } from "../../services/leads";
 
-export default function LeadsScreen({ navigation }) {
+export default function LeadsScreen({ route, navigation }) {
   // Tabs & Lists
   const [activeTab, setActiveTab] = useState("All");
+
+  useEffect(() => {
+    if (route?.params?.initialTab) {
+      setActiveTab(route.params.initialTab);
+    }
+  }, [route?.params?.initialTab]);
   const [leadsList, setLeadsList] = useState([]);
   const [stats, setStats] = useState(null);
   

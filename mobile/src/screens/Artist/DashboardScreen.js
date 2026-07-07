@@ -1,14 +1,14 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   ActivityIndicator,
-  FlatList,
+  Animated,
   Image,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -16,12 +16,146 @@ import { useFocusEffect } from "@react-navigation/native";
 import Colors from "../../constants/Colors";
 import { useAuth } from "../../context/AuthContext";
 import { useSocket } from "../../context/SocketContext";
+import { useNotifications } from "../../context/NotificationContext";
 import { getArtistDashboardData } from "../../services/artist";
 import { confirmCashPayment, rejectCashPayment, acceptBooking, rejectBooking } from "../../services/booking";
 import Alert from "../../utils/Alert";
 
+// --- Greeting Header Component ---
+function GreetingHeader({ artist, isVerified, unreadCount, onProfilePress, onNotificationPress }) {
+  const getGreeting = () => {
+    const hrs = new Date().getHours();
+    if (hrs < 12) return "Good Morning 👋";
+    if (hrs < 17) return "Good Afternoon 👋";
+    return "Good Evening 👋";
+  };
+
+  const getProfileCompletion = () => {
+    if (isVerified) return 100;
+    if (artist.experience_years) return 75;
+    return 50;
+  };
+
+  return (
+    <View style={styles.headerContainer}>
+      <View style={styles.headerProfileRow}>
+        <Pressable onPress={onProfilePress} style={styles.avatarWrapper}>
+          <Image
+            source={{ uri: artist.profile_image || "https://picsum.photos/200" }}
+            style={styles.avatarImage}
+          />
+          {isVerified && (
+            <View style={styles.verifiedMiniBadge}>
+              <Ionicons name="checkmark-circle" size={14} color={Colors.white} />
+            </View>
+          )}
+        </Pressable>
+        <View style={styles.headerTextCol}>
+          <Text style={styles.greetingText}>{getGreeting()}</Text>
+          <Text style={styles.artistNameText}>{artist.name || "Sonu Ma'am"}</Text>
+          <View style={styles.statusBadgeRow}>
+            <View style={[styles.statusBadge, { backgroundColor: isVerified ? "#E6F4EA" : "#FEF3C7" }]}>
+              <Text style={[styles.statusBadgeText, { color: isVerified ? Colors.success : Colors.warning }]}>
+                {isVerified ? "Approved Professional" : artist.verification_status || "PENDING"}
+              </Text>
+            </View>
+            <Text style={styles.completionPercentage}>
+              Completion: {getProfileCompletion()}%
+            </Text>
+          </View>
+        </View>
+      </View>
+      <Pressable onPress={onNotificationPress} style={styles.bellBtn}>
+        <Ionicons name="notifications-outline" size={24} color={Colors.text} />
+        {unreadCount > 0 && (
+          <View style={styles.bellBadge}>
+            <Text style={styles.bellBadgeText}>{unreadCount}</Text>
+          </View>
+        )}
+      </Pressable>
+    </View>
+  );
+}
+
+// --- Wallet Card Component ---
+function WalletCard({ balance, onWithdrawPress, onCardPress }) {
+  return (
+    <Pressable onPress={onCardPress}>
+      <View style={styles.walletCardBackground}>
+        <View style={styles.walletHeader}>
+          <View style={styles.walletTitleRow}>
+            <Ionicons name="wallet" size={20} color={Colors.white} style={{ marginRight: 6 }} />
+            <Text style={styles.walletLabel}>Available Wallet Balance</Text>
+          </View>
+          <Text style={styles.walletSecureText}>Safe & Secure Payouts</Text>
+        </View>
+        <View style={styles.walletBody}>
+          <Text style={styles.walletBalance}>₹{balance.toLocaleString()}</Text>
+          <Pressable onPress={onWithdrawPress} style={styles.walletBtn}>
+            <Ionicons name="arrow-up-circle-outline" size={16} color={Colors.primary} style={{ marginRight: 4 }} />
+            <Text style={styles.walletBtnText}>Withdraw</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+// --- Animated Dashboard Card Component ---
+function DashboardCard({ count, title, description, iconName, accentColor, onPress }) {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 0.96,
+      useNativeDriver: true,
+      friction: 4,
+      tension: 50
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      useNativeDriver: true,
+      friction: 4,
+      tension: 50
+    }).start();
+  };
+
+  return (
+    <Animated.View style={[{ transform: [{ scale: scaleAnim }] }, styles.cardOuter]}>
+      <Pressable
+        onPress={onPress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        android_ripple={{ color: "rgba(0,0,0,0.05)" }}
+        style={[styles.cardContainer, { borderLeftColor: accentColor || Colors.primary }]}
+      >
+        <View style={styles.cardHeaderRow}>
+          <View style={[styles.cardIconBox, { backgroundColor: `${accentColor || Colors.primary}12` }]}>
+            <Ionicons name={iconName} size={20} color={accentColor || Colors.primary} />
+          </View>
+          <Text style={styles.cardCount}>{count}</Text>
+        </View>
+        <View style={styles.cardInfoCol}>
+          <Text style={styles.cardTitle}>{title}</Text>
+          <Text style={styles.cardDesc} numberOfLines={2}>{description}</Text>
+        </View>
+        <View style={styles.cardFooterRow}>
+          <Text style={[styles.viewDetailsText, { color: accentColor || Colors.primary }]}>View Details</Text>
+          <Ionicons name="chevron-forward-outline" size={14} color={accentColor || Colors.primary} />
+        </View>
+      </Pressable>
+    </Animated.View>
+  );
+}
+
+// --- Main Screen ---
 export default function ArtistDashboardScreen({ navigation }) {
   const { user } = useAuth();
+  const { socket } = useSocket();
+  const { unreadCount } = useNotifications();
 
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -33,10 +167,10 @@ export default function ArtistDashboardScreen({ navigation }) {
       setDashboard(data);
     } catch (err) {
       console.log("Failed to load artist dashboard details:", err.message);
-      // Fallback fallback details
+      // Fallback
       setDashboard({
         artist: {
-          name: user?.name || "Priya Sharma",
+          name: user?.name || "Sonu Ma'am",
           profile_image: user?.profile_image || "https://picsum.photos/200",
           verification_status: "APPROVED",
           avg_rating: "4.8",
@@ -47,9 +181,19 @@ export default function ArtistDashboardScreen({ navigation }) {
         todayEarnings: 4500,
         pendingRequests: 3,
         walletBalance: 12500,
+        bookingCounts: {
+          PENDING: 3,
+          UPCOMING: 4,
+          ACCEPTED: 5,
+          ONGOING: 1,
+          COMPLETED: 18,
+          AWAITING_SETTLEMENT: 2,
+          PENDING_CASH_APPROVAL: 1,
+          CANCELLED: 2
+        },
         recentBookings: [
-          { id: 1, user: { name: "Ananya Sharma" }, service: { specialization_name: "Bridal Traditional Mehndi" }, booking_status: "CONFIRMED", total_price: 3500, createdAt: new Date().toISOString() },
-          { id: 2, user: { name: "Ritika Patel" }, service: { specialization_name: "Arabic Intricate Mehndi" }, booking_status: "PENDING", total_price: 1500, createdAt: new Date().toISOString() }
+          { id: 1, booking_code: "BK-591602", user: { name: "Ananya Sharma" }, service: { specialization_name: "Bridal Traditional Mehndi" }, booking_status: "CONFIRMED", total_price: 3500, final_amount: 3500, createdAt: new Date().toISOString() },
+          { id: 2, booking_code: "BK-302198", user: { name: "Ritika Patel" }, service: { specialization_name: "Arabic Intricate Mehndi" }, booking_status: "PENDING", total_price: 1500, final_amount: 1500, createdAt: new Date().toISOString() }
         ]
       });
     } finally {
@@ -57,8 +201,6 @@ export default function ArtistDashboardScreen({ navigation }) {
       setRefreshing(false);
     }
   }, [user]);
-
-  const { socket } = useSocket();
 
   useEffect(() => {
     if (socket) {
@@ -85,27 +227,6 @@ export default function ArtistDashboardScreen({ navigation }) {
     fetchDashboardDetails();
   };
 
-  if (loading) {
-    return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-      </View>
-    );
-  }
-
-  const artist = dashboard?.artist || {};
-  const isVerified = artist.verification_status === "APPROVED";
-
-  const quickActions = [
-    { icon: "calendar-outline", label: "My Bookings", screen: "BookingRequests" },
-    { icon: "wallet-outline", label: "Wallet Ledger", screen: "Wallet" },
-    { icon: "calendar-number-outline", label: "Availability", screen: "AvailabilityCalendar" },
-    { icon: "list-outline", label: "Services", screen: "Services" },
-    { icon: "images-outline", label: "Portfolio", screen: "Portfolio" },
-    { icon: "star-outline", label: "Reviews", screen: "Reviews" },
-    { icon: "notifications-outline", label: "Alerts", screen: "Notifications" }
-  ];
-
   const resolveImage = (uri) => {
     if (!uri) return null;
     if (uri.startsWith("http://") || uri.startsWith("https://") || uri.startsWith("file://") || uri.startsWith("content://")) {
@@ -116,8 +237,43 @@ export default function ArtistDashboardScreen({ navigation }) {
     return `${BASE_URL}${cleanUri}`;
   };
 
+  if (loading) {
+    return (
+      <View style={styles.centerContainer}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
+
+  const artist = dashboard?.artist || {};
+  const isVerified = artist.verification_status === "APPROVED";
+  const counts = dashboard?.bookingCounts || {};
+
+  // Quick Management Actions
+  const quickActions = [
+    { icon: "calendar-outline", label: "My Bookings", screen: "BookingRequests" },
+    { icon: "wallet-outline", label: "Wallet Ledger", screen: "Wallet" },
+    { icon: "calendar-number-outline", label: "Availability", screen: "AvailabilityCalendar" },
+    { icon: "list-outline", label: "Services", screen: "Services" },
+    { icon: "images-outline", label: "Portfolio", screen: "Portfolio" },
+    { icon: "star-outline", label: "Reviews", screen: "Reviews" },
+    { icon: "notifications-outline", label: "Alerts", screen: "Notifications" }
+  ];
+
   return (
     <SafeAreaView style={styles.container}>
+      {/* 1. Greeting Header Component */}
+      <GreetingHeader
+        artist={{
+          ...artist,
+          profile_image: resolveImage(artist.profile_image)
+        }}
+        isVerified={isVerified}
+        unreadCount={unreadCount}
+        onProfilePress={() => navigation.navigate("Profile")}
+        onNotificationPress={() => navigation.navigate("Notifications")}
+      />
+
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 100 }}
@@ -125,131 +281,175 @@ export default function ArtistDashboardScreen({ navigation }) {
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[Colors.primary]} />
         }
       >
-        {/* Header Profile Photo info */}
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.headerProfile} onPress={() => navigation.navigate("Profile")}>
-            <Image source={{ uri: resolveImage(artist.profile_image) || "https://picsum.photos/200" }} style={styles.headerAvatar} />
-            <View style={styles.headerTextContainer}>
-              <Text style={styles.headerGreeting}>Hi, {artist.name || "Artist"} 👋</Text>
-              <View style={styles.badgeRow}>
-                <Ionicons
-                  name={isVerified ? "shield-checkmark" : "time-outline"}
-                  size={12}
-                  color={isVerified ? Colors.success : Colors.warning}
-                />
-                <Text style={[styles.badgeText, { color: isVerified ? Colors.success : Colors.warning }]}>
-                  {artist.verification_status || "PENDING"}
-                </Text>
-              </View>
-            </View>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.notificationBtn} onPress={() => navigation.navigate("Notifications")}>
-            <Ionicons name="notifications-outline" size={20} color={Colors.text} />
-          </TouchableOpacity>
+        {/* 2. Wallet Card Component */}
+        <WalletCard
+          balance={dashboard?.walletBalance || 0}
+          onWithdrawPress={() => navigation.navigate("Wallet", { initialTab: "Withdraw" })}
+          onCardPress={() => navigation.navigate("Wallet", { initialTab: "Withdraw" })}
+        />
+
+        {/* 3. Core Stats Widgets */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Today's Overview</Text>
+        </View>
+        <View style={styles.statsGrid}>
+          <DashboardCard
+            count={dashboard?.todayBookings || 0}
+            title="Today's Jobs"
+            description="Active jobs scheduled for today"
+            iconName="calendar-outline"
+            accentColor={Colors.primary}
+            onPress={() => navigation.navigate("BookingRequests", { initialTab: "Accepted", filterToday: true })}
+          />
+          <DashboardCard
+            count={`₹${(dashboard?.todayEarnings || 0).toLocaleString()}`}
+            title="Today's Payout"
+            description="Earnings cleared today"
+            iconName="cash-outline"
+            accentColor={Colors.success}
+            onPress={() => navigation.navigate("Wallet", { initialTab: "Transactions" })}
+          />
+          <DashboardCard
+            count={dashboard?.pendingRequests || 0}
+            title="New Requests"
+            description="Leads awaiting response"
+            iconName="people-outline"
+            accentColor={Colors.warning}
+            onPress={() => navigation.navigate("Leads", { initialTab: "New Lead" })}
+          />
+          <DashboardCard
+            count={artist.avg_rating ? Number(artist.avg_rating).toFixed(1) : "0.0"}
+            title="Average Rating"
+            description="Your customer rating"
+            iconName="star-outline"
+            accentColor={Colors.info}
+            onPress={() => navigation.navigate("Reviews")}
+          />
         </View>
 
-        {/* Wallet Balance Hero Card */}
-        <View style={styles.walletHeroCard}>
-          <View>
-            <Text style={styles.walletHeroTitle}>Available Wallet Balance</Text>
-            <Text style={styles.walletHeroAmount}>₹{(dashboard?.walletBalance || 0).toLocaleString()}</Text>
-          </View>
-          <TouchableOpacity style={styles.walletHeroBtn} onPress={() => navigation.navigate("Wallet")}>
-            <Ionicons name="wallet-outline" size={16} color={Colors.white} />
-            <Text style={styles.walletHeroBtnText}>Withdraw</Text>
-          </TouchableOpacity>
+        {/* 4. Booking Performance Cards */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Booking Performance</Text>
+        </View>
+        <View style={styles.statsGrid}>
+          <DashboardCard
+            count={counts.PENDING || 0}
+            title="Pending Requests"
+            description="Awaiting confirmation"
+            iconName="hourglass-outline"
+            accentColor={Colors.warning}
+            onPress={() => navigation.navigate("BookingRequests", { initialTab: "Pending" })}
+          />
+          <DashboardCard
+            count={counts.UPCOMING || 0}
+            title="Upcoming Bookings"
+            description="Booked jobs in queue"
+            iconName="calendar-number-outline"
+            accentColor={Colors.info}
+            onPress={() => navigation.navigate("BookingRequests", { initialTab: "Accepted" })}
+          />
+          <DashboardCard
+            count={counts.ACCEPTED || 0}
+            title="Accepted Bookings"
+            description="Confirmed artist bookings"
+            iconName="checkbox-outline"
+            accentColor={Colors.success}
+            onPress={() => navigation.navigate("BookingRequests", { initialTab: "Accepted" })}
+          />
+          <DashboardCard
+            count={counts.ONGOING || 0}
+            title="Ongoing Bookings"
+            description="Services currently active"
+            iconName="play-circle-outline"
+            accentColor={Colors.primary}
+            onPress={() => navigation.navigate("BookingRequests", { initialTab: "Accepted" })}
+          />
+          <DashboardCard
+            count={counts.COMPLETED || 0}
+            title="Completed Bookings"
+            description="Total finished jobs"
+            iconName="checkmark-done-circle-outline"
+            accentColor="#10B981"
+            onPress={() => navigation.navigate("BookingRequests", { initialTab: "Completed" })}
+          />
+          <DashboardCard
+            count={counts.AWAITING_SETTLEMENT || 0}
+            title="Awaiting Settlement"
+            description="Settlements currently pending"
+            iconName="logo-usd"
+            accentColor="#EF4444"
+            onPress={() => navigation.navigate("Wallet", { initialTab: "Withdraw" })}
+          />
+          <DashboardCard
+            count={counts.PENDING_CASH_APPROVAL || 0}
+            title="Pending Cash Confirm"
+            description="Cash payments awaiting approval"
+            iconName="card-outline"
+            accentColor="#F59E0B"
+            onPress={() => navigation.navigate("BookingRequests", { initialTab: "Accepted" })}
+          />
+          <DashboardCard
+            count={counts.CANCELLED || 0}
+            title="Cancelled Bookings"
+            description="Total cancelled jobs"
+            iconName="close-circle-outline"
+            accentColor="#6B7280"
+            onPress={() => navigation.navigate("BookingRequests", { initialTab: "Completed" })}
+          />
         </View>
 
-        {/* Stats metrics widgets */}
-        <View style={styles.statsContainer}>
-          <View style={[styles.statCard, { borderLeftColor: Colors.primary }]}>
-            <Text style={styles.statValue}>{dashboard?.todayBookings || 0}</Text>
-            <Text style={styles.statLabel}>{"Today's Jobs"}</Text>
-          </View>
-          <View style={[styles.statCard, { borderLeftColor: Colors.success }]}>
-            <Text style={styles.statValue}>₹{(dashboard?.todayEarnings || 0).toLocaleString()}</Text>
-            <Text style={styles.statLabel}>{"Today's Payout"}</Text>
-          </View>
-          <View style={[styles.statCard, { borderLeftColor: Colors.warning }]}>
-            <Text style={styles.statValue}>{dashboard?.pendingRequests || 0}</Text>
-            <Text style={styles.statLabel}>New Requests</Text>
-          </View>
-          <View style={[styles.statCard, { borderLeftColor: Colors.info }]}>
-            <Text style={styles.statValue}>
-              {artist.avg_rating !== undefined && artist.avg_rating !== null ? Number(artist.avg_rating).toFixed(1) : "0.0"}
-            </Text>
-            <Text style={styles.statLabel}>Avg Rating</Text>
-          </View>
+        {/* 5. Quick Actions segment */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Quick Management Control</Text>
         </View>
-
-        {/* Booking Performance Breakdown Section */}
-        <Text style={styles.sectionTitle}>Booking Performance Breakdown</Text>
-        <View style={styles.statsContainer}>
-          {[
-            { label: "Pending Requests", value: dashboard?.bookingCounts?.PENDING || 0, color: Colors.primary },
-            { label: "Upcoming Bookings", value: dashboard?.bookingCounts?.UPCOMING || 0, color: Colors.info },
-            { label: "Accepted Bookings", value: dashboard?.bookingCounts?.ACCEPTED || 0, color: Colors.success },
-            { label: "Ongoing Bookings", value: dashboard?.bookingCounts?.ONGOING || 0, color: Colors.warning },
-            { label: "Completed Bookings", value: dashboard?.bookingCounts?.COMPLETED || 0, color: "#10B981" },
-            { label: "Awaiting Settlement", value: dashboard?.bookingCounts?.AWAITING_SETTLEMENT || 0, color: "#EF4444" },
-            { label: "Pending Cash Confirm", value: dashboard?.bookingCounts?.PENDING_CASH_APPROVAL || 0, color: "#F59E0B" },
-            { label: "Cancelled Bookings", value: dashboard?.bookingCounts?.CANCELLED || 0, color: "#6B7280" }
-          ].map((item, idx) => (
-            <View key={idx} style={[styles.statCard, { borderLeftColor: item.color }]}>
-              <Text style={styles.statValue}>{item.value}</Text>
-              <Text style={styles.statLabel}>{item.label}</Text>
-            </View>
-          ))}
-        </View>
-
-        {/* Quick Actions List Grid */}
-        <Text style={styles.sectionTitle}>Quick Management Control</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.actionsRow}>
           {quickActions.map((action, index) => (
-            <TouchableOpacity
+            <Pressable
               key={index}
               style={styles.actionChip}
               onPress={() => navigation.navigate(action.screen)}
             >
               <Ionicons name={action.icon} size={16} color={Colors.primary} />
               <Text style={styles.actionLabel}>{action.label}</Text>
-            </TouchableOpacity>
+            </Pressable>
           ))}
         </ScrollView>
 
-        {/* Pending Bookings Section */}
+        {/* 6. Active Actions (Pending Bookings) */}
         {dashboard?.recentBookings?.filter(b => b.booking_status === "PENDING").length > 0 && (
           <View style={styles.cashSection}>
-            <Text style={styles.sectionTitle}>Pending Bookings</Text>
+            <Text style={styles.sectionTitle}>New Pending Bookings</Text>
             {dashboard.recentBookings.filter(b => b.booking_status === "PENDING").map((item) => {
-              const paymentRecord = item.payments && item.payments[0];
-              const paymentMethod = paymentRecord?.payment_method || "Online";
-              const paymentStatus = paymentRecord?.status || item.payment_status || "PENDING";
               const slotDate = item.slot?.start_time ? new Date(item.slot.start_time).toLocaleDateString() : (item.reschedule_date || "TBD");
               const slotTime = item.slot ? `${new Date(item.slot.start_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - ${new Date(item.slot.end_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` : (item.reschedule_time || "TBD");
-              
+
               return (
                 <View key={item.id} style={styles.cashConfirmCard}>
-                  <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
-                    <Image 
-                      source={{ uri: item.user?.profile_image || "https://picsum.photos/200" }} 
-                      style={{ width: 40, height: 40, borderRadius: 20, marginRight: 10 }}
+                  <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 12 }}>
+                    <Image
+                      source={{ uri: item.user?.profile_image || "https://picsum.photos/200" }}
+                      style={{ width: 44, height: 44, borderRadius: 22, marginRight: 12 }}
                     />
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.cashCustomer} numberOfLines={1} adjustsFontSizeToFit={true}>Customer Name: {item.user?.name || "Client"}</Text>
-                      <Text style={styles.cashBookingCode} numberOfLines={1} adjustsFontSizeToFit={true}>Service Name: {item.service?.specialization_name || "Mehndi Design"}</Text>
+                      <Text style={styles.cashCustomer}>{item.user?.name || "Client"}</Text>
+                      <Text style={styles.cashService}>{item.service?.specialization_name || "Mehndi Design"}</Text>
                     </View>
                   </View>
-                  <Text style={styles.cashBookingCode} numberOfLines={1} adjustsFontSizeToFit={true}>Booking ID: #{item.booking_code}</Text>
-                  <Text style={styles.cashBookingCode} numberOfLines={1} adjustsFontSizeToFit={true}>Booking Date: {slotDate}</Text>
-                  <Text style={styles.cashBookingCode} numberOfLines={1} adjustsFontSizeToFit={true}>Booking Time: {slotTime}</Text>
-                  <Text style={styles.cashBookingCode} numberOfLines={1} adjustsFontSizeToFit={true}>Booking Amount: ₹{item.final_amount}</Text>
-                  <Text style={styles.cashBookingCode} numberOfLines={1} adjustsFontSizeToFit={true}>Payment Method: {paymentMethod}</Text>
-                  <Text style={styles.cashBookingCode} numberOfLines={1} adjustsFontSizeToFit={true}>Booking Status: {item.booking_status}</Text>
-                  <Text style={styles.cashBookingCode} numberOfLines={1} adjustsFontSizeToFit={true}>Payment Status: {paymentStatus}</Text>
-                  
+                  <View style={styles.itemMetaRow}>
+                    <Text style={styles.metaLabel}>Booking ID:</Text>
+                    <Text style={styles.metaValue}>#{item.booking_code}</Text>
+                  </View>
+                  <View style={styles.itemMetaRow}>
+                    <Text style={styles.metaLabel}>Date & Time:</Text>
+                    <Text style={styles.metaValue}>{slotDate} • {slotTime}</Text>
+                  </View>
+                  <View style={styles.itemMetaRow}>
+                    <Text style={styles.metaLabel}>Amount:</Text>
+                    <Text style={[styles.metaValue, { fontWeight: "800", color: Colors.primary }]}>₹{item.final_amount}</Text>
+                  </View>
+
                   <View style={styles.cashActionsRow}>
-                    <TouchableOpacity
+                    <Pressable
                       style={[styles.cashBtn, { backgroundColor: Colors.success }]}
                       onPress={async () => {
                         try {
@@ -259,14 +459,15 @@ export default function ArtistDashboardScreen({ navigation }) {
                           fetchDashboardDetails();
                         } catch (err) {
                           Alert.alert("Error", err.message || "Failed to accept booking.");
-                          setLoading(false);
+                          setLoading(true);
+                          fetchDashboardDetails();
                         }
                       }}
                     >
-                      <Text style={styles.cashBtnText} numberOfLines={1} adjustsFontSizeToFit={true}>✅ Accept Booking</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.cashBtn, { backgroundColor: "#EF4444" }]}
+                      <Text style={styles.cashBtnText}>Accept</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.cashBtn, { backgroundColor: Colors.error }]}
                       onPress={() => {
                         Alert.alert(
                           "Decline Booking",
@@ -284,7 +485,8 @@ export default function ArtistDashboardScreen({ navigation }) {
                                   fetchDashboardDetails();
                                 } catch (err) {
                                   Alert.alert("Error", err.message || "Failed to decline booking.");
-                                  setLoading(false);
+                                  setLoading(true);
+                                  fetchDashboardDetails();
                                 }
                               }
                             }
@@ -292,8 +494,8 @@ export default function ArtistDashboardScreen({ navigation }) {
                         );
                       }}
                     >
-                      <Text style={styles.cashBtnText} numberOfLines={1} adjustsFontSizeToFit={true}>❌ Decline Booking</Text>
-                    </TouchableOpacity>
+                      <Text style={styles.cashBtnText}>Decline</Text>
+                    </Pressable>
                   </View>
                 </View>
               );
@@ -301,23 +503,32 @@ export default function ArtistDashboardScreen({ navigation }) {
           </View>
         )}
 
-        {/* Pending Cash Payment Requests Section */}
+        {/* 7. Active Actions (Pending Cash Confirmations) */}
         {dashboard?.recentBookings?.filter(b => b.detailed_status === "AWAITING_CASH_CONFIRMATION" || b.booking_status === "AWAITING_CASH_CONFIRMATION").length > 0 && (
           <View style={styles.cashSection}>
-            <Text style={styles.sectionTitle}>Pending Cash Payment Requests</Text>
+            <Text style={styles.sectionTitle}>Pending Cash Confirmations</Text>
             {dashboard.recentBookings.filter(b => b.detailed_status === "AWAITING_CASH_CONFIRMATION" || b.booking_status === "AWAITING_CASH_CONFIRMATION").map((item) => (
               <View key={item.id} style={styles.cashConfirmCard}>
-                <View style={styles.cashHeader}>
-                  <Text style={styles.cashCustomer} numberOfLines={1} adjustsFontSizeToFit={true}>Customer Name: {item.user?.name || "Client"}</Text>
-                  <Text style={styles.cashAmount} numberOfLines={1} adjustsFontSizeToFit={true}>Booking Amount: ₹{item.final_amount}</Text>
+                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 12 }}>
+                  <View style={[styles.cardIconBox, { backgroundColor: "#FFF0F4", marginRight: 12 }]}>
+                    <Ionicons name="card" size={20} color={Colors.primary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.cashCustomer}>{item.user?.name || "Client"}</Text>
+                    <Text style={styles.cashService}>Awaiting cash settlement approval</Text>
+                  </View>
                 </View>
-                <Text style={styles.cashBookingCode} numberOfLines={1} adjustsFontSizeToFit={true}>Booking ID: #{item.booking_code}</Text>
-                <Text style={styles.cashBookingCode} numberOfLines={1} adjustsFontSizeToFit={true}>Booking Date: {item.slot?.start_time ? new Date(item.slot.start_time).toLocaleDateString() : (item.reschedule_date || "TBD")}</Text>
-                <Text style={styles.cashBookingCode} numberOfLines={1} adjustsFontSizeToFit={true}>Payment Method: Cash</Text>
-                <Text style={styles.cashBookingCode} numberOfLines={1} adjustsFontSizeToFit={true}>Payment Status: Pending Cash Confirmation</Text>
-                
+                <View style={styles.itemMetaRow}>
+                  <Text style={styles.metaLabel}>Booking ID:</Text>
+                  <Text style={styles.metaValue}>#{item.booking_code}</Text>
+                </View>
+                <View style={styles.itemMetaRow}>
+                  <Text style={styles.metaLabel}>Cash Amount:</Text>
+                  <Text style={[styles.metaValue, { fontWeight: "800", color: Colors.primary }]}>₹{item.final_amount}</Text>
+                </View>
+
                 <View style={styles.cashActionsRow}>
-                  <TouchableOpacity
+                  <Pressable
                     style={[styles.cashBtn, { backgroundColor: Colors.success }]}
                     onPress={async () => {
                       try {
@@ -327,14 +538,15 @@ export default function ArtistDashboardScreen({ navigation }) {
                         fetchDashboardDetails();
                       } catch (err) {
                         Alert.alert("Error", err.message);
-                        setLoading(false);
+                        setLoading(true);
+                        fetchDashboardDetails();
                       }
                     }}
                   >
-                    <Text style={styles.cashBtnText} numberOfLines={1} adjustsFontSizeToFit={true}>✅ Approve Payment</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.cashBtn, { backgroundColor: "#EF4444" }]}
+                    <Text style={styles.cashBtnText}>Approve Payment</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.cashBtn, { backgroundColor: Colors.error }]}
                     onPress={async () => {
                       try {
                         setLoading(true);
@@ -343,35 +555,36 @@ export default function ArtistDashboardScreen({ navigation }) {
                         fetchDashboardDetails();
                       } catch (err) {
                         Alert.alert("Error", err.message);
-                        setLoading(false);
+                        setLoading(true);
+                        fetchDashboardDetails();
                       }
                     }}
                   >
-                    <Text style={styles.cashBtnText} numberOfLines={1} adjustsFontSizeToFit={true}>❌ Reject Payment</Text>
-                  </TouchableOpacity>
+                    <Text style={styles.cashBtnText}>Reject</Text>
+                  </Pressable>
                 </View>
               </View>
             ))}
           </View>
         )}
 
-        {/* Recent booking request cards list */}
+        {/* 8. Recent Bookings List */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Recent Booking Jobs</Text>
-          <TouchableOpacity onPress={() => navigation.navigate("BookingRequests")}>
+          <Pressable onPress={() => navigation.navigate("BookingRequests")}>
             <Text style={styles.viewAll}>View All</Text>
-          </TouchableOpacity>
+          </Pressable>
         </View>
 
         {dashboard?.recentBookings?.map((item) => (
-          <TouchableOpacity
+          <Pressable
             key={item.id}
             style={styles.bookingCard}
             onPress={() => navigation.navigate("BookingDetails", { bookingId: item.id })}
           >
             <View style={styles.bookingLeft}>
               <View style={styles.avatarPlaceholder}>
-                <Ionicons name="person-outline" size={24} color={Colors.primary} />
+                <Ionicons name="person-outline" size={22} color={Colors.primary} />
               </View>
               <View style={styles.bookingInfo}>
                 <Text style={styles.customerName}>{item.user?.name || "Client Name"}</Text>
@@ -382,7 +595,7 @@ export default function ArtistDashboardScreen({ navigation }) {
               </View>
             </View>
             <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
-          </TouchableOpacity>
+          </Pressable>
         ))}
 
         {(!dashboard?.recentBookings || dashboard.recentBookings.length === 0) && (
@@ -395,45 +608,114 @@ export default function ArtistDashboardScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  walletHeroCard: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", margin: 16, backgroundColor: Colors.white, borderRadius: 16, padding: 18, borderWidth: 1, borderColor: Colors.border, shadowColor: Colors.shadow || "#000", shadowOpacity: 0.05, shadowRadius: 5, elevation: 1 },
-  walletHeroTitle: { fontSize: 11, color: Colors.textSecondary },
-  walletHeroAmount: { fontSize: 24, fontWeight: "800", color: Colors.text, marginTop: 4 },
-  walletHeroBtn: { flexDirection: "row", alignItems: "center", backgroundColor: Colors.primary, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10 },
-  walletHeroBtnText: { color: Colors.white, fontWeight: "700", fontSize: 12, marginLeft: 6 },
-  centerContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, paddingTop: 16, paddingBottom: 16, backgroundColor: Colors.white, borderBottomWidth: 1, borderBottomColor: Colors.border },
-  headerProfile: { flexDirection: "row", alignItems: "center" },
-  headerAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: Colors.background },
-  headerTextContainer: { marginLeft: 12 },
-  headerGreeting: { fontSize: 16, fontWeight: "800", color: Colors.text },
-  badgeRow: { flexDirection: "row", alignItems: "center", marginTop: 4 },
-  badgeText: { fontSize: 9, fontWeight: "800", marginLeft: 4, textTransform: "uppercase" },
-  notificationBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.background, justifyContent: "center", alignItems: "center" },
-  statsContainer: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", paddingHorizontal: 16, paddingTop: 16 },
-  statCard: { width: "48%", backgroundColor: Colors.white, borderRadius: 16, padding: 14, marginBottom: 12, borderLeftWidth: 4, borderWidth: 1, borderColor: Colors.border, elevation: 1 },
-  statValue: { fontSize: 18, fontWeight: "800", color: Colors.text },
-  statLabel: { marginTop: 4, color: Colors.textSecondary, fontSize: 11 },
-  sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 12, paddingRight: 16 },
-  sectionTitle: { fontSize: 13, fontWeight: "700", color: Colors.textSecondary, marginLeft: 16, marginVertical: 12 },
-  viewAll: { color: Colors.primary, fontWeight: "700", fontSize: 12 },
-  actionsRow: { paddingLeft: 16, paddingBottom: 10 },
-  actionChip: { flexDirection: "row", alignItems: "center", backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, marginRight: 10 },
-  actionLabel: { fontSize: 11, fontWeight: "700", color: Colors.text, marginLeft: 6 },
-  bookingCard: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: Colors.white, marginHorizontal: 16, marginBottom: 10, padding: 12, borderRadius: 14, borderWidth: 1, borderColor: Colors.border, elevation: 1 },
+  centerContainer: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: Colors.background },
+  
+  // Greeting Header Styles
+  headerContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: Colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+    elevation: 2,
+    shadowColor: Colors.shadow,
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4
+  },
+  headerProfileRow: { flexDirection: "row", alignItems: "center", flex: 1 },
+  avatarWrapper: { position: "relative" },
+  avatarImage: { width: 52, height: 52, borderRadius: 26, backgroundColor: Colors.background, borderWidth: 1.5, borderColor: Colors.border },
+  verifiedMiniBadge: {
+    position: "absolute",
+    bottom: -2,
+    right: -2,
+    backgroundColor: Colors.success,
+    borderRadius: 8,
+    width: 18,
+    height: 18,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1.5,
+    borderColor: Colors.white
+  },
+  headerTextCol: { marginLeft: 12, flex: 1 },
+  greetingText: { fontSize: 12, color: Colors.textSecondary, fontWeight: "500" },
+  artistNameText: { fontSize: 18, fontWeight: "800", color: Colors.text },
+  statusBadgeRow: { flexDirection: "row", alignItems: "center", marginTop: 4, flexWrap: "wrap" },
+  statusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, marginRight: 6 },
+  statusBadgeText: { fontSize: 9, fontWeight: "800", textTransform: "uppercase" },
+  completionPercentage: { fontSize: 10, color: Colors.textTertiary, fontWeight: "600" },
+  bellBtn: { width: 44, height: 44, borderRadius: 12, backgroundColor: Colors.background, justifyContent: "center", alignItems: "center" },
+  bellBadge: { position: "absolute", top: 8, right: 8, backgroundColor: Colors.primary, borderRadius: 8, minWidth: 16, height: 16, justifyContent: "center", alignItems: "center", paddingHorizontal: 2 },
+  bellBadgeText: { color: Colors.white, fontSize: 9, fontWeight: "800" },
+
+  // Wallet Card Styles
+  walletCardBackground: {
+    margin: 20,
+    backgroundColor: "#7D1538",
+    borderRadius: 20,
+    padding: 20,
+    elevation: 4,
+    shadowColor: Colors.shadow,
+    shadowOpacity: 0.15,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8
+  },
+  walletHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "rgba(255, 255, 255, 0.15)", paddingBottom: 12 },
+  walletTitleRow: { flexDirection: "row", alignItems: "center" },
+  walletLabel: { fontSize: 12, color: Colors.white, opacity: 0.8 },
+  walletSecureText: { fontSize: 9, color: Colors.white, opacity: 0.6, fontWeight: "600" },
+  walletBody: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 14 },
+  walletBalance: { fontSize: 32, fontWeight: "800", color: Colors.white },
+  walletBtn: { flexDirection: "row", alignItems: "center", backgroundColor: Colors.white, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, elevation: 1 },
+  walletBtnText: { color: Colors.primary, fontWeight: "800", fontSize: 13 },
+
+  // Section Styles
+  sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 10, paddingHorizontal: 20 },
+  sectionTitle: { fontSize: 15, fontWeight: "800", color: Colors.text, marginVertical: 8 },
+  viewAll: { color: Colors.primary, fontWeight: "800", fontSize: 13 },
+
+  // Stats Grid Styles
+  statsGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", paddingHorizontal: 20, marginTop: 4 },
+  cardOuter: { width: "48%", marginBottom: 16, borderRadius: 16, backgroundColor: Colors.white, elevation: 2, shadowColor: Colors.shadow, shadowOpacity: 0.04, shadowOffset: { width: 0, height: 2 }, shadowRadius: 4 },
+  cardContainer: { padding: 14, borderRadius: 16, borderLeftWidth: 4, borderWidth: 1, borderColor: Colors.border, height: 135, justifyContent: "space-between" },
+  cardHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  cardIconBox: { width: 34, height: 34, borderRadius: 10, justifyContent: "center", alignItems: "center" },
+  cardCount: { fontSize: 20, fontWeight: "800", color: Colors.text },
+  cardInfoCol: { flex: 1, justifyContent: "center", marginTop: 6 },
+  cardTitle: { fontSize: 12, fontWeight: "700", color: Colors.text },
+  cardDesc: { fontSize: 9, color: Colors.textSecondary, marginTop: 2, lineHeight: 12 },
+  cardFooterRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 6, marginTop: 4 },
+  viewDetailsText: { fontSize: 9, fontWeight: "800" },
+
+  // Quick Actions Styles
+  actionsRow: { paddingLeft: 20, paddingBottom: 16 },
+  actionChip: { flexDirection: "row", alignItems: "center", backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, marginRight: 12, elevation: 1 },
+  actionLabel: { fontSize: 12, fontWeight: "700", color: Colors.text, marginLeft: 8 },
+
+  // Booking Card Styles
+  bookingCard: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: Colors.white, marginHorizontal: 20, marginBottom: 12, padding: 14, borderRadius: 16, borderWidth: 1, borderColor: Colors.border, elevation: 1 },
   bookingLeft: { flexDirection: "row", alignItems: "center", flex: 1 },
-  avatarPlaceholder: { width: 44, height: 44, borderRadius: 10, backgroundColor: "#FFF0F4", justifyContent: "center", alignItems: "center" },
+  avatarPlaceholder: { width: 44, height: 44, borderRadius: 12, backgroundColor: "#FFF0F4", justifyContent: "center", alignItems: "center" },
   bookingInfo: { marginLeft: 12, flex: 1 },
-  customerName: { fontSize: 13, fontWeight: "700", color: Colors.text },
-  serviceName: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
-  bookingDate: { fontSize: 10, color: Colors.textTertiary, marginTop: 4 },
-  emptyText: { fontSize: 11, color: Colors.textSecondary, textAlign: "center", marginVertical: 32 },
-  cashSection: { paddingHorizontal: 16, marginVertical: 10 },
-  cashConfirmCard: { backgroundColor: Colors.white, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.border, elevation: 1 },
-  cashHeader: { flexDirection: "column", justifyContent: "flex-start", alignItems: "flex-start", marginBottom: 6 },
-  cashCustomer: { fontSize: 13, fontWeight: "700", color: Colors.text },
-  cashAmount: { fontSize: 13, fontWeight: "800", color: Colors.primary, marginTop: 2 },
-  cashBookingCode: { fontSize: 11, color: Colors.textSecondary, marginTop: 4, width: "100%" },
-  cashActionsRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 12, width: "100%" },
-  cashBtn: { flex: 1, height: 38, borderRadius: 8, justifyContent: "center", alignItems: "center", marginHorizontal: 4, paddingHorizontal: 4 },
-  cashBtnText: { color: Colors.white, fontWeight: "700", fontSize: 10, textAlign: "center" }
+  customerName: { fontSize: 14, fontWeight: "700", color: Colors.text },
+  serviceName: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  bookingDate: { fontSize: 11, color: Colors.textTertiary, marginTop: 4 },
+  emptyText: { fontSize: 12, color: Colors.textSecondary, textAlign: "center", marginVertical: 32 },
+
+  // Cash Section Card Styles
+  cashSection: { paddingHorizontal: 20, marginVertical: 10 },
+  cashConfirmCard: { backgroundColor: Colors.white, borderRadius: 20, padding: 16, marginBottom: 14, borderWidth: 1, borderColor: Colors.border, elevation: 2 },
+  cashCustomer: { fontSize: 15, fontWeight: "800", color: Colors.text },
+  cashService: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  itemMetaRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 8 },
+  metaLabel: { fontSize: 12, color: Colors.textSecondary },
+  metaValue: { fontSize: 12, color: Colors.text, fontWeight: "600" },
+  cashActionsRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 16 },
+  cashBtn: { flex: 1, height: 42, borderRadius: 10, justifyContent: "center", alignItems: "center", marginHorizontal: 4 },
+  cashBtnText: { color: Colors.white, fontWeight: "800", fontSize: 12 }
 });

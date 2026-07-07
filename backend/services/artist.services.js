@@ -1291,8 +1291,9 @@ async createReview(data) {
     return await db.Booking.findAll({
       where: { artist_id: artist.id },
       include: [
-        { model: db.User, as: "user", attributes: ["name", "phone"] },
-        { model: db.Service, as: "service", attributes: ["specialization_name"] }
+        { model: db.User, as: "user", attributes: ["id", "name", "phone", "profile_image"] },
+        { model: db.Service, as: "service", attributes: ["specialization_name"] },
+        { model: db.AvailabilitySlot, as: "slot" }
       ],
       order: [["createdAt", "DESC"]]
     });
@@ -2056,7 +2057,8 @@ async createReview(data) {
       user_id: booking.user_id,
       title: "Booking Accepted",
       message: `Your booking request #${booking.booking_code} has been accepted by the artist!`,
-      type: "BOOKING"
+      type: "BOOKING",
+      data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
     });
 
     try {
@@ -2064,7 +2066,8 @@ async createReview(data) {
       io.to(booking.user_id.toString()).emit("new_notification", {
         title: "Booking Accepted",
         message: `Your booking request #${booking.booking_code} has been accepted by the artist!`,
-        type: "BOOKING"
+        type: "BOOKING",
+        data: { bookingId: booking.id, booking_id: booking.id }
       });
     } catch {}
 
@@ -2107,7 +2110,8 @@ async createReview(data) {
       user_id: booking.user_id,
       title: "Booking Declined",
       message: `Your booking request #${booking.booking_code} was declined by the artist.`,
-      type: "BOOKING"
+      type: "BOOKING",
+      data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
     });
 
     try {
@@ -2115,7 +2119,8 @@ async createReview(data) {
       io.to(booking.user_id.toString()).emit("new_notification", {
         title: "Booking Declined",
         message: `Your booking request #${booking.booking_code} was declined by the artist.`,
-        type: "BOOKING"
+        type: "BOOKING",
+        data: { bookingId: booking.id, booking_id: booking.id }
       });
     } catch {}
 

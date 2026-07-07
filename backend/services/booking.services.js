@@ -514,7 +514,8 @@ class BookingService {
           user_id: booking.user_id,
           title: "Service Completed 🌸",
           message: `The service is completed. Please pay the artist ₹${booking.final_amount} in cash.`,
-          type: "SYSTEM"
+          type: "BOOKING",
+          data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
         });
 
         const artistProfile = await db.ArtistProfile.findByPk(booking.artist_id);
@@ -523,7 +524,8 @@ class BookingService {
             user_id: artistProfile.user_id,
             title: "Cash Payment Pending Confirmation 💵",
             message: `Please confirm if you have received the cash payment of ₹${booking.final_amount} for booking #${booking.booking_code}.`,
-            type: "SYSTEM"
+            type: "SYSTEM",
+            data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
           });
         }
       } else {
@@ -792,14 +794,16 @@ class BookingService {
       user_id: booking.user_id,
       title: "Cash Payment Confirmed! 💵",
       message: `Your artist has confirmed cash payment of ₹${totalAmount} for booking #${booking.booking_code}.`,
-      type: "SYSTEM"
+      type: "SYSTEM",
+      data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
     });
 
     await db.Notification.create({
       user_id: adminUser.id,
       title: "Cash Settlement Settled",
       message: `Booking #${booking.booking_code} has been settled via cash payment. Commission collected.`,
-      type: "SYSTEM"
+      type: "SYSTEM",
+      data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
     });
 
     return booking;

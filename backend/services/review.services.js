@@ -97,7 +97,8 @@ class ReviewService {
           user_id: artistProfile.user_id,
           title: "New Review Received! ⭐️",
           message: `Congratulations! A customer left a ${rating}-star review for booking #${booking.booking_code}.`,
-          type: "SYSTEM"
+          type: "REVIEW",
+          data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
         });
       }
 
@@ -106,7 +107,8 @@ class ReviewService {
         user_id: userId,
         title: "Booking Closed & Chat Session Terminated 🔒",
         message: `Your booking #${booking.booking_code} lifecycle is now fully closed. Chat history is preserved as read-only.`,
-        type: "SYSTEM"
+        type: "BOOKING",
+        data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
       });
 
       if (artistProfile) {
@@ -114,7 +116,8 @@ class ReviewService {
           user_id: artistProfile.user_id,
           title: "Booking Closed & Chat Session Terminated 🔒",
           message: `Booking #${booking.booking_code} lifecycle is now fully closed. Chat history is preserved as read-only.`,
-          type: "SYSTEM"
+          type: "BOOKING",
+          data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
         });
       }
     } catch (notifErr) {

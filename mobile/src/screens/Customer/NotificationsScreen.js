@@ -17,6 +17,7 @@ import {
   markNotificationAsRead,
   markAllNotificationsAsRead
 } from "../../services/notificationApi";
+import { handleNotificationNavigation } from "../../services/deepLink";
 
 export default function NotificationsScreen({ navigation }) {
   const [notifications, setNotifications] = useState([]);
@@ -66,25 +67,7 @@ export default function NotificationsScreen({ navigation }) {
         );
       }
       
-      let meta = {};
-      if (item.data) {
-        try {
-          meta = typeof item.data === "string" ? JSON.parse(item.data) : item.data;
-        } catch (e) {}
-      }
-      
-      const type = item.type ? item.type.toLowerCase() : "";
-      const title = (item.title || "").toLowerCase();
-      const message = (item.message || "").toLowerCase();
-      const bookingId = meta.bookingId || meta.booking_id;
-      
-      const isBooking = type === "booking" || title.includes("booking") || message.includes("booking") || title.includes("payment") || message.includes("payment");
-      
-      if (isBooking && bookingId) {
-        navigation.navigate("BookingDetails", { bookingId: bookingId });
-      } else {
-        navigation.navigate("NotificationDetails", { id: item.id, notification: item });
-      }
+      handleNotificationNavigation(item, navigation, "customer");
     } catch (err) {
       navigation.navigate("NotificationDetails", { id: item.id, notification: item });
     }

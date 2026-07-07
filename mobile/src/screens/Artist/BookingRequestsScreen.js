@@ -13,7 +13,8 @@ import {
 import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
-import { getBookingHistory, acceptBooking, rejectBooking } from "../../services/booking";
+import { acceptBooking, rejectBooking } from "../../services/booking";
+import { getArtistBookingsData } from "../../services/artist";
 
 export default function BookingRequestsScreen({ route, navigation }) {
   const [activeTab, setActiveTab] = useState("Pending");
@@ -29,7 +30,7 @@ export default function BookingRequestsScreen({ route, navigation }) {
 
   const fetchHistory = async () => {
     try {
-      const data = await getBookingHistory();
+      const data = await getArtistBookingsData();
       setBookings(data || []);
     } catch (e) {
       console.log("Failed to fetch artist bookings:", e.message);
@@ -89,13 +90,27 @@ export default function BookingRequestsScreen({ route, navigation }) {
 
   const getFilteredBookings = () => {
     return bookings.filter((item) => {
-      const status = item.detailed_status || item.booking_status;
+      // Only apply today's filter on the Accepted tab
+      if (activeTab === "Accepted" && route.params?.filterToday) {
+        const moment = require("moment");
+        const bookingDate = item.slot?.date || item.slot?.start_time || item.reschedule_date;
+        if (!bookingDate || !moment(bookingDate).isSame(moment(), 'day')) {
+          return false;
+        }
+      }
+
+      const bookingStatus = String(item.booking_status || "").toUpperCase();
+      const detailedStatus = String(item.detailed_status || "").toUpperCase();
+      const status = detailedStatus || bookingStatus;
+
       if (activeTab === "Pending") {
-        return status === "PENDING";
-      } else if (activeTab === "Accepted") {
-        return ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED", "RESCHEDULED", "CASH_PAYMENT_PENDING", "CASH_DISPUTED"].includes(status);
+        return bookingStatus === "PENDING" || detailedStatus === "PENDING" || detailedStatus === "VIEWED";
+      }
+      
+      if (activeTab === "Accepted") {
+        return bookingStatus !== "PENDING" && ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED", "RESCHEDULED", "CASH_PAYMENT_PENDING", "CASH_DISPUTED"].includes(status);
       } else {
-        return ["COMPLETED", "CANCELLED", "AWAITING_CASH_CONFIRMATION", "COMPLETED_CLOSED"].includes(status);
+        return bookingStatus !== "PENDING" && ["COMPLETED", "CANCELLED", "AWAITING_CASH_CONFIRMATION", "COMPLETED_CLOSED"].includes(status);
       }
     });
   };
@@ -126,6 +141,16 @@ export default function BookingRequestsScreen({ route, navigation }) {
     return localMoment(timeVal, formats).format("hh:mm A");
   };
 
+  const resolveImage = (uri) => {
+    if (!uri) return "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=300";
+    if (uri.startsWith("http://") || uri.startsWith("https://") || uri.startsWith("file://") || uri.startsWith("content://")) {
+      return uri;
+    }
+    const cleanUri = uri.startsWith("/") ? uri : `/${uri}`;
+    const { BASE_URL } = require("../../services/api");
+    return `${BASE_URL}${cleanUri}`;
+  };
+
   const renderItem = ({ item }) => {
     const moment = require("moment");
     let dateStr = "Today";
@@ -146,7 +171,7 @@ export default function BookingRequestsScreen({ route, navigation }) {
       <View style={styles.card}>
         <View style={styles.topSection}>
           <Image
-            source={{ uri: item.user?.profile_image || "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=300" }}
+            source={{ uri: resolveImage(item.user?.profile_image) }}
             style={styles.avatar}
           />
           <View style={styles.infoContainer}>

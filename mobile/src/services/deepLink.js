@@ -129,6 +129,159 @@ export function resolveNotificationRoute(notification, role) {
   return { screen: route.screen, params: resolvedParams };
 }
 
+export function handleNotificationNavigation(notification, navigation, role) {
+  if (!notification || !navigation) return;
+
+  const content = notification.request?.content || {};
+  let title = (notification.title || content.title || "").toLowerCase();
+  let message = (notification.message || notification.body || content.body || "").toLowerCase();
+  
+  let meta = {};
+  const rawData = notification.data || content.data || {};
+  if (rawData) {
+    try {
+      meta = typeof rawData === "string" ? JSON.parse(rawData) : rawData;
+    } catch (e) {
+      meta = {};
+    }
+  }
+
+  let type = (notification.type || meta.type || content.data?.type || "").toUpperCase();
+  if (!type) {
+    if (title.includes("booking") || message.includes("booking") || title.includes("lead") || message.includes("lead")) {
+      type = "BOOKING";
+    } else if (title.includes("chat") || message.includes("message") || title.includes("message")) {
+      type = "CHAT";
+    } else if (title.includes("payment") || message.includes("payment") || title.includes("cash") || message.includes("cash") || title.includes("transaction")) {
+      type = "PAYMENT";
+    } else if (title.includes("wallet") || message.includes("wallet") || title.includes("credit") || message.includes("debit")) {
+      type = "WALLET";
+    } else if (title.includes("review") || message.includes("review") || title.includes("rating")) {
+      type = "REVIEW";
+    } else if (title.includes("profile") || title.includes("kyc") || title.includes("verification")) {
+      type = "PROFILE";
+    } else if (title.includes("service")) {
+      type = "SERVICE";
+    } else if (title.includes("referral") || message.includes("referral")) {
+      type = "REFERRAL";
+    }
+  }
+
+  const referenceId = meta.referenceId || meta.reference_id || meta.bookingId || meta.booking_id || meta.leadId || meta.lead_id || meta.chatId || meta.chat_id || meta.serviceId || meta.service_id || meta.id || "";
+  const bookingId = meta.bookingId || meta.booking_id || (type === "BOOKING" || type === "CHAT" || type === "PAYMENT" ? referenceId : "");
+  const leadId = meta.leadId || meta.lead_id || (type === "LEAD" ? referenceId : "");
+  const serviceId = meta.serviceId || meta.service_id || (type === "SERVICE" ? referenceId : "");
+  const recipientId = meta.recipientId || meta.recipient_id || meta.senderId || meta.sender_id || "";
+  const bookingCode = meta.bookingCode || meta.booking_code || "";
+
+  if (meta.file_url) {
+    try {
+      const { Linking } = require("react-native");
+      Linking.openURL(meta.file_url);
+      return;
+    } catch (e) {
+      console.warn("Failed to open file_url:", e.message);
+    }
+  }
+
+  const normalizedRole = String(role || "").toUpperCase();
+
+  try {
+    switch (type) {
+      case "BOOKING":
+      case "LEAD":
+        if (normalizedRole === "ARTIST") {
+          if (title.includes("lead") || message.includes("lead") || type === "LEAD") {
+            if (leadId || referenceId) {
+              navigation.navigate("LeadDetails", { id: leadId || referenceId });
+              return;
+            }
+          }
+        }
+        if (bookingId) {
+          navigation.navigate("BookingDetails", { bookingId: bookingId });
+        } else {
+          navigation.navigate(normalizedRole === "ARTIST" ? "BookingRequests" : "MyBookings");
+        }
+        break;
+
+      case "CHAT":
+        if (bookingId) {
+          navigation.navigate("ChatRoom", {
+            bookingId: bookingId,
+            receiverId: recipientId,
+            bookingCode: bookingCode
+          });
+        } else {
+          navigation.navigate("ChatList");
+        }
+        break;
+
+      case "PAYMENT":
+      case "WALLET":
+        if (normalizedRole === "ARTIST") {
+          navigation.navigate("Wallet");
+        } else {
+          if (bookingId) {
+            const isPaymentRejected = title.includes("reject") || message.includes("not received");
+            if (isPaymentRejected) {
+              navigation.navigate("BookingSettlement", { bookingId: bookingId });
+            } else {
+              navigation.navigate("BookingDetails", { bookingId: bookingId });
+            }
+          } else {
+            navigation.navigate("Wallet");
+          }
+        }
+        break;
+
+      case "REVIEW":
+        if (normalizedRole === "ARTIST") {
+          navigation.navigate("Reviews");
+        } else {
+          if (bookingId) {
+            navigation.navigate("BookingDetails", { bookingId: bookingId });
+          }
+        }
+        break;
+
+      case "PROFILE":
+        if (normalizedRole === "ARTIST") {
+          if (title.includes("reject") || message.includes("reject") || title.includes("fail") || message.includes("fail")) {
+            navigation.navigate("Kyc");
+          } else {
+            navigation.navigate("Profile");
+          }
+        } else {
+          navigation.navigate("Profile");
+        }
+        break;
+
+      case "SERVICE":
+        if (normalizedRole === "ARTIST") {
+          navigation.navigate("Services");
+        }
+        break;
+
+      case "REFERRAL":
+        if (normalizedRole === "CUSTOMER") {
+          navigation.navigate("ReferralDashboard");
+        } else {
+          navigation.navigate("Wallet");
+        }
+        break;
+
+      default:
+        navigation.navigate("NotificationDetails", { id: notification.id, notification: notification });
+        break;
+    }
+  } catch (err) {
+    console.error("Centralized notification navigation failed:", err.message);
+    navigation.navigate("NotificationDetails", { id: notification.id, notification: notification });
+  }
+}
+
+
 export const linkingConfig = {
   prefixes: ["mehendigoo://", "https://mehendigoo.com", "https://mehendigo.app", "https://www.mehendigo.app"],
   config: {

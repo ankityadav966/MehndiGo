@@ -172,7 +172,8 @@ class PaymentService {
         user_id: booking.user_id,
         title: "Payment Received Successfully! 🎉",
         message: `Your payment of ₹${booking.final_amount} for booking #${booking.booking_code} was received.`,
-        type: "SYSTEM"
+        type: "PAYMENT",
+        data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
       });
 
       // Notify artist
@@ -390,7 +391,8 @@ class PaymentService {
         user_id: booking.user_id,
         title: "Refund Initiated 💸",
         message: `Your refund of ₹${booking.final_amount} for booking #${booking.booking_code} was successfully processed.`,
-        type: "SYSTEM"
+        type: "PAYMENT",
+        data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
       });
     } catch (notifErr) {
       console.error("Error sending refund notification:", notifErr.message);

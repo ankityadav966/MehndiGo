@@ -12,7 +12,7 @@ import {
   getLastNotificationResponse,
   scheduleLocalNotification,
 } from "../services/notification";
-import { resolveNotificationRoute } from "../services/deepLink";
+import { handleNotificationNavigation } from "../services/deepLink";
 
 const NotificationContext = createContext(null);
 
@@ -57,14 +57,9 @@ export function NotificationProvider({ children, navigationRef }) {
 
   const handleNotificationResponse = useCallback(
     (response) => {
-      const route = resolveNotificationRoute(response.notification, role);
-      if (route && navigationRef?.current) {
+      if (navigationRef?.current) {
         setTimeout(() => {
-          if (route.params) {
-            navigationRef.current.navigate(route.screen, route.params);
-          } else {
-            navigationRef.current.navigate(route.screen);
-          }
+          handleNotificationNavigation(response.notification, navigationRef.current, role);
         }, 500);
       }
     },

@@ -2,13 +2,31 @@ import { secureStorage } from "../utils/storage";
 
 const getBaseUrl = () => {
   const envUrl = process.env.EXPO_PUBLIC_API_URL;
-  if (envUrl) {
-    return envUrl.endsWith("/") ? envUrl.slice(0, -1) : envUrl;
+  if (!envUrl) {
+    console.warn("WARNING: EXPO_PUBLIC_API_URL is not set in environment variables!");
+    return "";
   }
-  return "https://mehandigo-api.globalrns.com/api/v1";
+  return envUrl.endsWith("/") ? envUrl.slice(0, -1) : envUrl;
 };
 
 export const BASE_URL = getBaseUrl();
+
+// Dynamically construct the SOCKET_URL from the base URL (extracting protocol, host, and port)
+const getSocketUrl = () => {
+  if (!BASE_URL) return "";
+  try {
+    const urlObj = new URL(BASE_URL);
+    return `${urlObj.protocol}//${urlObj.host}`;
+  } catch (e) {
+    const apiIndex = BASE_URL.indexOf("/api");
+    if (apiIndex !== -1) {
+      return BASE_URL.substring(0, apiIndex);
+    }
+    return BASE_URL;
+  }
+};
+
+export const SOCKET_URL = getSocketUrl();
 
 export function getNormalizedUrl(endpoint) {
   let baseUrl = BASE_URL;
@@ -36,19 +54,6 @@ export function getNormalizedUrl(endpoint) {
     baseUrl = baseUrl.slice(0, -1);
   }
   let url = `${baseUrl}${cleanEndpoint}`;
-
-  // Normalize and replace any dev local URL / IP
-  if (url.includes("192.168.1.9")) {
-    url = url.replace(/http:\/\/192\.168\.1\.9:\d+/g, "https://mehandigo-api.globalrns.com");
-    url = url.replace(/192\.168\.1\.9:\d+/g, "mehandigo-api.globalrns.com");
-    url = url.replace(/192\.168\.1\.9/g, "mehandigo-api.globalrns.com");
-  }
-
-  // Force HTTPS schema unless it is a local address (localhost, 127.0.0.1, or local IP networks)
-  const isLocalAddress = url.includes("localhost") || url.includes("127.0.0.1") || url.includes("192.") || url.includes("10.");
-  if (url.startsWith("http://") && !isLocalAddress) {
-    url = "https://" + url.substring(7);
-  }
 
   return url;
 }

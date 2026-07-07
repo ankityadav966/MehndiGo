@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import { markNotificationAsRead } from "../../services/notificationApi";
+import { handleNotificationNavigation } from "../../services/deepLink";
 
 const NOTIF_ICONS = {
   booking: "calendar-check-outline",
@@ -73,48 +74,7 @@ export default function NotificationDetailsScreen({ route, navigation }) {
 
   const handleAction = () => {
     if (!notification) return;
-
-    let meta = {};
-    if (notification.data) {
-      try {
-        meta = typeof notification.data === "string" ? JSON.parse(notification.data) : notification.data;
-      } catch (e) {}
-    }
-
-    const type = notification.type ? notification.type.toLowerCase() : "";
-    const title = (notification.title || "").toLowerCase();
-    const message = (notification.message || "").toLowerCase();
-
-    const bookingId = meta.bookingId || meta.booking_id;
-    const isBooking = type === "booking" || title.includes("booking") || message.includes("booking");
-    const isWallet = type === "wallet" || title.includes("wallet") || title.includes("cashback") || message.includes("wallet") || message.includes("cashback");
-    const isChat = type === "chat" || title.includes("message") || message.includes("message");
-
-    // Execute Deep Links Redirection mapping rules
-    if (isBooking) {
-      if (bookingId) {
-        const isPaymentRejected = title.includes("reject") || message.includes("not received");
-        if (isPaymentRejected) {
-          navigation.navigate("BookingSettlement", { bookingId: bookingId });
-        } else {
-          navigation.navigate("BookingDetails", { bookingId: bookingId });
-        }
-      } else {
-        navigation.navigate("CustomerTabs", { screen: "Bookings" });
-      }
-    } else if (isChat) {
-      if (bookingId) {
-        navigation.navigate("ChatRoom", { bookingId: bookingId });
-      } else {
-        navigation.navigate("CustomerTabs", { screen: "Home" });
-      }
-    } else if (isWallet) {
-      navigation.navigate("CustomerTabs", { screen: "Wallet" });
-    } else if (meta.file_url) {
-      Linking.openURL(meta.file_url);
-    } else {
-      navigation.goBack();
-    }
+    handleNotificationNavigation(notification, navigation, "customer");
   };
 
   if (loading || !notification) {

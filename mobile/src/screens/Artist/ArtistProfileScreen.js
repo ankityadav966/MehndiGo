@@ -476,12 +476,17 @@ export default function ArtistProfileScreen({ navigation }) {
           <View style={styles.statsBar}>
             <TouchableOpacity 
               style={styles.statsDividerItem}
-              onPress={() => navigation.navigate("BookingRequests", { initialTab: "Pending" })}
+              onPress={() => navigation.navigate("Bookings")}
             >
               <Text style={styles.statValue}>
                 {profile?.bookingStats?.total ?? "0"}
               </Text>
               <Text style={styles.statLabel}>Bookings</Text>
+              <View style={{ flexDirection: "row", gap: 4, marginTop: 4, flexWrap: "wrap", justifyContent: "center" }}>
+                <Text style={{ fontSize: 9, color: Colors.primary, fontWeight: "600" }}>P:{profile?.bookingStats?.pending ?? 0}</Text>
+                <Text style={{ fontSize: 9, color: Colors.success, fontWeight: "600" }}>C:{profile?.bookingStats?.completed ?? 0}</Text>
+                <Text style={{ fontSize: 9, color: Colors.error, fontWeight: "600" }}>Can:{profile?.bookingStats?.cancelled ?? 0}</Text>
+              </View>
             </TouchableOpacity>
             <View style={styles.statsSeparator} />
             <View style={styles.statsDividerItem}>
@@ -495,50 +500,6 @@ export default function ArtistProfileScreen({ navigation }) {
               <Text style={styles.statValue}>{portfolioItems.length || portfolios.length}</Text>
               <Text style={styles.statLabel}>Posts</Text>
             </View>
-          </View>
-
-          {/* Booking Analytics Section */}
-          <Text style={[styles.sectionTitle, { marginHorizontal: 16, marginTop: 20, marginBottom: 8, fontSize: 13, fontWeight: "700", color: Colors.textSecondary }]}>Booking Analytics</Text>
-          <View style={styles.analyticsGrid}>
-            <TouchableOpacity 
-              style={styles.analyticsCard} 
-              onPress={() => navigation.navigate("BookingRequests", { initialTab: "Completed" })}
-            >
-              <Text style={styles.analyticsValue}>{profile?.bookingStats?.total ?? 0}</Text>
-              <Text style={styles.analyticsLabel}>Total Bookings</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.analyticsCard} 
-              onPress={() => navigation.navigate("BookingRequests", { initialTab: "Pending" })}
-            >
-              <Text style={[styles.analyticsValue, { color: Colors.primary }]}>{profile?.bookingStats?.pending ?? 0}</Text>
-              <Text style={styles.analyticsLabel}>Pending</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.analyticsCard} 
-              onPress={() => navigation.navigate("BookingRequests", { initialTab: "Accepted" })}
-            >
-              <Text style={[styles.analyticsValue, { color: Colors.success }]}>{profile?.bookingStats?.completed ?? 0}</Text>
-              <Text style={styles.analyticsLabel}>Completed</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.analyticsCard} 
-              onPress={() => navigation.navigate("BookingRequests", { initialTab: "Completed" })}
-            >
-              <Text style={[styles.analyticsValue, { color: Colors.error }]}>{profile?.bookingStats?.cancelled ?? 0}</Text>
-              <Text style={styles.analyticsLabel}>Cancelled</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.analyticsCard} 
-              onPress={() => navigation.navigate("BookingRequests", { initialTab: "Completed" })}
-            >
-              <Text style={[styles.analyticsValue, { color: "#6B7280" }]}>{profile?.bookingStats?.rejected ?? 0}</Text>
-              <Text style={styles.analyticsLabel}>Rejected</Text>
-            </TouchableOpacity>
           </View>
 
           <View style={styles.actionRow}>

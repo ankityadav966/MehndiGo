@@ -420,7 +420,8 @@ async function sendMessage(req, res) {
       title: `New Message from ${req.user.name || "MehndiGo User"}`,
       message: message_type === "TEXT" ? message : `Sent an attachment: ${message_type}`,
       type: "CHAT",
-      booking_id: bookingId
+      booking_id: bookingId,
+      data: JSON.stringify({ bookingId: bookingId, booking_id: bookingId, senderId: req.user.id })
     });
 
     return res.status(201).json(SuccessResponse("Message sent", completeMsg));

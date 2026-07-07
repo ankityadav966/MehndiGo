@@ -4,6 +4,7 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View, ActivityIndicator
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import { getNotificationHistory, markNotificationAsRead } from "../../services/notificationApi";
+import { handleNotificationNavigation } from "../../services/deepLink";
 
 export default function NotificationDetailsScreen({ route, navigation }) {
   const { id, notification: paramNotification } = route.params || {};
@@ -23,7 +24,7 @@ export default function NotificationDetailsScreen({ route, navigation }) {
             setNotification(currentNotif);
           }
         }
-        
+
         // Mark read on server
         if (currentNotif && !currentNotif.is_read) {
           await markNotificationAsRead(currentNotif.id);
@@ -52,30 +53,7 @@ export default function NotificationDetailsScreen({ route, navigation }) {
 
   const handleAction = () => {
     if (!notification) return;
-
-    let meta = {};
-    if (notification.data) {
-      try {
-        meta = typeof notification.data === "string" ? JSON.parse(notification.data) : notification.data;
-      } catch (e) {}
-    }
-
-    const type = notification.type ? notification.type.toLowerCase() : "";
-    const title = (notification.title || "").toLowerCase();
-    const message = (notification.message || "").toLowerCase();
-
-    const bookingId = meta.bookingId || meta.booking_id;
-    const isCashRequest = title.includes("cash") || message.includes("cash") || type === "cash_request";
-    const isBooking = type === "booking" || title.includes("booking") || message.includes("booking");
-
-    if (isCashRequest) {
-      // Open Artist Dashboard -> Quick Management Control -> Pending Cash Payment Requests
-      navigation.navigate("ArtistTabs", { screen: "Dashboard" });
-    } else if (isBooking && bookingId) {
-      navigation.navigate("BookingDetails", { bookingId: bookingId });
-    } else {
-      navigation.navigate("ArtistTabs", { screen: "Dashboard" });
-    }
+    handleNotificationNavigation(notification, navigation, "artist");
   };
 
   if (loading) {
@@ -128,9 +106,7 @@ export default function NotificationDetailsScreen({ route, navigation }) {
           <Text style={styles.message}>{notification.message}</Text>
         </View>
 
-        <TouchableOpacity style={styles.actionBtn} onPress={handleAction}>
-          <Text style={styles.actionText}>View Action Details</Text>
-        </TouchableOpacity>
+
       </ScrollView>
     </SafeAreaView>
   );

@@ -25,14 +25,12 @@ export default function WalletScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const [selectedAmount, setSelectedAmount] = useState(500);
   const [customAmount, setCustomAmount] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
   const [addingMoney, setAddingMoney] = useState(false);
 
   // Segmented control tabs: ALL, APPROVED, PENDING, FAILED
   const [activeTab, setActiveTab] = useState("ALL");
-  const amounts = [100, 500, 1000, 2000];
 
   const loadWalletData = useCallback(async () => {
     try {
@@ -185,23 +183,6 @@ export default function WalletScreen({ navigation }) {
               <TouchableOpacity style={styles.addMoneyBtn} onPress={() => setShowAddModal(true)}>
                 <Text style={styles.addMoneyText}>Add Money</Text>
               </TouchableOpacity>
-            </View>
-
-            {/* Quick Add Section */}
-            <Text style={styles.sectionTitle}>Quick Recharge</Text>
-            <View style={styles.amountRow}>
-              {amounts.map((item) => (
-                <TouchableOpacity
-                  key={item}
-                  onPress={() => {
-                    setSelectedAmount(item);
-                    handleAddMoney(item);
-                  }}
-                  style={[styles.amountChip, selectedAmount === item && styles.activeChip]}
-                >
-                  <Text style={[styles.amountChipText, selectedAmount === item && styles.activeChipText]}>₹{item}</Text>
-                </TouchableOpacity>
-              ))}
             </View>
 
             {/* Transactions Segmented Tabs */}
