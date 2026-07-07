@@ -195,8 +195,8 @@ export default function ArtistProfileScreen({ navigation }) {
       return uri;
     }
     const cleanUri = uri.startsWith("/") ? uri : `/${uri}`;
-    const { BASE_URL } = require("../../services/api");
-    return `${BASE_URL}${cleanUri}`;
+    const { SOCKET_URL } = require("../../services/api");
+    return `${SOCKET_URL}${cleanUri}`;
   };
 
   const [portfolioItems, setPortfolioItems] = useState([]);

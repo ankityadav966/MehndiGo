@@ -79,6 +79,7 @@ class PortfolioRepository
 
         where: {
           artist_id,
+          title: { [db.Sequelize.Op.ne]: null }
         },
 
         include: [

@@ -129,8 +129,8 @@ export default function SupportTicketDetailsScreen({ route, navigation }) {
   const resolveImageUrl = (url) => {
     if (!url) return null;
     if (url.startsWith("http")) return url;
-    const { BASE_URL } = require("../../services/api");
-    return `${BASE_URL}${url.startsWith("/") ? url : `/${url}`}`;
+    const { SOCKET_URL } = require("../../services/api");
+    return `${SOCKET_URL}${url.startsWith("/") ? url : `/${url}`}`;
   };
 
   if (loading || !ticket) {

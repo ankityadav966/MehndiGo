@@ -233,8 +233,8 @@ export default function ArtistDashboardScreen({ navigation }) {
       return uri;
     }
     const cleanUri = uri.startsWith("/") ? uri : `/${uri}`;
-    const { BASE_URL } = require("../../services/api");
-    return `${BASE_URL}${cleanUri}`;
+    const { SOCKET_URL } = require("../../services/api");
+    return `${SOCKET_URL}${cleanUri}`;
   };
 
   if (loading) {
@@ -416,10 +416,10 @@ export default function ArtistDashboardScreen({ navigation }) {
         </ScrollView>
 
         {/* 6. Active Actions (Pending Bookings) */}
-        {dashboard?.recentBookings?.filter(b => b.booking_status === "PENDING").length > 0 && (
+        {dashboard?.recentBookings?.filter(b => b.booking_status === "PENDING" || (b.booking_status === "CONFIRMED" && b.detailed_status === "CONFIRMED")).length > 0 && (
           <View style={styles.cashSection}>
             <Text style={styles.sectionTitle}>New Pending Bookings</Text>
-            {dashboard.recentBookings.filter(b => b.booking_status === "PENDING").map((item) => {
+            {dashboard.recentBookings.filter(b => b.booking_status === "PENDING" || (b.booking_status === "CONFIRMED" && b.detailed_status === "CONFIRMED")).map((item) => {
               const slotDate = item.slot?.start_time ? new Date(item.slot.start_time).toLocaleDateString() : (item.reschedule_date || "TBD");
               const slotTime = item.slot ? `${new Date(item.slot.start_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - ${new Date(item.slot.end_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` : (item.reschedule_time || "TBD");
 

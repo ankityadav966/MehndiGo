@@ -408,7 +408,7 @@ async function uploadPortfolioMedia(req, res) {
         type: isVideo ? "video" : "image"
       };
 
-      if (artist) {
+      if (artist && req.query.createPortfolio === "true") {
         // If the user has an artist profile, automatically create a Portfolio record
         const data = {
           artist_id: req.user.id,

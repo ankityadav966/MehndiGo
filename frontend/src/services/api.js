@@ -7,7 +7,7 @@ const getBaseUrl = () => {
   }
   return typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" || window.location.hostname.startsWith("192."))
     ? "http://localhost:8000/api/v1/mehndigo"
-    : "http://98.70.11.123:3000/api/v1/mehndigo";
+    : "https://mehandigo-api.globalrns.com/api/v1/mehndigo";
 };
 
 const API_BASE_URL = getBaseUrl();

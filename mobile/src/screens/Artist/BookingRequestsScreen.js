@@ -104,11 +104,11 @@ export default function BookingRequestsScreen({ route, navigation }) {
       const status = detailedStatus || bookingStatus;
 
       if (activeTab === "Pending") {
-        return bookingStatus === "PENDING" || detailedStatus === "PENDING" || detailedStatus === "VIEWED";
+        return bookingStatus === "PENDING" || ["PENDING", "VIEWED", "CONFIRMED"].includes(detailedStatus);
       }
       
       if (activeTab === "Accepted") {
-        return bookingStatus !== "PENDING" && ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED", "RESCHEDULED", "CASH_PAYMENT_PENDING", "CASH_DISPUTED"].includes(status);
+        return bookingStatus !== "PENDING" && ["ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED", "RESCHEDULED", "CASH_PAYMENT_PENDING", "CASH_DISPUTED"].includes(status);
       } else {
         return bookingStatus !== "PENDING" && ["COMPLETED", "CANCELLED", "AWAITING_CASH_CONFIRMATION", "COMPLETED_CLOSED"].includes(status);
       }
@@ -147,8 +147,8 @@ export default function BookingRequestsScreen({ route, navigation }) {
       return uri;
     }
     const cleanUri = uri.startsWith("/") ? uri : `/${uri}`;
-    const { BASE_URL } = require("../../services/api");
-    return `${BASE_URL}${cleanUri}`;
+    const { SOCKET_URL } = require("../../services/api");
+    return `${SOCKET_URL}${cleanUri}`;
   };
 
   const renderItem = ({ item }) => {

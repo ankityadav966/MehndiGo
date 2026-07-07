@@ -277,6 +277,17 @@ class BookingService {
           model: db.Service,
           as: "service",
           attributes: ["id", "specialization_name", "category"]
+        },
+        {
+          model: db.ArtistProfile,
+          as: "artist",
+          include: [
+            {
+              model: db.User,
+              as: "user",
+              attributes: ["id", "name", "phone", "profile_image"]
+            }
+          ]
         }
       ],
       order: [["createdAt", "DESC"]]

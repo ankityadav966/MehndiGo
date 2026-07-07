@@ -195,11 +195,21 @@ export default function BookingDetailsScreen({ route, navigation }) {
     }
   };
 
+  const resolveImage = (uri) => {
+    if (!uri) return "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=300";
+    if (uri.startsWith("http://") || uri.startsWith("https://") || uri.startsWith("file://") || uri.startsWith("content://")) {
+      return uri;
+    }
+    const cleanUri = uri.startsWith("/") ? uri : `/${uri}`;
+    const { SOCKET_URL } = require("../../services/api");
+    return `${SOCKET_URL}${cleanUri}`;
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Ionicons name="chevron-back" size={22} color={Colors.text} />
+          <Ionicons name="chevron-back" size={24} color={Colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Booking Details</Text>
         <View style={{ width: 40 }} />
@@ -250,7 +260,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
         )}
 
         <Image
-          source={{ uri: booking.artist?.user?.profile_image || "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=800" }}
+          source={{ uri: resolveImage(booking.artist?.user?.profile_image) }}
           style={styles.artistImage}
         />
 

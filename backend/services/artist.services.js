@@ -1223,8 +1223,22 @@ async createReview(data) {
       pendingCashApprovalCount,
       cancelledBookingsCount
     ] = await Promise.all([
-      db.Booking.count({ where: { artist_id: artist.id, booking_status: "PENDING" } }),
-      db.Booking.count({ where: { artist_id: artist.id, booking_status: "CONFIRMED" } }),
+      db.Booking.count({
+        where: {
+          artist_id: artist.id,
+          [db.Sequelize.Op.or]: [
+            { booking_status: "PENDING" },
+            { booking_status: "CONFIRMED", detailed_status: "CONFIRMED" }
+          ]
+        }
+      }),
+      db.Booking.count({
+        where: {
+          artist_id: artist.id,
+          booking_status: "CONFIRMED",
+          detailed_status: { [db.Sequelize.Op.ne]: "CONFIRMED" }
+        }
+      }),
       db.Booking.count({ where: { artist_id: artist.id, detailed_status: "ARTIST_ACCEPTED" } }),
       db.Booking.count({ where: { artist_id: artist.id, detailed_status: "SERVICE_STARTED" } }),
       db.Booking.count({ where: { artist_id: artist.id, booking_status: "COMPLETED" } }),

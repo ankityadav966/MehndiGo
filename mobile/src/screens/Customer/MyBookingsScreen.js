@@ -84,6 +84,16 @@ export default function MyBookingsScreen({ navigation }) {
     return localMoment(timeVal, formats).format("hh:mm A");
   };
 
+  const resolveImage = (uri) => {
+    if (!uri) return "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=300";
+    if (uri.startsWith("http://") || uri.startsWith("https://") || uri.startsWith("file://") || uri.startsWith("content://")) {
+      return uri;
+    }
+    const cleanUri = uri.startsWith("/") ? uri : `/${uri}`;
+    const { SOCKET_URL } = require("../../services/api");
+    return `${SOCKET_URL}${cleanUri}`;
+  };
+
   const renderBooking = ({ item }) => {
     const status = item.detailed_status || item.booking_status || "PENDING";
     const localMoment = getMoment();
@@ -111,7 +121,7 @@ export default function MyBookingsScreen({ navigation }) {
     return (
       <View style={styles.card}>
         <Image
-          source={{ uri: item.user?.profile_image || "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=300" }}
+          source={{ uri: resolveImage(item.artist?.user?.profile_image) }}
           style={styles.artistImage}
         />
         <View style={styles.info}>
