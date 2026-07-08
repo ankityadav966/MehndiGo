@@ -16,8 +16,7 @@
         "foregroundImage": "./assets/images/icon.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.sonuy123.mehendigoo",
-      "usesCleartextTraffic": true
+      "package": "com.sonuy123.mehendigoo"
     },
     "plugins": [
       [

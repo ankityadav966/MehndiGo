@@ -100,7 +100,7 @@ const getCategoryImage = (item) => {
         }
       >
         <Image
-          source={hasError ? require("../../../assets/images/logo.jpg") : getCategoryImage(item)}
+          source={hasError ? require("../../assets/images/logo.jpg") : getCategoryImage(item)}
           onError={() => {
             setImageErrors((prev) => ({ ...prev, [item.id]: true }));
           }}

@@ -15,7 +15,20 @@ import GlobalModal from "./src/components/GlobalModal";
 import AlertMock from "./src/utils/Alert";
 
 // Global Alert Override
-Alert.alert = AlertMock.alert;
+try {
+  Alert.alert = AlertMock.alert;
+} catch (e) {
+  console.warn("Could not override Alert.alert directly:", e.message);
+  try {
+    Object.defineProperty(Alert, "alert", {
+      value: AlertMock.alert,
+      writable: true,
+      configurable: true,
+    });
+  } catch (err) {
+    console.error("Could not override Alert.alert via defineProperty:", err.message);
+  }
+}
 
 SplashScreen.preventAutoHideAsync();
 
