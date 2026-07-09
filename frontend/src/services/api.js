@@ -115,7 +115,11 @@ export const adminService = {
   getAuditLogs: () => apiClient.get("/security/audit"),
   blockUser: (data) => apiClient.post("/security/block-user", data),
   unblockUser: (data) => apiClient.post("/security/unblock-user", data),
-  getSystemHealth: () => apiClient.get("/security/health")
+  getSystemHealth: () => apiClient.get("/security/health"),
+  getWalletSummary: () => apiClient.get("/admin/wallet/summary"),
+  getCommissionHistory: (params = {}) => apiClient.get("/admin/wallet/commission-history", { params }),
+  getDashboardSummary: () => apiClient.get("/admin/wallet/dashboard-summary"),
+  getWalletTransactionDetails: (id) => apiClient.get(`/admin/wallet/transaction/${id}`)
 };
 
 export const chatService = {

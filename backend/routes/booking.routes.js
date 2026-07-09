@@ -18,13 +18,16 @@ router.put("/accept", authenticate, BookingController.acceptBooking);
 router.put("/reject", authenticate, BookingController.rejectBooking);
 router.put("/start", authenticate, BookingController.startService);
 router.put("/complete", authenticate, BookingController.completeService);
+router.put("/skip-review", authenticate, BookingController.skipReview);
 
 // Coupon validations
 router.post("/apply-coupon", authenticate, BookingController.applyCoupon);
 router.post("/remove-coupon", authenticate, BookingController.calculatePriceDetails); // Alias fallback
 
 // Payments checkout integrations
-router.post("/create-order", authenticate, BookingController.createRazorpayOrder);
+router.get("/pending", authenticate, BookingController.getPendingPayment);
+router.post("/create-session", authenticate, BookingController.createPaymentSession);
+router.post("/create-order", authenticate, BookingController.createPaymentSession);
 router.post("/verify-payment", authenticate, BookingController.verifyPayment);
 
 // Document download

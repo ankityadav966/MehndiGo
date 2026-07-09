@@ -62,11 +62,11 @@ async function applyCoupon(req, res) {
   }
 }
 
-async function createRazorpayOrder(req, res) {
+async function createPaymentSession(req, res) {
   try {
     const { bookingId } = req.body;
-    const response = await BookingService.createRazorpayOrder(bookingId, req.user.id);
-    return res.status(201).json(SuccessResponse("Razorpay order created successfully", response));
+    const response = await BookingService.createPaymentSession(bookingId, req.user.id);
+    return res.status(201).json(SuccessResponse("Cashfree payment session created successfully", response));
   } catch (error) {
     return res
       .status(error.statusCode || 500)
@@ -168,13 +168,35 @@ async function getInvoice(req, res) {
   }
 }
 
+async function getPendingPayment(req, res) {
+  try {
+    const response = await BookingService.getPendingPayment(req.user.id);
+    return res.status(200).json(SuccessResponse("Pending payment retrieved successfully", response));
+  } catch (error) {
+    return res
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
+  }
+}
+async function skipReview(req, res) {
+  try {
+    const { bookingId } = req.body;
+    const response = await BookingService.skipReview(bookingId, req.user.id);
+    return res.status(200).json(SuccessResponse("Review skipped successfully", response));
+  } catch (error) {
+    return res
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
+  }
+}
+
 module.exports = {
   calculatePriceDetails,
   createBooking,
   getBookingDetails,
   getBookingHistory,
   applyCoupon,
-  createRazorpayOrder,
+  createPaymentSession,
   verifyPayment,
   cancelBooking,
   rescheduleBooking,
@@ -182,5 +204,7 @@ module.exports = {
   rejectBooking,
   startService,
   completeService,
-  getInvoice
+  getInvoice,
+  getPendingPayment,
+  skipReview
 };

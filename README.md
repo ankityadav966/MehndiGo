@@ -1,6 +1,6 @@
 # Mehndi Go: Full-Stack Production-Ready App Documentation
 
-Mehndi Go is a premium full-stack SaaS platform connecting customers with professional mehndi artists. It provides location-based artist searches, interactive scheduling slot bookings, online Razorpay payments, real-time message chat, and detailed dashboards for Clients, Artists, and Administrators.
+Mehndi Go is a premium full-stack SaaS platform connecting customers with professional mehndi artists. It provides location-based artist searches, interactive scheduling slot bookings, online Cashfree payments, real-time message chat, and detailed dashboards for Clients, Artists, and Administrators.
 
 ---
 
@@ -85,9 +85,10 @@ TWILIO_ACCOUNT_SID=your_twilio_sid
 TWILIO_AUTH_TOKEN=your_twilio_auth_token
 TWILIO_PHONE_NUMBER=your_twilio_number
 
-# Razorpay Online Payment Gateway Details
-RAZORPAY_KEY_ID=your_razorpay_key_id
-RAZORPAY_KEY_SECRET=your_razorpay_key_secret
+# Cashfree Online Payment Gateway Details
+CASHFREE_CLIENT_ID=your_cashfree_client_id
+CASHFREE_CLIENT_SECRET=your_cashfree_client_secret
+CASHFREE_ENV=SANDBOX
 
 # Cloudinary CDN Storage Settings
 CLOUDINARY_CLOUD_NAME=your_cloudinary_cloud_name
@@ -154,8 +155,8 @@ npm run dev
 - `PUT /api/v1/mehndigo/artist/booking/:id` - Updates booking states (Accept/Complete/Cancel).
 
 ### Payments Integration (Authenticated)
-- `POST /api/v1/mehndigo/artist/create-order` - Generates a Razorpay order.
-- `POST /api/v1/mehndigo/artist/verify-payment` - Verifies Razorpay signature and updates statuses to paid/confirmed.
+- `POST /api/v1/mehndigo/artist/create-session` - Generates a Cashfree order session.
+- `POST /api/v1/mehndigo/artist/verify` - Verifies Cashfree payment status and updates statuses to paid/confirmed.
 
 ### Real-Time Chat (Authenticated)
 - `GET /api/v1/mehndigo/chat/:receiverId` - Retrieves historical chat threads.

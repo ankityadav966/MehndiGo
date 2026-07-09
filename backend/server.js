@@ -1,4 +1,4 @@
-
+// MehndiGo Server Entry Point
 require("dotenv").config();
 
 const express = require("express");
@@ -93,3 +93,4 @@ server.listen(PORT, "0.0.0.0", () => {
     `Server running on port ${PORT}`
   );
 });
+// Trigger reload

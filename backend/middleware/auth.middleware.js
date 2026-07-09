@@ -13,7 +13,14 @@ async function authenticate(
     const authHeader =
       req.headers.authorization;
 
-    if (!authHeader) {
+    let token;
+    if (authHeader) {
+      token = authHeader.split(" ")[1];
+    } else if (req.query.token) {
+      token = req.query.token;
+    }
+
+    if (!token) {
 
       return res.status(401).json({
 
@@ -23,11 +30,6 @@ async function authenticate(
           "Token missing",
       });
     }
-
-    // Bearer TOKEN
-
-    const token =
-      authHeader.split(" ")[1];
 
     const decoded =
       jwt.verify(

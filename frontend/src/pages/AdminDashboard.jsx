@@ -11,9 +11,34 @@ const AdminDashboard = ({ showToast }) => {
   const [chats, setChats] = useState([]);
   const [pendingArtists, setPendingArtists] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("pending");
+  const [activeTab, setActiveTab] = useState("overview");
   const [rejectId, setRejectId] = useState(null);
   const [rejectReason, setRejectReason] = useState("");
+
+  // Admin Commission Wallet States
+  const [walletSummary, setWalletSummary] = useState({
+    balance: 0,
+    totalCommissionEarned: 0,
+    totalBookings: 0,
+    totalTransactions: 0,
+    totalPendingSettlement: 0
+  });
+  const [commissionHistory, setCommissionHistory] = useState([]);
+  const [walletDashboardSummary, setWalletDashboardSummary] = useState({
+    today: 0,
+    weekly: 0,
+    monthly: 0,
+    yearly: 0,
+    lifetime: 0
+  });
+  const [walletLoading, setWalletLoading] = useState(false);
+  const [walletPage, setWalletPage] = useState(1);
+  const [walletTotalPages, setWalletTotalPages] = useState(1);
+  const [walletSearch, setWalletSearch] = useState("");
+  const [walletStatusFilter, setWalletStatusFilter] = useState("");
+  const [walletStartDate, setWalletStartDate] = useState("");
+  const [walletEndDate, setWalletEndDate] = useState("");
+  const [selectedWalletTx, setSelectedWalletTx] = useState(null);
 
   // Coupons Manager States
   const [coupons, setCoupons] = useState([]);
@@ -80,7 +105,7 @@ const AdminDashboard = ({ showToast }) => {
 
   useEffect(() => {
     fetchAdminData();
-  }, [activeTab, analyticsFilters.startDate, analyticsFilters.endDate, analyticsFilters.city, analyticsFilters.artistId]);
+  }, [activeTab, analyticsFilters.startDate, analyticsFilters.endDate, analyticsFilters.city, analyticsFilters.artistId, walletPage, walletSearch, walletStatusFilter, walletStartDate, walletEndDate]);
 
   const fetchAdminData = async () => {
     setLoading(true);
@@ -169,6 +194,26 @@ const AdminDashboard = ({ showToast }) => {
         setAnalyticsBookings(bks.data);
         setAnalyticsCustomers(cust.data);
         setAnalyticsArtists(art.data);
+      } else if (activeTab === "wallet") {
+        setWalletLoading(true);
+        const [summaryRes, historyRes, dashRes] = await Promise.all([
+          adminService.getWalletSummary(),
+          adminService.getCommissionHistory({
+            page: walletPage,
+            search: walletSearch,
+            status: walletStatusFilter,
+            startDate: walletStartDate,
+            endDate: walletEndDate
+          }),
+          adminService.getDashboardSummary()
+        ]);
+        if (summaryRes?.data) setWalletSummary(summaryRes.data);
+        if (historyRes?.data) {
+          setCommissionHistory(historyRes.data.transactions || []);
+          setWalletTotalPages(historyRes.data.totalPages || 1);
+        }
+        if (dashRes?.data) setWalletDashboardSummary(dashRes.data);
+        setWalletLoading(false);
       }
     } catch (e) {
       showToast("Error loading admin data: " + e.message, "danger");
@@ -312,6 +357,14 @@ const AdminDashboard = ({ showToast }) => {
         </h3>
         
         <button
+          className={`sidebar-link btn-secondary ${activeTab === "overview" ? "active" : ""}`}
+          onClick={() => setActiveTab("overview")}
+          style={{ width: "100%", justifyContent: "flex-start", border: "none", background: "none" }}
+        >
+          <ShieldCheck style={{ width: "18px" }} /> Dashboard Overview
+        </button>
+
+        <button
           className={`sidebar-link btn-secondary ${activeTab === "pending" ? "active" : ""}`}
           onClick={() => setActiveTab("pending")}
           style={{ width: "100%", justifyContent: "flex-start", border: "none", background: "none" }}
@@ -349,6 +402,14 @@ const AdminDashboard = ({ showToast }) => {
           style={{ width: "100%", justifyContent: "flex-start", border: "none", background: "none" }}
         >
           <DollarSign style={{ width: "18px" }} /> Financial Ledger
+        </button>
+
+        <button
+          className={`sidebar-link btn-secondary ${activeTab === "wallet" ? "active" : ""}`}
+          onClick={() => setActiveTab("wallet")}
+          style={{ width: "100%", justifyContent: "flex-start", border: "none", background: "none" }}
+        >
+          <DollarSign style={{ width: "18px" }} /> Commission Wallet
         </button>
 
         <button
@@ -464,6 +525,135 @@ const AdminDashboard = ({ showToast }) => {
           </div>
         ) : (
           <>
+            {/* Tab 0: Dashboard Overview */}
+            {activeTab === "overview" && (
+              <div>
+                <h1 style={{ fontSize: "2rem", fontWeight: 800, marginBottom: "0.5rem" }}>Dashboard Overview</h1>
+                <p style={{ color: "var(--text-secondary)", marginBottom: "2rem" }}>
+                  Real-time key business indicators, wallet commissions, and recent platform events.
+                </p>
+
+                {/* Commission Summary Cards Row */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1.5rem", marginBottom: "2.5rem" }}>
+                  <div className="glass-panel" style={{ padding: "1.5rem", borderLeft: "4px solid var(--success-color)" }}>
+                    <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontWeight: 600 }}>Commission Today</div>
+                    <div style={{ fontSize: "2rem", fontWeight: 800, color: "var(--success-color)", marginTop: "0.5rem" }}>₹{stats.commissionToday || 0}</div>
+                  </div>
+
+                  <div className="glass-panel" style={{ padding: "1.5rem", borderLeft: "4px solid var(--accent-color)" }}>
+                    <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontWeight: 600 }}>Commission This Month</div>
+                    <div style={{ fontSize: "2rem", fontWeight: 800, color: "var(--accent-color)", marginTop: "0.5rem" }}>₹{stats.commissionThisMonth || 0}</div>
+                  </div>
+
+                  <div className="glass-panel" style={{ padding: "1.5rem" }}>
+                    <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontWeight: 600 }}>Commission This Year</div>
+                    <div style={{ fontSize: "2rem", fontWeight: 800, marginTop: "0.5rem" }}>₹{stats.commissionThisYear || 0}</div>
+                  </div>
+
+                  <div className="glass-panel" style={{ padding: "1.5rem", borderLeft: "4px solid var(--info-color)" }}>
+                    <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontWeight: 600 }}>Lifetime Commission</div>
+                    <div style={{ fontSize: "2rem", fontWeight: 800, color: "var(--info-color)", marginTop: "0.5rem" }}>₹{stats.commissionLifetime || 0}</div>
+                  </div>
+                </div>
+
+                {/* Two-Column Grid: Top Earning Artists & Recent Bookings */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2rem", marginBottom: "2.5rem" }}>
+                  
+                  {/* Top Earning Artists */}
+                  <div className="glass-panel" style={{ padding: "1.5rem" }}>
+                    <h3 style={{ marginBottom: "1.2rem", fontSize: "1.1rem" }}>Top Earning Artists</h3>
+                    {!stats.topEarningArtists || stats.topEarningArtists.length === 0 ? (
+                      <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>No artist earnings recorded yet.</p>
+                    ) : (
+                      <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+                        <thead>
+                          <tr style={{ borderBottom: "1px solid var(--border-color)" }}>
+                            <th style={{ padding: "0.75rem 0.5rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>Artist Name</th>
+                            <th style={{ padding: "0.75rem 0.5rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>Total Earnings</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {stats.topEarningArtists.map((artist, idx) => (
+                            <tr key={idx} style={{ borderBottom: "1px solid var(--border-color)" }}>
+                              <td style={{ padding: "0.75rem 0.5rem", fontWeight: 600 }}>{artist.name}</td>
+                              <td style={{ padding: "0.75rem 0.5rem", color: "var(--success-color)", fontWeight: 700 }}>₹{artist.earnings}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+
+                  {/* Recent Bookings */}
+                  <div className="glass-panel" style={{ padding: "1.5rem" }}>
+                    <h3 style={{ marginBottom: "1.2rem", fontSize: "1.1rem" }}>Recent Bookings</h3>
+                    {!stats.recentBookings || stats.recentBookings.length === 0 ? (
+                      <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>No bookings placed yet.</p>
+                    ) : (
+                      <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+                        <thead>
+                          <tr style={{ borderBottom: "1px solid var(--border-color)" }}>
+                            <th style={{ padding: "0.75rem 0.5rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>Booking Code</th>
+                            <th style={{ padding: "0.75rem 0.5rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>Customer</th>
+                            <th style={{ padding: "0.75rem 0.5rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>Price</th>
+                            <th style={{ padding: "0.75rem 0.5rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {stats.recentBookings.map((b, idx) => (
+                            <tr key={idx} style={{ borderBottom: "1px solid var(--border-color)" }}>
+                              <td style={{ padding: "0.75rem 0.5rem", fontWeight: 700 }}>{b.booking_code}</td>
+                              <td style={{ padding: "0.75rem 0.5rem" }}>{b.user?.name}</td>
+                              <td style={{ padding: "0.75rem 0.5rem", fontWeight: 600 }}>₹{b.total_price}</td>
+                              <td style={{ padding: "0.75rem 0.5rem" }}>
+                                <span className={`badge badge-${b.booking_status.toLowerCase()}`}>
+                                  {b.booking_status}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+
+                </div>
+
+                {/* Latest Commission Transactions */}
+                <div className="glass-panel" style={{ padding: "1.5rem" }}>
+                  <h3 style={{ marginBottom: "1.2rem", fontSize: "1.1rem" }}>Latest Commission Transactions</h3>
+                  {!stats.latestCommissionTransactions || stats.latestCommissionTransactions.length === 0 ? (
+                    <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>No commission payments processed yet.</p>
+                  ) : (
+                    <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+                      <thead>
+                        <tr style={{ borderBottom: "1px solid var(--border-color)" }}>
+                          <th style={{ padding: "0.75rem 0.5rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>Booking Code</th>
+                          <th style={{ padding: "0.75rem 0.5rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>Customer</th>
+                          <th style={{ padding: "0.75rem 0.5rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>Artist</th>
+                          <th style={{ padding: "0.75rem 0.5rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>Commission</th>
+                          <th style={{ padding: "0.75rem 0.5rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>Date</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {stats.latestCommissionTransactions.map((tx, idx) => (
+                          <tr key={idx} style={{ borderBottom: "1px solid var(--border-color)" }}>
+                            <td style={{ padding: "0.75rem 0.5rem", fontWeight: 700 }}>{tx.booking?.booking_code || "N/A"}</td>
+                            <td style={{ padding: "0.75rem 0.5rem" }}>{tx.booking?.user?.name || "N/A"}</td>
+                            <td style={{ padding: "0.75rem 0.5rem" }}>{tx.booking?.artist?.user?.name || "N/A"}</td>
+                            <td style={{ padding: "0.75rem 0.5rem", color: "var(--success-color)", fontWeight: 700 }}>₹{tx.amount}</td>
+                            <td style={{ padding: "0.75rem 0.5rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+                              {new Date(tx.createdAt).toLocaleString()}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Tab 1: Verification Queue */}
             {activeTab === "pending" && (
               <div>
@@ -696,7 +886,7 @@ const AdminDashboard = ({ showToast }) => {
                     <tbody>
                       {payments.map((p) => (
                         <tr key={p.id} style={{ borderBottom: "1px solid var(--border-color)" }}>
-                          <td style={{ padding: "1rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>{p.razorpay_payment_id || p.transaction_id || `TXN-${p.id}`}</td>
+                          <td style={{ padding: "1rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>{p.cashfree_payment_id || p.transaction_id || `TXN-${p.id}`}</td>
                           <td style={{ padding: "1rem", fontWeight: 600 }}>{p.booking?.booking_code}</td>
                           <td style={{ padding: "1rem" }}>{p.booking?.user?.name || "Client"}</td>
                           <td style={{ padding: "1rem" }}>{p.booking?.artist?.user?.name || "Artist"}</td>
@@ -1275,6 +1465,327 @@ const AdminDashboard = ({ showToast }) => {
                         ))}
                       </div>
 
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Tab 11: Commission Wallet */}
+            {activeTab === "wallet" && (
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
+                  <div>
+                    <h1 style={{ fontSize: "2rem", fontWeight: 800, marginBottom: "0.5rem" }}>Commission Wallet</h1>
+                    <p style={{ color: "var(--text-secondary)" }}>Track 10% advance payments and overall admin platform commission earnings.</p>
+                  </div>
+                  <div style={{ display: "flex", gap: "0.75rem" }}>
+                    <button 
+                      className="btn btn-secondary" 
+                      onClick={async () => {
+                        try {
+                          const historyRes = await adminService.getCommissionHistory({
+                            page: 1,
+                            limit: 1000
+                          });
+                          const txs = historyRes.data?.transactions || [];
+                          if (txs.length === 0) {
+                            showToast("No transactions found to export", "warning");
+                            return;
+                          }
+                          const headers = ["Booking ID", "Customer Name", "Artist Name", "Total Amount (₹)", "Commission (₹)", "Status", "Date"];
+                          const csvContent = "data:text/csv;charset=utf-8," 
+                            + headers.join(",") + "\n"
+                            + txs.map(t => [
+                                t.booking?.booking_code || "N/A",
+                                t.booking?.user?.name || "N/A",
+                                t.booking?.artist?.user?.name || "N/A",
+                                t.booking?.final_amount || 0,
+                                t.amount || 0,
+                                t.status || "SUCCESS",
+                                new Date(t.createdAt).toLocaleString()
+                              ].map(val => `"${val}"`).join(",")).join("\n");
+                          const encodedUri = encodeURI(csvContent);
+                          const link = document.createElement("a");
+                          link.setAttribute("href", encodedUri);
+                          link.setAttribute("download", `Commission_Ledger_${Date.now()}.csv`);
+                          document.body.appendChild(link);
+                          link.click();
+                          document.body.removeChild(link);
+                          showToast("CSV exported successfully", "success");
+                        } catch (err) {
+                          showToast("Export failed: " + err.message, "danger");
+                        }
+                      }}
+                    >
+                      Export CSV
+                    </button>
+                    <button 
+                      className="btn btn-primary" 
+                      onClick={() => fetchAdminData()}
+                    >
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+
+                {/* Dashboard Summary Cards */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1.5rem", marginBottom: "2.5rem" }}>
+                  <div className="glass-panel" style={{ padding: "1.5rem", borderLeft: "4px solid var(--accent-color)" }}>
+                    <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontWeight: 600 }}>Wallet Balance</div>
+                    <div style={{ fontSize: "2rem", fontWeight: 800, color: "var(--accent-color)", marginTop: "0.5rem" }}>₹{walletSummary.balance}</div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>Available for withdrawal/disbursement</div>
+                  </div>
+
+                  <div className="glass-panel" style={{ padding: "1.5rem", borderLeft: "4px solid var(--success-color)" }}>
+                    <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontWeight: 600 }}>Today's Earnings</div>
+                    <div style={{ fontSize: "2rem", fontWeight: 800, color: "var(--success-color)", marginTop: "0.5rem" }}>₹{walletDashboardSummary.today}</div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>Commission earned today</div>
+                  </div>
+
+                  <div className="glass-panel" style={{ padding: "1.5rem" }}>
+                    <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontWeight: 600 }}>This Month's Earnings</div>
+                    <div style={{ fontSize: "2rem", fontWeight: 800, marginTop: "0.5rem" }}>₹{walletDashboardSummary.monthly}</div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>Current billing cycle</div>
+                  </div>
+
+                  <div className="glass-panel" style={{ padding: "1.5rem" }}>
+                    <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontWeight: 600 }}>Lifetime Commission</div>
+                    <div style={{ fontSize: "2rem", fontWeight: 800, marginTop: "0.5rem" }}>₹{walletDashboardSummary.lifetime}</div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>Cumulatively earned commission</div>
+                  </div>
+
+                  <div className="glass-panel" style={{ padding: "1.5rem", borderLeft: "4px solid var(--warning-color)" }}>
+                    <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontWeight: 600 }}>Pending Settlements</div>
+                    <div style={{ fontSize: "2rem", fontWeight: 800, color: "var(--warning-color)", marginTop: "0.5rem" }}>₹{walletSummary.totalPendingSettlement}</div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>90% outstanding balance of active bookings</div>
+                  </div>
+                </div>
+
+                {/* Filters */}
+                <div className="glass-panel" style={{ padding: "1.5rem", marginBottom: "2.5rem" }}>
+                  <h3 style={{ marginBottom: "1.2rem", fontSize: "1.1rem" }}>Filters</h3>
+                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: "1rem", alignItems: "end" }}>
+                    <div className="form-group">
+                      <label className="form-label">Search</label>
+                      <input 
+                        className="form-control" 
+                        type="text" 
+                        placeholder="Search by Booking ID or client name..." 
+                        value={walletSearch} 
+                        onChange={(e) => setWalletSearch(e.target.value)} 
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Status</label>
+                      <select 
+                        className="form-control" 
+                        value={walletStatusFilter} 
+                        onChange={(e) => setWalletStatusFilter(e.target.value)}
+                      >
+                        <option value="">All Statuses</option>
+                        <option value="SUCCESS">SUCCESS</option>
+                        <option value="PENDING">PENDING</option>
+                        <option value="FAILED">FAILED</option>
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Start Date</label>
+                      <input 
+                        className="form-control" 
+                        type="date" 
+                        value={walletStartDate} 
+                        onChange={(e) => setWalletStartDate(e.target.value)} 
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">End Date</label>
+                      <input 
+                        className="form-control" 
+                        type="date" 
+                        value={walletEndDate} 
+                        onChange={(e) => setWalletEndDate(e.target.value)} 
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Commission Ledger Table */}
+                <div className="glass-panel" style={{ padding: "1.5rem", overflowX: "auto" }}>
+                  <h3 style={{ marginBottom: "1.5rem", fontSize: "1.1rem" }}>Transactions Log</h3>
+                  {walletLoading ? (
+                    <div style={{ display: "flex", justifyContent: "center", padding: "3rem" }}>
+                      <span style={{ fontSize: "1.2rem", fontWeight: 600 }}>Loading transactions...</span>
+                    </div>
+                  ) : commissionHistory.length === 0 ? (
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "4rem" }}>
+                      <ShieldAlert style={{ width: "48px", height: "48px", color: "var(--text-secondary)", marginBottom: "1rem" }} />
+                      <p style={{ color: "var(--text-secondary)", fontWeight: 600 }}>No commission transactions found matching the filters.</p>
+                    </div>
+                  ) : (
+                    <div>
+                      <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+                        <thead>
+                          <tr style={{ borderBottom: "2px solid var(--border-color)" }}>
+                            <th style={{ padding: "1rem" }}>Booking ID</th>
+                            <th style={{ padding: "1rem" }}>Customer</th>
+                            <th style={{ padding: "1rem" }}>Artist</th>
+                            <th style={{ padding: "1rem" }}>Booking Amount</th>
+                            <th style={{ padding: "1rem" }}>10% Commission</th>
+                            <th style={{ padding: "1rem" }}>Tx ID</th>
+                            <th style={{ padding: "1rem" }}>Status</th>
+                            <th style={{ padding: "1rem" }}>Date</th>
+                            <th style={{ padding: "1rem" }}>Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {commissionHistory.map((t) => (
+                            <tr key={t.id} style={{ borderBottom: "1px solid var(--border-color)" }}>
+                              <td style={{ padding: "1rem", fontWeight: 700 }}>{t.booking?.booking_code || "N/A"}</td>
+                              <td style={{ padding: "1rem" }}>{t.booking?.user?.name || "N/A"}</td>
+                              <td style={{ padding: "1rem" }}>{t.booking?.artist?.user?.name || "N/A"}</td>
+                              <td style={{ padding: "1rem", fontWeight: 600 }}>₹{t.booking?.final_amount || 0}</td>
+                              <td style={{ padding: "1rem", fontWeight: 700, color: "var(--success-color)" }}>₹{t.amount || 0}</td>
+                              <td style={{ padding: "1rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>TXN-{t.id}</td>
+                              <td style={{ padding: "1rem" }}>
+                                <span className={`badge badge-${t.status === "SUCCESS" ? "success" : t.status === "PENDING" ? "warning" : "danger"}`}>
+                                  {t.status}
+                                </span>
+                              </td>
+                              <td style={{ padding: "1rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+                                {new Date(t.createdAt).toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                              </td>
+                              <td style={{ padding: "1rem" }}>
+                                <button 
+                                  className="btn btn-secondary" 
+                                  style={{ padding: "0.4rem 0.8rem", fontSize: "0.8rem" }}
+                                  onClick={async () => {
+                                    try {
+                                      const detailsRes = await adminService.getWalletTransactionDetails(t.id);
+                                      setSelectedWalletTx(detailsRes.data);
+                                    } catch (err) {
+                                      showToast("Failed to load details: " + err.message, "danger");
+                                    }
+                                  }}
+                                >
+                                  View Details
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+
+                      {/* Pagination Controls */}
+                      {walletTotalPages > 1 && (
+                        <div style={{ display: "flex", justifyContent: "center", gap: "0.5rem", marginTop: "2rem" }}>
+                          <button 
+                            className="btn btn-secondary" 
+                            disabled={walletPage === 1}
+                            onClick={() => setWalletPage(walletPage - 1)}
+                          >
+                            Prev
+                          </button>
+                          <span style={{ display: "flex", alignItems: "center", paddingHorizontal: "1rem", fontWeight: 600 }}>
+                            Page {walletPage} of {walletTotalPages}
+                          </span>
+                          <button 
+                            className="btn btn-secondary" 
+                            disabled={walletPage === walletTotalPages}
+                            onClick={() => setWalletPage(walletPage + 1)}
+                          >
+                            Next
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Detailed Transaction View Modal */}
+                {selectedWalletTx && (
+                  <div
+                    style={{
+                      position: "fixed",
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      background: "rgba(0,0,0,0.6)",
+                      zIndex: 2000,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: "1rem"
+                    }}
+                  >
+                    <div className="glass-panel" style={{ width: "100%", maxWidth: "600px", padding: "2rem", background: "var(--bg-secondary)", borderRadius: "20px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+                        <h2 style={{ fontSize: "1.5rem", fontWeight: 800 }}>Transaction Breakdown</h2>
+                        <button 
+                          onClick={() => setSelectedWalletTx(null)}
+                          style={{ background: "none", border: "none", fontSize: "1.5rem", cursor: "pointer", color: "var(--text-primary)" }}
+                        >
+                          &times;
+                        </button>
+                      </div>
+
+                      <div style={{ display: "flex", flexDirection: "column", gap: "1.2rem" }}>
+                        
+                        {/* Summary Header */}
+                        <div style={{ textAlign: "center", padding: "1rem", background: "rgba(108, 92, 231, 0.05)", borderRadius: "12px", border: "1px solid var(--border-color)" }}>
+                          <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>Commission Earned</span>
+                          <h1 style={{ fontSize: "2.2rem", fontWeight: 800, color: "var(--success-color)", marginTop: "0.25rem" }}>₹{selectedWalletTx.amount}</h1>
+                          <div style={{ display: "inline-block", padding: "0.25rem 0.75rem", borderRadius: "20px", fontSize: "0.75rem", fontWeight: 700, backgroundColor: "var(--success-color)", color: "#fff", marginTop: "0.5rem" }}>
+                            {selectedWalletTx.status}
+                          </div>
+                        </div>
+
+                        {/* Details Sections */}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", fontSize: "0.9rem" }}>
+                          <div>
+                            <span style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Transaction Reference</span>
+                            <div style={{ fontWeight: 600, marginTop: "2px" }}>TXN-{selectedWalletTx.id}</div>
+                          </div>
+                          <div>
+                            <span style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Booking Code</span>
+                            <div style={{ fontWeight: 600, marginTop: "2px" }}>{selectedWalletTx.booking?.booking_code || "N/A"}</div>
+                          </div>
+                          <div>
+                            <span style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Customer Name</span>
+                            <div style={{ fontWeight: 600, marginTop: "2px" }}>{selectedWalletTx.booking?.user?.name || "N/A"}</div>
+                          </div>
+                          <div>
+                            <span style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Artist Name</span>
+                            <div style={{ fontWeight: 600, marginTop: "2px" }}>{selectedWalletTx.booking?.artist?.user?.name || "N/A"}</div>
+                          </div>
+                          <div>
+                            <span style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Service Type</span>
+                            <div style={{ fontWeight: 600, marginTop: "2px" }}>{selectedWalletTx.booking?.service?.specialization_name || "N/A"}</div>
+                          </div>
+                          <div>
+                            <span style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Total Booking Value</span>
+                            <div style={{ fontWeight: 600, marginTop: "2px" }}>₹{selectedWalletTx.booking?.final_amount || 0}</div>
+                          </div>
+                          <div style={{ gridColumn: "span 2" }}>
+                            <span style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Booking Address</span>
+                            <div style={{ fontWeight: 600, marginTop: "2px" }}>{selectedWalletTx.booking?.address || "N/A"}</div>
+                          </div>
+                          <div style={{ gridColumn: "span 2" }}>
+                            <span style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Creation Date & Time</span>
+                            <div style={{ fontWeight: 600, marginTop: "2px" }}>{new Date(selectedWalletTx.createdAt).toLocaleString()}</div>
+                          </div>
+                        </div>
+
+                        {/* Description Box */}
+                        <div style={{ padding: "0.75rem", backgroundColor: "var(--bg-primary)", borderRadius: "8px", fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+                          <strong>Description: </strong>{selectedWalletTx.description}
+                        </div>
+
+                      </div>
                     </div>
                   </div>
                 )}

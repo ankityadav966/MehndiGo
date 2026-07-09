@@ -174,6 +174,24 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.TEXT,
         allowNull: true,
       },
+      artist_completion_status: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        defaultValue: "PENDING"
+      },
+      artist_completed_at: {
+        type: DataTypes.DATE,
+        allowNull: true
+      },
+      remaining_paid_at: {
+        type: DataTypes.DATE,
+        allowNull: true
+      },
+      review_skipped: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false
+      },
     },
     {
       sequelize,

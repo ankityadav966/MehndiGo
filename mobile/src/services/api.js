@@ -1,17 +1,33 @@
 import { secureStorage } from "../utils/storage";
 
+/**
+ * ENVIRONMENT SWITCHING GUIDE:
+ * - Local Development: Expo CLI automatically loads the `.env.local` file when you start the project
+ *   using `npx expo start`. It resolves requests to: http://98.70.11.123:3000/api/v1
+ * - Production Build: Expo's builder (or eas-cli) automatically loads `.env.production` during the
+ *   bundling phase. It resolves requests to: https://mehandigo-api.globalrns.com/api/v1
+ * 
+ * You do NOT need to modify the source code to change environments. Simply start development or bundle
+ * for release and the correct URL will be resolved automatically.
+ */
 const getBaseUrl = () => {
-  const envUrl = process.env.EXPO_PUBLIC_API_URL;
-  if (envUrl) {
-    return envUrl.endsWith("/") ? envUrl.slice(0, -1) : envUrl;
+  let envUrl = process.env.EXPO_PUBLIC_API_URL;
+  if (!envUrl) {
+    console.warn("WARNING: EXPO_PUBLIC_API_URL is not set in environment variables! Using fallback production API.");
+    return "https://mehandigo-api.globalrns.com/api/v1";
   }
-  return "http://192.168.1.9:8000";
+  envUrl = envUrl.endsWith("/") ? envUrl.slice(0, -1) : envUrl;
+  if (envUrl.endsWith("/api/v1")) {
+    envUrl = envUrl.slice(0, -7);
+  }
+  return envUrl;
 };
 
 export const BASE_URL = getBaseUrl();
 
 async function apiRequest(method, endpoint, body = null, auth = false) {
   const url = `${BASE_URL}${endpoint}`;
+  console.log(`[API REQUEST] ${method} -> ${url}`);
 
   const headers = { "Content-Type": "application/json" };
 

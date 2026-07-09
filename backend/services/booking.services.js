@@ -1,7 +1,6 @@
 const db = require("../models");
 const { Op } = require("sequelize");
 const AppError = require("../utils/errors/app.error");
-const razorpay = require("../utils/razorpay");
 const crypto = require("crypto");
 
 class BookingService {
@@ -118,7 +117,7 @@ class BookingService {
         slot_id: finalSlotId || null,
         total_price: pricing.servicePrice,
         advance_paid: 0,
-        remaining_amount: pricing.finalAmount,
+        remaining_amount: pricing.finalAmount - Math.round(pricing.finalAmount * 0.10),
         booking_status: "PENDING",
         payment_status: "PENDING",
         detailed_status: "PENDING",
@@ -275,104 +274,20 @@ class BookingService {
     };
   }
 
-  async createRazorpayOrder(bookingId, userId) {
-    const booking = await db.Booking.findOne({
-      where: { id: bookingId, user_id: userId }
-    });
-    if (!booking) {
-      throw new AppError("Booking not found", 404);
-    }
-
-    const options = {
-      amount: booking.final_amount * 100, // amount in paisa
-      currency: "INR",
-      receipt: `receipt_booking_${booking.id}`
-    };
-
-    let order;
-    try {
-      order = await razorpay.orders.create(options);
-    } catch (err) {
-      console.log("Razorpay SDK error, creating mock order fallback:", err.message);
-      order = {
-        id: `order_mock_${Math.floor(100000 + Math.random() * 900000)}`,
-        amount: options.amount,
-        currency: "INR",
-        receipt: options.receipt
-      };
-    }
-
-    await db.Transaction.create({
-      user_id: userId,
-      booking_id: bookingId,
-      razorpay_order_id: order.id,
-      amount: booking.final_amount,
-      status: "PENDING"
-    });
-
-    return order;
+  async createPaymentSession(bookingId, userId) {
+    const paymentService = require("./payment.services");
+    return await paymentService.createSession(bookingId, userId);
   }
 
   async verifyPayment(userId, data) {
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = data;
-
-    const tx = await db.Transaction.findOne({
-      where: { razorpay_order_id }
-    });
-    if (!tx) {
-      throw new AppError("Transaction not found", 404);
-    }
-
-    let isValid = true;
-    if (razorpay_signature && !razorpay_order_id.startsWith("order_mock") && process.env.NODE_ENV !== "development") {
-      const generated_signature = crypto
-        .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET || "key_secret")
-        .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-        .digest("hex");
-      isValid = generated_signature === razorpay_signature;
-    }
-
-    if (!isValid) {
-      await tx.update({ status: "FAILED" });
-      await db.Booking.update(
-        { payment_status: "FAILED" },
-        { where: { id: tx.booking_id } }
-      );
-      throw new AppError("Payment verification signature failed", 400);
-    }
-
-    // Success transaction
-    await tx.update({
-      razorpay_payment_id,
-      razorpay_signature: razorpay_signature || null,
-      status: "SUCCESS"
-    });
-
-    await db.Booking.update(
-      {
-        payment_status: "PAID",
-        booking_status: "CONFIRMED",
-        detailed_status: "CONFIRMED"
-      },
-      { where: { id: tx.booking_id } }
-    );
-
-    await db.BookingStatusHistory.create({
-      booking_id: tx.booking_id,
-      status: "CONFIRMED",
-      changed_by: userId,
-      notes: "Payment verified successfully. Booking confirmed."
-    });
-
-    // Create Invoice record
-    const invoiceNum = `INV-${Date.now()}`;
-    await db.Invoice.create({
-      booking_id: tx.booking_id,
-      invoice_number: invoiceNum,
-      invoice_url: `/payment/receipt/${tx.booking_id}`
-    });
-
-    return await this.getBookingDetails(tx.booking_id, userId, "CUSTOMER");
+    const paymentService = require("./payment.services");
+    // Translate booking-side verifyPayment structure to generic verifyPayment structure
+    const verifyData = {
+      cashfree_order_id: data.cashfree_order_id || data.order_id || data.orderId,
+      payment_session_id: data.payment_session_id
+    };
+    await paymentService.verifyPayment(userId, verifyData);
+    return await this.getBookingDetails(data.bookingId || verifyData.cashfree_order_id.split('_')[1], userId, "CUSTOMER");
   }
 
   async updateBookingStatus(bookingId, userId, role, newStatus, extraData = {}) {
@@ -398,46 +313,25 @@ class BookingService {
         );
       }
     } else if (newStatus === "COMPLETED") {
-      updates.booking_status = "COMPLETED";
-      if (booking.payment_status !== "PAID") {
-        updates.payment_status = "PAID";
-        try {
-          const artistProfile = await db.ArtistProfile.findByPk(booking.artist_id);
-          if (artistProfile) {
-            const [artistWallet] = await db.Wallet.findOrCreate({
-              where: { user_id: artistProfile.user_id },
-              defaults: { balance: 0 }
-            });
-            const creditAmount = booking.final_amount;
-            await artistWallet.increment('balance', { by: creditAmount });
+      updates.booking_status = "CONFIRMED";
+      updates.detailed_status = "WAITING_FOR_USER_PAYMENT";
+      updates.artist_completion_status = "COMPLETED";
+      updates.artist_completed_at = new Date();
 
-            const customerUser = await db.User.findByPk(booking.user_id);
-            const customerName = customerUser ? customerUser.name : "Client";
-            await db.WalletTransaction.create({
-              wallet_id: artistWallet.id,
-              booking_id: booking.id,
-              transaction_type: "PAYMENT",
-              amount: creditAmount,
-              status: "SUCCESS",
-              description: `Completed payment from ${customerName} (#${booking.booking_code})`
-            });
-            console.log(`[WalletTx] Credited completion amount of ₹${creditAmount} to artist user ID ${artistProfile.user_id} wallet`);
-
-            // Generate completion invoice if it doesn't exist
-            const existingInvoice = await db.Invoice.findOne({ where: { booking_id: booking.id } });
-            if (!existingInvoice) {
-              const invoiceNum = `INV-${Date.now()}`;
-              await db.Invoice.create({
-                booking_id: booking.id,
-                invoice_number: invoiceNum,
-                invoice_url: `/payment/receipt/${booking.id}`
-              });
-              console.log(`[Invoice] Generated completion invoice ${invoiceNum} for booking #${booking.booking_code}`);
-            }
+      try {
+        await db.Notification.create({
+          user_id: booking.user_id,
+          title: "Booking Completed",
+          message: "Your Mehendi service has been completed. Remaining payment is pending. Please complete your payment.",
+          type: "BOOKING",
+          data: {
+            type: "booking",
+            event: "booking_completed",
+            bookingId: booking.id
           }
-        } catch (walletErr) {
-          console.error("Error crediting artist wallet on completion:", walletErr.message);
-        }
+        });
+      } catch (notifErr) {
+        console.error("Error sending booking complete notification:", notifErr.message);
       }
     } else if (newStatus === "ARTIST_ACCEPTED" || newStatus === "CONFIRMED") {
       updates.booking_status = "CONFIRMED";
@@ -467,7 +361,12 @@ class BookingService {
         user_id: userToNotify,
         title: `Booking Update: ${newStatus}`,
         message: `Booking #${booking.booking_code} status has been updated to ${newStatus}`,
-        type: "SYSTEM"
+        type: "BOOKING",
+        data: {
+          type: "booking",
+          event: "booking_confirmed",
+          bookingId: booking.id
+        }
       });
     }
 
@@ -493,6 +392,49 @@ class BookingService {
       throw new AppError("Invoice not found", 404);
     }
     return invoice;
+  }
+
+  async getPendingPayment(userId) {
+    const booking = await db.Booking.findOne({
+      where: {
+        user_id: userId,
+        detailed_status: "WAITING_FOR_USER_PAYMENT",
+        payment_status: "PARTIAL"
+      },
+      include: [
+        {
+          model: db.ArtistProfile,
+          as: "artist",
+          attributes: ["id", "bio", "experience_years", "avg_rating", "total_reviews", "city", "state"],
+          include: [
+            {
+              model: db.User,
+              as: "user",
+              attributes: ["id", "name", "profile_image"]
+            }
+          ]
+        },
+        {
+          model: db.Service,
+          as: "service",
+          attributes: ["id", "specialization_name", "category"]
+        }
+      ],
+      order: [["updatedAt", "DESC"]]
+    });
+    return booking;
+  }
+
+  async skipReview(bookingId, userId) {
+    const booking = await db.Booking.findByPk(bookingId);
+    if (!booking) {
+      throw new AppError("Booking not found", 404);
+    }
+    if (booking.user_id !== userId) {
+      throw new AppError("Unauthorized access to booking", 403);
+    }
+    await booking.update({ review_skipped: true });
+    return booking;
   }
 }
 

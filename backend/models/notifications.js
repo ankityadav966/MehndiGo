@@ -39,6 +39,12 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         defaultValue: false,
       },
+
+      data: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        defaultValue: null
+      },
     },
     {
       sequelize,
@@ -64,7 +70,8 @@ module.exports = (sequelize, DataTypes) => {
               let dataPayload = {
                 type: notification.type ? notification.type.toLowerCase() : "system",
                 event: "system_notification",
-                notificationId: notification.id
+                notificationId: notification.id,
+                ...(notification.data || {})
               };
 
               const titleText = notification.title.toLowerCase();

@@ -5,20 +5,33 @@ const ArtistProfileRepository = require("../repositories/artistProfile.repositor
 const repo = new ArtistProfileRepository();
 
 const categoriesList = [
-  { id: "1", name: "Bridal Mehndi", slug: "bridal", icon: "flower-outline", image: "https://images.unsplash.com/photo-1590012357675-bc55909793fb?q=80&w=300" },
-  { id: "2", name: "Arabic Mehndi", slug: "arabic", icon: "brush-outline", image: "https://images.unsplash.com/photo-1601054790522-d08317b75567?q=80&w=300" },
-  { id: "3", name: "Royal Mehndi", slug: "royal", icon: "ribbon-outline", image: "https://images.unsplash.com/photo-1601054790740-975949514f7b?q=80&w=300" },
-  { id: "4", name: "Portrait Mehndi", slug: "portrait", icon: "person-outline", image: "https://images.unsplash.com/photo-1601054791559-0a67ab92b6a2?q=80&w=300" },
-  { id: "5", name: "Engagement Mehndi", slug: "engagement", icon: "heart-outline", image: "https://images.unsplash.com/photo-1601054791572-c510255b77ea?q=80&w=300" },
-  { id: "6", name: "Festival Mehndi", slug: "festival", icon: "sparkles-outline", image: "https://images.unsplash.com/photo-1601054791585-fb4050d24bf5?q=80&w=300" },
-  { id: "7", name: "Kids Mehndi", slug: "kids", icon: "happy-outline", image: "https://images.unsplash.com/photo-1601054791599-23efbf1c65d6?q=80&w=300" },
-  { id: "8", name: "Custom Design", slug: "custom", icon: "color-palette-outline", image: "https://images.unsplash.com/photo-1601054791612-4029237c1d76?q=80&w=300" },
+  { id: "1", name: "Bridal Mehendi", slug: "bridal", icon: "flower-outline", image: "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=300&q=80" },
+  { id: "2", name: "Arabic Mehendi", slug: "arabic", icon: "brush-outline", image: "https://images.unsplash.com/photo-1601054790522-d08317b75567?auto=format&fit=crop&w=300&q=80" },
+  { id: "3", name: "Royal Bridal Mehendi", slug: "royal-bridal", icon: "ribbon-outline", image: "https://images.unsplash.com/photo-1590012357675-bc55909793fb?auto=format&fit=crop&w=300&q=80" },
+  { id: "4", name: "Traditional Mehendi", slug: "traditional", icon: "cut-outline", image: "https://images.unsplash.com/photo-1601054790740-975949514f7b?auto=format&fit=crop&w=300&q=80" },
+  { id: "5", name: "Floral Mehendi", slug: "floral", icon: "rose-outline", image: "https://images.unsplash.com/photo-1601054791559-0a67ab92b6a2?auto=format&fit=crop&w=300&q=80" },
+  { id: "6", name: "Minimal Mehendi", slug: "minimal", icon: "remove-outline", image: "https://images.unsplash.com/photo-1601054791572-c510255b77ea?auto=format&fit=crop&w=300&q=80" },
+  { id: "7", name: "Modern Mehendi", slug: "modern", icon: "sparkles-outline", image: "https://images.unsplash.com/photo-1601054791585-fb4050d24bf5?auto=format&fit=crop&w=300&q=80" },
+  { id: "8", name: "Finger Mehendi", slug: "finger", icon: "hand-left-outline", image: "https://images.unsplash.com/photo-1601054791599-23efbf1c65d6?auto=format&fit=crop&w=300&q=80" },
+  { id: "9", name: "Full Hand Mehendi", slug: "full-hand", icon: "body-outline", image: "https://images.unsplash.com/photo-1601054791612-4029237c1d76?auto=format&fit=crop&w=300&q=80" },
+  { id: "10", name: "Back Hand Mehendi", slug: "back-hand", icon: "hand-right-outline", image: "https://images.unsplash.com/photo-1601054791637-27b233a73c91?auto=format&fit=crop&w=300&q=80" },
+  { id: "11", name: "Leg Mehendi", slug: "leg", icon: "foot-outline", image: "https://images.unsplash.com/photo-1601054791646-9d324b172a1e?auto=format&fit=crop&w=300&q=80" },
+  { id: "12", name: "Engagement Mehendi", slug: "engagement", icon: "heart-outline", image: "https://images.unsplash.com/photo-1601054791653-52467fd89886?auto=format&fit=crop&w=300&q=80" },
+  { name: "Wedding Mehendi", slug: "wedding", icon: "gift-outline", image: "https://images.unsplash.com/photo-1601054791657-3a13917d0961?auto=format&fit=crop&w=300&q=80" },
+  { name: "Karwa Chauth Mehendi", slug: "karwa-chauth", icon: "moon-outline", image: "https://images.unsplash.com/photo-1601054791672-0051e8e50b1d?auto=format&fit=crop&w=300&q=80" },
+  { name: "Eid Mehendi", slug: "eid", icon: "star-half-outline", image: "https://images.unsplash.com/photo-1601054791689-53e970a2fe89?auto=format&fit=crop&w=300&q=80" },
+  { name: "Festival Mehendi", slug: "festival", icon: "sunny-outline", image: "https://images.unsplash.com/photo-1601054791696-6e54ee0d55e9?auto=format&fit=crop&w=300&q=80" },
+  { name: "Kids Mehendi", slug: "kids", icon: "happy-outline", image: "https://images.unsplash.com/photo-1601054791702-8d76db7bd84b?auto=format&fit=crop&w=300&q=80" },
+  { name: "Groom Mehendi", slug: "groom", icon: "person-outline", image: "https://images.unsplash.com/photo-1601054791712-4091a135546d?auto=format&fit=crop&w=300&q=80" }
 ];
 
 const offersList = [
-  { id: "1", title: "Festival Special flat 20% off", description: "Get flat 20% off on all bookings this Teej. Code: TEEJ20", code: "TEEJ20", discount: "20%", banner: "https://images.unsplash.com/photo-1601054790522-d08317b75567?q=80&w=600" },
-  { id: "2", title: "Flat ₹500 off on Bridal Mehndi", description: "Flat ₹500 discount for Bridal bookings above ₹4000. Code: BRIDAL500", code: "BRIDAL500", discount: "₹500", banner: "https://images.unsplash.com/photo-1590012357675-bc55909793fb?q=80&w=600" },
-  { id: "3", title: "10% Cashback on Wallet payment", description: "Pay via MehndiGo Wallet and get 10% cashback up to ₹200.", code: "WALLET10", discount: "10%", banner: "https://images.unsplash.com/photo-1601054790740-975949514f7b?q=80&w=600" },
+  { id: "1", title: "Bridal Mehendi Ceremony", description: "Get flat 20% off on all bridal bookings this season. Code: BRIDAL20", code: "BRIDAL20", discount: "20%", banner: "https://images.unsplash.com/photo-1582192732961-2364f55b1a3d?auto=format&fit=crop&w=800&q=80" },
+  { id: "2", title: "Royal Wedding Mehendi", description: "Experience royal luxury patterns on your wedding day. Code: ROYAL500", code: "ROYAL500", discount: "₹500", banner: "https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=800&q=80" },
+  { id: "3", title: "Arabic Mehendi Design", description: "Graceful and elegant Arabic trails by top experts. Code: ARABIC15", code: "ARABIC15", discount: "15%", banner: "https://images.unsplash.com/photo-1563170351-be82bc888aa4?auto=format&fit=crop&w=800&q=80" },
+  { id: "4", title: "Professional Mehendi Artist", description: "Hire top certified artists for clean handcrafting. Code: EXPERT10", code: "EXPERT10", discount: "10%", banner: "https://images.unsplash.com/photo-1541532713592-79a0317b6b77?auto=format&fit=crop&w=800&q=80" },
+  { id: "5", title: "Festival Mehendi Celebration", description: "Add colors to your festivals with custom layouts. Code: FEST20", code: "FEST20", discount: "20%", banner: "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=800&q=80" },
+  { id: "6", title: "Luxury Mehendi Event", description: "Book premium lounges for your special celebrations. Code: LUXURY25", code: "LUXURY25", discount: "25%", banner: "https://images.unsplash.com/photo-1469371670807-013ccf25f16a?auto=format&fit=crop&w=800&q=80" }
 ];
 
 const trendingSearchesList = [
@@ -540,7 +553,7 @@ class CustomerService {
     return favorites.map((f) => f.artist).filter(Boolean);
   }
 
-  async getHomeDashboard(lat, lng) {
+  async getHomeDashboard(lat, lng, userId) {
     const [categories, offers, featured, popular] = await Promise.all([
       this.getCategories(),
       this.getOffers(),
@@ -548,12 +561,58 @@ class CustomerService {
       this.getPopularArtists(lat, lng),
     ]);
 
+    let recentlyBooked = [];
+    if (userId) {
+      try {
+        recentlyBooked = await this.getRecentlyBookedArtists(userId);
+      } catch (err) {
+        console.error("Error fetching recently booked artists:", err.message);
+      }
+    }
+
     return {
       categories,
       offers,
       featuredArtists: featured,
       popularArtists: popular,
+      recentlyBooked
     };
+  }
+
+  async getRecentlyBookedArtists(userId) {
+    const bookings = await db.Booking.findAll({
+      where: { user_id: userId },
+      order: [["createdAt", "DESC"]],
+      include: [
+        {
+          model: db.ArtistProfile,
+          as: "artist",
+          include: [{ model: db.User, as: "user", attributes: ["name", "profile_image", "city"] }]
+        },
+        {
+          model: db.Service,
+          as: "service",
+          attributes: ["specialization_name"]
+        }
+      ]
+    });
+
+    const uniqueArtistsMap = new Map();
+    bookings.forEach((b) => {
+      if (b.artist && !uniqueArtistsMap.has(b.artist.id)) {
+        uniqueArtistsMap.set(b.artist.id, {
+          id: b.artist.id,
+          name: b.artist.user?.name,
+          profile_image: b.artist.user?.profile_image,
+          specialization_name: b.service?.specialization_name || "Specialist",
+          booking_date: b.createdAt,
+          avg_rating: b.artist.avg_rating || "4.8",
+          city: b.artist.user?.city || "Jaipur"
+        });
+      }
+    });
+
+    return Array.from(uniqueArtistsMap.values());
   }
 
   // Portfolio & Gallery Management
@@ -739,6 +798,37 @@ class CustomerService {
     if (user.profile_image) filledFields++;
     const profileCompletion = Math.round((filledFields / totalFields) * 100);
 
+    // Find completed & paid bookings for this user that are not skipped
+    const completedBookings = await db.Booking.findAll({
+      where: {
+        user_id: userId,
+        booking_status: "COMPLETED",
+        payment_status: "PAID",
+        review_skipped: { [Op.ne]: true }
+      },
+      include: [
+        {
+          model: db.ArtistProfile,
+          as: "artist",
+          include: [{ model: db.User, as: "user", attributes: ["name", "profile_image"] }]
+        },
+        {
+          model: db.Service,
+          as: "service",
+          attributes: ["specialization_name"]
+        }
+      ]
+    });
+
+    let pendingReviewBooking = null;
+    for (const b of completedBookings) {
+      const review = await db.Review.findOne({ where: { booking_id: b.id } });
+      if (!review) {
+        pendingReviewBooking = b;
+        break;
+      }
+    }
+
     return {
       user: {
         id: user.id,
@@ -752,7 +842,8 @@ class CustomerService {
       },
       walletBalance: wallet ? wallet.balance : 0,
       totalBookings,
-      recentBookings
+      recentBookings,
+      pendingReviewBooking
     };
   }
 

@@ -1,11 +1,11 @@
 const PaymentService = require("../../services/payment.services");
 const { SuccessResponse, ErrorResponse } = require("../../utils/common");
 
-async function createOrder(req, res) {
+async function createSession(req, res) {
   try {
-    const { bookingId } = req.body;
-    const response = await PaymentService.createOrder(bookingId, req.user.id);
-    return res.status(200).json(SuccessResponse("Razorpay order created successfully", response));
+    const { bookingId, amount } = req.body;
+    const response = await PaymentService.createSession(bookingId, req.user.id, amount);
+    return res.status(200).json(SuccessResponse("Cashfree payment session created successfully", response));
   } catch (error) {
     return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
   }
@@ -13,18 +13,22 @@ async function createOrder(req, res) {
 
 async function verifyPayment(req, res) {
   try {
+    console.log("[VERIFY_PAYMENT_ROUTE] User ID:", req.user.id, "Request body:", JSON.stringify(req.body, null, 2));
     const response = await PaymentService.verifyPayment(req.user.id, req.body);
+    console.log("[VERIFY_PAYMENT_ROUTE] Success. Response:", JSON.stringify(response, null, 2));
     return res.status(200).json(SuccessResponse("Payment verified successfully", response));
   } catch (error) {
+    console.error("[VERIFY_PAYMENT_ROUTE] Error processing payment verification:", error.message, error.stack);
     return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
   }
 }
 
 async function handleWebhook(req, res) {
   try {
-    const signature = req.headers["x-razorpay-signature"];
+    const signature = req.headers["x-webhook-signature"];
+    const timestamp = req.headers["x-webhook-timestamp"];
     const rawBody = req.rawBody ? req.rawBody.toString() : JSON.stringify(req.body);
-    const response = await PaymentService.handleWebhook(rawBody, signature);
+    const response = await PaymentService.handleWebhook(rawBody, signature, timestamp);
     return res.status(200).json(SuccessResponse("Webhook event processed", response));
   } catch (error) {
     return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
@@ -251,8 +255,29 @@ async function payWithWallet(req, res) {
   }
 }
 
+async function renderCheckoutPage(req, res) {
+  try {
+    const { orderId, amount, bookingId, redirect, paymentSessionId } = req.query;
+    const env = process.env.CASHFREE_ENV === "PRODUCTION" ? "api" : "sandbox";
+    const sessionId = paymentSessionId || orderId;
+    const cfUrl = `https://${env}.cashfree.com/pg/view/checkout?session_id=${sessionId}`;
+    return res.redirect(cfUrl);
+  } catch (error) {
+    return res.status(500).send("Error redirecting to Cashfree checkout");
+  }
+}
+
+async function verifyHostedPayment(req, res) {
+  try {
+    const response = await PaymentService.verifyPaymentPublic(req.body);
+    return res.status(200).json(SuccessResponse("Payment verified successfully", response));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
 module.exports = {
-  createOrder,
+  createSession,
   verifyPayment,
   handleWebhook,
   getPaymentHistory,
@@ -262,5 +287,7 @@ module.exports = {
   getInvoiceByBooking,
   retryPayment,
   getReceiptHTML,
-  payWithWallet
+  payWithWallet,
+  renderCheckoutPage,
+  verifyHostedPayment
 };

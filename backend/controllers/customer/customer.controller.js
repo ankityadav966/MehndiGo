@@ -4,7 +4,7 @@ const { SuccessResponse, ErrorResponse } = require("../../utils/common");
 async function getHomeDashboard(req, res) {
   try {
     const { latitude, longitude } = req.query;
-    const response = await CustomerService.getHomeDashboard(latitude, longitude);
+    const response = await CustomerService.getHomeDashboard(latitude, longitude, req.user?.id);
     return res.status(200).json(SuccessResponse("Home Dashboard Fetched Successfully", response));
   } catch (error) {
     return res

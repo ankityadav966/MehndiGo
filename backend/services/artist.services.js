@@ -12,7 +12,7 @@ const {
 } = require("../repositories");
 
 const AppError = require("../utils/errors/app.error");
-const razorpay = require("../utils/razorpay");
+const cashfree = require("../utils/cashfree");
 const { getIO } = require("../sockets/socket");
 const db = require("../models");
 
@@ -773,46 +773,57 @@ async updateBookingStatus(
     const amount = booking.total_price;
     let order;
     try {
-      order = await razorpay.orders.create({
-        amount: amount * 100,
-        currency: "INR",
-        receipt: booking.booking_code,
+      order = await cashfree.createCashfreeOrder({
+        customerId: booking.user_id,
+        orderId: `booking_${booking_id}_${Date.now()}`,
+        amount: amount,
+        note: `Payment for Booking #${booking.booking_code}`
       });
     } catch (e) {
-      console.warn("Razorpay order creation failed, falling back to mock:", e.message);
+      console.warn("Cashfree order creation failed, falling back to mock:", e.message);
       order = {
-        id: `order_mock_${Date.now()}`,
-        amount: amount * 100,
-        currency: "INR",
-        receipt: booking.booking_code,
+        order_id: `booking_${booking_id}_${Date.now()}`,
+        payment_session_id: `session_mock_${Math.random().toString(36).substring(2, 10)}`,
+        order_amount: amount,
       };
     }
     await PaymentRepositor.create({
       booking_id,
-      razorpay_order_id: order.id,
+      cashfree_order_id: order.order_id,
       amount,
       payment_method: "ONLINE",
       status: "PENDING",
+      gateway: "CASHFREE",
+      currency: "INR"
     });
     return order;
   }
   async verifyPayment(data) {
     const {
       booking_id,
-      razorpay_order_id,
-      razorpay_payment_id,
-      razorpay_signature,
+      cashfree_order_id,
     } = data;
-    const isMock = razorpay_order_id && razorpay_order_id.startsWith("order_mock_");
+    
+    let orderStatus = "PENDING";
+    let cfPaymentId = `pay_mock_${Math.random().toString(36).substring(2, 10)}`;
+
+    const isMock = cashfree_order_id && (cashfree_order_id.startsWith("order_mock_") || cashfree_order_id.includes("_mock_"));
     if (!isMock) {
-      const generated_signature = crypto
-        .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET || "fallback_secret")
-        .update(razorpay_order_id + "|" + razorpay_payment_id)
-        .digest("hex");
-      if (generated_signature !== razorpay_signature) {
-        throw new AppError("Invalid payment signature", 400);
+      try {
+        const cfOrder = await cashfree.getCashfreeOrder(cashfree_order_id);
+        orderStatus = cfOrder.order_status;
+        cfPaymentId = cfOrder.cf_payment_id || cfPaymentId;
+      } catch (err) {
+        throw new AppError("Failed to verify payment with Cashfree", 400);
       }
+    } else {
+      orderStatus = "PAID";
     }
+
+    if (orderStatus !== "PAID") {
+      throw new AppError("Payment verification failed", 400);
+    }
+
     const booking = await BookingRepositor.getById(booking_id);
     if (!booking) {
       throw new AppError("Booking not found", 404);
@@ -828,8 +839,7 @@ async updateBookingStatus(
     const payment = payments[0];
     if (payment) {
       await PaymentRepositor.update(payment.id, {
-        razorpay_payment_id,
-        razorpay_signature,
+        cashfree_payment_id: cfPaymentId,
         status: "SUCCESS",
         paid_at: new Date()
       });

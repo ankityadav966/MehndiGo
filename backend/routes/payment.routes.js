@@ -6,8 +6,12 @@ const { authenticate } = require("../middleware/auth.middleware");
 // Webhooks (Public endpoint)
 router.post("/webhook", PaymentController.handleWebhook);
 
+// Public hosted payment endpoints
+router.get("/checkout", PaymentController.renderCheckoutPage);
+router.post("/verify-hosted", PaymentController.verifyHostedPayment);
+
 // Protected payment endpoints
-router.post("/create-order", authenticate, PaymentController.createOrder);
+router.post("/create-session", authenticate, PaymentController.createSession);
 router.post("/verify", authenticate, PaymentController.verifyPayment);
 router.post("/wallet-pay", authenticate, PaymentController.payWithWallet);
 router.get("/history", authenticate, PaymentController.getPaymentHistory);

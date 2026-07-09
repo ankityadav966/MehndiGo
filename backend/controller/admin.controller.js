@@ -153,6 +153,42 @@ async function rejectWithdrawal(req, res) {
   }
 }
 
+async function getWalletSummary(req, res) {
+  try {
+    const summary = await AdminService.getWalletSummary();
+    return res.status(200).json(SuccessResponse("Wallet summary fetched successfully", summary));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+async function getCommissionHistory(req, res) {
+  try {
+    const history = await AdminService.getCommissionHistory(req.query);
+    return res.status(200).json(SuccessResponse("Commission history fetched successfully", history));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+async function getDashboardSummary(req, res) {
+  try {
+    const summary = await AdminService.getDashboardSummary();
+    return res.status(200).json(SuccessResponse("Dashboard summary fetched successfully", summary));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+async function getWalletTransactionDetails(req, res) {
+  try {
+    const details = await AdminService.getWalletTransactionDetails(req.params.id);
+    return res.status(200).json(SuccessResponse("Transaction details fetched successfully", details));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
 module.exports = {
   getStats,
   getAllUsers,
@@ -168,5 +204,9 @@ module.exports = {
   getAllMessages,
   getAllWithdrawals,
   approveWithdrawal,
-  rejectWithdrawal
+  rejectWithdrawal,
+  getWalletSummary,
+  getCommissionHistory,
+  getDashboardSummary,
+  getWalletTransactionDetails
 };

@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "mehendigoo",
+    "name": "MehdiGo",
     "slug": "mehendigoo",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -8,14 +8,12 @@
     "scheme": "mehendigoo",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/images/icon.png"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#FFFFFF",
+        "foregroundImage": "./assets/images/icon.png"
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.sonuy123.mehendigoo"
@@ -24,17 +22,28 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
-          "android": {
-            "image": "./assets/images/splash-icon.png",
-            "imageWidth": 76
-          }
+          "backgroundColor": "#FFFFFF",
+          "image": "./assets/images/icon.png",
+          "imageWidth": 150,
+          "resizeMode": "contain"
         }
       ],
-      "expo-image"
+      "expo-image",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#FF4D6D"
+        }
+      ]
     ],
     "experiments": {
-      "reactCompiler": true
+      "reactCompiler": false
+    },
+    "extra": {
+      "eas": {
+        "projectId": "7d4325a8-28df-4b1b-b2c7-5166e10a6f9e"
+      }
     }
   }
 }
