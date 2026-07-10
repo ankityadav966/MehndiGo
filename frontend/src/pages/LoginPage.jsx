@@ -57,7 +57,7 @@ const LoginPage = ({ showToast }) => {
     try {
       const res = await authService.verifyOtp({ phone, otp, role });
       loginSuccess(res.data.token, res.data.user);
-      showToast("Welcome to Mehndi Go!", "success");
+      showToast("Welcome to MehndiGo!", "success");
       
       if (res.data.user.role === "ADMIN") {
         navigate("/admin");

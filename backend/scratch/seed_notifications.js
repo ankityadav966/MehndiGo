@@ -11,8 +11,8 @@ async function seed() {
 
       await db.Notification.create({
         user_id: user.id,
-        title: "Welcome to MehandiGo! 🎉",
-        message: "Thank you for registering on MehandiGo. Explore trending Mehendi artists near you and book your first session today!",
+        title: "Welcome to MehndiGo! 🎉",
+        message: "Thank you for registering on MehndiGo. Explore trending Mehndi artists near you and book your first session today!",
         type: "SYSTEM",
         is_read: false
       });
@@ -20,7 +20,7 @@ async function seed() {
       await db.Notification.create({
         user_id: user.id,
         title: "Booking Completed 📅",
-        message: "Your booking request for Bridal Mehendi session has been successfully completed. Share your experience by leaving a review!",
+        message: "Your booking request for Bridal Mehndi session has been successfully completed. Share your experience by leaving a review!",
         type: "BOOKING",
         is_read: false
       });
@@ -28,7 +28,7 @@ async function seed() {
       await db.Notification.create({
         user_id: user.id,
         title: "Cashback Credited! 💰",
-        message: "Congratulations! A cashback of ₹150 has been credited to your MehandiGo wallet for using code WELCOME50.",
+        message: "Congratulations! A cashback of ₹150 has been credited to your MehndiGo wallet for using code WELCOME50.",
         type: "PAYMENT",
         is_read: false
       });
@@ -36,7 +36,7 @@ async function seed() {
       await db.Notification.create({
         user_id: user.id,
         title: "Tej Festival Offer! 🌺",
-        message: "Get flat 20% discount on all Bridal and Rajasthani Mehendi categories. Use code TEEJ20 during checkout.",
+        message: "Get flat 20% discount on all Bridal and Rajasthani Mehndi categories. Use code TEEJ20 during checkout.",
         type: "PROMOTION",
         is_read: false
       });

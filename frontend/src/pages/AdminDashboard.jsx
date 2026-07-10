@@ -659,7 +659,7 @@ const AdminDashboard = ({ showToast }) => {
               <div>
                 <h1 style={{ fontSize: "2rem", fontWeight: 800, marginBottom: "0.5rem" }}>Artist Verification Queue</h1>
                 <p style={{ color: "var(--text-secondary)", marginBottom: "2rem" }}>
-                  Audit document uploads and verify mehndi artist accounts on Mehndi Go.
+                  Audit document uploads and verify mehndi artist accounts on MehndiGo.
                 </p>
 
                 {pendingArtists.length === 0 ? (

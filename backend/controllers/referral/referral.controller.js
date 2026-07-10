@@ -29,7 +29,7 @@ async function getReferralDashboard(req, res) {
       where: { is_active: true }
     });
 
-    const referralLink = `https://mehendigo.app/invite?ref=${codeRecord.code}`;
+    const referralLink = `https://mehndigo.com/invite?ref=${codeRecord.code}`;
 
     return res.status(200).json(SuccessResponse("Referral dashboard details fetched", {
       referralCode: codeRecord.code,

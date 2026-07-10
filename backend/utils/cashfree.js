@@ -38,7 +38,7 @@ const createCashfreeOrder = async (orderData) => {
         order_id: orderData.orderId,
         order_amount: Number(orderData.amount),
         order_currency: orderData.currency || "INR",
-        order_note: orderData.note || "MehendiGo Payment"
+        order_note: orderData.note || "MehndiGo Payment"
       })
     });
 

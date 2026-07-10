@@ -36,7 +36,7 @@ function App() {
         <nav className="navbar">
           <Link to="/" className="navbar-brand">
             <Sparkles style={{ width: "24px", height: "24px", color: "var(--accent-color)" }} />
-            Mehndi Go
+            MehndiGo
           </Link>
 
           <div className="navbar-links">

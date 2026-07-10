@@ -322,7 +322,7 @@ class BookingService {
         await db.Notification.create({
           user_id: booking.user_id,
           title: "Booking Completed",
-          message: "Your Mehendi service has been completed. Remaining payment is pending. Please complete your payment.",
+          message: "Your Mehndi service has been completed. Remaining payment is pending. Please complete your payment.",
           type: "BOOKING",
           data: {
             type: "booking",

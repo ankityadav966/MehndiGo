@@ -89,7 +89,7 @@ function RegisterPage({ showToast }) {
         
         <div style={{ textAlign: "center", marginBottom: "2rem" }}>
           <h2 style={{ fontSize: "2rem", marginBottom: "0.5rem", color: "var(--text-color)" }}>Create Account</h2>
-          <p style={{ color: "var(--text-muted)" }}>Join Mehndi Go and explore beautiful designs.</p>
+          <p style={{ color: "var(--text-muted)" }}>Join MehndiGo and explore beautiful designs.</p>
         </div>
 
         {step === 1 ? (

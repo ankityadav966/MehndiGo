@@ -52,7 +52,7 @@ class UserService {
         throw new AppError("Admin registration is not allowed publicly", 403);
       }
       user = await UserRepositor.create({
-        name: name || (role === "ARTIST" ? "Mehndi Artist" : "Mehandi User"),
+        name: name || (role === "ARTIST" ? "Mehndi Artist" : "Mehndi User"),
         phone,
         role: role || "USER",
       });
