@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "MehdiGo",
-    "slug": "mehendigoo",
+    "slug": "sonu-yadav",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -42,8 +42,9 @@
     },
     "extra": {
       "eas": {
-        "projectId": "7d4325a8-28df-4b1b-b2c7-5166e10a6f9e"
+        "projectId": "37619b8e-f029-4996-b122-e0fb200f6a06"
       }
-    }
+    },
+    "owner": "sonuy123s-team"
   }
 }

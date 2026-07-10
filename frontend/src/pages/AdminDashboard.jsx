@@ -82,7 +82,7 @@ const AdminDashboard = ({ showToast }) => {
     city: "",
     artistId: ""
   });
-  
+
   // Stats
   const [stats, setStats] = useState({
     totalUsers: 0,
@@ -145,16 +145,16 @@ const AdminDashboard = ({ showToast }) => {
         if (notifications.length > 0) return;
         const notifsRes = await adminService.getNotifications();
         setNotifications(notifsRes.data || []);
-        
+
         // Also fetch all users so admin can select target user
         const usersListRes = await adminService.getUsers();
         const artistListRes = await adminService.getArtists();
-        
+
         const combined = [
           ...(usersListRes.data?.rows || usersListRes.data || []),
           ...(artistListRes.data || []).map(a => a.user).filter(Boolean)
         ];
-        
+
         // Deduplicate
         const unique = [];
         const seen = new Set();
@@ -309,7 +309,7 @@ const AdminDashboard = ({ showToast }) => {
         is_active: true,
         first_booking_only: false
       });
-      
+
       const couponsRes = await adminService.getCoupons();
       setCoupons(couponsRes.data || []);
     } catch (err) {
@@ -355,13 +355,13 @@ const AdminDashboard = ({ showToast }) => {
         <h3 style={{ fontSize: "1.1rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "1px", marginBottom: "1rem", color: "var(--text-secondary)" }}>
           Admin Panel
         </h3>
-        
+
         <button
           className={`sidebar-link btn-secondary ${activeTab === "overview" ? "active" : ""}`}
           onClick={() => setActiveTab("overview")}
           style={{ width: "100%", justifyContent: "flex-start", border: "none", background: "none" }}
         >
-          <ShieldCheck style={{ width: "18px" }} /> Dashboard Overview
+          <ShieldCheck style={{ width: "19px" }} /> Dashboard Overview
         </button>
 
         <button
@@ -371,7 +371,7 @@ const AdminDashboard = ({ showToast }) => {
         >
           <ShieldAlert style={{ width: "18px" }} /> Verification Queue ({stats.pendingArtistsCount})
         </button>
-        
+
         <button
           className={`sidebar-link btn-secondary ${activeTab === "users" ? "active" : ""}`}
           onClick={() => setActiveTab("users")}
@@ -558,7 +558,7 @@ const AdminDashboard = ({ showToast }) => {
 
                 {/* Two-Column Grid: Top Earning Artists & Recent Bookings */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2rem", marginBottom: "2.5rem" }}>
-                  
+
                   {/* Top Earning Artists */}
                   <div className="glass-panel" style={{ padding: "1.5rem" }}>
                     <h3 style={{ marginBottom: "1.2rem", fontSize: "1.1rem" }}>Top Earning Artists</h3>
@@ -853,7 +853,7 @@ const AdminDashboard = ({ showToast }) => {
             {activeTab === "ledger" && (
               <div>
                 <h1 style={{ fontSize: "2rem", fontWeight: 800, marginBottom: "2rem" }}>Financial Ledger & Transactions</h1>
-                
+
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1.5rem", marginBottom: "2rem" }}>
                   <div className="glass-panel" style={{ padding: "1.5rem", textAlign: "center" }}>
                     <h3 style={{ fontSize: "1.1rem", color: "var(--text-secondary)", marginBottom: "0.5rem" }}>Total Revenue</h3>
@@ -948,7 +948,7 @@ const AdminDashboard = ({ showToast }) => {
             {activeTab === "notifications" && (
               <div>
                 <h1 style={{ fontSize: "2rem", fontWeight: 800, marginBottom: "2rem" }}>System Alerts Broadcaster</h1>
-                
+
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: "2rem" }}>
                   {/* Send Alert form */}
                   <div className="glass-panel" style={{ padding: "2rem", height: "fit-content" }}>
@@ -1041,12 +1041,12 @@ const AdminDashboard = ({ showToast }) => {
                     <form onSubmit={handleCouponSubmit} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem" }}>
                       <div className="form-group">
                         <label className="form-label">Coupon Code</label>
-                        <input className="form-control" type="text" placeholder="e.g. WELCOME500" value={couponFormData.code} onChange={(e) => setCouponFormData({...couponFormData, code: e.target.value.toUpperCase()})} required />
+                        <input className="form-control" type="text" placeholder="e.g. WELCOME500" value={couponFormData.code} onChange={(e) => setCouponFormData({ ...couponFormData, code: e.target.value.toUpperCase() })} required />
                       </div>
 
                       <div className="form-group">
                         <label className="form-label">Discount Type</label>
-                        <select className="form-control" value={couponFormData.discount_type} onChange={(e) => setCouponFormData({...couponFormData, discount_type: e.target.value})}>
+                        <select className="form-control" value={couponFormData.discount_type} onChange={(e) => setCouponFormData({ ...couponFormData, discount_type: e.target.value })}>
                           <option value="PERCENTAGE">Percentage (%)</option>
                           <option value="FLAT">Flat Rate (₹)</option>
                         </select>
@@ -1054,31 +1054,31 @@ const AdminDashboard = ({ showToast }) => {
 
                       <div className="form-group">
                         <label className="form-label">Discount Value ({couponFormData.discount_type === "PERCENTAGE" ? "%" : "₹"})</label>
-                        <input className="form-control" type="number" placeholder="Value" value={couponFormData.discount_value} onChange={(e) => setCouponFormData({...couponFormData, discount_value: e.target.value})} required />
+                        <input className="form-control" type="number" placeholder="Value" value={couponFormData.discount_value} onChange={(e) => setCouponFormData({ ...couponFormData, discount_value: e.target.value })} required />
                       </div>
 
                       <div className="form-group">
                         <label className="form-label">Maximum Discount Cap (₹)</label>
-                        <input className="form-control" type="number" placeholder="Cap Limit" value={couponFormData.max_discount} onChange={(e) => setCouponFormData({...couponFormData, max_discount: e.target.value})} required />
+                        <input className="form-control" type="number" placeholder="Cap Limit" value={couponFormData.max_discount} onChange={(e) => setCouponFormData({ ...couponFormData, max_discount: e.target.value })} required />
                       </div>
 
                       <div className="form-group">
                         <label className="form-label">Minimum Booking Value Required (₹)</label>
-                        <input className="form-control" type="number" placeholder="Minimum Value" value={couponFormData.min_booking_value} onChange={(e) => setCouponFormData({...couponFormData, min_booking_value: e.target.value})} required />
+                        <input className="form-control" type="number" placeholder="Minimum Value" value={couponFormData.min_booking_value} onChange={(e) => setCouponFormData({ ...couponFormData, min_booking_value: e.target.value })} required />
                       </div>
 
                       <div className="form-group">
                         <label className="form-label">Expiry Date</label>
-                        <input className="form-control" type="date" value={couponFormData.expires_at ? couponFormData.expires_at.split("T")[0] : ""} onChange={(e) => setCouponFormData({...couponFormData, expires_at: e.target.value})} required />
+                        <input className="form-control" type="date" value={couponFormData.expires_at ? couponFormData.expires_at.split("T")[0] : ""} onChange={(e) => setCouponFormData({ ...couponFormData, expires_at: e.target.value })} required />
                       </div>
 
                       <div className="form-group" style={{ gridColumn: "span 2", display: "flex", gap: "2rem", alignItems: "center" }}>
                         <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
-                          <input type="checkbox" checked={couponFormData.first_booking_only} onChange={(e) => setCouponFormData({...couponFormData, first_booking_only: e.target.checked})} />
+                          <input type="checkbox" checked={couponFormData.first_booking_only} onChange={(e) => setCouponFormData({ ...couponFormData, first_booking_only: e.target.checked })} />
                           First Booking Only
                         </label>
                         <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
-                          <input type="checkbox" checked={couponFormData.is_active} onChange={(e) => setCouponFormData({...couponFormData, is_active: e.target.checked})} />
+                          <input type="checkbox" checked={couponFormData.is_active} onChange={(e) => setCouponFormData({ ...couponFormData, is_active: e.target.checked })} />
                           Active
                         </label>
                       </div>
@@ -1190,18 +1190,18 @@ const AdminDashboard = ({ showToast }) => {
                     <form onSubmit={handleCampaignSubmit}>
                       <div className="form-group" style={{ marginBottom: "1rem" }}>
                         <label className="form-label">Campaign Title</label>
-                        <input className="form-control" type="text" placeholder="e.g. Monsoon Refer Fest" value={campaignFormData.title} onChange={(e) => setCampaignFormData({...campaignFormData, title: e.target.value})} required />
+                        <input className="form-control" type="text" placeholder="e.g. Monsoon Refer Fest" value={campaignFormData.title} onChange={(e) => setCampaignFormData({ ...campaignFormData, title: e.target.value })} required />
                       </div>
                       <div className="form-group" style={{ marginBottom: "1rem" }}>
                         <label className="form-label">Referrer Reward Cashback (₹)</label>
-                        <input className="form-control" type="number" placeholder="Referrer gets" value={campaignFormData.referrer_reward} onChange={(e) => setCampaignFormData({...campaignFormData, referrer_reward: e.target.value})} required />
+                        <input className="form-control" type="number" placeholder="Referrer gets" value={campaignFormData.referrer_reward} onChange={(e) => setCampaignFormData({ ...campaignFormData, referrer_reward: e.target.value })} required />
                       </div>
                       <div className="form-group" style={{ marginBottom: "1rem" }}>
                         <label className="form-label">Referred Welcome Friend Cashback (₹)</label>
-                        <input className="form-control" type="number" placeholder="Friend gets" value={campaignFormData.referred_reward} onChange={(e) => setCampaignFormData({...campaignFormData, referred_reward: e.target.value})} required />
+                        <input className="form-control" type="number" placeholder="Friend gets" value={campaignFormData.referred_reward} onChange={(e) => setCampaignFormData({ ...campaignFormData, referred_reward: e.target.value })} required />
                       </div>
                       <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", marginTop: "1rem" }}>
-                        <input type="checkbox" checked={campaignFormData.is_active} onChange={(e) => setCampaignFormData({...campaignFormData, is_active: e.target.checked})} />
+                        <input type="checkbox" checked={campaignFormData.is_active} onChange={(e) => setCampaignFormData({ ...campaignFormData, is_active: e.target.checked })} />
                         Activate immediately
                       </label>
                       <button type="submit" className="btn btn-primary" style={{ width: "100%", justifyContent: "center", marginTop: "1.5rem" }}>
@@ -1290,26 +1290,26 @@ const AdminDashboard = ({ showToast }) => {
                 <div className="glass-panel" style={{ padding: "1.5rem", marginBottom: "2rem", display: "flex", flexWrap: "wrap", gap: "1.5rem", alignItems: "flex-end" }}>
                   <div className="form-group" style={{ flexGrow: 1, minWidth: "150px" }}>
                     <label className="form-label">Start Date</label>
-                    <input className="form-control" type="date" value={analyticsFilters.startDate} onChange={(e) => setAnalyticsFilters({...analyticsFilters, startDate: e.target.value})} />
+                    <input className="form-control" type="date" value={analyticsFilters.startDate} onChange={(e) => setAnalyticsFilters({ ...analyticsFilters, startDate: e.target.value })} />
                   </div>
                   <div className="form-group" style={{ flexGrow: 1, minWidth: "150px" }}>
                     <label className="form-label">End Date</label>
-                    <input className="form-control" type="date" value={analyticsFilters.endDate} onChange={(e) => setAnalyticsFilters({...analyticsFilters, endDate: e.target.value})} />
+                    <input className="form-control" type="date" value={analyticsFilters.endDate} onChange={(e) => setAnalyticsFilters({ ...analyticsFilters, endDate: e.target.value })} />
                   </div>
                   <div className="form-group" style={{ flexGrow: 1, minWidth: "150px" }}>
                     <label className="form-label">Filter by City</label>
-                    <input className="form-control" type="text" placeholder="e.g. Panaji" value={analyticsFilters.city} onChange={(e) => setAnalyticsFilters({...analyticsFilters, city: e.target.value})} />
+                    <input className="form-control" type="text" placeholder="e.g. Panaji" value={analyticsFilters.city} onChange={(e) => setAnalyticsFilters({ ...analyticsFilters, city: e.target.value })} />
                   </div>
 
                   <div style={{ display: "flex", gap: "0.5rem" }}>
                     <button className="btn btn-secondary" onClick={() => {
                       const today = new Date().toISOString().split("T")[0];
-                      setAnalyticsFilters({...analyticsFilters, startDate: today, endDate: today});
+                      setAnalyticsFilters({ ...analyticsFilters, startDate: today, endDate: today });
                     }}>Today</button>
                     <button className="btn btn-secondary" onClick={() => {
                       const end = new Date().toISOString().split("T")[0];
                       const start = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-                      setAnalyticsFilters({...analyticsFilters, startDate: start, endDate: end});
+                      setAnalyticsFilters({ ...analyticsFilters, startDate: start, endDate: end });
                     }}>Last 7 Days</button>
                     <button className="btn btn-secondary" onClick={() => {
                       setAnalyticsFilters({ startDate: "", endDate: "", city: "", artistId: "" });
@@ -1345,15 +1345,15 @@ const AdminDashboard = ({ showToast }) => {
 
                     {/* SVG Analytics Charts Row */}
                     <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: "2rem", marginBottom: "2rem" }}>
-                      
+
                       {/* 1. Revenue Area/Line SVG Chart */}
                       <div className="glass-panel" style={{ padding: "1.5rem" }}>
                         <h3 style={{ marginBottom: "1.2rem" }}>Revenue Growth Trend (7 Days)</h3>
                         <svg viewBox="0 0 500 200" style={{ width: "100%", height: "200px" }}>
                           <defs>
                             <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor="var(--primary-color)" stopOpacity="0.4"/>
-                              <stop offset="100%" stopColor="var(--primary-color)" stopOpacity="0.0"/>
+                              <stop offset="0%" stopColor="var(--primary-color)" stopOpacity="0.4" />
+                              <stop offset="100%" stopColor="var(--primary-color)" stopOpacity="0.0" />
                             </linearGradient>
                           </defs>
                           {/* Grid lines */}
@@ -1419,7 +1419,7 @@ const AdminDashboard = ({ showToast }) => {
 
                     {/* Hourly Heatmap & Top Spenders */}
                     <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: "2rem" }}>
-                      
+
                       {/* Peak Booking Hours Grid Heatmap */}
                       <div className="glass-panel" style={{ padding: "1.5rem" }}>
                         <h3 style={{ marginBottom: "1.2rem" }}>Peak Booking Hours (Heatmap Distribution)</h3>
@@ -1480,8 +1480,8 @@ const AdminDashboard = ({ showToast }) => {
                     <p style={{ color: "var(--text-secondary)" }}>Track 10% advance payments and overall admin platform commission earnings.</p>
                   </div>
                   <div style={{ display: "flex", gap: "0.75rem" }}>
-                    <button 
-                      className="btn btn-secondary" 
+                    <button
+                      className="btn btn-secondary"
                       onClick={async () => {
                         try {
                           const historyRes = await adminService.getCommissionHistory({
@@ -1494,17 +1494,17 @@ const AdminDashboard = ({ showToast }) => {
                             return;
                           }
                           const headers = ["Booking ID", "Customer Name", "Artist Name", "Total Amount (₹)", "Commission (₹)", "Status", "Date"];
-                          const csvContent = "data:text/csv;charset=utf-8," 
+                          const csvContent = "data:text/csv;charset=utf-8,"
                             + headers.join(",") + "\n"
                             + txs.map(t => [
-                                t.booking?.booking_code || "N/A",
-                                t.booking?.user?.name || "N/A",
-                                t.booking?.artist?.user?.name || "N/A",
-                                t.booking?.final_amount || 0,
-                                t.amount || 0,
-                                t.status || "SUCCESS",
-                                new Date(t.createdAt).toLocaleString()
-                              ].map(val => `"${val}"`).join(",")).join("\n");
+                              t.booking?.booking_code || "N/A",
+                              t.booking?.user?.name || "N/A",
+                              t.booking?.artist?.user?.name || "N/A",
+                              t.booking?.final_amount || 0,
+                              t.amount || 0,
+                              t.status || "SUCCESS",
+                              new Date(t.createdAt).toLocaleString()
+                            ].map(val => `"${val}"`).join(",")).join("\n");
                           const encodedUri = encodeURI(csvContent);
                           const link = document.createElement("a");
                           link.setAttribute("href", encodedUri);
@@ -1520,8 +1520,8 @@ const AdminDashboard = ({ showToast }) => {
                     >
                       Export CSV
                     </button>
-                    <button 
-                      className="btn btn-primary" 
+                    <button
+                      className="btn btn-primary"
                       onClick={() => fetchAdminData()}
                     >
                       Refresh
@@ -1568,20 +1568,20 @@ const AdminDashboard = ({ showToast }) => {
                   <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: "1rem", alignItems: "end" }}>
                     <div className="form-group">
                       <label className="form-label">Search</label>
-                      <input 
-                        className="form-control" 
-                        type="text" 
-                        placeholder="Search by Booking ID or client name..." 
-                        value={walletSearch} 
-                        onChange={(e) => setWalletSearch(e.target.value)} 
+                      <input
+                        className="form-control"
+                        type="text"
+                        placeholder="Search by Booking ID or client name..."
+                        value={walletSearch}
+                        onChange={(e) => setWalletSearch(e.target.value)}
                       />
                     </div>
 
                     <div className="form-group">
                       <label className="form-label">Status</label>
-                      <select 
-                        className="form-control" 
-                        value={walletStatusFilter} 
+                      <select
+                        className="form-control"
+                        value={walletStatusFilter}
                         onChange={(e) => setWalletStatusFilter(e.target.value)}
                       >
                         <option value="">All Statuses</option>
@@ -1593,21 +1593,21 @@ const AdminDashboard = ({ showToast }) => {
 
                     <div className="form-group">
                       <label className="form-label">Start Date</label>
-                      <input 
-                        className="form-control" 
-                        type="date" 
-                        value={walletStartDate} 
-                        onChange={(e) => setWalletStartDate(e.target.value)} 
+                      <input
+                        className="form-control"
+                        type="date"
+                        value={walletStartDate}
+                        onChange={(e) => setWalletStartDate(e.target.value)}
                       />
                     </div>
 
                     <div className="form-group">
                       <label className="form-label">End Date</label>
-                      <input 
-                        className="form-control" 
-                        type="date" 
-                        value={walletEndDate} 
-                        onChange={(e) => setWalletEndDate(e.target.value)} 
+                      <input
+                        className="form-control"
+                        type="date"
+                        value={walletEndDate}
+                        onChange={(e) => setWalletEndDate(e.target.value)}
                       />
                     </div>
                   </div>
@@ -1659,8 +1659,8 @@ const AdminDashboard = ({ showToast }) => {
                                 {new Date(t.createdAt).toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
                               </td>
                               <td style={{ padding: "1rem" }}>
-                                <button 
-                                  className="btn btn-secondary" 
+                                <button
+                                  className="btn btn-secondary"
                                   style={{ padding: "0.4rem 0.8rem", fontSize: "0.8rem" }}
                                   onClick={async () => {
                                     try {
@@ -1682,8 +1682,8 @@ const AdminDashboard = ({ showToast }) => {
                       {/* Pagination Controls */}
                       {walletTotalPages > 1 && (
                         <div style={{ display: "flex", justifyContent: "center", gap: "0.5rem", marginTop: "2rem" }}>
-                          <button 
-                            className="btn btn-secondary" 
+                          <button
+                            className="btn btn-secondary"
                             disabled={walletPage === 1}
                             onClick={() => setWalletPage(walletPage - 1)}
                           >
@@ -1692,8 +1692,8 @@ const AdminDashboard = ({ showToast }) => {
                           <span style={{ display: "flex", alignItems: "center", paddingHorizontal: "1rem", fontWeight: 600 }}>
                             Page {walletPage} of {walletTotalPages}
                           </span>
-                          <button 
-                            className="btn btn-secondary" 
+                          <button
+                            className="btn btn-secondary"
                             disabled={walletPage === walletTotalPages}
                             onClick={() => setWalletPage(walletPage + 1)}
                           >
@@ -1725,7 +1725,7 @@ const AdminDashboard = ({ showToast }) => {
                     <div className="glass-panel" style={{ width: "100%", maxWidth: "600px", padding: "2rem", background: "var(--bg-secondary)", borderRadius: "20px" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
                         <h2 style={{ fontSize: "1.5rem", fontWeight: 800 }}>Transaction Breakdown</h2>
-                        <button 
+                        <button
                           onClick={() => setSelectedWalletTx(null)}
                           style={{ background: "none", border: "none", fontSize: "1.5rem", cursor: "pointer", color: "var(--text-primary)" }}
                         >
@@ -1734,7 +1734,7 @@ const AdminDashboard = ({ showToast }) => {
                       </div>
 
                       <div style={{ display: "flex", flexDirection: "column", gap: "1.2rem" }}>
-                        
+
                         {/* Summary Header */}
                         <div style={{ textAlign: "center", padding: "1rem", background: "rgba(108, 92, 231, 0.05)", borderRadius: "12px", border: "1px solid var(--border-color)" }}>
                           <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>Commission Earned</span>
