@@ -11,8 +11,9 @@ import { secureStorage } from "../utils/storage";
  * for release and the correct URL will be resolved automatically.
  */
 const getBaseUrl = () => {
-  // Try loading from environment variables, fallback to local port-forwarded backend
-  return process.env.EXPO_PUBLIC_API_URL || "http://localhost:8000";
+  // Try loading from environment variables, fallback to live backend
+  const envUrl = process.env.EXPO_PUBLIC_API_URL || "https://mehandigo-api.globalrns.com/api/v1";
+  return envUrl.endsWith("/") ? envUrl.slice(0, -1) : envUrl;
 };
 
 export const BASE_URL = getBaseUrl();

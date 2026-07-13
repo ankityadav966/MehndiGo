@@ -11,14 +11,45 @@ import { secureStorage } from "../utils/storage";
  * for release and the correct URL will be resolved automatically.
  */
 const getBaseUrl = () => {
-  // Try loading from environment variables, fallback to local port-forwarded backend
-  return process.env.EXPO_PUBLIC_API_URL || "http://localhost:8000";
+  // Try loading from environment variables, fallback to live backend
+  const envUrl = process.env.EXPO_PUBLIC_API_URL || "https://mehandigo-api.globalrns.com/api/v1";
+  return envUrl.endsWith("/") ? envUrl.slice(0, -1) : envUrl;
 };
 
 export const BASE_URL = getBaseUrl();
 
+export function getNormalizedUrl(endpoint) {
+  let baseUrl = BASE_URL;
+  let cleanEndpoint = endpoint;
+
+  // Ensure endpoint starts with a slash
+  if (!cleanEndpoint.startsWith("/")) {
+    cleanEndpoint = "/" + cleanEndpoint;
+  }
+
+  // Normalize endpoints to avoid double prefixing and handle root vs /api/v1 namespaces
+  if (cleanEndpoint.startsWith("/api/v1/")) {
+    if (baseUrl.endsWith("/api/v1")) {
+      cleanEndpoint = cleanEndpoint.substring(7); // strip /api/v1 from endpoint
+    }
+  } else {
+    // Root level endpoints (e.g. /wallet, /auth/login) shouldn't be prefixed with /api/v1
+    if (baseUrl.endsWith("/api/v1")) {
+      baseUrl = baseUrl.substring(0, baseUrl.length - 7);
+    }
+  }
+
+  // Construct URL
+  if (baseUrl.endsWith("/")) {
+    baseUrl = baseUrl.slice(0, -1);
+  }
+  let url = `${baseUrl}${cleanEndpoint}`;
+
+  return url;
+}
+
 async function apiRequest(method, endpoint, body = null, auth = false) {
-  const url = `${BASE_URL}${endpoint}`;
+  const url = getNormalizedUrl(endpoint);
   console.log(`[API REQUEST] ${method} -> ${url}`);
 
   const headers = { "Content-Type": "application/json" };
