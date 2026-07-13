@@ -288,7 +288,14 @@ export default function PaymentScreen({ route, navigation }) {
 
   const methods = [
     { id: "upi", title: "Cashfree Online Payment", subtitle: "Pay securely via UPI, Cards, Net Banking", icon: "card-outline" },
-    { id: "wallet", title: "MehndiGo Wallet", subtitle: "Pay using your internal wallet balance", icon: "wallet-outline" }
+    { 
+      id: "wallet", 
+      title: "MehndiGo Wallet", 
+      subtitle: walletBalance !== undefined && walletBalance !== null
+        ? `Pay using your wallet balance (Available: ₹${walletBalance})`
+        : "Pay using your internal wallet balance", 
+      icon: "wallet-outline" 
+    }
   ];
 
   if (loading) {

@@ -134,6 +134,11 @@ class PaymentService {
       throw new AppError("Transaction not found", 404);
     }
 
+    if (tx.status === "SUCCESS") {
+      console.log(`[VERIFY_PAYMENT] Transaction ${cashfree_order_id} is already SUCCESS. Returning early.`);
+      return tx;
+    }
+
     let orderStatus = "PENDING";
     let paymentDetails = null;
 
@@ -341,6 +346,22 @@ class PaymentService {
           { where: { cashfree_order_id } }
         );
       }
+    } else {
+      // Wallet Recharge Flow
+      const [wallet] = await db.Wallet.findOrCreate({
+        where: { user_id: tx.user_id },
+        defaults: { balance: 0 }
+      });
+      await wallet.increment("balance", { by: tx.amount });
+
+      await db.WalletTransaction.create({
+        wallet_id: wallet.id,
+        transaction_type: "RECHARGE",
+        amount: tx.amount,
+        status: "SUCCESS",
+        description: `Wallet recharge via Cashfree (Order: ${tx.cashfree_order_id})`
+      });
+      console.log(`[Recharge Success] Credited ₹${tx.amount} to user ID ${tx.user_id} wallet`);
     }
 
     return tx;
@@ -612,7 +633,7 @@ class PaymentService {
   }
 
   async retryPayment(bookingId, userId) {
-    return await this.createOrder(bookingId, userId);
+    return await this.createSession(bookingId, userId);
   }
 
   async payWithWallet(bookingId, userId) {
@@ -653,21 +674,21 @@ class PaymentService {
       const newBalance = wallet.balance - payableAmount;
       await wallet.update({ balance: newBalance }, { transaction: t });
 
-      // 1. Create Wallet Transaction log
+      // 1. Create Wallet Transaction log (Change DEBIT to PAYMENT enum)
       await db.WalletTransaction.create({
         wallet_id: wallet.id,
-        transaction_type: "DEBIT",
+        transaction_type: "PAYMENT",
         amount: payableAmount,
         status: "SUCCESS",
         booking_id: booking.id,
         description: `Deducted for booking #${booking.booking_code} (Wallet Checkout)`
       }, { transaction: t });
 
-      // 2. Create online payment transaction simulation
+      // 2. Create online payment transaction simulation (Add user_id and remove payment_method)
       await db.Transaction.create({
+        user_id: userId,
         booking_id: booking.id,
         amount: payableAmount,
-        payment_method: "WALLET",
         status: "SUCCESS",
         cashfree_order_id: `wallet_mock_${Date.now()}`,
         cashfree_payment_id: `wallet_pay_${Date.now()}`

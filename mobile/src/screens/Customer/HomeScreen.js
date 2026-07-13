@@ -270,6 +270,9 @@ const LOCAL_CATEGORY_IMAGES = {
 };
 
 const getCategoryImage = (item) => {
+  if (item && item.image && (item.image.startsWith("http://") || item.image.startsWith("https://"))) {
+    return { uri: item.image };
+  }
   const name = (item.name || "").toLowerCase();
   const slug = (item.slug || "").toLowerCase();
 
