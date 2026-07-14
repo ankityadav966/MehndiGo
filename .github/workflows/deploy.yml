@@ -15,17 +15,17 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
 
       - name: Install Backend Dependencies
         run: |
           cd backend
-          npm install --legacy-peer-deps
+          npm install --legacy-peer-deps || (cat /home/runner/.npm/_logs/*.log && exit 1)
 
       - name: Install Frontend Dependencies & Build
         run: |
           cd frontend
-          npm install --legacy-peer-deps
+          npm install --legacy-peer-deps || (cat /home/runner/.npm/_logs/*.log && exit 1)
           npm run build
 
   deploy:
