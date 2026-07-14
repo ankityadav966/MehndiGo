@@ -33,4 +33,8 @@ router.post("/verify-payment", authenticate, BookingController.verifyPayment);
 // Document download
 router.get("/invoice", authenticate, BookingController.getInvoice);
 
+// Live Tracking Location Query
+const TrackingController = require("../controllers/tracking/tracking.controller");
+router.get("/:bookingId/location", authenticate, TrackingController.getArtistLocation);
+
 module.exports = router;

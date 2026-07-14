@@ -85,3 +85,13 @@ export async function getPendingPayment() {
   const res = await apiRequest("GET", "/booking/pending", null, true);
   return res && res.success ? res.data : null;
 }
+
+export async function updateArtistLocation(payload) {
+  const res = await apiRequest("POST", "/artist/location/update", payload, true);
+  return res?.data || res;
+}
+
+export async function getArtistLocation(bookingId) {
+  const res = await apiRequest("GET", `/booking/${bookingId}/location`, null, true);
+  return res?.data || res;
+}

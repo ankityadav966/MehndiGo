@@ -56,6 +56,23 @@ export default function BookingDetailsScreen({ route, navigation }) {
     return () => clearTimeout(timer);
   }, [bookingId]);
 
+  // Live Tracking startup/shutdown listener based on active status
+  useEffect(() => {
+    if (!booking) return;
+    const currentDetailedStatus = booking.detailed_status || booking.booking_status || "PENDING";
+    const activeTrackingStatuses = ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED"];
+
+    if (activeTrackingStatuses.includes(currentDetailedStatus)) {
+      const { startTracking } = require("../../services/trackingService");
+      startTracking(booking.id, booking.artist_id).catch((err) => {
+        console.log("[BookingDetails] Auto start tracking warning:", err.message);
+      });
+    } else {
+      const { stopTracking } = require("../../services/trackingService");
+      stopTracking();
+    }
+  }, [booking]);
+
   const handleAccept = async () => {
     setLoading(true);
     try {
@@ -214,7 +231,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
     if (currentDetailedStatus === "CONFIRMED" || currentDetailedStatus === "ARTIST_ACCEPTED" || currentDetailedStatus === "ACCEPTED") {
       return (
         <View style={styles.footerSingle}>
-          <CustomButton title="Start Travel (On the Way)" onPress={handleStartService} />
+          <CustomButton title="Start Travel (On the Way)" onPress={handleStartTravel} />
         </View>
       );
     }

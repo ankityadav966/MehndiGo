@@ -88,6 +88,10 @@ initSocket(server);
 const { startScheduler } = require("./services/cron.services");
 startScheduler();
 
+// Connect MongoDB for live tracking
+const connectMongoDB = require("./config/mongodb");
+connectMongoDB();
+
 server.listen(PORT, "0.0.0.0", () => {
   console.log(
     `Server running on port ${PORT}`

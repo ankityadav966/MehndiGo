@@ -38,4 +38,8 @@ const ReviewController = require("../controllers/review/review.controller");
 router.get("/reviews", authenticate, ReviewController.getArtistReviews);
 router.get("/reviews/analytics", authenticate, ReviewController.getArtistReviewsAnalytics);
 
+// Artist Live Tracking Location Update
+const TrackingController = require("../controllers/tracking/tracking.controller");
+router.post("/location/update", authenticate, TrackingController.updateLocation);
+
 module.exports = router;
