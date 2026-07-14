@@ -57,6 +57,60 @@ class BookingService {
     const slotIds = Array.isArray(slotId) ? slotId : (slotId ? [slotId] : []);
     const slotCount = slotIds.length > 0 ? slotIds.length : 1;
 
+    // 1. Validate Customer Exists
+    const customer = await db.User.findByPk(userId);
+    if (!customer) {
+      throw new AppError("Customer not found", 404);
+    }
+
+    // 2. Validate Artist Exists
+    const artist = await db.ArtistProfile.findByPk(artistId);
+    if (!artist) {
+      throw new AppError("Artist profile not found", 404);
+    }
+
+    // 3. Validate Service Exists
+    const service = await db.Service.findByPk(serviceId);
+    if (!service) {
+      throw new AppError("Service not found", 404);
+    }
+    if (service.artist_id !== artistId) {
+      throw new AppError("Service does not belong to the selected artist", 400);
+    }
+
+    // 4. Validate Slots Exist, belong to artist, are not already booked, and check duplicate slots for user
+    if (slotIds.length > 0) {
+      for (const id of slotIds) {
+        const slot = await db.AvailabilitySlot.findByPk(id);
+        if (!slot) {
+          throw new AppError("Availability slot not found", 404);
+        }
+        if (slot.artist_id !== artistId) {
+          throw new AppError("Availability slot does not belong to this artist", 400);
+        }
+        if (slot.is_booked) {
+          throw new AppError("Selected time slot is already booked", 400);
+        }
+      }
+
+      const duplicate = await db.Booking.findOne({
+        where: {
+          user_id: userId,
+          slot_id: { [Op.in]: slotIds },
+          booking_status: { [Op.ne]: "CANCELLED" }
+        }
+      });
+      if (duplicate) {
+        throw new AppError("You already have an active booking for this time slot", 400);
+      }
+    }
+
+    // 5. Check Restricted Booking Rules
+    const isRestricted = await this.hasRestrictedBooking(userId, artistId);
+    if (isRestricted) {
+      throw new AppError("Booking restricted. You have too many active bookings or pending disputes.", 400);
+    }
+
     const bookingResult = await db.sequelize.transaction(async (t) => {
       let finalSlotId = slotIds[0] || null;
 
@@ -435,6 +489,32 @@ class BookingService {
     }
     await booking.update({ review_skipped: true });
     return booking;
+  }
+
+  async hasRestrictedBooking(userId, artistId) {
+    // 1. Check if user has 3 or more active bookings (PENDING or CONFIRMED)
+    const activeBookingsCount = await db.Booking.count({
+      where: {
+        user_id: userId,
+        booking_status: { [Op.in]: ["PENDING", "CONFIRMED"] }
+      }
+    });
+    if (activeBookingsCount >= 3) {
+      return true;
+    }
+
+    // 2. Check if user has a booking with a pending cash payment dispute or awaiting cash confirmation
+    const disputeCount = await db.Booking.count({
+      where: {
+        user_id: userId,
+        detailed_status: ["CASH_DISPUTED", "AWAITING_CASH_CONFIRMATION"]
+      }
+    });
+    if (disputeCount > 0) {
+      return true;
+    }
+
+    return false;
   }
 }
 
