@@ -40,7 +40,8 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             cd /home/ec2-user/mehendiGo
-            git pull origin main
+            git fetch origin main
+            git reset --hard origin/main
             
             # Rebuild and restart production containers
             docker compose -f docker-compose.prod.yml down
