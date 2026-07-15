@@ -1,5 +1,5 @@
-const Location = require("../../models/mongo/location.model");
-const db = require("../../models");
+156+const db = require("../../models");
+const { client: redisClient } = require("../../config/redis");
 const { SuccessResponse, ErrorResponse } = require("../../utils/common");
 const socketModule = require("../../sockets/socket");
 
@@ -46,23 +46,25 @@ async function updateLocation(req, res) {
       return res.status(400).json(ErrorResponse(`Tracking is not allowed. Booking is already ${currentDetailedStatus.toLowerCase()}`));
     }
 
-    // 6. Save latest location to MongoDB (update or create)
+    // 6. Save latest location to Redis
     const updateTime = new Date();
+    const redisKey = `artist:location:${bookingId}`;
     const locationData = {
-      bookingId: Number(bookingId),
-      artistId: artistProfile.id,
-      latitude: Number(latitude),
-      longitude: Number(longitude),
-      heading: heading !== undefined ? Number(heading) : 0,
-      speed: speed !== undefined ? Number(speed) : 0,
-      updatedAt: updateTime
+      bookingId: bookingId.toString(),
+      artistId: artistProfile.id.toString(),
+      latitude: latitude.toString(),
+      longitude: longitude.toString(),
+      heading: (heading !== undefined ? heading : 0).toString(),
+      speed: (speed !== undefined ? speed : 0).toString(),
+      updatedAt: updateTime.toISOString()
     };
 
-    await Location.findOneAndUpdate(
-      { bookingId: Number(bookingId) },
-      locationData,
-      { upsert: true, new: true }
-    );
+    try {
+      await redisClient.hSet(redisKey, locationData);
+      await redisClient.expire(redisKey, 7200); // Expire after 2 hours
+    } catch (redisErr) {
+      console.warn("[TrackingController] Redis update failed (Redis might be down):", redisErr.message);
+    }
 
     // 7. Emit Socket.IO event to the Customer owning the booking
     try {
@@ -84,7 +86,17 @@ async function updateLocation(req, res) {
       console.error("[TrackingController] Failed to emit Socket.IO event:", socketErr.message);
     }
 
-    return res.status(200).json(SuccessResponse("Artist location updated successfully", locationData));
+    const responseData = {
+      bookingId: Number(bookingId),
+      artistId: artistProfile.id,
+      latitude: Number(latitude),
+      longitude: Number(longitude),
+      heading: heading !== undefined ? Number(heading) : 0,
+      speed: speed !== undefined ? Number(speed) : 0,
+      updatedAt: updateTime
+    };
+
+    return res.status(200).json(SuccessResponse("Artist location updated successfully", responseData));
   } catch (error) {
     console.error("[TrackingController] updateLocation error:", error);
     return res.status(500).json(ErrorResponse("Internal server error", error));
@@ -114,13 +126,30 @@ async function getArtistLocation(req, res) {
       return res.status(403).json(ErrorResponse("Unauthorized. Only the booking customer can view live tracking"));
     }
 
-    // 3. Fetch latest location from MongoDB
-    const location = await Location.findOne({ bookingId: Number(bookingId) });
-    if (!location) {
+    // 3. Fetch latest location from Redis
+    const redisKey = `artist:location:${bookingId}`;
+    let location = null;
+    try {
+      location = await redisClient.hGetAll(redisKey);
+    } catch (redisErr) {
+      console.warn("[TrackingController] Redis retrieval failed (Redis might be down):", redisErr.message);
+    }
+
+    if (!location || Object.keys(location).length === 0) {
       return res.status(404).json(ErrorResponse("Live tracking location not available yet for this booking"));
     }
 
-    return res.status(200).json(SuccessResponse("Fetched artist tracking location successfully", location));
+    const formattedLocation = {
+      bookingId: Number(location.bookingId),
+      artistId: Number(location.artistId),
+      latitude: Number(location.latitude),
+      longitude: Number(location.longitude),
+      heading: Number(location.heading),
+      speed: Number(location.speed),
+      updatedAt: location.updatedAt
+    };
+
+    return res.status(200).json(SuccessResponse("Fetched artist tracking location successfully", formattedLocation));
   } catch (error) {
     console.error("[TrackingController] getArtistLocation error:", error);
     return res.status(500).json(ErrorResponse("Internal server error", error));

@@ -192,6 +192,44 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         defaultValue: false
       },
+      check_in_otp: {
+        type: DataTypes.STRING,
+        allowNull: true
+      },
+      check_in_otp_expires_at: {
+        type: DataTypes.DATE,
+        allowNull: true
+      },
+      check_in_otp_verified: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false
+      },
+      check_in_time: {
+        type: DataTypes.DATE,
+        allowNull: true
+      },
+      check_out_otp: {
+        type: DataTypes.STRING,
+        allowNull: true
+      },
+      check_out_otp_expires_at: {
+        type: DataTypes.DATE,
+        allowNull: true
+      },
+      check_out_otp_verified: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false
+      },
+      check_out_time: {
+        type: DataTypes.DATE,
+        allowNull: true
+      },
+      service_duration: {
+        type: DataTypes.INTEGER,
+        allowNull: true
+      },
     },
     {
       sequelize,

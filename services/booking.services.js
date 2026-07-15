@@ -4,6 +4,11 @@ const AppError = require("../utils/errors/app.error");
 const crypto = require("crypto");
 
 class BookingService {
+  constructor() {
+    this.createBooking = this.createBooking.bind(this);
+    this.hasRestrictedBooking = this.hasRestrictedBooking.bind(this);
+  }
+
   async calculatePriceDetails(serviceId, couponCode = null, userId = null, slotCount = 1) {
     const service = await db.Service.findByPk(serviceId);
     if (!service) {

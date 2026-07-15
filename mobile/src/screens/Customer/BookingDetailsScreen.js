@@ -27,6 +27,7 @@ const STEPS = [
   { key: "CONFIRMED", label: "Confirmed" },
   { key: "ARTIST_ACCEPTED", label: "Accepted" },
   { key: "ARTIST_ON_THE_WAY", label: "On The Way" },
+  { key: "ARTIST_ARRIVED", label: "Arrived" },
   { key: "SERVICE_STARTED", label: "Started" },
   { key: "COMPLETED", label: "Completed" }
 ];
@@ -42,6 +43,8 @@ export default function BookingDetailsScreen({ route, navigation }) {
   const [artistCoords, setArtistCoords] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [refreshTick, setRefreshTick] = useState(0);
+  const [roadDistance, setRoadDistance] = useState(null);
+  const [roadDuration, setRoadDuration] = useState(null);
 
   // Cancellation Modal states
   const [cancelModalVisible, setCancelModalVisible] = useState(false);
@@ -57,11 +60,55 @@ export default function BookingDetailsScreen({ route, navigation }) {
   const [rating, setRating] = useState(5);
   const [reviewText, setReviewText] = useState("");
   const [submittingReview, setSubmittingReview] = useState(false);
+  const [hasPromptedPayment, setHasPromptedPayment] = useState(false);
+  const [hasPromptedReview, setHasPromptedReview] = useState(false);
 
   const loadDetails = async () => {
     try {
       const data = await getBookingDetails(bookingId);
       setBooking(data);
+
+      const status = data.detailed_status || data.booking_status || "PENDING";
+      if (status === "COMPLETED") {
+        if ((data.payment_status === "PARTIAL" || data.payment_status === "PENDING") && !hasPromptedPayment) {
+          setHasPromptedPayment(true);
+          Alert.alert(
+            "Service Completed 🎉",
+            `Remaining payment of ₹${data.remaining_amount} is pending. Please complete the payment.`,
+            [
+              {
+                text: "Pay Online",
+                onPress: () => {
+                  navigation.navigate("Payment", {
+                    bookingId: data.id,
+                    bookingCode: data.booking_code,
+                    finalAmount: data.final_amount,
+                    isSettlement: true
+                  });
+                }
+              },
+              {
+                text: "Pay Cash",
+                onPress: async () => {
+                  try {
+                    setLoading(true);
+                    await selectCashPayment(data.id);
+                    Alert.alert("Success", "Cash payment selected. Please pay the artist.");
+                    loadDetails();
+                  } catch (err) {
+                    Alert.alert("Error", err.message || "Failed to select cash payment");
+                  } finally {
+                    setLoading(false);
+                  }
+                }
+              }
+            ]
+          );
+        } else if (data.payment_status === "PAID" && !data.review_skipped && !hasPromptedReview) {
+          setHasPromptedReview(true);
+          setReviewModalVisible(true);
+        }
+      }
     } catch (e) {
       Alert.alert("Error", "Could not retrieve booking details.");
       navigation.goBack();
@@ -114,6 +161,58 @@ export default function BookingDetailsScreen({ route, navigation }) {
     };
   }, [socket, bookingId]);
 
+  // Socket listeners for realtime OTP events, service start, and completion
+  useEffect(() => {
+    if (!socket || !bookingId) return;
+
+    const handleCheckInOtp = (payload) => {
+      console.log("[Customer screen] checkin_otp_received:", payload);
+      if (Number(payload.bookingId) === Number(bookingId)) {
+        Alert.alert(
+          "Check-In OTP Sent",
+          "Artist has arrived at your location. A Check-In OTP has been sent to your registered mobile number as a real SMS. Please share it with your artist to verify arrival and start the service."
+        );
+      }
+    };
+
+    const handleCheckOutOtp = (payload) => {
+      console.log("[Customer screen] checkout_otp_received:", payload);
+      if (Number(payload.bookingId) === Number(bookingId)) {
+        Alert.alert(
+          "Check-Out OTP Sent",
+          "Mehndi service has been completed. A Check-Out OTP has been sent to your registered mobile number as a real SMS. Please share it with your artist to verify and complete the booking."
+        );
+      }
+    };
+
+    const handleServiceStarted = (payload) => {
+      console.log("[Customer screen] service_started:", payload);
+      if (Number(payload.bookingId) === Number(bookingId)) {
+        loadDetails();
+        Alert.alert("Service Started", "Your Mehndi service has officially started!");
+      }
+    };
+
+    const handleBookingCompleted = (payload) => {
+      console.log("[Customer screen] booking_completed:", payload);
+      if (Number(payload.bookingId) === Number(bookingId)) {
+        loadDetails();
+      }
+    };
+
+    socket.on("checkin_otp_received", handleCheckInOtp);
+    socket.on("checkout_otp_received", handleCheckOutOtp);
+    socket.on("service_started", handleServiceStarted);
+    socket.on("booking_completed", handleBookingCompleted);
+
+    return () => {
+      socket.off("checkin_otp_received", handleCheckInOtp);
+      socket.off("checkout_otp_received", handleCheckOutOtp);
+      socket.off("service_started", handleServiceStarted);
+      socket.off("booking_completed", handleBookingCompleted);
+    };
+  }, [socket, bookingId]);
+
   // 2. Relative time string refresh ticker
   useEffect(() => {
     const timer = setInterval(() => {
@@ -123,6 +222,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
   }, []);
 
   const getDistance = () => {
+    if (roadDistance !== null) return roadDistance.toFixed(1);
     if (!booking || !artistCoords) return null;
     const lat1 = Number(booking.latitude || 26.9124);
     const lon1 = Number(booking.longitude || 75.7873);
@@ -143,6 +243,9 @@ export default function BookingDetailsScreen({ route, navigation }) {
   };
 
   const getETA = (distanceKm) => {
+    if (roadDuration !== null) {
+      return `${Math.round(roadDuration)} Minutes`;
+    }
     if (!distanceKm) return null;
     const dist = parseFloat(distanceKm);
     let speedKmh = 25; // fallback average speed
@@ -401,6 +504,10 @@ export default function BookingDetailsScreen({ route, navigation }) {
                 lng: Number(booking.longitude || 75.7873) 
               }}
               artistCoords={artistCoords}
+              onRouteUpdate={(dist, dur) => {
+                setRoadDistance(dist);
+                setRoadDuration(dur);
+              }}
             />
 
             <View style={styles.trackingStats}>
@@ -776,6 +883,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
           </View>
         </View>
       </Modal>
+      {/* Modals removed for production privacy */}
     </SafeAreaView>
   );
 }

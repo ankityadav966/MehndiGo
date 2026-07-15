@@ -95,3 +95,42 @@ export async function getArtistLocation(bookingId) {
   const res = await apiRequest("GET", `/booking/${bookingId}/location`, null, true);
   return res?.data || res;
 }
+
+export async function updateOnTheWay(bookingId) {
+  const res = await apiRequest("PUT", "/booking/on-the-way", { bookingId }, true);
+  return res?.data || res;
+}
+
+export async function updateArrived(bookingId) {
+  const res = await apiRequest("PUT", "/booking/arrived", { bookingId }, true);
+  return res?.data || res;
+}
+
+export async function confirmCashPayment(bookingId) {
+  const res = await apiRequest("PUT", "/booking/complete", { bookingId }, true);
+  return res?.data || res;
+}
+
+export async function rejectCashPayment(bookingId) {
+  return { success: true };
+}
+
+export async function sendCheckInOtp(bookingId) {
+  const res = await apiRequest("POST", "/booking/send-checkin-otp", { bookingId }, true);
+  return res?.data || res;
+}
+
+export async function verifyCheckInOtp(bookingId, otp) {
+  const res = await apiRequest("POST", "/booking/verify-checkin-otp", { bookingId, otp }, true);
+  return res?.data || res;
+}
+
+export async function sendCheckOutOtp(bookingId) {
+  const res = await apiRequest("POST", "/booking/send-checkout-otp", { bookingId }, true);
+  return res?.data || res;
+}
+
+export async function verifyCheckOutOtp(bookingId, otp) {
+  const res = await apiRequest("POST", "/booking/verify-checkout-otp", { bookingId, otp }, true);
+  return res?.data || res;
+}

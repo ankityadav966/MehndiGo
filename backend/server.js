@@ -88,9 +88,9 @@ initSocket(server);
 const { startScheduler } = require("./services/cron.services");
 startScheduler();
 
-// Connect MongoDB for live tracking
-const connectMongoDB = require("./config/mongodb");
-connectMongoDB();
+// Connect to Redis for live tracking
+const { connectRedis } = require("./config/redis");
+connectRedis();
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(

@@ -2,8 +2,17 @@ const db = require("../models");
 const { Op } = require("sequelize");
 const AppError = require("../utils/errors/app.error");
 const crypto = require("crypto");
+const twilioService = require("../utils/twilio.service");
+
+const checkInFailedAttempts = new Map();
+const checkOutFailedAttempts = new Map();
 
 class BookingService {
+  constructor() {
+    this.createBooking = this.createBooking.bind(this);
+    this.hasRestrictedBooking = this.hasRestrictedBooking.bind(this);
+  }
+
   async calculatePriceDetails(serviceId, couponCode = null, userId = null, slotCount = 1) {
     const service = await db.Service.findByPk(serviceId);
     if (!service) {
@@ -367,16 +376,61 @@ class BookingService {
         );
       }
     } else if (newStatus === "COMPLETED") {
-      updates.booking_status = "CONFIRMED";
-      updates.detailed_status = "WAITING_FOR_USER_PAYMENT";
+      updates.booking_status = "COMPLETED";
+      updates.detailed_status = "COMPLETED";
+      updates.payment_status = "PAID";
       updates.artist_completion_status = "COMPLETED";
       updates.artist_completed_at = new Date();
+      updates.remaining_paid_at = new Date();
+
+      // Credit remaining 90% directly to Artist Wallet on service completion
+      try {
+        const remainingPaid = booking.remaining_amount || 0;
+        const artistProfile = await db.ArtistProfile.findByPk(booking.artist_id);
+        if (artistProfile) {
+          const [artistWallet] = await db.Wallet.findOrCreate({
+            where: { user_id: artistProfile.user_id },
+            defaults: { balance: 0 }
+          });
+          await artistWallet.increment("balance", { by: remainingPaid });
+          
+          const customerUser = await db.User.findByPk(booking.user_id);
+          const customerName = customerUser ? customerUser.name : "Client";
+          await db.WalletTransaction.create({
+            wallet_id: artistWallet.id,
+            booking_id: booking.id,
+            transaction_type: "PAYMENT",
+            amount: remainingPaid,
+            status: "SUCCESS",
+            description: `Mehndi application service payment from customer ${customerName}`
+          });
+          console.log(`[completeService] Credited remaining ₹${remainingPaid} to Artist Wallet`);
+        }
+      } catch (artistErr) {
+        console.error("Error crediting Artist Wallet upon completion:", artistErr.message);
+      }
+
+      // Create success transaction record
+      try {
+        const cfPaymentId = `pay_cash_${Math.random().toString(36).substring(2, 10)}`;
+        await db.Transaction.create({
+          user_id: booking.user_id,
+          booking_id: booking.id,
+          cashfree_order_id: `order_${booking.id}_completion`,
+          cashfree_payment_id: cfPaymentId,
+          amount: booking.remaining_amount || 0,
+          status: "SUCCESS",
+          gateway: "CASH"
+        });
+      } catch (txErr) {
+        console.error("Error creating Transaction upon completion:", txErr.message);
+      }
 
       try {
         await db.Notification.create({
           user_id: booking.user_id,
-          title: "Booking Completed",
-          message: "Your Mehndi service has been completed. Remaining payment is pending. Please complete your payment.",
+          title: "Booking Completed 🎉",
+          message: `Your Mehndi service booking #${booking.booking_code} has been completed and fully paid.`,
           type: "BOOKING",
           data: {
             type: "booking",
@@ -492,11 +546,12 @@ class BookingService {
   }
 
   async hasRestrictedBooking(userId, artistId) {
-    // 1. Check if user has 3 or more active bookings (PENDING or CONFIRMED)
+    // 1. Check if user has 3 or more active bookings (excluding completed, waiting-for-payment, and cancelled bookings)
     const activeBookingsCount = await db.Booking.count({
       where: {
         user_id: userId,
-        booking_status: { [Op.in]: ["PENDING", "CONFIRMED"] }
+        booking_status: { [Op.ne]: "CANCELLED" },
+        detailed_status: { [Op.in]: ["PENDING", "CONFIRMED", "ACCEPTED", "ARTIST_ACCEPTED", "ARTIST_ON_THE_WAY", "ARTIST_ARRIVED", "SERVICE_STARTED", "RESCHEDULED"] }
       }
     });
     if (activeBookingsCount >= 3) {
@@ -507,7 +562,7 @@ class BookingService {
     const disputeCount = await db.Booking.count({
       where: {
         user_id: userId,
-        detailed_status: ["CASH_DISPUTED", "AWAITING_CASH_CONFIRMATION"]
+        detailed_status: { [Op.in]: ["CASH_DISPUTED", "AWAITING_CASH_CONFIRMATION"] }
       }
     });
     if (disputeCount > 0) {
@@ -515,6 +570,345 @@ class BookingService {
     }
 
     return false;
+  }
+
+  async sendCheckInOtp(bookingId, userId) {
+    const booking = await db.Booking.findByPk(bookingId, {
+      include: [{ model: db.User, as: "user", attributes: ["id", "phone", "name"] }]
+    });
+    if (!booking) {
+      throw new AppError("Booking not found", 404);
+    }
+
+    // 60-second resend cooldown
+    if (booking.check_in_otp_expires_at) {
+      const sentAt = new Date(new Date(booking.check_in_otp_expires_at).getTime() - 5 * 60 * 1000);
+      const secondsElapsed = Math.floor((Date.now() - sentAt.getTime()) / 1000);
+      if (secondsElapsed < 60) {
+        throw new AppError(`Please wait ${60 - secondsElapsed} seconds before requesting a new OTP.`, 429);
+      }
+    }
+
+    // Reset failed verification attempts
+    checkInFailedAttempts.delete(booking.id);
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 mins
+
+    const updates = {
+      check_in_otp: otp,
+      check_in_otp_expires_at: expiresAt,
+      check_in_otp_verified: false
+    };
+
+    if (booking.detailed_status === "ARTIST_ON_THE_WAY") {
+      updates.detailed_status = "ARTIST_ARRIVED";
+      try {
+        await db.BookingStatusHistory.create({
+          booking_id: booking.id,
+          status: "ARTIST_ARRIVED",
+          changed_by: userId,
+          notes: "Arrival confirmed automatically via Check-In OTP request"
+        });
+      } catch (historyErr) {
+        console.error("Error creating status history for automatic arrival:", historyErr.message);
+      }
+    }
+
+    await booking.update(updates);
+
+    console.log(`[CHECK_IN_OTP] OTP Generated successfully. Booking ID: ${booking.id}, Customer Phone: ${booking.user?.phone || "N/A"}`);
+    console.log(`[TESTING_OTP_LOG] Generated Check-In OTP: ${otp} for Booking ID: ${booking.id} (Phone: ${booking.user?.phone || "N/A"})`);
+
+    // Send via Twilio SMS
+    let twilioResult = null;
+    if (booking.user && booking.user.phone) {
+      console.log(`[CHECK_IN_OTP] Sending SMS request to: ${booking.user.phone} for Booking ID: ${booking.id}`);
+      twilioResult = await twilioService.sendOtp(booking.user.phone, otp);
+      console.log(`[CHECK_IN_OTP] SMS Provider Response. SID: ${twilioResult?.sid || "N/A"}, Error: ${twilioResult?.error || "None"}, Status: ${twilioResult?.error ? "FAILED" : "SENT"}`);
+    } else {
+      console.log(`[CHECK_IN_OTP] SMS Request Skipped. No mobile number found for Booking ID: ${booking.id}`);
+    }
+
+    // Create system notification for client (do NOT include raw OTP code in notification message)
+    try {
+      await db.Notification.create({
+        user_id: booking.user_id,
+        title: "Artist Has Arrived! 🗓️",
+        message: "Artist has arrived. Please share the OTP sent to your registered mobile number with your Artist to verify Check-In.",
+        type: "BOOKING",
+        data: {
+          type: "booking",
+          event: "checkin_otp_received",
+          bookingId: booking.id
+        }
+      });
+
+      // Emit realtime socket event to customer (do NOT include raw OTP code in socket payload)
+      const { getIO } = require("../sockets/socket");
+      const io = getIO();
+      io.to(booking.user_id.toString()).emit("checkin_otp_received", {
+        bookingId: booking.id,
+        message: "Artist has arrived. A Check-In OTP has been sent to your registered mobile number."
+      });
+    } catch (err) {
+      console.error("Error dispatching Check-In OTP notifications:", err.message);
+    }
+
+    return {
+      success: true,
+      maskedPhone: booking.user?.phone ? booking.user.phone.replace(/.(?=.{4})/g, "*") : "Customer"
+    };
+  }
+
+  async verifyCheckInOtp(bookingId, otp, userId) {
+    const booking = await db.Booking.findByPk(bookingId);
+    if (!booking) {
+      throw new AppError("Booking not found", 404);
+    }
+
+    const attempts = (checkInFailedAttempts.get(booking.id) || 0) + 1;
+    checkInFailedAttempts.set(booking.id, attempts);
+
+    if (!booking.check_in_otp || booking.check_in_otp !== otp || new Date() > new Date(booking.check_in_otp_expires_at)) {
+      console.log(`[CHECK_IN_OTP_VERIFY] Verification Status: FAILED. Booking ID: ${booking.id}, Attempt: ${attempts}/3, Reason: Invalid or expired OTP`);
+      if (attempts >= 3) {
+        await booking.update({
+          check_in_otp: null,
+          check_in_otp_expires_at: null
+        });
+        checkInFailedAttempts.delete(booking.id);
+        throw new AppError("Too many incorrect attempts. Please request a new OTP.", 400);
+      }
+      throw new AppError("Invalid or expired Check-In OTP", 400);
+    }
+
+    console.log(`[CHECK_IN_OTP_VERIFY] Verification Status: SUCCESS. Booking ID: ${booking.id}`);
+    checkInFailedAttempts.delete(booking.id);
+
+    await booking.update({
+      booking_status: "CONFIRMED",
+      detailed_status: "SERVICE_STARTED",
+      check_in_otp_verified: true,
+      check_in_time: new Date()
+    });
+
+    await db.BookingStatusHistory.create({
+      booking_id: booking.id,
+      status: "SERVICE_STARTED",
+      changed_by: userId,
+      notes: "Check-In OTP verified successfully. Service started."
+    });
+
+    // Notify customer and artist
+    try {
+      await db.Notification.create({
+        user_id: booking.user_id,
+        title: "Service Started! 💅",
+        message: `Your Mehndi service has officially started.`,
+        type: "BOOKING",
+        data: { type: "booking", event: "service_started", bookingId: booking.id }
+      });
+
+      const artistProfile = await db.ArtistProfile.findByPk(booking.artist_id);
+      if (artistProfile) {
+        await db.Notification.create({
+          user_id: artistProfile.user_id,
+          title: "Check-In Confirmed! ✅",
+          message: `Check-In verified. Service started for Booking #${booking.booking_code}.`,
+          type: "BOOKING",
+          data: { type: "booking", event: "service_started", bookingId: booking.id }
+        });
+      }
+
+      // Emit realtime socket event to customer
+      const { getIO } = require("../sockets/socket");
+      const io = getIO();
+      io.to(booking.user_id.toString()).emit("service_started", { bookingId: booking.id });
+    } catch (err) {
+      console.error("Error dispatching Check-In confirmations:", err.message);
+    }
+
+    return { success: true, booking };
+  }
+
+  async sendCheckOutOtp(bookingId, userId) {
+    const booking = await db.Booking.findByPk(bookingId, {
+      include: [{ model: db.User, as: "user", attributes: ["id", "phone", "name"] }]
+    });
+    if (!booking) {
+      throw new AppError("Booking not found", 404);
+    }
+
+    // 60-second resend cooldown
+    if (booking.check_out_otp_expires_at) {
+      const sentAt = new Date(new Date(booking.check_out_otp_expires_at).getTime() - 5 * 60 * 1000);
+      const secondsElapsed = Math.floor((Date.now() - sentAt.getTime()) / 1000);
+      if (secondsElapsed < 60) {
+        throw new AppError(`Please wait ${60 - secondsElapsed} seconds before requesting a new OTP.`, 429);
+      }
+    }
+
+    // Reset failed verification attempts
+    checkOutFailedAttempts.delete(booking.id);
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 mins
+
+    await booking.update({
+      check_out_otp: otp,
+      check_out_otp_expires_at: expiresAt,
+      check_out_otp_verified: false
+    });
+
+    console.log(`[CHECK_OUT_OTP] OTP Generated successfully. Booking ID: ${booking.id}, Customer Phone: ${booking.user?.phone || "N/A"}`);
+    console.log(`[TESTING_OTP_LOG] Generated Check-Out OTP: ${otp} for Booking ID: ${booking.id} (Phone: ${booking.user?.phone || "N/A"})`);
+
+    // Send via Twilio SMS
+    let twilioResult = null;
+    if (booking.user && booking.user.phone) {
+      console.log(`[CHECK_OUT_OTP] Sending SMS request to: ${booking.user.phone} for Booking ID: ${booking.id}`);
+      twilioResult = await twilioService.sendOtp(booking.user.phone, otp);
+      console.log(`[CHECK_OUT_OTP] SMS Provider Response. SID: ${twilioResult?.sid || "N/A"}, Error: ${twilioResult?.error || "None"}, Status: ${twilioResult?.error ? "FAILED" : "SENT"}`);
+    } else {
+      console.log(`[CHECK_OUT_OTP] SMS Request Skipped. No mobile number found for Booking ID: ${booking.id}`);
+    }
+
+    // Create system notification for client (do NOT include raw OTP code in notification message)
+    try {
+      await db.Notification.create({
+        user_id: booking.user_id,
+        title: "Service Completion Request 🌟",
+        message: "Your Mehndi service has been completed. Please share the OTP sent to your registered mobile number with your Artist to verify Check-Out.",
+        type: "BOOKING",
+        data: {
+          type: "booking",
+          event: "checkout_otp_received",
+          bookingId: booking.id
+        }
+      });
+
+      // Emit realtime socket event to customer (do NOT include raw OTP code in socket payload)
+      const { getIO } = require("../sockets/socket");
+      const io = getIO();
+      io.to(booking.user_id.toString()).emit("checkout_otp_received", {
+        bookingId: booking.id,
+        message: "Your service has been completed. Please share the OTP sent to your registered mobile number."
+      });
+    } catch (err) {
+      console.error("Error dispatching Check-Out OTP notifications:", err.message);
+    }
+
+    return { success: true };
+  }
+
+  async verifyCheckOutOtp(bookingId, otp, userId) {
+    const booking = await db.Booking.findByPk(bookingId);
+    if (!booking) {
+      throw new AppError("Booking not found", 404);
+    }
+
+    const attempts = (checkOutFailedAttempts.get(booking.id) || 0) + 1;
+    checkOutFailedAttempts.set(booking.id, attempts);
+
+    if (!booking.check_out_otp || booking.check_out_otp !== otp || new Date() > new Date(booking.check_out_otp_expires_at)) {
+      console.log(`[CHECK_OUT_OTP_VERIFY] Verification Status: FAILED. Booking ID: ${booking.id}, Attempt: ${attempts}/3, Reason: Invalid or expired OTP`);
+      if (attempts >= 3) {
+        await booking.update({
+          check_out_otp: null,
+          check_out_otp_expires_at: null
+        });
+        checkOutFailedAttempts.delete(booking.id);
+        throw new AppError("Too many incorrect attempts. Please request a new OTP.", 400);
+      }
+      throw new AppError("Invalid or expired Check-Out OTP", 400);
+    }
+
+    console.log(`[CHECK_OUT_OTP_VERIFY] Verification Status: SUCCESS. Booking ID: ${booking.id}`);
+    checkOutFailedAttempts.delete(booking.id);
+
+    const checkInTime = booking.check_in_time || new Date(Date.now() - 30 * 60 * 1000); // fallback 30m duration
+    const checkOutTime = new Date();
+    const duration = Math.round((checkOutTime - checkInTime) / (60 * 1000)) || 1;
+
+    await booking.update({
+      booking_status: "COMPLETED",
+      detailed_status: "COMPLETED",
+      payment_status: "PAID",
+      check_out_otp_verified: true,
+      check_out_time: checkOutTime,
+      service_duration: duration
+    });
+
+    // Credit remaining 90% directly to Artist Wallet on service completion
+    try {
+      const remainingPaid = booking.remaining_amount || 0;
+      const artistProfile = await db.ArtistProfile.findByPk(booking.artist_id);
+      if (artistProfile) {
+        const [artistWallet] = await db.Wallet.findOrCreate({
+          where: { user_id: artistProfile.user_id },
+          defaults: { balance: 0 }
+        });
+        await artistWallet.increment("balance", { by: remainingPaid });
+        
+        const customerUser = await db.User.findByPk(booking.user_id);
+        const customerName = customerUser ? customerUser.name : "Client";
+        await db.WalletTransaction.create({
+          wallet_id: artistWallet.id,
+          booking_id: booking.id,
+          transaction_type: "PAYMENT",
+          amount: remainingPaid,
+          status: "SUCCESS",
+          description: `Mehndi application service payment from customer ${customerName}`
+        });
+        console.log(`[completeService-OTP] Credited remaining ₹${remainingPaid} to Artist Wallet`);
+      }
+    } catch (artistErr) {
+      console.error("Error crediting Artist Wallet upon completion:", artistErr.message);
+    }
+
+    // Create success transaction record
+    try {
+      const cfPaymentId = `pay_cash_${Math.random().toString(36).substring(2, 10)}`;
+      await db.Transaction.create({
+        user_id: booking.user_id,
+        booking_id: booking.id,
+        cashfree_order_id: `order_${booking.id}_completion`,
+        cashfree_payment_id: cfPaymentId,
+        amount: booking.remaining_amount || 0,
+        status: "SUCCESS",
+        gateway: "CASH"
+      });
+    } catch (txErr) {
+      console.error("Error creating Transaction upon completion:", txErr.message);
+    }
+
+    await db.BookingStatusHistory.create({
+      booking_id: booking.id,
+      status: "COMPLETED",
+      changed_by: userId,
+      notes: `Check-Out OTP verified successfully. Service completed. Duration: ${duration} mins.`
+    });
+
+    // Notify customer and artist
+    try {
+      await db.Notification.create({
+        user_id: booking.user_id,
+        title: "Service Completed successfully! 🎉",
+        message: `Your Mehndi service has been completed. Thank you for using MehndiGo!`,
+        type: "BOOKING",
+        data: { type: "booking", event: "booking_completed", bookingId: booking.id }
+      });
+
+      // Emit realtime socket event to customer
+      const { getIO } = require("../sockets/socket");
+      const io = getIO();
+      io.to(booking.user_id.toString()).emit("booking_completed", { bookingId: booking.id });
+    } catch (err) {
+      console.error("Error dispatching Check-Out confirmations:", err.message);
+    }
+
+    return { success: true, booking };
   }
 }
 

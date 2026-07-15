@@ -30,8 +30,20 @@ services:
     networks:
       - mehndigo_dev_network
 
+  redis:
+    image: redis:7-alpine
+    container_name: mehndigo_dev_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_dev_data:/data
+    networks:
+      - mehndigo_dev_network
+
 volumes:
   pg_dev_data:
+  redis_dev_data:
 
 networks:
   mehndigo_dev_network:

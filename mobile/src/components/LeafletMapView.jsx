@@ -102,35 +102,64 @@ const htmlContent = `
         if (artist) {
           if (!artistMarker) {
             artistMarker = L.marker([artist.lat, artist.lng], { icon: artistIcon }).addTo(map).bindPopup('<b>Artist Location</b>');
+            map.setView([artist.lat, artist.lng], 15);
           } else {
-            // Animate smoothly over 3.5 seconds to bridge the 5-second tick interval
             animateMarker(artistMarker, artist.lat, artist.lng, 3500);
+            map.panTo([artist.lat, artist.lng]);
           }
         }
 
         if (customer && artist) {
-          const latlngs = [
-            [customer.lat, customer.lng],
-            [artist.lat, artist.lng]
-          ];
-          
-          if (!pathPolyline) {
-            pathPolyline = L.polyline(latlngs, { 
-              color: '#FF4D6D', 
-              weight: 4, 
-              opacity: 0.8,
-              dashArray: '6, 6'
-            }).addTo(map);
-          } else {
-            pathPolyline.setLatLngs(latlngs);
-          }
+          var url = 'https://router.project-osrm.org/route/v1/driving/' + artist.lng + ',' + artist.lat + ';' + customer.lng + ',' + customer.lat + '?overview=full&geometries=geojson';
+          fetch(url)
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+              if (data.routes && data.routes.length > 0) {
+                const route = data.routes[0];
+                const routeCoords = route.geometry.coordinates.map(function(c) {
+                  return [c[1], c[0]];
+                });
 
-          // Auto fit bounds on initial load
-          if (!didFitBounds) {
-            const group = new L.featureGroup([customerMarker, artistMarker]);
-            map.fitBounds(group.getBounds().pad(0.18));
-            didFitBounds = true;
-          }
+                if (!pathPolyline) {
+                  pathPolyline = L.polyline(routeCoords, {
+                    color: '#1A73E8',
+                    weight: 6,
+                    opacity: 0.85
+                  }).addTo(map);
+                } else {
+                  pathPolyline.setLatLngs(routeCoords);
+                }
+
+                window.ReactNativeWebView.postMessage(JSON.stringify({
+                  type: 'ROUTE_INFO',
+                  distance: route.distance / 1000,
+                  duration: route.duration / 60
+                }));
+
+                if (!didFitBounds) {
+                  const group = new L.featureGroup([customerMarker, artistMarker]);
+                  map.fitBounds(group.getBounds().pad(0.18));
+                  didFitBounds = true;
+                }
+              }
+            })
+            .catch(function(err) {
+              console.warn("OSRM routing failed, drawing straight line fallback:", err);
+              const fallbackLatLngs = [
+                [customer.lat, customer.lng],
+                [artist.lat, artist.lng]
+              ];
+              if (!pathPolyline) {
+                pathPolyline = L.polyline(fallbackLatLngs, {
+                  color: '#1A73E8',
+                  weight: 6,
+                  opacity: 0.85,
+                  dashArray: '5, 5'
+                }).addTo(map);
+              } else {
+                pathPolyline.setLatLngs(fallbackLatLngs);
+              }
+            });
         }
       } catch (err) {
         console.error("[LeafletWebView] Error rendering:", err);
@@ -143,7 +172,7 @@ const htmlContent = `
 </html>
 `;
 
-export default function LeafletMapView({ customerCoords, artistCoords }) {
+export default function LeafletMapView({ customerCoords, artistCoords, onRouteUpdate }) {
   const webviewRef = useRef(null);
 
   // Propagate coords updates to WebView context
@@ -168,6 +197,10 @@ export default function LeafletMapView({ customerCoords, artistCoords }) {
             artist: artistCoords
           })
         );
+      } else if (data.type === "ROUTE_INFO") {
+        if (onRouteUpdate) {
+          onRouteUpdate(data.distance, data.duration);
+        }
       }
     } catch (e) {
       console.warn("[LeafletMapView] handleMessage error:", e);

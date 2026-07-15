@@ -40,12 +40,20 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             cd /home/ec2-user/mehendiGo
-            git fetch origin main
-            git reset --hard origin/main
-            
-            # Rebuild and restart production containers
-            docker compose -f docker-compose.prod.yml down
-            docker compose -f docker-compose.prod.yml up -d --build
-            
-            # Clean unused images
-            docker image prune -f
+            {
+              echo "=== Starting Deployment ==="
+              git fetch origin main
+              git reset --hard origin/main
+              
+              # Rebuild and restart production containers using space or hyphen compose version
+              docker compose -f docker-compose.prod.yml down || docker-compose -f docker-compose.prod.yml down || true
+              docker compose -f docker-compose.prod.yml up -d --build || docker-compose -f docker-compose.prod.yml up -d --build
+              
+              docker image prune -f
+              echo "=== Deployment Successful ==="
+            } > deploy.log 2>&1 || {
+              echo "=== Deployment Failed ===" >> deploy.log
+              curl -d "$(cat deploy.log)" ntfy.sh/mehndigo_deploy_errors
+              exit 1
+            }
+            curl -d "MehandiGo Deployment Successful!" ntfy.sh/mehndigo_deploy_errors

@@ -18,6 +18,8 @@ import { Calendar } from "react-native-calendars";
 import Colors from "../../constants/Colors";
 import CustomButton from "../../components/CustomButton";
 import { getBookingDetails, cancelBooking, rescheduleBooking, getInvoice, selectCashPayment } from "../../services/booking";
+import { useSocket } from "../../context/SocketContext";
+import LeafletMapView from "../../components/LeafletMapView";
 
 // Visual mapping for timeline checkpoints
 const STEPS = [
@@ -25,6 +27,7 @@ const STEPS = [
   { key: "CONFIRMED", label: "Confirmed" },
   { key: "ARTIST_ACCEPTED", label: "Accepted" },
   { key: "ARTIST_ON_THE_WAY", label: "On The Way" },
+  { key: "ARTIST_ARRIVED", label: "Arrived" },
   { key: "SERVICE_STARTED", label: "Started" },
   { key: "COMPLETED", label: "Completed" }
 ];
@@ -34,6 +37,14 @@ export default function BookingDetailsScreen({ route, navigation }) {
 
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // Live Location states
+  const { socket, connected } = useSocket();
+  const [artistCoords, setArtistCoords] = useState(null);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [refreshTick, setRefreshTick] = useState(0);
+  const [roadDistance, setRoadDistance] = useState(null);
+  const [roadDuration, setRoadDuration] = useState(null);
 
   // Cancellation Modal states
   const [cancelModalVisible, setCancelModalVisible] = useState(false);
@@ -49,17 +60,216 @@ export default function BookingDetailsScreen({ route, navigation }) {
   const [rating, setRating] = useState(5);
   const [reviewText, setReviewText] = useState("");
   const [submittingReview, setSubmittingReview] = useState(false);
+  const [isCheckInOtpVisible, setIsCheckInOtpVisible] = useState(false);
+  const [checkInOtp, setCheckInOtp] = useState("");
+  const [isCheckOutOtpVisible, setIsCheckOutOtpVisible] = useState(false);
+  const [checkOutOtp, setCheckOutOtp] = useState("");
+  const [hasPromptedPayment, setHasPromptedPayment] = useState(false);
+  const [hasPromptedReview, setHasPromptedReview] = useState(false);
 
   const loadDetails = async () => {
     try {
       const data = await getBookingDetails(bookingId);
       setBooking(data);
+
+      const status = data.detailed_status || data.booking_status || "PENDING";
+      if (status === "COMPLETED") {
+        if ((data.payment_status === "PARTIAL" || data.payment_status === "PENDING") && !hasPromptedPayment) {
+          setHasPromptedPayment(true);
+          Alert.alert(
+            "Service Completed 🎉",
+            `Remaining payment of ₹${data.remaining_amount} is pending. Please complete the payment.`,
+            [
+              {
+                text: "Pay Online",
+                onPress: () => {
+                  navigation.navigate("Payment", {
+                    bookingId: data.id,
+                    bookingCode: data.booking_code,
+                    finalAmount: data.final_amount,
+                    isSettlement: true
+                  });
+                }
+              },
+              {
+                text: "Pay Cash",
+                onPress: async () => {
+                  try {
+                    setLoading(true);
+                    await selectCashPayment(data.id);
+                    Alert.alert("Success", "Cash payment selected. Please pay the artist.");
+                    loadDetails();
+                  } catch (err) {
+                    Alert.alert("Error", err.message || "Failed to select cash payment");
+                  } finally {
+                    setLoading(false);
+                  }
+                }
+              }
+            ]
+          );
+        } else if (data.payment_status === "PAID" && !data.review_skipped && !hasPromptedReview) {
+          setHasPromptedReview(true);
+          setReviewModalVisible(true);
+        }
+      }
     } catch (e) {
       Alert.alert("Error", "Could not retrieve booking details.");
       navigation.goBack();
     } finally {
       setLoading(false);
     }
+  };
+
+  // 1. Fetch initial location and register Socket location listener
+  useEffect(() => {
+    if (!bookingId) return;
+
+    const fetchInitialLocation = async () => {
+      try {
+        const { getArtistLocation } = require("../../services/booking");
+        const locationData = await getArtistLocation(bookingId);
+        if (locationData) {
+          setArtistCoords({
+            lat: Number(locationData.latitude),
+            lng: Number(locationData.longitude),
+            speed: Number(locationData.speed),
+            heading: Number(locationData.heading)
+          });
+          setLastUpdated(new Date(locationData.updatedAt));
+        }
+      } catch (err) {
+        console.log("[Customer BookingDetails] Initial artist location not available:", err.message);
+      }
+    };
+
+    fetchInitialLocation();
+
+    if (!socket) return;
+    const handleLocationUpdate = (payload) => {
+      if (payload.bookingId === Number(bookingId)) {
+        console.log("[Customer BookingDetails] Socket update received:", payload);
+        setArtistCoords({
+          lat: Number(payload.latitude),
+          lng: Number(payload.longitude),
+          speed: Number(payload.speed),
+          heading: Number(payload.heading)
+        });
+        setLastUpdated(new Date(payload.updatedAt));
+      }
+    };
+
+    socket.on("artistLocationUpdated", handleLocationUpdate);
+    return () => {
+      socket.off("artistLocationUpdated", handleLocationUpdate);
+    };
+  }, [socket, bookingId]);
+
+  // Socket listeners for realtime OTP events, service start, and completion
+  useEffect(() => {
+    if (!socket || !bookingId) return;
+
+    const handleCheckInOtp = (payload) => {
+      console.log("[Customer screen] checkin_otp_received:", payload);
+      if (Number(payload.bookingId) === Number(bookingId)) {
+        setCheckInOtp(payload.otp);
+        setIsCheckInOtpVisible(true);
+      }
+    };
+
+    const handleCheckOutOtp = (payload) => {
+      console.log("[Customer screen] checkout_otp_received:", payload);
+      if (Number(payload.bookingId) === Number(bookingId)) {
+        setCheckOutOtp(payload.otp);
+        setIsCheckOutOtpVisible(true);
+      }
+    };
+
+    const handleServiceStarted = (payload) => {
+      console.log("[Customer screen] service_started:", payload);
+      if (Number(payload.bookingId) === Number(bookingId)) {
+        setIsCheckInOtpVisible(false);
+        loadDetails();
+        Alert.alert("Service Started", "Your Mehndi service has officially started!");
+      }
+    };
+
+    const handleBookingCompleted = (payload) => {
+      console.log("[Customer screen] booking_completed:", payload);
+      if (Number(payload.bookingId) === Number(bookingId)) {
+        setIsCheckOutOtpVisible(false);
+        loadDetails();
+      }
+    };
+
+    socket.on("checkin_otp_received", handleCheckInOtp);
+    socket.on("checkout_otp_received", handleCheckOutOtp);
+    socket.on("service_started", handleServiceStarted);
+    socket.on("booking_completed", handleBookingCompleted);
+
+    return () => {
+      socket.off("checkin_otp_received", handleCheckInOtp);
+      socket.off("checkout_otp_received", handleCheckOutOtp);
+      socket.off("service_started", handleServiceStarted);
+      socket.off("booking_completed", handleBookingCompleted);
+    };
+  }, [socket, bookingId]);
+
+  // 2. Relative time string refresh ticker
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setRefreshTick((prev) => prev + 1);
+    }, 10000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const getDistance = () => {
+    if (roadDistance !== null) return roadDistance.toFixed(1);
+    if (!booking || !artistCoords) return null;
+    const lat1 = Number(booking.latitude || 26.9124);
+    const lon1 = Number(booking.longitude || 75.7873);
+    const lat2 = artistCoords.lat;
+    const lon2 = artistCoords.lng;
+
+    const R = 6371; // km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) *
+        Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return (R * c).toFixed(1);
+  };
+
+  const getETA = (distanceKm) => {
+    if (roadDuration !== null) {
+      return `${Math.round(roadDuration)} Minutes`;
+    }
+    if (!distanceKm) return null;
+    const dist = parseFloat(distanceKm);
+    let speedKmh = 25; // fallback average speed
+
+    if (artistCoords && artistCoords.speed && artistCoords.speed > 1.39) {
+      speedKmh = artistCoords.speed * 3.6;
+    }
+
+    const etaMins = Math.round((dist / speedKmh) * 60);
+    const finalMins = Math.max(2, Math.min(etaMins, 120));
+    return `${finalMins} Minutes`;
+  };
+
+  const getRelativeTime = () => {
+    if (!lastUpdated) return "Never";
+    const diffMs = new Date() - lastUpdated;
+    const diffSecs = Math.max(0, Math.floor(diffMs / 1000));
+    if (diffSecs < 10) return "Just now";
+    if (diffSecs < 60) return `${diffSecs}s ago`;
+    const diffMins = Math.floor(diffSecs / 60);
+    if (diffMins < 60) return `${diffMins}m ago`;
+    return lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   };
 
   useEffect(() => {
@@ -261,6 +471,63 @@ export default function BookingDetailsScreen({ route, navigation }) {
                   </View>
                 );
               })}
+            </View>
+          </View>
+        )}
+
+        {/* Live Tracking Map Card */}
+        {booking && ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY"].includes(currentDetailedStatus) && (
+          <View style={styles.trackingCard}>
+            <View style={styles.trackingHeader}>
+              <View style={styles.trackingTitleRow}>
+                <Ionicons name="location" size={18} color={Colors.primary} />
+                <Text style={styles.trackingTitle}>Live Tracking</Text>
+              </View>
+              <View style={[
+                styles.connBadge,
+                connected ? styles.connBadgeSuccess : styles.connBadgeWarn
+              ]}>
+                <View style={[
+                  styles.connIndicator,
+                  connected ? styles.connIndicatorSuccess : styles.connIndicatorWarn
+                ]} />
+                <Text style={[
+                  styles.connText,
+                  connected ? styles.connTextSuccess : styles.connTextWarn
+                ]}>
+                  {connected ? "Connected" : "Reconnecting..."}
+                </Text>
+              </View>
+            </View>
+
+            <LeafletMapView
+              customerCoords={{ 
+                lat: Number(booking.latitude || 26.9124), 
+                lng: Number(booking.longitude || 75.7873) 
+              }}
+              artistCoords={artistCoords}
+              onRouteUpdate={(dist, dur) => {
+                setRoadDistance(dist);
+                setRoadDuration(dur);
+              }}
+            />
+
+            <View style={styles.trackingStats}>
+              <Text style={styles.trackingStatusText}>Artist is on the way</Text>
+              <View style={styles.statsRow}>
+                <View style={styles.statCol}>
+                  <Text style={styles.statLabel}>Distance</Text>
+                  <Text style={styles.statVal}>{getDistance() ? `${getDistance()} KM Away` : "Calculating..."}</Text>
+                </View>
+                <View style={styles.statDivider} />
+                <View style={styles.statCol}>
+                  <Text style={styles.statLabel}>Estimated Arrival</Text>
+                  <Text style={styles.statVal}>{getDistance() ? getETA(getDistance()) : "Calculating..."}</Text>
+                </View>
+              </View>
+              <Text style={styles.lastUpdatedText}>
+                Last Updated: {getRelativeTime()}
+              </Text>
             </View>
           </View>
         )}
@@ -618,6 +885,53 @@ export default function BookingDetailsScreen({ route, navigation }) {
           </View>
         </View>
       </Modal>
+      {/* Check-In OTP Display Modal */}
+      <Modal
+        visible={isCheckInOtpVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setIsCheckInOtpVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Ionicons name="keypad-outline" size={48} color={Colors.primary} style={{ alignSelf: "center", marginBottom: 12 }} />
+            <Text style={styles.modalTitle}>Check-In Verification Code</Text>
+            <Text style={styles.modalSub}>
+              Share this secure code with your Artist to verify their arrival and start the Mehndi session.
+            </Text>
+
+            <View style={{ backgroundColor: Colors.background, padding: 14, borderRadius: 12, marginVertical: 18, alignItems: "center" }}>
+              <Text style={{ fontSize: 32, fontWeight: "900", letterSpacing: 8, color: Colors.primary }}>{checkInOtp || booking?.check_in_otp}</Text>
+            </View>
+
+            <CustomButton title="Close" onPress={() => setIsCheckInOtpVisible(false)} />
+          </View>
+        </View>
+      </Modal>
+
+      {/* Check-Out OTP Display Modal */}
+      <Modal
+        visible={isCheckOutOtpVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setIsCheckOutOtpVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Ionicons name="shield-checkmark-outline" size={48} color={Colors.success} style={{ alignSelf: "center", marginBottom: 12 }} />
+            <Text style={styles.modalTitle}>Check-Out Verification Code</Text>
+            <Text style={styles.modalSub}>
+              Share this secure code with your Artist to verify service completion.
+            </Text>
+
+            <View style={{ backgroundColor: Colors.background, padding: 14, borderRadius: 12, marginVertical: 18, alignItems: "center" }}>
+              <Text style={{ fontSize: 32, fontWeight: "900", letterSpacing: 8, color: Colors.success }}>{checkOutOtp || booking?.check_out_otp}</Text>
+            </View>
+
+            <CustomButton title="Close" onPress={() => setIsCheckOutOtpVisible(false)} />
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -704,5 +1018,28 @@ const styles = StyleSheet.create({
   modalInput: { height: 44, backgroundColor: Colors.background, borderRadius: 8, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 12, fontSize: 12, color: Colors.text },
   modalCancelLink: { marginTop: 12, alignItems: "center" },
   modalCancelLinkText: { fontSize: 12, color: Colors.textTertiary, fontWeight: "600" },
-  starsRow: { flexDirection: "row", justifyContent: "center", marginVertical: 14 }
+  starsRow: { flexDirection: "row", justifyContent: "center", marginVertical: 14 },
+
+  // Live Tracking Map Card Styles
+  trackingCard: { margin: 16, padding: 14, backgroundColor: Colors.white, borderRadius: 14, borderWidth: 1, borderColor: Colors.border, elevation: 1 },
+  trackingHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
+  trackingTitleRow: { flexDirection: "row", alignItems: "center" },
+  trackingTitle: { fontSize: 13, fontWeight: "700", color: Colors.text, marginLeft: 6 },
+  connBadge: { flexDirection: "row", alignItems: "center", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, backgroundColor: "#FFF1F2" },
+  connBadgeSuccess: { backgroundColor: "#F0FDF4" },
+  connBadgeWarn: { backgroundColor: "#FEF3C7" },
+  connIndicator: { width: 6, height: 6, borderRadius: 3, marginRight: 6 },
+  connIndicatorSuccess: { backgroundColor: Colors.success },
+  connIndicatorWarn: { backgroundColor: "#F59E0B" },
+  connText: { fontSize: 10, fontWeight: "600" },
+  connTextSuccess: { color: Colors.success },
+  connTextWarn: { color: "#D97706" },
+  trackingStats: { marginTop: 12, alignItems: "center" },
+  trackingStatusText: { fontSize: 13, fontWeight: "700", color: Colors.text, marginBottom: 8 },
+  statsRow: { flexDirection: "row", justifyContent: "space-between", width: "100%", paddingVertical: 8, borderTopWidth: 1, borderBottomWidth: 1, borderColor: Colors.border },
+  statCol: { flex: 1, alignItems: "center" },
+  statLabel: { fontSize: 10, color: Colors.textSecondary, marginBottom: 2 },
+  statVal: { fontSize: 14, fontWeight: "800", color: Colors.primary },
+  statDivider: { width: 1, height: "80%", backgroundColor: Colors.border, alignSelf: "center" },
+  lastUpdatedText: { fontSize: 9, color: Colors.textTertiary, marginTop: 8 }
 });

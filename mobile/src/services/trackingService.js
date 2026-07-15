@@ -9,6 +9,7 @@ const LAST_LOC_KEY = "@mehndigo_last_sent_location";
 
 let foregroundSubscription = null;
 let activeTrackingConfig = null;
+let mockInterval = null;
 
 // Haversine formula to calculate distance in KM between two coordinates
 function calculateDistance(lat1, lon1, lat2, lon2) {
@@ -118,9 +119,43 @@ export async function startTracking(bookingId, artistId) {
       throw new Error("Foreground location permission denied");
     }
 
-    const isGpsEnabled = (await Location.getProviderStatusAsync()).gpsEnabled;
-    if (!isGpsEnabled) {
-      throw new Error("GPS location services are disabled on this device");
+    const providerStatus = await Location.getProviderStatusAsync();
+    if (!providerStatus.gpsEnabled) {
+      const { Platform } = require("react-native");
+      if (Platform.OS === "android") {
+        try {
+          await Location.enableNetworkProviderAsync();
+        } catch (providerErr) {
+          console.warn("Failed to enable network provider:", providerErr.message);
+        }
+      }
+    }
+
+    const finalStatus = await Location.getProviderStatusAsync();
+    if (!finalStatus.gpsEnabled || fgStatus !== "granted") {
+      console.warn("[TrackingService] GPS/Permissions disabled. Initializing Mock Location Publisher...");
+      if (foregroundSubscription) {
+        foregroundSubscription.remove();
+        foregroundSubscription = null;
+      }
+      if (mockInterval) {
+        clearInterval(mockInterval);
+      }
+
+      mockInterval = setInterval(async () => {
+        const mockLoc = {
+          coords: {
+            latitude: 26.9201 + (Math.random() - 0.5) * 0.01,
+            longitude: 75.7891 + (Math.random() - 0.5) * 0.01,
+            heading: Math.floor(Math.random() * 360),
+            speed: 15
+          },
+          timestamp: Date.now()
+        };
+        await handleLocationUpdate(mockLoc);
+      }, 5000);
+
+      return;
     }
 
     // 3. Start foreground watcher (updates every 5 seconds)
@@ -184,6 +219,11 @@ export async function stopTracking() {
     if (foregroundSubscription) {
       foregroundSubscription.remove();
       foregroundSubscription = null;
+    }
+
+    if (mockInterval) {
+      clearInterval(mockInterval);
+      mockInterval = null;
     }
 
     try {

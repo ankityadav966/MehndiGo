@@ -28,6 +28,7 @@
     "nodemon": "^3.1.14",
     "pg": "^8.21.0",
     "pg-hstore": "^2.3.4",
+    "redis": "^6.1.0",
     "sequelize": "^6.37.8",
     "socket.io": "^4.8.3",
     "twilio": "^6.0.2"

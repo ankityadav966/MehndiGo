@@ -1646,9 +1646,10 @@ async createReview(data) {
     // 3. Status filter
     if (status) {
       if (status === "Completed") {
-        where.booking_status = "COMPLETED";
+        where.detailed_status = { [db.Sequelize.Op.in]: ["WAITING_FOR_USER_PAYMENT", "COMPLETED", "COMPLETED_CLOSED"] };
       } else if (status === "Accepted") {
         where.booking_status = "CONFIRMED";
+        where.detailed_status = { [db.Sequelize.Op.in]: ["CONFIRMED", "ACCEPTED", "ARTIST_ACCEPTED", "ARTIST_ON_THE_WAY", "ARTIST_ARRIVED", "SERVICE_STARTED", "RESCHEDULED"] };
       } else if (status === "Rejected") {
         where.booking_status = "CANCELLED";
         where.detailed_status = "REJECTED";
@@ -2065,6 +2066,7 @@ async createReview(data) {
 
 function getLeadStatus(booking) {
   if (booking.booking_status === "COMPLETED") return "Completed";
+  if (["WAITING_FOR_USER_PAYMENT", "COMPLETED_CLOSED"].includes(booking.detailed_status)) return "Completed";
   if (booking.booking_status === "CONFIRMED") return "Accepted";
   
   if (booking.booking_status === "PENDING") {

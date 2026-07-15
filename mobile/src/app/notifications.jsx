@@ -6,7 +6,7 @@ import { getGlobalStyles } from '../theme/globalStyles';
 import { Colors } from '../theme/colors';
 import { Bell, Check } from 'lucide-react-native';
 
-const SOCKET_URL = 'http://98.70.11.123:8000';
+const SOCKET_URL = 'http://192.168.1.26:8000';
 
 export default function NotificationsScreen() {
   const { user, theme } = useAuth();

@@ -11,8 +11,8 @@ import { secureStorage } from "../utils/storage";
  * for release and the correct URL will be resolved automatically.
  */
 const getBaseUrl = () => {
-  // Try loading from environment variables, fallback to live backend
-  const envUrl = process.env.EXPO_PUBLIC_API_URL || "http://98.70.11.123:3000/api/v1";
+  // Try loading from environment variables, fallback to local backend
+  const envUrl = process.env.EXPO_PUBLIC_API_URL || "http://192.168.1.26:8000/api/v1";
   return envUrl.endsWith("/") ? envUrl.slice(0, -1) : envUrl;
 };
 

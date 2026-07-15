@@ -16,8 +16,14 @@ router.put("/cancel", authenticate, BookingController.cancelBooking);
 router.put("/reschedule", authenticate, BookingController.rescheduleBooking);
 router.put("/accept", authenticate, BookingController.acceptBooking);
 router.put("/reject", authenticate, BookingController.rejectBooking);
+router.put("/on-the-way", authenticate, BookingController.updateOnTheWay);
+router.put("/arrived", authenticate, BookingController.updateArrived);
 router.put("/start", authenticate, BookingController.startService);
 router.put("/complete", authenticate, BookingController.completeService);
+router.post("/send-checkin-otp", authenticate, BookingController.sendCheckInOtp);
+router.post("/verify-checkin-otp", authenticate, BookingController.verifyCheckInOtp);
+router.post("/send-checkout-otp", authenticate, BookingController.sendCheckOutOtp);
+router.post("/verify-checkout-otp", authenticate, BookingController.verifyCheckOutOtp);
 router.put("/skip-review", authenticate, BookingController.skipReview);
 
 // Coupon validations
@@ -35,6 +41,7 @@ router.get("/invoice", authenticate, BookingController.getInvoice);
 
 // Live Tracking Location Query
 const TrackingController = require("../controllers/tracking/tracking.controller");
+router.get("/:bookingId/live-location", authenticate, TrackingController.getArtistLocation);
 router.get("/:bookingId/location", authenticate, TrackingController.getArtistLocation);
 
 module.exports = router;
