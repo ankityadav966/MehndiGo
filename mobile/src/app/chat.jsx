@@ -8,7 +8,7 @@ import { Colors } from '../theme/colors';
 import { chatService, adminService, artistService } from '../services/api';
 import { Send, User, ChevronLeft, MessageSquare } from 'lucide-react-native';
 
-const SOCKET_URL = 'http://192.168.1.26:8000';
+const SOCKET_URL = 'https://mehandigo-api.globalrns.com';
 
 export default function ChatScreen() {
   const { user, theme } = useAuth();

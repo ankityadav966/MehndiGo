@@ -12,7 +12,7 @@ import { secureStorage } from "../utils/storage";
  */
 const getBaseUrl = () => {
   // Try loading from environment variables, fallback to local backend
-  const envUrl = process.env.EXPO_PUBLIC_API_URL || "http://192.168.1.26:8000/api/v1";
+  const envUrl = process.env.EXPO_PUBLIC_API_URL || "https://mehandigo-api.globalrns.com/api/v1";
   return envUrl.endsWith("/") ? envUrl.slice(0, -1) : envUrl;
 };
 

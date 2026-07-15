@@ -1,4 +1,4 @@
-156+const db = require("../../models");
+const db = require("../../models");
 const { client: redisClient } = require("../../config/redis");
 const { SuccessResponse, ErrorResponse } = require("../../utils/common");
 const socketModule = require("../../sockets/socket");
@@ -78,7 +78,7 @@ async function updateLocation(req, res) {
         speed: speed !== undefined ? Number(speed) : 0,
         updatedAt: updateTime.toISOString()
       };
-      
+
       // Emit directly to customer's personal room
       io.to(booking.user_id.toString()).emit("artistLocationUpdated", socketPayload);
       console.log(`[TrackingController] Emitted artistLocationUpdated socket event to customer room: ${booking.user_id}`);
