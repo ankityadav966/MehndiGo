@@ -7,7 +7,9 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  ActivityIndicator
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform
 } from "react-native";
 import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -28,8 +30,8 @@ export default function SupportTicketScreen({ navigation }) {
   const [category, setCategory] = useState("");
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
-  const [submitting, setSubmitting] = useState(false);
   const [attachmentUri, setAttachmentUri] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const pickAttachment = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -39,9 +41,9 @@ export default function SupportTicketScreen({ navigation }) {
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.6,
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
+      quality: 0.8,
     });
 
     if (!result.canceled && result.assets && result.assets.length > 0) {
@@ -81,111 +83,116 @@ export default function SupportTicketScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => navigation.goBack()}
-          >
-            <Ionicons name="arrow-back" size={24} color="#1D1D1D" />
-          </TouchableOpacity>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
+      >
+        <ScrollView showsVerticalScrollIndicator={false}>
+          <View style={styles.header}>
+            <TouchableOpacity
+              style={styles.backBtn}
+              onPress={() => navigation.goBack()}
+            >
+              <Ionicons name="arrow-back" size={24} color="#1D1D1D" />
+            </TouchableOpacity>
 
-          <Text style={styles.headerTitle}>Raise a Ticket</Text>
-        </View>
+            <Text style={styles.headerTitle}>Raise a Ticket</Text>
+          </View>
 
-        <View style={styles.content}>
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Issue Category</Text>
+          <View style={styles.content}>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Issue Category</Text>
 
-            <View style={styles.categoryRow}>
-              {CATEGORIES.map((cat) => (
-                <TouchableOpacity
-                  key={cat}
-                  style={[
-                    styles.categoryChip,
-                    category === cat && styles.categoryChipActive,
-                  ]}
-                  onPress={() => setCategory(cat)}
-                >
-                  <Text
+              <View style={styles.categoryRow}>
+                {CATEGORIES.map((cat) => (
+                  <TouchableOpacity
+                    key={cat}
                     style={[
-                      styles.categoryChipText,
-                      category === cat && styles.categoryChipTextActive,
+                      styles.categoryChip,
+                      category === cat && styles.categoryChipActive,
                     ]}
+                    onPress={() => setCategory(cat)}
                   >
-                    {cat}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+                    <Text
+                      style={[
+                        styles.categoryChipText,
+                        category === cat && styles.categoryChipTextActive,
+                      ]}
+                    >
+                      {cat}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             </View>
-          </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Subject</Text>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Subject</Text>
 
-            <TextInput
-              style={styles.input}
-              placeholder="Brief subject of your issue"
-              placeholderTextColor="#CCC"
-              value={subject}
-              onChangeText={setSubject}
-            />
-          </View>
+              <TextInput
+                style={styles.input}
+                placeholder="Brief subject of your issue"
+                placeholderTextColor="#CCC"
+                value={subject}
+                onChangeText={setSubject}
+              />
+            </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Description</Text>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Description</Text>
 
-            <TextInput
-              style={styles.textarea}
-              placeholder="Describe your issue in detail..."
-              placeholderTextColor="#CCC"
-              value={description}
-              onChangeText={setDescription}
-              multiline
-              numberOfLines={6}
-              textAlignVertical="top"
-            />
-          </View>
+              <TextInput
+                style={styles.textarea}
+                placeholder="Describe your issue in detail..."
+                placeholderTextColor="#CCC"
+                value={description}
+                onChangeText={setDescription}
+                multiline
+                numberOfLines={6}
+                textAlignVertical="top"
+              />
+            </View>
 
-          <TouchableOpacity style={styles.attachBtn} onPress={pickAttachment}>
-            <Ionicons name="image-outline" size={20} color="#F7146B" />
-            <Text style={styles.attachBtnText}>
-              {attachmentUri ? "Change Attached Image" : "Attach Image (Optional)"}
-            </Text>
-          </TouchableOpacity>
-
-          {attachmentUri && (
-            <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 20, backgroundColor: "#F2F4F7", padding: 10, borderRadius: 12 }}>
-              <Ionicons name="document-attach-outline" size={20} color={Colors.primary || "#F7146B"} />
-              <Text style={{ flex: 1, marginLeft: 8, fontSize: 13, color: "#555" }} numberOfLines={1}>
-                {attachmentUri.split("/").pop()}
+            <TouchableOpacity style={styles.attachBtn} onPress={pickAttachment}>
+              <Ionicons name="image-outline" size={20} color="#F7146B" />
+              <Text style={styles.attachBtnText}>
+                {attachmentUri ? "Change Attached Image" : "Attach Image (Optional)"}
               </Text>
-              <TouchableOpacity onPress={() => setAttachmentUri(null)}>
-                <Ionicons name="close-circle" size={20} color="#EF4444" />
-              </TouchableOpacity>
-            </View>
-          )}
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[
-              styles.submitBtn,
-              (!category || !subject || !description || submitting) &&
-                styles.submitBtnDisabled,
-            ]}
-            disabled={!category || !subject || !description || submitting}
-            onPress={handleSubmit}
-          >
-            {submitting ? (
-              <ActivityIndicator size="small" color="#FFF" />
-            ) : (
-              <>
-                <Ionicons name="send-outline" size={18} color="#FFF" />
-                <Text style={styles.submitBtnText}>Submit Ticket</Text>
-              </>
+            {attachmentUri && (
+              <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 20, backgroundColor: "#F2F4F7", padding: 10, borderRadius: 12 }}>
+                <Ionicons name="document-attach-outline" size={20} color={Colors.primary || "#F7146B"} />
+                <Text style={{ flex: 1, marginLeft: 8, fontSize: 13, color: "#555" }} numberOfLines={1}>
+                  {attachmentUri.split("/").pop()}
+                </Text>
+                <TouchableOpacity onPress={() => setAttachmentUri(null)}>
+                  <Ionicons name="close-circle" size={20} color="#EF4444" />
+                </TouchableOpacity>
+              </View>
             )}
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
+
+            <TouchableOpacity
+              style={[
+                styles.submitBtn,
+                (!category || !subject || !description || submitting) &&
+                  styles.submitBtnDisabled,
+              ]}
+              disabled={!category || !subject || !description || submitting}
+              onPress={handleSubmit}
+            >
+              {submitting ? (
+                <ActivityIndicator size="small" color="#FFF" />
+              ) : (
+                <>
+                  <Ionicons name="send-outline" size={18} color="#FFF" />
+                  <Text style={styles.submitBtnText}>Submit Ticket</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -208,7 +215,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 20,
     fontWeight: "700",
-    color: "#111",
+    color: "#1D1D1D",
   },
   content: {
     paddingHorizontal: 20,

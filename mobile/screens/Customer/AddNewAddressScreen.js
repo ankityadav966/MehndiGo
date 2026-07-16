@@ -2,6 +2,8 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -14,8 +16,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import { saveCustomerAddress } from "../../services/customer";
 
-const LABELS = ["Home", "Work", "Other"];
-
 export default function AddNewAddressScreen({ navigation }) {
   const [selectedLabel, setSelectedLabel] = useState("Home");
   const [address, setAddress] = useState("");
@@ -25,28 +25,30 @@ export default function AddNewAddressScreen({ navigation }) {
   const [landmark, setLandmark] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const LABELS = ["Home", "Work", "Other"];
+
   const handleSave = async () => {
-    if (!address || !city || !state || !pincode) {
-      Alert.alert("Validation Error", "Please fill in all required fields.");
+    if (!address.trim() || !city.trim() || !state.trim() || !pincode.trim()) {
+      Alert.alert("Validation Error", "Please fill all required fields");
       return;
     }
+
     setLoading(true);
     try {
       await saveCustomerAddress({
-        name: selectedLabel,
-        addressLine1: address,
-        addressLine2: landmark || "",
+        label: selectedLabel,
+        address,
         city,
         state,
         pincode,
-        isDefault: true
+        landmark,
       });
-      Alert.alert("Success 🎉", "New address registered successfully.");
+      setLoading(false);
+      Alert.alert("Success", "Address saved successfully");
       navigation.goBack();
     } catch (err) {
-      Alert.alert("Save Error", err.message || "Failed to persist address.");
-    } finally {
       setLoading(false);
+      Alert.alert("Error", err.message || "Failed to save address");
     }
   };
 
@@ -60,101 +62,106 @@ export default function AddNewAddressScreen({ navigation }) {
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <View style={styles.chipRow}>
-          {LABELS.map((label) => (
-            <TouchableOpacity
-              key={label}
-              style={[styles.chip, selectedLabel === label && styles.chipActive]}
-              onPress={() => setSelectedLabel(label)}
-            >
-              <Ionicons
-                name={
-                  label === "Home"
-                    ? "home-outline"
-                    : label === "Work"
-                    ? "briefcase-outline"
-                    : "location-outline"
-                }
-                size={15}
-                color={selectedLabel === label ? Colors.white : Colors.textSecondary}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
+      >
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+          <View style={styles.chipRow}>
+            {LABELS.map((label) => (
+              <TouchableOpacity
+                key={label}
+                style={[styles.chip, selectedLabel === label && styles.chipActive]}
+                onPress={() => setSelectedLabel(label)}
+              >
+                <Ionicons
+                  name={
+                    label === "Home"
+                      ? "home-outline"
+                      : label === "Work"
+                      ? "briefcase-outline"
+                      : "location-outline"
+                  }
+                  size={15}
+                  color={selectedLabel === label ? Colors.white : Colors.textSecondary}
+                />
+                <Text style={[styles.chipText, selectedLabel === label && styles.chipTextActive]}>
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Full Address *</Text>
+            <TextInput
+              style={styles.textarea}
+              placeholder="House/Flat no., Street Name, Area name"
+              placeholderTextColor={Colors.textTertiary}
+              value={address}
+              onChangeText={setAddress}
+              multiline
+              numberOfLines={3}
+              textAlignVertical="top"
+            />
+          </View>
+
+          <View style={styles.row}>
+            <View style={styles.halfInput}>
+              <Text style={styles.inputLabel}>City *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="City"
+                placeholderTextColor={Colors.textTertiary}
+                value={city}
+                onChangeText={setCity}
               />
-              <Text style={[styles.chipText, selectedLabel === label && styles.chipTextActive]}>
-                {label}
-              </Text>
+            </View>
+            <View style={styles.halfInput}>
+              <Text style={styles.inputLabel}>State *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="State"
+                placeholderTextColor={Colors.textTertiary}
+                value={state}
+                onChangeText={setState}
+              />
+            </View>
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Pincode *</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="123456"
+              placeholderTextColor={Colors.textTertiary}
+              value={pincode}
+              onChangeText={setPincode}
+              keyboardType="number-pad"
+              maxLength={6}
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Landmark (Optional)</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Nearby prominent landmark"
+              placeholderTextColor={Colors.textTertiary}
+              value={landmark}
+              onChangeText={setLandmark}
+            />
+          </View>
+
+          {loading ? (
+            <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 20 }} />
+          ) : (
+            <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
+              <Text style={styles.saveBtnText}>Save Address</Text>
             </TouchableOpacity>
-          ))}
-        </View>
-
-        <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Full Address *</Text>
-          <TextInput
-            style={styles.textarea}
-            placeholder="House/Flat no., Street Name, Area name"
-            placeholderTextColor={Colors.textTertiary}
-            value={address}
-            onChangeText={setAddress}
-            multiline
-            numberOfLines={3}
-            textAlignVertical="top"
-          />
-        </View>
-
-        <View style={styles.row}>
-          <View style={styles.halfInput}>
-            <Text style={styles.inputLabel}>City *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="City"
-              placeholderTextColor={Colors.textTertiary}
-              value={city}
-              onChangeText={setCity}
-            />
-          </View>
-          <View style={styles.halfInput}>
-            <Text style={styles.inputLabel}>State *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="State"
-              placeholderTextColor={Colors.textTertiary}
-              value={state}
-              onChangeText={setState}
-            />
-          </View>
-        </View>
-
-        <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Pincode *</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="123456"
-            placeholderTextColor={Colors.textTertiary}
-            value={pincode}
-            onChangeText={setPincode}
-            keyboardType="number-pad"
-            maxLength={6}
-          />
-        </View>
-
-        <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Landmark (Optional)</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Nearby prominent landmark"
-            placeholderTextColor={Colors.textTertiary}
-            value={landmark}
-            onChangeText={setLandmark}
-          />
-        </View>
-
-        {loading ? (
-          <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 20 }} />
-        ) : (
-          <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
-            <Text style={styles.saveBtnText}>Save Address</Text>
-          </TouchableOpacity>
-        )}
-      </ScrollView>
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
