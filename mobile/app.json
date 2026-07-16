@@ -16,7 +16,13 @@
         "foregroundImage": "./assets/images/icon.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.sonuy123.mehendigoo"
+      "package": "com.sonuy123.mehendigoo",
+      "usesCleartextTraffic": true,
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
     },
     "plugins": [
       [
@@ -55,9 +61,9 @@
     },
     "extra": {
       "eas": {
-        "projectId": "37619b8e-f029-4996-b122-e0fb200f6a06"
+        "projectId": "137cc401-a02c-4f2e-9e40-1f7e5427432d"
       }
     },
-    "owner": "sonuy123s-team"
+    "owner": "sonuyadav87s-team"
   }
 }
