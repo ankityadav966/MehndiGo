@@ -101,4 +101,7 @@ router.put(
   ArtistController.markAsRead,
 );
 
+const TrackingController = require("../../controllers/tracking/tracking.controller");
+router.post("/location/update", authenticate, TrackingController.updateLocation);
+
 module.exports = router;

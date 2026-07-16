@@ -30,7 +30,7 @@ module.exports = (sequelize, DataTypes) => {
       },
 
       type: {
-        type: DataTypes.ENUM("BOOKING", "PAYMENT", "SYSTEM", "PROMOTION"),
+        type: DataTypes.ENUM("BOOKING", "PAYMENT", "SYSTEM", "PROMOTION", "CHAT"),
         allowNull: false,
       },
 
@@ -95,6 +95,8 @@ module.exports = (sequelize, DataTypes) => {
                 if (titleText.includes("fail")) {
                   dataPayload.event = "payment_failed";
                 }
+              } else if (notification.type === "CHAT") {
+                dataPayload.event = "new_message";
               }
 
               // Send push notification

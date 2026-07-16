@@ -74,6 +74,16 @@ const LOCAL_CATEGORY_IMAGES = {
 };
 
 const getCategoryImage = (item) => {
+  if (item.image) {
+    if (item.image.startsWith("http://") || item.image.startsWith("https://")) {
+      return { uri: item.image };
+    }
+    const { BASE_URL } = require("../../services/api");
+    const cleanBase = (BASE_URL || "").replace(/\/api\/v1\/?$/, "");
+    const cleanPath = item.image.startsWith("/") ? item.image : `/${item.image}`;
+    return { uri: `${cleanBase}${cleanPath}` };
+  }
+
   const name = (item.name || "").toLowerCase();
   const slug = (item.slug || "").toLowerCase();
 

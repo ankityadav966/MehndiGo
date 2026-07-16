@@ -1,4 +1,4 @@
-// MehndiGo Server Entry Point
+// MehndiGo Server Entry Point - Live Reloaded
 require("dotenv").config();
 
 const express = require("express");

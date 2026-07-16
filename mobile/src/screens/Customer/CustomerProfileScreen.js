@@ -18,7 +18,7 @@ import { useAuth } from "../../context/AuthContext";
 import { getCustomerDashboard, getCustomerProfile } from "../../services/customer";
 
 export default function CustomerProfileScreen({ navigation }) {
-  const { logout, isDarkMode, toggleTheme } = useAuth();
+  const { logout, isDarkMode } = useAuth();
 
   const [profileData, setProfileData] = useState(null);
   const [dashboardData, setDashboardData] = useState(null);
@@ -185,25 +185,6 @@ export default function CustomerProfileScreen({ navigation }) {
             </TouchableOpacity>
           ))}
 
-          {/* Theme Toggle Card */}
-          <View style={[styles.menuCard, { backgroundColor: currentCardBg, borderColor: currentBorderColor, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }]}>
-            <View style={styles.menuLeft}>
-              <View style={[styles.menuIconWrap, { backgroundColor: isDarkMode ? "#333" : "#FFEBEF" }]}>
-                <Ionicons name="moon" size={18} color={isDarkMode ? "#FFD700" : Colors.primary} />
-              </View>
-              <View style={{ marginLeft: 2 }}>
-                <Text style={[styles.menuLabel, { color: currentTextColor }]}>Dark Mode Theme</Text>
-                <Text style={{ fontSize: 9, color: currentSecTextColor, marginTop: 2 }}>Toggle black/white background</Text>
-              </View>
-            </View>
-            <TouchableOpacity
-              style={[styles.toggleSwitch, { backgroundColor: isDarkMode ? Colors.success : "#D1D5DB" }]}
-              onPress={toggleTheme}
-              activeOpacity={0.8}
-            >
-              <View style={[styles.toggleCircle, { transform: [{ translateX: isDarkMode ? 18 : 2 }] }]} />
-            </TouchableOpacity>
-          </View>
         </View>
 
         {/* Logout Button */}

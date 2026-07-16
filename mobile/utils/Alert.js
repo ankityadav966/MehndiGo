@@ -95,7 +95,18 @@ export const Alert = {
         lowerMsg.includes("🎉")
       ) {
         type = "success";
-      } else if (lowerTitle.includes("warn") || lowerMsg.includes("warn")) {
+      } else if (
+        lowerTitle.includes("warn") ||
+        lowerMsg.includes("warn") ||
+        lowerTitle.includes("unsupported") ||
+        lowerMsg.includes("unsupported") ||
+        lowerTitle.includes("denied") ||
+        lowerMsg.includes("denied") ||
+        lowerTitle.includes("blocked") ||
+        lowerMsg.includes("blocked") ||
+        lowerTitle.includes("restrict") ||
+        lowerMsg.includes("restrict")
+      ) {
         type = "warning";
       }
 

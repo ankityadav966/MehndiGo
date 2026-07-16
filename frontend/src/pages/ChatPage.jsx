@@ -27,7 +27,8 @@ const ChatPage = ({ showToast }) => {
 
   useEffect(() => {
     // 1. Establish Socket Connection
-    const newSocket = io("http://localhost:3000");
+    const socketUrl = window.location.hostname ? `${window.location.protocol}//${window.location.hostname}:3000` : "http://localhost:3000";
+    const newSocket = io(socketUrl);
     setSocket(newSocket);
 
     // Join room of current user
@@ -50,14 +51,15 @@ const ChatPage = ({ showToast }) => {
     // 3. Listen for socket message broadcasts
     socket.on("receive_message", (message) => {
       // Append if it's from the active chat receiver
-      if (
+      const isFromActive = (
         (message.sender_id === activeReceiver?.id && message.receiver_id === user?.id) ||
         (message.sender_id === user?.id && message.receiver_id === activeReceiver?.id)
-      ) {
+      );
+      if (isFromActive) {
         setMessages((prev) => [...prev, message]);
         // Send instant read message socket notification
-        socket.emit("read_messages", { sender_id: activeReceiver.id, receiver_id: user.id });
-        chatService.markChatAsSeen(activeReceiver.id).catch(() => {});
+        socket.emit("read_messages", { sender_id: activeReceiver.id, receiver_id: user.id, bookingId: activeReceiver.bookingId });
+        chatService.markChatAsSeen(activeReceiver.bookingId || activeReceiver.id).catch(() => {});
       } else {
         // Increment unread count for background sender
         setUnreadCounts((prev) => ({
@@ -69,15 +71,20 @@ const ChatPage = ({ showToast }) => {
     });
 
     socket.on("message_saved", (message) => {
-      if (message.receiver_id === activeReceiver?.id) {
-        setMessages((prev) => [...prev, message]);
+      if (message.receiver_id === activeReceiver?.id || message.booking_id === activeReceiver?.bookingId) {
+        setMessages((prev) => {
+          // Prevent duplicates
+          if (prev.some(m => m.id === message.id)) return prev;
+          return [...prev, message];
+        });
       }
     });
 
-    socket.on("unread_update", ({ sender_id }) => {
-      if (activeReceiver?.id === sender_id) {
-        socket.emit("read_messages", { sender_id, receiver_id: user.id });
-        chatService.markChatAsSeen(sender_id).catch(() => {});
+    socket.on("unread_update", ({ sender_id, bookingId }) => {
+      const activeId = activeReceiver?.bookingId || activeReceiver?.id;
+      if (activeId === bookingId || activeReceiver?.id === sender_id) {
+        socket.emit("read_messages", { sender_id, receiver_id: user.id, bookingId });
+        chatService.markChatAsSeen(bookingId || sender_id).catch(() => {});
       } else {
         setUnreadCounts((prev) => ({
           ...prev,
@@ -93,8 +100,9 @@ const ChatPage = ({ showToast }) => {
       }));
     });
 
-    socket.on("messages_read", ({ sender_id, receiver_id }) => {
-      if (activeReceiver?.id === receiver_id) {
+    socket.on("messages_read", ({ sender_id, receiver_id, bookingId }) => {
+      const activeId = activeReceiver?.bookingId || activeReceiver?.id;
+      if (activeId === bookingId || activeReceiver?.id === receiver_id) {
         setMessages((prev) =>
           prev.map((msg) => (msg.sender_id === user.id ? { ...msg, is_read: true } : msg))
         );
@@ -137,20 +145,35 @@ const ChatPage = ({ showToast }) => {
       let list = [];
       if (user?.role === "ADMIN") {
         const res = await adminService.getUsers();
-        list = res.data?.rows || res.data || [];
+        const users = res.data?.rows || res.data || [];
+        list = users
+          .filter((u) => u.role === "ARTIST")
+          .map((u) => ({
+            id: u.id,
+            name: u.name,
+            role: "ARTIST",
+            bookingId: `admin_${u.id}`
+          }));
       } else if (user?.role === "ARTIST") {
-        const res = await artistService.getArtistsNearby();
-        list = res.data?.rows || res.data || [];
+        const res = await chatService.getChatList();
+        const chats = res.data || res || [];
+        list = chats.map((c) => ({
+          id: c.recipient?.id,
+          name: c.recipient?.name || "Support Chat",
+          role: c.bookingCode === "ADMIN" ? "ADMIN" : "CUSTOMER",
+          bookingId: c.bookingId
+        }));
       } else {
-        const res = await artistService.getArtists();
-        const artists = res.data?.rows || res.data || [];
-        list = artists.map((a) => ({
-          id: a.user?.id || a.user_id,
-          name: a.user?.name || "Artist Name",
+        const res = await chatService.getChatList();
+        const chats = res.data || res || [];
+        list = chats.map((c) => ({
+          id: c.recipient?.id,
+          name: c.recipient?.name || "Artist",
           role: "ARTIST",
+          bookingId: c.bookingId
         }));
       }
-      const filteredList = list.filter((u) => u.id !== user?.id);
+      const filteredList = list.filter((u) => u.id && u.id !== user?.id);
       setChannels(filteredList);
     } catch (e) {
       showToast("Could not fetch user directory: " + e.message, "danger");
@@ -168,16 +191,17 @@ const ChatPage = ({ showToast }) => {
 
   const loadChatHistory = async (receiverId) => {
     try {
-      const res = await chatService.getHistory(receiverId);
+      const targetId = activeReceiver?.bookingId || receiverId;
+      const res = await chatService.getHistory(targetId);
       setMessages(res.data || []);
       
       // Clear unread counts for this channel
-      await chatService.markChatAsSeen(receiverId);
+      await chatService.markChatAsSeen(targetId);
       setUnreadCounts((prev) => ({ ...prev, [receiverId]: 0 }));
       
       // Notify sender that we read their messages
       if (socket) {
-        socket.emit("read_messages", { sender_id: receiverId, receiver_id: user.id });
+        socket.emit("read_messages", { sender_id: receiverId, receiver_id: user.id, bookingId: activeReceiver?.bookingId });
       }
     } catch (e) {
       showToast("Error loading messages: " + e.message, "danger");
@@ -191,6 +215,7 @@ const ChatPage = ({ showToast }) => {
     const messagePayload = {
       sender_id: user.id,
       receiver_id: activeReceiver.id,
+      bookingId: activeReceiver.bookingId || (user.role === "ADMIN" || activeReceiver.role === "ADMIN" ? `admin_${activeReceiver.id}` : null),
       message: inputText.trim(),
     };
 

@@ -92,6 +92,10 @@ class ArtistService {
       pincode: data.pincode !== undefined ? data.pincode : artist.pincode,
       cover_image: data.coverImage !== undefined ? data.coverImage : (data.cover_image !== undefined ? data.cover_image : artist.cover_image),
       languages: data.languages !== undefined ? data.languages : artist.languages,
+      intro_video: data.intro_video !== undefined ? data.intro_video : artist.intro_video,
+      portfolio_video: data.portfolio_video !== undefined ? data.portfolio_video : artist.portfolio_video,
+      intro_video_thumbnail: data.intro_video_thumbnail !== undefined ? data.intro_video_thumbnail : artist.intro_video_thumbnail,
+      portfolio_video_thumbnail: data.portfolio_video_thumbnail !== undefined ? data.portfolio_video_thumbnail : artist.portfolio_video_thumbnail,
     };
     
     await ArtistProfileRepositor.update(artist.id, allowedUpdates);
@@ -1411,7 +1415,11 @@ async createReview(data) {
       state: data.state || artist.state,
       pincode: data.pincode || artist.pincode,
       cover_image: data.coverImage !== undefined ? data.coverImage : (data.cover_image !== undefined ? data.cover_image : artist.cover_image),
-      languages: data.languages !== undefined ? data.languages : artist.languages
+      languages: data.languages !== undefined ? data.languages : artist.languages,
+      intro_video: data.intro_video !== undefined ? data.intro_video : artist.intro_video,
+      portfolio_video: data.portfolio_video !== undefined ? data.portfolio_video : artist.portfolio_video,
+      intro_video_thumbnail: data.intro_video_thumbnail !== undefined ? data.intro_video_thumbnail : artist.intro_video_thumbnail,
+      portfolio_video_thumbnail: data.portfolio_video_thumbnail !== undefined ? data.portfolio_video_thumbnail : artist.portfolio_video_thumbnail,
     });
 
     const user = await db.User.findByPk(userId);

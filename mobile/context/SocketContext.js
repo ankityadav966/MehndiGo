@@ -2,7 +2,8 @@ import React, { createContext, useContext, useEffect, useRef, useState, useCallb
 import { io } from "socket.io-client";
 import { useAuth } from "./AuthContext";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { BASE_URL } from "../services/api";
+import { SOCKET_URL } from "../services/api";
+import { scheduleLocalNotification } from "../services/notification";
 
 const SocketContext = createContext(null);
 
@@ -93,7 +94,7 @@ export function SocketProvider({ children }) {
     }
 
     // Connect to websocket server
-    const newSocket = io(BASE_URL, {
+    const newSocket = io(SOCKET_URL, {
       auth: { token },
       transports: ["websocket"]
     });
@@ -153,6 +154,19 @@ export function SocketProvider({ children }) {
 
         // Trigger read receipt since we are viewing it
         newSocket.emit("message-read", { bookingId: activeRoomRef.current });
+      } else {
+        const isFromSelf = message.sender_id === user?.id;
+        if (!isFromSelf) {
+          scheduleLocalNotification({
+            title: "New Message Received",
+            body: message.message_type === "TEXT" ? message.message : `Sent a ${message.message_type.toLowerCase()}`,
+            data: {
+              type: "chat",
+              event: "new_message",
+              bookingId: message.booking_id
+            }
+          });
+        }
       }
     });
 

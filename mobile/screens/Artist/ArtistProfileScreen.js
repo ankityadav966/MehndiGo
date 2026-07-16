@@ -478,6 +478,33 @@ export default function ArtistProfileScreen({ navigation }) {
             </View>
           ) : null}
 
+          {/* Profile Videos Section */}
+          {(profile?.intro_video || profile?.portfolio_video) ? (
+            <View style={[styles.bioContainer, { borderTopWidth: 1, borderColor: Colors.border, paddingTop: 10, marginTop: 5 }]}>
+              <Text style={{ fontSize: 13, fontWeight: "700", color: Colors.text, marginBottom: 8 }}>Profile Videos</Text>
+              <View style={{ flexDirection: "row", gap: 12 }}>
+                {profile.intro_video ? (
+                  <TouchableOpacity
+                    style={styles.selfVideoCard}
+                    onPress={() => navigation.navigate("VideoPlayer", { videoUrl: profile.intro_video, title: "Introduction Video" })}
+                  >
+                    <Ionicons name="play-circle" size={24} color={Colors.primary} />
+                    <Text style={styles.selfVideoText}>Intro Video</Text>
+                  </TouchableOpacity>
+                ) : null}
+                {profile.portfolio_video ? (
+                  <TouchableOpacity
+                    style={styles.selfVideoCard}
+                    onPress={() => navigation.navigate("VideoPlayer", { videoUrl: profile.portfolio_video, title: "Portfolio Video" })}
+                  >
+                    <Ionicons name="play-circle" size={24} color={Colors.primary} />
+                    <Text style={styles.selfVideoText}>Portfolio Video</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            </View>
+          ) : null}
+
           {/* Stats Bar */}
           <View style={styles.statsBar}>
             <TouchableOpacity 
@@ -801,6 +828,23 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.text,
     lineHeight: 18,
+  },
+  selfVideoCard: {
+    flex: 1,
+    flexDirection: "row",
+    height: 44,
+    backgroundColor: Colors.inputBackground || "#F5F5F5",
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  selfVideoText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: Colors.textSecondary,
   },
   locationRow: {
     flexDirection: "row",

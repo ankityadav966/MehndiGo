@@ -1,3 +1,4 @@
+import "./src/theme/ThemeManager";
 import { useCallback } from "react";
 import { NavigationContainer, createNavigationContainerRef } from "@react-navigation/native";
 import { StatusBar, Alert } from "react-native";

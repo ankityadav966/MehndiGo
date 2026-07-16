@@ -978,6 +978,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
                 return;
               }
               navigation.navigate("ChatRoom", {
+                bookingId: booking.id,
                 receiverId: booking.user_id,
                 receiverName: booking.user?.name,
                 receiverImage: booking.user?.profile_image

@@ -11,12 +11,31 @@ import { secureStorage } from "../utils/storage";
  * for release and the correct URL will be resolved automatically.
  */
 const getBaseUrl = () => {
-  // Try loading from environment variables, fallback to local backend
-  const envUrl = process.env.EXPO_PUBLIC_API_URL || "https://mehandigo-api.globalrns.com/api/v1";
+  let envUrl = process.env.EXPO_PUBLIC_API_URL || "http://98.70.11.123:3000/api/v1";
+  if (envUrl.includes("98.70.11.123:8000")) {
+    envUrl = envUrl.replace("98.70.11.123:8000", "98.70.11.123:3000");
+  }
   return envUrl.endsWith("/") ? envUrl.slice(0, -1) : envUrl;
 };
 
 export const BASE_URL = getBaseUrl();
+
+// Dynamically construct the SOCKET_URL from the base URL (extracting protocol, host, and port)
+const getSocketUrl = () => {
+  if (!BASE_URL) return "";
+  try {
+    const urlObj = new URL(BASE_URL);
+    return `${urlObj.protocol}//${urlObj.host}`;
+  } catch (e) {
+    const apiIndex = BASE_URL.indexOf("/api");
+    if (apiIndex !== -1) {
+      return BASE_URL.substring(0, apiIndex);
+    }
+    return BASE_URL;
+  }
+};
+
+export const SOCKET_URL = getSocketUrl();
 
 export function getNormalizedUrl(endpoint) {
   let baseUrl = BASE_URL;

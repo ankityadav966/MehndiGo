@@ -722,6 +722,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
                 style={[styles.actionBtn, { backgroundColor: Colors.success }]}
                 onPress={() => {
                   navigation.navigate("ChatRoom", {
+                    bookingId: booking.id,
                     receiverId: booking.artist?.user_id,
                     receiverName: booking.artist?.user?.name,
                     receiverImage: booking.artist?.user?.profile_image

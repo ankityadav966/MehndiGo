@@ -60,19 +60,21 @@ export function AuthProvider({ children }) {
   const [isDarkMode, setIsDarkMode] = useState(false);
 
   useEffect(() => {
-    async function loadTheme() {
-      const stored = await secureStorage.getTheme();
-      if (stored === "dark") {
-        setIsDarkMode(true);
-      }
-    }
-    loadTheme();
+    setIsDarkMode(false);
   }, []);
 
   const toggleTheme = useCallback(async () => {
-    const newVal = !isDarkMode;
-    setIsDarkMode(newVal);
-    await secureStorage.setTheme(newVal ? "dark" : "light");
+    // No-op
+  }, []);
+
+  useEffect(() => {
+    try {
+      const { applyTheme } = require("../theme/ThemeManager");
+      applyTheme(isDarkMode);
+      console.log("[ThemeManager] Applied theme state:", isDarkMode ? "dark" : "light");
+    } catch (err) {
+      console.warn("[ThemeManager] Theme switch error:", err.message);
+    }
   }, [isDarkMode]);
 
   useEffect(() => {

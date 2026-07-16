@@ -119,10 +119,18 @@ export const adminService = {
   getWalletSummary: () => apiClient.get("/admin/wallet/summary"),
   getCommissionHistory: (params = {}) => apiClient.get("/admin/wallet/commission-history", { params }),
   getDashboardSummary: () => apiClient.get("/admin/wallet/dashboard-summary"),
-  getWalletTransactionDetails: (id) => apiClient.get(`/admin/wallet/transaction/${id}`)
+  getWalletTransactionDetails: (id) => apiClient.get(`/admin/wallet/transaction/${id}`),
+  
+  // Category management CRUD
+  getCategories: () => apiClient.get("/category/admin/list"),
+  createCategory: (formData) => apiClient.post("/category/admin", formData, { headers: { "Content-Type": "multipart/form-data" } }),
+  updateCategory: (id, formData) => apiClient.put(`/category/admin/${id}`, formData, { headers: { "Content-Type": "multipart/form-data" } }),
+  deleteCategory: (id) => apiClient.delete(`/category/admin/${id}`),
+  toggleCategoryStatus: (id) => apiClient.patch(`/category/admin/${id}/status`)
 };
 
 export const chatService = {
+  getChatList: () => apiClient.get("/chat/list"),
   getHistory: (receiverId) => apiClient.get(`/chat/${receiverId}`),
   sendMessage: (receiverId, message) => apiClient.post("/chat/send", { receiver_id: receiverId, message }),
   getUnreadCounts: () => apiClient.get("/chat/unread/counts"),

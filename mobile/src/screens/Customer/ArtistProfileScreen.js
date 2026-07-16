@@ -376,6 +376,33 @@ export default function ArtistProfileScreen({ route, navigation }) {
           <Text style={styles.bioText}>{profile.bio}</Text>
         </View>
 
+        {/* Section: Profile Videos */}
+        {(profile.intro_video || profile.portfolio_video) && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Profile Videos</Text>
+            <View style={{ flexDirection: "row", gap: 12, marginTop: 4 }}>
+              {profile.intro_video && (
+                <TouchableOpacity
+                  style={styles.videoCard}
+                  onPress={() => navigation.navigate("VideoPlayer", { videoUrl: profile.intro_video, title: "Introduction Video" })}
+                >
+                  <Ionicons name="play-circle" size={32} color={Colors.primary} />
+                  <Text style={styles.videoCardText}>Intro Video</Text>
+                </TouchableOpacity>
+              )}
+              {profile.portfolio_video && (
+                <TouchableOpacity
+                  style={styles.videoCard}
+                  onPress={() => navigation.navigate("VideoPlayer", { videoUrl: profile.portfolio_video, title: "Portfolio Video" })}
+                >
+                  <Ionicons name="play-circle" size={32} color={Colors.primary} />
+                  <Text style={styles.videoCardText}>Portfolio Video</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        )}
+
         {/* Section: Location and Map */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Location</Text>
@@ -813,6 +840,22 @@ const styles = StyleSheet.create({
     alignItems: "center"
   },
   mapsBtnText: { color: Colors.white, fontWeight: "700", fontSize: 12 },
+  videoCard: {
+    flex: 1,
+    height: 70,
+    backgroundColor: Colors.inputBackground || "#F5F5F5",
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 4,
+  },
+  videoCardText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: Colors.textSecondary,
+  },
   emptyText: { fontSize: 12, color: Colors.textTertiary, fontStyle: "italic" },
   serviceRow: {
     flexDirection: "row",

@@ -1,4 +1,4 @@
-export const COLORS = {
+const baseCOLORS = {
   primary: "#E91E63",
   primaryLight: "#F8BBD0",
   primaryDark: "#C2185B",
@@ -18,6 +18,26 @@ export const COLORS = {
   overlay: "rgba(0, 0, 0, 0.5)",
   shadow: "rgba(0, 0, 0, 0.08)",
 };
+
+export const COLORS = new Proxy(baseCOLORS, {
+  get(target, prop) {
+    if (global.isDarkModeActive) {
+      if (prop === 'background' || prop === 'surface' || prop === 'white' || prop === 'borderLight') {
+        return '#120e0d';
+      }
+      if (prop === 'text' || prop === 'black') {
+        return '#ffffff';
+      }
+      if (prop === 'textSecondary') {
+        return '#bbaea9';
+      }
+      if (prop === 'border') {
+        return '#333333';
+      }
+    }
+    return target[prop];
+  }
+});
 
 export const FONTS = {
   sizes: {

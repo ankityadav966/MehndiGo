@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { adminService } from "../services/api";
-import { Check, X, ShieldAlert, Users, Award, ShieldCheck, Eye, Calendar, DollarSign, MessageSquare, Bell, Send, Tag, Gift, TrendingUp, Plus, Trash } from "lucide-react";
+import { Check, X, ShieldAlert, Users, Award, ShieldCheck, Eye, Calendar, DollarSign, MessageSquare, Bell, Send, Tag, Gift, TrendingUp, Plus, Trash, Grid } from "lucide-react";
 
 const AdminDashboard = ({ showToast }) => {
   const [users, setUsers] = useState([]);
@@ -40,8 +40,17 @@ const AdminDashboard = ({ showToast }) => {
   const [walletEndDate, setWalletEndDate] = useState("");
   const [selectedWalletTx, setSelectedWalletTx] = useState(null);
 
-  // Coupons Manager States
+  // Coupon State
   const [coupons, setCoupons] = useState([]);
+
+  // Category State
+  const [categories, setCategories] = useState([]);
+  const [categoryModalOpen, setCategoryModalOpen] = useState(false);
+  const [categoryTitle, setCategoryTitle] = useState("");
+  const [categorySlug, setCategorySlug] = useState("");
+  const [categoryDescription, setCategoryDescription] = useState("");
+  const [categoryImageFile, setCategoryImageFile] = useState(null);
+  const [categoryEditId, setCategoryEditId] = useState(null);
   const [showCouponForm, setShowCouponForm] = useState(false);
   const [editingCoupon, setEditingCoupon] = useState(null);
   const [couponFormData, setCouponFormData] = useState({
@@ -214,6 +223,9 @@ const AdminDashboard = ({ showToast }) => {
         }
         if (dashRes?.data) setWalletDashboardSummary(dashRes.data);
         setWalletLoading(false);
+      } else if (activeTab === "categories") {
+        const categoriesRes = await adminService.getCategories();
+        setCategories(categoriesRes.data || categoriesRes || []);
       }
     } catch (e) {
       showToast("Error loading admin data: " + e.message, "danger");
@@ -248,6 +260,78 @@ const AdminDashboard = ({ showToast }) => {
       fetchAdminData();
     } catch (e) {
       showToast(e.message, "danger");
+    }
+  };
+
+  const handleOpenCategoryModal = (cat = null) => {
+    if (cat) {
+      setCategoryEditId(cat.id);
+      setCategoryTitle(cat.specialization_name || cat.title || "");
+      setCategorySlug(cat.slug || "");
+      setCategoryDescription(cat.description || "");
+      setCategoryImageFile(null);
+    } else {
+      setCategoryEditId(null);
+      setCategoryTitle("");
+      setCategorySlug("");
+      setCategoryDescription("");
+      setCategoryImageFile(null);
+    }
+    setCategoryModalOpen(true);
+  };
+
+  const handleSaveCategory = async (e) => {
+    e.preventDefault();
+    if (!categoryTitle.trim()) {
+      showToast("Title is required", "danger");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("title", categoryTitle.trim());
+    formData.append("specialization_name", categoryTitle.trim());
+    formData.append("slug", categorySlug.trim() || categoryTitle.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-"));
+    formData.append("description", categoryDescription.trim());
+    if (categoryImageFile) {
+      formData.append("image", categoryImageFile);
+    }
+
+    try {
+      if (categoryEditId) {
+        await adminService.updateCategory(categoryEditId, formData);
+        showToast("Category updated successfully", "success");
+      } else {
+        await adminService.createCategory(formData);
+        showToast("Category created successfully", "success");
+      }
+      setCategoryModalOpen(false);
+      const categoriesRes = await adminService.getCategories();
+      setCategories(categoriesRes.data || categoriesRes || []);
+    } catch (err) {
+      showToast(err.message || "Failed to save category", "danger");
+    }
+  };
+
+  const handleDeleteCategory = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this category?")) return;
+    try {
+      await adminService.deleteCategory(id);
+      showToast("Category deleted successfully", "success");
+      const categoriesRes = await adminService.getCategories();
+      setCategories(categoriesRes.data || categoriesRes || []);
+    } catch (err) {
+      showToast(err.message || "Failed to delete category", "danger");
+    }
+  };
+
+  const handleToggleCategoryStatus = async (id) => {
+    try {
+      await adminService.toggleCategoryStatus(id);
+      showToast("Category status toggled successfully", "success");
+      const categoriesRes = await adminService.getCategories();
+      setCategories(categoriesRes.data || categoriesRes || []);
+    } catch (err) {
+      showToast(err.message || "Failed to toggle category status", "danger");
     }
   };
 
@@ -434,6 +518,14 @@ const AdminDashboard = ({ showToast }) => {
           style={{ width: "100%", justifyContent: "flex-start", border: "none", background: "none" }}
         >
           <Tag style={{ width: "18px" }} /> Coupons Manager
+        </button>
+
+        <button
+          className={`sidebar-link btn-secondary ${activeTab === "categories" ? "active" : ""}`}
+          onClick={() => setActiveTab("categories")}
+          style={{ width: "100%", justifyContent: "flex-start", border: "none", background: "none" }}
+        >
+          <Grid style={{ width: "18px" }} /> Categories Manager
         </button>
 
         <button
@@ -1150,6 +1242,97 @@ const AdminDashboard = ({ showToast }) => {
                             </td>
                           </tr>
                         ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {activeTab === "categories" && (
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+                  <h2 style={{ fontSize: "1.5rem", fontWeight: 800 }}>Categories Management</h2>
+                  <button className="btn btn-primary" onClick={() => handleOpenCategoryModal()}>
+                    <Plus style={{ width: "16px", marginRight: "0.25rem" }} /> Add Category
+                  </button>
+                </div>
+
+                {categoryModalOpen && (
+                  <div className="glass-panel" style={{ padding: "1.5rem", marginBottom: "2rem" }}>
+                    <h3>{categoryEditId ? "Edit Category" : "Add New Category"}</h3>
+                    <form onSubmit={handleSaveCategory} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+                      <div className="form-group" style={{ gridColumn: "span 2" }}>
+                        <label className="form-label">Category Title</label>
+                        <input className="form-control" type="text" placeholder="e.g. Bridal Mehndi, Arabian Style" value={categoryTitle} onChange={(e) => setCategoryTitle(e.target.value)} required />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">URL Slug (Optional)</label>
+                        <input className="form-control" type="text" placeholder="e.g. bridal-mehndi" value={categorySlug} onChange={(e) => setCategorySlug(e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Category Image File</label>
+                        <input className="form-control" type="file" accept="image/*" onChange={(e) => setCategoryImageFile(e.target.files[0])} />
+                      </div>
+                      <div className="form-group" style={{ gridColumn: "span 2" }}>
+                        <label className="form-label">Description</label>
+                        <textarea className="form-control" rows="3" placeholder="Category details..." value={categoryDescription} onChange={(e) => setCategoryDescription(e.target.value)} />
+                      </div>
+                      <div style={{ gridColumn: "span 2", display: "flex", gap: "1rem" }}>
+                        <button type="submit" className="btn btn-primary">Save Category</button>
+                        <button type="button" className="btn btn-secondary" onClick={() => setCategoryModalOpen(false)}>Cancel</button>
+                      </div>
+                    </form>
+                  </div>
+                )}
+
+                <div className="glass-panel" style={{ overflowX: "auto" }}>
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Image</th>
+                        <th>Name</th>
+                        <th>Slug</th>
+                        <th>Description</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {categories.length === 0 ? (
+                        <tr>
+                          <td colSpan="6" style={{ textAlign: "center", padding: "2rem", color: "var(--text-secondary)" }}>
+                            No categories available.
+                          </td>
+                        </tr>
+                      ) : (
+                        categories.map((cat) => {
+                          const name = cat.specialization_name || cat.title || "";
+                          const cleanImage = cat.image ? (cat.image.startsWith("http") ? cat.image : `http://localhost:3000/${cat.image.replace(/^\/+/, "")}`) : "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=100";
+                          return (
+                            <tr key={cat.id}>
+                              <td>
+                                <img src={cleanImage} alt={name} style={{ width: "50px", height: "50px", borderRadius: "8px", objectFit: "cover" }} />
+                              </td>
+                              <td style={{ fontWeight: 800 }}>{name}</td>
+                              <td>{cat.slug}</td>
+                              <td style={{ fontSize: "0.85rem", maxWidth: "300px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cat.description || "N/A"}</td>
+                              <td>
+                                <span className={`badge ${cat.is_active ? "badge-success" : "badge-danger"}`} style={{ cursor: "pointer" }} onClick={() => handleToggleCategoryStatus(cat.id)}>
+                                  {cat.is_active ? "Active" : "Inactive"}
+                                </span>
+                              </td>
+                              <td>
+                                <div style={{ display: "flex", gap: "0.5rem" }}>
+                                  <button className="btn btn-secondary" style={{ padding: "0.25rem 0.5rem", minHeight: "auto" }} onClick={() => handleOpenCategoryModal(cat)}>Edit</button>
+                                  <button className="btn btn-danger" style={{ padding: "0.25rem 0.5rem", minHeight: "auto" }} onClick={() => handleDeleteCategory(cat.id)}>
+                                    <Trash style={{ width: "14px" }} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
                       )}
                     </tbody>
                   </table>

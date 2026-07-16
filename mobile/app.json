@@ -30,6 +30,19 @@
       ],
       "expo-image",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app accesses your photos to let you share mehndi designs.",
+          "cameraPermission": "The app accesses your camera to let you take photos of mehndi designs."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "The app accesses your location to share coordinates with artists."
+        }
+      ],
+      [
         "expo-notifications",
         {
           "icon": "./assets/images/icon.png",

@@ -115,7 +115,9 @@ class BookingService {
     }
 
     // 5. Check Restricted Booking Rules
-    const isRestricted = await this.hasRestrictedBooking(userId, artistId);
+    const isRestricted = typeof this.hasRestrictedBooking === 'function'
+      ? await this.hasRestrictedBooking(userId, artistId)
+      : await BookingService.prototype.hasRestrictedBooking.call(this, userId, artistId);
     if (isRestricted) {
       throw new AppError("Booking restricted. You have too many active bookings or pending disputes.", 400);
     }

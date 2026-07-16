@@ -87,7 +87,7 @@ export async function getPendingPayment() {
 }
 
 export async function updateArtistLocation(payload) {
-  const res = await apiRequest("POST", "/artist/location/update", payload, true);
+  const res = await apiRequest("POST", "/api/v1/mehndigo/artist/location/update", payload, true);
   return res?.data || res;
 }
 

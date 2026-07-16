@@ -60,10 +60,6 @@ export default function BookingDetailsScreen({ route, navigation }) {
   const [rating, setRating] = useState(5);
   const [reviewText, setReviewText] = useState("");
   const [submittingReview, setSubmittingReview] = useState(false);
-  const [isCheckInOtpVisible, setIsCheckInOtpVisible] = useState(false);
-  const [checkInOtp, setCheckInOtp] = useState("");
-  const [isCheckOutOtpVisible, setIsCheckOutOtpVisible] = useState(false);
-  const [checkOutOtp, setCheckOutOtp] = useState("");
   const [hasPromptedPayment, setHasPromptedPayment] = useState(false);
   const [hasPromptedReview, setHasPromptedReview] = useState(false);
 
@@ -172,23 +168,26 @@ export default function BookingDetailsScreen({ route, navigation }) {
     const handleCheckInOtp = (payload) => {
       console.log("[Customer screen] checkin_otp_received:", payload);
       if (Number(payload.bookingId) === Number(bookingId)) {
-        setCheckInOtp(payload.otp);
-        setIsCheckInOtpVisible(true);
+        Alert.alert(
+          "Check-In OTP Sent",
+          "Artist has arrived at your location. A Check-In OTP has been sent to your registered mobile number as a real SMS. Please share it with your artist to verify arrival and start the service."
+        );
       }
     };
 
     const handleCheckOutOtp = (payload) => {
       console.log("[Customer screen] checkout_otp_received:", payload);
       if (Number(payload.bookingId) === Number(bookingId)) {
-        setCheckOutOtp(payload.otp);
-        setIsCheckOutOtpVisible(true);
+        Alert.alert(
+          "Check-Out OTP Sent",
+          "Mehndi service has been completed. A Check-Out OTP has been sent to your registered mobile number as a real SMS. Please share it with your artist to verify and complete the booking."
+        );
       }
     };
 
     const handleServiceStarted = (payload) => {
       console.log("[Customer screen] service_started:", payload);
       if (Number(payload.bookingId) === Number(bookingId)) {
-        setIsCheckInOtpVisible(false);
         loadDetails();
         Alert.alert("Service Started", "Your Mehndi service has officially started!");
       }
@@ -197,7 +196,6 @@ export default function BookingDetailsScreen({ route, navigation }) {
     const handleBookingCompleted = (payload) => {
       console.log("[Customer screen] booking_completed:", payload);
       if (Number(payload.bookingId) === Number(bookingId)) {
-        setIsCheckOutOtpVisible(false);
         loadDetails();
       }
     };
@@ -724,6 +722,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
                 style={[styles.actionBtn, { backgroundColor: Colors.success }]}
                 onPress={() => {
                   navigation.navigate("ChatRoom", {
+                    bookingId: booking.id,
                     receiverId: booking.artist?.user_id,
                     receiverName: booking.artist?.user?.name,
                     receiverImage: booking.artist?.user?.profile_image
@@ -885,53 +884,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
           </View>
         </View>
       </Modal>
-      {/* Check-In OTP Display Modal */}
-      <Modal
-        visible={isCheckInOtpVisible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setIsCheckInOtpVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Ionicons name="keypad-outline" size={48} color={Colors.primary} style={{ alignSelf: "center", marginBottom: 12 }} />
-            <Text style={styles.modalTitle}>Check-In Verification Code</Text>
-            <Text style={styles.modalSub}>
-              Share this secure code with your Artist to verify their arrival and start the Mehndi session.
-            </Text>
-
-            <View style={{ backgroundColor: Colors.background, padding: 14, borderRadius: 12, marginVertical: 18, alignItems: "center" }}>
-              <Text style={{ fontSize: 32, fontWeight: "900", letterSpacing: 8, color: Colors.primary }}>{checkInOtp || booking?.check_in_otp}</Text>
-            </View>
-
-            <CustomButton title="Close" onPress={() => setIsCheckInOtpVisible(false)} />
-          </View>
-        </View>
-      </Modal>
-
-      {/* Check-Out OTP Display Modal */}
-      <Modal
-        visible={isCheckOutOtpVisible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setIsCheckOutOtpVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Ionicons name="shield-checkmark-outline" size={48} color={Colors.success} style={{ alignSelf: "center", marginBottom: 12 }} />
-            <Text style={styles.modalTitle}>Check-Out Verification Code</Text>
-            <Text style={styles.modalSub}>
-              Share this secure code with your Artist to verify service completion.
-            </Text>
-
-            <View style={{ backgroundColor: Colors.background, padding: 14, borderRadius: 12, marginVertical: 18, alignItems: "center" }}>
-              <Text style={{ fontSize: 32, fontWeight: "900", letterSpacing: 8, color: Colors.success }}>{checkOutOtp || booking?.check_out_otp}</Text>
-            </View>
-
-            <CustomButton title="Close" onPress={() => setIsCheckOutOtpVisible(false)} />
-          </View>
-        </View>
-      </Modal>
+      {/* Modals removed for production privacy */}
     </SafeAreaView>
   );
 }
