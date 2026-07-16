@@ -78,11 +78,15 @@ export function applyTheme(isDark) {
         if (isDark) {
           value = mapColorToDark(value, prop);
         } else {
-          // Restore original light mode values
           value = originalStyle[prop];
         }
-        // Mutate in-place
-        targetStyle[prop] = value;
+        if (targetStyle[prop] !== value) {
+          try {
+            targetStyle[prop] = value;
+          } catch (e) {
+            // Ignore read-only assignment errors on frozen StyleSheet objects
+          }
+        }
       }
     }
   }
