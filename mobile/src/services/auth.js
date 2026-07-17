@@ -61,42 +61,52 @@ export async function registerUser(userData) {
 }
 
 export async function verifyOtp(email, otp) {
-  const data = await apiRequest("POST", "/auth/verify-otp", { email, otp });
+  const data = await apiRequest("POST", "/api/v1/mehndigo/user/verify-otp", { email, otp });
   await persistAuthData(data);
   return data;
 }
 
-export async function sendOtp(name, email, phone, role) {
-  console.log("Sending OTP request");
+export async function sendOtp(email, phone, role) {
+  console.log("Sending check/login OTP request for email:", email);
   const data = await apiRequest("POST", "/api/v1/mehndigo/user/send-otp", {
-    name,
     email,
-    role,
     phone,
+    role,
   });
   return data;
 }
 
-export async function verifyUserOtp(phone, otp, role, name, email, referralCode = "") {
-  const data = await apiRequest("POST", "/api/v1/mehndigo/user/verify-otp", {
-    phone,
-    otp,
+export async function registerSendOtp(name, email, phone, role) {
+  console.log("Sending register OTP request:", { name, email, phone, role });
+  const data = await apiRequest("POST", "/api/v1/mehndigo/user/register-send-otp", {
+    name,
+    email,
+    phone: phone || null,
     role,
-    name: name || "",
-    email: email || "",
-    referralCode,
+  });
+  return data;
+}
+
+export async function registerVerifyOtp(email, otp) {
+  console.log("Verifying register OTP:", { email, otp });
+  const data = await apiRequest("POST", "/api/v1/mehndigo/user/register-verify-otp", {
+    email,
+    otp,
   });
   return persistAuthData(data);
 }
 
-export async function registerUserV1(userData) {
-  const data = await apiRequest("POST", "/api/v1/mehndigo/user/register", userData);
+export async function verifyUserOtp(email, otp) {
+  const data = await apiRequest("POST", "/api/v1/mehndigo/user/verify-otp", {
+    email,
+    otp,
+  });
   return persistAuthData(data);
 }
 
-export async function loginWithPhone(phone, role) {
+export async function loginWithEmail(email, role) {
   const data = await apiRequest("POST", "/api/v1/mehndigo/user/login", {
-    phone,
+    email,
     role,
   });
   return persistAuthData(data);

@@ -39,10 +39,10 @@ class NotificationRepository
             console.error("Failed to send admin email:", err.message);
           });
         } else {
-          const { sendSms } = require("../utils/twilio.service");
-          if (user.phone) {
-            await sendSms(user.phone, `MehndiGo Alert: ${title} - ${msg}`).catch(err => {
-              console.error("Failed to send SMS:", err.message);
+          const { sendEmail } = require("../utils/mail.service");
+          if (user.email) {
+            await sendEmail(user.email, `MehndiGo Alert: ${title}`, msg).catch(err => {
+              console.error("Failed to send email:", err.message);
             });
           }
         }

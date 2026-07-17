@@ -5,20 +5,15 @@ async function seed() {
   
   try {
     // Sync models (ensuring schema is synchronized)
-    await db.sequelize.sync({ alter: true });
-    
-    // Clear old seed data (optional, but good for reset)
-    await db.Message.destroy({ where: {} });
-    await db.Review.destroy({ where: {} });
-    await db.Payment.destroy({ where: {} });
-    await db.Booking.destroy({ where: {} });
-    await db.AvailabilitySlot.destroy({ where: {} });
-    await db.Service.destroy({ where: {} });
-    await db.ArtistProfile.destroy({ where: {} });
-    await db.Otp.destroy({ where: {} });
-    await db.User.destroy({ where: {} });
-    
-    console.log("Database cleared.");
+    await db.sequelize.sync();
+
+    // Clear old seed data using TRUNCATE CASCADE to avoid foreign key violations
+    await db.sequelize.query('TRUNCATE TABLE "Messages", "Reviews", "Payments", "Bookings", "AvailabilitySlots", "Services", "artist_profiles", "Otps", "Users" CASCADE');
+
+    // Set phone to nullable and email to non-nullable
+    await db.sequelize.query('ALTER TABLE "Users" ALTER COLUMN "phone" DROP NOT NULL');
+    await db.sequelize.query('ALTER TABLE "Users" ALTER COLUMN "email" SET NOT NULL');
+    console.log("Database cleared via CASCADE.");
 
     // 1. Create System Admin
     const crypto = require("crypto");

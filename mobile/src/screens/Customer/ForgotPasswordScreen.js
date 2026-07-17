@@ -10,25 +10,47 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { sendOtp } from "../../services/auth";
+import Alert from "../../utils/Alert";
 
 export default function ForgotPasswordScreen({ navigation }) {
-  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const handleSendOtp = async () => {
     setError("");
-    if (!phone.trim() || phone.length < 10) {
-      setError("Please enter a valid 10-digit mobile number");
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      setError("Please enter your email address");
       return;
     }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmedEmail)) {
+      setError("Please enter a valid email address");
+      return;
+    }
+
     setLoading(true);
     try {
-      // Mock API call
-      await new Promise((r) => setTimeout(r, 1000));
-      navigation.navigate("Otp", { email: "", mobile: phone, name: "", password: "" });
+      const otpRes = await sendOtp(trimmedEmail);
+      const data = otpRes?.data || otpRes;
+
+      if (data.exists) {
+        const otp = data.otp ? String(data.otp) : "";
+        Alert.alert("Verification OTP", `OTP has been sent to your email. (Dev code: ${otp})`);
+        navigation.navigate("Otp", {
+          email: trimmedEmail,
+          role: data.role || "USER",
+          isRegistering: false,
+          otp,
+        });
+      } else {
+        setError("This email address is not registered in our database.");
+      }
     } catch (e) {
-      setError("Failed to send OTP. Please try again.");
+      setError(e?.response?.data?.message || e.message || "Failed to send OTP. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -48,25 +70,25 @@ export default function ForgotPasswordScreen({ navigation }) {
 
         <View style={styles.content}>
           <Text style={styles.title}>Forgot Password</Text>
-          <Text style={styles.subtitle}>Enter your registered mobile number</Text>
+          <Text style={styles.subtitle}>Enter your registered email address to receive an OTP</Text>
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
           <View style={styles.inputWrapper}>
-            <Text style={styles.inputLabel}>Mobile Number</Text>
-            <View style={styles.phoneRow}>
-              <View style={styles.countryCode}>
-                <Text style={styles.countryCodeText}>+91</Text>
-                <Ionicons name="chevron-down" size={14} color="#666" />
-              </View>
+            <Text style={styles.inputLabel}>Email Address</Text>
+            <View style={styles.emailRow}>
               <TextInput
-                style={styles.phoneInput}
-                placeholder="9876543210"
+                style={styles.emailInput}
+                placeholder="e.g. customer@gmail.com"
                 placeholderTextColor="#CCC"
-                value={phone}
-                onChangeText={setPhone}
-                keyboardType="phone-pad"
-                maxLength={10}
+                value={email}
+                onChangeText={(text) => {
+                  setEmail(text);
+                  setError("");
+                }}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                maxLength={100}
               />
             </View>
           </View>
@@ -87,10 +109,6 @@ export default function ForgotPasswordScreen({ navigation }) {
             <TouchableOpacity onPress={() => navigation.navigate("Login")}>
               <Text style={styles.linkText}>Login</Text>
             </TouchableOpacity>
-            <Text style={styles.linkSeparator}>|</Text>
-            <TouchableOpacity onPress={() => navigation.navigate("Register")}>
-              <Text style={styles.linkText}>Register</Text>
-            </TouchableOpacity>
           </View>
         </View>
       </ScrollView>
@@ -108,14 +126,8 @@ const styles = StyleSheet.create({
   errorText: { color: "#EF4444", fontSize: 13, marginBottom: 12, textAlign: "center" },
   inputWrapper: { marginBottom: 20 },
   inputLabel: { fontSize: 14, color: "#555", marginBottom: 8, fontWeight: "500" },
-  phoneRow: { flexDirection: "row", alignItems: "center" },
-  countryCode: {
-    height: 50, paddingHorizontal: 14, borderRadius: 12, borderWidth: 1,
-    borderColor: "#E2E6ED", flexDirection: "row", alignItems: "center",
-    marginRight: 10, backgroundColor: "#F2F4F7",
-  },
-  countryCodeText: { fontSize: 15, fontWeight: "600", color: "#111", marginRight: 4 },
-  phoneInput: {
+  emailRow: { flexDirection: "row", alignItems: "center" },
+  emailInput: {
     flex: 1, height: 50, borderWidth: 1, borderColor: "#E2E6ED", borderRadius: 12,
     paddingHorizontal: 16, fontSize: 15, color: "#111", backgroundColor: "#F2F4F7",
   },
@@ -129,5 +141,4 @@ const styles = StyleSheet.create({
     flexDirection: "row", justifyContent: "center", alignItems: "center", marginTop: 30,
   },
   linkText: { fontSize: 14, color: "#F7146B", fontWeight: "600" },
-  linkSeparator: { marginHorizontal: 14, color: "#DDD", fontSize: 14 },
 });

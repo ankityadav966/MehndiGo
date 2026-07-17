@@ -66,37 +66,22 @@ export async function verifyOtp(email, otp) {
   return data;
 }
 
-export function sanitizePhone(phone) {
-  if (!phone) return phone;
-  let cleaned = String(phone).trim();
-  if (cleaned.startsWith("+91")) {
-    cleaned = cleaned.substring(3);
-  }
-  cleaned = cleaned.replace(/[^0-9]/g, "");
-  if (cleaned.length > 10) {
-    cleaned = cleaned.substring(cleaned.length - 10);
-  }
-  return cleaned;
-}
-
 export async function sendOtp(name, email, phone, role) {
   console.log("Sending OTP request");
-  const sanitized = sanitizePhone(phone);
   const data = await apiRequest("POST", "/api/v1/mehndigo/user/send-otp", {
     name,
     email,
-    role: role === "CUSTOMER" ? "USER" : role, // Map CUSTOMER role to USER backend enum value
-    phone: sanitized,
+    role,
+    phone,
   });
   return data;
 }
 
 export async function verifyUserOtp(phone, otp, role, name, email, referralCode = "") {
-  const sanitized = sanitizePhone(phone);
   const data = await apiRequest("POST", "/api/v1/mehndigo/user/verify-otp", {
-    phone: sanitized,
+    phone,
     otp,
-    role: role === "CUSTOMER" ? "USER" : role, // Map CUSTOMER role to USER backend enum value
+    role,
     name: name || "",
     email: email || "",
     referralCode,
@@ -105,21 +90,14 @@ export async function verifyUserOtp(phone, otp, role, name, email, referralCode 
 }
 
 export async function registerUserV1(userData) {
-  if (userData && userData.phone) {
-    userData.phone = sanitizePhone(userData.phone);
-  }
-  if (userData && userData.role === "CUSTOMER") {
-    userData.role = "USER";
-  }
   const data = await apiRequest("POST", "/api/v1/mehndigo/user/register", userData);
   return persistAuthData(data);
 }
 
-export async function loginWithPhone(phone, role) {
-  const sanitized = sanitizePhone(phone);
+export async function loginWithEmail(email, role) {
   const data = await apiRequest("POST", "/api/v1/mehndigo/user/login", {
-    phone: sanitized,
-    role: role === "CUSTOMER" ? "USER" : role, // Map CUSTOMER role to USER backend enum value
+    email,
+    role,
   });
   return persistAuthData(data);
 }

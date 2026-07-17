@@ -2,45 +2,76 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { authService } from "../services/api";
 import { useAuth } from "../context/AuthContext";
-import { Phone, UserCheck, Shield, KeyRound } from "lucide-react";
+import { Mail, UserCheck, KeyRound, User, Phone } from "lucide-react";
 
 const LoginPage = ({ showToast }) => {
   const { loginSuccess } = useAuth();
   const navigate = useNavigate();
 
-  const [step, setStep] = useState(1); // 1 = input details, 2 = verify OTP
+  const [step, setStep] = useState(1); // 1 = Enter Email, 2 = Verify OTP
+  const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [role, setRole] = useState("USER");
   const [otp, setOtp] = useState("");
+  const [showRegistration, setShowRegistration] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const handleSendOtp = async (e) => {
+  const handleContinue = async (e) => {
     e.preventDefault();
-    if (!phone) {
-      showToast("Phone number is required", "warning");
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      showToast("Email address is required", "warning");
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmedEmail)) {
+      showToast("Please enter a valid email address", "warning");
       return;
     }
 
     setLoading(true);
     try {
-      const res = await authService.sendOtp({ name, phone, role });
-      showToast(`OTP Sent successfully: ${res.data.otp} (For testing)`, "success");
-      setStep(2);
-    } catch (e) {
-      // If user exists, prompt to login directly
-      if (e.message.includes("registered as")) {
-        showToast(e.message, "danger");
+      const res = await authService.sendOtp({ email: trimmedEmail });
+      const data = res.data || res;
+
+      if (data.exists) {
+        showToast(`OTP Sent successfully. Code: ${data.otp || ""} (For testing)`, "success");
+        setStep(2);
+        setShowRegistration(false);
       } else {
-        // Try directly sending login request if they are registered
-        try {
-          const res = await authService.login({ phone, role });
-          showToast(`OTP sent to your registered number: ${res.data?.otp || res.otp || ""} (For testing)`, "success");
-          setStep(2);
-        } catch (err) {
-          showToast(err.message, "danger");
-        }
+        setShowRegistration(true);
+        showToast("This email is not registered. Please enter your details below to sign up.", "info");
       }
+    } catch (err) {
+      showToast(err.message || "Failed to check email. Please try again.", "danger");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      showToast("Full Name is required for registration", "warning");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await authService.registerSendOtp({
+        name: trimmedName,
+        email: email.trim().toLowerCase(),
+        phone: phone.trim() || null,
+        role,
+      });
+      const data = res.data || res;
+      showToast(`Verification code sent to your email. Code: ${data.otp || ""} (For testing)`, "success");
+      setStep(2);
+    } catch (err) {
+      showToast(err.message || "Registration failed. Please try again.", "danger");
     } finally {
       setLoading(false);
     }
@@ -55,17 +86,24 @@ const LoginPage = ({ showToast }) => {
 
     setLoading(true);
     try {
-      const res = await authService.verifyOtp({ phone, otp, role });
-      loginSuccess(res.data.token, res.data.user);
+      let res;
+      if (showRegistration) {
+        res = await authService.registerVerifyOtp({ email: email.trim().toLowerCase(), otp });
+      } else {
+        res = await authService.verifyOtp({ email: email.trim().toLowerCase(), otp });
+      }
+      const data = res.data || res;
+
+      loginSuccess(data.token, data.user);
       showToast("Welcome to MehndiGo!", "success");
       
-      if (res.data.user.role === "ADMIN") {
+      if (data.user.role === "ADMIN") {
         navigate("/admin");
       } else {
         navigate("/dashboard");
       }
     } catch (e) {
-      showToast("Invalid verification code or role mismatch: " + e.message, "danger");
+      showToast("Invalid verification code: " + e.message, "danger");
     } finally {
       setLoading(false);
     }
@@ -95,27 +133,18 @@ const LoginPage = ({ showToast }) => {
             Mehndi <span className="text-accent">Go</span>
           </h2>
           <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem", marginTop: "0.25rem" }}>
-            {step === 1 ? "Sign up or login via Phone OTP" : "Enter the 6-digit verification code"}
+            {step === 1 
+              ? (showRegistration ? "Complete your profile to register" : "Enter your email address to continue")
+              : "Enter the 6-digit verification code"}
           </p>
         </div>
 
         {step === 1 ? (
-          <form onSubmit={handleSendOtp}>
+          <form onSubmit={showRegistration ? handleRegister : handleContinue}>
             <div className="form-group">
-              <label className="form-label">Full Name (Only for signup)</label>
-              <input
-                type="text"
-                className="form-control"
-                placeholder="e.g. Ankit Yadav"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Phone Number</label>
+              <label className="form-label">Email Address</label>
               <div style={{ position: "relative" }}>
-                <Phone
+                <Mail
                   style={{
                     position: "absolute",
                     left: "12px",
@@ -125,48 +154,117 @@ const LoginPage = ({ showToast }) => {
                   }}
                 />
                 <input
-                  type="tel"
+                  type="email"
                   className="form-control"
-                  placeholder="+919876543210"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="e.g. user@gmail.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  disabled={showRegistration}
                   style={{ paddingLeft: "2.5rem" }}
                   required
                 />
               </div>
             </div>
 
-            <div className="form-group">
-              <label className="form-label">Select Account Role</label>
-              <div style={{ position: "relative" }}>
-                <UserCheck
-                  style={{
-                    position: "absolute",
-                    left: "12px",
-                    top: "10px",
-                    color: "var(--text-secondary)",
-                    width: "16px",
-                  }}
-                />
-                <select
-                  className="form-control"
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
-                  style={{ paddingLeft: "2.5rem" }}
-                >
-                  <option value="USER">Customer / Client</option>
-                  <option value="ARTIST">Talent / Artist</option>
-                </select>
-              </div>
-            </div>
+            {showRegistration && (
+              <>
+                <div className="form-group">
+                  <label className="form-label">Full Name</label>
+                  <div style={{ position: "relative" }}>
+                    <User
+                      style={{
+                        position: "absolute",
+                        left: "12px",
+                        top: "10px",
+                        color: "var(--text-secondary)",
+                        width: "16px",
+                      }}
+                    />
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. Ankit Yadav"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      style={{ paddingLeft: "2.5rem" }}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Mobile Number (Optional)</label>
+                  <div style={{ position: "relative" }}>
+                    <Phone
+                      style={{
+                        position: "absolute",
+                        left: "12px",
+                        top: "10px",
+                        color: "var(--text-secondary)",
+                        width: "16px",
+                      }}
+                    />
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. 9876543210"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      style={{ paddingLeft: "2.5rem" }}
+                    />
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Select Account Role</label>
+                  <div style={{ position: "relative" }}>
+                    <UserCheck
+                      style={{
+                        position: "absolute",
+                        left: "12px",
+                        top: "10px",
+                        color: "var(--text-secondary)",
+                        width: "16px",
+                      }}
+                    />
+                    <select
+                      className="form-control"
+                      value={role}
+                      onChange={(e) => setRole(e.target.value)}
+                      style={{ paddingLeft: "2.5rem" }}
+                    >
+                      <option value="USER">Customer / Client</option>
+                      <option value="ARTIST">Talent / Artist</option>
+                    </select>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {showRegistration && (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setShowRegistration(false);
+                  setName("");
+                  setPhone("");
+                }}
+                style={{ width: "100%", justifyContent: "center", marginTop: "1rem" }}
+              >
+                Use a different email address
+              </button>
+            )}
 
             <button
               type="submit"
               className="btn btn-primary"
-              style={{ width: "100%", justifyContent: "center", marginTop: "1rem" }}
+              style={{ width: "100%", justifyContent: "center", marginTop: "0.5rem" }}
               disabled={loading}
             >
-              {loading ? "Requesting OTP..." : "Get Verification Code"}
+              {loading 
+                ? (showRegistration ? "Registering..." : "Continuing...") 
+                : (showRegistration ? "Create Account" : "Continue")}
             </button>
           </form>
         ) : (

@@ -45,6 +45,8 @@ export const authService = {
   updateProfile: (data) => apiClient.put("/user/profile", data),
   adminSendOtp: (data) => apiClient.post("/user/admin-send-otp", data),
   adminVerifyOtp: (data) => apiClient.post("/user/admin-verify-otp", data),
+  registerSendOtp: (data) => apiClient.post("/user/register-send-otp", data),
+  registerVerifyOtp: (data) => apiClient.post("/user/register-verify-otp", data),
 };
 
 export const artistService = {

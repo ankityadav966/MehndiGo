@@ -2,7 +2,6 @@ const db = require("../models");
 const { Op } = require("sequelize");
 const AppError = require("../utils/errors/app.error");
 const crypto = require("crypto");
-const twilioService = require("../utils/twilio.service");
 
 const checkInFailedAttempts = new Map();
 const checkOutFailedAttempts = new Map();
@@ -576,7 +575,7 @@ class BookingService {
 
   async sendCheckInOtp(bookingId, userId) {
     const booking = await db.Booking.findByPk(bookingId, {
-      include: [{ model: db.User, as: "user", attributes: ["id", "phone", "name"] }]
+      include: [{ model: db.User, as: "user", attributes: ["id", "phone", "name", "email"] }]
     });
     if (!booking) {
       throw new AppError("Booking not found", 404);
@@ -619,17 +618,22 @@ class BookingService {
 
     await booking.update(updates);
 
-    console.log(`[CHECK_IN_OTP] OTP Generated successfully. Booking ID: ${booking.id}, Customer Phone: ${booking.user?.phone || "N/A"}`);
-    console.log(`[TESTING_OTP_LOG] Generated Check-In OTP: ${otp} for Booking ID: ${booking.id} (Phone: ${booking.user?.phone || "N/A"})`);
+    console.log(`[CHECK_IN_OTP] OTP Generated successfully. Booking ID: ${booking.id}, Customer Email: ${booking.user?.email || "N/A"}`);
+    console.log(`[TESTING_OTP_LOG] Generated Check-In OTP: ${otp} for Booking ID: ${booking.id} (Email: ${booking.user?.email || "N/A"})`);
 
-    // Send via Twilio SMS
-    let twilioResult = null;
-    if (booking.user && booking.user.phone) {
-      console.log(`[CHECK_IN_OTP] Sending SMS request to: ${booking.user.phone} for Booking ID: ${booking.id}`);
-      twilioResult = await twilioService.sendOtp(booking.user.phone, otp);
-      console.log(`[CHECK_IN_OTP] SMS Provider Response. SID: ${twilioResult?.sid || "N/A"}, Error: ${twilioResult?.error || "None"}, Status: ${twilioResult?.error ? "FAILED" : "SENT"}`);
+    // Send via Email SMTP
+    let emailResult = null;
+    if (booking.user && booking.user.email) {
+      console.log(`[CHECK_IN_OTP] Sending Email request to: ${booking.user.email} for Booking ID: ${booking.id}`);
+      const { sendEmail } = require("../utils/mail.service");
+      emailResult = await sendEmail(
+        booking.user.email,
+        "MehandiGo - Check-In Verification Code",
+        `Hello ${booking.user.name},\n\nYour check-in OTP for booking #${booking.booking_code} is: ${otp}.\n\nShare this code with your artist to verify their arrival.\n\nBest regards,\nMehandiGo Team`
+      );
+      console.log(`[CHECK_IN_OTP] Email Provider Response: ${JSON.stringify(emailResult)}`);
     } else {
-      console.log(`[CHECK_IN_OTP] SMS Request Skipped. No mobile number found for Booking ID: ${booking.id}`);
+      console.log(`[CHECK_IN_OTP] Email Request Skipped. No email address found for Booking ID: ${booking.id}`);
     }
 
     // Create system notification for client (do NOT include raw OTP code in notification message)
@@ -637,7 +641,7 @@ class BookingService {
       await db.Notification.create({
         user_id: booking.user_id,
         title: "Artist Has Arrived! 🗓️",
-        message: "Artist has arrived. Please share the OTP sent to your registered mobile number with your Artist to verify Check-In.",
+        message: "Artist has arrived. Please share the OTP sent to your registered email address with your Artist to verify Check-In.",
         type: "BOOKING",
         data: {
           type: "booking",
@@ -736,7 +740,7 @@ class BookingService {
 
   async sendCheckOutOtp(bookingId, userId) {
     const booking = await db.Booking.findByPk(bookingId, {
-      include: [{ model: db.User, as: "user", attributes: ["id", "phone", "name"] }]
+      include: [{ model: db.User, as: "user", attributes: ["id", "phone", "name", "email"] }]
     });
     if (!booking) {
       throw new AppError("Booking not found", 404);
@@ -763,17 +767,22 @@ class BookingService {
       check_out_otp_verified: false
     });
 
-    console.log(`[CHECK_OUT_OTP] OTP Generated successfully. Booking ID: ${booking.id}, Customer Phone: ${booking.user?.phone || "N/A"}`);
-    console.log(`[TESTING_OTP_LOG] Generated Check-Out OTP: ${otp} for Booking ID: ${booking.id} (Phone: ${booking.user?.phone || "N/A"})`);
+    console.log(`[CHECK_OUT_OTP] OTP Generated successfully. Booking ID: ${booking.id}, Customer Email: ${booking.user?.email || "N/A"}`);
+    console.log(`[TESTING_OTP_LOG] Generated Check-Out OTP: ${otp} for Booking ID: ${booking.id} (Email: ${booking.user?.email || "N/A"})`);
 
-    // Send via Twilio SMS
-    let twilioResult = null;
-    if (booking.user && booking.user.phone) {
-      console.log(`[CHECK_OUT_OTP] Sending SMS request to: ${booking.user.phone} for Booking ID: ${booking.id}`);
-      twilioResult = await twilioService.sendOtp(booking.user.phone, otp);
-      console.log(`[CHECK_OUT_OTP] SMS Provider Response. SID: ${twilioResult?.sid || "N/A"}, Error: ${twilioResult?.error || "None"}, Status: ${twilioResult?.error ? "FAILED" : "SENT"}`);
+    // Send via Email SMTP
+    let emailResult = null;
+    if (booking.user && booking.user.email) {
+      console.log(`[CHECK_OUT_OTP] Sending Email request to: ${booking.user.email} for Booking ID: ${booking.id}`);
+      const { sendEmail } = require("../utils/mail.service");
+      emailResult = await sendEmail(
+        booking.user.email,
+        "MehandiGo - Check-Out Verification Code",
+        `Hello ${booking.user.name},\n\nYour check-out OTP for booking #${booking.booking_code} is: ${otp}.\n\nShare this code with your artist to verify service completion.\n\nBest regards,\nMehandiGo Team`
+      );
+      console.log(`[CHECK_OUT_OTP] Email Provider Response: ${JSON.stringify(emailResult)}`);
     } else {
-      console.log(`[CHECK_OUT_OTP] SMS Request Skipped. No mobile number found for Booking ID: ${booking.id}`);
+      console.log(`[CHECK_OUT_OTP] Email Request Skipped. No email address found for Booking ID: ${booking.id}`);
     }
 
     // Create system notification for client (do NOT include raw OTP code in notification message)
@@ -781,7 +790,7 @@ class BookingService {
       await db.Notification.create({
         user_id: booking.user_id,
         title: "Service Completion Request 🌟",
-        message: "Your Mehndi service has been completed. Please share the OTP sent to your registered mobile number with your Artist to verify Check-Out.",
+        message: "Your Mehndi service has been completed. Please share the OTP sent to your registered email address with your Artist to verify Check-Out.",
         type: "BOOKING",
         data: {
           type: "booking",

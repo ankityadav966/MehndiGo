@@ -43,6 +43,11 @@ export function getNormalizedUrl(endpoint) {
     cleanEndpoint = "/" + cleanEndpoint;
   }
 
+  // Defensive: Strip trailing /mehndigo from base URL if present to prevent double-prefixing
+  if (baseUrl.endsWith("/api/v1/mehndigo")) {
+    baseUrl = baseUrl.substring(0, baseUrl.length - 9);
+  }
+
   // Normalize endpoints to avoid double prefixing and handle root vs /api/v1 namespaces
   if (cleanEndpoint.startsWith("/api/v1/")) {
     if (baseUrl.endsWith("/api/v1")) {

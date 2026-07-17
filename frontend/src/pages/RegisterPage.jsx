@@ -154,7 +154,7 @@ function RegisterPage({ showToast }) {
           <form onSubmit={handleVerifyOtp} style={{ display: "flex", flexDirection: "column", gap: "1.2rem" }}>
             <div style={{ textAlign: "center", marginBottom: "1rem" }}>
               <CheckCircle2 size={48} color="var(--success-color)" style={{ margin: "0 auto", marginBottom: "1rem" }} />
-              <p>We've sent an OTP to your {formData.phone ? "Mobile" : "Email"}.</p>
+              <p>We've sent an OTP to your email address.</p>
             </div>
 
             <div className="form-group">

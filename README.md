@@ -80,10 +80,9 @@ DB_NAME=mehandigo
 # JWT Auth Secret
 JWT_SECRET=your_jwt_signing_secret
 
-# Twilio SMS OTP Gateway Credentials
-TWILIO_ACCOUNT_SID=your_twilio_sid
-TWILIO_AUTH_TOKEN=your_twilio_auth_token
-TWILIO_PHONE_NUMBER=your_twilio_number
+# Gmail SMTP Gateway Credentials
+EMAIL_USER=your_email@gmail.com
+EMAIL_PASS=your_app_password
 
 # Cashfree Online Payment Gateway Details
 CASHFREE_CLIENT_ID=your_cashfree_client_id

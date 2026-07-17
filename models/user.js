@@ -14,6 +14,21 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: "user_id",
         as: "otps",
       });
+
+      User.hasOne(models.Wallet, {
+        foreignKey: "user_id",
+        as: "wallet"
+      });
+
+      User.hasOne(models.BankAccount, {
+        foreignKey: "user_id",
+        as: "bankAccount"
+      });
+
+      User.hasMany(models.Address, {
+        foreignKey: "user_id",
+        as: "addresses"
+      });
     }
   }
 
@@ -33,7 +48,7 @@ module.exports = (sequelize, DataTypes) => {
 
       email: {
         type: DataTypes.STRING(100),
-        allowNull: true,
+        allowNull: false,
         unique: true,
       },
 
@@ -58,6 +73,26 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
       },
 
+      city: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
+
+      state: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
+
+      pincode: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
+
+      refresh_token: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+      },
+
       is_verified: {
         type: DataTypes.BOOLEAN,
         allowNull: false,
@@ -67,6 +102,12 @@ module.exports = (sequelize, DataTypes) => {
       last_login_at: {
         type: DataTypes.DATE,
         allowNull: true,
+      },
+
+      hide_last_seen: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
       },
     },
     {

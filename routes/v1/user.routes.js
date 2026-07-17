@@ -6,14 +6,15 @@ const UserController = require("../../controller/user.controller");
 const { authenticate } = require("../../middleware/auth.middleware");
 const { validateBody } = require("../../middleware/validate.middleware");
 
-router.post("/register-send-otp", validateBody(["name", "password", "role"]), UserController.registerSendOtp);
-router.post("/register-verify-otp", validateBody(["otp"]), UserController.registerVerifyOtp);
+// Routes
+router.post("/register-send-otp", validateBody(["name", "email", "role"]), UserController.registerSendOtp);
+router.post("/register-verify-otp", validateBody(["email", "otp"]), UserController.registerVerifyOtp);
 
-router.post("/send-otp", UserController.sendOtp); // Legacy / Login send OTP
-router.post("/verify-otp", UserController.verifyOtp); // Legacy / Login verify OTP
-router.post("/login", UserController.login); // Legacy
-router.post("/admin-send-otp", UserController.adminSendOtp);
-router.post("/admin-verify-otp", UserController.adminVerifyOtp);
+router.post("/send-otp", validateBody(["email"]), UserController.sendOtp);
+router.post("/verify-otp", validateBody(["email", "otp"]), UserController.verifyOtp);
+router.post("/login", validateBody(["email"]), UserController.login);
+router.post("/admin-send-otp", validateBody(["email", "password"]), UserController.adminSendOtp);
+router.post("/admin-verify-otp", validateBody(["email", "otp"]), UserController.adminVerifyOtp);
 
 // Profile management
 router.get("/profile", authenticate, UserController.getProfile);

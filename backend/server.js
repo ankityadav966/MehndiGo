@@ -1,5 +1,5 @@
 // MehndiGo Server Entry Point - Live Reloaded
-require("dotenv").config();
+require("./config/env");
 
 const express = require("express");
 const cors = require("cors");
@@ -7,6 +7,11 @@ const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 
 const app = express();
+
+app.use((req, res, next) => {
+  console.log(`[HTTP DIAGNOSTIC] ${req.method} ${req.originalUrl || req.url}`);
+  next();
+});
 
 const PORT = process.env.PORT || 3000;
 
