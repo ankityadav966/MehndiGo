@@ -17,7 +17,6 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.sonuy123.mehendigoo",
-      "usesCleartextTraffic": true,
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.ACCESS_COARSE_LOCATION",
@@ -54,7 +53,17 @@
           "icon": "./assets/images/icon.png",
           "color": "#FF4D6D"
         }
-      ]
+      ],
+      "expo-audio",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
+      "expo-asset"
     ],
     "experiments": {
       "reactCompiler": false

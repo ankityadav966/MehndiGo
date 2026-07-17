@@ -23,12 +23,7 @@ import ImageView from "react-native-image-viewing";
 
 import Colors from "../../constants/Colors";
 
-let Audio = null;
-try {
-  Audio = require("expo-av").Audio;
-} catch (e) {
-  console.log("expo-av is not available in the current container:", e.message);
-}
+import { useAudioRecorder, createAudioPlayer, AudioModule, RecordingPresets, setAudioModeAsync } from "expo-audio";
 import { useSocket } from "../../context/SocketContext";
 import {
   getChatHistory,
@@ -60,17 +55,13 @@ export default function ChatRoomScreen({ route, navigation }) {
   const [inputText, setInputText] = useState("");
   const [booking, setBooking] = useState(null);
   const [isVoiceSupported, setIsVoiceSupported] = useState(false);
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
 
   useEffect(() => {
     async function checkVoiceSupport() {
-      if (!Audio) {
-        setIsVoiceSupported(false);
-        return;
-      }
       try {
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: false,
-          playsInSilentModeIOS: false
+        await setAudioModeAsync({
+          playsInSilentMode: true
         });
         setIsVoiceSupported(true);
       } catch (err) {
@@ -88,7 +79,6 @@ export default function ChatRoomScreen({ route, navigation }) {
   const [mediaUploading, setMediaUploading] = useState(false);
 
   // Voice Message Recording States
-  const [recording, setRecording] = useState(null);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
   const recordingTimer = useRef(null);
@@ -353,22 +343,19 @@ export default function ChatRoomScreen({ route, navigation }) {
       return;
     }
     try {
-      const perm = await Audio.requestPermissionsAsync();
+      const perm = await AudioModule.requestRecordingPermissionsAsync();
       if (!perm.granted) {
         Alert.alert("Permission Denied", "Audio recording permission required.");
         return;
       }
 
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true
+      await setAudioModeAsync({
+        playsInSilentMode: true
       });
 
-      const { recording: newRecording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
+      await audioRecorder.prepareToRecordAsync();
+      audioRecorder.record();
 
-      setRecording(newRecording);
       setIsRecording(true);
       setRecordingDuration(0);
 
@@ -381,15 +368,14 @@ export default function ChatRoomScreen({ route, navigation }) {
   };
 
   const stopRecordingAndSend = async () => {
-    if (!recording) return;
+    if (!audioRecorder.isRecording) return;
 
     setIsRecording(false);
     clearInterval(recordingTimer.current);
 
     try {
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
-      setRecording(null);
+      await audioRecorder.stop();
+      const uri = audioRecorder.uri;
 
       if (uri) {
         setMediaUploading(true);
@@ -408,12 +394,11 @@ export default function ChatRoomScreen({ route, navigation }) {
   };
 
   const cancelRecording = async () => {
-    if (!recording) return;
+    if (!audioRecorder.isRecording) return;
     setIsRecording(false);
     clearInterval(recordingTimer.current);
     try {
-      await recording.stopAndUnloadAsync();
-      setRecording(null);
+      await audioRecorder.stop();
     } catch (e) {}
   };
 
@@ -427,37 +412,38 @@ export default function ChatRoomScreen({ route, navigation }) {
 
   // Play voice note playback
   const playAudio = async (messageId, url) => {
-    if (!Audio) {
-      Alert.alert("Audio Unsupported", "Audio playback is not supported in this container.");
-      return;
-    }
     try {
       if (playingAudioId === messageId) {
         // Pause
         if (soundRef.current) {
-          await soundRef.current.pauseAsync();
+          soundRef.current.pause();
           setPlayingAudioId(null);
         }
         return;
       }
 
-      // Unload active player
+      // Release active player
       if (soundRef.current) {
-        await soundRef.current.unloadAsync();
+        soundRef.current.release();
+        soundRef.current = null;
       }
 
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: url },
-        { shouldPlay: true }
-      );
-      soundRef.current = sound;
+      const player = createAudioPlayer(url);
+      soundRef.current = player;
       setPlayingAudioId(messageId);
 
-      sound.setOnPlaybackStatusUpdate((status) => {
+      const subscription = player.addListener("playbackStatusUpdate", (status) => {
         if (status.didJustFinish) {
           setPlayingAudioId(null);
+          subscription.remove();
+          player.release();
+          if (soundRef.current === player) {
+            soundRef.current = null;
+          }
         }
       });
+
+      player.play();
     } catch (e) {
       Alert.alert("Error", "Playback failed.");
     }
