@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { authService } from "../services/api";
 import { useAuth } from "../context/AuthContext";
-import { Phone, Mail, KeyRound, ShieldAlert } from "lucide-react";
+import { Mail, KeyRound, ShieldAlert } from "lucide-react";
 
 const SecretAdminLogin = ({ showToast }) => {
   const { loginSuccess } = useAuth();

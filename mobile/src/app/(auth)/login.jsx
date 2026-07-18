@@ -18,15 +18,15 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
 
   const handleSendOtp = async () => {
-    if (!identifier) {
-      Alert.alert("Required", "Phone number or Email is required");
+    const trimmedEmail = identifier.trim();
+    if (!trimmedEmail) {
+      Alert.alert("Required", "Email address is required");
       return;
     }
 
     setLoading(true);
     try {
-      const isEmail = identifier.includes("@");
-      const payload = isEmail ? { email: identifier } : { phone: identifier };
+      const payload = { email: trimmedEmail };
       
       const res = await authService.login(payload);
       Alert.alert("Success", "OTP Sent successfully!");
@@ -46,8 +46,7 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
-      const isEmail = identifier.includes("@");
-      const payload = { otp, ...(isEmail ? { email: identifier } : { phone: identifier }) };
+      const payload = { otp, email: identifier.trim() };
       
       const res = await authService.verifyOtp(payload);
       await loginSuccess(res.data.token, res.data.user);
@@ -76,14 +75,14 @@ export default function LoginPage() {
 
           {step === 1 ? (
             <View>
-              <Text style={styles.label}>Email or Mobile Number</Text>
+              <Text style={styles.label}>Email Address</Text>
               <View style={{ position: 'relative', justifyContent: 'center' }}>
                 <View style={{ position: 'absolute', left: 12, zIndex: 1 }}>
                   <User size={20} color={colors.textSecondary} />
                 </View>
                 <TextInput
                   style={[styles.input, { paddingLeft: 40 }]}
-                  placeholder="Enter email or mobile"
+                  placeholder="Enter your email"
                   placeholderTextColor={colors.textSecondary}
                   value={identifier}
                   onChangeText={setIdentifier}

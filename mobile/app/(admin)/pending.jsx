@@ -74,7 +74,7 @@ export default function AdminPending() {
   const renderPending = ({ item }) => (
     <View style={[styles.glassPanel, { marginBottom: 16 }]}>
       <Text style={{ fontSize: 18, fontWeight: '700', color: colors.textPrimary }}>{item.user?.name}</Text>
-      <Text style={{ color: colors.textSecondary, marginBottom: 4 }}>Phone: {item.user?.phone}</Text>
+
       <Text style={{ color: colors.textSecondary, marginBottom: 4 }}>Experience: {item.experience_years} Years</Text>
       <Text style={{ color: colors.textSecondary, marginBottom: 12 }}>Address: {item.location}, {item.city}, {item.state} ({item.pincode})</Text>
 

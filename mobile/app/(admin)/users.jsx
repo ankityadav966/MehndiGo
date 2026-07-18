@@ -45,7 +45,7 @@ export default function AdminUsers() {
       </View>
       <View style={{ flex: 1 }}>
         <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>{item.name}</Text>
-        <Text style={{ fontSize: 14, color: colors.textSecondary }}>{item.phone}</Text>
+
         {item.email && <Text style={{ fontSize: 12, color: colors.textSecondary }}>{item.email}</Text>}
       </View>
       <View style={{ backgroundColor: item.is_verified ? colors.success : colors.bgTertiary, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 }}>

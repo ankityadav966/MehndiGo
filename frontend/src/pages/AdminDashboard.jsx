@@ -768,7 +768,7 @@ const AdminDashboard = ({ showToast }) => {
                           <div>
                             <h3 style={{ fontWeight: 700 }}>{artist.user?.name}</h3>
                             <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>
-                              Phone: {artist.user?.phone} | Email: {artist.user?.email || "N/A"}
+                              Email: {artist.user?.email || "N/A"}
                             </p>
                             <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>
                               Experience: {artist.experience_years} Years
@@ -838,7 +838,7 @@ const AdminDashboard = ({ showToast }) => {
                       <tr style={{ borderBottom: "2px solid var(--border-color)" }}>
                         <th style={{ padding: "1rem" }}>User ID</th>
                         <th style={{ padding: "1rem" }}>Name</th>
-                        <th style={{ padding: "1rem" }}>Phone Number</th>
+
                         <th style={{ padding: "1rem" }}>Email</th>
                         <th style={{ padding: "1rem" }}>Verified</th>
                       </tr>
@@ -848,7 +848,7 @@ const AdminDashboard = ({ showToast }) => {
                         <tr key={u.id} style={{ borderBottom: "1px solid var(--border-color)" }}>
                           <td style={{ padding: "1rem" }}>#{u.id}</td>
                           <td style={{ padding: "1rem", fontWeight: 600 }}>{u.name}</td>
-                          <td style={{ padding: "1rem" }}>{u.phone}</td>
+
                           <td style={{ padding: "1rem" }}>{u.email || "N/A"}</td>
                           <td style={{ padding: "1rem" }}>
                             <span className={`badge ${u.is_verified ? "badge-success" : "badge-secondary"}`}>

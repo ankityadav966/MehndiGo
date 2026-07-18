@@ -38,15 +38,17 @@ apiClient.interceptors.response.use(
 );
 
 export const authService = {
-  sendOtp: (data) => apiClient.post("/user/send-otp", data),
-  verifyOtp: (data) => apiClient.post("/user/verify-otp", data),
+  register: (data) => apiClient.post("/user/register", data),
+  verifyEmailOtp: (data) => apiClient.post("/user/verify-email-otp", data),
   login: (data) => apiClient.post("/user/login", data),
+  forgotPassword: (data) => apiClient.post("/user/forgot-password", data),
+  verifyForgotPasswordOtp: (data) => apiClient.post("/user/verify-forgot-password-otp", data),
+  resetPassword: (data) => apiClient.post("/user/reset-password", data),
+  resendOtp: (data) => apiClient.post("/user/resend-otp", data),
   getProfile: () => apiClient.get("/user/profile"),
   updateProfile: (data) => apiClient.put("/user/profile", data),
   adminSendOtp: (data) => apiClient.post("/user/admin-send-otp", data),
   adminVerifyOtp: (data) => apiClient.post("/user/admin-verify-otp", data),
-  registerSendOtp: (data) => apiClient.post("/user/register-send-otp", data),
-  registerVerifyOtp: (data) => apiClient.post("/user/register-verify-otp", data),
 };
 
 export const artistService = {

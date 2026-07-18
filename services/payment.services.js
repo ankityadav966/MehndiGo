@@ -62,7 +62,7 @@ class PaymentService {
           customerId: userId,
           customerName: user.name,
           customerEmail: user.email,
-          customerPhone: user.phone,
+          customerPhone: "9999999999",
           orderId: orderId,
           amount: orderAmount,
           note: note
@@ -440,7 +440,7 @@ class PaymentService {
           model: db.Booking,
           as: "booking",
           include: [
-            { model: db.User, as: "user", attributes: ["name", "phone"] },
+            { model: db.User, as: "user", attributes: ["name"] },
             { model: db.Service, as: "service", attributes: ["specialization_name"] }
           ]
         }
@@ -585,7 +585,7 @@ class PaymentService {
           model: db.Booking,
           as: "booking",
           include: [
-            { model: db.User, as: "user", attributes: ["name", "phone", "email"] },
+            { model: db.User, as: "user", attributes: ["name", "email"] },
             { model: db.Service, as: "service", attributes: ["specialization_name"] }
           ]
         }

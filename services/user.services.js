@@ -28,13 +28,12 @@ function generateToken(user) {
 }
 
 class UserService {
-  // 1. Registration - Send OTP (Stores temporarily in Otp table)
-  async registerSendOtp(data) {
-    console.log("Registration Data received:", data);
-    const { name, email, phone, password, role } = data;
+  // 1. Registration
+  async register(data) {
+    const { fullName, email, password, role } = data;
 
-    if (!name || !email || !role) {
-      throw new AppError("Name, Email, and Role are required for registration", 400);
+    if (!fullName || !email || !password || !role) {
+      throw new AppError("Full Name, Email, Password, and Role are required", 400);
     }
 
     if (role === "ADMIN") {
@@ -43,50 +42,39 @@ class UserService {
 
     const trimmedEmail = String(email).trim().toLowerCase();
 
-    // Check if user already exists
+    // Check duplicate email
     const existingEmail = await UserRepositor.getOne({ email: trimmedEmail });
+
     if (existingEmail) {
-      throw new AppError(`This email is already registered. Please log in instead.`, 400);
+      throw new AppError("This email is already registered.", 400);
     }
 
-    if (phone) {
-      const phoneCleaned = String(phone).trim().replace(/[\s-()]/g, "");
-      if (phoneCleaned !== "") {
-        const existingUser = await UserRepositor.getOne({ phone: phoneCleaned });
-        if (existingUser) {
-          throw new AppError(`This phone number is already registered. Please log in instead.`, 400);
-        }
-      }
-    }
-
+    const hashPassword = crypto.createHash("sha256").update(password).digest("hex");
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const hashPassword = password ? crypto.createHash("sha256").update(password).digest("hex") : null;
 
-    // Store registration data temporarily in OTP table
+    // Store in DB
     const payload = JSON.stringify({
-      name,
+      fullName,
       email: trimmedEmail,
-      phone: phone ? phone.trim() : null,
       password: hashPassword,
       role
     });
 
     await OtpRepositor.create({
-      phone: phone || null,
       email: trimmedEmail,
       otp,
       registration_payload: payload,
       expires_at: new Date(Date.now() + 5 * 60 * 1000),
     });
 
-    await sendOtpEmail(trimmedEmail, otp, name);
+    await sendOtpEmail(trimmedEmail, otp, fullName);
     console.log(`\n==================================\nEMAIL OTP (Register)\nEmail: ${trimmedEmail}\nOTP: ${otp}\n==================================\n`);
 
-    return { email: trimmedEmail, otp }; // OTP returned for dev testing easily
+    return { email: trimmedEmail, message: "OTP sent successfully to email" };
   }
 
-  // 2. Registration - Verify OTP & Create Account
-  async registerVerifyOtp(data) {
+  // 2. Verify Email OTP
+  async verifyEmailOtp(data) {
     const { email, otp } = data;
 
     if (!email || !otp) {
@@ -118,14 +106,13 @@ class UserService {
     // Verify OTP
     await OtpRepositor.update(otpData.id, { verified: true });
 
-    // Create User (phone is nullable/optional)
+    // Create User
     const user = await UserRepositor.create({
-      name: payload.name,
-      phone: payload.phone || null,
+      fullName: payload.fullName,
       email: payload.email,
       password: payload.password,
       role: payload.role,
-      is_verified: true,
+      isEmailVerified: true,
       last_login_at: new Date(),
     });
     
@@ -137,205 +124,174 @@ class UserService {
       });
     }
 
-    // Generate Token
     const token = generateToken(user);
-    
-    console.log("Database Query Result (User Created):", user.id);
-    console.log("Generated JWT:", token);
 
     return {
       token,
       user: {
         id: user.id,
-        name: user.name,
-        phone: user.phone,
+        fullName: user.fullName,
         email: user.email,
         role: user.role,
+        isEmailVerified: user.isEmailVerified
       },
     };
   }
 
-  // 3. Unified Login - Send OTP
-  async loginSendOtp(data) {
-    const { email, phone, role } = data;
-    const loginValue = email || phone;
-
-    if (!loginValue) {
-      throw new AppError("Email or Mobile Number is required for login", 400);
-    }
-
-    const cleaned = String(loginValue).trim();
-    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleaned);
-
-    let user = null;
-    let trimmedEmail = "";
-
-    if (isEmail) {
-      trimmedEmail = cleaned.toLowerCase();
-      
-      // Special Admin Logic
-      const isSpecialAdmin = trimmedEmail === "ankityadav941318@gmail.com" || trimmedEmail === "sonudonyadav87@gmail.com";
-      if (isSpecialAdmin) {
-        user = await UserRepositor.getOne({ role: "ADMIN" });
-        if (!user) {
-          user = await UserRepositor.create({
-            name: "Master Admin",
-            phone: "6350650966",
-            email: trimmedEmail,
-            role: "ADMIN",
-            is_verified: true,
-          });
-        }
-      } else {
-        user = await UserRepositor.getOne({ email: trimmedEmail });
-      }
-    } else {
-      const phoneCleaned = cleaned.replace(/[\s-()]/g, "");
-      user = await UserRepositor.getOne({ phone: phoneCleaned });
-      if (!user && phoneCleaned.length === 10) {
-        user = await UserRepositor.getOne({ phone: `+91${phoneCleaned}` });
-      }
-    }
-
-    if (!user) {
-      throw new AppError("User not found. Please register first.", 404);
-    }
-
-    if (role && user.role !== role) {
-      throw new AppError(`Access denied: Registered as a ${user.role}`, 403);
-    }
-
-    trimmedEmail = user.email;
-    if (!trimmedEmail) {
-      throw new AppError("No email address is registered on this account.", 400);
-    }
-
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-
-    await OtpRepositor.create({
-      user_id: user.id,
-      phone: user.phone || null,
-      email: trimmedEmail,
-      otp,
-      expires_at: new Date(Date.now() + 5 * 60 * 1000),
-    });
-
-    await sendOtpEmail(trimmedEmail, otp, user.name);
-    console.log(`\n==================================\nEMAIL OTP (Login)\nEmail: ${trimmedEmail}\nOTP: ${otp}\n==================================\n`);
-
-    return {
-      email: trimmedEmail,
-      role: user.role,
-      otp,
-    };
-  }
-
-  // 4. Unified Login - Verify OTP
-  async loginVerifyOtp(data) {
-    const { email, phone, otp } = data;
-    const loginValue = email || phone;
-
-    if (!loginValue || !otp) {
-      throw new AppError("Email/Mobile and OTP required", 400);
-    }
-
-    const cleaned = String(loginValue).trim();
-    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleaned);
-
-    let targetEmail = "";
-    if (isEmail) {
-      targetEmail = cleaned.toLowerCase();
-    } else {
-      const phoneCleaned = cleaned.replace(/[\s-()]/g, "");
-      const user = await UserRepositor.getOne({ phone: phoneCleaned });
-      if (user) {
-        targetEmail = user.email;
-      } else {
-        const user91 = await UserRepositor.getOne({ phone: `+91${phoneCleaned}` });
-        if (user91) targetEmail = user91.email;
-      }
-    }
-
-    if (!targetEmail) {
-      throw new AppError("Valid email or registered phone number required", 400);
-    }
-
-    const otpData = await OtpRepositor.getOne({
-      email: targetEmail,
-      otp: String(otp),
-      verified: false,
-    });
-
-    if (!otpData) {
-      throw new AppError("Invalid OTP", 400);
-    }
-
-    if (new Date(otpData.expires_at) < new Date()) {
-      throw new AppError("OTP Expired", 400);
-    }
-
-    await OtpRepositor.update(otpData.id, { verified: true });
-
-    const user = await UserRepositor.getById(otpData.user_id);
-    if (!user) {
-      throw new AppError("User not found", 404);
-    }
-
-    await UserRepositor.update(user.id, {
-      last_login_at: new Date(),
-    });
-
-    const token = generateToken(user);
-
-    console.log("Authenticated User:", user.id);
-    console.log("Generated JWT:", token);
-
-    return {
-      token,
-      user: {
-        id: user.id,
-        name: user.name,
-        phone: user.phone,
-        email: user.email,
-        role: user.role,
-      },
-    };
-  }
-
-  // Legacy/Compatibility fallbacks
-  async sendOtp(data) {
-    return this.loginSendOtp(data);
-  }
-
-  async verifyOtp(data) {
-    return this.loginVerifyOtp(data);
-  }
-
+  // 3. Login
   async login(data) {
-    return this.sendOtp(data);
-  }
-
-  async adminSendOtp(data) {
     const { email, password } = data;
-    
+
     if (!email || !password) {
       throw new AppError("Email and Password are required", 400);
     }
 
     const trimmedEmail = String(email).trim().toLowerCase();
-    
-    const user = await UserRepositor.getOne({ email: trimmedEmail, role: "ADMIN" });
+    const user = await UserRepositor.getOne({ email: trimmedEmail });
+
     if (!user) {
-      throw new AppError("Access denied: Invalid Admin credentials", 403);
+      throw new AppError("User Not Found. Please register first.", 404);
     }
-    
+
     const inputHash = crypto.createHash("sha256").update(password).digest("hex");
     if (user.password !== inputHash) {
-      throw new AppError("Access denied: Invalid Admin credentials", 403);
+      throw new AppError("Incorrect Password", 400);
+    }
+
+    if (!user.isEmailVerified) {
+      // Trigger OTP sending logic
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      await OtpRepositor.create({
+        email: trimmedEmail,
+        otp,
+        expires_at: new Date(Date.now() + 5 * 60 * 1000),
+      });
+      await sendOtpEmail(trimmedEmail, otp, user.fullName || "User");
+      
+      throw new AppError("Email Not Verified", 403);
+    }
+
+    await UserRepositor.update(user.id, { last_login_at: new Date() });
+    const token = generateToken(user);
+
+    return {
+      token,
+      user: {
+        id: user.id,
+        fullName: user.fullName,
+        email: user.email,
+        role: user.role,
+        isEmailVerified: user.isEmailVerified
+      },
+    };
+  }
+
+  // 4. Forgot Password
+  async forgotPassword(data) {
+    const { email } = data;
+    if (!email) throw new AppError("Email is required", 400);
+
+    const trimmedEmail = String(email).trim().toLowerCase();
+    const user = await UserRepositor.getOne({ email: trimmedEmail });
+
+    if (!user) {
+      throw new AppError("User Not Found", 404);
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    await OtpRepositor.create({
+      user_id: user.id,
+      email: trimmedEmail,
+      otp,
+      expires_at: new Date(Date.now() + 5 * 60 * 1000),
+    });
 
+    await sendOtpEmail(trimmedEmail, otp, user.fullName || "User");
+
+    return { email: trimmedEmail, message: "OTP sent to your email for password reset" };
+  }
+
+  // 5. Verify Forgot Password OTP
+  async verifyForgotPasswordOtp(data) {
+    const { email, otp } = data;
+    if (!email || !otp) throw new AppError("Email and OTP required", 400);
+
+    const trimmedEmail = String(email).trim().toLowerCase();
+    const otpData = await OtpRepositor.getOne({ email: trimmedEmail, otp: String(otp), verified: false });
+
+    if (!otpData) throw new AppError("Invalid OTP", 400);
+    if (new Date(otpData.expires_at) < new Date()) throw new AppError("OTP Expired", 400);
+
+    await OtpRepositor.update(otpData.id, { verified: true });
+    
+    return { email: trimmedEmail, message: "OTP verified successfully. You can now reset your password." };
+  }
+
+  // 6. Reset Password
+  async resetPassword(data) {
+    const { email, password } = data;
+    if (!email || !password) throw new AppError("Email and Password required", 400);
+
+    const trimmedEmail = String(email).trim().toLowerCase();
+    const user = await UserRepositor.getOne({ email: trimmedEmail });
+
+    if (!user) throw new AppError("User Not Found", 404);
+
+    const hashPassword = crypto.createHash("sha256").update(password).digest("hex");
+    
+    await UserRepositor.update(user.id, { password: hashPassword });
+
+    return { message: "Password reset successfully. You can now login." };
+  }
+
+  // 7. Resend OTP
+  async resendOtp(data) {
+    const { email } = data;
+    if (!email) throw new AppError("Email is required", 400);
+
+    const trimmedEmail = String(email).trim().toLowerCase();
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    let name = "User";
+    const user = await UserRepositor.getOne({ email: trimmedEmail });
+    if (user) {
+        name = user.fullName || "User";
+    } else {
+        const latestOtp = await OtpRepositor.getOne({ email: trimmedEmail });
+        if (latestOtp && latestOtp.registration_payload) {
+            try {
+                const payload = JSON.parse(latestOtp.registration_payload);
+                name = payload.fullName || "User";
+            } catch (e) {}
+        }
+    }
+
+    await OtpRepositor.create({
+      email: trimmedEmail,
+      otp,
+      expires_at: new Date(Date.now() + 5 * 60 * 1000),
+    });
+
+    await sendOtpEmail(trimmedEmail, otp, name);
+
+    return { message: "A new OTP has been sent to your email." };
+  }
+
+  // Admin Legacy Routes
+  async adminSendOtp(data) {
+    const { email, password } = data;
+    if (!email || !password) throw new AppError("Email and Password are required", 400);
+
+    const trimmedEmail = String(email).trim().toLowerCase();
+    const user = await UserRepositor.getOne({ email: trimmedEmail, role: "ADMIN" });
+    
+    if (!user) throw new AppError("Access denied: Invalid Admin credentials", 403);
+    
+    const inputHash = crypto.createHash("sha256").update(password).digest("hex");
+    if (user.password !== inputHash) throw new AppError("Access denied: Invalid Admin credentials", 403);
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
     await OtpRepositor.create({
       user_id: user.id,
       email: trimmedEmail,
@@ -345,25 +301,16 @@ class UserService {
 
     await sendEmail(trimmedEmail, "Mehndi Go - Admin Verification Code", `Your Admin security verification OTP is: ${otp}`);
 
-    return {
-      email: trimmedEmail,
-      otp,
-    };
+    return { email: trimmedEmail, otp };
   }
 
   async adminVerifyOtp(data) {
     const { email, otp } = data;
-
-    if (!email || !otp) {
-      throw new AppError("Email and OTP are required", 400);
-    }
+    if (!email || !otp) throw new AppError("Email and OTP are required", 400);
 
     const trimmedEmail = String(email).trim().toLowerCase();
-
     const user = await UserRepositor.getOne({ email: trimmedEmail, role: "ADMIN" });
-    if (!user) {
-      throw new AppError("Access denied: Invalid Admin credentials", 403);
-    }
+    if (!user) throw new AppError("Access denied: Invalid Admin credentials", 403);
 
     const otpData = await OtpRepositor.getOne({
       user_id: user.id,
@@ -371,30 +318,18 @@ class UserService {
       verified: false,
     });
 
-    if (!otpData) {
-      throw new AppError("Invalid OTP", 400);
-    }
+    if (!otpData) throw new AppError("Invalid OTP", 400);
+    if (new Date(otpData.expires_at) < new Date()) throw new AppError("OTP Expired", 400);
 
-    if (new Date(otpData.expires_at) < new Date()) {
-      throw new AppError("OTP Expired", 400);
-    }
-
-    await OtpRepositor.update(otpData.id, {
-      verified: true,
-    });
-
-    await UserRepositor.update(user.id, {
-      last_login_at: new Date(),
-    });
+    await OtpRepositor.update(otpData.id, { verified: true });
+    await UserRepositor.update(user.id, { last_login_at: new Date() });
 
     const token = generateToken(user);
-
     return {
       token,
       user: {
         id: user.id,
-        name: user.name,
-        phone: user.phone,
+        fullName: user.fullName,
         role: user.role,
         email: user.email,
       },
