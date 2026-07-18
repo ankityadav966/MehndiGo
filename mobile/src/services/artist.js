@@ -110,6 +110,15 @@ export async function getPortfolioItemById(id) {
 export async function createPortfolioItem(itemData) {
   const { File, Paths } = require("expo-file-system");
 
+  const getSafeUri = (uri) => {
+    if (!uri) return uri;
+    try {
+      return decodeURIComponent(decodeURIComponent(uri));
+    } catch (e) {
+      return uri;
+    }
+  };
+
   const isLocal = (url) => url && (url.startsWith("file://") || url.startsWith("content://"));
   const hasLocalMedia = isLocal(itemData.image_url) || isLocal(itemData.video_url);
 
@@ -131,15 +140,26 @@ export async function createPortfolioItem(itemData) {
     let finalUri = mediaUri;
     const tempName = `upload_portfolio_${Date.now()}_${name}`;
 
-    let destFile = null;
     try {
-      const srcFile = new File(mediaUri);
-      destFile = new File(Paths.cache, tempName);
-      await srcFile.copy(destFile.uri);
-      finalUri = destFile.uri;
-      console.log("[FileSystem] Portfolio file copied successfully:", finalUri);
+      const FileSystem = require("expo-file-system");
+      const destUri = `${FileSystem.cacheDirectory}${tempName}`;
+      await FileSystem.copyAsync({
+        from: getSafeUri(mediaUri),
+        to: destUri
+      });
+      finalUri = destUri;
+      console.log("[FileSystem] Portfolio file copied successfully using copyAsync:", finalUri);
     } catch (err) {
-      console.warn("[FileSystem] Copy failed for portfolio item:", err.message);
+      console.warn("[FileSystem] copyAsync failed, trying File API:", err.message);
+      try {
+        const srcFile = new File(getSafeUri(mediaUri));
+        const destFile = new File(Paths.cache, tempName);
+        await srcFile.copy(destFile.uri);
+        finalUri = destFile.uri;
+        console.log("[FileSystem] Portfolio file copied successfully using File API:", finalUri);
+      } catch (fileApiErr) {
+        console.warn("[FileSystem] Both copyAsync and File API failed for portfolio item:", fileApiErr.message);
+      }
     }
 
     const token = await secureStorage.getAccessToken();
@@ -207,6 +227,15 @@ export async function uploadPortfolioMedia(mediaFiles) {
   const { File, Paths } = require("expo-file-system");
   const token = await secureStorage.getAccessToken();
   const results = [];
+
+  const getSafeUri = (uri) => {
+    if (!uri) return uri;
+    try {
+      return decodeURIComponent(decodeURIComponent(uri));
+    } catch (e) {
+      return uri;
+    }
+  };
   
   for (let index = 0; index < mediaFiles.length; index++) {
     const file = mediaFiles[index];
@@ -224,15 +253,26 @@ export async function uploadPortfolioMedia(mediaFiles) {
       let finalUri = uri;
       const tempName = `upload_portfolio_media_${Date.now()}_${name}`;
 
-      let destFile = null;
       try {
-        const srcFile = new File(uri);
-        destFile = new File(Paths.cache, tempName);
-        await srcFile.copy(destFile.uri);
-        finalUri = destFile.uri;
-        console.log("[FileSystem] Portfolio media file copied successfully:", finalUri);
+        const FileSystem = require("expo-file-system");
+        const destUri = `${FileSystem.cacheDirectory}${tempName}`;
+        await FileSystem.copyAsync({
+          from: getSafeUri(uri),
+          to: destUri
+        });
+        finalUri = destUri;
+        console.log("[FileSystem] Portfolio media file copied successfully using copyAsync:", finalUri);
       } catch (err) {
-        console.warn("[FileSystem] Copy failed for portfolio media:", err.message);
+        console.warn("[FileSystem] copyAsync failed, trying File API:", err.message);
+        try {
+          const srcFile = new File(getSafeUri(uri));
+          destFile = new File(Paths.cache, tempName);
+          await srcFile.copy(destFile.uri);
+          finalUri = destFile.uri;
+          console.log("[FileSystem] Portfolio media file copied successfully using File API:", finalUri);
+        } catch (fileApiErr) {
+          console.warn("[FileSystem] Both copyAsync and File API failed for portfolio media:", fileApiErr.message);
+        }
       }
 
       const formData = new FormData();

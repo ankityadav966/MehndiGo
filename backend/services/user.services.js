@@ -205,7 +205,7 @@ class UserService {
       throw new AppError(`Access denied: Registered as a ${user.role}`, 403);
     }
 
-    trimmedEmail = user.email;
+    trimmedEmail = isEmail ? cleaned.toLowerCase() : user.email;
     if (!trimmedEmail) {
       throw new AppError("No email address is registered on this account.", 400);
     }
@@ -224,6 +224,7 @@ class UserService {
     console.log(`\n==================================\nEMAIL OTP (Login)\nEmail: ${trimmedEmail}\nOTP: ${otp}\n==================================\n`);
 
     return {
+      exists: true,
       email: trimmedEmail,
       role: user.role,
       otp,

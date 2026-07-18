@@ -33,18 +33,38 @@ export async function uploadChatMedia(fileUri, fileType, fileName) {
   else if (fileType === "pdf") type = "application/pdf";
   else if (fileType === "voice") type = "audio/m4a";
 
+  const getSafeUri = (uri) => {
+    if (!uri) return uri;
+    try {
+      return decodeURIComponent(decodeURIComponent(uri));
+    } catch (e) {
+      return uri;
+    }
+  };
+
   let finalUri = fileUri;
   const tempName = `upload_${Date.now()}_${name}`;
 
-  let destFile = null;
   try {
-    const srcFile = new File(fileUri);
-    destFile = new File(Paths.cache, tempName);
-    await srcFile.copy(destFile.uri);
-    finalUri = destFile.uri;
-    console.log("[FileSystem] Successfully copied file to readable local path using SDK 56 File API:", finalUri);
+    const FileSystem = require("expo-file-system");
+    const destUri = `${FileSystem.cacheDirectory}${tempName}`;
+    await FileSystem.copyAsync({
+      from: getSafeUri(fileUri),
+      to: destUri
+    });
+    finalUri = destUri;
+    console.log("[FileSystem] Successfully copied chat file using copyAsync:", finalUri);
   } catch (err) {
-    console.warn("[FileSystem] Copy failed, attempting direct upload of original URI:", err.message);
+    console.warn("[FileSystem] copyAsync failed, trying File API:", err.message);
+    try {
+      const srcFile = new File(getSafeUri(fileUri));
+      destFile = new File(Paths.cache, tempName);
+      await srcFile.copy(destFile.uri);
+      finalUri = destFile.uri;
+      console.log("[FileSystem] Successfully copied chat file using File API:", finalUri);
+    } catch (fileApiErr) {
+      console.warn("[FileSystem] Both copyAsync and File API failed for chat upload:", fileApiErr.message);
+    }
   }
 
   const url = `${BASE_URL}/mehndigo/chat/upload`;

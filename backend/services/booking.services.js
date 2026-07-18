@@ -114,9 +114,16 @@ class BookingService {
     }
 
     // 5. Check Restricted Booking Rules
-    const isRestricted = typeof this.hasRestrictedBooking === 'function'
-      ? await this.hasRestrictedBooking(userId, artistId)
-      : await BookingService.prototype.hasRestrictedBooking.call(this, userId, artistId);
+    let isRestricted = false;
+    try {
+      if (typeof this.hasRestrictedBooking === 'function') {
+        isRestricted = await this.hasRestrictedBooking(userId, artistId);
+      } else if (typeof BookingService !== 'undefined' && BookingService.prototype && typeof BookingService.prototype.hasRestrictedBooking === 'function') {
+        isRestricted = await BookingService.prototype.hasRestrictedBooking.call(this, userId, artistId);
+      }
+    } catch (err) {
+      console.error("Warning: hasRestrictedBooking check failed:", err.message);
+    }
     if (isRestricted) {
       throw new AppError("Booking restricted. You have too many active bookings or pending disputes.", 400);
     }
