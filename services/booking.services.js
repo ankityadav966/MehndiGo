@@ -240,7 +240,7 @@ class BookingService {
         {
           model: db.User,
           as: "user",
-          attributes: ["id", "name", "phone", "profile_image"]
+          attributes: ["id", "name", "profile_image"]
         },
         {
           model: db.ArtistProfile,
@@ -249,7 +249,7 @@ class BookingService {
             {
               model: db.User,
               as: "user",
-              attributes: ["id", "name", "phone", "profile_image"]
+              attributes: ["id", "name", "profile_image"]
             }
           ]
         },
@@ -582,7 +582,7 @@ class BookingService {
 
   async sendCheckInOtp(bookingId, userId) {
     const booking = await db.Booking.findByPk(bookingId, {
-      include: [{ model: db.User, as: "user", attributes: ["id", "phone", "name", "email"] }]
+      include: [{ model: db.User, as: "user", attributes: ["id", "name", "email"] }]
     });
     if (!booking) {
       throw new AppError("Booking not found", 404);
@@ -670,7 +670,7 @@ class BookingService {
 
     return {
       success: true,
-      maskedPhone: booking.user?.phone ? booking.user.phone.replace(/.(?=.{4})/g, "*") : "Customer"
+      maskedPhone: "Customer",
     };
   }
 
@@ -747,7 +747,7 @@ class BookingService {
 
   async sendCheckOutOtp(bookingId, userId) {
     const booking = await db.Booking.findByPk(bookingId, {
-      include: [{ model: db.User, as: "user", attributes: ["id", "phone", "name", "email"] }]
+      include: [{ model: db.User, as: "user", attributes: ["id", "name", "email"] }]
     });
     if (!booking) {
       throw new AppError("Booking not found", 404);

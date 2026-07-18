@@ -1,4 +1,4 @@
-import apiRequest, { BASE_URL } from "./api";
+import apiRequest, { BASE_URL, getNormalizedUrl } from "./api";
 
 // Fetch chat room listings for active bookings
 export async function getChatList() {
@@ -24,93 +24,44 @@ export async function deleteMessage(messageId, deleteType = "me") {
   return res?.data || res;
 }
 
+
+
 // Upload file to Cloudinary via REST API
 export async function uploadChatMedia(fileUri, fileType, fileName) {
-  const { File, Paths } = require("expo-file-system");
-  const name = fileName || fileUri.split("/").pop();
+  const getSafeUri = (uri) => {
+    if (!uri) return uri;
+    let cleanUri = uri;
+    if (cleanUri.startsWith("/")) {
+      cleanUri = `file://${cleanUri}`;
+    }
+    return cleanUri;
+  };
+
   let type = "image/jpeg";
   if (fileType === "video") type = "video/mp4";
   else if (fileType === "pdf") type = "application/pdf";
   else if (fileType === "voice") type = "audio/m4a";
 
-  const getSafeUri = (uri) => {
-    if (!uri) return uri;
-    try {
-      return decodeURIComponent(decodeURIComponent(uri));
-    } catch (e) {
-      return uri;
-    }
-  };
-
-  let finalUri = fileUri;
-  const tempName = `upload_${Date.now()}_${name}`;
-
-  try {
-    const FileSystem = require("expo-file-system");
-    const destUri = `${FileSystem.cacheDirectory}${tempName}`;
-    await FileSystem.copyAsync({
-      from: getSafeUri(fileUri),
-      to: destUri
-    });
-    finalUri = destUri;
-    console.log("[FileSystem] Successfully copied chat file using copyAsync:", finalUri);
-  } catch (err) {
-    console.warn("[FileSystem] copyAsync failed, trying File API:", err.message);
-    try {
-      const srcFile = new File(getSafeUri(fileUri));
-      destFile = new File(Paths.cache, tempName);
-      await srcFile.copy(destFile.uri);
-      finalUri = destFile.uri;
-      console.log("[FileSystem] Successfully copied chat file using File API:", finalUri);
-    } catch (fileApiErr) {
-      console.warn("[FileSystem] Both copyAsync and File API failed for chat upload:", fileApiErr.message);
-    }
-  }
-
-  const url = `${BASE_URL}/mehndigo/chat/upload`;
+  const finalUri = getSafeUri(fileUri);
+  const url = getNormalizedUrl("/api/v1/mehndigo/chat/upload");
   const token = await require("../utils/storage").secureStorage.getAccessToken();
 
-  const formData = new FormData();
-  formData.append("file", {
-    uri: finalUri,
-    type: type,
-    name: name
+  const FileSystem = require("expo-file-system/legacy");
+  const response = await FileSystem.uploadAsync(url, finalUri, {
+    httpMethod: "POST",
+    uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+    fieldName: "file",
+    mimeType: type,
+    headers: token ? { Authorization: `Bearer ${token}` } : {}
   });
 
-  let response;
-  try {
-    response = await fetch(url, {
-      method: "POST",
-      body: formData,
-      headers: {
-        "Content-Type": "multipart/form-data",
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      }
-    });
-  } finally {
-    try {
-      if (destFile && finalUri !== fileUri) {
-        await destFile.delete();
-        console.log("[FileSystem] Cleaned up temporary copied file using SDK 56 File API:", finalUri);
-      }
-    } catch (cleanErr) {
-      console.warn("[FileSystem] Failed to clean up temp file:", cleanErr.message);
-    }
+  const responseData = JSON.parse(response.body);
+
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(responseData?.message || `Upload failed with status ${response.status}`);
   }
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    let parsedError;
-    try {
-      parsedError = JSON.parse(errorText);
-    } catch {
-      parsedError = { message: errorText };
-    }
-    throw new Error(parsedError?.message || `Upload failed with status ${response.status}`);
-  }
-
-  const data = await response.json();
-  return data?.data || data;
+  return responseData?.data || responseData;
 }
 
 // Fetch media history attachments

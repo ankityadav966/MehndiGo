@@ -18,7 +18,7 @@ import { sendOtp, registerSendOtp } from "../../services/auth";
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
-  const [mobile, setMobile] = useState("");
+
   const [role, setRole] = useState("USER");
   const [showRegistration, setShowRegistration] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -41,7 +41,7 @@ export default function LoginScreen({ navigation }) {
 
     setLoading(true);
     try {
-      const res = await sendOtp(trimmedEmail, undefined, undefined);
+      const res = await sendOtp(trimmedEmail, undefined);
       const data = res?.data || res;
 
       if (data.exists) {
@@ -75,7 +75,7 @@ export default function LoginScreen({ navigation }) {
     setError("");
     const trimmedEmail = email.trim();
     const trimmedName = name.trim();
-    const trimmedPhone = mobile.trim();
+
 
     if (!trimmedName) {
       setError("Please enter your name");
@@ -84,7 +84,7 @@ export default function LoginScreen({ navigation }) {
 
     setLoading(true);
     try {
-      const res = await registerSendOtp(trimmedName, trimmedEmail, trimmedPhone || null, role);
+      const res = await registerSendOtp(trimmedName, trimmedEmail, null, role);
       const data = res?.data || res;
       const otp = data.otp ? String(data.otp) : "";
 
@@ -153,17 +153,7 @@ export default function LoginScreen({ navigation }) {
                 maxLength={50}
               />
             </View>
-            <View style={[styles.inputContainer, { marginTop: 8 }]}>
-              <TextInput
-                value={mobile}
-                onChangeText={setMobile}
-                style={styles.input}
-                placeholder="Mobile Number (Optional)"
-                placeholderTextColor={Colors.placeholder}
-                keyboardType="phone-pad"
-                maxLength={15}
-              />
-            </View>
+
 
             <Text style={styles.roleLabel}>I want to register as a</Text>
             <View style={styles.roleRow}>
@@ -202,7 +192,7 @@ export default function LoginScreen({ navigation }) {
           onPress={() => {
             setShowRegistration(!showRegistration);
             setName("");
-            setMobile("");
+
             setError("");
           }}
         >

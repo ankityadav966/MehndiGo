@@ -4,8 +4,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import * as Location from "expo-location";
 import Colors from "../../constants/Colors";
 import { useArtistOnboarding } from "../../context/ArtistOnboardingContext";
+import { useAuth } from "../../context/AuthContext";
 
 export default function PersonalDetailsScreen({ navigation, route }) {
+  const { user } = useAuth();
   const { artistDetails, updateArtistDetails } = useArtistOnboarding();
   const { phone: routePhone, name: routeName } = route.params || {};
 
@@ -17,6 +19,7 @@ export default function PersonalDetailsScreen({ navigation, route }) {
   const [state, setState] = useState(artistDetails.state || "");
   const [location, setLocation] = useState(artistDetails.location || "");
   const [pincode, setPincode] = useState(artistDetails.pincode || "");
+  const [phone, setPhone] = useState(artistDetails.phone || user?.phone || "");
 
   const [errors, setErrors] = useState({});
 
@@ -47,6 +50,16 @@ export default function PersonalDetailsScreen({ navigation, route }) {
     if (!state.trim()) errs.state = "Please enter your state";
     if (!location.trim()) errs.location = "Please enter your location";
     if (!pincode.trim()) errs.pincode = "Please enter your pincode";
+    
+    if (!phone.trim()) {
+      errs.phone = "Please enter your phone number";
+    } else {
+      const cleanPhone = phone.trim().replace(/[^0-9]/g, "");
+      if (cleanPhone.length !== 10) {
+        errs.phone = "Phone number must be exactly 10 digits";
+      }
+    }
+    
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -62,6 +75,7 @@ export default function PersonalDetailsScreen({ navigation, route }) {
       state: state.trim(),
       location: location.trim(),
       pincode: pincode.trim(),
+      phone: phone.trim().replace(/[^0-9]/g, ""),
     });
     navigation.navigate("ProfilePhoto");
   };
@@ -96,6 +110,20 @@ export default function PersonalDetailsScreen({ navigation, route }) {
             onChangeText={(t) => { setExperienceYears(t); setErrors((p) => ({ ...p, experienceYears: "" })); }}
           />
           {errors.experienceYears ? <Text style={styles.errorText}>{errors.experienceYears}</Text> : null}
+        </View>
+
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Phone Number</Text>
+          <TextInput
+            style={[styles.input, errors.phone ? styles.inputError : null]}
+            value={phone}
+            placeholderTextColor={Colors.placeholder}
+            placeholder="Enter 10-digit phone number"
+            keyboardType="phone-pad"
+            maxLength={10}
+            onChangeText={(t) => { setPhone(t); setErrors((p) => ({ ...p, phone: "" })); }}
+          />
+          {errors.phone ? <Text style={styles.errorText}>{errors.phone}</Text> : null}
         </View>
 
         <View style={styles.formGroup}>

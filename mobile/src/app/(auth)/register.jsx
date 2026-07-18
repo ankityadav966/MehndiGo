@@ -18,7 +18,6 @@ export default function RegisterPage() {
   const [formData, setFormData] = useState({
     name: "",
     email: "",
-    phone: "",
     password: "",
     confirmPassword: "",
     role: "USER"
@@ -39,17 +38,16 @@ export default function RegisterPage() {
       Alert.alert("Error", "Name and Password are required");
       return;
     }
-    if (!formData.phone && !formData.email) {
-      Alert.alert("Error", "Please provide either Phone or Email");
+    if (!formData.email) {
+      Alert.alert("Error", "Please provide Email Address");
       return;
     }
 
     setLoading(true);
     try {
       const payload = {
-        name: formData.name,
-        email: formData.email,
-        phone: formData.phone,
+        name: formData.name.trim(),
+        email: formData.email.trim(),
         password: formData.password,
         role: formData.role
       };
@@ -73,8 +71,7 @@ export default function RegisterPage() {
     try {
       const payload = {
         otp,
-        email: formData.email,
-        phone: formData.phone
+        email: formData.email.trim()
       };
       const res = await authService.registerVerifyOtp(payload);
       await loginSuccess(res.data.token, res.data.user);
@@ -111,12 +108,6 @@ export default function RegisterPage() {
               <View style={{ position: 'relative', justifyContent: 'center', marginBottom: 12 }}>
                 <View style={{ position: 'absolute', left: 12, zIndex: 1 }}><Mail size={20} color={colors.textSecondary} /></View>
                 <TextInput style={[styles.input, { paddingLeft: 40, marginBottom: 0 }]} placeholder="Enter your email" placeholderTextColor={colors.textSecondary} value={formData.email} onChangeText={(v) => handleChange('email', v)} autoCapitalize="none" keyboardType="email-address" />
-              </View>
-
-              <Text style={styles.label}>Mobile Number</Text>
-              <View style={{ position: 'relative', justifyContent: 'center', marginBottom: 12 }}>
-                <View style={{ position: 'absolute', left: 12, zIndex: 1 }}><Phone size={20} color={colors.textSecondary} /></View>
-                <TextInput style={[styles.input, { paddingLeft: 40, marginBottom: 0 }]} placeholder="Enter your mobile number" placeholderTextColor={colors.textSecondary} value={formData.phone} onChangeText={(v) => handleChange('phone', v)} keyboardType="phone-pad" />
               </View>
 
               <Text style={styles.label}>Password</Text>
@@ -161,7 +152,7 @@ export default function RegisterPage() {
               <View style={{ alignItems: 'center', marginBottom: 20 }}>
                 <CheckCircle2 size={48} color={colors.success} style={{ marginBottom: 12 }} />
                 <Text style={{ color: colors.textSecondary, textAlign: 'center' }}>
-                  We've sent an OTP to your {formData.phone ? "Mobile" : "Email"}.
+                  We've sent an OTP to your Email.
                 </Text>
               </View>
 

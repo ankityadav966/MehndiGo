@@ -69,11 +69,11 @@ export default function MyBookingsScreen({ navigation }) {
       if (selectedTab === "Pending") {
         return ["PENDING", "VIEWED", "CONFIRMED", "WAITING_FOR_USER_PAYMENT"].includes(status);
       } else if (selectedTab === "Accepted") {
-        return ["ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED", "RESCHEDULED"].includes(status);
+        return ["ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "ARTIST_ARRIVED", "SERVICE_STARTED", "RESCHEDULED", "CASH_PAYMENT_PENDING", "CASH_DISPUTED"].includes(status);
       } else if (selectedTab === "Completed") {
-        return status === "COMPLETED";
+        return ["COMPLETED", "AWAITING_CASH_CONFIRMATION", "COMPLETED_CLOSED"].includes(status);
       } else {
-        return status === "CANCELLED";
+        return ["CANCELLED", "REJECTED", "REFUNDED"].includes(status);
       }
     });
   };

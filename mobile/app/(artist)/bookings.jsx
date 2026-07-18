@@ -60,7 +60,7 @@ export default function ArtistBookings() {
               {item.service?.specialization_name}
             </Text>
             <Text style={{ fontSize: 14, color: colors.textSecondary }}>Client: {item.user?.name}</Text>
-            <Text style={{ fontSize: 14, color: colors.textSecondary }}>Phone: {item.user?.phone}</Text>
+
           </View>
           <View style={{ 
             backgroundColor: item.booking_status === 'CONFIRMED' ? colors.success : 

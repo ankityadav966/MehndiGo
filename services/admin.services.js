@@ -24,7 +24,7 @@ class AdminService {
         {
           model: db.User,
           as: "user",
-          attributes: ["id", "name", "phone", "email", "profile_image"]
+          attributes: ["id", "name", "email", "profile_image"]
         }
       ],
       order: [["id", "DESC"]]
@@ -240,7 +240,7 @@ class AdminService {
         {
           model: db.User,
           as: "user",
-          attributes: ["id", "name", "phone", "email"]
+          attributes: ["id", "name", "email"]
         },
         {
           model: db.ArtistProfile,
@@ -373,7 +373,7 @@ class AdminService {
         {
           model: db.ArtistProfile,
           as: "artist",
-          include: [{ model: db.User, as: "user", attributes: ["name", "profile_image", "email", "phone"] }]
+          include: [{ model: db.User, as: "user", attributes: ["name", "profile_image", "email"] }]
         }
       ],
       order: [["createdAt", "DESC"]]
@@ -577,7 +577,7 @@ class AdminService {
             {
               model: db.User,
               as: "user",
-              attributes: ["id", "name", "email", "phone"]
+              attributes: ["id", "name", "email"]
             },
             {
               model: db.ArtistProfile,
@@ -681,7 +681,7 @@ class AdminService {
             {
               model: db.User,
               as: "user",
-              attributes: ["id", "name", "email", "phone"]
+              attributes: ["id", "name", "email"]
             },
             {
               model: db.ArtistProfile,
@@ -690,7 +690,7 @@ class AdminService {
                 {
                   model: db.User,
                   as: "user",
-                  attributes: ["id", "name", "email", "phone", "profile_image"]
+                  attributes: ["id", "name", "email", "profile_image"]
                 }
               ]
             },

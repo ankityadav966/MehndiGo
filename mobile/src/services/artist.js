@@ -1,24 +1,20 @@
-import apiRequest, { BASE_URL } from "./api";
+import apiRequest, { BASE_URL, getNormalizedUrl } from "./api";
 import { secureStorage } from "../utils/storage";
+
+async function getUploadBlob(uri, mimeType) {
+  try {
+    const response = await fetch(uri);
+    const originalBlob = await response.blob();
+    return new Blob([originalBlob], { type: mimeType });
+  } catch (err) {
+    console.error("[getUploadBlob] Failed to fetch or convert URI to Blob:", uri, err);
+    throw new Error(`Failed to read local media file: ${err.message}`);
+  }
+}
 
 export async function getArtistDetails() {
   const data = await apiRequest("GET", "/api/v1/mehndigo/artist/artistdetails", null, true);
   return data?.data || data;
-}
-
-function uriToBlob(uri) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.onload = function () {
-      resolve(xhr.response);
-    };
-    xhr.onerror = function (e) {
-      reject(new Error("uriToBlob failed: " + (e?.message || "unknown")));
-    };
-    xhr.responseType = "blob";
-    xhr.open("GET", uri, true);
-    xhr.send(null);
-  });
 }
 
 export async function createArtistProfile(profileData) {
@@ -32,7 +28,8 @@ export async function createArtistProfile(profileData) {
         val.startsWith("content://") ||
         val.startsWith("ph://") ||
         val.startsWith("assets-library://") ||
-        val.startsWith("data:")
+        val.startsWith("data:") ||
+        val.startsWith("/")
       );
     }
     if (typeof val === "object" && typeof val.uri === "string") {
@@ -41,28 +38,24 @@ export async function createArtistProfile(profileData) {
     return false;
   };
 
-  const getUriString = (val) => {
-    if (typeof val === "string") return val;
-    if (typeof val === "object" && val !== null) return val.uri;
-    return "";
+  const getSafeUri = (val) => {
+    let uri = "";
+    if (typeof val === "string") uri = val;
+    else if (typeof val === "object" && val !== null) uri = val.uri;
+
+    if (uri.startsWith("/")) {
+      return `file://${uri}`;
+    }
+    return uri;
   };
 
   for (const [key, value] of Object.entries(profileData)) {
     if (value === null || value === undefined) continue;
 
     if (isLocalUri(value)) {
-      const uri = getUriString(value);
-      try {
-        const blob = await uriToBlob(uri);
-        formData.append(key, blob, `${key}_${Date.now()}.jpg`);
-      } catch (err) {
-        console.log("Failed to convert URI to Blob:", uri, err);
-        formData.append(key, {
-          uri,
-          type: "image/jpeg",
-          name: `${key}_${Date.now()}.jpg`,
-        });
-      }
+      const uri = getSafeUri(value);
+      const blob = await getUploadBlob(uri, "image/jpeg");
+      formData.append(key, blob, `${key}_${Date.now()}.jpg`);
     } else if (typeof value === "object") {
       formData.append(key, JSON.stringify(value));
     } else {
@@ -72,7 +65,7 @@ export async function createArtistProfile(profileData) {
 
   const token = await secureStorage.getAccessToken();
   console.log("createArtistProfile FormData parts:", formData._parts);
-  const response = await fetch(`${BASE_URL}/api/v1/mehndigo/artist/profile`, {
+  const response = await fetch(getNormalizedUrl("/api/v1/mehndigo/artist/profile"), {
     method: "POST",
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: formData,
@@ -107,109 +100,121 @@ export async function getPortfolioItemById(id) {
   return data?.data || data;
 }
 
-export async function createPortfolioItem(itemData) {
-  const { File, Paths } = require("expo-file-system");
+async function uploadDirectToCloudinary(localUri, mimeType, isVideo, onProgress) {
+  try {
+    const sigRes = await apiRequest("GET", "/api/v1/mehndigo/artist/portfolio/upload-signature", null, true);
+    const { signature, timestamp, folder, api_key, cloud_name } = sigRes.data || sigRes;
 
+    const resourceType = isVideo ? "video" : "image";
+    const url = `https://api.cloudinary.com/v1_1/${cloud_name}/${resourceType}/upload`;
+
+    const FileSystem = require("expo-file-system/legacy");
+
+    const uploadOptions = {
+      httpMethod: "POST",
+      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+      fieldName: "file",
+      mimeType: mimeType,
+      parameters: {
+        signature: signature,
+        timestamp: String(timestamp),
+        api_key: api_key,
+        folder: folder
+      }
+    };
+
+    if (onProgress) {
+      const uploadTask = FileSystem.createUploadTask(
+        url,
+        localUri,
+        uploadOptions,
+        (data) => {
+          if (data.totalBytesExpectedToSend && data.totalBytesExpectedToSend > 0) {
+            const progress = data.totalBytesSent / data.totalBytesExpectedToSend;
+            onProgress(progress);
+          }
+        }
+      );
+      const result = await uploadTask.uploadAsync();
+      if (result.status < 200 || result.status >= 300) {
+        throw new Error(`Cloudinary direct upload failed with status ${result.status}: ${result.body}`);
+      }
+      const responseData = JSON.parse(result.body);
+      return responseData.secure_url;
+    } else {
+      const response = await FileSystem.uploadAsync(url, localUri, uploadOptions);
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(`Cloudinary direct upload failed with status ${response.status}: ${response.body}`);
+      }
+      const responseData = JSON.parse(response.body);
+      return responseData.secure_url;
+    }
+  } catch (error) {
+    console.error("[uploadDirectToCloudinary] Error:", error);
+    throw error;
+  }
+}
+
+export async function createPortfolioItem(itemData, onProgress) {
   const getSafeUri = (uri) => {
     if (!uri) return uri;
-    try {
-      return decodeURIComponent(decodeURIComponent(uri));
-    } catch (e) {
-      return uri;
+    let cleanUri = uri;
+    if (cleanUri.startsWith("/")) {
+      cleanUri = `file://${cleanUri}`;
     }
+    return cleanUri;
   };
 
-  const isLocal = (url) => url && (url.startsWith("file://") || url.startsWith("content://"));
-  const hasLocalMedia = isLocal(itemData.image_url) || isLocal(itemData.video_url);
+  const isLocal = (url) => url && (url.startsWith("file://") || url.startsWith("content://") || url.startsWith("/"));
 
-  if (hasLocalMedia) {
-    const isVideo = itemData.video_url && isLocal(itemData.video_url);
-    const mediaUri = isVideo ? itemData.video_url : itemData.image_url;
-    
-    const params = {};
-    Object.entries(itemData).forEach(([key, value]) => {
-      const shouldExclude = key === "video_url" || (key === "image_url" && isLocal(value));
-      if (!shouldExclude && value !== undefined && value !== null) {
-        params[key] = String(value);
-      }
-    });
+  let imageUrl = itemData.image_url;
+  let videoUrl = itemData.video_url;
 
-    const name = mediaUri.split("/").pop() || "media_file";
-    const mimeType = isVideo ? "video/mp4" : "image/jpeg";
-
-    let finalUri = mediaUri;
-    const tempName = `upload_portfolio_${Date.now()}_${name}`;
-
-    try {
-      const FileSystem = require("expo-file-system");
-      const destUri = `${FileSystem.cacheDirectory}${tempName}`;
-      await FileSystem.copyAsync({
-        from: getSafeUri(mediaUri),
-        to: destUri
-      });
-      finalUri = destUri;
-      console.log("[FileSystem] Portfolio file copied successfully using copyAsync:", finalUri);
-    } catch (err) {
-      console.warn("[FileSystem] copyAsync failed, trying File API:", err.message);
-      try {
-        const srcFile = new File(getSafeUri(mediaUri));
-        const destFile = new File(Paths.cache, tempName);
-        await srcFile.copy(destFile.uri);
-        finalUri = destFile.uri;
-        console.log("[FileSystem] Portfolio file copied successfully using File API:", finalUri);
-      } catch (fileApiErr) {
-        console.warn("[FileSystem] Both copyAsync and File API failed for portfolio item:", fileApiErr.message);
-      }
-    }
-
-    const token = await secureStorage.getAccessToken();
-    const formData = new FormData();
-    formData.append("portfolio_image", {
-      uri: finalUri,
-      type: mimeType,
-      name: name
-    });
-    Object.entries(params).forEach(([key, value]) => {
-      formData.append(key, value);
-    });
-
-    let response;
-    try {
-      response = await fetch(`${BASE_URL}/api/v1/mehndigo/artist/portfolio`, {
-        method: "POST",
-        body: formData,
-        headers: {
-          "Content-Type": "multipart/form-data",
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
+  try {
+    // 1. Upload Video if it is local
+    if (videoUrl && isLocal(videoUrl)) {
+      const videoUri = getSafeUri(videoUrl);
+      if (onProgress) onProgress(0.01);
+      videoUrl = await uploadDirectToCloudinary(
+        videoUri,
+        "video/mp4",
+        true,
+        (progress) => {
+          if (onProgress) onProgress(0.01 + progress * 0.79);
         }
-      });
-    } finally {
-      try {
-        if (destFile && finalUri !== mediaUri) {
-          await destFile.delete();
-          console.log("[FileSystem] Portfolio temp file deleted:", finalUri);
+      );
+    }
+
+    // 2. Upload Image if it is local
+    if (imageUrl && isLocal(imageUrl)) {
+      const imageUri = getSafeUri(imageUrl);
+      imageUrl = await uploadDirectToCloudinary(
+        imageUri,
+        "image/jpeg",
+        false,
+        (progress) => {
+          if (!videoUrl && onProgress) {
+            onProgress(0.01 + progress * 0.79);
+          }
         }
-      } catch (cleanErr) {
-        console.warn("[FileSystem] Failed to clean up portfolio temp file:", cleanErr.message);
-      }
+      );
     }
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      let parsedError;
-      try {
-        parsedError = JSON.parse(errorText);
-      } catch {
-        parsedError = { message: errorText };
-      }
-      throw new Error(parsedError?.message || `Failed to create portfolio item: ${response.status}`);
-    }
+    if (onProgress) onProgress(0.9);
 
-    const data = await response.json();
+    const finalItemData = {
+      ...itemData,
+      image_url: imageUrl,
+      video_url: videoUrl
+    };
+
+    if (onProgress) onProgress(0.95);
+    const data = await apiRequest("POST", "/api/v1/mehndigo/artist/portfolio", finalItemData, true);
+    if (onProgress) onProgress(1.0);
     return data?.data || data;
-  } else {
-    const data = await apiRequest("POST", "/api/v1/mehndigo/artist/portfolio", itemData, true);
-    return data?.data || data;
+  } catch (err) {
+    console.error("[createPortfolioItem] Error:", err);
+    throw err;
   }
 }
 
@@ -223,101 +228,48 @@ export async function deletePortfolioItem(id) {
   return data?.data || data;
 }
 
-export async function uploadPortfolioMedia(mediaFiles) {
-  const { File, Paths } = require("expo-file-system");
-  const token = await secureStorage.getAccessToken();
+export async function uploadPortfolioMedia(mediaFiles, onProgress) {
   const results = [];
 
   const getSafeUri = (uri) => {
     if (!uri) return uri;
-    try {
-      return decodeURIComponent(decodeURIComponent(uri));
-    } catch (e) {
-      return uri;
+    let cleanUri = uri;
+    if (cleanUri.startsWith("/")) {
+      cleanUri = `file://${cleanUri}`;
     }
+    return cleanUri;
   };
-  
+
+  const isLocal = (url) => url && (url.startsWith("file://") || url.startsWith("content://") || url.startsWith("/"));
+
   for (let index = 0; index < mediaFiles.length; index++) {
     const file = mediaFiles[index];
     const uri = typeof file === "string" ? file : file?.uri;
     if (!uri) continue;
 
     let type = "image/jpeg";
-    if (uri.endsWith(".mp4") || uri.endsWith(".mov") || file?.type?.startsWith("video")) {
+    const isVideo = uri.endsWith(".mp4") || uri.endsWith(".mov") || file?.type?.startsWith("video");
+    if (isVideo) {
       type = "video/mp4";
     }
 
-    const name = file?.name || `media_${index}_${Date.now()}.${type === "video/mp4" ? "mp4" : "jpg"}`;
-    
-    if (uri.startsWith("file://") || uri.startsWith("content://")) {
-      let finalUri = uri;
-      const tempName = `upload_portfolio_media_${Date.now()}_${name}`;
-
-      try {
-        const FileSystem = require("expo-file-system");
-        const destUri = `${FileSystem.cacheDirectory}${tempName}`;
-        await FileSystem.copyAsync({
-          from: getSafeUri(uri),
-          to: destUri
-        });
-        finalUri = destUri;
-        console.log("[FileSystem] Portfolio media file copied successfully using copyAsync:", finalUri);
-      } catch (err) {
-        console.warn("[FileSystem] copyAsync failed, trying File API:", err.message);
-        try {
-          const srcFile = new File(getSafeUri(uri));
-          destFile = new File(Paths.cache, tempName);
-          await srcFile.copy(destFile.uri);
-          finalUri = destFile.uri;
-          console.log("[FileSystem] Portfolio media file copied successfully using File API:", finalUri);
-        } catch (fileApiErr) {
-          console.warn("[FileSystem] Both copyAsync and File API failed for portfolio media:", fileApiErr.message);
-        }
-      }
-
-      const formData = new FormData();
-      formData.append("media", {
-        uri: finalUri,
-        type: type,
-        name: name
-      });
-
-      let response;
-      try {
-        response = await fetch(`${BASE_URL}/api/v1/mehndigo/artist/portfolio/upload`, {
-          method: "POST",
-          body: formData,
-          headers: {
-            "Content-Type": "multipart/form-data",
-            ...(token ? { Authorization: `Bearer ${token}` } : {})
+    if (isLocal(uri)) {
+      const finalUri = getSafeUri(uri);
+      const secureUrl = await uploadDirectToCloudinary(
+        finalUri,
+        type,
+        isVideo,
+        (progress) => {
+          if (onProgress) {
+            const totalProgress = (index + progress) / mediaFiles.length;
+            onProgress(totalProgress);
           }
-        });
-      } finally {
-        try {
-          if (destFile && finalUri !== uri) {
-            await destFile.delete();
-            console.log("[FileSystem] Portfolio media temp file deleted:", finalUri);
-          }
-        } catch (cleanErr) {
-          console.warn("[FileSystem] Failed to clean up portfolio media temp file:", cleanErr.message);
         }
-      }
+      );
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        let parsedError;
-        try {
-          parsedError = JSON.parse(errorText);
-        } catch {
-          parsedError = { message: errorText };
-        }
-        throw new Error(parsedError?.message || `Upload failed with status ${response.status}`);
-      }
-
-      const data = await response.json();
-      results.push(data?.data || data);
+      results.push({ url: secureUrl, type: isVideo ? "video" : "image" });
     } else {
-      results.push({ url: uri, type: type === "video/mp4" ? "video" : "image" });
+      results.push({ url: uri, type: isVideo ? "video" : "image" });
     }
   }
 

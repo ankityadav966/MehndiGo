@@ -35,6 +35,8 @@ async function createPortfolio(req, res) {
       aadhaar_back: req.files?.aadhaar_back?.[0]?.path || null,
  
       selfie_image: req.files?.selfie_image?.[0]?.path || null,
+
+      phone: req.body.phone,
     };
 
     const response = await ArtistService.createArtistProfile(data);
@@ -358,7 +360,40 @@ async function getArtistDetailsById(req, res) {
   }
 }
 
+async function getUploadSignature(req, res) {
+  try {
+    const cloudinary = require("../config/cloudinary");
+    const timestamp = Math.round(new Date().getTime() / 1000);
+    const folder = "mehndigo/portfolio";
+    const signature = cloudinary.utils.api_sign_request(
+      {
+        timestamp: timestamp,
+        folder: folder
+      },
+      cloudinary.config().api_secret
+    );
+
+    return res.status(200).json(SuccessResponse("Signature generated successfully", {
+      signature,
+      timestamp,
+      folder,
+      api_key: cloudinary.config().api_key,
+      cloud_name: cloudinary.config().cloud_name
+    }));
+  } catch (error) {
+    return res
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
+  }
+}
+
 async function uploadPortfolioImage(req, res) {
+  console.log("[uploadPortfolioImage Controller log]:", {
+    hasFile: !!req.file,
+    filePath: req.file?.path,
+    fileMimetype: req.file?.mimetype,
+    body: req.body
+  });
   try {
     const isVideo = req.file?.mimetype?.startsWith("video/") || req.body.video_url;
     const path = req.file?.path || req.body.image_url || null;
@@ -438,6 +473,7 @@ module.exports = {
   getPortfolioById,
   updatePortfolio,
   deletePortfolio,
+  getUploadSignature,
   uploadPortfolioImage,
   uploadPortfolioMedia,
   // Booking management

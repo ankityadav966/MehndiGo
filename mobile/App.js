@@ -1,4 +1,52 @@
 import "./src/theme/ThemeManager";
+import * as ImagePicker from "expo-image-picker";
+
+// Centralized ImagePicker Safety Lock to prevent "Unregistered ActivityResultLauncher" crashes on rapid clicks
+try {
+  const originalLaunchImageLibrary = ImagePicker.launchImageLibraryAsync;
+  const originalLaunchCamera = ImagePicker.launchCameraAsync;
+  let isPickerOpen = false;
+
+  ImagePicker.launchImageLibraryAsync = async function (...args) {
+    if (isPickerOpen) {
+      console.warn("[ImagePicker Interceptor] Blocked concurrent image library launch request.");
+      return { canceled: true };
+    }
+    isPickerOpen = true;
+    try {
+      return await originalLaunchImageLibrary.apply(ImagePicker, args);
+    } catch (err) {
+      console.error("[ImagePicker Interceptor] Error launching image library:", err);
+      return { canceled: true, error: err };
+    } finally {
+      setTimeout(() => {
+        isPickerOpen = false;
+      }, 1000);
+    }
+  };
+
+  ImagePicker.launchCameraAsync = async function (...args) {
+    if (isPickerOpen) {
+      console.warn("[ImagePicker Interceptor] Blocked concurrent camera launch request.");
+      return { canceled: true };
+    }
+    isPickerOpen = true;
+    try {
+      return await originalLaunchCamera.apply(ImagePicker, args);
+    } catch (err) {
+      console.error("[ImagePicker Interceptor] Error launching camera:", err);
+      return { canceled: true, error: err };
+    } finally {
+      setTimeout(() => {
+        isPickerOpen = false;
+      }, 1000);
+    }
+  };
+  console.log("[ImagePicker Interceptor] expo-image-picker successfully monkeypatched!");
+} catch (e) {
+  console.error("[ImagePicker Interceptor] Failed to override expo-image-picker methods:", e);
+}
+
 import { useCallback } from "react";
 import { NavigationContainer, createNavigationContainerRef } from "@react-navigation/native";
 import { StatusBar, Alert } from "react-native";

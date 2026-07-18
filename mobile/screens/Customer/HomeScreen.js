@@ -183,20 +183,53 @@ export default function HomeScreen({ navigation }) {
 
   useFocusEffect(
     useCallback(() => {
-      if (!user?.profile_image || !user?.city) {
-        async function syncUserProfile() {
-          try {
-            const profileData = await getCustomerProfile();
-            if (profileData && (profileData.profile_image !== user?.profile_image || profileData.city !== user?.city || profileData.name !== user?.name)) {
+      let isSubscribed = true;
+      async function syncUserProfile() {
+        try {
+          const profileData = await getCustomerProfile();
+          if (!isSubscribed) return;
+          if (profileData) {
+            const hasChanges = 
+              profileData.profile_image !== user?.profile_image || 
+              profileData.city !== user?.city || 
+              profileData.name !== user?.name ||
+              profileData.phone !== user?.phone;
+            
+            if (hasChanges) {
               dispatch({ type: "UPDATE_USER", payload: profileData });
             }
-          } catch (e) {
-            console.log("Failed to sync customer profile on Home:", e.message);
+            
+            // Check if phone number is missing
+            if (!profileData.phone) {
+              const { Alert } = require("react-native");
+              Alert.alert(
+                "Phone Number Required",
+                "Please update your phone number to continue using MehndiGo.",
+                [
+                  {
+                    text: "Update Now",
+                    onPress: () => navigation.navigate("EditProfile")
+                  }
+                ],
+                { cancelable: false }
+              );
+            }
           }
+        } catch (e) {
+          console.log("Failed to sync customer profile on Home:", e.message);
         }
+      }
+
+      if (user && !user.phone) {
+        syncUserProfile();
+      } else if (!user?.profile_image || !user?.city) {
         syncUserProfile();
       }
-    }, [dispatch, user])
+
+      return () => {
+        isSubscribed = false;
+      };
+    }, [dispatch, user, navigation])
   );
 
   // Banner Auto-scrolling carousel setup

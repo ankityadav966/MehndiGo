@@ -195,13 +195,13 @@ export default function BookingRequestsScreen({ route, navigation }) {
       const status = detailedStatus || bookingStatus;
 
       if (activeTab === "Pending") {
-        return bookingStatus === "PENDING" || ["PENDING", "VIEWED", "CONFIRMED"].includes(detailedStatus);
+        return ["PENDING", "VIEWED", "CONFIRMED"].includes(status);
       }
       
       if (activeTab === "Accepted") {
-        return bookingStatus !== "PENDING" && ["ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED", "RESCHEDULED", "CASH_PAYMENT_PENDING", "CASH_DISPUTED", "WAITING_FOR_USER_PAYMENT"].includes(status);
+        return ["ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "ARTIST_ARRIVED", "SERVICE_STARTED", "RESCHEDULED", "CASH_PAYMENT_PENDING", "CASH_DISPUTED", "WAITING_FOR_USER_PAYMENT"].includes(status);
       } else {
-        return bookingStatus !== "PENDING" && ["COMPLETED", "CANCELLED", "AWAITING_CASH_CONFIRMATION", "COMPLETED_CLOSED"].includes(status);
+        return ["COMPLETED", "CANCELLED", "REJECTED", "REFUNDED", "AWAITING_CASH_CONFIRMATION", "COMPLETED_CLOSED"].includes(status);
       }
     });
   };

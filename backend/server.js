@@ -33,12 +33,12 @@ app.use("/api", limiter);
 const { checkBlockedIP, sanitizeInputs } = require("./middleware/security.middleware");
 
 app.use(express.json({
-  limit: "50mb",
+  limit: "220mb",
   verify: (req, res, buf) => {
     req.rawBody = buf;
   }
 }));
-app.use(express.urlencoded({ limit: "50mb", extended: true }));
+app.use(express.urlencoded({ limit: "220mb", extended: true }));
 app.use(checkBlockedIP);
 app.use(sanitizeInputs);
 app.use("/auth", require("./routes/auth.routes"));
@@ -58,6 +58,14 @@ app.use("/wallet", require("./routes/wallet.routes"));
 app.use("/transactions", require("./routes/wallet.routes"));
 app.use("/settlements", require("./routes/wallet.routes"));
 app.use("/bank-account", require("./routes/wallet.routes"));
+app.get("/health", (req, res) => {
+  return res.status(200).json({
+    success: true,
+    status: "UP",
+    timestamp: new Date()
+  });
+});
+
 app.use("/api", require("./routes/index"));
 app.use((req, res) => {
   return res.status(404).json({
@@ -70,6 +78,7 @@ console.log('====================================');
 console.log("testing : ");
 console.log('====================================');
 app.use((error, req, res, next) => {
+  console.error("[SERVER ERROR]:", error);
   return res.status(error.statusCode || 500).json({
     success: false,
     message:

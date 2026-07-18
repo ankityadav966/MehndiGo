@@ -21,8 +21,11 @@ const UserDashboard = ({ showToast }) => {
 
     // Socket.io for Real-time Notifications
     if (user?.id) {
-      const socket = io("http://localhost:3000");
-      socket.emit("join", user.id);
+      const token = localStorage.getItem("token");
+      const socket = io("http://localhost:3000", {
+        auth: { token },
+        transports: ["websocket"]
+      });
 
       socket.on("new_notification", (data) => {
         showToast(data.title + ": " + data.message, "info");
@@ -45,7 +48,7 @@ const UserDashboard = ({ showToast }) => {
       setBookings(bookingsRes.data || []);
       
       const artistsRes = await artistService.getArtists();
-      setArtists(artistsRes.data || []);
+      setArtists(artistsRes.data?.rows || artistsRes.data || []);
 
       const profileRes = await authService.getProfile();
       setProfile(profileRes.data || { name: "", email: "", gender: "" });

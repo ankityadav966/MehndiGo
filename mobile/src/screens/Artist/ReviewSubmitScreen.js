@@ -37,6 +37,7 @@ export default function ReviewSubmitScreen({ navigation }) {
         aadhaar_front: aadhaarFiles?.front,
         aadhaar_back: aadhaarFiles?.back,
         selfie_image: profilePhoto,
+        phone: artistDetails.phone,
       });
 
       await secureStorage.setArtistProfileCompleted(true);

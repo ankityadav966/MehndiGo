@@ -189,6 +189,17 @@ export default function EditProfileScreen({ navigation }) {
       return;
     }
 
+    if (!phone.trim()) {
+      Alert.alert("Validation Error", "Please enter your phone number");
+      return;
+    }
+
+    const cleanPhone = phone.trim().replace(/[^0-9]/g, "");
+    if (cleanPhone.length !== 10) {
+      Alert.alert("Validation Error", "Phone number must be exactly 10 digits");
+      return;
+    }
+
     if (isArtist) {
       if (experience.trim() !== "" && (isNaN(Number(experience)) || Number(experience) < 0)) {
         Alert.alert("Validation Error", "Experience must be a positive number");
@@ -257,12 +268,14 @@ export default function EditProfileScreen({ navigation }) {
           languages: languages.trim(),
           intro_video: uploadedIntroVideoUrl,
           portfolio_video: uploadedPortfolioVideoUrl,
+          phone: cleanPhone,
         });
       } else {
         await updateCustomerProfile({
           name: fullName.trim(),
           email: email.trim(),
           profile_image: finalAvatar,
+          phone: cleanPhone,
         });
       }
 
@@ -274,6 +287,7 @@ export default function EditProfileScreen({ navigation }) {
         profile_image: finalAvatar,
         avatar: finalAvatar, // Sync avatar key
         email: email.trim(),
+        phone: cleanPhone,
       };
       await secureStorage.setUserData(updatedUser);
       dispatch({ type: "UPDATE_USER", payload: updatedUser });
@@ -381,8 +395,8 @@ export default function EditProfileScreen({ navigation }) {
               />
             </View>
 
-            <Text style={styles.label}>Phone Number (Read-only)</Text>
-            <View style={[styles.inputContainer, styles.disabledInput]}>
+            <Text style={styles.label}>Phone Number</Text>
+            <View style={styles.inputContainer}>
               <Ionicons
                 name="call-outline"
                 size={20}
@@ -390,10 +404,12 @@ export default function EditProfileScreen({ navigation }) {
               />
               <TextInput
                 value={phone}
-                editable={false}
+                onChangeText={setPhone}
                 placeholder="Enter Phone Number"
                 placeholderTextColor={Colors.textTertiary}
-                style={[styles.input, { color: Colors.textTertiary }]}
+                keyboardType="phone-pad"
+                maxLength={10}
+                style={styles.input}
               />
             </View>
 

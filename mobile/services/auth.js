@@ -2,16 +2,7 @@ import { Platform } from "react-native";
 import { secureStorage } from "../utils/storage";
 import apiRequest from "./api";
 
-export function useGoogleAuth() {
-  return {
-    request: null,
-    response: null,
-    promptAsync: async () => {
-      const mockIdToken = "mock-google-id-token-" + Date.now();
-      return { type: "success", params: { id_token: mockIdToken } };
-    },
-  };
-}
+
 
 function extractPayload(response) {
   return response?.data || response;
@@ -39,14 +30,7 @@ async function persistAuthData(response) {
   return payload;
 }
 
-export async function signInWithGoogle(idToken) {
-  const data = await apiRequest("POST", "/auth/google", {
-    idToken,
-    platform: Platform.OS,
-  });
-  await persistAuthData(data);
-  return data;
-}
+
 
 export async function signInWithEmail(email, password) {
   const data = await apiRequest("POST", "/auth/login", { email, password });
@@ -66,28 +50,7 @@ export async function verifyOtp(email, otp) {
   return data;
 }
 
-export async function sendOtp(name, email, phone, role) {
-  console.log("Sending OTP request");
-  const data = await apiRequest("POST", "/api/v1/mehndigo/user/send-otp", {
-    name,
-    email,
-    role,
-    phone,
-  });
-  return data;
-}
 
-export async function verifyUserOtp(phone, otp, role, name, email, referralCode = "") {
-  const data = await apiRequest("POST", "/api/v1/mehndigo/user/verify-otp", {
-    phone,
-    otp,
-    role,
-    name: name || "",
-    email: email || "",
-    referralCode,
-  });
-  return persistAuthData(data);
-}
 
 export async function registerUserV1(userData) {
   const data = await apiRequest("POST", "/api/v1/mehndigo/user/register", userData);
@@ -131,3 +94,13 @@ export async function signOut() {
   } catch (_) {}
   await secureStorage.clearAll();
 }
+
+export const authService = {
+  register: (data) => apiRequest("POST", "/api/v1/mehndigo/user/register", data),
+  verifyEmailOtp: (data) => apiRequest("POST", "/api/v1/mehndigo/user/verify-email-otp", data),
+  login: (data) => apiRequest("POST", "/api/v1/mehndigo/user/login", data),
+  forgotPassword: (data) => apiRequest("POST", "/api/v1/mehndigo/user/forgot-password", data),
+  verifyForgotPasswordOtp: (data) => apiRequest("POST", "/api/v1/mehndigo/user/verify-forgot-password-otp", data),
+  resetPassword: (data) => apiRequest("POST", "/api/v1/mehndigo/user/reset-password", data),
+  resendOtp: (data) => apiRequest("POST", "/api/v1/mehndigo/user/resend-otp", data),
+};

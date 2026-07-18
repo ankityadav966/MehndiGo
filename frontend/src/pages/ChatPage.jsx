@@ -6,7 +6,7 @@ import { chatService, adminService, artistService } from "../services/api";
 import { Send, User, MessageSquare } from "lucide-react";
 
 const ChatPage = ({ showToast }) => {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const location = useLocation();
   
   // Potential pre-selected user to chat with from query state
@@ -28,13 +28,11 @@ const ChatPage = ({ showToast }) => {
   useEffect(() => {
     // 1. Establish Socket Connection
     const socketUrl = window.location.hostname ? `${window.location.protocol}//${window.location.hostname}:3000` : "http://localhost:3000";
-    const newSocket = io(socketUrl);
+    const newSocket = io(socketUrl, {
+      auth: { token },
+      transports: ["websocket"]
+    });
     setSocket(newSocket);
-
-    // Join room of current user
-    if (user?.id) {
-      newSocket.emit("join", user.id);
-    }
 
     // 2. Fetch all possible users to chat with (based on role)
     fetchChannels();
@@ -43,7 +41,18 @@ const ChatPage = ({ showToast }) => {
     return () => {
       newSocket.disconnect();
     };
-  }, [user]);
+  }, [user, token]);
+
+  // Join/leave room on active channel changes
+  useEffect(() => {
+    if (socket && activeReceiver?.bookingId) {
+      socket.emit("join-room", { bookingId: activeReceiver.bookingId });
+      
+      return () => {
+        socket.emit("leave-room", { bookingId: activeReceiver.bookingId });
+      };
+    }
+  }, [socket, activeReceiver]);
 
   useEffect(() => {
     if (!socket) return;

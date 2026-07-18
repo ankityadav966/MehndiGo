@@ -129,14 +129,18 @@ export default function AddPortfolioScreen({ navigation }) {
     }
 
     setSubmitting(true);
-    setUploadProgress(0.2);
+    setUploadProgress(0.01);
 
     try {
       let remoteThumbnailUrl = null;
       if (media.type === "video" && videoThumbnail) {
-        setUploadProgress(0.4);
         const { uploadPortfolioMedia } = require("../../services/artist");
-        const uploadResult = await uploadPortfolioMedia([{ uri: videoThumbnail }]);
+        const uploadResult = await uploadPortfolioMedia(
+          [{ uri: videoThumbnail }],
+          (progress) => {
+            setUploadProgress(0.01 + progress * 0.14);
+          }
+        );
         if (uploadResult && uploadResult.length > 0) {
           remoteThumbnailUrl = uploadResult[0].url;
         }
@@ -154,8 +158,10 @@ export default function AddPortfolioScreen({ navigation }) {
         video_url: media.type === "video" ? media.uri : null
       };
 
-      setUploadProgress(0.7);
-      await createPortfolioItem(itemData);
+      const startVal = remoteThumbnailUrl ? 0.15 : 0.01;
+      await createPortfolioItem(itemData, (progress) => {
+        setUploadProgress(startVal + progress * (0.90 - startVal));
+      });
       setUploadProgress(1.0);
       
       navigation.goBack();
@@ -349,7 +355,11 @@ export default function AddPortfolioScreen({ navigation }) {
             <View style={styles.progressContainer}>
               <ActivityIndicator size="small" color={Colors.primary} />
               <Text style={styles.progressText}>
-                Uploading design media file... ({Math.round(uploadProgress * 100)}%)
+                {uploadProgress >= 1.0 
+                  ? "Upload complete" 
+                  : uploadProgress >= 0.90 
+                    ? "Processing and saving portfolio..." 
+                    : `Uploading media... (${Math.round(uploadProgress * 100)}%)`}
               </Text>
             </View>
           )}

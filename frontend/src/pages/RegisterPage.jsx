@@ -1,56 +1,66 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { authService } from "../services/api";
 import { useAuth } from "../context/AuthContext";
-import { User, Lock, Mail, Phone, ShieldCheck, ArrowRight, CheckCircle2, ChevronLeft } from "lucide-react";
+import { User, Lock, Mail, ShieldCheck, ArrowRight, CheckCircle2, ChevronLeft } from "lucide-react";
 
 function RegisterPage({ showToast }) {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const { loginSuccess } = useAuth();
   const navigate = useNavigate();
 
   const [formData, setFormData] = useState({
-    name: "",
+    fullName: "",
     email: "",
-    phone: "",
     password: "",
     confirmPassword: "",
     role: "USER"
   });
   
   const [otp, setOtp] = useState("");
+  const [timeLeft, setTimeLeft] = useState(300); // 5 minutes timer
   
+  useEffect(() => {
+    if (step === 2 && timeLeft > 0) {
+      const timerId = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
+      return () => clearTimeout(timerId);
+    }
+  }, [step, timeLeft]);
+
+  const formatTime = (seconds) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleSendOtp = async (e) => {
+  const handleRegister = async (e) => {
     e.preventDefault();
     if (formData.password !== formData.confirmPassword) {
       return showToast("Passwords do not match", "danger");
     }
-    if (!formData.name || !formData.password) {
-      return showToast("Name and Password are required", "danger");
-    }
-    if (!formData.phone && !formData.email) {
-      return showToast("Please provide either Phone or Email", "danger");
+    if (!formData.fullName || !formData.email || !formData.password) {
+      return showToast("All fields are required", "danger");
     }
     
     setLoading(true);
     try {
       const payload = {
-        name: formData.name,
+        fullName: formData.fullName,
         email: formData.email,
-        phone: formData.phone,
         password: formData.password,
         role: formData.role
       };
-      const res = await authService.registerSendOtp(payload);
-      showToast(res.message || "OTP sent successfully! (Check terminal for mock OTP)", "success");
+      const res = await authService.register(payload);
+      showToast(res.message || "OTP sent successfully!", "success");
       setStep(2);
+      setTimeLeft(300);
     } catch (err) {
-      showToast(err.message || "Failed to send OTP", "danger");
+      showToast(err.message || "Registration failed", "danger");
     } finally {
       setLoading(false);
     }
@@ -64,20 +74,34 @@ function RegisterPage({ showToast }) {
     try {
       const payload = {
         otp,
-        email: formData.email,
-        phone: formData.phone
+        email: formData.email
       };
-      const res = await authService.registerVerifyOtp(payload);
-      login(res.data.user, res.data.token);
+      const res = await authService.verifyEmailOtp(payload);
+      const data = res.data || res;
+      loginSuccess(data.token, data.user);
       showToast("Registration Successful!", "success");
       
-      if (res.data.user.role === "ARTIST") {
+      if (data.user.role === "ARTIST") {
         navigate("/dashboard");
       } else {
         navigate("/dashboard");
       }
     } catch (err) {
       showToast(err.message || "Invalid OTP", "danger");
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const handleResendOtp = async () => {
+    if (timeLeft > 0) return; // Prevent spamming
+    setLoading(true);
+    try {
+      await authService.resendOtp({ email: formData.email });
+      showToast("OTP resent to your email", "success");
+      setTimeLeft(300);
+    } catch (err) {
+      showToast(err.message || "Failed to resend OTP", "danger");
     } finally {
       setLoading(false);
     }
@@ -93,12 +117,12 @@ function RegisterPage({ showToast }) {
         </div>
 
         {step === 1 ? (
-          <form onSubmit={handleSendOtp} style={{ display: "flex", flexDirection: "column", gap: "1.2rem" }}>
+          <form onSubmit={handleRegister} style={{ display: "flex", flexDirection: "column", gap: "1.2rem" }}>
             <div className="form-group">
               <label>Full Name</label>
               <div className="input-with-icon">
                 <User className="input-icon" />
-                <input type="text" name="name" value={formData.name} onChange={handleChange} placeholder="Enter your full name" required className="form-control" />
+                <input type="text" name="fullName" value={formData.fullName} onChange={handleChange} placeholder="Enter your full name" required className="form-control" />
               </div>
             </div>
 
@@ -106,15 +130,7 @@ function RegisterPage({ showToast }) {
               <label>Email Address</label>
               <div className="input-with-icon">
                 <Mail className="input-icon" />
-                <input type="email" name="email" value={formData.email} onChange={handleChange} placeholder="Enter your email" className="form-control" />
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label>Mobile Number</label>
-              <div className="input-with-icon">
-                <Phone className="input-icon" />
-                <input type="text" name="phone" value={formData.phone} onChange={handleChange} placeholder="Enter your mobile number" className="form-control" />
+                <input type="email" name="email" value={formData.email} onChange={handleChange} placeholder="Enter your email" required className="form-control" />
               </div>
             </div>
 
@@ -145,7 +161,7 @@ function RegisterPage({ showToast }) {
             <button type="submit" className="btn btn-primary" style={{ width: "100%", padding: "0.8rem", marginTop: "1rem", display: "flex", justifyContent: "center", alignItems: "center", gap: "0.5rem" }} disabled={loading}>
               {loading ? "Processing..." : (
                 <>
-                  Continue <ArrowRight size={18} />
+                  Register <ArrowRight size={18} />
                 </>
               )}
             </button>
@@ -154,16 +170,30 @@ function RegisterPage({ showToast }) {
           <form onSubmit={handleVerifyOtp} style={{ display: "flex", flexDirection: "column", gap: "1.2rem" }}>
             <div style={{ textAlign: "center", marginBottom: "1rem" }}>
               <CheckCircle2 size={48} color="var(--success-color)" style={{ margin: "0 auto", marginBottom: "1rem" }} />
-              <p>We've sent an OTP to your email address.</p>
+              <p>We've sent an OTP to <strong>{formData.email}</strong>.</p>
             </div>
 
             <div className="form-group">
               <label>Enter OTP</label>
               <input type="text" value={otp} onChange={(e) => setOtp(e.target.value)} placeholder="000000" maxLength="6" required className="form-control" style={{ textAlign: "center", fontSize: "1.5rem", letterSpacing: "0.5rem" }} />
             </div>
+            
+            <div style={{ textAlign: "center", margin: "0.5rem 0" }}>
+                <span style={{ color: "var(--text-muted)" }}>Time remaining: {formatTime(timeLeft)}</span>
+            </div>
 
             <button type="submit" className="btn btn-primary" style={{ width: "100%", padding: "0.8rem" }} disabled={loading}>
               {loading ? "Verifying..." : "Verify & Create Account"}
+            </button>
+            
+            <button 
+                type="button" 
+                className="btn btn-outline" 
+                style={{ width: "100%", padding: "0.8rem", opacity: timeLeft > 0 ? 0.5 : 1 }} 
+                onClick={handleResendOtp} 
+                disabled={loading || timeLeft > 0}
+            >
+              Resend OTP
             </button>
             
             <button type="button" className="btn btn-secondary" style={{ width: "100%", padding: "0.8rem", marginTop: "0.5rem", display: "flex", justifyContent: "center", alignItems: "center", gap: "0.5rem" }} onClick={() => setStep(1)} disabled={loading}>

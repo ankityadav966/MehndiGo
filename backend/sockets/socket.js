@@ -233,7 +233,7 @@ function initSocket(server) {
         }
 
         // Check blocking status
-        const isUserBlocked = await db.MessageBlock.findOne({
+        const isUserBlocked = await db.BlockedUser.findOne({
           where: {
             [Op.or]: [
               { blocker_id: senderId, blocked_id: otherUserIdResolved },

@@ -28,12 +28,12 @@ app.use("/api", limiter);
 const { checkBlockedIP, sanitizeInputs } = require("./middleware/security.middleware");
 
 app.use(express.json({
-  limit: "50mb",
+  limit: "220mb",
   verify: (req, res, buf) => {
     req.rawBody = buf;
   }
 }));
-app.use(express.urlencoded({ limit: "50mb", extended: true }));
+app.use(express.urlencoded({ limit: "220mb", extended: true }));
 app.use(checkBlockedIP);
 app.use(sanitizeInputs);
 app.use("/auth", require("./routes/auth.routes"));

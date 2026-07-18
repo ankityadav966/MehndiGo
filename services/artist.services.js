@@ -1249,7 +1249,7 @@ async createReview(data) {
     return await db.Booking.findAll({
       where: { artist_id: artist.id },
       include: [
-        { model: db.User, as: "user", attributes: ["name", "phone"] },
+        { model: db.User, as: "user", attributes: ["name"] },
         { model: db.Service, as: "service", attributes: ["specialization_name"] }
       ],
       order: [["createdAt", "DESC"]]
@@ -1393,7 +1393,7 @@ async createReview(data) {
   async getProfile(userId) {
     const artist = await db.ArtistProfile.findOne({
       where: { user_id: userId },
-      include: [{ model: db.User, as: "user", attributes: ["name", "phone", "email", "profile_image"] }]
+      include: [{ model: db.User, as: "user", attributes: ["name", "email", "profile_image"] }]
     });
     if (!artist) throw new AppError("Artist profile not found", 404);
     return artist;
@@ -1698,7 +1698,7 @@ async createReview(data) {
       {
         model: db.User,
         as: "user",
-        attributes: ["id", "name", "phone", "email", "profile_image"]
+        attributes: ["id", "name", "email", "profile_image"]
       },
       {
         model: db.Service,
@@ -1717,8 +1717,7 @@ async createReview(data) {
       const searchPattern = `%${search}%`;
       include[0].where = {
         [db.Sequelize.Op.or]: [
-          { name: { [db.Sequelize.Op.iLike]: searchPattern } },
-          { phone: { [db.Sequelize.Op.iLike]: searchPattern } }
+          { name: { [db.Sequelize.Op.iLike]: searchPattern } }
         ]
       };
       include[0].required = true;
@@ -1878,7 +1877,7 @@ async createReview(data) {
 
     const booking = await db.Booking.findByPk(id, {
       include: [
-        { model: db.User, as: "user", attributes: ["id", "name", "phone", "email", "profile_image"] },
+        { model: db.User, as: "user", attributes: ["id", "name", "email", "profile_image"] },
         { model: db.Service, as: "service", attributes: ["id", "specialization_name", "category", "minimum_price", "description"] },
         { model: db.AvailabilitySlot, as: "slot", required: false }
       ]
@@ -1909,7 +1908,7 @@ async createReview(data) {
       customer: {
         id: booking.user?.id,
         name: booking.user?.name || "Customer",
-        phone: booking.user?.phone || "",
+        phone: "",
         email: booking.user?.email || "",
         profile_image: booking.user?.profile_image || null
       },

@@ -62,6 +62,7 @@ router.put("/slot/:id", authenticate, ArtistController.updateSlot);
 router.delete("/slot/:id", authenticate, ArtistController.deleteSlot);
 // portfolio routes
 router.get("/portfolio", authenticate, ArtistController.getMyPortfolio);
+router.get("/portfolio/upload-signature", authenticate, ArtistController.getUploadSignature);
 router.get("/portfolio/:id", authenticate, ArtistController.getPortfolioById);
 router.post("/portfolio", authenticate, upload.single("portfolio_image"), ArtistController.uploadPortfolioImage);
 router.put("/portfolio/:id", authenticate, ArtistController.updatePortfolio);

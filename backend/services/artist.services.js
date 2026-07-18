@@ -58,6 +58,10 @@ class ArtistService {
 
     // create profile
 
+    if (data.phone) {
+      await UserRepositor.update(user_id, { phone: data.phone });
+    }
+
     const profile = await ArtistProfileRepositor.createProfile(data);
 
     return profile;
@@ -78,6 +82,7 @@ class ArtistService {
     if (data.name !== undefined) userUpdates.name = data.name;
     if (data.profileImage !== undefined) userUpdates.profile_image = data.profileImage;
     if (data.profile_image !== undefined) userUpdates.profile_image = data.profile_image;
+    if (data.phone !== undefined) userUpdates.phone = data.phone;
     
     if (Object.keys(userUpdates).length > 0) {
       await UserRepositor.update(userId, userUpdates);

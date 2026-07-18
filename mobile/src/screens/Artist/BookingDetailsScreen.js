@@ -588,6 +588,19 @@ export default function BookingDetailsScreen({ route, navigation }) {
     }
   };
 
+  const handleOpenCheckInOTP = async () => {
+    setLoading(true);
+    try {
+      await sendCheckInOtp(bookingId);
+      setOtpTimer(300);
+      setIsCheckInModalVisible(true);
+    } catch (err) {
+      Alert.alert("Error", err.message || "Failed to send Check-In OTP");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleResendCheckInOtp = async () => {
     setLoading(true);
     try {
@@ -757,7 +770,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
       if (distanceInMeters !== null && distanceInMeters <= 50) {
         return (
           <View style={styles.footerSingle}>
-            <CustomButton title="Verify Check-In OTP" onPress={() => { setOtpTimer(300); setIsCheckInModalVisible(true); }} />
+            <CustomButton title="Verify Check-In OTP" onPress={handleOpenCheckInOTP} />
           </View>
         );
       }
@@ -771,7 +784,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
     if (currentDetailedStatus === "ARTIST_ARRIVED") {
       return (
         <View style={styles.footerSingle}>
-          <CustomButton title="Verify Check-In OTP" onPress={() => { setOtpTimer(300); setIsCheckInModalVisible(true); }} />
+          <CustomButton title="Verify Check-In OTP" onPress={handleOpenCheckInOTP} />
         </View>
       );
     }

@@ -147,13 +147,13 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  const sendOtp = useCallback(async (name, email, phone, role) => {
-    return await sendOtpService(name, email, phone, role);
+  const sendOtp = useCallback(async (email, role) => {
+    return await sendOtpService(email, undefined, role);
   }, []);
 
-  const verifyOtpAndAuthenticate = useCallback(async (phone, otp) => {
+  const verifyOtpAndAuthenticate = useCallback(async (email, otp) => {
     try {
-      const data = await verifyUserOtpService(phone, otp);
+      const data = await verifyUserOtpService(email, otp);
       dispatch({
         type: "LOGIN",
         payload: {
