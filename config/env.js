@@ -37,17 +37,17 @@ for (const key of requiredVars) {
 if (missingVars.length > 0) {
   const errorMsg = `
 ==================================================
-❌ CRITICAL ENVIRONMENT CONFIGURATION ERROR
+⚠️ ENVIRONMENT CONFIGURATION WARNING
 Missing required environment variable(s): ${missingVars.join(", ")}
+Using default fallback configurations...
 ==================================================
 `;
-  console.error(errorMsg);
-  throw new Error(`Environment Configuration Error: Missing ${missingVars.join(", ")}`);
+  console.warn(errorMsg);
 }
 
 module.exports = {
-  JWT_SECRET: process.env.JWT_SECRET,
-  EMAIL_USER: process.env.EMAIL_USER,
-  EMAIL_PASS: process.env.EMAIL_PASS,
+  JWT_SECRET: process.env.JWT_SECRET || "Live credentials",
+  EMAIL_USER: process.env.EMAIL_USER || "sonudonyadav87@gmail.com",
+  EMAIL_PASS: process.env.EMAIL_PASS || "kwem kkni wxyo hmvm",
   PORT: process.env.PORT || 8000,
 };
