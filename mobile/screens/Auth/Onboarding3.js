@@ -57,7 +57,7 @@ export default function Onboarding3({ navigation }) {
       </Text>
 
       {/* Next Button */}
-      <Pressable
+      {/* <Pressable
         style={styles.button}
         onPress={() => navigation.replace("Login")}
       >
@@ -69,14 +69,9 @@ export default function Onboarding3({ navigation }) {
           color="#fff"
           style={{ marginLeft: 8 }}
         />
-      </Pressable>
+      </Pressable> */}
 
-      {/* Indicator */}
-      <View style={styles.dots}>
-        <View style={styles.dot} />
-        <View style={styles.dot} />
-        <View style={[styles.dot, styles.activeDot]} />
-      </View>
+
     </SafeAreaView>
   );
 }
