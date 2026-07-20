@@ -554,29 +554,6 @@ class BookingService {
   }
 
   async hasRestrictedBooking(userId, artistId) {
-    // 1. Check if user has 3 or more active bookings (excluding completed, waiting-for-payment, and cancelled bookings)
-    const activeBookingsCount = await db.Booking.count({
-      where: {
-        user_id: userId,
-        booking_status: { [Op.ne]: "CANCELLED" },
-        detailed_status: { [Op.in]: ["PENDING", "CONFIRMED", "ACCEPTED", "ARTIST_ACCEPTED", "ARTIST_ON_THE_WAY", "ARTIST_ARRIVED", "SERVICE_STARTED", "RESCHEDULED"] }
-      }
-    });
-    if (activeBookingsCount >= 3) {
-      return true;
-    }
-
-    // 2. Check if user has a booking with a pending cash payment dispute or awaiting cash confirmation
-    const disputeCount = await db.Booking.count({
-      where: {
-        user_id: userId,
-        detailed_status: { [Op.in]: ["CASH_DISPUTED", "AWAITING_CASH_CONFIRMATION"] }
-      }
-    });
-    if (disputeCount > 0) {
-      return true;
-    }
-
     return false;
   }
 
