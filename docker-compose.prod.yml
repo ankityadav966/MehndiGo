@@ -26,6 +26,8 @@ services:
       dockerfile: Dockerfile
     container_name: mehndigo_prod_backend
     restart: always
+    env_file:
+      - ./backend/.env
     environment:
       NODE_ENV: production
       PORT: 3000
@@ -34,6 +36,8 @@ services:
       DB_PASS: ${DB_PASS:-123456}
       DB_NAME: ${DB_NAME:-mehndigo_prod_db}
       JWT_SECRET: ${JWT_SECRET}
+      EMAIL_USER: ${EMAIL_USER}
+      EMAIL_PASS: ${EMAIL_PASS}
       CASHFREE_CLIENT_ID: ${CASHFREE_CLIENT_ID}
       CASHFREE_CLIENT_SECRET: ${CASHFREE_CLIENT_SECRET}
       CASHFREE_ENV: ${CASHFREE_ENV}

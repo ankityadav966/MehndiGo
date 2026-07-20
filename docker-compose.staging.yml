@@ -20,6 +20,8 @@ services:
       dockerfile: Dockerfile
     container_name: mehndigo_staging_backend
     restart: always
+    env_file:
+      - ./backend/.env
     environment:
       NODE_ENV: staging
       PORT: 3000
@@ -28,6 +30,8 @@ services:
       DB_PASS: 123456
       DB_NAME: mehndigo_staging_db
       JWT_SECRET: staging_super_secret_secret
+      EMAIL_USER: ${EMAIL_USER:-staging_email@gmail.com}
+      EMAIL_PASS: ${EMAIL_PASS:-staging_pass}
     ports:
       - "3000:3000"
     depends_on:
