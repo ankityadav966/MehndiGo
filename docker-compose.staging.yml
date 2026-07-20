@@ -32,10 +32,21 @@ services:
       JWT_SECRET: staging_super_secret_secret
       EMAIL_USER: ${EMAIL_USER:-staging_email@gmail.com}
       EMAIL_PASS: ${EMAIL_PASS:-staging_pass}
+      REDIS_URL: redis://redis:6379
     ports:
       - "3000:3000"
     depends_on:
       - postgres
+      - redis
+    networks:
+      - mehndigo_staging_net
+
+  redis:
+    image: redis:7-alpine
+    container_name: mehndigo_staging_redis
+    restart: always
+    volumes:
+      - redis_staging_data:/data
     networks:
       - mehndigo_staging_net
 
@@ -54,6 +65,7 @@ services:
 
 volumes:
   pg_staging_data:
+  redis_staging_data:
 
 networks:
   mehndigo_staging_net:
