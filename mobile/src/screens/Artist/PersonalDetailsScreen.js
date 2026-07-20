@@ -25,14 +25,22 @@ export default function PersonalDetailsScreen({ navigation, route }) {
 
   useEffect(() => {
     (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status === "granted") {
-        const pos = await Location.getCurrentPositionAsync({});
-        updateArtistDetails({
-          latitude: String(pos.coords.latitude),
-          longitude: String(pos.coords.longitude),
-        });
-      } else {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === "granted") {
+          const pos = await Location.getCurrentPositionAsync({});
+          updateArtistDetails({
+            latitude: String(pos.coords.latitude),
+            longitude: String(pos.coords.longitude),
+          });
+        } else {
+          updateArtistDetails({
+            latitude: "26.912434",
+            longitude: "75.787270",
+          });
+        }
+      } catch (err) {
+        console.warn("Failed to retrieve live location during onboarding, using default:", err.message);
         updateArtistDetails({
           latitude: "26.912434",
           longitude: "75.787270",

@@ -136,7 +136,7 @@ class WalletService {
     }
 
     const artist = await db.ArtistProfile.findByPk(request.artist_id);
-    if (!artist || artist.user_id !== userId) {
+    if (!artist || Number(artist.user_id) !== Number(userId)) {
       throw new AppError("Unauthorized action", 403);
     }
 

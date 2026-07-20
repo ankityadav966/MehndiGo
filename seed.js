@@ -85,7 +85,9 @@ async function seed() {
         location: "Jaipur, Rajasthan",
         avg_rating: (Math.random() * 2 + 3).toFixed(1), // 3.0 to 5.0
         total_reviews: Math.floor(Math.random() * 50),
-        total_bookings: Math.floor(Math.random() * 100)
+        total_bookings: Math.floor(Math.random() * 100),
+        latitude: 26.9124 + (Math.random() - 0.5) * 0.05,
+        longitude: 75.7873 + (Math.random() - 0.5) * 0.05
       });
       artistProfiles.push(profile);
     }

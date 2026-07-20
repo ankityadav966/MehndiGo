@@ -63,7 +63,7 @@ class ReviewService {
     // Validate booking
     const booking = await db.Booking.findByPk(booking_id);
     if (!booking) throw new AppError("Booking not found", 404);
-    if (booking.user_id !== userId) throw new AppError("Unauthorized access to booking", 403);
+    if (Number(booking.user_id) !== Number(userId)) throw new AppError("Unauthorized access to booking", 403);
     if (booking.booking_status !== "COMPLETED" || booking.payment_status !== "PAID") {
       throw new AppError("Only completed and fully paid bookings can be reviewed.", 400);
     }
@@ -90,7 +90,7 @@ class ReviewService {
   async updateReview(id, userId, data) {
     const review = await db.Review.findByPk(id);
     if (!review) throw new AppError("Review not found", 404);
-    if (review.user_id !== userId) throw new AppError("Unauthorized edit request", 403);
+    if (Number(review.user_id) !== Number(userId)) throw new AppError("Unauthorized edit request", 403);
 
     // Validate 24 hours editing limit
     const ageMs = Date.now() - new Date(review.createdAt).getTime();
@@ -113,7 +113,7 @@ class ReviewService {
   async deleteReview(id, userId) {
     const review = await db.Review.findByPk(id);
     if (!review) throw new AppError("Review not found", 404);
-    if (review.user_id !== userId) throw new AppError("Unauthorized delete request", 403);
+    if (Number(review.user_id) !== Number(userId)) throw new AppError("Unauthorized delete request", 403);
 
     const ageMs = Date.now() - new Date(review.createdAt).getTime();
     if (ageMs > 24 * 60 * 60 * 1000) {

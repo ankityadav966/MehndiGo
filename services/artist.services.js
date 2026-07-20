@@ -58,7 +58,12 @@ class ArtistService {
 
     // create profile
 
-    const profile = await ArtistProfileRepositor.createProfile(data);
+    const profile = await ArtistProfileRepositor.createProfile({
+      ...data,
+      verification_status: "APPROVED",
+      latitude: data.latitude || 26.9124,
+      longitude: data.longitude || 75.7873
+    });
 
     return profile;
   }

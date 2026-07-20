@@ -546,7 +546,7 @@ class BookingService {
     if (!booking) {
       throw new AppError("Booking not found", 404);
     }
-    if (booking.user_id !== userId) {
+    if (Number(booking.user_id) !== Number(userId)) {
       throw new AppError("Unauthorized access to booking", 403);
     }
     await booking.update({ review_skipped: true });

@@ -60,6 +60,7 @@ export default function ArtistProfileScreen({ route, navigation }) {
   const loadProfileDetails = async () => {
     setLoading(true);
     setError(null);
+    console.log("[ArtistProfileScreen Debug] Starting loadProfileDetails. Param artistId:", artistId);
     try {
       const [prof, servs, port, revs, avail, sim, favs] = await Promise.all([
         fetchArtistProfile(artistId),
@@ -71,7 +72,13 @@ export default function ArtistProfileScreen({ route, navigation }) {
         getFavorites()
       ]);
 
+      console.log("[ArtistProfileScreen Debug] All fetches completed successfully.");
+      console.log("[ArtistProfileScreen Debug] prof:", prof);
+      console.log("[ArtistProfileScreen Debug] servs count:", servs?.length);
+      console.log("[ArtistProfileScreen Debug] port count:", port?.length);
+
       if (!prof) {
+        console.log("[ArtistProfileScreen Debug] prof is null/undefined!");
         setError("Artist profile not found");
         setLoading(false);
         return;
@@ -99,7 +106,7 @@ export default function ArtistProfileScreen({ route, navigation }) {
         }
       }
     } catch (e) {
-      console.log("Error loading artist details:", e.message);
+      console.log("[ArtistProfileScreen Debug] Error loading artist details:", e.message, e);
       setError("Failed to load artist details. Please try again.");
     } finally {
       setLoading(false);

@@ -26,9 +26,9 @@ router.put("/leads/view", authenticate, ArtistController.viewLead);
 router.get("/services", authenticate, ArtistController.getServices);
 router.get("/services/:id", authenticate, ArtistController.getServiceById);
 router.post("/services", authenticate, ArtistController.createService);
+router.put("/services/status", authenticate, ArtistController.updateServiceStatus);
 router.put("/services/:id", authenticate, ArtistController.updateService);
 router.delete("/services/:id", authenticate, ArtistController.deleteService);
-router.put("/services/status", authenticate, ArtistController.updateServiceStatus);
 router.post("/services/media", authenticate, ArtistController.postServiceMedia);
 router.delete("/services/media", authenticate, ArtistController.deleteServiceMedia);
 

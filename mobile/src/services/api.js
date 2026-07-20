@@ -12,9 +12,6 @@ import { secureStorage } from "../utils/storage";
  */
 const getBaseUrl = () => {
   let envUrl = process.env.EXPO_PUBLIC_API_URL || "https://mehandigo-api.globalrns.com/api/v1";
-  if (envUrl.includes("192.168.1.26")) {
-    envUrl = envUrl.replace("192.168.1.26", "10.29.188.64");
-  }
   return envUrl.endsWith("/") ? envUrl.slice(0, -1) : envUrl;
 };
 

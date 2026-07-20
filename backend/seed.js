@@ -67,7 +67,9 @@ async function seed() {
       location: "Malviya Nagar, Jaipur",
       avg_rating: 4.8,
       total_reviews: 1,
-      total_bookings: 1
+      total_bookings: 1,
+      latitude: 26.9124,
+      longitude: 75.7873
     });
     console.log("Artist Profile seeded.");
 
