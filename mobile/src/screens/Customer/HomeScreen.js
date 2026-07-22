@@ -83,7 +83,7 @@ export default function HomeScreen({ navigation }) {
       setFeaturedArtists(data?.featuredArtists || []);
       setPopularArtists(data?.popularArtists || []);
       setRecentlyBookedArtists(data?.recentlyBooked || []);
-      
+
       // Load favorites from database
       try {
         const favs = await getFavorites();
@@ -189,16 +189,16 @@ export default function HomeScreen({ navigation }) {
           const profileData = await getCustomerProfile();
           if (!isSubscribed) return;
           if (profileData) {
-            const hasChanges = 
-              profileData.profile_image !== user?.profile_image || 
-              profileData.city !== user?.city || 
+            const hasChanges =
+              profileData.profile_image !== user?.profile_image ||
+              profileData.city !== user?.city ||
               profileData.name !== user?.name ||
               profileData.phone !== user?.phone;
-            
+
             if (hasChanges) {
               dispatch({ type: "UPDATE_USER", payload: profileData });
             }
-            
+
             // Check if phone number is missing
             if (!profileData.phone) {
               const { Alert } = require("react-native");
@@ -235,7 +235,7 @@ export default function HomeScreen({ navigation }) {
   // Banner Auto-scrolling carousel setup
   useEffect(() => {
     if (offers.length === 0 || !isAutoPlayEnabled) return;
-    
+
     if (bannerTimerRef.current) clearInterval(bannerTimerRef.current);
 
     bannerTimerRef.current = setInterval(() => {
@@ -279,59 +279,59 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-const LOCAL_CATEGORY_IMAGES = {
-  "bridal": require("../../assets/images/categories/bridal.png"),
-  "royal": require("../../assets/images/categories/royal.png"),
-  "arabic": require("../../assets/images/categories/arabic.png"),
-  "traditional": require("../../assets/images/categories/traditional.png"),
-  "floral": require("../../assets/images/categories/floral.png"),
-  "minimal": require("../../assets/images/categories/minimal.png"),
-  "modern": require("../../assets/images/categories/modern.png"),
-  "finger": require("../../assets/images/categories/finger.png"),
-  "full-hand": require("../../assets/images/categories/full_hand.png"),
-  "back-hand": require("../../assets/images/categories/back_hand.png"),
-  "front-hand": require("../../assets/images/categories/front_hand.png"),
-  "leg": require("../../assets/images/categories/leg.png"),
-  "kids": require("../../assets/images/categories/kids.png"),
-  "groom": require("../../assets/images/categories/groom.png"),
-  "engagement": require("../../assets/images/categories/engagement.png"),
-  "wedding": require("../../assets/images/categories/wedding.png"),
-  "karwa-chauth": require("../../assets/images/categories/karwa_chauth.png"),
-  "eid": require("../../assets/images/categories/eid.png"),
-  "festival": require("../../assets/images/categories/festival.png"),
-  "custom": require("../../assets/images/categories/custom.png")
-};
+  const LOCAL_CATEGORY_IMAGES = {
+    "bridal": require("../../assets/images/categories/bridal.png"),
+    "royal": require("../../assets/images/categories/royal.png"),
+    "arabic": require("../../assets/images/categories/arabic.png"),
+    "traditional": require("../../assets/images/categories/traditional.png"),
+    "floral": require("../../assets/images/categories/floral.png"),
+    "minimal": require("../../assets/images/categories/minimal.png"),
+    "modern": require("../../assets/images/categories/modern.png"),
+    "finger": require("../../assets/images/categories/finger.png"),
+    "full-hand": require("../../assets/images/categories/full_hand.png"),
+    "back-hand": require("../../assets/images/categories/back_hand.png"),
+    "front-hand": require("../../assets/images/categories/front_hand.png"),
+    "leg": require("../../assets/images/categories/leg.png"),
+    "kids": require("../../assets/images/categories/kids.png"),
+    "groom": require("../../assets/images/categories/groom.png"),
+    "engagement": require("../../assets/images/categories/engagement.png"),
+    "wedding": require("../../assets/images/categories/wedding.png"),
+    "karwa-chauth": require("../../assets/images/categories/karwa_chauth.png"),
+    "eid": require("../../assets/images/categories/eid.png"),
+    "festival": require("../../assets/images/categories/festival.png"),
+    "custom": require("../../assets/images/categories/custom.png")
+  };
 
-const getCategoryImage = (item) => {
-  if (item && item.image && (item.image.startsWith("http://") || item.image.startsWith("https://"))) {
-    return { uri: item.image };
-  }
-  const name = (item.name || "").toLowerCase();
-  const slug = (item.slug || "").toLowerCase();
+  const getCategoryImage = (item) => {
+    if (item && item.image && (item.image.startsWith("http://") || item.image.startsWith("https://"))) {
+      return { uri: item.image };
+    }
+    const name = (item.name || "").toLowerCase();
+    const slug = (item.slug || "").toLowerCase();
 
-  let key = "custom";
-  if (slug.includes("royal") || name.includes("royal")) key = "royal";
-  else if (slug.includes("bridal") || name.includes("bridal")) key = "bridal";
-  else if (slug.includes("arabic") || name.includes("arabic")) key = "arabic";
-  else if (slug.includes("traditional") || name.includes("traditional")) key = "traditional";
-  else if (slug.includes("floral") || name.includes("floral")) key = "floral";
-  else if (slug.includes("minimal") || name.includes("minimal")) key = "minimal";
-  else if (slug.includes("modern") || name.includes("modern")) key = "modern";
-  else if (slug.includes("finger") || name.includes("finger")) key = "finger";
-  else if (slug.includes("full-hand") || name.includes("full hand") || name.includes("full-hand")) key = "full-hand";
-  else if (slug.includes("back-hand") || name.includes("back hand") || name.includes("back-hand")) key = "back-hand";
-  else if (slug.includes("front-hand") || name.includes("front hand") || name.includes("front-hand")) key = "front-hand";
-  else if (slug.includes("leg") || name.includes("leg")) key = "leg";
-  else if (slug.includes("kids") || name.includes("kid") || slug.includes("kid")) key = "kids";
-  else if (slug.includes("groom") || name.includes("groom")) key = "groom";
-  else if (slug.includes("engagement") || name.includes("engagement")) key = "engagement";
-  else if (slug.includes("wedding") || name.includes("wedding")) key = "wedding";
-  else if (slug.includes("karwa") || name.includes("karwa")) key = "karwa-chauth";
-  else if (slug.includes("eid") || name.includes("eid")) key = "eid";
-  else if (slug.includes("festival") || name.includes("festival")) key = "festival";
+    let key = "custom";
+    if (slug.includes("royal") || name.includes("royal")) key = "royal";
+    else if (slug.includes("bridal") || name.includes("bridal")) key = "bridal";
+    else if (slug.includes("arabic") || name.includes("arabic")) key = "arabic";
+    else if (slug.includes("traditional") || name.includes("traditional")) key = "traditional";
+    else if (slug.includes("floral") || name.includes("floral")) key = "floral";
+    else if (slug.includes("minimal") || name.includes("minimal")) key = "minimal";
+    else if (slug.includes("modern") || name.includes("modern")) key = "modern";
+    else if (slug.includes("finger") || name.includes("finger")) key = "finger";
+    else if (slug.includes("full-hand") || name.includes("full hand") || name.includes("full-hand")) key = "full-hand";
+    else if (slug.includes("back-hand") || name.includes("back hand") || name.includes("back-hand")) key = "back-hand";
+    else if (slug.includes("front-hand") || name.includes("front hand") || name.includes("front-hand")) key = "front-hand";
+    else if (slug.includes("leg") || name.includes("leg")) key = "leg";
+    else if (slug.includes("kids") || name.includes("kid") || slug.includes("kid")) key = "kids";
+    else if (slug.includes("groom") || name.includes("groom")) key = "groom";
+    else if (slug.includes("engagement") || name.includes("engagement")) key = "engagement";
+    else if (slug.includes("wedding") || name.includes("wedding")) key = "wedding";
+    else if (slug.includes("karwa") || name.includes("karwa")) key = "karwa-chauth";
+    else if (slug.includes("eid") || name.includes("eid")) key = "eid";
+    else if (slug.includes("festival") || name.includes("festival")) key = "festival";
 
-  return LOCAL_CATEGORY_IMAGES[key] || LOCAL_CATEGORY_IMAGES.custom;
-};
+    return LOCAL_CATEGORY_IMAGES[key] || LOCAL_CATEGORY_IMAGES.custom;
+  };
 
   // Render a Category card item
   const renderCategoryItem = ({ item }) => {
@@ -343,7 +343,7 @@ const getCategoryImage = (item) => {
       >
         <View style={[styles.categoryIcon, { overflow: "hidden" }]}>
           <Image
-            source={hasError ? require("../../assets/images/logo.jpg") : getCategoryImage(item)}
+            source={hasError ? require("../../assets/images/logo.png") : getCategoryImage(item)}
             onError={() => {
               setImageErrors((prev) => ({ ...prev, [item.id]: true }));
             }}
@@ -489,7 +489,7 @@ const getCategoryImage = (item) => {
           source={{ uri: item.user?.profile_image || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400" }}
           style={styles.nearbyArtistImage}
         />
-        
+
         <View style={styles.nearbyArtistInfo}>
           <View style={styles.nearbyNameHeader}>
             <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
@@ -869,7 +869,7 @@ const getCategoryImage = (item) => {
             <View style={styles.modalHeaderIconContainer}>
               <Ionicons name="time-outline" size={30} color={Colors.primary} />
             </View>
-            
+
             <Text style={styles.modalTitle}>Remaining Payment Pending</Text>
             <Text style={styles.modalSubtitle}>Please clear the remaining dues to complete your booking.</Text>
 
@@ -888,7 +888,7 @@ const getCategoryImage = (item) => {
                     <Text style={styles.modalArtistCategory}>
                       {pendingPaymentBooking.service?.category || "Mehndi Specialist"}
                     </Text>
-                    
+
                     <View style={styles.modalArtistStats}>
                       <View style={styles.modalStatItem}>
                         <Ionicons name="star" size={13} color="#FFB800" />
@@ -922,8 +922,8 @@ const getCategoryImage = (item) => {
                     <Ionicons name="calendar-outline" size={14} color={Colors.textSecondary} />
                     <Text style={styles.modalDetailLabel}>Date & Time:</Text>
                     <Text style={styles.modalDetailValue}>
-                      {pendingPaymentBooking.slot?.start_time || pendingPaymentBooking.slot?.date 
-                        ? new Date(pendingPaymentBooking.slot.start_time || pendingPaymentBooking.slot.date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) 
+                      {pendingPaymentBooking.slot?.start_time || pendingPaymentBooking.slot?.date
+                        ? new Date(pendingPaymentBooking.slot.start_time || pendingPaymentBooking.slot.date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
                         : (pendingPaymentBooking.reschedule_date ? new Date(pendingPaymentBooking.reschedule_date).toLocaleDateString() : "TBD")} at {pendingPaymentBooking.slot?.time_label || pendingPaymentBooking.reschedule_time || "TBD"}
                     </Text>
                   </View>
@@ -981,7 +981,7 @@ const getCategoryImage = (item) => {
               >
                 <Text style={styles.modalLaterText}>Later</Text>
               </TouchableOpacity>
-              
+
               <TouchableOpacity
                 style={styles.modalPayBtn}
                 activeOpacity={0.8}
@@ -1272,10 +1272,10 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { fontSize: 16, fontWeight: "700", color: Colors.text },
   viewAllText: { fontSize: 13, color: Colors.primary, fontWeight: "600" },
-  categoryCard: { 
-    alignItems: "center", 
-    marginRight: 16, 
-    width: 76 
+  categoryCard: {
+    alignItems: "center",
+    marginRight: 16,
+    width: 76
   },
   categoryIcon: {
     width: 64,
@@ -1292,12 +1292,12 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     elevation: 2,
   },
-  categoryText: { 
-    marginTop: 8, 
-    fontSize: 11, 
-    fontWeight: "600", 
-    color: Colors.text, 
-    textAlign: "center" 
+  categoryText: {
+    marginTop: 8,
+    fontSize: 11,
+    fontWeight: "600",
+    color: Colors.text,
+    textAlign: "center"
   },
   horizontalArtistCard: {
     width: 140,
@@ -1401,7 +1401,7 @@ const styles = StyleSheet.create({
   emptySub: { fontSize: 13, color: Colors.textSecondary, marginTop: 4, textAlign: "center" },
   footerEnd: { paddingVertical: 20, alignItems: "center" },
   footerEndText: { fontSize: 12, color: Colors.textTertiary },
-  
+
   // Split Payment Styles
   pendingCardContainer: {
     marginHorizontal: 16,

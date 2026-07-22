@@ -85,10 +85,8 @@ export default function CustomerProfileScreen({ navigation }) {
     { icon: "wallet-outline", label: "Wallet", screen: "Wallet" },
     { icon: "share-social-outline", label: "Refer & Earn", screen: "ReferralDashboard" },
     { icon: "pricetag-outline", label: "Coupons", screen: "Coupons" },
-    { icon: "location-outline", label: "Saved Addresses", screen: "AddressSelection" },
     { icon: "star-outline", label: "My Reviews", screen: "Reviews" },
     { icon: "headset-outline", label: "Support Helpdesk", screen: "Support" },
-    { icon: "settings-outline", label: "Settings", screen: "Settings", params: { role: "customer" } }
   ];
 
   const currentBgColor = isDarkMode ? "#000000" : Colors.background;

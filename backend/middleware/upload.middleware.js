@@ -85,23 +85,36 @@ async function uploadLocalFileToCloudinary(filePath, file) {
   });
 }
 
+const uploadsDir = path.join(__dirname, "../uploads");
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
 /**
- * Safe wrapper to upload a file object and clean up its local disk file in finally block
+ * Safe wrapper to upload a file object and clean up its local disk file in finally block.
+ * Falls back to local disk storage in /uploads if Cloudinary is unavailable or disabled.
  */
 async function safeUploadAndCleanup(file) {
   if (!file || !file.path) return;
   const localPath = file.path;
   try {
     const secureUrl = await uploadLocalFileToCloudinary(localPath, file);
-    // Replace the local file path with the Cloudinary secure URL
     file.path = secureUrl;
-  } finally {
+    if (fs.existsSync(localPath)) {
+      fs.unlinkSync(localPath);
+    }
+  } catch (err) {
+    console.warn("[Multer Cloudinary Wrapper] Cloudinary upload failed (fallback to local server storage):", err.message);
+    const fileName = path.basename(localPath);
+    const destPath = path.join(uploadsDir, fileName);
     try {
       if (fs.existsSync(localPath)) {
-        fs.unlinkSync(localPath);
+        fs.renameSync(localPath, destPath);
       }
-    } catch (e) {
-      console.error("[Multer Cloudinary Wrapper] Cleanup Error:", e);
+      file.path = `/uploads/${fileName}`;
+    } catch (moveErr) {
+      console.error("[Multer Cloudinary Wrapper] Fallback move error:", moveErr);
+      file.path = `/uploads/${fileName}`;
     }
   }
 }

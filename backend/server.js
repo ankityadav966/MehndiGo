@@ -38,7 +38,9 @@ app.use(express.json({
     req.rawBody = buf;
   }
 }));
+const path = require("path");
 app.use(express.urlencoded({ limit: "220mb", extended: true }));
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use(checkBlockedIP);
 app.use(sanitizeInputs);
 app.use("/auth", require("./routes/auth.routes"));
@@ -79,14 +81,23 @@ console.log("testing : ");
 console.log('====================================');
 app.use((error, req, res, next) => {
   console.error("[SERVER ERROR]:", error);
-  return res.status(error.statusCode || 500).json({
+  let message = error.message || "Something went wrong";
+
+  if (error.name === "SequelizeValidationError" || error.name === "SequelizeUniqueConstraintError") {
+    if (error.errors && error.errors.length > 0) {
+      message = error.errors.map((e) => {
+        if (e.type === "unique violation") {
+          return `${e.path || 'Field'} is already registered with another account.`;
+        }
+        return e.message;
+      }).join(", ");
+    }
+  }
+
+  return res.status(error.statusCode || 400).json({
     success: false,
-    message:
-      error.message ||
-      "Something went wrong",
-
+    message: message,
     data: {},
-
     error,
   });
 });

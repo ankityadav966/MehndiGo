@@ -875,15 +875,39 @@ class CustomerService {
   }
 
   async updateProfile(userId, data) {
+    const AppError = require("../utils/errors/app.error");
     const user = await db.User.findByPk(userId);
-    if (!user) throw new Error("User not found");
+    if (!user) throw new AppError("User not found", 404);
 
-    await user.update({
-      name: data.name || user.name,
-      email: data.email || user.email,
-      phone: data.phone || user.phone,
-      profile_image: data.profileImage || data.profile_image || user.profile_image
-    });
+    const updates = {};
+    if (data.name && data.name.trim()) updates.name = data.name.trim();
+
+    const newAvatar = data.profile_image || data.profileImage;
+    if (newAvatar) updates.profile_image = newAvatar;
+
+    if (data.email && data.email.trim() && data.email.trim().toLowerCase() !== user.email) {
+      const cleanEmail = data.email.trim().toLowerCase();
+      const existingEmail = await db.User.findOne({ where: { email: cleanEmail } });
+      if (existingEmail && Number(existingEmail.id) !== Number(userId)) {
+        throw new AppError("This email address is already registered with another account.", 400);
+      }
+      updates.email = cleanEmail;
+    }
+
+    if (data.phone) {
+      const cleanPhone = String(data.phone).trim().replace(/[^0-9]/g, "");
+      if (cleanPhone && cleanPhone !== user.phone) {
+        const existingPhone = await db.User.findOne({ where: { phone: cleanPhone } });
+        if (existingPhone && Number(existingPhone.id) !== Number(userId)) {
+          throw new AppError("This phone number is already registered with another account.", 400);
+        }
+        updates.phone = cleanPhone;
+      }
+    }
+
+    if (Object.keys(updates).length > 0) {
+      await user.update(updates);
+    }
 
     return user;
   }

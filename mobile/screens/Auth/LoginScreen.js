@@ -77,7 +77,7 @@ export default function LoginScreen({ navigation }) {
       >
         <View style={styles.logoContainer}>
           <Image
-            source={require("../../assets/images/logo.jpg")}
+            source={require("../../assets/images/logo.png")}
             style={styles.logo}
             resizeMode="contain"
           />
