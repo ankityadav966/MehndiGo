@@ -296,7 +296,8 @@ export default function EditProfileScreen({ navigation }) {
       navigation.goBack();
     } catch (err) {
       console.log("Failed to save profile:", err);
-      Alert.alert("Error", err.message || "Failed to update profile.");
+      const errMsg = err.response?.data?.message || err.message || "Failed to update profile.";
+      Alert.alert("Error", errMsg);
     } finally {
       setSaving(false);
     }

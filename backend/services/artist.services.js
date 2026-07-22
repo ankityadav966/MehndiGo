@@ -1434,10 +1434,26 @@ async createReview(data) {
 
     const user = await db.User.findByPk(userId);
     if (user) {
-      await user.update({
-        name: data.name || user.name,
-        profile_image: data.profileImage || user.profile_image
-      });
+      const userUpdates = {};
+      if (data.name && data.name.trim()) userUpdates.name = data.name.trim();
+
+      const newAvatar = data.profileImage || data.profile_image;
+      if (newAvatar) userUpdates.profile_image = newAvatar;
+
+      if (data.phone) {
+        const cleanPhone = String(data.phone).trim().replace(/[^0-9]/g, "");
+        if (cleanPhone && cleanPhone !== user.phone) {
+          const existingPhone = await db.User.findOne({ where: { phone: cleanPhone } });
+          if (existingPhone && Number(existingPhone.id) !== Number(userId)) {
+            throw new AppError("This phone number is already registered with another account.", 400);
+          }
+          userUpdates.phone = cleanPhone;
+        }
+      }
+
+      if (Object.keys(userUpdates).length > 0) {
+        await user.update(userUpdates);
+      }
     }
 
     return await this.getProfile(userId);
