@@ -38,7 +38,9 @@ app.use(express.json({
     req.rawBody = buf;
   }
 }));
+const path = require("path");
 app.use(express.urlencoded({ limit: "220mb", extended: true }));
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use(checkBlockedIP);
 app.use(sanitizeInputs);
 app.use("/auth", require("./routes/auth.routes"));
