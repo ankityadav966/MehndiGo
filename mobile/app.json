@@ -20,7 +20,10 @@
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION"
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
       ]
     },
     "plugins": [
@@ -70,9 +73,8 @@
     },
     "extra": {
       "eas": {
-        "projectId": "137cc401-a02c-4f2e-9e40-1f7e5427432d"
+        "projectId": "2e825d37-ae6b-4083-8fe7-f7a7576722c9"
       }
-    },
-    "owner": "sonuyadav87s-team"
+    }
   }
 }
