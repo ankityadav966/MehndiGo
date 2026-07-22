@@ -1,10 +1,17 @@
 const db = require("../models");
 const { Op } = require("sequelize");
 const AppError = require("../utils/errors/app.error");
-const razorpay = require("../utils/razorpay");
 const crypto = require("crypto");
 
+const checkInFailedAttempts = new Map();
+const checkOutFailedAttempts = new Map();
+
 class BookingService {
+  constructor() {
+    this.createBooking = this.createBooking.bind(this);
+    this.hasRestrictedBooking = this.hasRestrictedBooking.bind(this);
+  }
+
   async calculatePriceDetails(serviceId, couponCode = null, userId = null, slotCount = 1) {
     const service = await db.Service.findByPk(serviceId);
     if (!service) {
@@ -62,6 +69,69 @@ class BookingService {
 
     const slotIds = Array.isArray(slotId) ? slotId : (slotId ? [slotId] : []);
     const slotCount = slotIds.length > 0 ? slotIds.length : 1;
+
+    // 1. Validate Customer Exists
+    const customer = await db.User.findByPk(userId);
+    if (!customer) {
+      throw new AppError("Customer not found", 404);
+    }
+
+    // 2. Validate Artist Exists
+    const artist = await db.ArtistProfile.findByPk(artistId);
+    if (!artist) {
+      throw new AppError("Artist profile not found", 404);
+    }
+
+    // 3. Validate Service Exists
+    const service = await db.Service.findByPk(serviceId);
+    if (!service) {
+      throw new AppError("Service not found", 404);
+    }
+    if (service.artist_id !== artistId) {
+      throw new AppError("Service does not belong to the selected artist", 400);
+    }
+
+    // 4. Validate Slots Exist, belong to artist, are not already booked, and check duplicate slots for user
+    if (slotIds.length > 0) {
+      for (const id of slotIds) {
+        const slot = await db.AvailabilitySlot.findByPk(id);
+        if (!slot) {
+          throw new AppError("Availability slot not found", 404);
+        }
+        if (slot.artist_id !== artistId) {
+          throw new AppError("Availability slot does not belong to this artist", 400);
+        }
+        if (slot.is_booked) {
+          throw new AppError("Selected time slot is already booked", 400);
+        }
+      }
+
+      const duplicate = await db.Booking.findOne({
+        where: {
+          user_id: userId,
+          slot_id: { [Op.in]: slotIds },
+          booking_status: { [Op.ne]: "CANCELLED" }
+        }
+      });
+      if (duplicate) {
+        throw new AppError("You already have an active booking for this time slot", 400);
+      }
+    }
+
+    // 5. Check Restricted Booking Rules
+    let isRestricted = false;
+    try {
+      if (typeof this.hasRestrictedBooking === 'function') {
+        isRestricted = await this.hasRestrictedBooking(userId, artistId);
+      } else if (typeof BookingService !== 'undefined' && BookingService.prototype && typeof BookingService.prototype.hasRestrictedBooking === 'function') {
+        isRestricted = await BookingService.prototype.hasRestrictedBooking.call(this, userId, artistId);
+      }
+    } catch (err) {
+      console.error("Warning: hasRestrictedBooking check failed:", err.message);
+    }
+    if (isRestricted) {
+      throw new AppError("Booking restricted. You have too many active bookings or pending disputes.", 400);
+    }
 
     const bookingResult = await db.sequelize.transaction(async (t) => {
       let finalSlotId = slotIds[0] || null;
@@ -123,7 +193,7 @@ class BookingService {
         slot_id: finalSlotId || null,
         total_price: pricing.servicePrice,
         advance_paid: 0,
-        remaining_amount: pricing.finalAmount,
+        remaining_amount: pricing.finalAmount - Math.round(pricing.finalAmount * 0.10),
         booking_status: "PENDING",
         payment_status: "PENDING",
         detailed_status: "PENDING",
@@ -327,45 +397,13 @@ class BookingService {
     };
   }
 
-  async createRazorpayOrder(bookingId, userId) {
-    const booking = await db.Booking.findOne({
-      where: { id: bookingId, user_id: userId }
-    });
-    if (!booking) {
-      throw new AppError("Booking not found", 404);
-    }
-
-    const options = {
-      amount: booking.final_amount * 100, // amount in paisa
-      currency: "INR",
-      receipt: `receipt_booking_${booking.id}`
-    };
-
-    let order;
-    try {
-      order = await razorpay.orders.create(options);
-    } catch (err) {
-      console.log("Razorpay SDK error, creating mock order fallback:", err.message);
-      order = {
-        id: `order_mock_${Math.floor(100000 + Math.random() * 900000)}`,
-        amount: options.amount,
-        currency: "INR",
-        receipt: options.receipt
-      };
-    }
-
-    await db.Transaction.create({
-      user_id: userId,
-      booking_id: bookingId,
-      razorpay_order_id: order.id,
-      amount: booking.final_amount,
-      status: "PENDING"
-    });
-
-    return order;
+  async createPaymentSession(bookingId, userId) {
+    const paymentService = require("./payment.services");
+    return await paymentService.createSession(bookingId, userId);
   }
 
   async verifyPayment(userId, data) {
+<<<<<<< HEAD
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = data;
 
     const tx = await db.Transaction.findOne({
@@ -459,6 +497,16 @@ class BookingService {
     }
 
     return await this.getBookingDetails(tx.booking_id, userId, "CUSTOMER");
+=======
+    const paymentService = require("./payment.services");
+    // Translate booking-side verifyPayment structure to generic verifyPayment structure
+    const verifyData = {
+      cashfree_order_id: data.cashfree_order_id || data.order_id || data.orderId,
+      payment_session_id: data.payment_session_id
+    };
+    await paymentService.verifyPayment(userId, verifyData);
+    return await this.getBookingDetails(data.bookingId || verifyData.cashfree_order_id.split('_')[1], userId, "CUSTOMER");
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
   }
 
   async updateBookingStatus(bookingId, userId, role, newStatus, extraData = {}) {
@@ -483,6 +531,7 @@ class BookingService {
           { where: { id: booking.slot_id } }
         );
       }
+<<<<<<< HEAD
 
       // Rollback escrow pending balance on the artist's wallet if it is an online payment booking
       try {
@@ -563,7 +612,73 @@ class BookingService {
           } catch (xpErr) {
             console.error("Error awarding XP on completion:", xpErr.message);
           }
+=======
+    } else if (newStatus === "COMPLETED") {
+      updates.booking_status = "COMPLETED";
+      updates.detailed_status = "COMPLETED";
+      updates.payment_status = "PAID";
+      updates.artist_completion_status = "COMPLETED";
+      updates.artist_completed_at = new Date();
+      updates.remaining_paid_at = new Date();
+
+      // Credit remaining 90% directly to Artist Wallet on service completion
+      try {
+        const remainingPaid = booking.remaining_amount || 0;
+        const artistProfile = await db.ArtistProfile.findByPk(booking.artist_id);
+        if (artistProfile) {
+          const [artistWallet] = await db.Wallet.findOrCreate({
+            where: { user_id: artistProfile.user_id },
+            defaults: { balance: 0 }
+          });
+          await artistWallet.increment("balance", { by: remainingPaid });
+          
+          const customerUser = await db.User.findByPk(booking.user_id);
+          const customerName = customerUser ? customerUser.name : "Client";
+          await db.WalletTransaction.create({
+            wallet_id: artistWallet.id,
+            booking_id: booking.id,
+            transaction_type: "PAYMENT",
+            amount: remainingPaid,
+            status: "SUCCESS",
+            description: `Mehndi application service payment from customer ${customerName}`
+          });
+          console.log(`[completeService] Credited remaining ₹${remainingPaid} to Artist Wallet`);
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
         }
+      } catch (artistErr) {
+        console.error("Error crediting Artist Wallet upon completion:", artistErr.message);
+      }
+
+      // Create success transaction record
+      try {
+        const cfPaymentId = `pay_cash_${Math.random().toString(36).substring(2, 10)}`;
+        await db.Transaction.create({
+          user_id: booking.user_id,
+          booking_id: booking.id,
+          cashfree_order_id: `order_${booking.id}_completion`,
+          cashfree_payment_id: cfPaymentId,
+          amount: booking.remaining_amount || 0,
+          status: "SUCCESS",
+          gateway: "CASH"
+        });
+      } catch (txErr) {
+        console.error("Error creating Transaction upon completion:", txErr.message);
+      }
+
+      try {
+        await db.Notification.create({
+          user_id: booking.user_id,
+          title: "Booking Completed 🎉",
+          message: `Your Mehndi service booking #${booking.booking_code} has been completed and fully paid.`,
+          type: "BOOKING",
+          data: {
+            type: "booking",
+            event: "booking_completed",
+            bookingId: booking.id
+          }
+        });
+      } catch (notifErr) {
+        console.error("Error sending booking complete notification:", notifErr.message);
       }
     } else if (newStatus === "ARTIST_ACCEPTED" || newStatus === "CONFIRMED") {
       updates.booking_status = "CONFIRMED";
@@ -618,10 +733,21 @@ class BookingService {
 
       await db.Notification.create({
         user_id: userToNotify,
+<<<<<<< HEAD
         title: notificationTitle,
         message: notificationMessage,
         type: notificationType,
         data: JSON.stringify(notificationData)
+=======
+        title: `Booking Update: ${newStatus}`,
+        message: `Booking #${booking.booking_code} status has been updated to ${newStatus}`,
+        type: "BOOKING",
+        data: {
+          type: "booking",
+          event: "booking_confirmed",
+          bookingId: booking.id
+        }
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
       });
     }
 
@@ -648,6 +774,7 @@ class BookingService {
     }
     return invoice;
   }
+<<<<<<< HEAD
   async selectCashPayment(bookingId, userId) {
     const booking = await db.Booking.findOne({ where: { id: bookingId, user_id: userId } });
     if (!booking) throw new AppError("Booking not found", 404);
@@ -882,6 +1009,403 @@ class BookingService {
       }
     });
     return !!activeBooking;
+=======
+
+  async getPendingPayment(userId) {
+    const booking = await db.Booking.findOne({
+      where: {
+        user_id: userId,
+        detailed_status: "WAITING_FOR_USER_PAYMENT",
+        payment_status: "PARTIAL"
+      },
+      include: [
+        {
+          model: db.ArtistProfile,
+          as: "artist",
+          attributes: ["id", "bio", "experience_years", "avg_rating", "total_reviews", "city", "state"],
+          include: [
+            {
+              model: db.User,
+              as: "user",
+              attributes: ["id", "name", "profile_image"]
+            }
+          ]
+        },
+        {
+          model: db.Service,
+          as: "service",
+          attributes: ["id", "specialization_name", "category"]
+        }
+      ],
+      order: [["updatedAt", "DESC"]]
+    });
+    return booking;
+  }
+
+  async skipReview(bookingId, userId) {
+    const booking = await db.Booking.findByPk(bookingId);
+    if (!booking) {
+      throw new AppError("Booking not found", 404);
+    }
+    if (Number(booking.user_id) !== Number(userId)) {
+      throw new AppError("Unauthorized access to booking", 403);
+    }
+    await booking.update({ review_skipped: true });
+    return booking;
+  }
+
+  async hasRestrictedBooking(userId, artistId) {
+    return false;
+  }
+
+  async sendCheckInOtp(bookingId, userId) {
+    const booking = await db.Booking.findByPk(bookingId, {
+      include: [{ model: db.User, as: "user", attributes: ["id", "phone", "name", "email"] }]
+    });
+    if (!booking) {
+      throw new AppError("Booking not found", 404);
+    }
+
+    // 60-second resend cooldown
+    if (booking.check_in_otp_expires_at) {
+      const sentAt = new Date(new Date(booking.check_in_otp_expires_at).getTime() - 5 * 60 * 1000);
+      const secondsElapsed = Math.floor((Date.now() - sentAt.getTime()) / 1000);
+      if (secondsElapsed < 60) {
+        throw new AppError(`Please wait ${60 - secondsElapsed} seconds before requesting a new OTP.`, 429);
+      }
+    }
+
+    // Reset failed verification attempts
+    checkInFailedAttempts.delete(booking.id);
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 mins
+
+    const updates = {
+      check_in_otp: otp,
+      check_in_otp_expires_at: expiresAt,
+      check_in_otp_verified: false
+    };
+
+    if (booking.detailed_status === "ARTIST_ON_THE_WAY") {
+      updates.detailed_status = "ARTIST_ARRIVED";
+      try {
+        await db.BookingStatusHistory.create({
+          booking_id: booking.id,
+          status: "ARTIST_ARRIVED",
+          changed_by: userId,
+          notes: "Arrival confirmed automatically via Check-In OTP request"
+        });
+      } catch (historyErr) {
+        console.error("Error creating status history for automatic arrival:", historyErr.message);
+      }
+    }
+
+    await booking.update(updates);
+
+    console.log(`[CHECK_IN_OTP] OTP Generated successfully. Booking ID: ${booking.id}, Customer Email: ${booking.user?.email || "N/A"}`);
+    console.log(`[TESTING_OTP_LOG] Generated Check-In OTP: ${otp} for Booking ID: ${booking.id} (Email: ${booking.user?.email || "N/A"})`);
+
+    // Send via Email SMTP
+    let emailResult = null;
+    if (booking.user && booking.user.email) {
+      console.log(`[CHECK_IN_OTP] Sending Email request to: ${booking.user.email} for Booking ID: ${booking.id}`);
+      const { sendEmail } = require("../utils/mail.service");
+      emailResult = await sendEmail(
+        booking.user.email,
+        "MehandiGo - Check-In Verification Code",
+        `Hello ${booking.user.name},\n\nYour check-in OTP for booking #${booking.booking_code} is: ${otp}.\n\nShare this code with your artist to verify their arrival.\n\nBest regards,\nMehandiGo Team`
+      );
+      console.log(`[CHECK_IN_OTP] Email Provider Response: ${JSON.stringify(emailResult)}`);
+    } else {
+      console.log(`[CHECK_IN_OTP] Email Request Skipped. No email address found for Booking ID: ${booking.id}`);
+    }
+
+    // Create system notification for client (do NOT include raw OTP code in notification message)
+    try {
+      await db.Notification.create({
+        user_id: booking.user_id,
+        title: "Artist Has Arrived! 🗓️",
+        message: "Artist has arrived. Please share the OTP sent to your registered email address with your Artist to verify Check-In.",
+        type: "BOOKING",
+        data: {
+          type: "booking",
+          event: "checkin_otp_received",
+          bookingId: booking.id
+        }
+      });
+
+      // Emit realtime socket event to customer (do NOT include raw OTP code in socket payload)
+      const { getIO } = require("../sockets/socket");
+      const io = getIO();
+      io.to(booking.user_id.toString()).emit("checkin_otp_received", {
+        bookingId: booking.id,
+        message: "Artist has arrived. A Check-In OTP has been sent to your registered mobile number."
+      });
+    } catch (err) {
+      console.error("Error dispatching Check-In OTP notifications:", err.message);
+    }
+
+    return {
+      success: true,
+      maskedPhone: booking.user?.phone ? booking.user.phone.replace(/.(?=.{4})/g, "*") : "Customer"
+    };
+  }
+
+  async verifyCheckInOtp(bookingId, otp, userId) {
+    const booking = await db.Booking.findByPk(bookingId);
+    if (!booking) {
+      throw new AppError("Booking not found", 404);
+    }
+
+    const attempts = (checkInFailedAttempts.get(booking.id) || 0) + 1;
+    checkInFailedAttempts.set(booking.id, attempts);
+
+    if (!booking.check_in_otp || booking.check_in_otp !== otp || new Date() > new Date(booking.check_in_otp_expires_at)) {
+      console.log(`[CHECK_IN_OTP_VERIFY] Verification Status: FAILED. Booking ID: ${booking.id}, Attempt: ${attempts}/3, Reason: Invalid or expired OTP`);
+      if (attempts >= 3) {
+        await booking.update({
+          check_in_otp: null,
+          check_in_otp_expires_at: null
+        });
+        checkInFailedAttempts.delete(booking.id);
+        throw new AppError("Too many incorrect attempts. Please request a new OTP.", 400);
+      }
+      throw new AppError("Invalid or expired Check-In OTP", 400);
+    }
+
+    console.log(`[CHECK_IN_OTP_VERIFY] Verification Status: SUCCESS. Booking ID: ${booking.id}`);
+    checkInFailedAttempts.delete(booking.id);
+
+    await booking.update({
+      booking_status: "CONFIRMED",
+      detailed_status: "SERVICE_STARTED",
+      check_in_otp_verified: true,
+      check_in_time: new Date()
+    });
+
+    await db.BookingStatusHistory.create({
+      booking_id: booking.id,
+      status: "SERVICE_STARTED",
+      changed_by: userId,
+      notes: "Check-In OTP verified successfully. Service started."
+    });
+
+    // Notify customer and artist
+    try {
+      await db.Notification.create({
+        user_id: booking.user_id,
+        title: "Service Started! 💅",
+        message: `Your Mehndi service has officially started.`,
+        type: "BOOKING",
+        data: { type: "booking", event: "service_started", bookingId: booking.id }
+      });
+
+      const artistProfile = await db.ArtistProfile.findByPk(booking.artist_id);
+      if (artistProfile) {
+        await db.Notification.create({
+          user_id: artistProfile.user_id,
+          title: "Check-In Confirmed! ✅",
+          message: `Check-In verified. Service started for Booking #${booking.booking_code}.`,
+          type: "BOOKING",
+          data: { type: "booking", event: "service_started", bookingId: booking.id }
+        });
+      }
+
+      // Emit realtime socket event to customer
+      const { getIO } = require("../sockets/socket");
+      const io = getIO();
+      io.to(booking.user_id.toString()).emit("service_started", { bookingId: booking.id });
+    } catch (err) {
+      console.error("Error dispatching Check-In confirmations:", err.message);
+    }
+
+    return { success: true, booking };
+  }
+
+  async sendCheckOutOtp(bookingId, userId) {
+    const booking = await db.Booking.findByPk(bookingId, {
+      include: [{ model: db.User, as: "user", attributes: ["id", "phone", "name", "email"] }]
+    });
+    if (!booking) {
+      throw new AppError("Booking not found", 404);
+    }
+
+    // 60-second resend cooldown
+    if (booking.check_out_otp_expires_at) {
+      const sentAt = new Date(new Date(booking.check_out_otp_expires_at).getTime() - 5 * 60 * 1000);
+      const secondsElapsed = Math.floor((Date.now() - sentAt.getTime()) / 1000);
+      if (secondsElapsed < 60) {
+        throw new AppError(`Please wait ${60 - secondsElapsed} seconds before requesting a new OTP.`, 429);
+      }
+    }
+
+    // Reset failed verification attempts
+    checkOutFailedAttempts.delete(booking.id);
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 mins
+
+    await booking.update({
+      check_out_otp: otp,
+      check_out_otp_expires_at: expiresAt,
+      check_out_otp_verified: false
+    });
+
+    console.log(`[CHECK_OUT_OTP] OTP Generated successfully. Booking ID: ${booking.id}, Customer Email: ${booking.user?.email || "N/A"}`);
+    console.log(`[TESTING_OTP_LOG] Generated Check-Out OTP: ${otp} for Booking ID: ${booking.id} (Email: ${booking.user?.email || "N/A"})`);
+
+    // Send via Email SMTP
+    let emailResult = null;
+    if (booking.user && booking.user.email) {
+      console.log(`[CHECK_OUT_OTP] Sending Email request to: ${booking.user.email} for Booking ID: ${booking.id}`);
+      const { sendEmail } = require("../utils/mail.service");
+      emailResult = await sendEmail(
+        booking.user.email,
+        "MehandiGo - Check-Out Verification Code",
+        `Hello ${booking.user.name},\n\nYour check-out OTP for booking #${booking.booking_code} is: ${otp}.\n\nShare this code with your artist to verify service completion.\n\nBest regards,\nMehandiGo Team`
+      );
+      console.log(`[CHECK_OUT_OTP] Email Provider Response: ${JSON.stringify(emailResult)}`);
+    } else {
+      console.log(`[CHECK_OUT_OTP] Email Request Skipped. No email address found for Booking ID: ${booking.id}`);
+    }
+
+    // Create system notification for client (do NOT include raw OTP code in notification message)
+    try {
+      await db.Notification.create({
+        user_id: booking.user_id,
+        title: "Service Completion Request 🌟",
+        message: "Your Mehndi service has been completed. Please share the OTP sent to your registered email address with your Artist to verify Check-Out.",
+        type: "BOOKING",
+        data: {
+          type: "booking",
+          event: "checkout_otp_received",
+          bookingId: booking.id
+        }
+      });
+
+      // Emit realtime socket event to customer (do NOT include raw OTP code in socket payload)
+      const { getIO } = require("../sockets/socket");
+      const io = getIO();
+      io.to(booking.user_id.toString()).emit("checkout_otp_received", {
+        bookingId: booking.id,
+        message: "Your service has been completed. Please share the OTP sent to your registered mobile number."
+      });
+    } catch (err) {
+      console.error("Error dispatching Check-Out OTP notifications:", err.message);
+    }
+
+    return { success: true };
+  }
+
+  async verifyCheckOutOtp(bookingId, otp, userId) {
+    const booking = await db.Booking.findByPk(bookingId);
+    if (!booking) {
+      throw new AppError("Booking not found", 404);
+    }
+
+    const attempts = (checkOutFailedAttempts.get(booking.id) || 0) + 1;
+    checkOutFailedAttempts.set(booking.id, attempts);
+
+    if (!booking.check_out_otp || booking.check_out_otp !== otp || new Date() > new Date(booking.check_out_otp_expires_at)) {
+      console.log(`[CHECK_OUT_OTP_VERIFY] Verification Status: FAILED. Booking ID: ${booking.id}, Attempt: ${attempts}/3, Reason: Invalid or expired OTP`);
+      if (attempts >= 3) {
+        await booking.update({
+          check_out_otp: null,
+          check_out_otp_expires_at: null
+        });
+        checkOutFailedAttempts.delete(booking.id);
+        throw new AppError("Too many incorrect attempts. Please request a new OTP.", 400);
+      }
+      throw new AppError("Invalid or expired Check-Out OTP", 400);
+    }
+
+    console.log(`[CHECK_OUT_OTP_VERIFY] Verification Status: SUCCESS. Booking ID: ${booking.id}`);
+    checkOutFailedAttempts.delete(booking.id);
+
+    const checkInTime = booking.check_in_time || new Date(Date.now() - 30 * 60 * 1000); // fallback 30m duration
+    const checkOutTime = new Date();
+    const duration = Math.round((checkOutTime - checkInTime) / (60 * 1000)) || 1;
+
+    await booking.update({
+      booking_status: "COMPLETED",
+      detailed_status: "COMPLETED",
+      payment_status: "PAID",
+      check_out_otp_verified: true,
+      check_out_time: checkOutTime,
+      service_duration: duration
+    });
+
+    // Credit remaining 90% directly to Artist Wallet on service completion
+    try {
+      const remainingPaid = booking.remaining_amount || 0;
+      const artistProfile = await db.ArtistProfile.findByPk(booking.artist_id);
+      if (artistProfile) {
+        const [artistWallet] = await db.Wallet.findOrCreate({
+          where: { user_id: artistProfile.user_id },
+          defaults: { balance: 0 }
+        });
+        await artistWallet.increment("balance", { by: remainingPaid });
+        
+        const customerUser = await db.User.findByPk(booking.user_id);
+        const customerName = customerUser ? customerUser.name : "Client";
+        await db.WalletTransaction.create({
+          wallet_id: artistWallet.id,
+          booking_id: booking.id,
+          transaction_type: "PAYMENT",
+          amount: remainingPaid,
+          status: "SUCCESS",
+          description: `Mehndi application service payment from customer ${customerName}`
+        });
+        console.log(`[completeService-OTP] Credited remaining ₹${remainingPaid} to Artist Wallet`);
+      }
+    } catch (artistErr) {
+      console.error("Error crediting Artist Wallet upon completion:", artistErr.message);
+    }
+
+    // Create success transaction record
+    try {
+      const cfPaymentId = `pay_cash_${Math.random().toString(36).substring(2, 10)}`;
+      await db.Transaction.create({
+        user_id: booking.user_id,
+        booking_id: booking.id,
+        cashfree_order_id: `order_${booking.id}_completion`,
+        cashfree_payment_id: cfPaymentId,
+        amount: booking.remaining_amount || 0,
+        status: "SUCCESS",
+        gateway: "CASH"
+      });
+    } catch (txErr) {
+      console.error("Error creating Transaction upon completion:", txErr.message);
+    }
+
+    await db.BookingStatusHistory.create({
+      booking_id: booking.id,
+      status: "COMPLETED",
+      changed_by: userId,
+      notes: `Check-Out OTP verified successfully. Service completed. Duration: ${duration} mins.`
+    });
+
+    // Notify customer and artist
+    try {
+      await db.Notification.create({
+        user_id: booking.user_id,
+        title: "Service Completed successfully! 🎉",
+        message: `Your Mehndi service has been completed. Thank you for using MehndiGo!`,
+        type: "BOOKING",
+        data: { type: "booking", event: "booking_completed", bookingId: booking.id }
+      });
+
+      // Emit realtime socket event to customer
+      const { getIO } = require("../sockets/socket");
+      const io = getIO();
+      io.to(booking.user_id.toString()).emit("booking_completed", { bookingId: booking.id });
+    } catch (err) {
+      console.error("Error dispatching Check-Out confirmations:", err.message);
+    }
+
+    return { success: true, booking };
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
   }
 }
 

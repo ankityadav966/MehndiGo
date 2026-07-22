@@ -123,7 +123,7 @@ async function getHealth(req, res) {
       socketStatus: "ONLINE",
       firebaseStatus: "CONNECTED",
       cloudinaryStatus: "CONNECTED",
-      razorpayStatus: "ONLINE",
+      cashfreeStatus: "ONLINE",
       serverHealth
     }));
   } catch (error) {

@@ -4,13 +4,21 @@
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
+<<<<<<< HEAD
       "backgroundColor": "#010100",
+=======
+      "backgroundColor": "#ffffff",
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
       "imageWidth": 449
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
+<<<<<<< HEAD
         "backgroundColor": "#010100"
+=======
+        "backgroundColor": "#ffffff"
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
       }
     },
     "web": {

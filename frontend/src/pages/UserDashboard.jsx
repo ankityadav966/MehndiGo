@@ -21,8 +21,11 @@ const UserDashboard = ({ showToast }) => {
 
     // Socket.io for Real-time Notifications
     if (user?.id) {
-      const socket = io("http://localhost:3000");
-      socket.emit("join", user.id);
+      const token = localStorage.getItem("token");
+      const socket = io("http://localhost:3000", {
+        auth: { token },
+        transports: ["websocket"]
+      });
 
       socket.on("new_notification", (data) => {
         showToast(data.title + ": " + data.message, "info");
@@ -45,7 +48,7 @@ const UserDashboard = ({ showToast }) => {
       setBookings(bookingsRes.data || []);
       
       const artistsRes = await artistService.getArtists();
-      setArtists(artistsRes.data || []);
+      setArtists(artistsRes.data?.rows || artistsRes.data || []);
 
       const profileRes = await authService.getProfile();
       setProfile(profileRes.data || { name: "", email: "", gender: "" });
@@ -69,60 +72,14 @@ const UserDashboard = ({ showToast }) => {
     }
   };
 
-  // Inline script loader for Razorpay
+  // Redirect checkout handler for Cashfree
   const handlePayment = async (booking) => {
     try {
-      // 1. Load Razorpay script
-      const scriptLoaded = await new Promise((resolve) => {
-        const script = document.createElement("script");
-        script.src = "https://checkout.razorpay.com/v1/checkout.js";
-        script.onload = () => resolve(true);
-        script.onerror = () => resolve(false);
-        document.body.appendChild(script);
-      });
-
-      if (!scriptLoaded) {
-        showToast("Failed to load Razorpay SDK. Check network.", "danger");
-        return;
-      }
-
-      // 2. Create Order
+      showToast("Redirecting to secure Cashfree gateway...", "info");
       const orderRes = await artistService.createOrder(booking.id);
-      const order = orderRes.data;
-
-      // 3. Configure Checkout Options
-      const options = {
-        key: "rzp_test_Sz3Oa0GdrWOAhW", // Testing Key ID from .env
-        amount: order.amount,
-        currency: "INR",
-        name: "Mehndi Go",
-        description: `Booking ref: ${booking.booking_code}`,
-        order_id: order.id,
-        handler: async function (response) {
-          try {
-            await artistService.verifyPayment({
-              booking_id: booking.id,
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-            });
-            showToast("Payment verified successfully!", "success");
-            fetchUserData(); // reload
-          } catch (err) {
-            showToast("Payment verification failed: " + err.message, "danger");
-          }
-        },
-        prefill: {
-          name: profile.name,
-          email: profile.email,
-        },
-        theme: {
-          color: "#d97d64",
-        },
-      };
-
-      const paymentWindow = new window.Razorpay(options);
-      paymentWindow.open();
+      const { payment_session_id } = orderRes.data;
+      const env = "sandbox";
+      window.location.href = `https://${env}.cashfree.com/pg/view/checkout?session_id=${payment_session_id}`;
     } catch (e) {
       showToast("Payment initialization failed: " + e.message, "danger");
     }

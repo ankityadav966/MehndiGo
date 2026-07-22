@@ -178,10 +178,68 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.TEXT,
         allowNull: true,
       },
+<<<<<<< HEAD
       review_skipped: {
         type: DataTypes.BOOLEAN,
         allowNull: false,
         defaultValue: false,
+=======
+      artist_completion_status: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        defaultValue: "PENDING"
+      },
+      artist_completed_at: {
+        type: DataTypes.DATE,
+        allowNull: true
+      },
+      remaining_paid_at: {
+        type: DataTypes.DATE,
+        allowNull: true
+      },
+      review_skipped: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false
+      },
+      check_in_otp: {
+        type: DataTypes.STRING,
+        allowNull: true
+      },
+      check_in_otp_expires_at: {
+        type: DataTypes.DATE,
+        allowNull: true
+      },
+      check_in_otp_verified: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false
+      },
+      check_in_time: {
+        type: DataTypes.DATE,
+        allowNull: true
+      },
+      check_out_otp: {
+        type: DataTypes.STRING,
+        allowNull: true
+      },
+      check_out_otp_expires_at: {
+        type: DataTypes.DATE,
+        allowNull: true
+      },
+      check_out_otp_verified: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false
+      },
+      check_out_time: {
+        type: DataTypes.DATE,
+        allowNull: true
+      },
+      service_duration: {
+        type: DataTypes.INTEGER,
+        allowNull: true
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
       },
     },
     {

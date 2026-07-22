@@ -3,8 +3,7 @@ const {
   OtpRepository,
 } = require("../repositories");
 const AppError = require("../utils/errors/app.error");
-const { generateToken } = require("../utils/jwt");
-const { sendOtp } = require("../utils/twilio.service");
+const { sendOtpEmail } = require("../utils/mail.service");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const db = require("../models");
@@ -13,7 +12,6 @@ const { Op } = require("sequelize");
 const UserRepositor = new UserRepository();
 const OtpRepositor = new OtpRepository();
 
-// In-memory store for OTP verification failed attempts: otpId -> count
 const otpFailedAttempts = new Map();
 
 function hashPassword(password) {
@@ -21,6 +19,9 @@ function hashPassword(password) {
 }
 
 function generateAccessToken(user) {
+  if (!process.env.JWT_SECRET) {
+    throw new AppError("JWT Secret is not configured in server environment variables", 500);
+  }
   return jwt.sign(
     { id: user.id, role: user.role },
     process.env.JWT_SECRET || "Live credentials",
@@ -29,6 +30,9 @@ function generateAccessToken(user) {
 }
 
 function generateRefreshToken(user) {
+  if (!process.env.JWT_SECRET) {
+    throw new AppError("JWT Secret is not configured in server environment variables", 500);
+  }
   return jwt.sign(
     { id: user.id, role: user.role },
     process.env.JWT_SECRET || "Live credentials",
@@ -38,20 +42,28 @@ function generateRefreshToken(user) {
 
 class AuthService {
   async sendOtp(data) {
-    const { phone, role, name, email } = data;
+    const { email } = data;
 
-    if (!phone) {
-      throw new AppError("Phone number is required", 400);
-    }
-    if (!role) {
-      throw new AppError("Role is required", 400);
+    if (!email) {
+      throw new AppError("Email Address is required", 400);
     }
 
-    // Rate Limit check: Check how many OTPs sent to this phone in the last 10 minutes
+    const targetEmail = String(email).trim().toLowerCase();
+    const user = await UserRepositor.getOne({ email: targetEmail });
+
+    if (!user) {
+      // Dynamic Check: user does not exist, return exists: false
+      return {
+        exists: false,
+        email: targetEmail
+      };
+    }
+
+    // Rate Limit check
     const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
     const recentOtpsCount = await db.Otp.count({
       where: {
-        phone,
+        email: targetEmail,
         createdAt: {
           [Op.gte]: tenMinutesAgo
         }
@@ -62,68 +74,51 @@ class AuthService {
       throw new AppError("Too many OTP requests. Please try again after 10 minutes.", 429);
     }
 
-    // Check if user exists
-    let user = await UserRepositor.getOne({ phone });
-    if (user && user.role !== role) {
-      throw new AppError(`This phone number is already registered as a ${user.role}`, 400);
-    }
-
-    // Create user if they don't exist yet (Pre-registration on OTP request)
-    if (!user) {
-      if (role === "ADMIN") {
-        throw new AppError("Admin registration is not allowed publicly", 403);
-      }
-      user = await UserRepositor.create({
-        name: name || "User",
-        phone,
-        email: email || null,
-        role: role || "USER",
-        is_verified: false
-      });
-    }
-
-    const otp = Math.floor(100000 + Math.random() * 900000);
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
     // Save OTP to database
     await OtpRepositor.create({
       user_id: user.id,
-      phone,
-      otp: String(otp),
+      phone: user.phone || null,
+      email: targetEmail,
+      otp,
       expires_at: new Date(Date.now() + 5 * 60 * 1000), // 5 min expiry
       verified: false
     });
 
-    console.log(OtpRepositor, 'OtpRepositorOtpRepositorOtpRepositor')
-    console.log(otp, 'OtpR')
+    console.log(otp, 'OtpR');
 
-    // Send via Twilio
-    await sendOtp(phone, otp);
+    // Send via SMTP
+    await sendOtpEmail(targetEmail, otp, user.name);
 
     return {
-      phone,
+      exists: true,
+      email: targetEmail,
       role: user.role,
-      otp, // For testing convenience if twilio is mock
+      otp,
     };
   }
 
   async verifyOtp(data) {
-    const { phone, otp, role, name, email } = data;
+    const { email, otp } = data;
 
-    if (!phone || !otp || !role) {
-      throw new AppError("Phone, OTP, and Role are required", 400);
+    if (!email || !otp) {
+      throw new AppError("Email and OTP are required", 400);
     }
 
-    // Find the latest unverified OTP for this phone
+    const targetEmail = String(email).trim().toLowerCase();
+
+    // Find the latest unverified OTP for this email
     const otpData = await db.Otp.findOne({
       where: {
-        phone,
+        email: targetEmail,
         verified: false
       },
       order: [["createdAt", "DESC"]]
     });
 
     if (!otpData) {
-      throw new AppError("No OTP requested for this phone number", 400);
+      throw new AppError("No OTP requested for this email address", 400);
     }
 
     // Check Expiry
@@ -131,7 +126,6 @@ class AuthService {
       throw new AppError("OTP has expired. Please request a new one.", 400);
     }
 
-    // Max Retry Limit: 3 attempts per OTP ID
     const attempts = otpFailedAttempts.get(otpData.id) || 0;
     if (attempts >= 3) {
       throw new AppError("Maximum verification attempts exceeded. Please request a new OTP.", 429);
@@ -142,13 +136,12 @@ class AuthService {
       throw new AppError("Invalid OTP verification code", 400);
     }
 
-    // Mark OTP as verified
     await OtpRepositor.update(otpData.id, { verified: true });
     otpFailedAttempts.delete(otpData.id);
 
-    // Fetch user or create if missed
-    let user = await UserRepositor.getOne({ phone });
+    let user = await UserRepositor.getOne({ email: targetEmail });
     if (!user) {
+<<<<<<< HEAD
       user = await UserRepositor.create({
         name: name || "User",
         phone,
@@ -172,13 +165,20 @@ class AuthService {
       if (email) updateData.email = email;
       await UserRepositor.update(user.id, updateData);
       user = await UserRepositor.getById(user.id);
+=======
+      throw new AppError("User not found", 404);
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
     }
 
-    // Generate JWT access and refresh tokens
+    await UserRepositor.update(user.id, {
+      is_verified: true,
+      last_login_at: new Date()
+    });
+    user = await UserRepositor.getById(user.id);
+
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
 
-    // Save refresh token to user
     await UserRepositor.update(user.id, { refresh_token: refreshToken });
 
     return {
@@ -200,29 +200,36 @@ class AuthService {
   }
 
   async register(data) {
-    const { name, phone, email, password, role, gender, city, state, pincode } = data;
+    const { name, email, phone, password, role, gender, city, state, pincode } = data;
 
-    if (!name || !phone || !email || !password || !role) {
-      throw new AppError("Name, Phone, Email, Password, and Role are required", 400);
+    if (!name || !email || !role) {
+      throw new AppError("Name, Email, and Role are required", 400);
     }
 
-    // Check if phone or email already registered
-    let existingUser = await UserRepositor.getOne({ phone });
-    if (existingUser) {
-      throw new AppError("Phone number is already registered", 400);
-    }
+    const trimmedEmail = String(email).trim().toLowerCase();
 
-    existingUser = await UserRepositor.getOne({ email });
+    // Check if email already registered
+    let existingUser = await UserRepositor.getOne({ email: trimmedEmail });
     if (existingUser) {
       throw new AppError("Email is already registered", 400);
     }
 
-    const hashedPassword = hashPassword(password);
+    if (phone) {
+      const phoneCleaned = String(phone).trim().replace(/[\s-()]/g, "");
+      if (phoneCleaned !== "") {
+        existingUser = await UserRepositor.getOne({ phone: phoneCleaned });
+        if (existingUser) {
+          throw new AppError("Phone number is already registered", 400);
+        }
+      }
+    }
+
+    const hashedPassword = password ? hashPassword(password) : null;
 
     const user = await UserRepositor.create({
       name,
-      phone,
-      email,
+      phone: phone || null,
+      email: trimmedEmail,
       password: hashedPassword,
       role,
       gender: gender || null,
@@ -262,14 +269,14 @@ class AuthService {
       throw new AppError("Email and Password are required", 400);
     }
 
-    const user = await UserRepositor.getOne({ email });
+    const user = await UserRepositor.getOne({ email: String(email).trim().toLowerCase() });
     if (!user || !user.password) {
-      throw new AppError("Invalid email or password credentials", 401);
+      throw new AppError("Invalid credentials", 401);
     }
 
     const hashedPassword = hashPassword(password);
     if (user.password !== hashedPassword) {
-      throw new AppError("Invalid email or password credentials", 401);
+      throw new AppError("Invalid credentials", 401);
     }
 
     const accessToken = generateAccessToken(user);
@@ -306,7 +313,14 @@ class AuthService {
     }
 
     try {
+<<<<<<< HEAD
       const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET || "Live credentials");
+=======
+      if (!process.env.JWT_SECRET) {
+        throw new AppError("JWT Secret is not configured", 500);
+      }
+      const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
       const user = await UserRepositor.getById(decoded.id);
 
       if (!user || user.refresh_token !== refreshToken) {

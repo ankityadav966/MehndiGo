@@ -50,42 +50,66 @@ export default function CategoriesScreen({ navigation }) {
     fetchCategories();
   };
 
-const CATEGORY_IMAGES = {
-  bridal: "https://images.unsplash.com/photo-1590012357675-bc55909793fb?q=80&w=400",
-  arabic: "https://images.unsplash.com/photo-1601054790522-d08317b75567?q=80&w=400",
-  royal: "https://images.unsplash.com/photo-1601054790740-975949514f7b?q=80&w=400",
-  portrait: "https://images.unsplash.com/photo-1601054791559-0a67ab92b6a2?q=80&w=400",
-  engagement: "https://images.unsplash.com/photo-1601054791572-c510255b77ea?q=80&w=400",
-  festival: "https://images.unsplash.com/photo-1601054791585-fb4050d24bf5?q=80&w=400",
-  kids: "https://images.unsplash.com/photo-1601054791599-23efbf1c65d6?q=80&w=400",
-  custom: "https://images.unsplash.com/photo-1601054791612-4029237c1d76?q=80&w=400"
-};
+  const LOCAL_CATEGORY_IMAGES = {
+    "bridal": require("../../assets/images/categories/bridal.png"),
+    "royal": require("../../assets/images/categories/royal.png"),
+    "arabic": require("../../assets/images/categories/arabic.png"),
+    "traditional": require("../../assets/images/categories/traditional.png"),
+    "floral": require("../../assets/images/categories/floral.png"),
+    "minimal": require("../../assets/images/categories/minimal.png"),
+    "modern": require("../../assets/images/categories/modern.png"),
+    "finger": require("../../assets/images/categories/finger.png"),
+    "full-hand": require("../../assets/images/categories/full_hand.png"),
+    "back-hand": require("../../assets/images/categories/back_hand.png"),
+    "front-hand": require("../../assets/images/categories/front_hand.png"),
+    "leg": require("../../assets/images/categories/leg.png"),
+    "kids": require("../../assets/images/categories/kids.png"),
+    "groom": require("../../assets/images/categories/groom.png"),
+    "engagement": require("../../assets/images/categories/engagement.png"),
+    "wedding": require("../../assets/images/categories/wedding.png"),
+    "karwa-chauth": require("../../assets/images/categories/karwa_chauth.png"),
+    "eid": require("../../assets/images/categories/eid.png"),
+    "festival": require("../../assets/images/categories/festival.png"),
+    "custom": require("../../assets/images/categories/custom.png")
+  };
 
-const getCategoryImage = (item) => {
-  const name = (item.name || "").toLowerCase();
-  const slug = (item.slug || "").toLowerCase();
+  const getCategoryImage = (item) => {
+    if (item.image) {
+      if (item.image.startsWith("http://") || item.image.startsWith("https://")) {
+        return { uri: item.image };
+      }
+      const { BASE_URL } = require("../../services/api");
+      const cleanBase = (BASE_URL || "").replace(/\/api\/v1\/?$/, "");
+      const cleanPath = item.image.startsWith("/") ? item.image : `/${item.image}`;
+      return { uri: `${cleanBase}${cleanPath}` };
+    }
 
-  const isUrlValid = item.image && 
-    (item.image.startsWith("http://") || item.image.startsWith("https://")) &&
-    !item.image.includes("localhost") &&
-    !item.image.includes("127.0.0.1");
+    const name = (item.name || "").toLowerCase();
+    const slug = (item.slug || "").toLowerCase();
 
-  if (isUrlValid) {
-    return { uri: item.image };
-  }
+    let key = "custom";
+    if (slug.includes("royal") || name.includes("royal")) key = "royal";
+    else if (slug.includes("bridal") || name.includes("bridal")) key = "bridal";
+    else if (slug.includes("arabic") || name.includes("arabic")) key = "arabic";
+    else if (slug.includes("traditional") || name.includes("traditional")) key = "traditional";
+    else if (slug.includes("floral") || name.includes("floral")) key = "floral";
+    else if (slug.includes("minimal") || name.includes("minimal")) key = "minimal";
+    else if (slug.includes("modern") || name.includes("modern")) key = "modern";
+    else if (slug.includes("finger") || name.includes("finger")) key = "finger";
+    else if (slug.includes("full-hand") || name.includes("full hand") || name.includes("full-hand")) key = "full-hand";
+    else if (slug.includes("back-hand") || name.includes("back hand") || name.includes("back-hand")) key = "back-hand";
+    else if (slug.includes("front-hand") || name.includes("front hand") || name.includes("front-hand")) key = "front-hand";
+    else if (slug.includes("leg") || name.includes("leg")) key = "leg";
+    else if (slug.includes("kids") || name.includes("kid") || slug.includes("kid")) key = "kids";
+    else if (slug.includes("groom") || name.includes("groom")) key = "groom";
+    else if (slug.includes("engagement") || name.includes("engagement")) key = "engagement";
+    else if (slug.includes("wedding") || name.includes("wedding")) key = "wedding";
+    else if (slug.includes("karwa") || name.includes("karwa")) key = "karwa-chauth";
+    else if (slug.includes("eid") || name.includes("eid")) key = "eid";
+    else if (slug.includes("festival") || name.includes("festival")) key = "festival";
 
-  let key = "custom";
-  if (slug.includes("bridal") || name.includes("bridal")) key = "bridal";
-  else if (slug.includes("arabic") || name.includes("arabic")) key = "arabic";
-  else if (slug.includes("royal") || name.includes("royal")) key = "royal";
-  else if (slug.includes("portrait") || name.includes("portrait")) key = "portrait";
-  else if (slug.includes("engagement") || name.includes("engagement")) key = "engagement";
-  else if (slug.includes("festival") || name.includes("festival")) key = "festival";
-  else if (slug.includes("kid") || name.includes("kid")) key = "kids";
-
-  const fallbackUrl = CATEGORY_IMAGES[key] || CATEGORY_IMAGES.custom;
-  return { uri: fallbackUrl };
-};
+    return LOCAL_CATEGORY_IMAGES[key] || LOCAL_CATEGORY_IMAGES.custom;
+  };
 
   const renderItem = ({ item }) => {
     const hasError = !!imageErrors[item.id];
@@ -100,7 +124,11 @@ const getCategoryImage = (item) => {
         }
       >
         <Image
+<<<<<<< HEAD
           source={hasError ? require("../../assets/images/logo.jpg") : getCategoryImage(item)}
+=======
+          source={hasError ? require("../../assets/images/logo.png") : getCategoryImage(item)}
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
           onError={() => {
             setImageErrors((prev) => ({ ...prev, [item.id]: true }));
           }}
@@ -108,11 +136,11 @@ const getCategoryImage = (item) => {
           resizeMode="cover"
         />
 
-      <View style={styles.cardFooter}>
-        <Ionicons name={item.icon || "flower-outline"} size={16} color={Colors.primary} style={{ marginRight: 6 }} />
-        <Text style={styles.cardTitle} numberOfLines={1}>{item.name}</Text>
-      </View>
-    </TouchableOpacity>
+        <View style={styles.cardFooter}>
+          <Ionicons name={item.icon || "flower-outline"} size={16} color={Colors.primary} style={{ marginRight: 6 }} />
+          <Text style={styles.cardTitle} numberOfLines={1}>{item.name}</Text>
+        </View>
+      </TouchableOpacity>
     );
   };
 

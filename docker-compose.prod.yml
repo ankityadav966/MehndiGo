@@ -1,0 +1,104 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: mehndigo_prod_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER:-ankit}
+      POSTGRES_PASSWORD: ${DB_PASS:-123456}
+      POSTGRES_DB: ${DB_NAME:-mehndigo_prod_db}
+    volumes:
+      - pg_prod_data:/var/lib/postgresql/data
+      - pg_prod_backups:/var/backups
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mehndigo_prod_net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: mehndigo_prod_backend
+    restart: always
+    env_file:
+      - ./backend/.env
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DB_HOST: postgres
+      DB_USER: ${DB_USER:-ankit}
+      DB_PASS: ${DB_PASS:-123456}
+      DB_NAME: ${DB_NAME:-mehndigo_prod_db}
+      JWT_SECRET: ${JWT_SECRET}
+      EMAIL_USER: ${EMAIL_USER}
+      EMAIL_PASS: ${EMAIL_PASS}
+      CASHFREE_CLIENT_ID: ${CASHFREE_CLIENT_ID}
+      CASHFREE_CLIENT_SECRET: ${CASHFREE_CLIENT_SECRET}
+      CASHFREE_ENV: ${CASHFREE_ENV}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET}
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/security/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+    networks:
+      - mehndigo_prod_net
+
+  redis:
+    image: redis:7-alpine
+    container_name: mehndigo_prod_redis
+    restart: always
+    volumes:
+      - redis_prod_data:/data
+    networks:
+      - mehndigo_prod_net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: mehndigo_prod_frontend
+    restart: always
+    depends_on:
+      - backend
+    networks:
+      - mehndigo_prod_net
+
+  nginx:
+    image: nginx:alpine
+    container_name: mehndigo_prod_nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/letsencrypt:ro
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - mehndigo_prod_net
+
+volumes:
+  pg_prod_data:
+  pg_prod_backups:
+  redis_prod_data:
+
+networks:
+  mehndigo_prod_net:
+    driver: bridge

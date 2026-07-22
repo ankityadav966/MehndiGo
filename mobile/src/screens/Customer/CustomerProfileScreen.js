@@ -18,7 +18,7 @@ import { useAuth } from "../../context/AuthContext";
 import { getCustomerDashboard, getCustomerProfile } from "../../services/customer";
 
 export default function CustomerProfileScreen({ navigation }) {
-  const { logout } = useAuth();
+  const { logout, isDarkMode } = useAuth();
 
   const [profileData, setProfileData] = useState(null);
   const [dashboardData, setDashboardData] = useState(null);
@@ -85,14 +85,18 @@ export default function CustomerProfileScreen({ navigation }) {
     { icon: "wallet-outline", label: "Wallet", screen: "Wallet" },
     { icon: "share-social-outline", label: "Refer & Earn", screen: "ReferralDashboard" },
     { icon: "pricetag-outline", label: "Coupons", screen: "Coupons" },
-    { icon: "location-outline", label: "Saved Addresses", screen: "AddressSelection" },
     { icon: "star-outline", label: "My Reviews", screen: "Reviews" },
     { icon: "headset-outline", label: "Support Helpdesk", screen: "Support" },
-    { icon: "settings-outline", label: "Settings", screen: "Settings", params: { role: "customer" } }
   ];
 
+  const currentBgColor = isDarkMode ? "#000000" : Colors.background;
+  const currentCardBg = isDarkMode ? "#121212" : Colors.white;
+  const currentTextColor = isDarkMode ? "#FFFFFF" : Colors.text;
+  const currentSecTextColor = isDarkMode ? "#B0B0B0" : Colors.textSecondary;
+  const currentBorderColor = isDarkMode ? "#333333" : Colors.border;
+
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: currentBgColor }]}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 120 }}
@@ -101,7 +105,7 @@ export default function CustomerProfileScreen({ navigation }) {
         }
       >
         {/* Profile Card Info */}
-        <View style={styles.profileHeader}>
+        <View style={[styles.profileHeader, { backgroundColor: currentCardBg, borderBottomColor: currentBorderColor }]}>
           <View style={styles.photoContainer}>
             {profile.profile_image ? (
               <Image source={{ uri: profile.profile_image }} style={styles.avatarCircle} resizeMode="cover" />
@@ -118,70 +122,82 @@ export default function CustomerProfileScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
+<<<<<<< HEAD
           <Text style={styles.name}>{profile.name}</Text>
           <View style={styles.badgeRow}>
             {profile.current_level !== undefined && (
               <View style={[styles.badgeContainer, { backgroundColor: "#FFE5EC", borderColor: Colors.primary, borderWidth: 1, marginBottom: 8 }]}>
+=======
+          <Text style={[styles.name, { color: currentTextColor }]}>{profile.name}</Text>
+          <View style={styles.badgeRow}>
+            {profile.current_level !== undefined && (
+              <View style={[styles.badgeContainer, { backgroundColor: isDarkMode ? "#333" : "#FFE5EC", borderColor: Colors.primary, borderWidth: 1, marginBottom: 8 }]}>
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
                 <Ionicons name="sparkles-outline" size={12} color={Colors.primary} />
                 <Text style={[styles.badgeText, { color: Colors.primary }]}>Level {profile.current_level}</Text>
               </View>
             )}
             {profile.ambassador_tier && (
+<<<<<<< HEAD
               <View style={[styles.badgeContainer, { backgroundColor: "#FFF8E1", borderColor: "#FFA000", borderWidth: 1, marginBottom: 8 }]}>
+=======
+              <View style={[styles.badgeContainer, { backgroundColor: isDarkMode ? "#333" : "#FFF8E1", borderColor: "#FFA000", borderWidth: 1, marginBottom: 8 }]}>
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
                 <Ionicons name="trophy-outline" size={12} color="#FFA000" />
                 <Text style={[styles.badgeText, { color: "#FFA000" }]}>{profile.ambassador_tier} Tier</Text>
               </View>
             )}
           </View>
-          <Text style={styles.contactDetails}>{profile.phone || "No Mobile"}{profile.email ? ` • ${profile.email}` : ""}</Text>
+          <Text style={[styles.contactDetails, { color: currentSecTextColor }]}>{profile.phone || "No Mobile"}{profile.email ? ` • ${profile.email}` : ""}</Text>
 
           {/* Profile Completion percentage bar */}
           <View style={styles.progressBarWrap}>
             <View style={styles.progressBarHeader}>
-              <Text style={styles.progressLabel}>Profile Completion</Text>
+              <Text style={[styles.progressLabel, { color: currentSecTextColor }]}>Profile Completion</Text>
               <Text style={styles.progressVal}>{profile.profileCompletion}%</Text>
             </View>
-            <View style={styles.progressBarBg}>
+            <View style={[styles.progressBarBg, { backgroundColor: currentBorderColor }]}>
               <View style={[styles.progressBarFill, { width: `${profile.profileCompletion}%` }]} />
             </View>
           </View>
         </View>
 
         {/* Quick Balance Section */}
-        <View style={styles.walletQuickCard}>
+        <View style={[styles.walletQuickCard, { backgroundColor: currentCardBg, borderColor: currentBorderColor }]}>
           <View>
-            <Text style={styles.walletTitle}>Wallet Balance</Text>
-            <Text style={styles.walletAmount}>₹{dashboardData?.walletBalance || 0}</Text>
+            <Text style={[styles.walletTitle, { color: currentSecTextColor }]}>Wallet Balance</Text>
+            <Text style={[styles.walletAmount, { color: currentTextColor }]}>₹{dashboardData?.walletBalance || 0}</Text>
           </View>
           <TouchableOpacity style={styles.walletBtn} onPress={() => navigation.navigate("Wallet")}>
             <Text style={styles.walletBtnLabel}>Manage</Text>
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.sectionTitle}>Account & Services</Text>
+        <Text style={[styles.sectionTitle, { color: currentSecTextColor }]}>Account & Services</Text>
 
         {/* Quick Actions List */}
         <View style={styles.menuSection}>
           {quickActions.map((item, index) => (
             <TouchableOpacity
               key={index}
-              style={styles.menuCard}
+              style={[styles.menuCard, { backgroundColor: currentCardBg, borderColor: currentBorderColor }]}
               activeOpacity={0.7}
               onPress={() => navigation.navigate(item.screen, item.params || {})}
             >
               <View style={styles.menuLeft}>
-                <View style={styles.menuIconWrap}>
+                <View style={[styles.menuIconWrap, { backgroundColor: isDarkMode ? "#332225" : "#FFF0F4" }]}>
                   <Ionicons name={item.icon} size={18} color={Colors.primary} />
                 </View>
-                <Text style={styles.menuLabel}>{item.label}</Text>
+                <Text style={[styles.menuLabel, { color: currentTextColor }]}>{item.label}</Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color={Colors.textTertiary} />
             </TouchableOpacity>
           ))}
+
         </View>
 
         {/* Logout Button */}
-        <TouchableOpacity style={styles.logoutButton} activeOpacity={0.8} onPress={handleLogout}>
+        <TouchableOpacity style={[styles.logoutButton, { backgroundColor: currentCardBg }]} activeOpacity={0.8} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={18} color={Colors.error} />
           <Text style={styles.logoutText}>Logout Session</Text>
         </TouchableOpacity>
@@ -221,5 +237,27 @@ const styles = StyleSheet.create({
   menuLabel: { fontSize: 13, fontWeight: "700", color: Colors.text },
   logoutButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: Colors.white, marginHorizontal: 16, marginBottom: 40, height: 48, borderRadius: 14, borderWidth: 1, borderColor: Colors.error },
   logoutText: { fontSize: 13, fontWeight: "800", color: Colors.error, marginLeft: 8 },
+<<<<<<< HEAD
   badgeRow: { flexDirection: "row", gap: 8, justifyContent: "center", alignItems: "center" }
+=======
+  badgeRow: { flexDirection: "row", gap: 8, justifyContent: "center", alignItems: "center" },
+  toggleSwitch: {
+    width: 42,
+    height: 24,
+    borderRadius: 12,
+    paddingVertical: 2,
+    justifyContent: "center"
+  },
+  toggleCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: Colors.white,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 1 }
+  }
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
 });

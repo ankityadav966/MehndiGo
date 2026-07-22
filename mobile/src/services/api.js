@@ -1,11 +1,25 @@
 import { secureStorage } from "../utils/storage";
 
+/**
+ * ENVIRONMENT SWITCHING GUIDE:
+ * - Local Development: Expo CLI automatically loads the `.env.local` file when you start the project
+ *   using `npx expo start`. It resolves requests to: http://98.70.11.123:3000/api/v1
+ * - Production Build: Expo's builder (or eas-cli) automatically loads `.env.production` during the
+ *   bundling phase. It resolves requests to: https://mehandigo-api.globalrns.com/api/v1
+ * 
+ * You do NOT need to modify the source code to change environments. Simply start development or bundle
+ * for release and the correct URL will be resolved automatically.
+ */
 const getBaseUrl = () => {
+<<<<<<< HEAD
   const envUrl = process.env.EXPO_PUBLIC_API_URL;
   if (!envUrl) {
     console.warn("WARNING: EXPO_PUBLIC_API_URL is not set in environment variables!");
     return "";
   }
+=======
+  let envUrl = process.env.EXPO_PUBLIC_API_URL || "https://mehandigo-api.globalrns.com/api/v1";
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
   return envUrl.endsWith("/") ? envUrl.slice(0, -1) : envUrl;
 };
 
@@ -37,6 +51,14 @@ export function getNormalizedUrl(endpoint) {
     cleanEndpoint = "/" + cleanEndpoint;
   }
 
+<<<<<<< HEAD
+=======
+  // Defensive: Strip trailing /mehndigo from base URL if present to prevent double-prefixing
+  if (baseUrl.endsWith("/api/v1/mehndigo")) {
+    baseUrl = baseUrl.substring(0, baseUrl.length - 9);
+  }
+
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
   // Normalize endpoints to avoid double prefixing and handle root vs /api/v1 namespaces
   if (cleanEndpoint.startsWith("/api/v1/")) {
     if (baseUrl.endsWith("/api/v1")) {
@@ -60,8 +82,11 @@ export function getNormalizedUrl(endpoint) {
 
 async function apiRequest(method, endpoint, body = null, auth = false) {
   const url = getNormalizedUrl(endpoint);
+<<<<<<< HEAD
 
   // Log the exact URL before request
+=======
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
   console.log(`[API REQUEST] ${method} -> ${url}`);
 
   const headers = { "Content-Type": "application/json" };

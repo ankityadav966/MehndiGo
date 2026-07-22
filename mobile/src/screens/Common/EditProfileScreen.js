@@ -44,6 +44,24 @@ export default function EditProfileScreen({ navigation }) {
   const [pincode, setPincode] = useState("");
   const [coverImageUri, setCoverImageUri] = useState("");
   const [languages, setLanguages] = useState("");
+  const [introVideoUri, setIntroVideoUri] = useState("");
+  const [portfolioVideoUri, setPortfolioVideoUri] = useState("");
+
+  const resolveImage = (uri) => {
+    const placeholder = "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=300";
+    if (!uri) return placeholder;
+    if (uri.startsWith("http://") || uri.startsWith("https://") || uri.startsWith("file://") || uri.startsWith("content://")) {
+      return uri;
+    }
+    const cleanUri = uri.startsWith("/") ? uri : `/${uri}`;
+    const { SOCKET_URL } = require("../../services/api");
+    if (!SOCKET_URL) return placeholder;
+    const finalUrl = `${SOCKET_URL}${cleanUri}`;
+    if (!finalUrl.startsWith("http://") && !finalUrl.startsWith("https://")) {
+      return placeholder;
+    }
+    return finalUrl;
+  };
 
   const resolveImage = (uri) => {
     const placeholder = "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=300";
@@ -78,6 +96,8 @@ export default function EditProfileScreen({ navigation }) {
         setPincode(data.pincode || "");
         setCoverImageUri(resolveImage(data.cover_image));
         setLanguages(data.languages || "");
+        setIntroVideoUri(data.intro_video ? resolveImage(data.intro_video) : "");
+        setPortfolioVideoUri(data.portfolio_video ? resolveImage(data.portfolio_video) : "");
       } else {
         const data = await getCustomerProfile();
         setFullName(data.name || "");
@@ -138,6 +158,42 @@ export default function EditProfileScreen({ navigation }) {
     }
   };
 
+  const handlePickIntroVideo = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("Permission Required", "Please allow access to photos to upload your introduction video.");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['videos'],
+      allowsEditing: true,
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      setIntroVideoUri(result.assets[0].uri);
+    }
+  };
+
+  const handlePickPortfolioVideo = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("Permission Required", "Please allow access to photos to upload your portfolio video.");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['videos'],
+      allowsEditing: true,
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      setPortfolioVideoUri(result.assets[0].uri);
+    }
+  };
+
   const handleSave = async () => {
     if (!fullName.trim()) {
       Alert.alert("Validation Error", "Please enter your name");
@@ -146,6 +202,17 @@ export default function EditProfileScreen({ navigation }) {
 
     if (email.trim() && !/\S+@\S+\.\S+/.test(email.trim())) {
       Alert.alert("Validation Error", "Please enter a valid email address");
+      return;
+    }
+
+    if (!phone.trim()) {
+      Alert.alert("Validation Error", "Please enter your phone number");
+      return;
+    }
+
+    const cleanPhone = phone.trim().replace(/[^0-9]/g, "");
+    if (cleanPhone.length !== 10) {
+      Alert.alert("Validation Error", "Phone number must be exactly 10 digits");
       return;
     }
 
@@ -180,6 +247,26 @@ export default function EditProfileScreen({ navigation }) {
         }
       }
 
+      let uploadedIntroVideoUrl = introVideoUri;
+      if (introVideoUri && (introVideoUri.startsWith("file://") || introVideoUri.startsWith("content://"))) {
+        const uploadResult = await uploadPortfolioMedia([{ uri: introVideoUri }]);
+        if (uploadResult && uploadResult.length > 0) {
+          uploadedIntroVideoUrl = uploadResult[0].url;
+        }
+      } else if (!introVideoUri) {
+        uploadedIntroVideoUrl = null;
+      }
+
+      let uploadedPortfolioVideoUrl = portfolioVideoUri;
+      if (portfolioVideoUri && (portfolioVideoUri.startsWith("file://") || portfolioVideoUri.startsWith("content://"))) {
+        const uploadResult = await uploadPortfolioMedia([{ uri: portfolioVideoUri }]);
+        if (uploadResult && uploadResult.length > 0) {
+          uploadedPortfolioVideoUrl = uploadResult[0].url;
+        }
+      } else if (!portfolioVideoUri) {
+        uploadedPortfolioVideoUrl = null;
+      }
+
       const finalAvatar = uploadedUrl || avatarUri;
       const finalCover = uploadedCoverUrl || coverImageUri;
 
@@ -195,12 +282,16 @@ export default function EditProfileScreen({ navigation }) {
           state: state.trim(),
           pincode: pincode.trim() || undefined,
           languages: languages.trim(),
+          intro_video: uploadedIntroVideoUrl,
+          portfolio_video: uploadedPortfolioVideoUrl,
+          phone: cleanPhone,
         });
       } else {
         await updateCustomerProfile({
           name: fullName.trim(),
           email: email.trim(),
           profile_image: finalAvatar,
+          phone: cleanPhone,
         });
       }
 
@@ -212,6 +303,7 @@ export default function EditProfileScreen({ navigation }) {
         profile_image: finalAvatar,
         avatar: finalAvatar, // Sync avatar key
         email: email.trim(),
+        phone: cleanPhone,
       };
       await secureStorage.setUserData(updatedUser);
       dispatch({ type: "UPDATE_USER", payload: updatedUser });
@@ -220,7 +312,8 @@ export default function EditProfileScreen({ navigation }) {
       navigation.goBack();
     } catch (err) {
       console.log("Failed to save profile:", err);
-      Alert.alert("Error", err.message || "Failed to update profile.");
+      const errMsg = err.response?.data?.message || err.message || "Failed to update profile.";
+      Alert.alert("Error", errMsg);
     } finally {
       setSaving(false);
     }
@@ -319,8 +412,8 @@ export default function EditProfileScreen({ navigation }) {
               />
             </View>
 
-            <Text style={styles.label}>Phone Number (Read-only)</Text>
-            <View style={[styles.inputContainer, styles.disabledInput]}>
+            <Text style={styles.label}>Phone Number</Text>
+            <View style={styles.inputContainer}>
               <Ionicons
                 name="call-outline"
                 size={20}
@@ -328,10 +421,12 @@ export default function EditProfileScreen({ navigation }) {
               />
               <TextInput
                 value={phone}
-                editable={false}
+                onChangeText={setPhone}
                 placeholder="Enter Phone Number"
                 placeholderTextColor={Colors.textTertiary}
-                style={[styles.input, { color: Colors.textTertiary }]}
+                keyboardType="phone-pad"
+                maxLength={10}
+                style={styles.input}
               />
             </View>
 
@@ -453,6 +548,62 @@ export default function EditProfileScreen({ navigation }) {
                     style={styles.input}
                   />
                 </View>
+
+                <Text style={styles.label}>Introduction Video</Text>
+                {introVideoUri ? (
+                  <View style={styles.videoContainer}>
+                    <TouchableOpacity
+                      style={styles.videoPreview}
+                      onPress={() => navigation.navigate("VideoPlayer", { videoUrl: introVideoUri, title: "Introduction Video" })}
+                    >
+                      <Ionicons name="play-circle-outline" size={48} color={Colors.primary} />
+                      <Text style={styles.videoPlayText}>Tap to Preview Video</Text>
+                    </TouchableOpacity>
+                    <View style={styles.videoActions}>
+                      <TouchableOpacity style={styles.videoActionBtn} onPress={handlePickIntroVideo}>
+                        <Ionicons name="swap-horizontal" size={20} color={Colors.primary} />
+                        <Text style={styles.videoActionText}>Replace</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.videoActionBtn, { borderColor: Colors.danger }]} onPress={() => setIntroVideoUri("")}>
+                        <Ionicons name="trash-outline" size={20} color={Colors.danger} />
+                        <Text style={[styles.videoActionText, { color: Colors.danger }]}>Delete</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : (
+                  <TouchableOpacity style={styles.videoUploadPlaceholder} onPress={handlePickIntroVideo}>
+                    <Ionicons name="videocam-outline" size={28} color={Colors.textTertiary} />
+                    <Text style={styles.videoPlaceholderText}>Upload Introduction Video</Text>
+                  </TouchableOpacity>
+                )}
+
+                <Text style={styles.label}>Portfolio Video</Text>
+                {portfolioVideoUri ? (
+                  <View style={styles.videoContainer}>
+                    <TouchableOpacity
+                      style={styles.videoPreview}
+                      onPress={() => navigation.navigate("VideoPlayer", { videoUrl: portfolioVideoUri, title: "Portfolio Video" })}
+                    >
+                      <Ionicons name="play-circle-outline" size={48} color={Colors.primary} />
+                      <Text style={styles.videoPlayText}>Tap to Preview Video</Text>
+                    </TouchableOpacity>
+                    <View style={styles.videoActions}>
+                      <TouchableOpacity style={styles.videoActionBtn} onPress={handlePickPortfolioVideo}>
+                        <Ionicons name="swap-horizontal" size={20} color={Colors.primary} />
+                        <Text style={styles.videoActionText}>Replace</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.videoActionBtn, { borderColor: Colors.danger }]} onPress={() => setPortfolioVideoUri("")}>
+                        <Ionicons name="trash-outline" size={20} color={Colors.danger} />
+                        <Text style={[styles.videoActionText, { color: Colors.danger }]}>Delete</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : (
+                  <TouchableOpacity style={styles.videoUploadPlaceholder} onPress={handlePickPortfolioVideo}>
+                    <Ionicons name="videocam-outline" size={28} color={Colors.textTertiary} />
+                    <Text style={styles.videoPlaceholderText}>Upload Portfolio Video</Text>
+                  </TouchableOpacity>
+                )}
               </>
             )}
           </View>
@@ -592,5 +743,62 @@ const styles = StyleSheet.create({
     shadowColor: "#000",
     shadowOpacity: 0.15,
     shadowRadius: 4,
+  },
+  videoContainer: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 14,
+    backgroundColor: Colors.background,
+    overflow: "hidden",
+    marginBottom: 10,
+  },
+  videoPreview: {
+    height: 120,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#00000010",
+  },
+  videoPlayText: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    marginTop: 4,
+    fontWeight: "500",
+  },
+  videoActions: {
+    flexDirection: "row",
+    borderTopWidth: 1,
+    borderColor: Colors.border,
+  },
+  videoActionBtn: {
+    flex: 1,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 12,
+    borderRightWidth: 1,
+    borderColor: Colors.border,
+  },
+  videoActionText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: Colors.primary,
+    marginLeft: 6,
+  },
+  videoUploadPlaceholder: {
+    height: 100,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderStyle: "dashed",
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: Colors.background,
+    marginBottom: 15,
+  },
+  videoPlaceholderText: {
+    fontSize: 13,
+    color: Colors.textTertiary,
+    marginTop: 6,
+    fontWeight: "500",
   },
 });

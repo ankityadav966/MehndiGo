@@ -12,7 +12,7 @@ async function getDashboard(req, res) {
 
 async function getBookings(req, res) {
   try {
-    const response = await ArtistService.getBookings(req.user.id);
+    const response = await ArtistService.getArtistBookings(req.user.id);
     return res.status(200).json(SuccessResponse("Artist bookings fetched successfully", response));
   } catch (error) {
     return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));

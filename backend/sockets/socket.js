@@ -51,7 +51,7 @@ async function getChatAuthContext(userId, bookingId) {
   }
 
   const status = booking.detailed_status || booking.booking_status;
-  const allowedStatuses = ["PENDING", "CONFIRMED", "ARTIST_ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED", "RESCHEDULED"];
+  const allowedStatuses = ["CONFIRMED", "ARTIST_ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED", "RESCHEDULED"];
   const isConfirmed = allowedStatuses.includes(status);
   const isCompleted = status === "COMPLETED";
 
@@ -162,29 +162,98 @@ function initSocket(server) {
     });
 
     // 3. Send message
-    socket.on("send-message", async (data) => {
-      const { bookingId, message, message_type, parent_message_id, media } = data;
+    const handleSendMessageSocket = async (data) => {
+      const senderId = socket.user.id;
+      let { bookingId, receiver_id, message, message_type, messageType, parent_message_id, parentMessageId, media } = data;
+      const targetReceiverId = receiver_id || data.receiver_id;
+
+      const finalMessageType = message_type || messageType || "TEXT";
+      const finalParentMessageId = parent_message_id || parentMessageId || null;
 
       try {
-        const auth = await getChatAuthContext(socket.user.id, bookingId);
-        if (!auth) {
+        let finalBookingId = bookingId || null;
+        let isAuthorized = false;
+        let otherUserIdResolved = targetReceiverId;
+
+        if (finalBookingId && typeof finalBookingId === "string" && finalBookingId.startsWith("admin_")) {
+          otherUserIdResolved = parseInt(finalBookingId.split("_")[1]);
+          finalBookingId = null;
+        }
+
+        if (!finalBookingId) {
+          if (otherUserIdResolved) {
+            const otherUser = await db.User.findByPk(otherUserIdResolved);
+            if (otherUser) {
+              const isUserAdmin = socket.user.role === "ADMIN";
+              const isUserArtist = socket.user.role === "ARTIST";
+              const isOtherAdmin = otherUser.role === "ADMIN";
+              const isOtherArtist = otherUser.role === "ARTIST";
+
+              if ((isUserAdmin && isOtherArtist) || (isUserArtist && isOtherAdmin)) {
+                isAuthorized = true;
+              }
+            }
+          }
+
+          if (!isAuthorized && otherUserIdResolved) {
+            const artist = await db.ArtistProfile.findOne({
+              where: {
+                user_id: { [Op.in]: [senderId, otherUserIdResolved] }
+              }
+            });
+            if (artist) {
+              const actualCustomerId = artist.user_id === senderId ? otherUserIdResolved : senderId;
+              const fallbackBooking = await db.Booking.findOne({
+                where: {
+                  user_id: actualCustomerId,
+                  artist_id: artist.id,
+                  booking_status: { [Op.in]: ["CONFIRMED", "COMPLETED"] }
+                },
+                order: [["updatedAt", "DESC"]]
+              });
+              if (fallbackBooking) {
+                finalBookingId = fallbackBooking.id;
+                isAuthorized = true;
+              }
+            }
+          }
+        } else {
+          const auth = await getChatAuthContext(senderId, finalBookingId);
+          if (auth) {
+            otherUserIdResolved = auth.otherUserId;
+            if (auth.active) {
+              isAuthorized = true;
+            }
+          }
+        }
+
+        if (!isAuthorized || !otherUserIdResolved) {
           socket.emit("error", { message: "Unauthorized or closed chat room" });
           return;
         }
 
-        if (!auth.active) {
-          socket.emit("error", { message: "This chat room is closed" });
+        // Check blocking status
+        const isUserBlocked = await db.BlockedUser.findOne({
+          where: {
+            [Op.or]: [
+              { blocker_id: senderId, blocked_id: otherUserIdResolved },
+              { blocker_id: otherUserIdResolved, blocked_id: senderId }
+            ]
+          }
+        });
+        if (isUserBlocked) {
+          socket.emit("error", { message: "Communication restricted" });
           return;
         }
 
         // Save to Database
         const savedMsg = await db.Message.create({
-          sender_id: socket.user.id,
-          receiver_id: auth.otherUserId,
-          booking_id: bookingId,
+          sender_id: senderId,
+          receiver_id: otherUserIdResolved,
+          booking_id: finalBookingId,
           message: message || "",
-          message_type: message_type || "TEXT",
-          parent_message_id: parent_message_id || null,
+          message_type: finalMessageType,
+          parent_message_id: finalParentMessageId,
           is_read: false
         });
 
@@ -206,37 +275,50 @@ function initSocket(server) {
           ]
         });
 
-        const roomName = `booking_room_${bookingId}`;
-        
-        // Emit to the entire room (including sender)
-        io.to(roomName).emit("receive-message", completeMsg);
+        const virtualRoomId = finalBookingId ? finalBookingId : `admin_${socket.user.role === "ADMIN" ? otherUserIdResolved : senderId}`;
+
+        // Emit to rooms
+        if (finalBookingId) {
+          const roomName = `booking_room_${finalBookingId}`;
+          io.to(roomName).emit("receive-message", completeMsg);
+          io.to(roomName).emit("receive_message", completeMsg);
+        }
+
+        io.to(senderId.toString()).to(otherUserIdResolved.toString()).emit("receive-message", completeMsg);
+        io.to(senderId.toString()).to(otherUserIdResolved.toString()).emit("receive_message", completeMsg);
 
         // Notify sender confirmation
         socket.emit("message_saved", completeMsg);
 
         // Check if receiver is online, then emit dynamic unread count update
-        const otherUserIdStr = auth.otherUserId.toString();
-        if (onlineUsers.has(otherUserIdStr) && onlineUsers.get(otherUserIdStr).size > 0) {
-          io.to(otherUserIdStr).emit("unread_update", {
-            bookingId,
-            unreadCount: 1
-          });
-        }
+        const otherUserIdStr = otherUserIdResolved.toString();
+        io.to(otherUserIdStr).emit("unread_update", {
+          bookingId: virtualRoomId,
+          unreadCount: 1,
+          sender_id: senderId
+        });
+
+        // Fetch sender's real name
+        const senderUser = await db.User.findByPk(senderId, { attributes: ["name"] });
+        const senderName = senderUser?.name || "Partner";
 
         // Push / In-App Notification seeding
         await db.Notification.create({
-          user_id: auth.otherUserId,
-          title: `New Message from ${socket.user.name || "User"}`,
-          message: message_type === "TEXT" ? message : `Sent an attachment: ${message_type}`,
+          user_id: otherUserIdResolved,
+          title: "New Message",
+          message: `${senderName} sent you a message`,
           type: "CHAT",
-          booking_id: bookingId
+          data: { bookingId: virtualRoomId.toString() }
         });
 
       } catch (err) {
-        console.error("Error processing socket send-message:", err);
+        console.error("Error processing socket message:", err);
         socket.emit("error", { message: "Failed to send message" });
       }
-    });
+    };
+
+    socket.on("send-message", handleSendMessageSocket);
+    socket.on("send_message", handleSendMessageSocket);
 
     // 4. Typing indicators
     socket.on("typing", ({ bookingId }) => {
@@ -256,30 +338,70 @@ function initSocket(server) {
     });
 
     // 5. Mark messages as read/seen
-    socket.on("message-read", async ({ bookingId }) => {
-      if (!bookingId) return;
-
+    const handleReadMessagesSocket = async (data) => {
+      const { bookingId, sender_id } = data;
+      const targetSenderId = sender_id || data.sender_id;
+      
       try {
+        let finalBookingId = bookingId || data.bookingId || null;
+        let isDirect = false;
+        let otherUserId = targetSenderId;
+
+        if (finalBookingId && typeof finalBookingId === "string" && finalBookingId.startsWith("admin_")) {
+          otherUserId = parseInt(finalBookingId.split("_")[1]);
+          finalBookingId = null;
+          isDirect = true;
+        }
+
+        const updateWhere = {
+          receiver_id: socket.user.id,
+          is_read: false
+        };
+
+        if (finalBookingId) {
+          updateWhere.booking_id = finalBookingId;
+        } else if (otherUserId) {
+          updateWhere.booking_id = null;
+          updateWhere.sender_id = otherUserId;
+        } else {
+          return;
+        }
+
         await db.Message.update(
           { is_read: true },
-          {
-            where: {
-              booking_id: bookingId,
-              receiver_id: socket.user.id,
-              is_read: false
-            }
-          }
+          { where: updateWhere }
         );
 
-        // Notify sender that receiver read the messages
-        socket.to(`booking_room_${bookingId}`).emit("messages_read", {
-          bookingId,
-          readerId: socket.user.id
+        // Notify other user
+        const readerId = socket.user.id;
+        const otherId = otherUserId || (finalBookingId ? (await getChatAuthContext(readerId, finalBookingId))?.otherUserId : null);
+        if (!otherId) return;
+
+        const virtualRoomId = finalBookingId ? finalBookingId : `admin_${socket.user.role === "ADMIN" ? otherId : readerId}`;
+
+        if (finalBookingId) {
+          socket.to(`booking_room_${finalBookingId}`).emit("messages_read", {
+            bookingId: finalBookingId,
+            readerId,
+            sender_id: otherId,
+            receiver_id: readerId
+          });
+        }
+        
+        io.to(otherId.toString()).emit("messages_read", {
+          bookingId: virtualRoomId,
+          readerId,
+          sender_id: otherId,
+          receiver_id: readerId
         });
       } catch (err) {
         console.error("Error updating message read status via socket:", err);
       }
-    });
+    };
+
+    socket.on("message-read", handleReadMessagesSocket);
+    socket.on("read_messages", handleReadMessagesSocket);
+    socket.on("read-messages", handleReadMessagesSocket);
 
     // 6. Upload progress reporting
     socket.on("upload-progress", ({ bookingId, progress }) => {

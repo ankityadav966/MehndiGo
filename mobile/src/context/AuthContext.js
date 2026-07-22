@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useReducer, useCallback } from "react";
+import { createContext, useContext, useEffect, useMemo, useReducer, useCallback, useState } from "react";
 import { secureStorage } from "../utils/storage";
 import {
   signInWithGoogle,
@@ -57,6 +57,25 @@ function authReducer(state, action) {
 
 export function AuthProvider({ children }) {
   const [state, dispatch] = useReducer(authReducer, initialState);
+  const [isDarkMode, setIsDarkMode] = useState(false);
+
+  useEffect(() => {
+    setIsDarkMode(false);
+  }, []);
+
+  const toggleTheme = useCallback(async () => {
+    // No-op
+  }, []);
+
+  useEffect(() => {
+    try {
+      const { applyTheme } = require("../theme/ThemeManager");
+      applyTheme(isDarkMode);
+      console.log("[ThemeManager] Applied theme state:", isDarkMode ? "dark" : "light");
+    } catch (err) {
+      console.warn("[ThemeManager] Theme switch error:", err.message);
+    }
+  }, [isDarkMode]);
 
   useEffect(() => {
     global.logoutHandler = () => {
@@ -128,13 +147,13 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  const sendOtp = useCallback(async (name, email, phone, role) => {
-    return await sendOtpService(name, email, phone, role);
+  const sendOtp = useCallback(async (email, role) => {
+    return await sendOtpService(email, undefined, role);
   }, []);
 
-  const verifyOtpAndAuthenticate = useCallback(async (phone, otp) => {
+  const verifyOtpAndAuthenticate = useCallback(async (email, otp) => {
     try {
-      const data = await verifyUserOtpService(phone, otp);
+      const data = await verifyUserOtpService(email, otp);
       dispatch({
         type: "LOGIN",
         payload: {
@@ -167,6 +186,8 @@ export function AuthProvider({ children }) {
   const value = useMemo(
     () => ({
       ...state,
+      isDarkMode,
+      toggleTheme,
       loginWithGoogle,
       loginWithEmail,
       register,
@@ -178,7 +199,7 @@ export function AuthProvider({ children }) {
       setOnboardingComplete,
       dispatch,
     }),
-    [state, loginWithGoogle, loginWithEmail, register, verifyOtpAndLogin, sendOtp, verifyOtpAndAuthenticate, logout, setUserRole, setOnboardingComplete],
+    [state, isDarkMode, toggleTheme, loginWithGoogle, loginWithEmail, register, verifyOtpAndLogin, sendOtp, verifyOtpAndAuthenticate, logout, setUserRole, setOnboardingComplete],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

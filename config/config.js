@@ -1,4 +1,4 @@
-require("dotenv").config();
+require("./env");
 
 module.exports = {
   development: {

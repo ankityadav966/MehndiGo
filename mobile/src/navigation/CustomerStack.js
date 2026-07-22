@@ -1,6 +1,7 @@
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 
 import ChangePasswordScreen from "../screens/Common/ChangePasswordScreen";
+import VideoPlayerScreen from "../screens/Common/VideoPlayerScreen";
 import DeleteAccountScreen from "../screens/Common/DeleteAccountScreen";
 import EditProfileScreen from "../screens/Common/EditProfileScreen";
 import NotificationCenterScreen from "../screens/Common/NotificationCenterScreen";
@@ -88,6 +89,8 @@ export default function CustomerStack() {
       <Stack.Screen name="ReferralDashboard" component={ReferralDashboardScreen} />
       <Stack.Screen name="SupportTicket" component={SupportTicketScreen} />
       <Stack.Screen name="SupportTicketDetails" component={SupportTicketDetailsScreen} />
+      <Stack.Screen name="BookingSettlement" component={BookingSettlementScreen} />
+      <Stack.Screen name="VideoPlayer" component={VideoPlayerScreen} />
     </Stack.Navigator>
   );
 }

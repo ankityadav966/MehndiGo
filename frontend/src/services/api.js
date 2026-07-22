@@ -48,9 +48,13 @@ apiClient.interceptors.response.use(
 );
 
 export const authService = {
-  sendOtp: (data) => apiClient.post("/user/send-otp", data),
-  verifyOtp: (data) => apiClient.post("/user/verify-otp", data),
+  register: (data) => apiClient.post("/user/register", data),
+  verifyEmailOtp: (data) => apiClient.post("/user/verify-email-otp", data),
   login: (data) => apiClient.post("/user/login", data),
+  forgotPassword: (data) => apiClient.post("/user/forgot-password", data),
+  verifyForgotPasswordOtp: (data) => apiClient.post("/user/verify-forgot-password-otp", data),
+  resetPassword: (data) => apiClient.post("/user/reset-password", data),
+  resendOtp: (data) => apiClient.post("/user/resend-otp", data),
   getProfile: () => apiClient.get("/user/profile"),
   updateProfile: (data) => apiClient.put("/user/profile", data),
   adminSendOtp: (data) => apiClient.post("/user/admin-send-otp", data),
@@ -125,10 +129,22 @@ export const adminService = {
   getAuditLogs: () => apiClient.get("/security/audit"),
   blockUser: (data) => apiClient.post("/security/block-user", data),
   unblockUser: (data) => apiClient.post("/security/unblock-user", data),
-  getSystemHealth: () => apiClient.get("/security/health")
+  getSystemHealth: () => apiClient.get("/security/health"),
+  getWalletSummary: () => apiClient.get("/admin/wallet/summary"),
+  getCommissionHistory: (params = {}) => apiClient.get("/admin/wallet/commission-history", { params }),
+  getDashboardSummary: () => apiClient.get("/admin/wallet/dashboard-summary"),
+  getWalletTransactionDetails: (id) => apiClient.get(`/admin/wallet/transaction/${id}`),
+  
+  // Category management CRUD
+  getCategories: () => apiClient.get("/category/admin/list"),
+  createCategory: (formData) => apiClient.post("/category/admin", formData, { headers: { "Content-Type": "multipart/form-data" } }),
+  updateCategory: (id, formData) => apiClient.put(`/category/admin/${id}`, formData, { headers: { "Content-Type": "multipart/form-data" } }),
+  deleteCategory: (id) => apiClient.delete(`/category/admin/${id}`),
+  toggleCategoryStatus: (id) => apiClient.patch(`/category/admin/${id}/status`)
 };
 
 export const chatService = {
+  getChatList: () => apiClient.get("/chat/list"),
   getHistory: (receiverId) => apiClient.get(`/chat/${receiverId}`),
   sendMessage: (receiverId, message) => apiClient.post("/chat/send", { receiver_id: receiverId, message }),
   getUnreadCounts: () => apiClient.get("/chat/unread/counts"),

@@ -35,14 +35,14 @@ class NotificationRepository
         if (user.role === "ADMIN") {
           const { sendEmail } = require("../utils/mail.service");
           const adminEmail = user.email || process.env.EMAIL_USER || "admin@mehndigo.com";
-          await sendEmail(adminEmail, `Mehndi Go Admin Alert: ${title}`, msg).catch(err => {
+          await sendEmail(adminEmail, `MehndiGo Admin Alert: ${title}`, msg).catch(err => {
             console.error("Failed to send admin email:", err.message);
           });
         } else {
-          const { sendSms } = require("../utils/twilio.service");
-          if (user.phone) {
-            await sendSms(user.phone, `Mehndi Go Alert: ${title} - ${msg}`).catch(err => {
-              console.error("Failed to send SMS:", err.message);
+          const { sendEmail } = require("../utils/mail.service");
+          if (user.email) {
+            await sendEmail(user.email, `MehndiGo Alert: ${title}`, msg).catch(err => {
+              console.error("Failed to send email:", err.message);
             });
           }
         }

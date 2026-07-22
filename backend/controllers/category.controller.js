@@ -21,7 +21,11 @@ async function adminGetCategories(req, res) {
 
 async function adminCreateCategory(req, res) {
   try {
-    const response = await CategoryService.createCategory(req.body, req.user.id);
+    const data = { ...req.body };
+    if (req.file) {
+      data.image = req.file.path;
+    }
+    const response = await CategoryService.createCategory(data, req.user.id);
     return res.status(201).json(SuccessResponse("Category created successfully", response));
   } catch (error) {
     return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
@@ -30,7 +34,11 @@ async function adminCreateCategory(req, res) {
 
 async function adminUpdateCategory(req, res) {
   try {
-    const response = await CategoryService.updateCategory(req.params.id, req.body, req.user.id);
+    const data = { ...req.body };
+    if (req.file) {
+      data.image = req.file.path;
+    }
+    const response = await CategoryService.updateCategory(req.params.id, data, req.user.id);
     return res.status(200).json(SuccessResponse("Category updated successfully", response));
   } catch (error) {
     return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));

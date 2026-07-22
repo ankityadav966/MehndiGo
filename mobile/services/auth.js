@@ -1,0 +1,106 @@
+import { Platform } from "react-native";
+import { secureStorage } from "../utils/storage";
+import apiRequest from "./api";
+
+
+
+function extractPayload(response) {
+  return response?.data || response;
+}
+
+function extractToken(payload) {
+  return payload.accessToken || payload.access_token || payload.token || null;
+}
+
+async function persistAuthData(response) {
+  const payload = extractPayload(response);
+  const token = extractToken(payload);
+  if (token) {
+    await secureStorage.setAccessToken(token);
+  }
+  if (payload.refreshToken) {
+    await secureStorage.setRefreshToken(payload.refreshToken);
+  }
+  if (payload.user) {
+    await secureStorage.setUserData(payload.user);
+    if (payload.user.role) {
+      await secureStorage.setUserRole(payload.user.role);
+    }
+  }
+  return payload;
+}
+
+
+
+export async function signInWithEmail(email, password) {
+  const data = await apiRequest("POST", "/auth/login", { email, password });
+  await persistAuthData(data);
+  return data;
+}
+
+export async function registerUser(userData) {
+  const data = await apiRequest("POST", "/auth/register", userData);
+  await persistAuthData(data);
+  return data;
+}
+
+export async function verifyOtp(email, otp) {
+  const data = await apiRequest("POST", "/auth/verify-otp", { email, otp });
+  await persistAuthData(data);
+  return data;
+}
+
+
+
+export async function registerUserV1(userData) {
+  const data = await apiRequest("POST", "/api/v1/mehndigo/user/register", userData);
+  return persistAuthData(data);
+}
+
+export async function loginWithEmail(email, role) {
+  const data = await apiRequest("POST", "/api/v1/mehndigo/user/login", {
+    email,
+    role,
+  });
+  return persistAuthData(data);
+}
+
+export async function refreshAccessToken() {
+  const refreshToken = await secureStorage.getRefreshToken();
+  if (!refreshToken) throw new Error("No refresh token available");
+
+  const data = await apiRequest("POST", "/auth/refresh-token", {
+    refreshToken,
+  });
+
+  const payload = extractPayload(data);
+  if (payload.accessToken) {
+    await secureStorage.setAccessToken(payload.accessToken);
+  }
+  if (payload.refreshToken) {
+    await secureStorage.setRefreshToken(payload.refreshToken);
+  }
+  return payload.accessToken;
+}
+
+export async function signOut() {
+  try {
+    const notificationToken = await secureStorage.getNotificationToken();
+    if (notificationToken) {
+      await apiRequest("POST", "/auth/remove-notification-token", {
+        token: notificationToken,
+      }, true);
+    }
+  } catch (_) {}
+  await secureStorage.clearAll();
+}
+
+export const authService = {
+  register: (data) => apiRequest("POST", "/api/v1/mehndigo/user/register", data),
+  verifyEmailOtp: (data) => apiRequest("POST", "/api/v1/mehndigo/user/verify-email-otp", data),
+  login: (data) => apiRequest("POST", "/api/v1/mehndigo/user/login", data),
+  forgotPassword: (data) => apiRequest("POST", "/api/v1/mehndigo/user/forgot-password", data),
+  verifyForgotPasswordOtp: (data) => apiRequest("POST", "/api/v1/mehndigo/user/verify-forgot-password-otp", data),
+  resetPassword: (data) => apiRequest("POST", "/api/v1/mehndigo/user/reset-password", data),
+  resendOtp: (data) => apiRequest("POST", "/api/v1/mehndigo/user/resend-otp", data),
+};

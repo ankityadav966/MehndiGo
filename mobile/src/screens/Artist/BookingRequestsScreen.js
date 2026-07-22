@@ -88,6 +88,97 @@ export default function BookingRequestsScreen({ route, navigation }) {
     );
   };
 
+  const handleAcceptAll = async () => {
+    const pendingBookings = filteredData.filter(b => {
+      const bookingStatus = String(b.booking_status || "").toUpperCase();
+      const detailedStatus = String(b.detailed_status || "").toUpperCase();
+      return bookingStatus === "PENDING" || ["PENDING", "VIEWED", "CONFIRMED"].includes(detailedStatus);
+    });
+
+    if (pendingBookings.length === 0) {
+      Alert.alert("No pending requests", "There are no pending booking requests to accept.");
+      return;
+    }
+
+    Alert.alert(
+      "Accept All",
+      `Are you sure you want to accept all ${pendingBookings.length} pending booking requests?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Accept All",
+          onPress: async () => {
+            setLoading(true);
+            let successCount = 0;
+            let errorCount = 0;
+            for (const b of pendingBookings) {
+              try {
+                await acceptBooking(b.id);
+                successCount++;
+              } catch (err) {
+                console.log(`Failed to accept booking ${b.id}:`, err.message);
+                errorCount++;
+              }
+            }
+            setLoading(false);
+            if (errorCount > 0) {
+              Alert.alert("Batch Complete", `Accepted ${successCount} bookings. Failed to accept ${errorCount} bookings.`);
+            } else {
+              Alert.alert("Success", `All ${successCount} booking requests accepted successfully!`);
+            }
+            fetchHistory();
+          }
+        }
+      ]
+    );
+  };
+
+  const handleDeclineAll = async () => {
+    const pendingBookings = filteredData.filter(b => {
+      const bookingStatus = String(b.booking_status || "").toUpperCase();
+      const detailedStatus = String(b.detailed_status || "").toUpperCase();
+      return bookingStatus === "PENDING" || ["PENDING", "VIEWED", "CONFIRMED"].includes(detailedStatus);
+    });
+
+    if (pendingBookings.length === 0) {
+      Alert.alert("No pending requests", "There are no pending booking requests to decline.");
+      return;
+    }
+
+    Alert.alert(
+      "Decline All",
+      `Are you sure you want to decline all ${pendingBookings.length} pending booking requests?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Decline All",
+          style: "destructive",
+          onPress: async () => {
+            setLoading(true);
+            let successCount = 0;
+            let errorCount = 0;
+            for (const b of pendingBookings) {
+              try {
+                await rejectBooking(b.id, "Declined by artist in bulk");
+                successCount++;
+              } catch (err) {
+                console.log(`Failed to decline booking ${b.id}:`, err.message);
+                errorCount++;
+              }
+            }
+            setLoading(false);
+            if (errorCount > 0) {
+              Alert.alert("Batch Complete", `Declined ${successCount} bookings. Failed to decline ${errorCount} bookings.`);
+            } else {
+              Alert.alert("Success", `All ${successCount} booking requests declined.`);
+            }
+            fetchHistory();
+          }
+        }
+      ]
+    );
+  };
+
   const getFilteredBookings = () => {
     return bookings.filter((item) => {
       // Only apply today's filter on the Accepted tab
@@ -104,6 +195,7 @@ export default function BookingRequestsScreen({ route, navigation }) {
       const status = detailedStatus || bookingStatus;
 
       if (activeTab === "Pending") {
+<<<<<<< HEAD
         return bookingStatus === "PENDING" || ["PENDING", "VIEWED", "CONFIRMED"].includes(detailedStatus);
       }
       
@@ -111,6 +203,15 @@ export default function BookingRequestsScreen({ route, navigation }) {
         return bookingStatus !== "PENDING" && ["ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED", "RESCHEDULED", "CASH_PAYMENT_PENDING", "CASH_DISPUTED"].includes(status);
       } else {
         return bookingStatus !== "PENDING" && ["COMPLETED", "CANCELLED", "AWAITING_CASH_CONFIRMATION", "COMPLETED_CLOSED"].includes(status);
+=======
+        return ["PENDING", "VIEWED", "CONFIRMED"].includes(status);
+      }
+      
+      if (activeTab === "Accepted") {
+        return ["ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "ARTIST_ARRIVED", "SERVICE_STARTED", "RESCHEDULED", "CASH_PAYMENT_PENDING", "CASH_DISPUTED", "WAITING_FOR_USER_PAYMENT"].includes(status);
+      } else {
+        return ["COMPLETED", "CANCELLED", "REJECTED", "REFUNDED", "AWAITING_CASH_CONFIRMATION", "COMPLETED_CLOSED"].includes(status);
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
       }
     });
   };
@@ -233,6 +334,19 @@ export default function BookingRequestsScreen({ route, navigation }) {
         ))}
       </View>
 
+      {activeTab === "Pending" && filteredData.length > 0 && (
+        <View style={styles.bulkActionContainer}>
+          <TouchableOpacity style={styles.bulkAcceptButton} onPress={handleAcceptAll}>
+            <Ionicons name="checkmark-done" size={16} color={Colors.white} />
+            <Text style={styles.bulkButtonText}>Accept All</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.bulkDeclineButton} onPress={handleDeclineAll}>
+            <Ionicons name="close-circle" size={16} color={Colors.error} />
+            <Text style={styles.bulkDeclineButtonText}>Decline All</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {loading ? (
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color={Colors.primary} />
@@ -288,5 +402,10 @@ const styles = StyleSheet.create({
   viewButtonText: { color: Colors.primary, fontWeight: "700", fontSize: 12 },
   emptyContainer: { flex: 1, justifyContent: "center", alignItems: "center", paddingVertical: 100 },
   emptyTitle: { fontSize: 14, fontWeight: "700", color: Colors.text, marginTop: 12 },
-  emptySubtitle: { fontSize: 11, color: Colors.textSecondary, marginTop: 4 }
+  emptySubtitle: { fontSize: 11, color: Colors.textSecondary, marginTop: 4 },
+  bulkActionContainer: { flexDirection: "row", marginHorizontal: 16, marginBottom: 12, gap: 10, justifyContent: "space-between" },
+  bulkAcceptButton: { flex: 1, flexDirection: "row", height: 40, backgroundColor: Colors.primary, borderRadius: 8, justifyContent: "center", alignItems: "center", gap: 6 },
+  bulkButtonText: { color: Colors.white, fontWeight: "700", fontSize: 13 },
+  bulkDeclineButton: { flex: 1, flexDirection: "row", height: 40, borderWidth: 1, borderColor: Colors.error, borderRadius: 8, justifyContent: "center", alignItems: "center", gap: 6 },
+  bulkDeclineButtonText: { color: Colors.error, fontWeight: "700", fontSize: 13 }
 });

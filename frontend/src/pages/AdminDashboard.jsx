@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { adminService } from "../services/api";
-import { Check, X, ShieldAlert, Users, Award, ShieldCheck, Eye, Calendar, DollarSign, MessageSquare, Bell, Send, Tag, Gift, TrendingUp, Plus, Trash } from "lucide-react";
+import { Check, X, ShieldAlert, Users, Award, ShieldCheck, Eye, Calendar, DollarSign, MessageSquare, Bell, Send, Tag, Gift, TrendingUp, Plus, Trash, Grid } from "lucide-react";
 
 const AdminDashboard = ({ showToast }) => {
   const [users, setUsers] = useState([]);
@@ -11,12 +11,46 @@ const AdminDashboard = ({ showToast }) => {
   const [chats, setChats] = useState([]);
   const [pendingArtists, setPendingArtists] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("pending");
+  const [activeTab, setActiveTab] = useState("overview");
   const [rejectId, setRejectId] = useState(null);
   const [rejectReason, setRejectReason] = useState("");
 
-  // Coupons Manager States
+  // Admin Commission Wallet States
+  const [walletSummary, setWalletSummary] = useState({
+    balance: 0,
+    totalCommissionEarned: 0,
+    totalBookings: 0,
+    totalTransactions: 0,
+    totalPendingSettlement: 0
+  });
+  const [commissionHistory, setCommissionHistory] = useState([]);
+  const [walletDashboardSummary, setWalletDashboardSummary] = useState({
+    today: 0,
+    weekly: 0,
+    monthly: 0,
+    yearly: 0,
+    lifetime: 0
+  });
+  const [walletLoading, setWalletLoading] = useState(false);
+  const [walletPage, setWalletPage] = useState(1);
+  const [walletTotalPages, setWalletTotalPages] = useState(1);
+  const [walletSearch, setWalletSearch] = useState("");
+  const [walletStatusFilter, setWalletStatusFilter] = useState("");
+  const [walletStartDate, setWalletStartDate] = useState("");
+  const [walletEndDate, setWalletEndDate] = useState("");
+  const [selectedWalletTx, setSelectedWalletTx] = useState(null);
+
+  // Coupon State
   const [coupons, setCoupons] = useState([]);
+
+  // Category State
+  const [categories, setCategories] = useState([]);
+  const [categoryModalOpen, setCategoryModalOpen] = useState(false);
+  const [categoryTitle, setCategoryTitle] = useState("");
+  const [categorySlug, setCategorySlug] = useState("");
+  const [categoryDescription, setCategoryDescription] = useState("");
+  const [categoryImageFile, setCategoryImageFile] = useState(null);
+  const [categoryEditId, setCategoryEditId] = useState(null);
   const [showCouponForm, setShowCouponForm] = useState(false);
   const [editingCoupon, setEditingCoupon] = useState(null);
   const [couponFormData, setCouponFormData] = useState({
@@ -57,7 +91,7 @@ const AdminDashboard = ({ showToast }) => {
     city: "",
     artistId: ""
   });
-  
+
   // Stats
   const [stats, setStats] = useState({
     totalUsers: 0,
@@ -80,7 +114,7 @@ const AdminDashboard = ({ showToast }) => {
 
   useEffect(() => {
     fetchAdminData();
-  }, [activeTab, analyticsFilters.startDate, analyticsFilters.endDate, analyticsFilters.city, analyticsFilters.artistId]);
+  }, [activeTab, analyticsFilters.startDate, analyticsFilters.endDate, analyticsFilters.city, analyticsFilters.artistId, walletPage, walletSearch, walletStatusFilter, walletStartDate, walletEndDate]);
 
   const fetchAdminData = async () => {
     setLoading(true);
@@ -120,16 +154,16 @@ const AdminDashboard = ({ showToast }) => {
         if (notifications.length > 0) return;
         const notifsRes = await adminService.getNotifications();
         setNotifications(notifsRes.data || []);
-        
+
         // Also fetch all users so admin can select target user
         const usersListRes = await adminService.getUsers();
         const artistListRes = await adminService.getArtists();
-        
+
         const combined = [
           ...(usersListRes.data?.rows || usersListRes.data || []),
           ...(artistListRes.data || []).map(a => a.user).filter(Boolean)
         ];
-        
+
         // Deduplicate
         const unique = [];
         const seen = new Set();
@@ -169,6 +203,29 @@ const AdminDashboard = ({ showToast }) => {
         setAnalyticsBookings(bks.data);
         setAnalyticsCustomers(cust.data);
         setAnalyticsArtists(art.data);
+      } else if (activeTab === "wallet") {
+        setWalletLoading(true);
+        const [summaryRes, historyRes, dashRes] = await Promise.all([
+          adminService.getWalletSummary(),
+          adminService.getCommissionHistory({
+            page: walletPage,
+            search: walletSearch,
+            status: walletStatusFilter,
+            startDate: walletStartDate,
+            endDate: walletEndDate
+          }),
+          adminService.getDashboardSummary()
+        ]);
+        if (summaryRes?.data) setWalletSummary(summaryRes.data);
+        if (historyRes?.data) {
+          setCommissionHistory(historyRes.data.transactions || []);
+          setWalletTotalPages(historyRes.data.totalPages || 1);
+        }
+        if (dashRes?.data) setWalletDashboardSummary(dashRes.data);
+        setWalletLoading(false);
+      } else if (activeTab === "categories") {
+        const categoriesRes = await adminService.getCategories();
+        setCategories(categoriesRes.data || categoriesRes || []);
       }
     } catch (e) {
       showToast("Error loading admin data: " + e.message, "danger");
@@ -203,6 +260,78 @@ const AdminDashboard = ({ showToast }) => {
       fetchAdminData();
     } catch (e) {
       showToast(e.message, "danger");
+    }
+  };
+
+  const handleOpenCategoryModal = (cat = null) => {
+    if (cat) {
+      setCategoryEditId(cat.id);
+      setCategoryTitle(cat.specialization_name || cat.title || "");
+      setCategorySlug(cat.slug || "");
+      setCategoryDescription(cat.description || "");
+      setCategoryImageFile(null);
+    } else {
+      setCategoryEditId(null);
+      setCategoryTitle("");
+      setCategorySlug("");
+      setCategoryDescription("");
+      setCategoryImageFile(null);
+    }
+    setCategoryModalOpen(true);
+  };
+
+  const handleSaveCategory = async (e) => {
+    e.preventDefault();
+    if (!categoryTitle.trim()) {
+      showToast("Title is required", "danger");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("title", categoryTitle.trim());
+    formData.append("specialization_name", categoryTitle.trim());
+    formData.append("slug", categorySlug.trim() || categoryTitle.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-"));
+    formData.append("description", categoryDescription.trim());
+    if (categoryImageFile) {
+      formData.append("image", categoryImageFile);
+    }
+
+    try {
+      if (categoryEditId) {
+        await adminService.updateCategory(categoryEditId, formData);
+        showToast("Category updated successfully", "success");
+      } else {
+        await adminService.createCategory(formData);
+        showToast("Category created successfully", "success");
+      }
+      setCategoryModalOpen(false);
+      const categoriesRes = await adminService.getCategories();
+      setCategories(categoriesRes.data || categoriesRes || []);
+    } catch (err) {
+      showToast(err.message || "Failed to save category", "danger");
+    }
+  };
+
+  const handleDeleteCategory = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this category?")) return;
+    try {
+      await adminService.deleteCategory(id);
+      showToast("Category deleted successfully", "success");
+      const categoriesRes = await adminService.getCategories();
+      setCategories(categoriesRes.data || categoriesRes || []);
+    } catch (err) {
+      showToast(err.message || "Failed to delete category", "danger");
+    }
+  };
+
+  const handleToggleCategoryStatus = async (id) => {
+    try {
+      await adminService.toggleCategoryStatus(id);
+      showToast("Category status toggled successfully", "success");
+      const categoriesRes = await adminService.getCategories();
+      setCategories(categoriesRes.data || categoriesRes || []);
+    } catch (err) {
+      showToast(err.message || "Failed to toggle category status", "danger");
     }
   };
 
@@ -264,7 +393,7 @@ const AdminDashboard = ({ showToast }) => {
         is_active: true,
         first_booking_only: false
       });
-      
+
       const couponsRes = await adminService.getCoupons();
       setCoupons(couponsRes.data || []);
     } catch (err) {
@@ -310,7 +439,15 @@ const AdminDashboard = ({ showToast }) => {
         <h3 style={{ fontSize: "1.1rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "1px", marginBottom: "1rem", color: "var(--text-secondary)" }}>
           Admin Panel
         </h3>
-        
+
+        <button
+          className={`sidebar-link btn-secondary ${activeTab === "overview" ? "active" : ""}`}
+          onClick={() => setActiveTab("overview")}
+          style={{ width: "100%", justifyContent: "flex-start", border: "none", background: "none" }}
+        >
+          <ShieldCheck style={{ width: "19px" }} /> Dashboard Overview
+        </button>
+
         <button
           className={`sidebar-link btn-secondary ${activeTab === "pending" ? "active" : ""}`}
           onClick={() => setActiveTab("pending")}
@@ -318,7 +455,7 @@ const AdminDashboard = ({ showToast }) => {
         >
           <ShieldAlert style={{ width: "18px" }} /> Verification Queue ({stats.pendingArtistsCount})
         </button>
-        
+
         <button
           className={`sidebar-link btn-secondary ${activeTab === "users" ? "active" : ""}`}
           onClick={() => setActiveTab("users")}
@@ -352,6 +489,14 @@ const AdminDashboard = ({ showToast }) => {
         </button>
 
         <button
+          className={`sidebar-link btn-secondary ${activeTab === "wallet" ? "active" : ""}`}
+          onClick={() => setActiveTab("wallet")}
+          style={{ width: "100%", justifyContent: "flex-start", border: "none", background: "none" }}
+        >
+          <DollarSign style={{ width: "18px" }} /> Commission Wallet
+        </button>
+
+        <button
           className={`sidebar-link btn-secondary ${activeTab === "chats" ? "active" : ""}`}
           onClick={() => setActiveTab("chats")}
           style={{ width: "100%", justifyContent: "flex-start", border: "none", background: "none" }}
@@ -373,6 +518,14 @@ const AdminDashboard = ({ showToast }) => {
           style={{ width: "100%", justifyContent: "flex-start", border: "none", background: "none" }}
         >
           <Tag style={{ width: "18px" }} /> Coupons Manager
+        </button>
+
+        <button
+          className={`sidebar-link btn-secondary ${activeTab === "categories" ? "active" : ""}`}
+          onClick={() => setActiveTab("categories")}
+          style={{ width: "100%", justifyContent: "flex-start", border: "none", background: "none" }}
+        >
+          <Grid style={{ width: "18px" }} /> Categories Manager
         </button>
 
         <button
@@ -464,12 +617,141 @@ const AdminDashboard = ({ showToast }) => {
           </div>
         ) : (
           <>
+            {/* Tab 0: Dashboard Overview */}
+            {activeTab === "overview" && (
+              <div>
+                <h1 style={{ fontSize: "2rem", fontWeight: 800, marginBottom: "0.5rem" }}>Dashboard Overview</h1>
+                <p style={{ color: "var(--text-secondary)", marginBottom: "2rem" }}>
+                  Real-time key business indicators, wallet commissions, and recent platform events.
+                </p>
+
+                {/* Commission Summary Cards Row */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1.5rem", marginBottom: "2.5rem" }}>
+                  <div className="glass-panel" style={{ padding: "1.5rem", borderLeft: "4px solid var(--success-color)" }}>
+                    <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontWeight: 600 }}>Commission Today</div>
+                    <div style={{ fontSize: "2rem", fontWeight: 800, color: "var(--success-color)", marginTop: "0.5rem" }}>₹{stats.commissionToday || 0}</div>
+                  </div>
+
+                  <div className="glass-panel" style={{ padding: "1.5rem", borderLeft: "4px solid var(--accent-color)" }}>
+                    <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontWeight: 600 }}>Commission This Month</div>
+                    <div style={{ fontSize: "2rem", fontWeight: 800, color: "var(--accent-color)", marginTop: "0.5rem" }}>₹{stats.commissionThisMonth || 0}</div>
+                  </div>
+
+                  <div className="glass-panel" style={{ padding: "1.5rem" }}>
+                    <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontWeight: 600 }}>Commission This Year</div>
+                    <div style={{ fontSize: "2rem", fontWeight: 800, marginTop: "0.5rem" }}>₹{stats.commissionThisYear || 0}</div>
+                  </div>
+
+                  <div className="glass-panel" style={{ padding: "1.5rem", borderLeft: "4px solid var(--info-color)" }}>
+                    <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontWeight: 600 }}>Lifetime Commission</div>
+                    <div style={{ fontSize: "2rem", fontWeight: 800, color: "var(--info-color)", marginTop: "0.5rem" }}>₹{stats.commissionLifetime || 0}</div>
+                  </div>
+                </div>
+
+                {/* Two-Column Grid: Top Earning Artists & Recent Bookings */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2rem", marginBottom: "2.5rem" }}>
+
+                  {/* Top Earning Artists */}
+                  <div className="glass-panel" style={{ padding: "1.5rem" }}>
+                    <h3 style={{ marginBottom: "1.2rem", fontSize: "1.1rem" }}>Top Earning Artists</h3>
+                    {!stats.topEarningArtists || stats.topEarningArtists.length === 0 ? (
+                      <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>No artist earnings recorded yet.</p>
+                    ) : (
+                      <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+                        <thead>
+                          <tr style={{ borderBottom: "1px solid var(--border-color)" }}>
+                            <th style={{ padding: "0.75rem 0.5rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>Artist Name</th>
+                            <th style={{ padding: "0.75rem 0.5rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>Total Earnings</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {stats.topEarningArtists.map((artist, idx) => (
+                            <tr key={idx} style={{ borderBottom: "1px solid var(--border-color)" }}>
+                              <td style={{ padding: "0.75rem 0.5rem", fontWeight: 600 }}>{artist.name}</td>
+                              <td style={{ padding: "0.75rem 0.5rem", color: "var(--success-color)", fontWeight: 700 }}>₹{artist.earnings}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+
+                  {/* Recent Bookings */}
+                  <div className="glass-panel" style={{ padding: "1.5rem" }}>
+                    <h3 style={{ marginBottom: "1.2rem", fontSize: "1.1rem" }}>Recent Bookings</h3>
+                    {!stats.recentBookings || stats.recentBookings.length === 0 ? (
+                      <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>No bookings placed yet.</p>
+                    ) : (
+                      <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+                        <thead>
+                          <tr style={{ borderBottom: "1px solid var(--border-color)" }}>
+                            <th style={{ padding: "0.75rem 0.5rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>Booking Code</th>
+                            <th style={{ padding: "0.75rem 0.5rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>Customer</th>
+                            <th style={{ padding: "0.75rem 0.5rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>Price</th>
+                            <th style={{ padding: "0.75rem 0.5rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {stats.recentBookings.map((b, idx) => (
+                            <tr key={idx} style={{ borderBottom: "1px solid var(--border-color)" }}>
+                              <td style={{ padding: "0.75rem 0.5rem", fontWeight: 700 }}>{b.booking_code}</td>
+                              <td style={{ padding: "0.75rem 0.5rem" }}>{b.user?.name}</td>
+                              <td style={{ padding: "0.75rem 0.5rem", fontWeight: 600 }}>₹{b.total_price}</td>
+                              <td style={{ padding: "0.75rem 0.5rem" }}>
+                                <span className={`badge badge-${b.booking_status.toLowerCase()}`}>
+                                  {b.booking_status}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+
+                </div>
+
+                {/* Latest Commission Transactions */}
+                <div className="glass-panel" style={{ padding: "1.5rem" }}>
+                  <h3 style={{ marginBottom: "1.2rem", fontSize: "1.1rem" }}>Latest Commission Transactions</h3>
+                  {!stats.latestCommissionTransactions || stats.latestCommissionTransactions.length === 0 ? (
+                    <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>No commission payments processed yet.</p>
+                  ) : (
+                    <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+                      <thead>
+                        <tr style={{ borderBottom: "1px solid var(--border-color)" }}>
+                          <th style={{ padding: "0.75rem 0.5rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>Booking Code</th>
+                          <th style={{ padding: "0.75rem 0.5rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>Customer</th>
+                          <th style={{ padding: "0.75rem 0.5rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>Artist</th>
+                          <th style={{ padding: "0.75rem 0.5rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>Commission</th>
+                          <th style={{ padding: "0.75rem 0.5rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>Date</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {stats.latestCommissionTransactions.map((tx, idx) => (
+                          <tr key={idx} style={{ borderBottom: "1px solid var(--border-color)" }}>
+                            <td style={{ padding: "0.75rem 0.5rem", fontWeight: 700 }}>{tx.booking?.booking_code || "N/A"}</td>
+                            <td style={{ padding: "0.75rem 0.5rem" }}>{tx.booking?.user?.name || "N/A"}</td>
+                            <td style={{ padding: "0.75rem 0.5rem" }}>{tx.booking?.artist?.user?.name || "N/A"}</td>
+                            <td style={{ padding: "0.75rem 0.5rem", color: "var(--success-color)", fontWeight: 700 }}>₹{tx.amount}</td>
+                            <td style={{ padding: "0.75rem 0.5rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+                              {new Date(tx.createdAt).toLocaleString()}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Tab 1: Verification Queue */}
             {activeTab === "pending" && (
               <div>
                 <h1 style={{ fontSize: "2rem", fontWeight: 800, marginBottom: "0.5rem" }}>Artist Verification Queue</h1>
                 <p style={{ color: "var(--text-secondary)", marginBottom: "2rem" }}>
-                  Audit document uploads and verify mehndi artist accounts on Mehndi Go.
+                  Audit document uploads and verify mehndi artist accounts on MehndiGo.
                 </p>
 
                 {pendingArtists.length === 0 ? (
@@ -486,7 +768,7 @@ const AdminDashboard = ({ showToast }) => {
                           <div>
                             <h3 style={{ fontWeight: 700 }}>{artist.user?.name}</h3>
                             <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>
-                              Phone: {artist.user?.phone} | Email: {artist.user?.email || "N/A"}
+                              Email: {artist.user?.email || "N/A"}
                             </p>
                             <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>
                               Experience: {artist.experience_years} Years
@@ -556,7 +838,7 @@ const AdminDashboard = ({ showToast }) => {
                       <tr style={{ borderBottom: "2px solid var(--border-color)" }}>
                         <th style={{ padding: "1rem" }}>User ID</th>
                         <th style={{ padding: "1rem" }}>Name</th>
-                        <th style={{ padding: "1rem" }}>Phone Number</th>
+
                         <th style={{ padding: "1rem" }}>Email</th>
                         <th style={{ padding: "1rem" }}>Verified</th>
                       </tr>
@@ -566,7 +848,7 @@ const AdminDashboard = ({ showToast }) => {
                         <tr key={u.id} style={{ borderBottom: "1px solid var(--border-color)" }}>
                           <td style={{ padding: "1rem" }}>#{u.id}</td>
                           <td style={{ padding: "1rem", fontWeight: 600 }}>{u.name}</td>
-                          <td style={{ padding: "1rem" }}>{u.phone}</td>
+
                           <td style={{ padding: "1rem" }}>{u.email || "N/A"}</td>
                           <td style={{ padding: "1rem" }}>
                             <span className={`badge ${u.is_verified ? "badge-success" : "badge-secondary"}`}>
@@ -663,7 +945,7 @@ const AdminDashboard = ({ showToast }) => {
             {activeTab === "ledger" && (
               <div>
                 <h1 style={{ fontSize: "2rem", fontWeight: 800, marginBottom: "2rem" }}>Financial Ledger & Transactions</h1>
-                
+
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1.5rem", marginBottom: "2rem" }}>
                   <div className="glass-panel" style={{ padding: "1.5rem", textAlign: "center" }}>
                     <h3 style={{ fontSize: "1.1rem", color: "var(--text-secondary)", marginBottom: "0.5rem" }}>Total Revenue</h3>
@@ -696,7 +978,7 @@ const AdminDashboard = ({ showToast }) => {
                     <tbody>
                       {payments.map((p) => (
                         <tr key={p.id} style={{ borderBottom: "1px solid var(--border-color)" }}>
-                          <td style={{ padding: "1rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>{p.razorpay_payment_id || p.transaction_id || `TXN-${p.id}`}</td>
+                          <td style={{ padding: "1rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>{p.cashfree_payment_id || p.transaction_id || `TXN-${p.id}`}</td>
                           <td style={{ padding: "1rem", fontWeight: 600 }}>{p.booking?.booking_code}</td>
                           <td style={{ padding: "1rem" }}>{p.booking?.user?.name || "Client"}</td>
                           <td style={{ padding: "1rem" }}>{p.booking?.artist?.user?.name || "Artist"}</td>
@@ -758,7 +1040,7 @@ const AdminDashboard = ({ showToast }) => {
             {activeTab === "notifications" && (
               <div>
                 <h1 style={{ fontSize: "2rem", fontWeight: 800, marginBottom: "2rem" }}>System Alerts Broadcaster</h1>
-                
+
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: "2rem" }}>
                   {/* Send Alert form */}
                   <div className="glass-panel" style={{ padding: "2rem", height: "fit-content" }}>
@@ -851,12 +1133,12 @@ const AdminDashboard = ({ showToast }) => {
                     <form onSubmit={handleCouponSubmit} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem" }}>
                       <div className="form-group">
                         <label className="form-label">Coupon Code</label>
-                        <input className="form-control" type="text" placeholder="e.g. WELCOME500" value={couponFormData.code} onChange={(e) => setCouponFormData({...couponFormData, code: e.target.value.toUpperCase()})} required />
+                        <input className="form-control" type="text" placeholder="e.g. WELCOME500" value={couponFormData.code} onChange={(e) => setCouponFormData({ ...couponFormData, code: e.target.value.toUpperCase() })} required />
                       </div>
 
                       <div className="form-group">
                         <label className="form-label">Discount Type</label>
-                        <select className="form-control" value={couponFormData.discount_type} onChange={(e) => setCouponFormData({...couponFormData, discount_type: e.target.value})}>
+                        <select className="form-control" value={couponFormData.discount_type} onChange={(e) => setCouponFormData({ ...couponFormData, discount_type: e.target.value })}>
                           <option value="PERCENTAGE">Percentage (%)</option>
                           <option value="FLAT">Flat Rate (₹)</option>
                         </select>
@@ -864,31 +1146,31 @@ const AdminDashboard = ({ showToast }) => {
 
                       <div className="form-group">
                         <label className="form-label">Discount Value ({couponFormData.discount_type === "PERCENTAGE" ? "%" : "₹"})</label>
-                        <input className="form-control" type="number" placeholder="Value" value={couponFormData.discount_value} onChange={(e) => setCouponFormData({...couponFormData, discount_value: e.target.value})} required />
+                        <input className="form-control" type="number" placeholder="Value" value={couponFormData.discount_value} onChange={(e) => setCouponFormData({ ...couponFormData, discount_value: e.target.value })} required />
                       </div>
 
                       <div className="form-group">
                         <label className="form-label">Maximum Discount Cap (₹)</label>
-                        <input className="form-control" type="number" placeholder="Cap Limit" value={couponFormData.max_discount} onChange={(e) => setCouponFormData({...couponFormData, max_discount: e.target.value})} required />
+                        <input className="form-control" type="number" placeholder="Cap Limit" value={couponFormData.max_discount} onChange={(e) => setCouponFormData({ ...couponFormData, max_discount: e.target.value })} required />
                       </div>
 
                       <div className="form-group">
                         <label className="form-label">Minimum Booking Value Required (₹)</label>
-                        <input className="form-control" type="number" placeholder="Minimum Value" value={couponFormData.min_booking_value} onChange={(e) => setCouponFormData({...couponFormData, min_booking_value: e.target.value})} required />
+                        <input className="form-control" type="number" placeholder="Minimum Value" value={couponFormData.min_booking_value} onChange={(e) => setCouponFormData({ ...couponFormData, min_booking_value: e.target.value })} required />
                       </div>
 
                       <div className="form-group">
                         <label className="form-label">Expiry Date</label>
-                        <input className="form-control" type="date" value={couponFormData.expires_at ? couponFormData.expires_at.split("T")[0] : ""} onChange={(e) => setCouponFormData({...couponFormData, expires_at: e.target.value})} required />
+                        <input className="form-control" type="date" value={couponFormData.expires_at ? couponFormData.expires_at.split("T")[0] : ""} onChange={(e) => setCouponFormData({ ...couponFormData, expires_at: e.target.value })} required />
                       </div>
 
                       <div className="form-group" style={{ gridColumn: "span 2", display: "flex", gap: "2rem", alignItems: "center" }}>
                         <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
-                          <input type="checkbox" checked={couponFormData.first_booking_only} onChange={(e) => setCouponFormData({...couponFormData, first_booking_only: e.target.checked})} />
+                          <input type="checkbox" checked={couponFormData.first_booking_only} onChange={(e) => setCouponFormData({ ...couponFormData, first_booking_only: e.target.checked })} />
                           First Booking Only
                         </label>
                         <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
-                          <input type="checkbox" checked={couponFormData.is_active} onChange={(e) => setCouponFormData({...couponFormData, is_active: e.target.checked})} />
+                          <input type="checkbox" checked={couponFormData.is_active} onChange={(e) => setCouponFormData({ ...couponFormData, is_active: e.target.checked })} />
                           Active
                         </label>
                       </div>
@@ -967,6 +1249,97 @@ const AdminDashboard = ({ showToast }) => {
               </div>
             )}
 
+            {activeTab === "categories" && (
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+                  <h2 style={{ fontSize: "1.5rem", fontWeight: 800 }}>Categories Management</h2>
+                  <button className="btn btn-primary" onClick={() => handleOpenCategoryModal()}>
+                    <Plus style={{ width: "16px", marginRight: "0.25rem" }} /> Add Category
+                  </button>
+                </div>
+
+                {categoryModalOpen && (
+                  <div className="glass-panel" style={{ padding: "1.5rem", marginBottom: "2rem" }}>
+                    <h3>{categoryEditId ? "Edit Category" : "Add New Category"}</h3>
+                    <form onSubmit={handleSaveCategory} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+                      <div className="form-group" style={{ gridColumn: "span 2" }}>
+                        <label className="form-label">Category Title</label>
+                        <input className="form-control" type="text" placeholder="e.g. Bridal Mehndi, Arabian Style" value={categoryTitle} onChange={(e) => setCategoryTitle(e.target.value)} required />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">URL Slug (Optional)</label>
+                        <input className="form-control" type="text" placeholder="e.g. bridal-mehndi" value={categorySlug} onChange={(e) => setCategorySlug(e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Category Image File</label>
+                        <input className="form-control" type="file" accept="image/*" onChange={(e) => setCategoryImageFile(e.target.files[0])} />
+                      </div>
+                      <div className="form-group" style={{ gridColumn: "span 2" }}>
+                        <label className="form-label">Description</label>
+                        <textarea className="form-control" rows="3" placeholder="Category details..." value={categoryDescription} onChange={(e) => setCategoryDescription(e.target.value)} />
+                      </div>
+                      <div style={{ gridColumn: "span 2", display: "flex", gap: "1rem" }}>
+                        <button type="submit" className="btn btn-primary">Save Category</button>
+                        <button type="button" className="btn btn-secondary" onClick={() => setCategoryModalOpen(false)}>Cancel</button>
+                      </div>
+                    </form>
+                  </div>
+                )}
+
+                <div className="glass-panel" style={{ overflowX: "auto" }}>
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Image</th>
+                        <th>Name</th>
+                        <th>Slug</th>
+                        <th>Description</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {categories.length === 0 ? (
+                        <tr>
+                          <td colSpan="6" style={{ textAlign: "center", padding: "2rem", color: "var(--text-secondary)" }}>
+                            No categories available.
+                          </td>
+                        </tr>
+                      ) : (
+                        categories.map((cat) => {
+                          const name = cat.specialization_name || cat.title || "";
+                          const cleanImage = cat.image ? (cat.image.startsWith("http") ? cat.image : `http://localhost:3000/${cat.image.replace(/^\/+/, "")}`) : "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=100";
+                          return (
+                            <tr key={cat.id}>
+                              <td>
+                                <img src={cleanImage} alt={name} style={{ width: "50px", height: "50px", borderRadius: "8px", objectFit: "cover" }} />
+                              </td>
+                              <td style={{ fontWeight: 800 }}>{name}</td>
+                              <td>{cat.slug}</td>
+                              <td style={{ fontSize: "0.85rem", maxWidth: "300px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cat.description || "N/A"}</td>
+                              <td>
+                                <span className={`badge ${cat.is_active ? "badge-success" : "badge-danger"}`} style={{ cursor: "pointer" }} onClick={() => handleToggleCategoryStatus(cat.id)}>
+                                  {cat.is_active ? "Active" : "Inactive"}
+                                </span>
+                              </td>
+                              <td>
+                                <div style={{ display: "flex", gap: "0.5rem" }}>
+                                  <button className="btn btn-secondary" style={{ padding: "0.25rem 0.5rem", minHeight: "auto" }} onClick={() => handleOpenCategoryModal(cat)}>Edit</button>
+                                  <button className="btn btn-danger" style={{ padding: "0.25rem 0.5rem", minHeight: "auto" }} onClick={() => handleDeleteCategory(cat.id)}>
+                                    <Trash style={{ width: "14px" }} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
             {/* Tab 9: Referrals Dashboard */}
             {activeTab === "referrals" && (
               <div>
@@ -1000,18 +1373,18 @@ const AdminDashboard = ({ showToast }) => {
                     <form onSubmit={handleCampaignSubmit}>
                       <div className="form-group" style={{ marginBottom: "1rem" }}>
                         <label className="form-label">Campaign Title</label>
-                        <input className="form-control" type="text" placeholder="e.g. Monsoon Refer Fest" value={campaignFormData.title} onChange={(e) => setCampaignFormData({...campaignFormData, title: e.target.value})} required />
+                        <input className="form-control" type="text" placeholder="e.g. Monsoon Refer Fest" value={campaignFormData.title} onChange={(e) => setCampaignFormData({ ...campaignFormData, title: e.target.value })} required />
                       </div>
                       <div className="form-group" style={{ marginBottom: "1rem" }}>
                         <label className="form-label">Referrer Reward Cashback (₹)</label>
-                        <input className="form-control" type="number" placeholder="Referrer gets" value={campaignFormData.referrer_reward} onChange={(e) => setCampaignFormData({...campaignFormData, referrer_reward: e.target.value})} required />
+                        <input className="form-control" type="number" placeholder="Referrer gets" value={campaignFormData.referrer_reward} onChange={(e) => setCampaignFormData({ ...campaignFormData, referrer_reward: e.target.value })} required />
                       </div>
                       <div className="form-group" style={{ marginBottom: "1rem" }}>
                         <label className="form-label">Referred Welcome Friend Cashback (₹)</label>
-                        <input className="form-control" type="number" placeholder="Friend gets" value={campaignFormData.referred_reward} onChange={(e) => setCampaignFormData({...campaignFormData, referred_reward: e.target.value})} required />
+                        <input className="form-control" type="number" placeholder="Friend gets" value={campaignFormData.referred_reward} onChange={(e) => setCampaignFormData({ ...campaignFormData, referred_reward: e.target.value })} required />
                       </div>
                       <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", marginTop: "1rem" }}>
-                        <input type="checkbox" checked={campaignFormData.is_active} onChange={(e) => setCampaignFormData({...campaignFormData, is_active: e.target.checked})} />
+                        <input type="checkbox" checked={campaignFormData.is_active} onChange={(e) => setCampaignFormData({ ...campaignFormData, is_active: e.target.checked })} />
                         Activate immediately
                       </label>
                       <button type="submit" className="btn btn-primary" style={{ width: "100%", justifyContent: "center", marginTop: "1.5rem" }}>
@@ -1100,26 +1473,26 @@ const AdminDashboard = ({ showToast }) => {
                 <div className="glass-panel" style={{ padding: "1.5rem", marginBottom: "2rem", display: "flex", flexWrap: "wrap", gap: "1.5rem", alignItems: "flex-end" }}>
                   <div className="form-group" style={{ flexGrow: 1, minWidth: "150px" }}>
                     <label className="form-label">Start Date</label>
-                    <input className="form-control" type="date" value={analyticsFilters.startDate} onChange={(e) => setAnalyticsFilters({...analyticsFilters, startDate: e.target.value})} />
+                    <input className="form-control" type="date" value={analyticsFilters.startDate} onChange={(e) => setAnalyticsFilters({ ...analyticsFilters, startDate: e.target.value })} />
                   </div>
                   <div className="form-group" style={{ flexGrow: 1, minWidth: "150px" }}>
                     <label className="form-label">End Date</label>
-                    <input className="form-control" type="date" value={analyticsFilters.endDate} onChange={(e) => setAnalyticsFilters({...analyticsFilters, endDate: e.target.value})} />
+                    <input className="form-control" type="date" value={analyticsFilters.endDate} onChange={(e) => setAnalyticsFilters({ ...analyticsFilters, endDate: e.target.value })} />
                   </div>
                   <div className="form-group" style={{ flexGrow: 1, minWidth: "150px" }}>
                     <label className="form-label">Filter by City</label>
-                    <input className="form-control" type="text" placeholder="e.g. Panaji" value={analyticsFilters.city} onChange={(e) => setAnalyticsFilters({...analyticsFilters, city: e.target.value})} />
+                    <input className="form-control" type="text" placeholder="e.g. Panaji" value={analyticsFilters.city} onChange={(e) => setAnalyticsFilters({ ...analyticsFilters, city: e.target.value })} />
                   </div>
 
                   <div style={{ display: "flex", gap: "0.5rem" }}>
                     <button className="btn btn-secondary" onClick={() => {
                       const today = new Date().toISOString().split("T")[0];
-                      setAnalyticsFilters({...analyticsFilters, startDate: today, endDate: today});
+                      setAnalyticsFilters({ ...analyticsFilters, startDate: today, endDate: today });
                     }}>Today</button>
                     <button className="btn btn-secondary" onClick={() => {
                       const end = new Date().toISOString().split("T")[0];
                       const start = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-                      setAnalyticsFilters({...analyticsFilters, startDate: start, endDate: end});
+                      setAnalyticsFilters({ ...analyticsFilters, startDate: start, endDate: end });
                     }}>Last 7 Days</button>
                     <button className="btn btn-secondary" onClick={() => {
                       setAnalyticsFilters({ startDate: "", endDate: "", city: "", artistId: "" });
@@ -1155,15 +1528,15 @@ const AdminDashboard = ({ showToast }) => {
 
                     {/* SVG Analytics Charts Row */}
                     <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: "2rem", marginBottom: "2rem" }}>
-                      
+
                       {/* 1. Revenue Area/Line SVG Chart */}
                       <div className="glass-panel" style={{ padding: "1.5rem" }}>
                         <h3 style={{ marginBottom: "1.2rem" }}>Revenue Growth Trend (7 Days)</h3>
                         <svg viewBox="0 0 500 200" style={{ width: "100%", height: "200px" }}>
                           <defs>
                             <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor="var(--primary-color)" stopOpacity="0.4"/>
-                              <stop offset="100%" stopColor="var(--primary-color)" stopOpacity="0.0"/>
+                              <stop offset="0%" stopColor="var(--primary-color)" stopOpacity="0.4" />
+                              <stop offset="100%" stopColor="var(--primary-color)" stopOpacity="0.0" />
                             </linearGradient>
                           </defs>
                           {/* Grid lines */}
@@ -1229,7 +1602,7 @@ const AdminDashboard = ({ showToast }) => {
 
                     {/* Hourly Heatmap & Top Spenders */}
                     <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: "2rem" }}>
-                      
+
                       {/* Peak Booking Hours Grid Heatmap */}
                       <div className="glass-panel" style={{ padding: "1.5rem" }}>
                         <h3 style={{ marginBottom: "1.2rem" }}>Peak Booking Hours (Heatmap Distribution)</h3>
@@ -1275,6 +1648,327 @@ const AdminDashboard = ({ showToast }) => {
                         ))}
                       </div>
 
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Tab 11: Commission Wallet */}
+            {activeTab === "wallet" && (
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
+                  <div>
+                    <h1 style={{ fontSize: "2rem", fontWeight: 800, marginBottom: "0.5rem" }}>Commission Wallet</h1>
+                    <p style={{ color: "var(--text-secondary)" }}>Track 10% advance payments and overall admin platform commission earnings.</p>
+                  </div>
+                  <div style={{ display: "flex", gap: "0.75rem" }}>
+                    <button
+                      className="btn btn-secondary"
+                      onClick={async () => {
+                        try {
+                          const historyRes = await adminService.getCommissionHistory({
+                            page: 1,
+                            limit: 1000
+                          });
+                          const txs = historyRes.data?.transactions || [];
+                          if (txs.length === 0) {
+                            showToast("No transactions found to export", "warning");
+                            return;
+                          }
+                          const headers = ["Booking ID", "Customer Name", "Artist Name", "Total Amount (₹)", "Commission (₹)", "Status", "Date"];
+                          const csvContent = "data:text/csv;charset=utf-8,"
+                            + headers.join(",") + "\n"
+                            + txs.map(t => [
+                              t.booking?.booking_code || "N/A",
+                              t.booking?.user?.name || "N/A",
+                              t.booking?.artist?.user?.name || "N/A",
+                              t.booking?.final_amount || 0,
+                              t.amount || 0,
+                              t.status || "SUCCESS",
+                              new Date(t.createdAt).toLocaleString()
+                            ].map(val => `"${val}"`).join(",")).join("\n");
+                          const encodedUri = encodeURI(csvContent);
+                          const link = document.createElement("a");
+                          link.setAttribute("href", encodedUri);
+                          link.setAttribute("download", `Commission_Ledger_${Date.now()}.csv`);
+                          document.body.appendChild(link);
+                          link.click();
+                          document.body.removeChild(link);
+                          showToast("CSV exported successfully", "success");
+                        } catch (err) {
+                          showToast("Export failed: " + err.message, "danger");
+                        }
+                      }}
+                    >
+                      Export CSV
+                    </button>
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => fetchAdminData()}
+                    >
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+
+                {/* Dashboard Summary Cards */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1.5rem", marginBottom: "2.5rem" }}>
+                  <div className="glass-panel" style={{ padding: "1.5rem", borderLeft: "4px solid var(--accent-color)" }}>
+                    <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontWeight: 600 }}>Wallet Balance</div>
+                    <div style={{ fontSize: "2rem", fontWeight: 800, color: "var(--accent-color)", marginTop: "0.5rem" }}>₹{walletSummary.balance}</div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>Available for withdrawal/disbursement</div>
+                  </div>
+
+                  <div className="glass-panel" style={{ padding: "1.5rem", borderLeft: "4px solid var(--success-color)" }}>
+                    <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontWeight: 600 }}>Today's Earnings</div>
+                    <div style={{ fontSize: "2rem", fontWeight: 800, color: "var(--success-color)", marginTop: "0.5rem" }}>₹{walletDashboardSummary.today}</div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>Commission earned today</div>
+                  </div>
+
+                  <div className="glass-panel" style={{ padding: "1.5rem" }}>
+                    <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontWeight: 600 }}>This Month's Earnings</div>
+                    <div style={{ fontSize: "2rem", fontWeight: 800, marginTop: "0.5rem" }}>₹{walletDashboardSummary.monthly}</div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>Current billing cycle</div>
+                  </div>
+
+                  <div className="glass-panel" style={{ padding: "1.5rem" }}>
+                    <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontWeight: 600 }}>Lifetime Commission</div>
+                    <div style={{ fontSize: "2rem", fontWeight: 800, marginTop: "0.5rem" }}>₹{walletDashboardSummary.lifetime}</div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>Cumulatively earned commission</div>
+                  </div>
+
+                  <div className="glass-panel" style={{ padding: "1.5rem", borderLeft: "4px solid var(--warning-color)" }}>
+                    <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontWeight: 600 }}>Pending Settlements</div>
+                    <div style={{ fontSize: "2rem", fontWeight: 800, color: "var(--warning-color)", marginTop: "0.5rem" }}>₹{walletSummary.totalPendingSettlement}</div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>90% outstanding balance of active bookings</div>
+                  </div>
+                </div>
+
+                {/* Filters */}
+                <div className="glass-panel" style={{ padding: "1.5rem", marginBottom: "2.5rem" }}>
+                  <h3 style={{ marginBottom: "1.2rem", fontSize: "1.1rem" }}>Filters</h3>
+                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: "1rem", alignItems: "end" }}>
+                    <div className="form-group">
+                      <label className="form-label">Search</label>
+                      <input
+                        className="form-control"
+                        type="text"
+                        placeholder="Search by Booking ID or client name..."
+                        value={walletSearch}
+                        onChange={(e) => setWalletSearch(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Status</label>
+                      <select
+                        className="form-control"
+                        value={walletStatusFilter}
+                        onChange={(e) => setWalletStatusFilter(e.target.value)}
+                      >
+                        <option value="">All Statuses</option>
+                        <option value="SUCCESS">SUCCESS</option>
+                        <option value="PENDING">PENDING</option>
+                        <option value="FAILED">FAILED</option>
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Start Date</label>
+                      <input
+                        className="form-control"
+                        type="date"
+                        value={walletStartDate}
+                        onChange={(e) => setWalletStartDate(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">End Date</label>
+                      <input
+                        className="form-control"
+                        type="date"
+                        value={walletEndDate}
+                        onChange={(e) => setWalletEndDate(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Commission Ledger Table */}
+                <div className="glass-panel" style={{ padding: "1.5rem", overflowX: "auto" }}>
+                  <h3 style={{ marginBottom: "1.5rem", fontSize: "1.1rem" }}>Transactions Log</h3>
+                  {walletLoading ? (
+                    <div style={{ display: "flex", justifyContent: "center", padding: "3rem" }}>
+                      <span style={{ fontSize: "1.2rem", fontWeight: 600 }}>Loading transactions...</span>
+                    </div>
+                  ) : commissionHistory.length === 0 ? (
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "4rem" }}>
+                      <ShieldAlert style={{ width: "48px", height: "48px", color: "var(--text-secondary)", marginBottom: "1rem" }} />
+                      <p style={{ color: "var(--text-secondary)", fontWeight: 600 }}>No commission transactions found matching the filters.</p>
+                    </div>
+                  ) : (
+                    <div>
+                      <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+                        <thead>
+                          <tr style={{ borderBottom: "2px solid var(--border-color)" }}>
+                            <th style={{ padding: "1rem" }}>Booking ID</th>
+                            <th style={{ padding: "1rem" }}>Customer</th>
+                            <th style={{ padding: "1rem" }}>Artist</th>
+                            <th style={{ padding: "1rem" }}>Booking Amount</th>
+                            <th style={{ padding: "1rem" }}>10% Commission</th>
+                            <th style={{ padding: "1rem" }}>Tx ID</th>
+                            <th style={{ padding: "1rem" }}>Status</th>
+                            <th style={{ padding: "1rem" }}>Date</th>
+                            <th style={{ padding: "1rem" }}>Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {commissionHistory.map((t) => (
+                            <tr key={t.id} style={{ borderBottom: "1px solid var(--border-color)" }}>
+                              <td style={{ padding: "1rem", fontWeight: 700 }}>{t.booking?.booking_code || "N/A"}</td>
+                              <td style={{ padding: "1rem" }}>{t.booking?.user?.name || "N/A"}</td>
+                              <td style={{ padding: "1rem" }}>{t.booking?.artist?.user?.name || "N/A"}</td>
+                              <td style={{ padding: "1rem", fontWeight: 600 }}>₹{t.booking?.final_amount || 0}</td>
+                              <td style={{ padding: "1rem", fontWeight: 700, color: "var(--success-color)" }}>₹{t.amount || 0}</td>
+                              <td style={{ padding: "1rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>TXN-{t.id}</td>
+                              <td style={{ padding: "1rem" }}>
+                                <span className={`badge badge-${t.status === "SUCCESS" ? "success" : t.status === "PENDING" ? "warning" : "danger"}`}>
+                                  {t.status}
+                                </span>
+                              </td>
+                              <td style={{ padding: "1rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+                                {new Date(t.createdAt).toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                              </td>
+                              <td style={{ padding: "1rem" }}>
+                                <button
+                                  className="btn btn-secondary"
+                                  style={{ padding: "0.4rem 0.8rem", fontSize: "0.8rem" }}
+                                  onClick={async () => {
+                                    try {
+                                      const detailsRes = await adminService.getWalletTransactionDetails(t.id);
+                                      setSelectedWalletTx(detailsRes.data);
+                                    } catch (err) {
+                                      showToast("Failed to load details: " + err.message, "danger");
+                                    }
+                                  }}
+                                >
+                                  View Details
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+
+                      {/* Pagination Controls */}
+                      {walletTotalPages > 1 && (
+                        <div style={{ display: "flex", justifyContent: "center", gap: "0.5rem", marginTop: "2rem" }}>
+                          <button
+                            className="btn btn-secondary"
+                            disabled={walletPage === 1}
+                            onClick={() => setWalletPage(walletPage - 1)}
+                          >
+                            Prev
+                          </button>
+                          <span style={{ display: "flex", alignItems: "center", paddingHorizontal: "1rem", fontWeight: 600 }}>
+                            Page {walletPage} of {walletTotalPages}
+                          </span>
+                          <button
+                            className="btn btn-secondary"
+                            disabled={walletPage === walletTotalPages}
+                            onClick={() => setWalletPage(walletPage + 1)}
+                          >
+                            Next
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Detailed Transaction View Modal */}
+                {selectedWalletTx && (
+                  <div
+                    style={{
+                      position: "fixed",
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      background: "rgba(0,0,0,0.6)",
+                      zIndex: 2000,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: "1rem"
+                    }}
+                  >
+                    <div className="glass-panel" style={{ width: "100%", maxWidth: "600px", padding: "2rem", background: "var(--bg-secondary)", borderRadius: "20px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+                        <h2 style={{ fontSize: "1.5rem", fontWeight: 800 }}>Transaction Breakdown</h2>
+                        <button
+                          onClick={() => setSelectedWalletTx(null)}
+                          style={{ background: "none", border: "none", fontSize: "1.5rem", cursor: "pointer", color: "var(--text-primary)" }}
+                        >
+                          &times;
+                        </button>
+                      </div>
+
+                      <div style={{ display: "flex", flexDirection: "column", gap: "1.2rem" }}>
+
+                        {/* Summary Header */}
+                        <div style={{ textAlign: "center", padding: "1rem", background: "rgba(108, 92, 231, 0.05)", borderRadius: "12px", border: "1px solid var(--border-color)" }}>
+                          <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>Commission Earned</span>
+                          <h1 style={{ fontSize: "2.2rem", fontWeight: 800, color: "var(--success-color)", marginTop: "0.25rem" }}>₹{selectedWalletTx.amount}</h1>
+                          <div style={{ display: "inline-block", padding: "0.25rem 0.75rem", borderRadius: "20px", fontSize: "0.75rem", fontWeight: 700, backgroundColor: "var(--success-color)", color: "#fff", marginTop: "0.5rem" }}>
+                            {selectedWalletTx.status}
+                          </div>
+                        </div>
+
+                        {/* Details Sections */}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", fontSize: "0.9rem" }}>
+                          <div>
+                            <span style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Transaction Reference</span>
+                            <div style={{ fontWeight: 600, marginTop: "2px" }}>TXN-{selectedWalletTx.id}</div>
+                          </div>
+                          <div>
+                            <span style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Booking Code</span>
+                            <div style={{ fontWeight: 600, marginTop: "2px" }}>{selectedWalletTx.booking?.booking_code || "N/A"}</div>
+                          </div>
+                          <div>
+                            <span style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Customer Name</span>
+                            <div style={{ fontWeight: 600, marginTop: "2px" }}>{selectedWalletTx.booking?.user?.name || "N/A"}</div>
+                          </div>
+                          <div>
+                            <span style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Artist Name</span>
+                            <div style={{ fontWeight: 600, marginTop: "2px" }}>{selectedWalletTx.booking?.artist?.user?.name || "N/A"}</div>
+                          </div>
+                          <div>
+                            <span style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Service Type</span>
+                            <div style={{ fontWeight: 600, marginTop: "2px" }}>{selectedWalletTx.booking?.service?.specialization_name || "N/A"}</div>
+                          </div>
+                          <div>
+                            <span style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Total Booking Value</span>
+                            <div style={{ fontWeight: 600, marginTop: "2px" }}>₹{selectedWalletTx.booking?.final_amount || 0}</div>
+                          </div>
+                          <div style={{ gridColumn: "span 2" }}>
+                            <span style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Booking Address</span>
+                            <div style={{ fontWeight: 600, marginTop: "2px" }}>{selectedWalletTx.booking?.address || "N/A"}</div>
+                          </div>
+                          <div style={{ gridColumn: "span 2" }}>
+                            <span style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Creation Date & Time</span>
+                            <div style={{ fontWeight: 600, marginTop: "2px" }}>{new Date(selectedWalletTx.createdAt).toLocaleString()}</div>
+                          </div>
+                        </div>
+
+                        {/* Description Box */}
+                        <div style={{ padding: "0.75rem", backgroundColor: "var(--bg-primary)", borderRadius: "8px", fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+                          <strong>Description: </strong>{selectedWalletTx.description}
+                        </div>
+
+                      </div>
                     </div>
                   </div>
                 )}

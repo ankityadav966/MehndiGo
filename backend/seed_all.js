@@ -10,14 +10,21 @@ async function seed() {
     await db.Message.destroy({ where: {} });
     await db.Review.destroy({ where: {} });
     await db.Payment.destroy({ where: {} });
+    if (db.Invoice) await db.Invoice.destroy({ where: {} });
+    if (db.Refund) await db.Refund.destroy({ where: {} });
+    if (db.Settlement) await db.Settlement.destroy({ where: {} });
+    await db.Transaction.destroy({ where: {} });
+    if (db.WalletTransaction) await db.WalletTransaction.destroy({ where: {} });
     await db.Booking.destroy({ where: {} });
     await db.Portfolio.destroy({ where: {} });
     await db.Favorite.destroy({ where: {} });
-    await db.Transaction.destroy({ where: {} });
     await db.AvailabilitySlot.destroy({ where: {} });
     await db.Service.destroy({ where: {} });
     await db.ArtistProfile.destroy({ where: {} });
     await db.Otp.destroy({ where: {} });
+    if (db.Notification) await db.Notification.destroy({ where: {} });
+    if (db.Wallet) await db.Wallet.destroy({ where: {} });
+    if (db.Coupon) await db.Coupon.destroy({ where: {} });
     await db.User.destroy({ where: {} });
     
     console.log("Database cleared.");

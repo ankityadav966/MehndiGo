@@ -11,13 +11,13 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
-import { verifyUserOtp } from "../../services/auth";
+import { verifyUserOtp, registerVerifyOtp } from "../../services/auth";
 import { secureStorage } from "../../utils/storage";
 import { useAuth } from "../../context/AuthContext";
 import { useArtistOnboarding } from "../../context/ArtistOnboardingContext";
 
 export default function OtpScreen({ navigation, route }) {
-  const { phone, name, email, role, otp: initialOtp, referralCode } = route.params || {};
+  const { email, role, otp: initialOtp, isRegistering } = route.params || {};
   const [otp, setOtp] = useState(initialOtp ? initialOtp.split("") : ["", "", "", "", "", ""]);
   const inputRefs = useRef([]);
   const { dispatch } = useAuth();
@@ -71,7 +71,7 @@ export default function OtpScreen({ navigation, route }) {
       return;
     }
 
-    if (!phone) {
+    if (!email) {
       navigation.reset({
         index: 0,
         routes: [{ name: "RoleSelection" }],
@@ -81,7 +81,12 @@ export default function OtpScreen({ navigation, route }) {
 
     setLoading(true);
     try {
-      const data = await verifyUserOtp(phone, otpStr, role, name, email, referralCode);
+      let data;
+      if (isRegistering) {
+        data = await registerVerifyOtp(email, otpStr);
+      } else {
+        data = await verifyUserOtp(email, otpStr);
+      }
       try {
         const AsyncStorage = require("@react-native-async-storage/async-storage").default;
         await AsyncStorage.removeItem("pendingReferralCode");
@@ -137,7 +142,7 @@ export default function OtpScreen({ navigation, route }) {
     }
   };
 
-  const displayPhone = phone ? `+91 ${phone.replace(/^\+91/, "")}` : "+91 98765 43210";
+  const displayEmail = email ? email : "your registered email";
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -145,9 +150,9 @@ export default function OtpScreen({ navigation, route }) {
         style={styles.container}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <Text style={styles.title}>Verify Your Number</Text>
+        <Text style={styles.title}>Verify Your Email</Text>
         <Text style={styles.subtitle}>Enter 6 digit code sent to</Text>
-        <Text style={styles.mobile}>{displayPhone}</Text>
+        <Text style={styles.emailText}>{displayEmail}</Text>
 
         <View style={styles.otpContainer}>
           {otp.map((digit, index) => (
@@ -196,7 +201,7 @@ export default function OtpScreen({ navigation, route }) {
           {loading ? (
             <ActivityIndicator color={Colors.white} size="small" />
           ) : (
-            <Text style={styles.buttonText}>Verify</Text>
+            <Text style={styles.buttonText}>Verify OTP</Text>
           )}
         </TouchableOpacity>
       </KeyboardAvoidingView>
@@ -209,7 +214,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.white, justifyContent: "center", paddingHorizontal: 24 },
   title: { fontSize: 30, fontWeight: "700", color: Colors.text },
   subtitle: { marginTop: 8, fontSize: 14, color: Colors.textSecondary },
-  mobile: { marginTop: 15, fontSize: 15, fontWeight: "600", color: Colors.text },
+  emailText: { marginTop: 15, fontSize: 15, fontWeight: "600", color: Colors.text },
   otpContainer: { flexDirection: "row", justifyContent: "space-between", marginTop: 35 },
   otpBox: { width: 50, height: 60, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, textAlign: "center", fontSize: 22, fontWeight: "700", color: Colors.text, backgroundColor: Colors.inputBackground },
   otpBoxError: { borderColor: Colors.error || "#FF3B30" },

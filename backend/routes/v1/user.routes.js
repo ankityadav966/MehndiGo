@@ -6,9 +6,13 @@ const UserController = require("../../controller/user.controller");
 const { authenticate } = require("../../middleware/auth.middleware");
 const { validateBody } = require("../../middleware/validate.middleware");
 
-router.post("/send-otp", validateBody(["phone", "role"]), UserController.sendOtp);
-router.post("/verify-otp", validateBody(["phone", "otp", "role"]), UserController.verifyOtp);
-router.post("/login", validateBody(["phone", "role"]), UserController.login);
+// Routes
+router.post("/register-send-otp", validateBody(["name", "email", "role"]), UserController.registerSendOtp);
+router.post("/register-verify-otp", validateBody(["email", "otp"]), UserController.registerVerifyOtp);
+
+router.post("/send-otp", validateBody(["email"]), UserController.sendOtp);
+router.post("/verify-otp", validateBody(["email", "otp"]), UserController.verifyOtp);
+router.post("/login", validateBody(["email"]), UserController.login);
 router.post("/admin-send-otp", validateBody(["email", "password"]), UserController.adminSendOtp);
 router.post("/admin-verify-otp", validateBody(["email", "otp"]), UserController.adminVerifyOtp);
 

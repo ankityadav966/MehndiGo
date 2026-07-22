@@ -12,7 +12,7 @@ const {
 } = require("../repositories");
 
 const AppError = require("../utils/errors/app.error");
-const razorpay = require("../utils/razorpay");
+const cashfree = require("../utils/cashfree");
 const { getIO } = require("../sockets/socket");
 const db = require("../models");
 
@@ -58,7 +58,16 @@ class ArtistService {
 
     // create profile
 
-    const profile = await ArtistProfileRepositor.createProfile(data);
+    if (data.phone) {
+      await UserRepositor.update(user_id, { phone: data.phone });
+    }
+
+    const profile = await ArtistProfileRepositor.createProfile({
+      ...data,
+      verification_status: "APPROVED",
+      latitude: data.latitude || 26.9124,
+      longitude: data.longitude || 75.7873
+    });
 
     return profile;
   }
@@ -78,6 +87,7 @@ class ArtistService {
     if (data.name !== undefined) userUpdates.name = data.name;
     if (data.profileImage !== undefined) userUpdates.profile_image = data.profileImage;
     if (data.profile_image !== undefined) userUpdates.profile_image = data.profile_image;
+    if (data.phone !== undefined) userUpdates.phone = data.phone;
     
     if (Object.keys(userUpdates).length > 0) {
       await UserRepositor.update(userId, userUpdates);
@@ -92,6 +102,10 @@ class ArtistService {
       pincode: data.pincode !== undefined ? data.pincode : artist.pincode,
       cover_image: data.coverImage !== undefined ? data.coverImage : (data.cover_image !== undefined ? data.cover_image : artist.cover_image),
       languages: data.languages !== undefined ? data.languages : artist.languages,
+      intro_video: data.intro_video !== undefined ? data.intro_video : artist.intro_video,
+      portfolio_video: data.portfolio_video !== undefined ? data.portfolio_video : artist.portfolio_video,
+      intro_video_thumbnail: data.intro_video_thumbnail !== undefined ? data.intro_video_thumbnail : artist.intro_video_thumbnail,
+      portfolio_video_thumbnail: data.portfolio_video_thumbnail !== undefined ? data.portfolio_video_thumbnail : artist.portfolio_video_thumbnail,
     };
     
     await ArtistProfileRepositor.update(artist.id, allowedUpdates);
@@ -782,46 +796,57 @@ async updateBookingStatus(
     const amount = booking.total_price;
     let order;
     try {
-      order = await razorpay.orders.create({
-        amount: amount * 100,
-        currency: "INR",
-        receipt: booking.booking_code,
+      order = await cashfree.createCashfreeOrder({
+        customerId: booking.user_id,
+        orderId: `booking_${booking_id}_${Date.now()}`,
+        amount: amount,
+        note: `Payment for Booking #${booking.booking_code}`
       });
     } catch (e) {
-      console.warn("Razorpay order creation failed, falling back to mock:", e.message);
+      console.warn("Cashfree order creation failed, falling back to mock:", e.message);
       order = {
-        id: `order_mock_${Date.now()}`,
-        amount: amount * 100,
-        currency: "INR",
-        receipt: booking.booking_code,
+        order_id: `booking_${booking_id}_${Date.now()}`,
+        payment_session_id: `session_mock_${Math.random().toString(36).substring(2, 10)}`,
+        order_amount: amount,
       };
     }
     await PaymentRepositor.create({
       booking_id,
-      razorpay_order_id: order.id,
+      cashfree_order_id: order.order_id,
       amount,
       payment_method: "ONLINE",
       status: "PENDING",
+      gateway: "CASHFREE",
+      currency: "INR"
     });
     return order;
   }
   async verifyPayment(data) {
     const {
       booking_id,
-      razorpay_order_id,
-      razorpay_payment_id,
-      razorpay_signature,
+      cashfree_order_id,
     } = data;
-    const isMock = razorpay_order_id && razorpay_order_id.startsWith("order_mock_");
+    
+    let orderStatus = "PENDING";
+    let cfPaymentId = `pay_mock_${Math.random().toString(36).substring(2, 10)}`;
+
+    const isMock = cashfree_order_id && (cashfree_order_id.startsWith("order_mock_") || cashfree_order_id.includes("_mock_"));
     if (!isMock) {
-      const generated_signature = crypto
-        .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET || "fallback_secret")
-        .update(razorpay_order_id + "|" + razorpay_payment_id)
-        .digest("hex");
-      if (generated_signature !== razorpay_signature) {
-        throw new AppError("Invalid payment signature", 400);
+      try {
+        const cfOrder = await cashfree.getCashfreeOrder(cashfree_order_id);
+        orderStatus = cfOrder.order_status;
+        cfPaymentId = cfOrder.cf_payment_id || cfPaymentId;
+      } catch (err) {
+        throw new AppError("Failed to verify payment with Cashfree", 400);
       }
+    } else {
+      orderStatus = "PAID";
     }
+
+    if (orderStatus !== "PAID") {
+      throw new AppError("Payment verification failed", 400);
+    }
+
     const booking = await BookingRepositor.getById(booking_id);
     if (!booking) {
       throw new AppError("Booking not found", 404);
@@ -837,8 +862,7 @@ async updateBookingStatus(
     const payment = payments[0];
     if (payment) {
       await PaymentRepositor.update(payment.id, {
-        razorpay_payment_id,
-        razorpay_signature,
+        cashfree_payment_id: cfPaymentId,
         status: "SUCCESS",
         paid_at: new Date()
       });
@@ -1486,15 +1510,42 @@ async createReview(data) {
       state: data.state !== undefined ? data.state : artist.state,
       pincode: data.pincode !== undefined ? data.pincode : artist.pincode,
       cover_image: data.coverImage !== undefined ? data.coverImage : (data.cover_image !== undefined ? data.cover_image : artist.cover_image),
-      languages: data.languages !== undefined ? data.languages : artist.languages
+      languages: data.languages !== undefined ? data.languages : artist.languages,
+      intro_video: data.intro_video !== undefined ? data.intro_video : artist.intro_video,
+      portfolio_video: data.portfolio_video !== undefined ? data.portfolio_video : artist.portfolio_video,
+      intro_video_thumbnail: data.intro_video_thumbnail !== undefined ? data.intro_video_thumbnail : artist.intro_video_thumbnail,
+      portfolio_video_thumbnail: data.portfolio_video_thumbnail !== undefined ? data.portfolio_video_thumbnail : artist.portfolio_video_thumbnail,
     });
 
     const user = await db.User.findByPk(userId);
     if (user) {
+<<<<<<< HEAD
       await user.update({
         name: data.name !== undefined ? data.name : user.name,
         profile_image: data.profileImage !== undefined ? data.profileImage : (data.profile_image !== undefined ? data.profile_image : user.profile_image)
       });
+=======
+      const userUpdates = {};
+      if (data.name && data.name.trim()) userUpdates.name = data.name.trim();
+
+      const newAvatar = data.profileImage || data.profile_image;
+      if (newAvatar) userUpdates.profile_image = newAvatar;
+
+      if (data.phone) {
+        const cleanPhone = String(data.phone).trim().replace(/[^0-9]/g, "");
+        if (cleanPhone && cleanPhone !== user.phone) {
+          const existingPhone = await db.User.findOne({ where: { phone: cleanPhone } });
+          if (existingPhone && Number(existingPhone.id) !== Number(userId)) {
+            throw new AppError("This phone number is already registered with another account.", 400);
+          }
+          userUpdates.phone = cleanPhone;
+        }
+      }
+
+      if (Object.keys(userUpdates).length > 0) {
+        await user.update(userUpdates);
+      }
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
     }
 
     return await this.getProfile(userId);
@@ -1721,9 +1772,10 @@ async createReview(data) {
     // 3. Status filter
     if (status) {
       if (status === "Completed") {
-        where.booking_status = "COMPLETED";
+        where.detailed_status = { [db.Sequelize.Op.in]: ["WAITING_FOR_USER_PAYMENT", "COMPLETED", "COMPLETED_CLOSED"] };
       } else if (status === "Accepted") {
         where.booking_status = "CONFIRMED";
+        where.detailed_status = { [db.Sequelize.Op.in]: ["CONFIRMED", "ACCEPTED", "ARTIST_ACCEPTED", "ARTIST_ON_THE_WAY", "ARTIST_ARRIVED", "SERVICE_STARTED", "RESCHEDULED"] };
       } else if (status === "Rejected") {
         where.booking_status = "CANCELLED";
         where.detailed_status = "REJECTED";
@@ -2144,6 +2196,7 @@ async createReview(data) {
 
 function getLeadStatus(booking) {
   if (booking.booking_status === "COMPLETED") return "Completed";
+  if (["WAITING_FOR_USER_PAYMENT", "COMPLETED_CLOSED"].includes(booking.detailed_status)) return "Completed";
   if (booking.booking_status === "CONFIRMED") return "Accepted";
   
   if (booking.booking_status === "PENDING") {

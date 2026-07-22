@@ -612,7 +612,7 @@ const ArtistDashboard = ({ showToast }) => {
                     <div key={booking.id} className="glass-panel" style={{ padding: "1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem" }}>
                       <div>
                         <div style={{ fontWeight: 700, fontSize: "1.1rem" }}>{booking.service?.specialization_name}</div>
-                        <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>Client: {booking.user?.name} ({booking.user?.phone})</div>
+                        <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>Client: {booking.user?.name}</div>
                         <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>Address: {booking.address}</div>
                         <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)", display: "flex", gap: "1rem", marginTop: "0.3rem" }}>
                           <span>Date: {start.toLocaleDateString()}</span>

@@ -35,7 +35,7 @@ async function getReferralDashboard(req, res) {
       where: { is_active: true }
     });
 
-    const referralLink = `https://mehendigo.app/invite?ref=${codeRecord.code}`;
+    const referralLink = `https://mehndigo.com/invite?ref=${codeRecord.code}`;
 
     // Get rank (by lifetime_xp)
     const rank = await db.User.count({

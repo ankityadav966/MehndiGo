@@ -37,4 +37,28 @@ router.patch(
   AdminController.rejectArtist,
 );
 
+// Coupons Management
+const CouponController = require("../../controllers/coupon/coupon.controller");
+router.get("/coupons", authenticate, authorize("ADMIN"), CouponController.adminGetCoupons);
+router.post("/coupon", authenticate, authorize("ADMIN"), CouponController.adminCreate);
+router.put("/coupon/:id", authenticate, authorize("ADMIN"), CouponController.adminUpdate);
+router.delete("/coupon/:id", authenticate, authorize("ADMIN"), CouponController.adminDelete);
+
+// Referral Campaign & Analytics Management
+const ReferralController = require("../../controllers/referral/referral.controller");
+router.get("/referral/campaigns", authenticate, authorize("ADMIN"), ReferralController.adminGetCampaigns);
+router.post("/referral/campaign", authenticate, authorize("ADMIN"), ReferralController.adminCreateCampaign);
+router.get("/referral/analytics", authenticate, authorize("ADMIN"), ReferralController.adminGetAnalytics);
+
+// Withdrawal Requests Management
+router.get("/withdrawals", authenticate, authorize("ADMIN"), AdminController.getAllWithdrawals);
+router.patch("/withdraw/:id/approve", authenticate, authorize("ADMIN"), AdminController.approveWithdrawal);
+router.patch("/withdraw/:id/reject", authenticate, authorize("ADMIN"), AdminController.rejectWithdrawal);
+
+// Commission Wallet analytics & logs
+router.get("/wallet/summary", authenticate, authorize("ADMIN"), AdminController.getWalletSummary);
+router.get("/wallet/commission-history", authenticate, authorize("ADMIN"), AdminController.getCommissionHistory);
+router.get("/wallet/dashboard-summary", authenticate, authorize("ADMIN"), AdminController.getDashboardSummary);
+router.get("/wallet/transaction/:id", authenticate, authorize("ADMIN"), AdminController.getWalletTransactionDetails);
+
 module.exports = router;

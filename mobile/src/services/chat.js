@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 import apiRequest, { getNormalizedUrl } from "./api";
+=======
+import apiRequest, { BASE_URL, getNormalizedUrl } from "./api";
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
 
 // Fetch chat room listings for active bookings
 export async function getChatList() {
@@ -24,40 +28,49 @@ export async function deleteMessage(messageId, deleteType = "me") {
   return res?.data || res;
 }
 
+
+
 // Upload file to Cloudinary via REST API
 export async function uploadChatMedia(fileUri, fileType, fileName) {
-  const FileSystem = require("expo-file-system/legacy");
-  const { UploadType } = require("expo-file-system");
-  const name = fileName || fileUri.split("/").pop();
+  const getSafeUri = (uri) => {
+    if (!uri) return uri;
+    let cleanUri = uri;
+    if (cleanUri.startsWith("/")) {
+      cleanUri = `file://${cleanUri}`;
+    }
+    return cleanUri;
+  };
+
   let type = "image/jpeg";
   if (fileType === "video") type = "video/mp4";
   else if (fileType === "pdf") type = "application/pdf";
   else if (fileType === "voice") type = "audio/m4a";
 
+<<<<<<< HEAD
   const url = getNormalizedUrl("/chat/upload");
   console.log(`[API REQUEST] POST (uploadAsync) -> ${url}`);
+=======
+  const finalUri = getSafeUri(fileUri);
+  const url = getNormalizedUrl("/api/v1/mehndigo/chat/upload");
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
   const token = await require("../utils/storage").secureStorage.getAccessToken();
 
-  const response = await FileSystem.uploadAsync(url, fileUri, {
-    fieldName: "file",
+  const FileSystem = require("expo-file-system/legacy");
+  const response = await FileSystem.uploadAsync(url, finalUri, {
     httpMethod: "POST",
-    uploadType: UploadType.MULTIPART,
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    mimeType: type
+    uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+    fieldName: "file",
+    mimeType: type,
+    headers: token ? { Authorization: `Bearer ${token}` } : {}
   });
 
-  let data;
-  try {
-    data = JSON.parse(response.body);
-  } catch {
-    data = { message: response.body };
-  }
+  const responseData = JSON.parse(response.body);
 
   if (response.status < 200 || response.status >= 300) {
-    throw new Error(data?.message || "File upload failed");
+    throw new Error(responseData?.message || `Upload failed with status ${response.status}`);
   }
 
-  return data?.data || data;
+  return responseData?.data || responseData;
 }
 
 // Fetch media history attachments

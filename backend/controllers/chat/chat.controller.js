@@ -55,7 +55,7 @@ async function getChatAuthContext(userId, bookingId) {
 
   // Enforce booking status constraint
   const status = booking.detailed_status || booking.booking_status;
-  const allowedStatuses = ["PENDING", "CONFIRMED", "ARTIST_ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED", "RESCHEDULED"];
+  const allowedStatuses = ["CONFIRMED", "ARTIST_ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED", "RESCHEDULED"];
   const isConfirmed = allowedStatuses.includes(status);
   const isCompleted = status === "COMPLETED";
 
@@ -108,6 +108,71 @@ async function getChatList(req, res) {
   try {
     const userId = req.user.id;
     const role = req.user.role;
+    const chatList = [];
+
+    // Custom flow for Admin
+    if (role === "ADMIN") {
+      const messages = await db.Message.findAll({
+        where: {
+          booking_id: null,
+          [Op.or]: [
+            { sender_id: userId },
+            { receiver_id: userId }
+          ]
+        },
+        order: [["createdAt", "DESC"]]
+      });
+
+      const uniqueArtistIds = [];
+      const artistLastMessages = {};
+      const artistUnreadCounts = {};
+
+      for (const msg of messages) {
+        const otherId = msg.sender_id === userId ? msg.receiver_id : msg.sender_id;
+        if (!uniqueArtistIds.includes(otherId)) {
+          uniqueArtistIds.push(otherId);
+          artistLastMessages[otherId] = msg;
+        }
+        if (msg.receiver_id === userId && !msg.is_read) {
+          artistUnreadCounts[otherId] = (artistUnreadCounts[otherId] || 0) + 1;
+        }
+      }
+
+      for (const artistId of uniqueArtistIds) {
+        const artistUser = await db.User.findByPk(artistId, {
+          attributes: ["id", "name", "profile_image", "hide_last_seen", "last_login_at"]
+        });
+        if (artistUser && artistUser.role === "ARTIST") {
+          const lastMsg = artistLastMessages[artistId];
+          chatList.push({
+            bookingId: `admin_${artistUser.id}`,
+            bookingCode: "ADMIN",
+            serviceName: "Artist Chat",
+            roomSettings: {
+              isPinned: false,
+              isArchived: false
+            },
+            recipient: {
+              id: artistUser.id,
+              name: artistUser.name,
+              profileImage: artistUser.profile_image,
+              hideLastSeen: artistUser.hide_last_seen,
+              lastSeen: artistUser.last_login_at
+            },
+            lastMessage: {
+              id: lastMsg.id,
+              message: lastMsg.is_deleted_everyone ? "This message was deleted" : lastMsg.message,
+              messageType: lastMsg.message_type,
+              createdAt: lastMsg.createdAt,
+              senderId: lastMsg.sender_id,
+              isRead: lastMsg.is_read
+            },
+            unreadCount: artistUnreadCounts[artistId] || 0
+          });
+        }
+      }
+      return res.status(200).json(SuccessResponse("Chat list retrieved", chatList));
+    }
 
     let bookingQuery = {};
     if (role === "ARTIST") {
@@ -147,8 +212,6 @@ async function getChatList(req, res) {
       ],
       order: [["updatedAt", "DESC"]]
     });
-
-    const chatList = [];
 
     for (const b of bookings) {
       const status = b.detailed_status || b.booking_status;
@@ -232,6 +295,64 @@ async function getChatList(req, res) {
       });
     }
 
+    // For Artist, append Admin Support Chat if any messages exist
+    if (role === "ARTIST") {
+      const lastAdminMsg = await db.Message.findOne({
+        where: {
+          booking_id: null,
+          [Op.or]: [
+            { sender_id: userId },
+            { receiver_id: userId }
+          ]
+        },
+        order: [["createdAt", "DESC"]]
+      });
+
+      if (lastAdminMsg) {
+        const adminId = lastAdminMsg.sender_id === userId ? lastAdminMsg.receiver_id : lastAdminMsg.sender_id;
+        const adminUser = await db.User.findByPk(adminId, {
+          attributes: ["id", "name", "profile_image", "hide_last_seen", "last_login_at"]
+        });
+
+        if (adminUser) {
+          const unreadCount = await db.Message.count({
+            where: {
+              booking_id: null,
+              receiver_id: userId,
+              sender_id: adminId,
+              is_read: false
+            }
+          });
+
+          chatList.push({
+            bookingId: `admin_${adminId}`,
+            bookingCode: "ADMIN",
+            serviceName: "Support Chat",
+            roomSettings: {
+              isPinned: false,
+              isArchived: false
+            },
+            recipient: {
+              id: adminUser.id,
+              name: adminUser.name || "System Admin",
+              profileImage: adminUser.profile_image,
+              hideLastSeen: adminUser.hide_last_seen,
+              lastSeen: adminUser.last_login_at
+            },
+            lastMessage: {
+              id: lastAdminMsg.id,
+              message: lastAdminMsg.is_deleted_everyone ? "This message was deleted" : lastAdminMsg.message,
+              messageType: lastAdminMsg.message_type,
+              createdAt: lastAdminMsg.createdAt,
+              senderId: lastAdminMsg.sender_id,
+              isRead: lastAdminMsg.is_read
+            },
+            unreadCount
+          });
+        }
+      }
+    }
+
     return res.status(200).json(SuccessResponse("Chat list retrieved", chatList));
   } catch (error) {
     return res.status(500).json(ErrorResponse(error.message, error));
@@ -273,6 +394,77 @@ async function getChatHistory(req, res) {
           auth = await getChatAuthContext(userId, bookingId);
         }
       }
+    }
+
+    // Direct Admin-Artist chat authorization fallback (no booking ID)
+    let isAdminArtist = false;
+    let otherUserId = null;
+
+    if (!auth) {
+      let targetUserIdStr = bookingId;
+      if (typeof bookingId === "string" && bookingId.startsWith("admin_")) {
+        targetUserIdStr = bookingId.split("_")[1];
+      }
+
+      const otherUserIdParsed = parseInt(targetUserIdStr);
+      if (!isNaN(otherUserIdParsed)) {
+        const otherUser = await db.User.findByPk(otherUserIdParsed);
+        if (otherUser) {
+          const isUserAdmin = req.user.role === "ADMIN";
+          const isUserArtist = req.user.role === "ARTIST";
+          const isOtherAdmin = otherUser.role === "ADMIN";
+          const isOtherArtist = otherUser.role === "ARTIST";
+
+          if ((isUserAdmin && isOtherArtist) || (isUserArtist && isOtherAdmin)) {
+            isAdminArtist = true;
+            otherUserId = otherUser.id;
+          }
+        }
+      }
+    }
+
+    if (isAdminArtist) {
+      const messages = await db.Message.findAll({
+        where: {
+          booking_id: null,
+          [Op.or]: [
+            { sender_id: userId, receiver_id: otherUserId, deleted_by_sender: false },
+            { sender_id: otherUserId, receiver_id: userId, deleted_by_receiver: false }
+          ]
+        },
+        include: [
+          { model: db.MessageMedia, as: "media" },
+          { model: db.Message, as: "parentMessage", include: [{ model: db.MessageMedia, as: "media" }] }
+        ],
+        order: [["createdAt", "DESC"]],
+        limit,
+        offset
+      });
+
+      // Mark these as read
+      await db.Message.update(
+        { is_read: true },
+        {
+          where: {
+            booking_id: null,
+            sender_id: otherUserId,
+            receiver_id: userId,
+            is_read: false
+          }
+        }
+      );
+
+      // Notify via WebSocket
+      const io = getIO();
+      const virtualRoomId = `admin_${req.user.role === "ADMIN" ? otherUserId : userId}`;
+      io.to(userId.toString()).to(otherUserId.toString()).emit("messages_read", {
+        bookingId: virtualRoomId,
+        readerId: userId,
+        sender_id: otherUserId, // web compat
+        receiver_id: userId // web compat
+      });
+
+      return res.status(200).json(SuccessResponse("Chat history retrieved", messages.reverse()));
     }
 
     if (!auth) {
@@ -332,8 +524,99 @@ async function getChatHistory(req, res) {
 async function sendMessage(req, res) {
   try {
     const userId = req.user.id;
-    let { bookingId, receiver_id, message, message_type, parent_message_id, media } = req.body;
+    let { bookingId, receiver_id, message, message_type, messageType, parent_message_id, parentMessageId, media } = req.body;
 
+    const finalMessageType = message_type || messageType || "TEXT";
+    const finalParentMessageId = parent_message_id || parentMessageId || null;
+
+    // Check if it is Admin-Artist chat request
+    let isAdminArtist = false;
+    let otherUserId = receiver_id;
+
+    if (bookingId && typeof bookingId === "string" && bookingId.startsWith("admin_")) {
+      otherUserId = parseInt(bookingId.split("_")[1]);
+      bookingId = null;
+    }
+
+    if (!bookingId) {
+      // Validate roles of sender and receiver
+      if (otherUserId) {
+        const otherUser = await db.User.findByPk(otherUserId);
+        if (otherUser) {
+          const isUserAdmin = req.user.role === "ADMIN";
+          const isUserArtist = req.user.role === "ARTIST";
+          const isOtherAdmin = otherUser.role === "ADMIN";
+          const isOtherArtist = otherUser.role === "ARTIST";
+
+          if ((isUserAdmin && isOtherArtist) || (isUserArtist && isOtherAdmin)) {
+            isAdminArtist = true;
+          }
+        }
+      }
+    }
+
+    if (isAdminArtist) {
+      const blocked = await isBlocked(userId, otherUserId);
+      if (blocked) {
+        return res.status(403).json(ErrorResponse("Message blocked. Communication restricted."));
+      }
+
+      const newMsg = await db.Message.create({
+        sender_id: userId,
+        receiver_id: otherUserId,
+        booking_id: null,
+        message: message || "",
+        message_type: finalMessageType,
+        parent_message_id: finalParentMessageId,
+        is_read: false
+      });
+
+      let savedMedia = null;
+      if (media) {
+        savedMedia = await db.MessageMedia.create({
+          message_id: newMsg.id,
+          file_url: media.file_url,
+          file_type: media.file_type,
+          file_size: media.file_size,
+          duration: media.duration,
+          waveform: media.waveform ? JSON.stringify(media.waveform) : null
+        });
+      }
+
+      const completeMsg = await db.Message.findByPk(newMsg.id, {
+        include: [
+          { model: db.MessageMedia, as: "media" },
+          { model: db.Message, as: "parentMessage", include: [{ model: db.MessageMedia, as: "media" }] }
+        ]
+      });
+
+      // Emit via sockets
+      const io = getIO();
+      const virtualRoomId = `admin_${req.user.role === "ADMIN" ? otherUserId : userId}`;
+      
+      // Emit web and mobile events
+      io.to(userId.toString()).to(otherUserId.toString()).emit("receive_message", completeMsg);
+      io.to(userId.toString()).to(otherUserId.toString()).emit("receive-message", completeMsg);
+
+      io.to(otherUserId.toString()).emit("unread_update", {
+        bookingId: virtualRoomId,
+        unreadCount: 1,
+        sender_id: userId // web compat
+      });
+
+      // Create system notification for push
+      await db.Notification.create({
+        user_id: otherUserId,
+        title: "New Message",
+        message: `${req.user.name || "System Admin"} sent you a message`,
+        type: "CHAT",
+        data: { bookingId: virtualRoomId } // Deep linking param saved in data JSON
+      });
+
+      return res.status(201).json(SuccessResponse("Message sent", completeMsg));
+    }
+
+    // Standard Customer-Artist chat flow
     if (!bookingId && receiver_id) {
       // Find latest confirmed booking between userId and receiver_id
       const artist = await db.ArtistProfile.findOne({
@@ -380,8 +663,8 @@ async function sendMessage(req, res) {
       receiver_id: auth.otherUserId,
       booking_id: bookingId,
       message: message || "",
-      message_type: message_type || "TEXT",
-      parent_message_id: parent_message_id || null,
+      message_type: finalMessageType,
+      parent_message_id: finalParentMessageId,
       is_read: false
     });
 
@@ -406,22 +689,28 @@ async function sendMessage(req, res) {
 
     // Emit via sockets
     const io = getIO();
-    io.to(`booking_room_${bookingId}`).emit("receive_message", completeMsg);
+    io.to(`booking_room_${bookingId}`).emit("receive-message", completeMsg);
+    io.to(`booking_room_${bookingId}`).emit("receive_message", completeMsg); // Web compat
 
     // Dynamic unread count updates
     io.to(auth.otherUserId.toString()).emit("unread_update", {
       bookingId,
-      unreadCount: 1
+      unreadCount: 1,
+      sender_id: userId // web compat
     });
 
     // Create system notification for push
     await db.Notification.create({
       user_id: auth.otherUserId,
-      title: `New Message from ${req.user.name || "MehndiGo User"}`,
-      message: message_type === "TEXT" ? message : `Sent an attachment: ${message_type}`,
+      title: "New Message",
+      message: `${req.user.name || "MehndiGo User"} sent you a message`,
       type: "CHAT",
+<<<<<<< HEAD
       booking_id: bookingId,
       data: JSON.stringify({ bookingId: bookingId, booking_id: bookingId, senderId: req.user.id })
+=======
+      data: { bookingId: bookingId.toString() } // Deep linking param saved in data JSON
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
     });
 
     return res.status(201).json(SuccessResponse("Message sent", completeMsg));
@@ -529,19 +818,25 @@ async function uploadMedia(req, res) {
     }
 
     const { size, mimetype } = req.file;
+    const isDoc = mimetype === "application/pdf" || 
+                  mimetype.startsWith("application/vnd.") || 
+                  mimetype.startsWith("application/msword") ||
+                  mimetype.startsWith("text/") || 
+                  mimetype.includes("zip");
+
     if (mimetype.startsWith("image/") && size > 5 * 1024 * 1024) {
       return res.status(400).json(ErrorResponse("Image exceeds 5MB size limit"));
     }
     if (mimetype.startsWith("video/") && size > 20 * 1024 * 1024) {
       return res.status(400).json(ErrorResponse("Video exceeds 20MB size limit"));
     }
-    if (mimetype === "application/pdf" && size > 10 * 1024 * 1024) {
-      return res.status(400).json(ErrorResponse("PDF exceeds 10MB size limit"));
+    if (isDoc && size > 10 * 1024 * 1024) {
+      return res.status(400).json(ErrorResponse("Document exceeds 10MB size limit"));
     }
 
     let fileType = "image";
     if (mimetype.startsWith("video/")) fileType = "video";
-    else if (mimetype === "application/pdf") fileType = "pdf";
+    else if (isDoc) fileType = "pdf";
     else if (mimetype.startsWith("audio/") || mimetype.startsWith("application/octet-stream")) fileType = "voice";
 
     return res.status(201).json(SuccessResponse("Media uploaded successfully", {

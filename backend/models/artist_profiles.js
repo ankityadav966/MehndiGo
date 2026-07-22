@@ -176,6 +176,26 @@ module.exports = (
       last_location_update: {
         type: DataTypes.DATE,
       },
+
+      intro_video: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
+
+      portfolio_video: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
+
+      intro_video_thumbnail: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
+
+      portfolio_video_thumbnail: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
     },
     {
       sequelize,

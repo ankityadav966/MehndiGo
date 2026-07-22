@@ -57,4 +57,10 @@ router.get("/withdrawals", authenticate, authorize("ADMIN"), AdminController.get
 router.patch("/withdraw/:id/approve", authenticate, authorize("ADMIN"), AdminController.approveWithdrawal);
 router.patch("/withdraw/:id/reject", authenticate, authorize("ADMIN"), AdminController.rejectWithdrawal);
 
+// Commission Wallet analytics & logs
+router.get("/wallet/summary", authenticate, authorize("ADMIN"), AdminController.getWalletSummary);
+router.get("/wallet/commission-history", authenticate, authorize("ADMIN"), AdminController.getCommissionHistory);
+router.get("/wallet/dashboard-summary", authenticate, authorize("ADMIN"), AdminController.getDashboardSummary);
+router.get("/wallet/transaction/:id", authenticate, authorize("ADMIN"), AdminController.getWalletTransactionDetails);
+
 module.exports = router;

@@ -55,73 +55,89 @@ class WalletService {
   }
 
   async addWalletMoney(userId, data) {
-    const { amount, razorpay_order_id, razorpay_payment_id, razorpay_signature } = data;
-
-    let isValid = true;
-    if (razorpay_signature && !razorpay_order_id.startsWith("order_mock")) {
-      const generated_signature = crypto
-        .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET || "key_secret")
-        .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-        .digest("hex");
-      isValid = generated_signature === razorpay_signature;
-    }
-
-    if (!isValid) {
-      throw new AppError("Payment signature verification failed", 400);
-    }
-
+    console.log("[WALLET_SERVICE] addWalletMoney request payload:", JSON.stringify(data, null, 2));
+    const paymentService = require("./payment.services");
+    
+    const verifyData = {
+      cashfree_order_id: data.cashfree_order_id || data.order_id || data.orderId,
+      payment_session_id: data.payment_session_id
+    };
+    
+    console.log("[WALLET_SERVICE] Calling paymentService.verifyPayment with payload:", JSON.stringify(verifyData, null, 2));
+    await paymentService.verifyPayment(userId, verifyData);
+    console.log("[WALLET_SERVICE] paymentService.verifyPayment succeeded. Proceeding to credit wallet.");
+    
     const wallet = await this.getOrCreateWallet(userId);
-    const newBalance = wallet.balance + Number(amount);
-    await wallet.update({ balance: newBalance });
-
-    const tx = await db.WalletTransaction.create({
-      wallet_id: wallet.id,
-      transaction_type: "RECHARGE",
-      amount: Number(amount),
-      status: "SUCCESS",
-      description: `Recharge via Online Payment ID: ${razorpay_payment_id || "mock"}`
+    const tx = await db.WalletTransaction.findOne({
+      where: { wallet_id: wallet.id, transaction_type: "RECHARGE" },
+      order: [["createdAt", "DESC"]]
     });
-
+    
     return { wallet, tx };
   }
 
   async initiateWithdrawal(userId, amount) {
-    const wallet = await this.getOrCreateWallet(userId);
-    if (wallet.balance < Number(amount)) {
-      throw new AppError("Sufficient wallet balance required to withdraw", 400);
+    const t = await db.sequelize.transaction();
+    try {
+      // Get or create wallet row safely with row update lock
+      let wallet = await db.Wallet.findOne({ 
+        where: { user_id: userId },
+        lock: t.LOCK.UPDATE,
+        transaction: t
+      });
+      if (!wallet) {
+        wallet = await db.Wallet.create({ user_id: userId, balance: 0 }, { transaction: t });
+      }
+
+      if (wallet.balance < Number(amount)) {
+        console.error(`[WalletDeductionFailed] Insufficient wallet balance for withdrawal. User: ${userId}, Requested: ${amount}, Available: ${wallet.balance}`);
+        throw new AppError("You don't have enough wallet balance to complete this transaction.", 400);
+      }
+
+      const artist = await db.ArtistProfile.findOne({ 
+        where: { user_id: userId },
+        transaction: t
+      });
+      if (!artist) {
+        throw new AppError("Artist profile profile required for withdrawal requests", 404);
+      }
+
+      const request = await db.WithdrawRequest.create({
+        artist_id: artist.id,
+        amount: Number(amount),
+        status: "PENDING"
+      }, { transaction: t });
+
+      const newBalance = wallet.balance - Number(amount);
+      await wallet.update({ balance: newBalance }, { transaction: t });
+
+      await db.WalletTransaction.create({
+        wallet_id: wallet.id,
+        transaction_type: "WITHDRAWAL",
+        amount: Number(amount),
+        status: "PENDING",
+        description: `Withdraw request ID: WR-${request.id}`
+      }, { transaction: t });
+
+      await t.commit();
+
+      // Notify admin
+      try {
+        await db.Notification.create({
+          user_id: 1, // Admin index
+          title: "New Withdrawal Request 💸",
+          message: `Artist ${userId} requested withdrawal of ₹${amount}.`,
+          type: "SYSTEM"
+        });
+      } catch (notifErr) {
+        console.error("Error creating withdrawal admin notification:", notifErr.message);
+      }
+
+      return request;
+    } catch (error) {
+      await t.rollback();
+      throw error;
     }
-
-    const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
-    if (!artist) {
-      throw new AppError("Artist profile profile required for withdrawal requests", 404);
-    }
-
-    const request = await db.WithdrawRequest.create({
-      artist_id: artist.id,
-      amount: Number(amount),
-      status: "PENDING"
-    });
-
-    const newBalance = wallet.balance - Number(amount);
-    await wallet.update({ balance: newBalance });
-
-    await db.WalletTransaction.create({
-      wallet_id: wallet.id,
-      transaction_type: "WITHDRAWAL",
-      amount: Number(amount),
-      status: "PENDING",
-      description: `Withdraw request ID: WR-${request.id}`
-    });
-
-    // Notify admin
-    await db.Notification.create({
-      user_id: 1, // Admin index
-      title: "New Withdrawal Request 💸",
-      message: `Artist ${userId} requested withdrawal of ₹${amount}.`,
-      type: "SYSTEM"
-    });
-
-    return request;
   }
 
   async cancelWithdrawal(userId, requestId) {
@@ -131,7 +147,7 @@ class WalletService {
     }
 
     const artist = await db.ArtistProfile.findByPk(request.artist_id);
-    if (!artist || artist.user_id !== userId) {
+    if (!artist || Number(artist.user_id) !== Number(userId)) {
       throw new AppError("Unauthorized action", 403);
     }
 

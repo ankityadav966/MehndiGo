@@ -1,0 +1,22 @@
+# Ignore local dependencies
+node_modules/
+
+# Ignore generated native folders
+android/
+ios/
+
+# Ignore local config and build caches
+.expo/
+dist/
+web-build/
+.kotlin/
+
+# Ignore local env settings
+.env*.local
+.env.local
+
+# Ignore logs
+*.log
+npm-debug.*
+yarn-debug.*
+yarn-error.*

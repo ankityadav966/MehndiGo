@@ -5,7 +5,12 @@ import { useAuth } from '../context/AuthContext';
 import { getGlobalStyles } from '../theme/globalStyles';
 import { Colors } from '../theme/colors';
 import { Bell, Check } from 'lucide-react-native';
+<<<<<<< HEAD
 import { SOCKET_URL } from '../services/api';
+=======
+
+const SOCKET_URL = 'https://mehandigo-api.globalrns.com';
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
 
 export default function NotificationsScreen() {
   const { user, theme } = useAuth();

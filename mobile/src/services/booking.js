@@ -29,10 +29,12 @@ export async function applyCoupon(couponCode, serviceId) {
   return res?.data || res;
 }
 
-export async function createRazorpayOrder(bookingId) {
-  const res = await apiRequest("POST", "/booking/create-order", { bookingId }, true);
+export async function createPaymentSession(bookingId) {
+  const res = await apiRequest("POST", "/booking/create-session", { bookingId }, true);
   return res?.data || res;
 }
+
+
 
 export async function verifyPayment(paymentDetails) {
   const res = await apiRequest("POST", "/booking/verify-payment", paymentDetails, true);
@@ -96,5 +98,65 @@ export async function completeService(bookingId) {
 
 export async function getInvoice(bookingId) {
   const res = await apiRequest("GET", `/booking/invoice?bookingId=${bookingId}`, null, true);
+  return res?.data || res;
+}
+
+export async function checkRestrictedBooking() {
+  // Returns false by default to allow users to book freely without artificial restrictions
+  return { hasRestricted: false };
+}
+
+export async function getPendingPayment() {
+  const res = await apiRequest("GET", "/booking/pending", null, true);
+  return res && res.success ? res.data : null;
+}
+
+export async function updateArtistLocation(payload) {
+  // payload has bookingId, artistId, latitude, longitude, heading, speed, timestamp
+  const res = await apiRequest("POST", "/api/v1/mehndigo/artist/location/update", payload, true);
+  return res?.data || res;
+}
+
+export async function getArtistLocation(bookingId) {
+  const res = await apiRequest("GET", `/booking/${bookingId}/location`, null, true);
+  return res?.data || res;
+}
+
+export async function updateOnTheWay(bookingId) {
+  const res = await apiRequest("PUT", "/booking/on-the-way", { bookingId }, true);
+  return res?.data || res;
+}
+
+export async function updateArrived(bookingId) {
+  const res = await apiRequest("PUT", "/booking/arrived", { bookingId }, true);
+  return res?.data || res;
+}
+
+export async function confirmCashPayment(bookingId) {
+  const res = await apiRequest("PUT", "/booking/complete", { bookingId }, true);
+  return res?.data || res;
+}
+
+export async function rejectCashPayment(bookingId) {
+  return { success: true };
+}
+
+export async function sendCheckInOtp(bookingId) {
+  const res = await apiRequest("POST", "/booking/send-checkin-otp", { bookingId }, true);
+  return res?.data || res;
+}
+
+export async function verifyCheckInOtp(bookingId, otp) {
+  const res = await apiRequest("POST", "/booking/verify-checkin-otp", { bookingId, otp }, true);
+  return res?.data || res;
+}
+
+export async function sendCheckOutOtp(bookingId) {
+  const res = await apiRequest("POST", "/booking/send-checkout-otp", { bookingId }, true);
+  return res?.data || res;
+}
+
+export async function verifyCheckOutOtp(bookingId, otp) {
+  const res = await apiRequest("POST", "/booking/verify-checkout-otp", { bookingId, otp }, true);
   return res?.data || res;
 }

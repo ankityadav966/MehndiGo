@@ -17,12 +17,7 @@ import { sendOtp } from "../../services/auth";
 export default function RegisterScreen({ navigation }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [mobile, setMobile] = useState("");
-  const [role, setRole] = useState("USER");
-  const [loading, setLoading] = useState(false);
-  const [nameError, setNameError] = useState("");
   const [emailError, setEmailError] = useState("");
-  const [mobileError, setMobileError] = useState("");
   const [apiError, setApiError] = useState("");
   const [referralCode, setReferralCode] = useState("");
 
@@ -44,15 +39,12 @@ export default function RegisterScreen({ navigation }) {
   const handleRegister = async () => {
     setNameError("");
     setEmailError("");
-    setMobileError("");
+    setEmailError("");
     setApiError("");
 
     const trimmedName = name.trim();
     const trimmedEmail = email.trim();
-    let trimmedPhone = mobile.trim();
-    if (trimmedPhone && !trimmedPhone.startsWith("+")) {
-      trimmedPhone = `+91${trimmedPhone}`;
-    }
+
 
     if (!trimmedName) {
       setNameError("Please enter your name");
@@ -64,17 +56,13 @@ export default function RegisterScreen({ navigation }) {
       return;
     }
 
-    if (!trimmedPhone || trimmedPhone.length < 10) {
-      setMobileError("Please enter a valid mobile number");
-      return;
-    }
+
 
     setLoading(true);
     try {
-      const otpRes = await sendOtp(trimmedName, trimmedEmail, trimmedPhone, role);
+      const otpRes = await sendOtp(trimmedName, trimmedEmail, role);
       const otp = otpRes?.data?.otp ? String(otpRes.data.otp) : "";
       navigation.navigate("Otp", {
-        phone: trimmedPhone,
         name: trimmedName,
         email: trimmedEmail,
         role,
@@ -139,21 +127,7 @@ export default function RegisterScreen({ navigation }) {
         </View>
         {emailError ? <Text style={styles.errorText}>{emailError}</Text> : null}
 
-        <View style={[styles.inputContainer, mobileError ? styles.inputError : null]}>
-          <TextInput
-            value={mobile}
-            onChangeText={(text) => {
-              setMobile(text);
-              setMobileError("");
-            }}
-            style={styles.input}
-            placeholder="Mobile Number"
-            placeholderTextColor={Colors.placeholder}
-            keyboardType="phone-pad"
-            maxLength={15}
-          />
-        </View>
-        {mobileError ? <Text style={styles.errorText}>{mobileError}</Text> : null}
+
 
         {apiError ? <Text style={styles.errorText}>{apiError}</Text> : null}
 

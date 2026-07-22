@@ -242,14 +242,7 @@ const LandingPage = ({ showToast }) => {
                     >
                       {user.email || "No email provided"}
                     </p>
-                    <p
-                      style={{
-                        margin: "0 0 1rem 0",
-                        color: "var(--text-secondary)",
-                      }}
-                    >
-                      {user.phone || "No phone provided"}
-                    </p>
+
                     <div
                       style={{
                         display: "flex",

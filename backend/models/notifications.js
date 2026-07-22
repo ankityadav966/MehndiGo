@@ -30,7 +30,7 @@ module.exports = (sequelize, DataTypes) => {
       },
 
       type: {
-        type: DataTypes.ENUM("BOOKING", "PAYMENT", "SYSTEM", "PROMOTION"),
+        type: DataTypes.ENUM("BOOKING", "PAYMENT", "SYSTEM", "PROMOTION", "CHAT"),
         allowNull: false,
       },
 
@@ -38,6 +38,12 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.BOOLEAN,
         allowNull: false,
         defaultValue: false,
+      },
+
+      data: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        defaultValue: null
       },
     },
     {
@@ -64,7 +70,8 @@ module.exports = (sequelize, DataTypes) => {
               let dataPayload = {
                 type: notification.type ? notification.type.toLowerCase() : "system",
                 event: "system_notification",
-                notificationId: notification.id
+                notificationId: notification.id,
+                ...(notification.data || {})
               };
 
               const titleText = notification.title.toLowerCase();
@@ -88,6 +95,8 @@ module.exports = (sequelize, DataTypes) => {
                 if (titleText.includes("fail")) {
                   dataPayload.event = "payment_failed";
                 }
+              } else if (notification.type === "CHAT") {
+                dataPayload.event = "new_message";
               }
 
               // Send push notification

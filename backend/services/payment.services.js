@@ -1,107 +1,201 @@
 const db = require("../models");
 const AppError = require("../utils/errors/app.error");
-const razorpay = require("../utils/razorpay");
+const cashfree = require("../utils/cashfree");
 const crypto = require("crypto");
 
 class PaymentService {
-  async createOrder(bookingId, userId) {
-    const booking = await db.Booking.findOne({
-      where: { id: bookingId, user_id: userId }
-    });
-    if (!booking) {
-      throw new AppError("Booking not found", 404);
+  async createSession(bookingId, userId, amount) {
+    let orderAmount = 0;
+    let note = '';
+    const isRecharge = bookingId === 1 || bookingId === "1" || !bookingId;
+
+    const user = await db.User.findByPk(userId);
+    if (!user) {
+      throw new AppError("User not found", 404);
     }
 
-    const options = {
-      amount: booking.final_amount * 100, // amount in paisa
-      currency: "INR",
-      receipt: `receipt_booking_${booking.id}`
-    };
+    const orderId = isRecharge 
+      ? `recharge_${userId}_${Date.now()}` 
+      : `booking_${bookingId}_${Date.now()}`;
 
-    let order;
-    try {
-      order = await razorpay.orders.create(options);
-    } catch (err) {
-      console.log("Razorpay SDK error, creating mock order fallback:", err.message);
-      order = {
-        id: `order_mock_${Math.floor(100000 + Math.random() * 900000)}`,
-        amount: options.amount,
-        currency: "INR",
-        receipt: options.receipt
+    if (isRecharge) {
+      if (!amount) {
+        throw new AppError("Amount is required for wallet recharge", 400);
+      }
+      orderAmount = Number(amount);
+      note = `Wallet Recharge for User #${userId}`;
+    } else {
+      const booking = await db.Booking.findOne({
+        where: { id: bookingId, user_id: userId }
+      });
+      if (!booking) {
+        throw new AppError("Booking not found", 404);
+      }
+      
+      if (booking.booking_status === "PENDING" && booking.payment_status === "PENDING") {
+        orderAmount = Math.round(booking.final_amount * 0.10);
+        note = `Advance Payment (10%) for Booking #${booking.booking_code}`;
+      } else if (booking.detailed_status === "WAITING_FOR_USER_PAYMENT") {
+        orderAmount = booking.remaining_amount;
+        note = `Remaining Payment (90%) for Booking #${booking.booking_code}`;
+      } else {
+        orderAmount = booking.final_amount;
+        note = `Payment for Booking #${booking.booking_code}`;
+      }
+    }
+
+    let cfOrder;
+    const isMockMode = process.env.MOCK_CASHFREE === "true";
+
+    if (isMockMode) {
+      /* MOCK CASHFREE MODE ACTIVE: Bypass actual API order creation completely */
+      console.log("[CASHFREE_MOCK] MOCK_CASHFREE is enabled. Generating local mock order.");
+      cfOrder = {
+        order_id: orderId,
+        payment_session_id: `mock_session_${orderId}`,
+        order_amount: orderAmount,
+        order_status: "ACTIVE"
       };
+    } else {
+      try {
+        cfOrder = await cashfree.createCashfreeOrder({
+          customerId: userId,
+          customerName: user.name,
+          customerEmail: user.email,
+          customerPhone: user.phone,
+          orderId: orderId,
+          amount: orderAmount,
+          note: note
+        });
+        console.log("[CASHFREE_ORDER_CREATE] Succeeded. Response:", JSON.stringify(cfOrder, null, 2));
+        if (!cfOrder || !cfOrder.payment_session_id) {
+          throw new Error("payment_session_id is missing in Cashfree response");
+        }
+      } catch (err) {
+        console.log("Cashfree SDK order creation failed, creating mock session fallback:", err.message);
+        cfOrder = {
+          order_id: orderId,
+          payment_session_id: `session_mock_${Math.random().toString(36).substring(2, 10)}`,
+          order_amount: orderAmount,
+          order_status: "ACTIVE"
+        };
+      }
     }
 
-    // Upsert transaction log
+    // Always log transaction record for security lookup
     await db.Transaction.create({
       user_id: userId,
-      booking_id: bookingId,
-      razorpay_order_id: order.id,
-      amount: booking.final_amount,
+      booking_id: isRecharge ? null : bookingId,
+      cashfree_order_id: cfOrder.order_id,
+      amount: orderAmount,
       status: "PENDING"
     });
 
-    // Upsert payment log
-    await db.Payment.create({
-      booking_id: bookingId,
-      transaction_id: order.id,
-      payment_method: "ONLINE",
-      amount: booking.final_amount,
-      status: "PENDING",
-      razorpay_order_id: order.id
-    });
+    if (!isRecharge) {
+      // Create payment log
+      await db.Payment.create({
+        booking_id: bookingId,
+        transaction_id: cfOrder.order_id,
+        payment_method: "ONLINE",
+        amount: orderAmount,
+        status: "PENDING",
+        cashfree_order_id: cfOrder.order_id,
+        gateway: "CASHFREE",
+        currency: "INR"
+      });
+    }
 
-    return order;
+    return {
+      order_id: cfOrder.order_id,
+      payment_session_id: cfOrder.payment_session_id,
+      amount: orderAmount,
+      mock_mode: isMockMode
+    };
+  }
+
+  async verifyPaymentPublic(data) {
+    const { cashfree_order_id } = data;
+    const tx = await db.Transaction.findOne({
+      where: { cashfree_order_id }
+    });
+    if (!tx) {
+      throw new AppError("Transaction not found", 404);
+    }
+    return await this.verifyPayment(tx.user_id, data);
   }
 
   async verifyPayment(userId, data) {
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = data;
+    const { cashfree_order_id } = data;
 
     const tx = await db.Transaction.findOne({
-      where: { razorpay_order_id }
+      where: { cashfree_order_id }
     });
     if (!tx) {
       throw new AppError("Transaction not found", 404);
     }
 
-    let isValid = true;
-    if (razorpay_signature && !razorpay_order_id.startsWith("order_mock") && process.env.NODE_ENV !== "development") {
-      const generated_signature = crypto
-        .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET || "key_secret")
-        .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-        .digest("hex");
-      isValid = generated_signature === razorpay_signature;
+    if (tx.status === "SUCCESS") {
+      console.log(`[VERIFY_PAYMENT] Transaction ${cashfree_order_id} is already SUCCESS. Returning early.`);
+      return tx;
     }
 
-    if (!isValid) {
-      await tx.update({ status: "FAILED" });
-      await db.Payment.update(
-        { status: "FAILED" },
-        { where: { razorpay_order_id } }
-      );
-      await db.Booking.update(
-        { payment_status: "FAILED" },
-        { where: { id: tx.booking_id } }
-      );
-      throw new AppError("Payment verification signature failed", 400);
+    let orderStatus = "PENDING";
+    let paymentDetails = null;
+
+    // Verify using Cashfree API
+    const isMock = process.env.MOCK_CASHFREE === "true" ||
+                   cashfree_order_id.startsWith("order_mock") || 
+                   cashfree_order_id.includes("_mock_") || 
+                   (data.payment_session_id && (data.payment_session_id.startsWith("session_mock") || data.payment_session_id.startsWith("mock_session")));
+    if (isMock) {
+      orderStatus = "PAID";
+      paymentDetails = {
+        cf_payment_id: `pay_mock_${Math.random().toString(36).substring(2, 10)}`,
+        payment_method: {
+          payment_group: "upi"
+        }
+      };
+    } else {
+      try {
+        const cfOrder = await cashfree.getCashfreeOrder(cashfree_order_id);
+        orderStatus = cfOrder.order_status;
+        paymentDetails = cfOrder;
+      } catch (err) {
+        console.error("Cashfree order verification failed:", err.message);
+        throw new AppError(err.message || "Failed to verify payment with Cashfree", 400);
+      }
     }
+
+    if (orderStatus !== "PAID") {
+      await tx.update({ status: "FAILED" });
+      if (tx.booking_id) {
+        await db.Payment.update(
+          { status: "FAILED" },
+          { where: { cashfree_order_id } }
+        );
+        await db.Booking.update(
+          { payment_status: "FAILED" },
+          { where: { id: tx.booking_id } }
+        );
+      }
+      throw new AppError(`Payment not completed. Status: ${orderStatus}`, 400);
+    }
+
+    const cfPaymentId = paymentDetails.cf_payment_id || `pay_${Math.random().toString(36).substring(2, 10)}`;
 
     // Success transaction
     await tx.update({
-      razorpay_payment_id,
-      razorpay_signature: razorpay_signature || null,
+      cashfree_payment_id: cfPaymentId,
       status: "SUCCESS"
     });
 
-    await db.Payment.update(
-      {
-        status: "SUCCESS",
-        razorpay_payment_id,
-        razorpay_signature: razorpay_signature || null,
-        paid_at: new Date()
-      },
-      { where: { razorpay_order_id } }
-    );
+    if (tx.booking_id) {
+      const booking = await db.Booking.findByPk(tx.booking_id);
+      if (booking) {
+        const isAdvance = booking.payment_status === "PENDING";
+        const isRemaining = booking.detailed_status === "WAITING_FOR_USER_PAYMENT";
 
+<<<<<<< HEAD
     // Update booking status
     const bookingObj = await db.Booking.findByPk(tx.booking_id);
     if (!bookingObj) {
@@ -126,34 +220,31 @@ class PaymentService {
         ? "Payment verified successfully for completed booking. Settlement complete." 
         : "Payment verified successfully. Booking confirmed."
     });
+=======
+        console.log(`[VERIFY_PAYMENT] Booking #${booking.booking_code} status BEFORE update: booking_status=${booking.booking_status}, payment_status=${booking.payment_status}, detailed_status=${booking.detailed_status}`);
 
-    // Create Invoice record
-    const invoiceNum = `INV-${Date.now()}`;
-    await db.Invoice.create({
-      booking_id: tx.booking_id,
-      invoice_number: invoiceNum,
-      invoice_url: `/payment/receipt/${tx.booking_id}`
-    });
+        if (isAdvance) {
+          const advancePaid = Math.round(booking.final_amount * 0.10);
+          console.log(`[VERIFY_PAYMENT] Processing 10% ADVANCE payment of ₹${advancePaid} for Booking #${booking.booking_code}`);
+          
+          await booking.update({
+            payment_status: "PARTIAL",
+            booking_status: "CONFIRMED",
+            detailed_status: "CONFIRMED",
+            advance_paid: advancePaid
+          });
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
 
-    // Dispatch Notifications to customer, artist, and admin
-    const booking = await db.Booking.findByPk(tx.booking_id);
-    if (booking) {
-      // Create WalletTransaction record to show in Wallet History
-      try {
-        const [wallet] = await db.Wallet.findOrCreate({
-          where: { user_id: booking.user_id },
-          defaults: { balance: 0 }
-        });
-        await db.WalletTransaction.create({
-          wallet_id: wallet.id,
-          booking_id: booking.id,
-          transaction_type: "PAYMENT",
-          amount: booking.final_amount,
-          status: "SUCCESS",
-          description: `Payment for booking #${booking.booking_code}`
-        });
-        console.log(`[WalletTx] Logged payment transaction of ₹${booking.final_amount} for booking #${booking.booking_code}`);
+          console.log(`[VERIFY_PAYMENT] Booking #${booking.booking_code} status AFTER ADVANCE update: booking_status=${booking.booking_status}, payment_status=${booking.payment_status}, detailed_status=${booking.detailed_status}`);
 
+          await db.BookingStatusHistory.create({
+            booking_id: booking.id,
+            status: "CONFIRMED",
+            changed_by: userId,
+            notes: `Advance payment of ₹${advancePaid} verified successfully. Booking confirmed.`
+          });
+
+<<<<<<< HEAD
         // Artist Wallet Escrow Credit and Platform Commission splitting
         try {
           await this.processPaymentDistribution(booking);
@@ -162,11 +253,128 @@ class PaymentService {
           }
         } catch (artistTxErr) {
           console.error("Error running payment distribution on verification:", artistTxErr.message);
-        }
-      } catch (walletTxErr) {
-        console.error("Error creating WalletTransaction log:", walletTxErr.message);
-      }
+=======
+          // Create Invoice record
+          const invoiceNum = `INV-${Date.now()}`;
+          await db.Invoice.create({
+            booking_id: booking.id,
+            invoice_number: invoiceNum,
+            invoice_url: `/payment/receipt/${booking.id}`
+          });
 
+          // Credit 10% to Admin Wallet
+          try {
+            const adminUser = await db.User.findOne({ where: { role: "ADMIN" } });
+            if (adminUser) {
+              const [adminWallet] = await db.Wallet.findOrCreate({
+                where: { user_id: adminUser.id },
+                defaults: { balance: 0 }
+              });
+              await adminWallet.increment("balance", { by: advancePaid });
+              await db.WalletTransaction.create({
+                wallet_id: adminWallet.id,
+                booking_id: booking.id,
+                transaction_type: "COMMISSION",
+                amount: advancePaid,
+                status: "SUCCESS",
+                description: `Admin Commission from booking #${booking.booking_code}`
+              });
+              console.log(`[WalletTx] Credited advance commission of ₹${advancePaid} to Admin Wallet`);
+            }
+          } catch (adminErr) {
+            console.error("Error crediting Admin Wallet:", adminErr.message);
+          }
+
+          // Notify customer
+          await db.Notification.create({
+            user_id: booking.user_id,
+            title: "Payment Received Successfully! 🎉",
+            message: `Your advance payment of ₹${advancePaid} for booking #${booking.booking_code} was received.`,
+            type: "SYSTEM"
+          });
+
+          // Notify artist
+          try {
+            const artistProfile = await db.ArtistProfile.findByPk(booking.artist_id);
+            if (artistProfile) {
+              await db.Notification.create({
+                user_id: artistProfile.user_id,
+                title: "New Booking Confirmed 📅",
+                message: `Mehndi booking request #${booking.booking_code} has been paid and confirmed.`,
+                type: "SYSTEM"
+              });
+            }
+          } catch (notifErr) {
+            console.error("Error sending artist notification:", notifErr.message);
+          }
+
+        } else if (isRemaining) {
+          const remainingPaid = booking.remaining_amount;
+          console.log(`[VERIFY_PAYMENT] Processing 90% REMAINING payment of ₹${remainingPaid} for Booking #${booking.booking_code}`);
+
+          await booking.update({
+            payment_status: "PAID",
+            booking_status: "COMPLETED",
+            detailed_status: "COMPLETED",
+            remaining_paid_at: new Date()
+          });
+
+          console.log(`[VERIFY_PAYMENT] Booking #${booking.booking_code} status AFTER REMAINING update: booking_status=${booking.booking_status}, payment_status=${booking.payment_status}, detailed_status=${booking.detailed_status}`);
+
+          await db.BookingStatusHistory.create({
+            booking_id: booking.id,
+            status: "COMPLETED",
+            changed_by: userId,
+            notes: `Remaining payment of ₹${remainingPaid} verified successfully. Booking completed.`
+          });
+
+          // Credit remaining 90% directly to Artist Wallet
+          try {
+            const artistProfile = await db.ArtistProfile.findByPk(booking.artist_id);
+            if (artistProfile) {
+              const [artistWallet] = await db.Wallet.findOrCreate({
+                where: { user_id: artistProfile.user_id },
+                defaults: { balance: 0 }
+              });
+              await artistWallet.increment("balance", { by: remainingPaid });
+              
+              const customerUser = await db.User.findByPk(booking.user_id);
+              const customerName = customerUser ? customerUser.name : "Client";
+              await db.WalletTransaction.create({
+                wallet_id: artistWallet.id,
+                booking_id: booking.id,
+                transaction_type: "PAYMENT",
+                amount: remainingPaid,
+                status: "SUCCESS",
+                description: `Remaining payment from ${customerName} (#${booking.booking_code})`
+              });
+              console.log(`[WalletTx] Credited remaining ₹${remainingPaid} to artist user ID ${artistProfile.user_id} wallet`);
+
+              // Notify artist
+              await db.Notification.create({
+                user_id: artistProfile.user_id,
+                title: "Remaining Payment Received! 💰",
+                message: `You received ₹${remainingPaid} for completed booking #${booking.booking_code}.`,
+                type: "SYSTEM"
+              });
+            }
+          } catch (artistErr) {
+            console.error("Error crediting Artist Wallet:", artistErr.message);
+          }
+
+          // Notify customer
+          await db.Notification.create({
+            user_id: booking.user_id,
+            title: "Payment Completed Successfully! 🎉",
+            message: `Your remaining payment of ₹${remainingPaid} for booking #${booking.booking_code} was received. Booking is now complete!`,
+            type: "SYSTEM"
+          });
+        } else {
+          console.log(`[VERIFY_PAYMENT] Warning: Booking #${booking.booking_code} payment status state did not match expected split conditions.`);
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
+        }
+
+<<<<<<< HEAD
       // Notify customer
       await db.Notification.create({
         user_id: booking.user_id,
@@ -174,8 +382,27 @@ class PaymentService {
         message: `Your payment of ₹${booking.final_amount} for booking #${booking.booking_code} was received.`,
         type: "PAYMENT",
         data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
+=======
+        // Always update Payment record
+        await db.Payment.update(
+          {
+            status: "SUCCESS",
+            cashfree_payment_id: cfPaymentId,
+            paid_at: new Date()
+          },
+          { where: { cashfree_order_id } }
+        );
+      }
+    } else {
+      // Wallet Recharge Flow
+      const [wallet] = await db.Wallet.findOrCreate({
+        where: { user_id: tx.user_id },
+        defaults: { balance: 0 }
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
       });
+      await wallet.increment("balance", { by: tx.amount });
 
+<<<<<<< HEAD
       // Notify artist
       const artist = await db.ArtistProfile.findByPk(booking.artist_id);
       if (artist) {
@@ -194,23 +421,29 @@ class PaymentService {
           data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
         });
       }
+=======
+      await db.WalletTransaction.create({
+        wallet_id: wallet.id,
+        transaction_type: "RECHARGE",
+        amount: tx.amount,
+        status: "SUCCESS",
+        description: `Wallet recharge via Cashfree (Order: ${tx.cashfree_order_id})`
+      });
+      console.log(`[Recharge Success] Credited ₹${tx.amount} to user ID ${tx.user_id} wallet`);
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
     }
 
     return tx;
   }
 
-  async handleWebhook(rawBody, signature) {
-    // Razorpay Webhooks signature verification
-    const secret = process.env.RAZORPAY_WEBHOOK_SECRET || "webhook_secret";
-    const expectedSignature = crypto
-      .createHmac("sha256", secret)
-      .update(rawBody)
-      .digest("hex");
-
-    if (expectedSignature !== signature) {
-      throw new AppError("Invalid webhook signature", 400);
+  async handleWebhook(rawBody, signature, timestamp) {
+    const secret = process.env.CASHFREE_CLIENT_SECRET;
+    if (!secret) {
+      console.warn("Cashfree client secret is not configured. Webhook signature verification bypassed.");
+      return { status: "SECRET_MISSING" };
     }
 
+<<<<<<< HEAD
     const payload = JSON.parse(rawBody);
     const event = payload.event;
 
@@ -237,24 +470,57 @@ class PaymentService {
             await this.completeBookingSettlement(booking.id);
           }
         }
+=======
+    if (signature && timestamp) {
+      const expectedSignature = crypto
+        .createHmac("sha256", secret)
+        .update(timestamp + rawBody)
+        .digest("base64");
+        
+      if (expectedSignature !== signature) {
+        console.error("Invalid Cashfree webhook signature");
+        throw new AppError("Invalid webhook signature", 400);
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
       }
-    } else if (event === "payment.failed") {
-      const orderId = payload.payload.payment.entity.order_id;
-      const tx = await db.Transaction.findOne({ where: { razorpay_order_id: orderId } });
-      if (tx) {
-        await tx.update({ status: "FAILED" });
-        await db.Payment.update({ status: "FAILED" }, { where: { razorpay_order_id: orderId } });
-        await db.Booking.update({ payment_status: "FAILED" }, { where: { id: tx.booking_id } });
-      }
-    } else if (event === "refund.processed") {
-      const refundId = payload.payload.refund.entity.id;
-      const paymentId = payload.payload.refund.entity.payment_id;
+    }
 
-      const refund = await db.Refund.findOne({ where: { razorpay_refund_id: refundId } });
-      if (refund) {
-        await refund.update({ status: "SUCCESS" });
-        await db.Booking.update({ payment_status: "FAILED", detailed_status: "REFUNDED" }, { where: { id: refund.booking_id } });
+    try {
+      const payload = JSON.parse(rawBody);
+      const event = payload.type;
+      const data = payload.data || {};
+      const order = data.order || {};
+      const payment = data.payment || {};
+      const refund = data.refund || {};
+
+      console.log(`Cashfree Webhook Event Received: ${event}`);
+
+      const orderId = order.order_id;
+      const paymentId = payment.cf_payment_id;
+
+      if (event === "PAYMENT_SUCCESS") {
+        const tx = await db.Transaction.findOne({ where: { cashfree_order_id: orderId } });
+        if (tx && tx.status !== "SUCCESS") {
+          await tx.update({ status: "SUCCESS", cashfree_payment_id: paymentId });
+          await db.Payment.update({ status: "SUCCESS", cashfree_payment_id: paymentId, paid_at: new Date() }, { where: { cashfree_order_id: orderId } });
+          await db.Booking.update({ payment_status: "PAID", booking_status: "CONFIRMED", detailed_status: "CONFIRMED" }, { where: { id: tx.booking_id } });
+        }
+      } else if (event === "PAYMENT_FAILED") {
+        const tx = await db.Transaction.findOne({ where: { cashfree_order_id: orderId } });
+        if (tx) {
+          await tx.update({ status: "FAILED" });
+          await db.Payment.update({ status: "FAILED" }, { where: { cashfree_order_id: orderId } });
+          await db.Booking.update({ payment_status: "FAILED" }, { where: { id: tx.booking_id } });
+        }
+      } else if (event === "REFUND_SUCCESS") {
+        const refundId = refund.cf_refund_id;
+        const refRecord = await db.Refund.findOne({ where: { cashfree_refund_id: refundId } });
+        if (refRecord) {
+          await refRecord.update({ status: "SUCCESS" });
+          await db.Booking.update({ payment_status: "FAILED", detailed_status: "REFUNDED" }, { where: { id: refRecord.booking_id } });
+        }
       }
+    } catch (parseErr) {
+      console.error("Error parsing Cashfree webhook:", parseErr.message);
     }
 
     return { status: "OK" };
@@ -318,22 +584,24 @@ class PaymentService {
     const refundAmount = booking.final_amount;
 
     let refundId = `ref_mock_${Math.floor(100000 + Math.random() * 900000)}`;
-    if (payment && payment.razorpay_payment_id && !payment.razorpay_payment_id.startsWith("pay_mock")) {
+    if (payment && payment.cashfree_order_id && !payment.cashfree_order_id.startsWith("order_mock")) {
       try {
-        const rpRefund = await razorpay.refunds.create({
-          payment_id: payment.razorpay_payment_id,
-          amount: refundAmount * 100 // amount in paisa
-        });
-        refundId = rpRefund.id;
+        const cfRefund = await cashfree.initiateCashfreeRefund(
+          payment.cashfree_order_id,
+          refundAmount,
+          `ref_${Date.now()}`,
+          reason || "Booking Cancellation Refund"
+        );
+        refundId = cfRefund.cf_refund_id || refundId;
       } catch (err) {
-        console.log("Razorpay SDK refund error, using fallback mock ID:", err.message);
+        console.log("Cashfree SDK refund error, using fallback mock ID:", err.message);
       }
     }
 
     const refundRecord = await db.Refund.create({
       booking_id: bookingId,
       payment_id: payment ? payment.id : null,
-      razorpay_refund_id: refundId,
+      cashfree_refund_id: refundId,
       amount: refundAmount,
       status: "SUCCESS",
       reason: reason || "Cancelled by user"
@@ -357,30 +625,44 @@ class PaymentService {
     try {
       const artistProfile = await db.ArtistProfile.findByPk(booking.artist_id);
       if (artistProfile) {
-        const artistWallet = await db.Wallet.findOne({ where: { user_id: artistProfile.user_id } });
-        if (artistWallet) {
-          const artistTx = await db.WalletTransaction.findOne({
-            where: {
-              wallet_id: artistWallet.id,
-              booking_id: bookingId,
-              transaction_type: "PAYMENT",
-              status: "SUCCESS"
-            }
+        await db.sequelize.transaction(async (t) => {
+          const artistWallet = await db.Wallet.findOne({ 
+            where: { user_id: artistProfile.user_id },
+            lock: t.LOCK.UPDATE,
+            transaction: t
           });
-
-          if (artistTx) {
-            await artistWallet.decrement("balance", { by: artistTx.amount });
-            await db.WalletTransaction.create({
-              wallet_id: artistWallet.id,
-              booking_id: bookingId,
-              transaction_type: "WITHDRAWAL",
-              amount: artistTx.amount,
-              status: "SUCCESS",
-              description: `Deduction for refunded booking #${booking.booking_code}`
+          if (artistWallet) {
+            const artistTx = await db.WalletTransaction.findOne({
+              where: {
+                wallet_id: artistWallet.id,
+                booking_id: bookingId,
+                transaction_type: "PAYMENT",
+                status: "SUCCESS"
+              },
+              transaction: t
             });
-            console.log(`[WalletTx] Debited ₹${artistTx.amount} from artist user ID ${artistProfile.user_id} wallet due to refund.`);
+
+            if (artistTx) {
+              if (artistWallet.balance < artistTx.amount) {
+                console.error(`[WalletDeductionFailed] Insufficient wallet balance for artist debit on refund. Artist: ${artistProfile.user_id}, Needed: ${artistTx.amount}, Available: ${artistWallet.balance}, Booking: ${bookingId}`);
+                throw new AppError("You don't have enough wallet balance to complete this transaction.", 400);
+              }
+              
+              const newBalance = artistWallet.balance - artistTx.amount;
+              await artistWallet.update({ balance: newBalance }, { transaction: t });
+
+              await db.WalletTransaction.create({
+                wallet_id: artistWallet.id,
+                booking_id: bookingId,
+                transaction_type: "WITHDRAWAL",
+                amount: artistTx.amount,
+                status: "SUCCESS",
+                description: `Deduction for refunded booking #${booking.booking_code}`
+              }, { transaction: t });
+              console.log(`[WalletTx] Debited ₹${artistTx.amount} from artist user ID ${artistProfile.user_id} wallet due to refund.`);
+            }
           }
-        }
+        });
       }
     } catch (debitErr) {
       console.error("Error debiting artist wallet on refund:", debitErr.message);
@@ -450,7 +732,7 @@ class PaymentService {
   }
 
   async retryPayment(bookingId, userId) {
-    return await this.createOrder(bookingId, userId);
+    return await this.createSession(bookingId, userId);
   }
 
   async payWithWallet(bookingId, userId) {
@@ -459,13 +741,16 @@ class PaymentService {
       throw new AppError("Booking not found", 404);
     }
 
-    const WalletService = require("./wallet.services");
-    const wallet = await WalletService.getOrCreateWallet(userId);
-    
-    // Allow negative wallet balance: "wallet me bhi mines me honachaye"
-    const newBalance = wallet.balance - Number(booking.final_amount);
-    await wallet.update({ balance: newBalance });
+    let payableAmount = 0;
+    if (booking.booking_status === "PENDING" && booking.payment_status === "PENDING") {
+      payableAmount = Math.round(booking.final_amount * 0.10);
+    } else if (booking.detailed_status === "WAITING_FOR_USER_PAYMENT") {
+      payableAmount = booking.remaining_amount;
+    } else {
+      payableAmount = booking.final_amount;
+    }
 
+<<<<<<< HEAD
     // 1. Create Wallet Transaction
     await db.WalletTransaction.create({
       wallet_id: wallet.id,
@@ -475,17 +760,29 @@ class PaymentService {
       booking_id: booking.id,
       description: `Deducted for booking #${booking.booking_code} (Wallet Checkout)`
     });
+=======
+    const t = await db.sequelize.transaction();
+    try {
+      const WalletService = require("./wallet.services");
+      
+      // Get or create wallet row safely with row update lock
+      let wallet = await db.Wallet.findOne({ 
+        where: { user_id: userId },
+        lock: t.LOCK.UPDATE,
+        transaction: t
+      });
+      if (!wallet) {
+        wallet = await db.Wallet.create({ user_id: userId, balance: 0 }, { transaction: t });
+      }
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
 
-    // 2. Create online payment transaction simulation
-    await db.Transaction.create({
-      booking_id: booking.id,
-      amount: Number(booking.final_amount),
-      payment_method: "WALLET",
-      status: "SUCCESS",
-      razorpay_order_id: `wallet_mock_${Date.now()}`,
-      razorpay_payment_id: `wallet_pay_${Date.now()}`
-    });
+      // Insufficient balance check (Backend validation)
+      if (wallet.balance < payableAmount) {
+        console.error(`[WalletDeductionFailed] Insufficient wallet balance checkout. User: ${userId}, Required: ${payableAmount}, Available: ${wallet.balance}, Booking: ${bookingId}`);
+        throw new AppError("Insufficient wallet balance. Please add money to your wallet and try again.", 400);
+      }
 
+<<<<<<< HEAD
     // 3. Update Booking
     const isCompleted = booking.booking_status === "COMPLETED";
     await booking.update({
@@ -501,15 +798,32 @@ class PaymentService {
       changed_by: userId,
       notes: isCompleted ? "Paid via MehndiGo Wallet. Booking settled." : "Paid via MehndiGo Wallet. Booking confirmed."
     });
+=======
+      const newBalance = wallet.balance - payableAmount;
+      await wallet.update({ balance: newBalance }, { transaction: t });
 
-    // 5. Create Invoice record
-    const invoiceNum = `INV-${Date.now()}`;
-    await db.Invoice.create({
-      booking_id: booking.id,
-      invoice_number: invoiceNum,
-      invoice_url: `/payment/receipt/${booking.id}`
-    });
+      // 1. Create Wallet Transaction log (Change DEBIT to PAYMENT enum)
+      await db.WalletTransaction.create({
+        wallet_id: wallet.id,
+        transaction_type: "PAYMENT",
+        amount: payableAmount,
+        status: "SUCCESS",
+        booking_id: booking.id,
+        description: `Deducted for booking #${booking.booking_code} (Wallet Checkout)`
+      }, { transaction: t });
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
 
+      // 2. Create online payment transaction simulation (Add user_id and remove payment_method)
+      await db.Transaction.create({
+        user_id: userId,
+        booking_id: booking.id,
+        amount: payableAmount,
+        status: "SUCCESS",
+        cashfree_order_id: `wallet_mock_${Date.now()}`,
+        cashfree_payment_id: `wallet_pay_${Date.now()}`
+      }, { transaction: t });
+
+<<<<<<< HEAD
     // Apply payment distribution automatically
     await this.processPaymentDistribution(booking);
     if (isCompleted) {
@@ -517,6 +831,94 @@ class PaymentService {
     }
 
     return booking;
+=======
+      // 3. Update Booking
+      if (booking.booking_status === "PENDING" && booking.payment_status === "PENDING") {
+        // Advance paid
+        await booking.update({
+          payment_status: "PARTIAL",
+          booking_status: "CONFIRMED",
+          detailed_status: "CONFIRMED",
+          advance_paid: payableAmount
+        }, { transaction: t });
+
+        // Credit 10% advance to admin commission wallet
+        let adminWallet = await db.Wallet.findOne({ 
+          where: { user_id: 1 },
+          lock: t.LOCK.UPDATE,
+          transaction: t
+        });
+        if (!adminWallet) {
+          adminWallet = await db.Wallet.create({ user_id: 1, balance: 0 }, { transaction: t });
+        }
+        await adminWallet.increment("balance", { by: payableAmount, transaction: t });
+        
+        await db.WalletTransaction.create({
+          wallet_id: adminWallet.id,
+          transaction_type: "COMMISSION",
+          amount: payableAmount,
+          status: "SUCCESS",
+          booking_id: booking.id,
+          description: `Admin Commission for Booking #${booking.booking_code}`
+        }, { transaction: t });
+        console.log(`[WalletPayment] Credited admin commission: ₹${payableAmount}`);
+      } else {
+        // Remaining payment paid or full payment paid
+        await booking.update({
+          payment_status: "PAID",
+          booking_status: "COMPLETED",
+          detailed_status: "COMPLETED_CLOSED",
+          remaining_paid_at: new Date()
+        }, { transaction: t });
+
+        // Credit remaining to artist wallet
+        const artistProfile = await db.ArtistProfile.findByPk(booking.artist_id, { transaction: t });
+        if (artistProfile) {
+          let artistWallet = await db.Wallet.findOne({ 
+            where: { user_id: artistProfile.user_id },
+            lock: t.LOCK.UPDATE,
+            transaction: t
+          });
+          if (!artistWallet) {
+            artistWallet = await db.Wallet.create({ user_id: artistProfile.user_id, balance: 0 }, { transaction: t });
+          }
+          await artistWallet.increment("balance", { by: payableAmount, transaction: t });
+          
+          await db.WalletTransaction.create({
+            wallet_id: artistWallet.id,
+            transaction_type: "CREDIT",
+            amount: payableAmount,
+            status: "SUCCESS",
+            booking_id: booking.id,
+            description: `Settlement for completed booking #${booking.booking_code}`
+          }, { transaction: t });
+          console.log(`[WalletPayment] Credited artist: ₹${payableAmount}`);
+        }
+      }
+
+      // 4. Booking status history
+      await db.BookingStatusHistory.create({
+        booking_id: booking.id,
+        status: booking.booking_status,
+        changed_by: userId,
+        notes: `Paid ₹${payableAmount} via MehndiGo Wallet.`
+      }, { transaction: t });
+
+      // 5. Create Invoice record
+      const invoiceNum = `INV-${Date.now()}`;
+      await db.Invoice.create({
+        booking_id: booking.id,
+        invoice_number: invoiceNum,
+        invoice_url: `/payment/receipt/${booking.id}`
+      }, { transaction: t });
+
+      await t.commit();
+      return booking;
+    } catch (error) {
+      await t.rollback();
+      throw error;
+    }
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
   }
 
   async processPaymentDistribution(booking) {
