@@ -59,8 +59,9 @@ class WalletService {
     const paymentService = require("./payment.services");
     
     const verifyData = {
-      cashfree_order_id: data.cashfree_order_id || data.order_id || data.orderId,
-      payment_session_id: data.payment_session_id
+      razorpay_order_id: data.razorpay_order_id || data.order_id || data.orderId,
+      razorpay_payment_id: data.razorpay_payment_id || data.paymentId,
+      razorpay_signature: data.razorpay_signature || data.signature
     };
     
     console.log("[WALLET_SERVICE] Calling paymentService.verifyPayment with payload:", JSON.stringify(verifyData, null, 2));

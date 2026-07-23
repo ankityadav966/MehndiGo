@@ -978,7 +978,7 @@ const AdminDashboard = ({ showToast }) => {
                     <tbody>
                       {payments.map((p) => (
                         <tr key={p.id} style={{ borderBottom: "1px solid var(--border-color)" }}>
-                          <td style={{ padding: "1rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>{p.cashfree_payment_id || p.transaction_id || `TXN-${p.id}`}</td>
+                          <td style={{ padding: "1rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>{p.razorpay_payment_id || p.transaction_id || `TXN-${p.id}`}</td>
                           <td style={{ padding: "1rem", fontWeight: 600 }}>{p.booking?.booking_code}</td>
                           <td style={{ padding: "1rem" }}>{p.booking?.user?.name || "Client"}</td>
                           <td style={{ padding: "1rem" }}>{p.booking?.artist?.user?.name || "Artist"}</td>

@@ -403,110 +403,15 @@ class BookingService {
   }
 
   async verifyPayment(userId, data) {
-<<<<<<< HEAD
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = data;
-
-    const tx = await db.Transaction.findOne({
-      where: { razorpay_order_id }
-    });
-    if (!tx) {
-      throw new AppError("Transaction not found", 404);
-    }
-
-    let isValid = true;
-    if (razorpay_signature && !razorpay_order_id.startsWith("order_mock") && process.env.NODE_ENV !== "development") {
-      const generated_signature = crypto
-        .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET || "key_secret")
-        .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-        .digest("hex");
-      isValid = generated_signature === razorpay_signature;
-    }
-
-    if (!isValid) {
-      await tx.update({ status: "FAILED" });
-      await db.Booking.update(
-        { payment_status: "FAILED" },
-        { where: { id: tx.booking_id } }
-      );
-      throw new AppError("Payment verification signature failed", 400);
-    }
-
-    // Success transaction
-    await tx.update({
-      razorpay_payment_id,
-      razorpay_signature: razorpay_signature || null,
-      status: "SUCCESS"
-    });
-
-    const bookingBefore = await db.Booking.findByPk(tx.booking_id);
-    const isCompletedBooking = bookingBefore && (bookingBefore.booking_status === "COMPLETED" || ["CASH_DISPUTED", "AWAITING_CASH_CONFIRMATION"].includes(bookingBefore.detailed_status));
-
-    await db.Booking.update(
-      {
-        payment_status: "PAID",
-        booking_status: isCompletedBooking ? "COMPLETED" : "CONFIRMED",
-        detailed_status: isCompletedBooking ? "COMPLETED" : "CONFIRMED"
-      },
-      { where: { id: tx.booking_id } }
-    );
-
-    await db.BookingStatusHistory.create({
-      booking_id: tx.booking_id,
-      status: isCompletedBooking ? "COMPLETED" : "CONFIRMED",
-      changed_by: userId,
-      notes: "Payment verified successfully. Booking updated."
-    });
-
-    // Create Invoice record
-    const invoiceNum = `INV-${Date.now()}`;
-    await db.Invoice.create({
-      booking_id: tx.booking_id,
-      invoice_number: invoiceNum,
-      invoice_url: `/payment/receipt/${tx.booking_id}`
-    });
-
-    const booking = await db.Booking.findByPk(tx.booking_id);
-    if (booking) {
-      // 1. Notify artist
-      const artistProfile = await db.ArtistProfile.findByPk(booking.artist_id);
-      if (artistProfile) {
-        await db.Notification.create({
-          user_id: artistProfile.user_id,
-          title: "Payment Received Successfully",
-          message: `The customer has completed the online payment for Booking #${booking.booking_code}.`,
-          type: "PAYMENT",
-          data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
-        });
-      }
-
-      // 2. Notify customer
-      await db.Notification.create({
-        user_id: booking.user_id,
-        title: "Payment Verified",
-        message: `Your payment of ₹${booking.final_amount} for Booking #${booking.booking_code} has been verified successfully.`,
-        type: "PAYMENT",
-        data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
-      });
-
-      const PaymentService = require("./payment.services");
-      try {
-        await PaymentService.processPaymentDistribution(booking);
-      } catch (distErr) {
-        console.error("Error distributing payments in booking.services.js:", distErr.message);
-      }
-    }
-
-    return await this.getBookingDetails(tx.booking_id, userId, "CUSTOMER");
-=======
     const paymentService = require("./payment.services");
     // Translate booking-side verifyPayment structure to generic verifyPayment structure
     const verifyData = {
-      cashfree_order_id: data.cashfree_order_id || data.order_id || data.orderId,
+      razorpay_order_id: data.razorpay_order_id || data.order_id || data.orderId,
       payment_session_id: data.payment_session_id
     };
     await paymentService.verifyPayment(userId, verifyData);
-    return await this.getBookingDetails(data.bookingId || verifyData.cashfree_order_id.split('_')[1], userId, "CUSTOMER");
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
+    return await this.getBookingDetails(data.bookingId || verifyData.razorpay_order_id.split('_')[1], userId, "CUSTOMER");
+
   }
 
   async updateBookingStatus(bookingId, userId, role, newStatus, extraData = {}) {
@@ -531,88 +436,6 @@ class BookingService {
           { where: { id: booking.slot_id } }
         );
       }
-<<<<<<< HEAD
-
-      // Rollback escrow pending balance on the artist's wallet if it is an online payment booking
-      try {
-        const escrow = await db.EscrowRecord.findOne({ where: { booking_id: bookingId, status: "HELD" } });
-        if (escrow) {
-          const artistProfile = await db.ArtistProfile.findByPk(booking.artist_id);
-          if (artistProfile) {
-            const [artistWallet] = await db.Wallet.findOrCreate({
-              where: { user_id: artistProfile.user_id },
-              defaults: { balance: 0, pending_balance: 0, lifetime_earnings: 0, total_commission_earned: 0, total_withdrawals: 0 }
-            });
-            
-            // Decrement pending balance since the booking is cancelled
-            await artistWallet.decrement("pending_balance", { by: escrow.amount });
-            
-            // Update escrow record status
-            await escrow.update({ status: "CANCELLED", updated_at: new Date() });
-            
-            // Update the WalletTransaction status from PENDING to CANCELLED
-            const tx = await db.WalletTransaction.findOne({
-              where: { wallet_id: artistWallet.id, booking_id: booking.id, transaction_type: "PAYMENT", status: "PENDING" }
-            });
-            if (tx) {
-              await tx.update({ status: "CANCELLED", description: `Transaction cancelled due to booking cancellation` });
-            }
-          }
-        }
-      } catch (escrowErr) {
-        console.error("Failed to rollback escrow on booking cancellation:", escrowErr.message);
-      }
-    } else if (newStatus === "COMPLETED") {
-      const paymentRecord = await db.Payment.findOne({ where: { booking_id: bookingId } });
-      const isCashBooking = paymentRecord && paymentRecord.payment_method === "CASH";
-
-      if (isCashBooking) {
-        updates.booking_status = "COMPLETED";
-        updates.detailed_status = "AWAITING_CASH_CONFIRMATION";
-
-        await db.Notification.create({
-          user_id: booking.user_id,
-          title: "Service Completed 🌸",
-          message: `The service is completed. Please pay the artist ₹${booking.final_amount} in cash.`,
-          type: "BOOKING",
-          data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
-        });
-
-        const artistProfile = await db.ArtistProfile.findByPk(booking.artist_id);
-        if (artistProfile) {
-          await db.Notification.create({
-            user_id: artistProfile.user_id,
-            title: "Cash Payment Pending Confirmation 💵",
-            message: `Please confirm if you have received the cash payment of ₹${booking.final_amount} for booking #${booking.booking_code}.`,
-            type: "SYSTEM",
-            data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
-          });
-        }
-      } else {
-        updates.booking_status = "COMPLETED";
-        updates.detailed_status = "COMPLETED";
-
-        const PaymentService = require("./payment.services");
-        await PaymentService.completeBookingSettlement(booking.id);
-
-        const artistProfile = await db.ArtistProfile.findByPk(booking.artist_id);
-        if (artistProfile) {
-          try {
-            const referralService = require("./referral.services");
-            await referralService.verifyAndRewardReferral(booking.user_id, booking.id);
-          } catch (refErr) {
-            console.error("Error verifying referral on completion:", refErr.message);
-          }
-
-          try {
-            const xpService = require("./xp.services");
-            await xpService.awardXp(booking.user_id, 100, "Booking Service Completed", booking.id);
-            await xpService.awardXp(artistProfile.user_id, 100, "Booking Work Completed", booking.id);
-            await xpService.evaluateArtistMilestone(artistProfile.user_id);
-          } catch (xpErr) {
-            console.error("Error awarding XP on completion:", xpErr.message);
-          }
-=======
     } else if (newStatus === "COMPLETED") {
       updates.booking_status = "COMPLETED";
       updates.detailed_status = "COMPLETED";
@@ -643,7 +466,7 @@ class BookingService {
             description: `Mehndi application service payment from customer ${customerName}`
           });
           console.log(`[completeService] Credited remaining ₹${remainingPaid} to Artist Wallet`);
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
+
         }
       } catch (artistErr) {
         console.error("Error crediting Artist Wallet upon completion:", artistErr.message);
@@ -655,8 +478,8 @@ class BookingService {
         await db.Transaction.create({
           user_id: booking.user_id,
           booking_id: booking.id,
-          cashfree_order_id: `order_${booking.id}_completion`,
-          cashfree_payment_id: cfPaymentId,
+          razorpay_order_id: `order_${booking.id}_completion`,
+          razorpay_payment_id: cfPaymentId,
           amount: booking.remaining_amount || 0,
           status: "SUCCESS",
           gateway: "CASH"
@@ -733,12 +556,6 @@ class BookingService {
 
       await db.Notification.create({
         user_id: userToNotify,
-<<<<<<< HEAD
-        title: notificationTitle,
-        message: notificationMessage,
-        type: notificationType,
-        data: JSON.stringify(notificationData)
-=======
         title: `Booking Update: ${newStatus}`,
         message: `Booking #${booking.booking_code} status has been updated to ${newStatus}`,
         type: "BOOKING",
@@ -747,7 +564,7 @@ class BookingService {
           event: "booking_confirmed",
           bookingId: booking.id
         }
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
+
       });
     }
 
@@ -774,242 +591,6 @@ class BookingService {
     }
     return invoice;
   }
-<<<<<<< HEAD
-  async selectCashPayment(bookingId, userId) {
-    const booking = await db.Booking.findOne({ where: { id: bookingId, user_id: userId } });
-    if (!booking) throw new AppError("Booking not found", 404);
-
-    const [payment] = await db.Payment.findOrCreate({
-      where: { booking_id: bookingId },
-      defaults: {
-        payment_method: "CASH",
-        amount: booking.final_amount,
-        status: "PENDING"
-      }
-    });
-
-    if (payment.payment_method !== "CASH") {
-      await payment.update({ payment_method: "CASH" });
-    }
-
-    await booking.update({
-      booking_status: "COMPLETED",
-      detailed_status: "AWAITING_CASH_CONFIRMATION"
-    });
-
-    await db.BookingStatusHistory.create({
-      booking_id: bookingId,
-      status: "AWAITING_CASH_CONFIRMATION",
-      changed_by: userId,
-      notes: "Customer selected Cash Payment method."
-    });
-
-    const artistProfile = await db.ArtistProfile.findByPk(booking.artist_id);
-    if (artistProfile) {
-      await db.Notification.create({
-        user_id: artistProfile.user_id,
-        title: "Cash Payment Approval Required",
-        message: "Customer has marked this booking as Cash Payment. Please approve or reject the payment.",
-        type: "PAYMENT",
-        data: JSON.stringify({ bookingId: bookingId, booking_id: bookingId })
-      });
-    }
-
-    return booking;
-  }
-
-  async confirmCashPayment(bookingId, artistUserId) {
-    const booking = await db.Booking.findByPk(bookingId);
-    if (!booking) throw new AppError("Booking not found", 404);
-
-    const artistProfile = await db.ArtistProfile.findOne({ where: { user_id: artistUserId } });
-    if (!artistProfile || booking.artist_id !== artistProfile.id) {
-      throw new AppError("Unauthorized access to confirm cash payment", 403);
-    }
-
-    const totalAmount = Number(booking.final_amount);
-    const commissionSetting = await db.SystemSetting.findOne({ where: { key: "COMMISSION_PERCENTAGE" } });
-    const commissionPercentage = commissionSetting ? parseInt(commissionSetting.value) : 10;
-    const commissionAmount = Math.round(totalAmount * (commissionPercentage / 100));
-    const artistAmount = totalAmount - commissionAmount;
-
-    // 1. Process Admin Wallet Commission
-    let adminUser = await db.User.findOne({ where: { role: "ADMIN" } });
-    if (!adminUser) {
-      adminUser = await db.User.create({
-        name: "System Admin",
-        phone: "9999900000",
-        email: "admin@mehndigo.com",
-        role: "ADMIN",
-        password: "system_generated_hash"
-      });
-    }
-
-    const [adminWallet] = await db.Wallet.findOrCreate({
-      where: { user_id: adminUser.id },
-      defaults: { balance: 0, pending_balance: 0, lifetime_earnings: 0, total_commission_earned: 0, total_withdrawals: 0 }
-    });
-    await adminWallet.increment({
-      balance: commissionAmount,
-      total_commission_earned: commissionAmount,
-      lifetime_earnings: commissionAmount
-    });
-
-    await db.WalletTransaction.create({
-      wallet_id: adminWallet.id,
-      booking_id: booking.id,
-      transaction_type: "COMMISSION",
-      amount: commissionAmount,
-      status: "SUCCESS",
-      description: `Commission from cash booking #${booking.booking_code}`
-    });
-
-    // 2. Process Artist Wallet: Debit commission since artist received full cash
-    const [artistWallet] = await db.Wallet.findOrCreate({
-      where: { user_id: artistUserId },
-      defaults: { balance: 0, pending_balance: 0, lifetime_earnings: 0, total_commission_earned: 0, total_withdrawals: 0 }
-    });
-    await artistWallet.decrement("balance", { by: commissionAmount });
-    await artistWallet.increment("lifetime_earnings", { by: artistAmount });
-
-    await db.WalletTransaction.create({
-      wallet_id: artistWallet.id,
-      booking_id: booking.id,
-      transaction_type: "COMMISSION",
-      amount: commissionAmount,
-      status: "SUCCESS",
-      description: `Platform commission debited for cash booking #${booking.booking_code}`
-    });
-
-    // 3. Update payment and booking statuses
-    const payment = await db.Payment.findOne({ where: { booking_id: bookingId } });
-    if (payment) {
-      await payment.update({ status: "SUCCESS", paid_at: new Date() });
-    }
-
-    await booking.update({
-      payment_status: "PAID",
-      booking_status: "COMPLETED",
-      detailed_status: "COMPLETED"
-    });
-
-    await db.BookingStatusHistory.create({
-      booking_id: bookingId,
-      status: "COMPLETED",
-      changed_by: artistUserId,
-      notes: "Artist confirmed cash payment received. Booking settled."
-    });
-
-    // 4. Create SettlementHistory
-    await db.SettlementHistory.create({
-      booking_id: booking.id,
-      artist_id: booking.artist_id,
-      total_amount: totalAmount,
-      commission_amount: commissionAmount,
-      artist_amount: artistAmount,
-      status: "COMPLETED"
-    });
-
-    // 5. Award Milestone Rewards & XP
-    try {
-      const referralService = require("./referral.services");
-      await referralService.verifyAndRewardReferral(booking.user_id, booking.id);
-    } catch (refErr) {
-      console.error("Error verifying referral on cash completion:", refErr.message);
-    }
-
-    try {
-      const xpService = require("./xp.services");
-      await xpService.awardXp(booking.user_id, 100, "Booking Service Completed", booking.id);
-      await xpService.awardXp(artistUserId, 100, "Booking Work Completed", booking.id);
-      await xpService.evaluateArtistMilestone(artistUserId);
-    } catch (xpErr) {
-      console.error("Error awarding XP on cash completion:", xpErr.message);
-    }
-
-    // 6. Send Notifications
-    await db.Notification.create({
-      user_id: booking.user_id,
-      title: "Cash Payment Confirmed! 💵",
-      message: `Your artist has confirmed cash payment of ₹${totalAmount} for booking #${booking.booking_code}.`,
-      type: "SYSTEM",
-      data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
-    });
-
-    await db.Notification.create({
-      user_id: adminUser.id,
-      title: "Cash Settlement Settled",
-      message: `Booking #${booking.booking_code} has been settled via cash payment. Commission collected.`,
-      type: "SYSTEM",
-      data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
-    });
-
-    return booking;
-  }
-
-  async rejectCashPayment(bookingId, artistUserId) {
-    const booking = await db.Booking.findByPk(bookingId);
-    if (!booking) throw new AppError("Booking not found", 404);
-
-    const artistProfile = await db.ArtistProfile.findOne({ where: { user_id: artistUserId } });
-    if (!artistProfile || booking.artist_id !== artistProfile.id) {
-      throw new AppError("Unauthorized access to reject cash payment", 403);
-    }
-
-    await booking.update({
-      payment_status: "PENDING",
-      detailed_status: "CASH_DISPUTED"
-    });
-
-    await db.BookingStatusHistory.create({
-      booking_id: bookingId,
-      status: "COMPLETED",
-      changed_by: artistUserId,
-      notes: "Artist flagged cash payment as NOT received. Dispute pending."
-    });
-
-    // Notify customer
-    await db.Notification.create({
-      user_id: booking.user_id,
-      title: "Payment Rejected ❌",
-      message: "The artist reported that cash payment was not received. Please complete your payment again using Cash or Online payment method.",
-      type: "BOOKING",
-      data: JSON.stringify({ bookingId: bookingId, booking_id: bookingId })
-    });
-
-    // Notify admin
-    const adminUser = await db.User.findOne({ where: { role: "ADMIN" } });
-    if (adminUser) {
-      await db.Notification.create({
-        user_id: adminUser.id,
-        title: "Cash Payment Dispute",
-        message: `Artist reported no payment for booking #${booking.booking_code}. Admin resolution required.`,
-        type: "SYSTEM"
-      });
-    }
-
-    return booking;
-  }
-
-  async hasRestrictedBooking(userId) {
-    const activeBooking = await db.Booking.findOne({
-      where: {
-        user_id: userId,
-        booking_status: { [db.Sequelize.Op.ne]: "CANCELLED" },
-        detailed_status: { [db.Sequelize.Op.notIn]: ["COMPLETED_CLOSED", "CASH_DISPUTED"] },
-        [db.Sequelize.Op.or]: [
-          {
-            booking_status: "COMPLETED",
-            payment_status: "PENDING"
-          },
-          {
-            detailed_status: "AWAITING_CASH_CONFIRMATION"
-          }
-        ]
-      }
-    });
-    return !!activeBooking;
-=======
 
   async getPendingPayment(userId) {
     const booking = await db.Booking.findOne({
@@ -1369,8 +950,8 @@ class BookingService {
       await db.Transaction.create({
         user_id: booking.user_id,
         booking_id: booking.id,
-        cashfree_order_id: `order_${booking.id}_completion`,
-        cashfree_payment_id: cfPaymentId,
+        razorpay_order_id: `order_${booking.id}_completion`,
+        razorpay_payment_id: cfPaymentId,
         amount: booking.remaining_amount || 0,
         status: "SUCCESS",
         gateway: "CASH"
@@ -1405,7 +986,7 @@ class BookingService {
     }
 
     return { success: true, booking };
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
+
   }
 }
 

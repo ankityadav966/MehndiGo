@@ -30,6 +30,10 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING,
         allowNull: true
       },
+      razorpay_refund_id: {
+        type: DataTypes.STRING,
+        allowNull: true
+      },
       amount: {
         type: DataTypes.INTEGER,
         allowNull: false

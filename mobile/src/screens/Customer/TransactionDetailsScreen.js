@@ -30,7 +30,7 @@ export default function TransactionDetailsScreen({ route, navigation }) {
       // Fallback fallback data for standalone view tests
       setTransaction({
         id: paymentId,
-        cashfree_order_id: `ord_${Math.random().toString(36).substring(2, 10)}`,
+        razorpay_order_id: `ord_${Math.random().toString(36).substring(2, 10)}`,
         status: "SUCCESS",
         amount: 2850,
         createdAt: new Date().toISOString(),
@@ -107,11 +107,11 @@ export default function TransactionDetailsScreen({ route, navigation }) {
 
         <View style={styles.detailsCard}>
           <DetailRow label="Transaction Ref ID" value={String(transaction?.id || "")} />
-          <DetailRow label="Cashfree Order ID" value={transaction?.cashfree_order_id || "N/A"} />
+          <DetailRow label="Razorpay Order ID" value={transaction?.razorpay_order_id || "N/A"} />
           <DetailRow label="Booking Code" value={transaction?.booking?.booking_code || "N/A"} />
           <DetailRow label="Date" value={dateStr} />
           <DetailRow label="Time" value={timeStr} />
-          <DetailRow label="Payment Gateway" value="Cashfree secure online" isLast />
+          <DetailRow label="Payment Gateway" value="Razorpay secure online" isLast />
         </View>
 
         {isSuccess && (

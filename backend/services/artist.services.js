@@ -12,7 +12,7 @@ const {
 } = require("../repositories");
 
 const AppError = require("../utils/errors/app.error");
-const cashfree = require("../utils/cashfree");
+const razorpay = require("../utils/razorpay");
 const { getIO } = require("../sockets/socket");
 const db = require("../models");
 
@@ -794,57 +794,43 @@ async updateBookingStatus(
       throw new AppError("Booking already paid", 400);
     }
     const amount = booking.total_price;
+    const user = await UserRepositor.getById(booking.user_id);
     let order;
     try {
-      order = await cashfree.createCashfreeOrder({
+      order = await razorpay.createRazorpayOrder({
         customerId: booking.user_id,
+        customerName: user ? user.name : "Customer",
+        customerEmail: user ? user.email : "test@test.com",
+        customerPhone: user ? user.phone : "9999999999",
         orderId: `booking_${booking_id}_${Date.now()}`,
         amount: amount,
         note: `Payment for Booking #${booking.booking_code}`
       });
     } catch (e) {
-      console.warn("Cashfree order creation failed, falling back to mock:", e.message);
-      order = {
-        order_id: `booking_${booking_id}_${Date.now()}`,
-        payment_session_id: `session_mock_${Math.random().toString(36).substring(2, 10)}`,
-        order_amount: amount,
-      };
+      throw new AppError("Razorpay order creation failed: " + e.message, 400);
     }
     await PaymentRepositor.create({
       booking_id,
-      cashfree_order_id: order.order_id,
+      razorpay_order_id: order.id,
       amount,
       payment_method: "ONLINE",
       status: "PENDING",
-      gateway: "CASHFREE",
+      gateway: "RAZORPAY",
       currency: "INR"
     });
-    return order;
+    return { order_id: order.id, amount };
   }
   async verifyPayment(data) {
     const {
       booking_id,
-      cashfree_order_id,
+      razorpay_order_id,
+      razorpay_payment_id,
+      razorpay_signature
     } = data;
     
-    let orderStatus = "PENDING";
-    let cfPaymentId = `pay_mock_${Math.random().toString(36).substring(2, 10)}`;
-
-    const isMock = cashfree_order_id && (cashfree_order_id.startsWith("order_mock_") || cashfree_order_id.includes("_mock_"));
-    if (!isMock) {
-      try {
-        const cfOrder = await cashfree.getCashfreeOrder(cashfree_order_id);
-        orderStatus = cfOrder.order_status;
-        cfPaymentId = cfOrder.cf_payment_id || cfPaymentId;
-      } catch (err) {
-        throw new AppError("Failed to verify payment with Cashfree", 400);
-      }
-    } else {
-      orderStatus = "PAID";
-    }
-
-    if (orderStatus !== "PAID") {
-      throw new AppError("Payment verification failed", 400);
+    const isValid = razorpay.verifyRazorpaySignature(razorpay_order_id, razorpay_payment_id, razorpay_signature);
+    if (!isValid) {
+        throw new AppError("Failed to verify payment with Razorpay", 400);
     }
 
     const booking = await BookingRepositor.getById(booking_id);
@@ -862,7 +848,8 @@ async updateBookingStatus(
     const payment = payments[0];
     if (payment) {
       await PaymentRepositor.update(payment.id, {
-        cashfree_payment_id: cfPaymentId,
+        razorpay_payment_id: razorpay_payment_id,
+        razorpay_signature: razorpay_signature,
         status: "SUCCESS",
         paid_at: new Date()
       });
@@ -1519,12 +1506,6 @@ async createReview(data) {
 
     const user = await db.User.findByPk(userId);
     if (user) {
-<<<<<<< HEAD
-      await user.update({
-        name: data.name !== undefined ? data.name : user.name,
-        profile_image: data.profileImage !== undefined ? data.profileImage : (data.profile_image !== undefined ? data.profile_image : user.profile_image)
-      });
-=======
       const userUpdates = {};
       if (data.name && data.name.trim()) userUpdates.name = data.name.trim();
 
@@ -1545,7 +1526,7 @@ async createReview(data) {
       if (Object.keys(userUpdates).length > 0) {
         await user.update(userUpdates);
       }
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
+
     }
 
     return await this.getProfile(userId);

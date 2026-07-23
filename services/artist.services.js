@@ -12,7 +12,7 @@ const {
 } = require("../repositories");
 
 const AppError = require("../utils/errors/app.error");
-const cashfree = require("../utils/cashfree");
+const razorpay = require("../utils/razorpay");
 const { getIO } = require("../sockets/socket");
 const db = require("../models");
 
@@ -58,6 +58,10 @@ class ArtistService {
 
     // create profile
 
+    if (data.phone) {
+      await UserRepositor.update(user_id, { phone: data.phone });
+    }
+
     const profile = await ArtistProfileRepositor.createProfile({
       ...data,
       verification_status: "APPROVED",
@@ -83,6 +87,7 @@ class ArtistService {
     if (data.name !== undefined) userUpdates.name = data.name;
     if (data.profileImage !== undefined) userUpdates.profile_image = data.profileImage;
     if (data.profile_image !== undefined) userUpdates.profile_image = data.profile_image;
+    if (data.phone !== undefined) userUpdates.phone = data.phone;
     
     if (Object.keys(userUpdates).length > 0) {
       await UserRepositor.update(userId, userUpdates);
@@ -97,9 +102,22 @@ class ArtistService {
       pincode: data.pincode !== undefined ? data.pincode : artist.pincode,
       cover_image: data.coverImage !== undefined ? data.coverImage : (data.cover_image !== undefined ? data.cover_image : artist.cover_image),
       languages: data.languages !== undefined ? data.languages : artist.languages,
+      intro_video: data.intro_video !== undefined ? data.intro_video : artist.intro_video,
+      portfolio_video: data.portfolio_video !== undefined ? data.portfolio_video : artist.portfolio_video,
+      intro_video_thumbnail: data.intro_video_thumbnail !== undefined ? data.intro_video_thumbnail : artist.intro_video_thumbnail,
+      portfolio_video_thumbnail: data.portfolio_video_thumbnail !== undefined ? data.portfolio_video_thumbnail : artist.portfolio_video_thumbnail,
     };
     
     await ArtistProfileRepositor.update(artist.id, allowedUpdates);
+
+    // Trigger referred artist milestones evaluation
+    try {
+      const xpService = require("./xp.services");
+      await xpService.evaluateArtistMilestone(userId);
+    } catch (err) {
+      console.error("[Milestones Trigger] Error evaluating milestones on profile update:", err.message);
+    }
+
     return await ArtistProfileRepositor.getArtistDetails(userId);
   }
 
@@ -776,57 +794,43 @@ async updateBookingStatus(
       throw new AppError("Booking already paid", 400);
     }
     const amount = booking.total_price;
+    const user = await UserRepositor.getById(booking.user_id);
     let order;
     try {
-      order = await cashfree.createCashfreeOrder({
+      order = await razorpay.createRazorpayOrder({
         customerId: booking.user_id,
+        customerName: user ? user.name : "Customer",
+        customerEmail: user ? user.email : "test@test.com",
+        customerPhone: user ? user.phone : "9999999999",
         orderId: `booking_${booking_id}_${Date.now()}`,
         amount: amount,
         note: `Payment for Booking #${booking.booking_code}`
       });
     } catch (e) {
-      console.warn("Cashfree order creation failed, falling back to mock:", e.message);
-      order = {
-        order_id: `booking_${booking_id}_${Date.now()}`,
-        payment_session_id: `session_mock_${Math.random().toString(36).substring(2, 10)}`,
-        order_amount: amount,
-      };
+      throw new AppError("Razorpay order creation failed: " + e.message, 400);
     }
     await PaymentRepositor.create({
       booking_id,
-      cashfree_order_id: order.order_id,
+      razorpay_order_id: order.id,
       amount,
       payment_method: "ONLINE",
       status: "PENDING",
-      gateway: "CASHFREE",
+      gateway: "RAZORPAY",
       currency: "INR"
     });
-    return order;
+    return { order_id: order.id, amount };
   }
   async verifyPayment(data) {
     const {
       booking_id,
-      cashfree_order_id,
+      razorpay_order_id,
+      razorpay_payment_id,
+      razorpay_signature
     } = data;
     
-    let orderStatus = "PENDING";
-    let cfPaymentId = `pay_mock_${Math.random().toString(36).substring(2, 10)}`;
-
-    const isMock = cashfree_order_id && (cashfree_order_id.startsWith("order_mock_") || cashfree_order_id.includes("_mock_"));
-    if (!isMock) {
-      try {
-        const cfOrder = await cashfree.getCashfreeOrder(cashfree_order_id);
-        orderStatus = cfOrder.order_status;
-        cfPaymentId = cfOrder.cf_payment_id || cfPaymentId;
-      } catch (err) {
-        throw new AppError("Failed to verify payment with Cashfree", 400);
-      }
-    } else {
-      orderStatus = "PAID";
-    }
-
-    if (orderStatus !== "PAID") {
-      throw new AppError("Payment verification failed", 400);
+    const isValid = razorpay.verifyRazorpaySignature(razorpay_order_id, razorpay_payment_id, razorpay_signature);
+    if (!isValid) {
+        throw new AppError("Failed to verify payment with Razorpay", 400);
     }
 
     const booking = await BookingRepositor.getById(booking_id);
@@ -844,7 +848,8 @@ async updateBookingStatus(
     const payment = payments[0];
     if (payment) {
       await PaymentRepositor.update(payment.id, {
-        cashfree_payment_id: cfPaymentId,
+        razorpay_payment_id: razorpay_payment_id,
+        razorpay_signature: razorpay_signature,
         status: "SUCCESS",
         paid_at: new Date()
       });
@@ -1201,31 +1206,76 @@ async createReview(data) {
       where: { artist_id: artist.id, createdAt: { [db.Sequelize.Op.gte]: today } }
     });
 
-    const artistWallet = await db.Wallet.findOne({ where: { user_id: userId } });
+    const WalletService = require("./wallet.services");
+    const walletSummary = await WalletService.getWalletSummary(userId);
+
     let todayEarnings = 0;
-    if (artistWallet) {
-      todayEarnings = await db.WalletTransaction.sum("amount", {
-        where: {
-          wallet_id: artistWallet.id,
-          status: "SUCCESS",
-          createdAt: { [db.Sequelize.Op.gte]: today }
-        }
-      });
+    if (walletSummary) {
+      const wallet = await db.Wallet.findOne({ where: { user_id: userId } });
+      if (wallet) {
+        todayEarnings = await db.WalletTransaction.sum("amount", {
+          where: {
+            wallet_id: wallet.id,
+            status: "SUCCESS",
+            transaction_type: { [db.Sequelize.Op.in]: ["SETTLEMENT", "RECHARGE", "REFUND", "MANUAL_CREDIT"] },
+            createdAt: { [db.Sequelize.Op.gte]: today }
+          }
+        }) || 0;
+      }
     }
 
-    const pendingRequests = await db.Booking.count({
-      where: { artist_id: artist.id, booking_status: "PENDING" }
-    });
+    const [
+      pendingRequests,
+      upcomingBookingsCount,
+      acceptedBookingsCount,
+      ongoingBookingsCount,
+      completedBookingsCount,
+      awaitingSettlementCount,
+      pendingCashApprovalCount,
+      cancelledBookingsCount
+    ] = await Promise.all([
+      db.Booking.count({
+        where: {
+          artist_id: artist.id,
+          [db.Sequelize.Op.or]: [
+            { booking_status: "PENDING" },
+            { booking_status: "CONFIRMED", detailed_status: "CONFIRMED" }
+          ]
+        }
+      }),
+      db.Booking.count({
+        where: {
+          artist_id: artist.id,
+          booking_status: "CONFIRMED",
+          detailed_status: { [db.Sequelize.Op.ne]: "CONFIRMED" }
+        }
+      }),
+      db.Booking.count({ where: { artist_id: artist.id, detailed_status: "ARTIST_ACCEPTED" } }),
+      db.Booking.count({ where: { artist_id: artist.id, detailed_status: "SERVICE_STARTED" } }),
+      db.Booking.count({ where: { artist_id: artist.id, booking_status: "COMPLETED" } }),
+      db.Booking.count({
+        where: {
+          artist_id: artist.id,
+          booking_status: "COMPLETED",
+          detailed_status: { [db.Sequelize.Op.ne]: "COMPLETED_CLOSED" },
+          payment_status: "PENDING"
+        }
+      }),
+      db.Booking.count({ where: { artist_id: artist.id, detailed_status: "AWAITING_CASH_CONFIRMATION" } }),
+      db.Booking.count({ where: { artist_id: artist.id, booking_status: "CANCELLED" } })
+    ]);
 
-    const wallet = await db.Wallet.findOne({ where: { user_id: userId } });
+    const pendingBookingsCount = pendingRequests;
 
     const recentBookings = await db.Booking.findAll({
       where: { artist_id: artist.id },
-      limit: 5,
+      limit: 20,
       order: [["createdAt", "DESC"]],
       include: [
-        { model: db.User, as: "user", attributes: ["name"] },
-        { model: db.Service, as: "service", attributes: ["specialization_name"] }
+        { model: db.User, as: "user", attributes: ["name", "profile_image"] },
+        { model: db.Service, as: "service", attributes: ["specialization_name"] },
+        { model: db.AvailabilitySlot, as: "slot", attributes: ["start_time", "end_time"] },
+        { model: db.Payment, as: "payments", attributes: ["payment_method", "status"] }
       ]
     });
 
@@ -1242,8 +1292,20 @@ async createReview(data) {
       todayBookings,
       todayEarnings: todayEarnings || 0,
       pendingRequests,
-      walletBalance: wallet ? wallet.balance : 0,
-      recentBookings
+      walletBalance: walletSummary.balance,
+      pendingEarnings: walletSummary.pending_balance,
+      lifetimeEarnings: walletSummary.lifetime_earnings,
+      recentBookings,
+      bookingCounts: {
+        PENDING: pendingBookingsCount,
+        UPCOMING: upcomingBookingsCount,
+        ACCEPTED: acceptedBookingsCount,
+        ONGOING: ongoingBookingsCount,
+        COMPLETED: completedBookingsCount,
+        AWAITING_SETTLEMENT: awaitingSettlementCount,
+        PENDING_CASH_APPROVAL: pendingCashApprovalCount,
+        CANCELLED: cancelledBookingsCount
+      }
     };
   }
 
@@ -1254,8 +1316,9 @@ async createReview(data) {
     return await db.Booking.findAll({
       where: { artist_id: artist.id },
       include: [
-        { model: db.User, as: "user", attributes: ["name"] },
-        { model: db.Service, as: "service", attributes: ["specialization_name"] }
+        { model: db.User, as: "user", attributes: ["id", "name", "phone", "profile_image"] },
+        { model: db.Service, as: "service", attributes: ["specialization_name"] },
+        { model: db.AvailabilitySlot, as: "slot" }
       ],
       order: [["createdAt", "DESC"]]
     });
@@ -1398,10 +1461,28 @@ async createReview(data) {
   async getProfile(userId) {
     const artist = await db.ArtistProfile.findOne({
       where: { user_id: userId },
-      include: [{ model: db.User, as: "user", attributes: ["name", "email", "profile_image"] }]
+      include: [{ model: db.User, as: "user", attributes: ["name", "phone", "email", "profile_image"] }]
     });
     if (!artist) throw new AppError("Artist profile not found", 404);
-    return artist;
+
+    const [totalBookings, completedBookings, pendingBookings, cancelledBookings, rejectedBookings] = await Promise.all([
+      db.Booking.count({ where: { artist_id: artist.id } }),
+      db.Booking.count({ where: { artist_id: artist.id, booking_status: "COMPLETED" } }),
+      db.Booking.count({ where: { artist_id: artist.id, booking_status: "PENDING" } }),
+      db.Booking.count({ where: { artist_id: artist.id, booking_status: "CANCELLED", detailed_status: { [db.Sequelize.Op.ne]: "REJECTED" } } }),
+      db.Booking.count({ where: { artist_id: artist.id, detailed_status: "REJECTED" } })
+    ]);
+
+    const artistJSON = artist.toJSON();
+    artistJSON.bookingStats = {
+      total: totalBookings,
+      completed: completedBookings,
+      pending: pendingBookings,
+      cancelled: cancelledBookings,
+      rejected: rejectedBookings
+    };
+
+    return artistJSON;
   }
 
   async updateProfileDetails(userId, data) {
@@ -1409,22 +1490,43 @@ async createReview(data) {
     if (!artist) throw new AppError("Artist profile not found", 404);
 
     await artist.update({
-      bio: data.bio || artist.bio,
-      experience_years: data.experience_years !== undefined ? Number(data.experience_years) : artist.experience_years,
-      location: data.location || artist.location,
-      city: data.city || artist.city,
-      state: data.state || artist.state,
-      pincode: data.pincode || artist.pincode,
+      bio: data.bio !== undefined ? data.bio : artist.bio,
+      experience_years: data.experience_years !== undefined ? Number(data.experience_years) : (data.experience !== undefined ? Number(data.experience) : artist.experience_years),
+      location: data.location !== undefined ? data.location : artist.location,
+      city: data.city !== undefined ? data.city : artist.city,
+      state: data.state !== undefined ? data.state : artist.state,
+      pincode: data.pincode !== undefined ? data.pincode : artist.pincode,
       cover_image: data.coverImage !== undefined ? data.coverImage : (data.cover_image !== undefined ? data.cover_image : artist.cover_image),
-      languages: data.languages !== undefined ? data.languages : artist.languages
+      languages: data.languages !== undefined ? data.languages : artist.languages,
+      intro_video: data.intro_video !== undefined ? data.intro_video : artist.intro_video,
+      portfolio_video: data.portfolio_video !== undefined ? data.portfolio_video : artist.portfolio_video,
+      intro_video_thumbnail: data.intro_video_thumbnail !== undefined ? data.intro_video_thumbnail : artist.intro_video_thumbnail,
+      portfolio_video_thumbnail: data.portfolio_video_thumbnail !== undefined ? data.portfolio_video_thumbnail : artist.portfolio_video_thumbnail,
     });
 
     const user = await db.User.findByPk(userId);
     if (user) {
-      await user.update({
-        name: data.name || user.name,
-        profile_image: data.profileImage || user.profile_image
-      });
+      const userUpdates = {};
+      if (data.name && data.name.trim()) userUpdates.name = data.name.trim();
+
+      const newAvatar = data.profileImage || data.profile_image;
+      if (newAvatar) userUpdates.profile_image = newAvatar;
+
+      if (data.phone) {
+        const cleanPhone = String(data.phone).trim().replace(/[^0-9]/g, "");
+        if (cleanPhone && cleanPhone !== user.phone) {
+          const existingPhone = await db.User.findOne({ where: { phone: cleanPhone } });
+          if (existingPhone && Number(existingPhone.id) !== Number(userId)) {
+            throw new AppError("This phone number is already registered with another account.", 400);
+          }
+          userUpdates.phone = cleanPhone;
+        }
+      }
+
+      if (Object.keys(userUpdates).length > 0) {
+        await user.update(userUpdates);
+      }
+
     }
 
     return await this.getProfile(userId);
@@ -1651,9 +1753,10 @@ async createReview(data) {
     // 3. Status filter
     if (status) {
       if (status === "Completed") {
-        where.booking_status = "COMPLETED";
+        where.detailed_status = { [db.Sequelize.Op.in]: ["WAITING_FOR_USER_PAYMENT", "COMPLETED", "COMPLETED_CLOSED"] };
       } else if (status === "Accepted") {
         where.booking_status = "CONFIRMED";
+        where.detailed_status = { [db.Sequelize.Op.in]: ["CONFIRMED", "ACCEPTED", "ARTIST_ACCEPTED", "ARTIST_ON_THE_WAY", "ARTIST_ARRIVED", "SERVICE_STARTED", "RESCHEDULED"] };
       } else if (status === "Rejected") {
         where.booking_status = "CANCELLED";
         where.detailed_status = "REJECTED";
@@ -1703,7 +1806,7 @@ async createReview(data) {
       {
         model: db.User,
         as: "user",
-        attributes: ["id", "name", "email", "profile_image"]
+        attributes: ["id", "name", "phone", "email", "profile_image"]
       },
       {
         model: db.Service,
@@ -1722,7 +1825,8 @@ async createReview(data) {
       const searchPattern = `%${search}%`;
       include[0].where = {
         [db.Sequelize.Op.or]: [
-          { name: { [db.Sequelize.Op.iLike]: searchPattern } }
+          { name: { [db.Sequelize.Op.iLike]: searchPattern } },
+          { phone: { [db.Sequelize.Op.iLike]: searchPattern } }
         ]
       };
       include[0].required = true;
@@ -1882,7 +1986,7 @@ async createReview(data) {
 
     const booking = await db.Booking.findByPk(id, {
       include: [
-        { model: db.User, as: "user", attributes: ["id", "name", "email", "profile_image"] },
+        { model: db.User, as: "user", attributes: ["id", "name", "phone", "email", "profile_image"] },
         { model: db.Service, as: "service", attributes: ["id", "specialization_name", "category", "minimum_price", "description"] },
         { model: db.AvailabilitySlot, as: "slot", required: false }
       ]
@@ -1913,7 +2017,7 @@ async createReview(data) {
       customer: {
         id: booking.user?.id,
         name: booking.user?.name || "Customer",
-        phone: "",
+        phone: booking.user?.phone || "",
         email: booking.user?.email || "",
         profile_image: booking.user?.profile_image || null
       },
@@ -2000,7 +2104,8 @@ async createReview(data) {
       user_id: booking.user_id,
       title: "Booking Accepted",
       message: `Your booking request #${booking.booking_code} has been accepted by the artist!`,
-      type: "BOOKING"
+      type: "BOOKING",
+      data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
     });
 
     try {
@@ -2008,7 +2113,8 @@ async createReview(data) {
       io.to(booking.user_id.toString()).emit("new_notification", {
         title: "Booking Accepted",
         message: `Your booking request #${booking.booking_code} has been accepted by the artist!`,
-        type: "BOOKING"
+        type: "BOOKING",
+        data: { bookingId: booking.id, booking_id: booking.id }
       });
     } catch {}
 
@@ -2051,7 +2157,8 @@ async createReview(data) {
       user_id: booking.user_id,
       title: "Booking Declined",
       message: `Your booking request #${booking.booking_code} was declined by the artist.`,
-      type: "BOOKING"
+      type: "BOOKING",
+      data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
     });
 
     try {
@@ -2059,7 +2166,8 @@ async createReview(data) {
       io.to(booking.user_id.toString()).emit("new_notification", {
         title: "Booking Declined",
         message: `Your booking request #${booking.booking_code} was declined by the artist.`,
-        type: "BOOKING"
+        type: "BOOKING",
+        data: { bookingId: booking.id, booking_id: booking.id }
       });
     } catch {}
 
@@ -2069,6 +2177,7 @@ async createReview(data) {
 
 function getLeadStatus(booking) {
   if (booking.booking_status === "COMPLETED") return "Completed";
+  if (["WAITING_FOR_USER_PAYMENT", "COMPLETED_CLOSED"].includes(booking.detailed_status)) return "Completed";
   if (booking.booking_status === "CONFIRMED") return "Accepted";
   
   if (booking.booking_status === "PENDING") {

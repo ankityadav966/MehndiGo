@@ -24,7 +24,7 @@ class AdminService {
         {
           model: db.User,
           as: "user",
-          attributes: ["id", "name", "email", "profile_image"]
+          attributes: ["id", "name", "phone", "email", "profile_image"]
         }
       ],
       order: [["id", "DESC"]]
@@ -191,7 +191,7 @@ class AdminService {
       user_id: artist.user_id,
       title: "Profile Approved! 🎉",
       message: "Congratulations! Your artist profile has been approved. You can now list your services.",
-      type: "SYSTEM",
+      type: "PROFILE",
       is_read: false,
     });
     // Real-time socket push
@@ -200,9 +200,17 @@ class AdminService {
       io.to(artist.user_id.toString()).emit("new_notification", {
         title: "Profile Approved! 🎉",
         message: "Congratulations! Your artist profile has been approved. You can now list your services.",
-        type: "SYSTEM"
+        type: "PROFILE"
       });
     } catch (e) {}
+    // Trigger referred artist milestones evaluation
+    try {
+      const xpService = require("./xp.services");
+      await xpService.evaluateArtistMilestone(artist.user_id);
+    } catch (err) {
+      console.error("[Milestones Trigger] Error evaluating milestones on approval:", err.message);
+    }
+
     return true;
   }
 
@@ -219,7 +227,7 @@ class AdminService {
       user_id: artist.user_id,
       title: "Profile Rejected",
       message: `Your profile could not be approved. Reason: ${reason}. Please re-submit with corrected documents.`,
-      type: "SYSTEM",
+      type: "PROFILE",
       is_read: false,
     });
     // Real-time socket push
@@ -228,7 +236,7 @@ class AdminService {
       io.to(artist.user_id.toString()).emit("new_notification", {
         title: "Profile Rejected",
         message: `Your profile could not be approved. Reason: ${reason}. Please re-submit with corrected documents.`,
-        type: "SYSTEM"
+        type: "PROFILE"
       });
     } catch (e) {}
     return true;
@@ -240,7 +248,7 @@ class AdminService {
         {
           model: db.User,
           as: "user",
-          attributes: ["id", "name", "email"]
+          attributes: ["id", "name", "phone", "email"]
         },
         {
           model: db.ArtistProfile,
@@ -373,7 +381,7 @@ class AdminService {
         {
           model: db.ArtistProfile,
           as: "artist",
-          include: [{ model: db.User, as: "user", attributes: ["name", "profile_image", "email"] }]
+          include: [{ model: db.User, as: "user", attributes: ["name", "profile_image", "email", "phone"] }]
         }
       ],
       order: [["createdAt", "DESC"]]
@@ -414,7 +422,7 @@ class AdminService {
           user_id: artist.user_id,
           title: "Withdrawal Approved! 💸",
           message: `Your withdrawal of ₹${request.amount} was approved and processed successfully.`,
-          type: "SYSTEM"
+          type: "WALLET"
         });
       } catch (err) {
         console.error("Error creating withdrawal notification:", err.message);
@@ -474,7 +482,7 @@ class AdminService {
           user_id: artist.user_id,
           title: "Withdrawal Rejected ❌",
           message: `Your withdrawal request of ₹${request.amount} was rejected. Reason: ${reason || "Check details."}. Funds have been restored.`,
-          type: "SYSTEM"
+          type: "WALLET"
         });
       } catch (err) {
         console.error("Error creating rejection notification:", err.message);
@@ -577,7 +585,7 @@ class AdminService {
             {
               model: db.User,
               as: "user",
-              attributes: ["id", "name", "email"]
+              attributes: ["id", "name", "email", "phone"]
             },
             {
               model: db.ArtistProfile,
@@ -681,7 +689,7 @@ class AdminService {
             {
               model: db.User,
               as: "user",
-              attributes: ["id", "name", "email"]
+              attributes: ["id", "name", "email", "phone"]
             },
             {
               model: db.ArtistProfile,
@@ -690,7 +698,7 @@ class AdminService {
                 {
                   model: db.User,
                   as: "user",
-                  attributes: ["id", "name", "email", "profile_image"]
+                  attributes: ["id", "name", "email", "phone", "profile_image"]
                 }
               ]
             },

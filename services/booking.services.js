@@ -60,6 +60,11 @@ class BookingService {
   }
 
   async createBooking(userId, data) {
+    const hasRestricted = await this.hasRestrictedBooking(userId);
+    if (hasRestricted) {
+      throw new AppError("You have a previous booking with a pending payment or settlement. Please complete your current booking before creating a new booking.", 400);
+    }
+
     const { serviceId, artistId, slotId, address, landmark, notes, couponCode, latitude, longitude, selectedDate, timeLabel } = data;
 
     const slotIds = Array.isArray(slotId) ? slotId : (slotId ? [slotId] : []);
@@ -217,6 +222,42 @@ class BookingService {
       return booking;
     });
 
+    // Notify artist and trigger real-time updates
+    try {
+      const artist = await db.ArtistProfile.findByPk(artistId);
+      if (artist) {
+        const slot = bookingResult.slot_id ? await db.AvailabilitySlot.findByPk(bookingResult.slot_id) : null;
+        const dateStr = slot?.start_time ? new Date(slot.start_time).toLocaleDateString() : (bookingResult.reschedule_date || "TBD");
+        
+        const customer = await db.User.findByPk(userId);
+        const customerName = customer?.name || "A customer";
+
+        await db.Notification.create({
+          user_id: artist.user_id,
+          title: "New Booking Request",
+          message: `You have received a new booking request from ${customerName}.`,
+          type: "BOOKING",
+          data: JSON.stringify({
+            bookingId: bookingResult.id,
+            booking_id: bookingResult.id,
+            customerName: customerName,
+            bookingDate: dateStr,
+            bookingTime: bookingResult.slot_id ? "Scheduled slot" : (bookingResult.reschedule_time || "TBD")
+          })
+        });
+
+        // Emit real-time booking event to the artist's socket room
+        const { getIO } = require("../sockets/socket");
+        const io = getIO();
+        io.to(artist.user_id.toString()).emit("booking_created", {
+          bookingId: bookingResult.id,
+          bookingCode: bookingResult.booking_code
+        });
+      }
+    } catch (err) {
+      console.error("Error in createBooking real-time notification dispatch:", err.message);
+    }
+
     return await this.getBookingDetails(bookingResult.id, userId, "CUSTOMER");
   }
 
@@ -240,7 +281,7 @@ class BookingService {
         {
           model: db.User,
           as: "user",
-          attributes: ["id", "name", "profile_image"]
+          attributes: ["id", "name", "phone", "profile_image"]
         },
         {
           model: db.ArtistProfile,
@@ -249,7 +290,7 @@ class BookingService {
             {
               model: db.User,
               as: "user",
-              attributes: ["id", "name", "profile_image"]
+              attributes: ["id", "name", "phone", "profile_image"]
             }
           ]
         },
@@ -306,6 +347,17 @@ class BookingService {
           model: db.Service,
           as: "service",
           attributes: ["id", "specialization_name", "category"]
+        },
+        {
+          model: db.ArtistProfile,
+          as: "artist",
+          include: [
+            {
+              model: db.User,
+              as: "user",
+              attributes: ["id", "name", "phone", "profile_image"]
+            }
+          ]
         }
       ],
       order: [["createdAt", "DESC"]]
@@ -354,11 +406,12 @@ class BookingService {
     const paymentService = require("./payment.services");
     // Translate booking-side verifyPayment structure to generic verifyPayment structure
     const verifyData = {
-      cashfree_order_id: data.cashfree_order_id || data.order_id || data.orderId,
+      razorpay_order_id: data.razorpay_order_id || data.order_id || data.orderId,
       payment_session_id: data.payment_session_id
     };
     await paymentService.verifyPayment(userId, verifyData);
-    return await this.getBookingDetails(data.bookingId || verifyData.cashfree_order_id.split('_')[1], userId, "CUSTOMER");
+    return await this.getBookingDetails(data.bookingId || verifyData.razorpay_order_id.split('_')[1], userId, "CUSTOMER");
+
   }
 
   async updateBookingStatus(bookingId, userId, role, newStatus, extraData = {}) {
@@ -413,6 +466,7 @@ class BookingService {
             description: `Mehndi application service payment from customer ${customerName}`
           });
           console.log(`[completeService] Credited remaining ₹${remainingPaid} to Artist Wallet`);
+
         }
       } catch (artistErr) {
         console.error("Error crediting Artist Wallet upon completion:", artistErr.message);
@@ -424,8 +478,8 @@ class BookingService {
         await db.Transaction.create({
           user_id: booking.user_id,
           booking_id: booking.id,
-          cashfree_order_id: `order_${booking.id}_completion`,
-          cashfree_payment_id: cfPaymentId,
+          razorpay_order_id: `order_${booking.id}_completion`,
+          razorpay_payment_id: cfPaymentId,
           amount: booking.remaining_amount || 0,
           status: "SUCCESS",
           gateway: "CASH"
@@ -473,6 +527,33 @@ class BookingService {
       : booking.user_id;
 
     if (userToNotify) {
+      let notificationTitle = `Booking Update: ${newStatus}`;
+      let notificationMessage = `Booking #${booking.booking_code} status has been updated to ${newStatus}`;
+      let notificationType = "SYSTEM";
+      let notificationData = { bookingId: booking.id, booking_id: booking.id };
+
+      if (newStatus === "CANCELLED" && role !== "CUSTOMER") {
+        const artist = await db.ArtistProfile.findOne({
+          where: { id: booking.artist_id },
+          include: [{ model: db.User, as: "user", attributes: ["name"] }]
+        });
+        const artistName = artist?.user?.name || "The artist";
+        
+        notificationTitle = "Booking Update";
+        notificationMessage = "Your booking/payment request has been rejected by the artist. Please review the booking and complete the payment again if required.";
+        notificationType = "BOOKING";
+        
+        notificationData = {
+          bookingId: booking.id,
+          booking_id: booking.id,
+          artistId: booking.artist_id,
+          artistName: artistName,
+          bookingDate: booking.slot_id ? (await db.AvailabilitySlot.findByPk(booking.slot_id))?.start_time : null,
+          paymentStatus: booking.payment_status,
+          rejectionReason: extraData.cancelReason || "Rejected by artist"
+        };
+      }
+
       await db.Notification.create({
         user_id: userToNotify,
         title: `Booking Update: ${newStatus}`,
@@ -483,6 +564,7 @@ class BookingService {
           event: "booking_confirmed",
           bookingId: booking.id
         }
+
       });
     }
 
@@ -559,7 +641,7 @@ class BookingService {
 
   async sendCheckInOtp(bookingId, userId) {
     const booking = await db.Booking.findByPk(bookingId, {
-      include: [{ model: db.User, as: "user", attributes: ["id", "name", "email"] }]
+      include: [{ model: db.User, as: "user", attributes: ["id", "phone", "name", "email"] }]
     });
     if (!booking) {
       throw new AppError("Booking not found", 404);
@@ -647,7 +729,7 @@ class BookingService {
 
     return {
       success: true,
-      maskedPhone: "Customer",
+      maskedPhone: booking.user?.phone ? booking.user.phone.replace(/.(?=.{4})/g, "*") : "Customer"
     };
   }
 
@@ -724,7 +806,7 @@ class BookingService {
 
   async sendCheckOutOtp(bookingId, userId) {
     const booking = await db.Booking.findByPk(bookingId, {
-      include: [{ model: db.User, as: "user", attributes: ["id", "name", "email"] }]
+      include: [{ model: db.User, as: "user", attributes: ["id", "phone", "name", "email"] }]
     });
     if (!booking) {
       throw new AppError("Booking not found", 404);
@@ -868,8 +950,8 @@ class BookingService {
       await db.Transaction.create({
         user_id: booking.user_id,
         booking_id: booking.id,
-        cashfree_order_id: `order_${booking.id}_completion`,
-        cashfree_payment_id: cfPaymentId,
+        razorpay_order_id: `order_${booking.id}_completion`,
+        razorpay_payment_id: cfPaymentId,
         amount: booking.remaining_amount || 0,
         status: "SUCCESS",
         gateway: "CASH"
@@ -904,7 +986,9 @@ class BookingService {
     }
 
     return { success: true, booking };
+
   }
 }
 
 module.exports = new BookingService();
+

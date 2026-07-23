@@ -93,34 +93,33 @@ export default function BookingScreen() {
 
       const res = await bookingService.createBooking(bookingData);
       
-      // If payment is ONLINE, we trigger Cashfree checkout.
-      // Since Cashfree requires native modules, we include simulation fallback when run on Expo Go.
+      // If payment is ONLINE, we trigger Razorpay checkout.
+      // Since Razorpay requires native modules, we include simulation fallback when run on Expo Go.
       if (paymentMethod === "ONLINE") {
         const { createPaymentSession, verifyPaymentSignature } = require("../services/payment");
-        const { CFPaymentGatewayService } = require("react-native-cashfree-pg-sdk");
-        const { CFSession, CFEnvironment, CFDropCheckoutPayment, CFPaymentComponentBuilder, CFPaymentModes, CFThemeBuilder } = require("cashfree-pg-api-contract");
+        const RazorpayCheckout = require('react-native-razorpay').default || require('react-native-razorpay');
 
         let sessionData;
         try {
-          console.log("[BOOKING_JSX] Requesting Cashfree payment session for booking ID:", res.data.id || res.data.bookingId);
+          console.log("[BOOKING_JSX] Requesting Razorpay payment session for booking ID:", res.data.id || res.data.bookingId);
           sessionData = await createPaymentSession(res.data.id || res.data.bookingId);
-          console.log("[BOOKING_JSX] Cashfree session response data:", JSON.stringify(sessionData, null, 2));
+          console.log("[BOOKING_JSX] Razorpay session response data:", JSON.stringify(sessionData, null, 2));
 
           if (!sessionData || !sessionData.payment_session_id) {
             throw new Error("payment_session_id is null, undefined, or empty");
           }
         } catch (sessionErr) {
-          console.error("[BOOKING_JSX] Cashfree session creation failed:", sessionErr.message);
-          Alert.alert("Payment Error", "Failed to generate Cashfree payment session.");
+          console.error("[BOOKING_JSX] Razorpay session creation failed:", sessionErr.message);
+          Alert.alert("Payment Error", "Failed to generate Razorpay payment session.");
           return;
         }
 
         if (sessionData.payment_session_id && (sessionData.payment_session_id.startsWith("session_mock") || sessionData.payment_session_id.startsWith("mock_session") || sessionData.mock_mode)) {
           console.log("[BOOKING_JSX] Mock session detected, triggering simulator payment success flow directly.");
-          Alert.alert("Payment Simulation", "Simulating Cashfree Payment Success (Sandbox)...");
+          Alert.alert("Payment Simulation", "Simulating Razorpay Payment Success (Sandbox)...");
           try {
             const verifyPayload = {
-              cashfree_order_id: sessionData.order_id,
+              razorpay_order_id: sessionData.order_id,
               payment_session_id: sessionData.payment_session_id
             };
             console.log("[BOOKING_JSX] Calling verifyPaymentSignature in Simulator mode with payload:", JSON.stringify(verifyPayload, null, 2));
@@ -137,11 +136,23 @@ export default function BookingScreen() {
         }
 
         try {
-          const onVerify = async (orderIdVal) => {
-            console.log("[BOOKING_JSX] Cashfree Success Callback in booking.jsx. orderIdVal:", orderIdVal);
+          const options = {
+            description: 'Payment for Booking',
+            currency: 'INR',
+            key: process.env.EXPO_PUBLIC_RAZORPAY_KEY_ID || 'rzp_test_TG65Zz9HYgFZsj',
+            amount: (sessionData.amount || 1500) * 100, // Amount is in paise
+            name: 'MehndiGo',
+            order_id: sessionData.order_id,
+            theme: {color: '#ff7e5f'}
+          };
+
+          RazorpayCheckout.open(options).then(async (data) => {
+            console.log("[BOOKING_JSX] Razorpay Success Callback in booking.jsx. data:", data);
             try {
               const verifyPayload = {
-                cashfree_order_id: orderIdVal,
+                razorpay_order_id: data.razorpay_order_id,
+                razorpay_payment_id: data.razorpay_payment_id,
+                razorpay_signature: data.razorpay_signature,
                 payment_session_id: sessionData.payment_session_id
               };
               console.log("[BOOKING_JSX] Calling verifyPaymentSignature with payload:", JSON.stringify(verifyPayload, null, 2));
@@ -154,48 +165,26 @@ export default function BookingScreen() {
               console.error("[BOOKING_JSX] Verification API error:", verifyErr.message, verifyErr);
               Alert.alert("Verification Failed", "Failed to confirm payment signature.");
             }
-          };
-
-          const onError = (error, orderIdVal) => {
-            console.log("Cashfree Error Callback in booking.jsx:", error);
-            Alert.alert("Payment Failed", error.message || "Checkout session failed.");
-          };
-
-          CFPaymentGatewayService.setCallback({ onVerify, onError });
-
-          const session = new CFSession(
-            sessionData.payment_session_id,
-            sessionData.order_id,
-            CFEnvironment.SANDBOX
-          );
-
-          const paymentModes = new CFPaymentComponentBuilder()
-            .add(CFPaymentModes.CARD)
-            .add(CFPaymentModes.UPI)
-            .add(CFPaymentModes.WALLET)
-            .add(CFPaymentModes.NET_BANKING)
-            .build();
-
-          const theme = new CFThemeBuilder()
-            .setNavigationBarBackgroundColor('#ff7e5f')
-            .setNavigationBarTextColor('#FFFFFF')
-            .setButtonBackgroundColor('#ff7e5f')
-            .setButtonTextColor('#FFFFFF')
-            .build();
-
-          const dropPayment = new CFDropCheckoutPayment(session, paymentModes, theme);
-
-          CFPaymentGatewayService.doPayment(dropPayment);
-        } catch (sdkError) {
-          console.log("Cashfree SDK failed (Expo Go fallback). Simulating success...");
-          Alert.alert("Payment Simulation", "Simulating Cashfree Payment Success...");
-          await verifyPaymentSignature({
-            cashfree_order_id: sessionData.order_id,
-            payment_session_id: sessionData.payment_session_id
+          }).catch(async (error) => {
+            console.log("Razorpay Error Callback in booking.jsx:", error);
+            // Expo Go Simulator fallback
+            if (error.code && error.code.toString().includes("UNAVAILABLE")) {
+               console.log("Razorpay SDK failed (Expo Go fallback). Simulating success...");
+               Alert.alert("Payment Simulation", "Simulating Razorpay Payment Success...");
+               await verifyPaymentSignature({
+                 razorpay_order_id: sessionData.order_id,
+                 payment_session_id: sessionData.payment_session_id
+               });
+               Alert.alert("Success", "Booking Confirmed!", [
+                 { text: "OK", onPress: () => router.replace('/(user)/bookings') }
+               ]);
+            } else {
+               Alert.alert("Payment Failed", error.description || error.message || "Checkout session failed.");
+            }
           });
-          Alert.alert("Success", "Booking Confirmed!", [
-            { text: "OK", onPress: () => router.replace('/(user)/bookings') }
-          ]);
+        } catch (sdkError) {
+          console.log("Error initializing Razorpay:", sdkError);
+          Alert.alert("Payment Failed", "Could not initialize payment gateway.");
         }
         return;
       } else if (paymentMethod === "WALLET") {

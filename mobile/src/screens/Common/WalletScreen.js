@@ -18,8 +18,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import { getWalletDetails, getWalletTransactions } from "../../services/customer";
 import { createPaymentSession } from "../../services/payment";
-import { CFPaymentGatewayService } from "react-native-cashfree-pg-sdk";
-import { CFSession, CFEnvironment, CFDropCheckoutPayment, CFPaymentComponentBuilder, CFPaymentModes, CFThemeBuilder } from "cashfree-pg-api-contract";
+import RazorpayCheckout from 'react-native-razorpay';
 import apiRequest from "../../services/api";
 import moment from "moment";
 
@@ -97,11 +96,23 @@ export default function WalletScreen({ navigation }) {
         return;
       }
 
-      const onVerify = async (orderIdVal) => {
-        console.log("Cashfree Wallet Recharge Success Callback:", orderIdVal);
+      const options = {
+        description: 'Wallet Recharge',
+        currency: 'INR',
+        key: process.env.EXPO_PUBLIC_RAZORPAY_KEY_ID || 'rzp_test_TG65Zz9HYgFZsj',
+        amount: Math.round(amt * 100),
+        name: 'MehndiGo',
+        order_id: sessionData.order_id,
+        theme: { color: '#ff7e5f' }
+      };
+
+      RazorpayCheckout.open(options).then(async (data) => {
+        console.log("Razorpay Wallet Recharge Success Callback:", data);
         try {
           await apiRequest("POST", "/wallet/add-money", {
-            cashfree_order_id: orderIdVal,
+            razorpay_order_id: data.razorpay_order_id,
+            razorpay_payment_id: data.razorpay_payment_id,
+            razorpay_signature: data.razorpay_signature,
             payment_session_id: sessionData.payment_session_id
           }, true);
           
@@ -112,47 +123,19 @@ export default function WalletScreen({ navigation }) {
           console.log("Verification error in wallet recharge:", verifyErr);
           Alert.alert("Verification Failed", "Failed to confirm payment signature.");
         }
-      };
-
-      const onError = (error, orderIdVal) => {
-        console.log("Cashfree Recharge Error Callback:", error, orderIdVal);
-        if (error && error.message && error.message.includes("Cancelled")) {
+      }).catch(error => {
+        console.log("Razorpay Recharge Error Callback:", error);
+        if (error && error.code && error.code.toString().includes("UNAVAILABLE")) {
+           // Expo Go fallback
+           setCheckoutModalVisible(true);
+        } else if (error && error.description && error.description.includes("cancelled")) {
           Alert.alert("Recharge Cancelled", "You cancelled the top-up transaction.");
         } else {
-          Alert.alert("Recharge Failed", error.message || "Top-up session failed.");
+          Alert.alert("Recharge Failed", error.description || error.message || "Top-up session failed.");
         }
-      };
-
-      CFPaymentGatewayService.setCallback({ onVerify, onError });
-
-      const session = new CFSession(
-        sessionData.payment_session_id,
-        sessionData.order_id,
-        CFEnvironment.SANDBOX
-      );
-
-      const paymentModes = new CFPaymentComponentBuilder()
-        .add(CFPaymentModes.CARD)
-        .add(CFPaymentModes.UPI)
-        .add(CFPaymentModes.WALLET)
-        .add(CFPaymentModes.NET_BANKING)
-        .build();
-
-      const theme = new CFThemeBuilder()
-        .setNavigationBarBackgroundColor('#ff7e5f')
-        .setNavigationBarTextColor('#FFFFFF')
-        .setButtonBackgroundColor('#ff7e5f')
-        .setButtonTextColor('#FFFFFF')
-        .build();
-
-      const dropPayment = new CFDropCheckoutPayment(session, paymentModes, theme);
-
-      CFPaymentGatewayService.doPayment(dropPayment);
+      });
     } catch (err) {
-      console.log("Cashfree SDK Initiation Error (Fallback to Simulation):", err);
-      try {
-        CFPaymentGatewayService.removeCallback();
-      } catch (e) {}
+      console.log("Razorpay SDK Initiation Error (Fallback to Simulation):", err);
       setCheckoutModalVisible(true);
     } finally {
       setAddingMoney(false);
@@ -164,7 +147,7 @@ export default function WalletScreen({ navigation }) {
     setLoading(true);
     try {
       const rechargeDetails = {
-        cashfree_order_id: orderId,
+        razorpay_order_id: orderId,
         payment_session_id: paymentSessionId
       };
       await apiRequest("POST", "/wallet/add-money", rechargeDetails, true);

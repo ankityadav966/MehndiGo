@@ -24,17 +24,29 @@ module.exports = (sequelize, DataTypes) => {
       },
       booking_id: {
         type: DataTypes.INTEGER,
-        allowNull: false,
+        allowNull: true,
       },
       cashfree_order_id: {
         type: DataTypes.STRING,
-        allowNull: false,
+        allowNull: true,
       },
       cashfree_payment_id: {
         type: DataTypes.STRING,
         allowNull: true,
       },
       cashfree_signature: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
+      razorpay_order_id: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
+      razorpay_payment_id: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
+      razorpay_signature: {
         type: DataTypes.STRING,
         allowNull: true,
       },

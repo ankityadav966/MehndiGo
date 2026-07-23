@@ -35,7 +35,7 @@ export default function PaymentFailedScreen({ route, navigation }) {
     setLoading(true);
     try {
       const verifyData = {
-        cashfree_order_id: newOrderId,
+        razorpay_order_id: newOrderId,
         payment_session_id: `session_mock_${Math.random().toString(36).substring(2, 10)}`
       };
       await verifyPaymentSignature(verifyData);
@@ -89,7 +89,7 @@ export default function PaymentFailedScreen({ route, navigation }) {
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Ionicons name="shield-checkmark" size={24} color={Colors.primary} />
-              <Text style={styles.modalTitle}>Retry Cashfree Checkout</Text>
+              <Text style={styles.modalTitle}>Retry Razorpay Checkout</Text>
             </View>
             <Text style={styles.modalAmount}>₹{finalAmount}</Text>
             <TouchableOpacity style={styles.successBtn} onPress={handleRetrySuccess}>
