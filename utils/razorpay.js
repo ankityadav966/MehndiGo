@@ -2,85 +2,94 @@ const Razorpay = require("razorpay");
 const crypto = require("crypto");
 const AppError = require("./errors/app.error");
 
+/**
+ * Returns a configured instance of Razorpay SDK.
+ */
 const getRazorpayInstance = () => {
   const key_id = process.env.RAZORPAY_KEY_ID;
-  const key_secret = process.env.RAZORPAY_SECRET;
+  const key_secret = process.env.RAZORPAY_KEY_SECRET;
 
   if (!key_id || !key_secret) {
-    throw new AppError("Razorpay API keys are not configured in environment variables", 500);
+    throw new AppError("Razorpay credentials (RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET) are not configured in environment", 500);
   }
 
   return new Razorpay({
-    key_id: key_id,
-    key_secret: key_secret,
+    key_id,
+    key_secret
   });
 };
 
-const createRazorpayOrder = async (orderData) => {
+/**
+ * Creates a Razorpay order.
+ * @param {Object} options - { amount (in paise), currency, receipt, notes }
+ * @returns {Promise<Object>} Razorpay order details: { order_id, amount, currency, id, receipt }
+ */
+const createRazorpayOrder = async ({ amount, currency = "INR", receipt, notes = {} }) => {
+  const numericAmount = Number(amount);
+
+  if (isNaN(numericAmount) || numericAmount < 100) {
+    throw new AppError("Minimum order amount must be at least 100 paise", 400);
+  }
+
+  const razorpay = getRazorpayInstance();
+  const options = {
+    amount: Math.round(numericAmount), // amount in paise
+    currency: currency || "INR",
+    receipt: receipt || `receipt_${Date.now()}`,
+    notes: notes || {}
+  };
+
   try {
-    const razorpay = getRazorpayInstance();
-    const options = {
-      amount: Math.round(Number(orderData.amount) * 100), // Amount in paise
-      currency: orderData.currency || "INR",
-      receipt: String(orderData.orderId),
-      notes: {
-        customerId: String(orderData.customerId),
-        customerEmail: orderData.customerEmail || "",
-        customerPhone: orderData.customerPhone || "",
-        note: orderData.note || "MehndiGo Payment"
-      }
-    };
-    
     const order = await razorpay.orders.create(options);
-    return order;
-  } catch (error) {
-    console.error("Razorpay Order Creation Error:", error);
-    throw new AppError(error.description || error.message || "Failed to create Razorpay order", 400);
-  }
-};
-
-const verifyRazorpaySignature = (orderId, paymentId, signature) => {
-  try {
-    const key_secret = process.env.RAZORPAY_SECRET;
-    if (!key_secret) {
-      throw new AppError("Razorpay secret not configured", 500);
-    }
-    
-    const generatedSignature = crypto
-      .createHmac("sha256", key_secret)
-      .update(`${orderId}|${paymentId}`)
-      .digest("hex");
-      
-    if (generatedSignature === signature) {
-      return true;
-    }
-    return false;
-  } catch (error) {
-    console.error("Razorpay Signature Verification Error:", error);
-    return false;
-  }
-};
-
-const initiateRazorpayRefund = async (paymentId, refundAmount, note) => {
-  try {
-    const razorpay = getRazorpayInstance();
-    const options = {
-      amount: Math.round(Number(refundAmount) * 100), // Amount in paise
-      notes: {
-        reason: note || "Booking Cancellation Refund"
-      }
+    return {
+      order_id: order.id,
+      id: order.id,
+      amount: order.amount,
+      currency: order.currency,
+      receipt: order.receipt,
+      status: order.status,
+      created_at: order.created_at
     };
-    
-    const refund = await razorpay.payments.refund(paymentId, options);
-    return refund;
   } catch (error) {
-    console.error("Razorpay Refund Error:", error);
-    throw new AppError(error.description || error.message || "Failed to initiate Razorpay refund", 400);
+    console.error("Razorpay API Order Creation Error:", error);
+    throw new AppError(error.description || error.message || "Failed to create Razorpay order", 500);
+  }
+};
+
+/**
+ * Verifies Razorpay payment signature using HMAC-SHA256.
+ * Algorithm: HMAC-SHA256(order_id + "|" + payment_id, KEY_SECRET)
+ * @param {Object} params - { razorpay_order_id, razorpay_payment_id, razorpay_signature }
+ * @returns {boolean} true if signature matches, false otherwise
+ */
+const verifyRazorpaySignature = ({ razorpay_order_id, razorpay_payment_id, razorpay_signature }) => {
+  if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+    return false;
+  }
+
+  const key_secret = process.env.RAZORPAY_KEY_SECRET;
+  if (!key_secret) {
+    throw new AppError("RAZORPAY_KEY_SECRET is not configured in environment", 500);
+  }
+
+  const body = razorpay_order_id + "|" + razorpay_payment_id;
+  const expectedSignature = crypto
+    .createHmac("sha256", key_secret)
+    .update(body.toString())
+    .digest("hex");
+
+  try {
+    return crypto.timingSafeEqual(
+      Buffer.from(expectedSignature, "utf-8"),
+      Buffer.from(razorpay_signature, "utf-8")
+    );
+  } catch (e) {
+    return expectedSignature === razorpay_signature;
   }
 };
 
 module.exports = {
+  getRazorpayInstance,
   createRazorpayOrder,
-  verifyRazorpaySignature,
-  initiateRazorpayRefund
+  verifyRazorpaySignature
 };

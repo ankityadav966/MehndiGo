@@ -46,7 +46,7 @@ const UserDashboard = ({ showToast }) => {
     try {
       const bookingsRes = await artistService.getBookings();
       setBookings(bookingsRes.data || []);
-      
+
       const artistsRes = await artistService.getArtists();
       setArtists(artistsRes.data?.rows || artistsRes.data || []);
 
@@ -72,59 +72,74 @@ const UserDashboard = ({ showToast }) => {
     }
   };
 
-  // Redirect checkout handler for Razorpay
+  // Razorpay Standard Checkout Handler
   const handlePayment = async (booking) => {
     try {
-      showToast("Initializing secure Razorpay gateway...", "info");
-      
-      const loadScript = () => {
-        return new Promise((resolve) => {
-          if (window.Razorpay) return resolve(true);
-          const script = document.createElement("script");
-          script.src = "https://checkout.razorpay.com/v1/checkout.js";
-          script.onload = () => resolve(true);
-          script.onerror = () => resolve(false);
-          document.body.appendChild(script);
-        });
-      };
-      
-      const res = await loadScript();
-      if (!res) {
-        throw new Error("Razorpay SDK failed to load. Are you online?");
-      }
-      
+      showToast("Initializing Razorpay checkout...", "info");
       const orderRes = await artistService.createOrder(booking.id);
-      const { order_id, amount } = orderRes.data;
-      
+      const orderData = orderRes.data || orderRes;
+      const { order_id, amount, currency } = orderData;
+
+      if (!order_id) {
+        throw new Error("Order ID not returned from server");
+      }
+
+      const keyId = import.meta.env.VITE_RAZORPAY_KEY_ID || "rzp_test_TGoR6mRPZ6Isma";
+
       const options = {
-        key: import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_test_TG65Zz9HYgFZsj',
-        amount: Math.round(amount * 100),
-        currency: "INR",
+        key: keyId,
+        amount: amount,
+        currency: currency || "INR",
         name: "MehndiGo",
-        description: `Payment for Booking #${booking.booking_code}`,
+        description: `Payment for Booking #${booking.booking_code || booking.id}`,
         order_id: order_id,
         handler: async function (response) {
-           try {
-             await artistService.verifyPayment({
-               booking_id: booking.id,
-               razorpay_order_id: response.razorpay_order_id,
-               razorpay_payment_id: response.razorpay_payment_id,
-               razorpay_signature: response.razorpay_signature
-             });
-             showToast("Payment verified successfully!", "success");
-             fetchBookings();
-           } catch (e) {
-             showToast("Payment verification failed", "danger");
-           }
+          try {
+            showToast("Verifying payment signature...", "info");
+            const verifyRes = await artistService.verifyPayment({
+              booking_id: booking.id,
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature
+            });
+            showToast("Payment completed and verified successfully!", "success");
+            fetchDashboardData();
+          } catch (err) {
+            showToast("Payment verification error: " + err.message, "danger");
+          }
         },
-        theme: { color: "#ff7e5f" }
+        prefill: {
+          name: profile?.name || "",
+          email: profile?.email || "",
+          contact: profile?.phone || ""
+        },
+        theme: {
+          color: "#E11D48"
+        },
+        modal: {
+          ondismiss: function () {
+            showToast("Payment process cancelled.", "warning");
+          }
+        }
       };
-      const rzp = new window.Razorpay(options);
-      rzp.open();
+
+      if (!window.Razorpay) {
+        throw new Error("Razorpay SDK not loaded. Please refresh the page.");
+      }
+
+      const razorpayModal = new window.Razorpay(options);
+
+      razorpayModal.on("payment.failed", function (response) {
+        console.error("Razorpay Payment Failed:", response.error);
+        showToast(`Payment failed: ${response.error.description || response.error.reason}`, "danger");
+      });
+
+      razorpayModal.open();
     } catch (e) {
       showToast("Payment initialization failed: " + e.message, "danger");
     }
   };
+
 
   return (
     <div className="dashboard-layout">
