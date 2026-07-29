@@ -124,11 +124,8 @@ export default function CategoriesScreen({ navigation }) {
         }
       >
         <Image
-<<<<<<< HEAD
-          source={hasError ? require("../../assets/images/logo.jpg") : getCategoryImage(item)}
-=======
-          source={hasError ? require("../../assets/images/logo.png") : getCategoryImage(item)}
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
+          source={hasError ? require("../../../assets/images/icon.png") : getCategoryImage(item)}
+
           onError={() => {
             setImageErrors((prev) => ({ ...prev, [item.id]: true }));
           }}

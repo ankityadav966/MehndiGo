@@ -143,7 +143,7 @@ export default function App() {
   }
 
   return (
-    <SafeAreaProvider onLayout={onLayoutRootView}>
+    <SafeAreaProvider onLayout={onLayoutRootView} style={{ flex: 1 }}>
       <GlobalToast />
       <GlobalModal />
       <AuthProvider>

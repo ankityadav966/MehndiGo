@@ -809,7 +809,6 @@ class ArtistService {
     if (isNaN(amountPaise) || amountPaise < 100) {
       throw new AppError("Minimum order amount must be at least 100 paise", 400);
     }
-<<<<<<< HEAD
     const amount = booking.total_price;
     const user = await UserRepositor.getById(booking.user_id);
     let order;
@@ -836,34 +835,7 @@ class ArtistService {
       currency: "INR"
     });
     return { order_id: order.id, amount };
-=======
 
-    const order = await razorpayUtil.createRazorpayOrder({
-      amount: amountPaise,
-      currency: "INR",
-      receipt
-    });
-
-    if (booking_id) {
-      await PaymentRepositor.create({
-        booking_id,
-        cashfree_order_id: order.order_id,
-        transaction_id: order.order_id,
-        amount: Math.round(amountPaise / 100),
-        payment_method: "ONLINE",
-        status: "PENDING",
-        gateway: "RAZORPAY",
-        currency: "INR"
-      });
-    }
-
-    return {
-      order_id: order.order_id,
-      id: order.order_id,
-      amount: order.amount,
-      currency: order.currency
-    };
->>>>>>> afabfdb10c22b33fcbde282630fffc7bd8f57736
   }
 
   async verifyPayment(data) {
@@ -871,7 +843,6 @@ class ArtistService {
       booking_id,
       razorpay_order_id,
       razorpay_payment_id,
-<<<<<<< HEAD
       razorpay_signature
     } = data;
 
@@ -899,61 +870,7 @@ class ArtistService {
         razorpay_signature: razorpay_signature,
         status: "SUCCESS",
         paid_at: new Date()
-=======
-      razorpay_signature,
-      cashfree_order_id
-    } = data;
 
-    const orderId = razorpay_order_id || cashfree_order_id;
-    const paymentId = razorpay_payment_id;
-    const signature = razorpay_signature;
-
-    if (!orderId || !paymentId || !signature) {
-      throw new AppError("Missing payment verification parameters (razorpay_order_id, razorpay_payment_id, razorpay_signature)", 400);
-    }
-
-    const isValid = razorpayUtil.verifyRazorpaySignature({
-      razorpay_order_id: orderId,
-      razorpay_payment_id: paymentId,
-      razorpay_signature: signature
-    });
-
-    if (!isValid) {
-      throw new AppError("Invalid payment signature. Payment verification failed.", 400);
-    }
-
-    if (booking_id) {
-      const booking = await BookingRepositor.getById(booking_id);
-      if (!booking) {
-        throw new AppError("Booking not found", 404);
-      }
-      await BookingRepositor.update(booking_id, {
-        payment_status: "PAID",
-        booking_status: "CONFIRMED",
-        advance_paid: booking.total_price,
-        remaining_amount: 0
-      });
-
-      const payments = await PaymentRepositor.getAll({ booking_id });
-      const payment = payments[0];
-      if (payment) {
-        await PaymentRepositor.update(payment.id, {
-          cashfree_payment_id: paymentId,
-          transaction_id: paymentId,
-          status: "SUCCESS",
-          paid_at: new Date()
-        });
-      }
-
-      const artist = await ArtistProfileRepositor.getById(booking.artist_id);
-      const artistUserId = artist ? artist.user_id : booking.artist_id;
-
-      await NotificationRepositor.createNotification({
-        user_id: artistUserId,
-        title: "Payment Success",
-        message: "Booking payment completed via Razorpay",
-        type: "PAYMENT",
->>>>>>> afabfdb10c22b33fcbde282630fffc7bd8f57736
       });
     }
 

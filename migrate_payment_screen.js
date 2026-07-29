@@ -1,4 +1,6 @@
-import Ionicons from "@expo/vector-icons/Ionicons";
+const fs = require('fs');
+
+const content = `import Ionicons from "@expo/vector-icons/Ionicons";
 import React, { useState, useEffect } from "react";
 import {
   ActivityIndicator,
@@ -99,7 +101,7 @@ export default function PaymentScreen({ route, navigation }) {
             {
               text: "OK",
               onPress: () => {
-                navigation.replace("BookingSuccess", { bookingCode: bookingCode || booking?.booking_code || `BK-${Math.floor(100000 + Math.random() * 900000)}` });
+                navigation.replace("BookingSuccess", { bookingCode: bookingCode || booking?.booking_code || \`BK-\${Math.floor(100000 + Math.random() * 900000)}\` });
               }
             }
           ]
@@ -141,7 +143,7 @@ export default function PaymentScreen({ route, navigation }) {
             specializationName: booking?.service?.specialization_name
           });
         } else {
-          navigation.replace("BookingSuccess", { bookingCode: bookingCode || booking?.booking_code || `BK-${Math.floor(100000 + Math.random() * 900000)}` });
+          navigation.replace("BookingSuccess", { bookingCode: bookingCode || booking?.booking_code || \`BK-\${Math.floor(100000 + Math.random() * 900000)}\` });
         }
       } catch (err) {
         setLoading(false);
@@ -220,7 +222,7 @@ export default function PaymentScreen({ route, navigation }) {
       id: "wallet", 
       title: "MehndiGo Wallet", 
       subtitle: walletBalance !== undefined && walletBalance !== null
-        ? `Pay using your wallet balance (Available: ₹${walletBalance})`
+        ? \`Pay using your wallet balance (Available: ₹\${walletBalance})\`
         : "Pay using your internal wallet balance", 
       icon: "wallet-outline" 
     }
@@ -345,7 +347,7 @@ export default function PaymentScreen({ route, navigation }) {
       </ScrollView>
 
       <View style={styles.footer}>
-        <CustomButton title={`Pay Securely ₹${finalAmount || ""}`} onPress={handlePay} disabled={loading} />
+        <CustomButton title={\`Pay Securely ₹\${finalAmount || ""}\`} onPress={handlePay} disabled={loading} />
       </View>
     </SafeAreaView>
   );
@@ -393,3 +395,6 @@ const styles = StyleSheet.create({
   gatewayDisclaimer: { fontSize: 9, color: Colors.textTertiary, textAlign: "center", lineHeight: 14 },
   footer: { padding: 16, backgroundColor: Colors.white, borderTopWidth: 1, borderTopColor: Colors.border }
 });
+`;
+fs.writeFileSync('mobile/src/screens/Customer/PaymentScreen.js', content, 'utf8');
+console.log('Migrated PaymentScreen to Razorpay');

@@ -141,7 +141,6 @@ class AuthService {
 
     let user = await UserRepositor.getOne({ email: targetEmail });
     if (!user) {
-<<<<<<< HEAD
       user = await UserRepositor.create({
         name: name || "User",
         phone,
@@ -165,9 +164,7 @@ class AuthService {
       if (email) updateData.email = email;
       await UserRepositor.update(user.id, updateData);
       user = await UserRepositor.getById(user.id);
-=======
-      throw new AppError("User not found", 404);
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
+
     }
 
     await UserRepositor.update(user.id, {
@@ -313,14 +310,8 @@ class AuthService {
     }
 
     try {
-<<<<<<< HEAD
       const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET || "Live credentials");
-=======
-      if (!process.env.JWT_SECRET) {
-        throw new AppError("JWT Secret is not configured", 500);
-      }
-      const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
+
       const user = await UserRepositor.getById(decoded.id);
 
       if (!user || user.refresh_token !== refreshToken) {

@@ -193,7 +193,6 @@ async function getInvoice(req, res) {
   }
 }
 
-<<<<<<< HEAD
 async function skipReview(req, res) {
   try {
     const { bookingId } = req.body;
@@ -302,23 +301,7 @@ async function onTheWayBooking(req, res) {
     const { bookingId } = req.body;
     const response = await BookingService.updateBookingStatus(bookingId, req.user.id, req.user.role, "ARTIST_ON_THE_WAY");
     return res.status(200).json(SuccessResponse("Artist is on the way", response));
-=======
-async function getPendingPayment(req, res) {
-  try {
-    const response = await BookingService.getPendingPayment(req.user.id);
-    return res.status(200).json(SuccessResponse("Pending payment retrieved successfully", response));
-  } catch (error) {
-    return res
-      .status(error.statusCode || 500)
-      .json(ErrorResponse(error.message, error));
-  }
-}
-async function skipReview(req, res) {
-  try {
-    const { bookingId } = req.body;
-    const response = await BookingService.skipReview(bookingId, req.user.id);
-    return res.status(200).json(SuccessResponse("Review skipped successfully", response));
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
+
   } catch (error) {
     return res
       .status(error.statusCode || 500)
@@ -326,49 +309,7 @@ async function skipReview(req, res) {
   }
 }
 
-<<<<<<< HEAD
-=======
-async function sendCheckInOtp(req, res) {
-  try {
-    const { bookingId } = req.body;
-    const response = await BookingService.sendCheckInOtp(bookingId, req.user.id);
-    return res.status(200).json(SuccessResponse("Check-In OTP sent successfully", response));
-  } catch (error) {
-    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
-  }
-}
 
-async function verifyCheckInOtp(req, res) {
-  try {
-    const { bookingId, otp } = req.body;
-    const response = await BookingService.verifyCheckInOtp(bookingId, otp, req.user.id);
-    return res.status(200).json(SuccessResponse("Check-In OTP verified successfully", response));
-  } catch (error) {
-    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
-  }
-}
-
-async function sendCheckOutOtp(req, res) {
-  try {
-    const { bookingId } = req.body;
-    const response = await BookingService.sendCheckOutOtp(bookingId, req.user.id);
-    return res.status(200).json(SuccessResponse("Check-Out OTP sent successfully", response));
-  } catch (error) {
-    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
-  }
-}
-
-async function verifyCheckOutOtp(req, res) {
-  try {
-    const { bookingId, otp } = req.body;
-    const response = await BookingService.verifyCheckOutOtp(bookingId, otp, req.user.id);
-    return res.status(200).json(SuccessResponse("Check-Out OTP verified successfully", response));
-  } catch (error) {
-    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
-  }
-}
-
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
 module.exports = {
   calculatePriceDetails,
   createBooking,
@@ -385,7 +326,6 @@ module.exports = {
   updateArrived,
   startService,
   completeService,
-<<<<<<< HEAD
   onTheWayBooking,
   getInvoice,
   skipReview,
@@ -393,13 +333,5 @@ module.exports = {
   confirmCashPayment,
   rejectCashPayment,
   checkRestrictedBooking
-=======
-  getInvoice,
-  getPendingPayment,
-  skipReview,
-  sendCheckInOtp,
-  verifyCheckInOtp,
-  sendCheckOutOtp,
-  verifyCheckOutOtp
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
+
 };

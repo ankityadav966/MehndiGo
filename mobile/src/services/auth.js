@@ -66,7 +66,6 @@ export async function verifyOtp(email, otp) {
   return data;
 }
 
-<<<<<<< HEAD
 export function sanitizePhone(phone) {
   if (!phone) return phone;
   let cleaned = String(phone).trim();
@@ -83,24 +82,16 @@ export function sanitizePhone(phone) {
 export async function sendOtp(name, email, phone, role) {
   console.log("Sending OTP request");
   const sanitized = sanitizePhone(phone);
-=======
-export async function sendOtp(email, phone, role) {
-  console.log("Sending check/login OTP request for email:", email);
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
+
   const data = await apiRequest("POST", "/api/v1/mehndigo/user/send-otp", {
     email,
-<<<<<<< HEAD
     role: role === "CUSTOMER" ? "USER" : role, // Map CUSTOMER role to USER backend enum value
     phone: sanitized,
-=======
-    phone,
-    role,
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
+
   });
   return data;
 }
 
-<<<<<<< HEAD
 export async function verifyUserOtp(phone, otp, role, name, email, referralCode = "") {
   const sanitized = sanitizePhone(phone);
   const data = await apiRequest("POST", "/api/v1/mehndigo/user/verify-otp", {
@@ -110,29 +101,11 @@ export async function verifyUserOtp(phone, otp, role, name, email, referralCode 
     name: name || "",
     email: email || "",
     referralCode,
-=======
-export async function registerSendOtp(name, email, phone, role) {
-  console.log("Sending register OTP request:", { name, email, phone, role });
-  const data = await apiRequest("POST", "/api/v1/mehndigo/user/register-send-otp", {
-    name,
-    email,
-    phone: phone || null,
-    role,
-  });
-  return data;
-}
 
-export async function registerVerifyOtp(email, otp) {
-  console.log("Verifying register OTP:", { email, otp });
-  const data = await apiRequest("POST", "/api/v1/mehndigo/user/register-verify-otp", {
-    email,
-    otp,
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
   });
   return persistAuthData(data);
 }
 
-<<<<<<< HEAD
 export async function registerUserV1(userData) {
   if (userData && userData.phone) {
     userData.phone = sanitizePhone(userData.phone);
@@ -149,20 +122,7 @@ export async function loginWithPhone(phone, role) {
   const data = await apiRequest("POST", "/api/v1/mehndigo/user/login", {
     phone: sanitized,
     role: role === "CUSTOMER" ? "USER" : role, // Map CUSTOMER role to USER backend enum value
-=======
-export async function verifyUserOtp(email, otp) {
-  const data = await apiRequest("POST", "/api/v1/mehndigo/user/verify-otp", {
-    email,
-    otp,
-  });
-  return persistAuthData(data);
-}
 
-export async function loginWithEmail(email, role) {
-  const data = await apiRequest("POST", "/api/v1/mehndigo/user/login", {
-    email,
-    role,
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
   });
   return persistAuthData(data);
 }

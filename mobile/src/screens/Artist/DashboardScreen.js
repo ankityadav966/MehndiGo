@@ -386,7 +386,6 @@ export default function ArtistDashboardScreen({ navigation }) {
             accentColor="#EF4444"
             onPress={() => navigation.navigate("Wallet", { initialTab: "Withdraw" })}
           />
-<<<<<<< HEAD
           <DashboardCard
             count={counts.PENDING_CASH_APPROVAL || 0}
             title="Pending Cash Confirm"
@@ -395,9 +394,7 @@ export default function ArtistDashboardScreen({ navigation }) {
             accentColor="#F59E0B"
             onPress={() => navigation.navigate("BookingRequests", { initialTab: "Accepted" })}
           />
-=======
 
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
           <DashboardCard
             count={counts.CANCELLED || 0}
             title="Cancelled Bookings"
@@ -428,18 +425,9 @@ export default function ArtistDashboardScreen({ navigation }) {
         {/* 6. Active Actions (Pending Bookings) */}
         {dashboard?.recentBookings?.filter(b => b.booking_status === "PENDING" || (b.booking_status === "CONFIRMED" && b.detailed_status === "CONFIRMED")).length > 0 && (
           <View style={styles.cashSection}>
-<<<<<<< HEAD
             <Text style={styles.sectionTitle}>New Pending Bookings</Text>
             {dashboard.recentBookings.filter(b => b.booking_status === "PENDING" || (b.booking_status === "CONFIRMED" && b.detailed_status === "CONFIRMED")).map((item) => {
-=======
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-              <Text style={styles.sectionTitle}>New Pending Bookings</Text>
-              <Pressable onPress={() => navigation.navigate("BookingRequests", { initialTab: "Pending" })}>
-                <Text style={styles.viewAll}>View All</Text>
-              </Pressable>
-            </View>
-            {dashboard.recentBookings.filter(b => b.booking_status === "PENDING" || (b.booking_status === "CONFIRMED" && b.detailed_status === "CONFIRMED")).slice(0, 3).map((item) => {
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
+
               const slotDate = item.slot?.start_time ? new Date(item.slot.start_time).toLocaleDateString() : (item.reschedule_date || "TBD");
               const slotTime = item.slot ? `${new Date(item.slot.start_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - ${new Date(item.slot.end_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` : (item.reschedule_time || "TBD");
 
@@ -523,7 +511,6 @@ export default function ArtistDashboardScreen({ navigation }) {
           </View>
         )}
 
-<<<<<<< HEAD
         {/* 7. Active Actions (Pending Cash Confirmations) */}
         {dashboard?.recentBookings?.filter(b => b.detailed_status === "AWAITING_CASH_CONFIRMATION" || b.booking_status === "AWAITING_CASH_CONFIRMATION").length > 0 && (
           <View style={styles.cashSection}>
@@ -588,9 +575,7 @@ export default function ArtistDashboardScreen({ navigation }) {
             ))}
           </View>
         )}
-=======
 
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
 
         {/* 8. Recent Bookings List */}
         <View style={styles.sectionHeader}>
@@ -600,11 +585,8 @@ export default function ArtistDashboardScreen({ navigation }) {
           </Pressable>
         </View>
 
-<<<<<<< HEAD
         {dashboard?.recentBookings?.map((item) => (
-=======
-        {dashboard?.recentBookings?.slice(0, 3).map((item) => (
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
+
           <Pressable
             key={item.id}
             style={styles.bookingCard}

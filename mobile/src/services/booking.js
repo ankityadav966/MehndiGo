@@ -101,10 +101,6 @@ export async function getInvoice(bookingId) {
   return res?.data || res;
 }
 
-export async function checkRestrictedBooking() {
-  // Returns false by default to allow users to book freely without artificial restrictions
-  return { hasRestricted: false };
-}
 
 export async function getPendingPayment() {
   const res = await apiRequest("GET", "/booking/pending", null, true);
@@ -122,24 +118,13 @@ export async function getArtistLocation(bookingId) {
   return res?.data || res;
 }
 
-export async function updateOnTheWay(bookingId) {
-  const res = await apiRequest("PUT", "/booking/on-the-way", { bookingId }, true);
-  return res?.data || res;
-}
 
 export async function updateArrived(bookingId) {
   const res = await apiRequest("PUT", "/booking/arrived", { bookingId }, true);
   return res?.data || res;
 }
 
-export async function confirmCashPayment(bookingId) {
-  const res = await apiRequest("PUT", "/booking/complete", { bookingId }, true);
-  return res?.data || res;
-}
 
-export async function rejectCashPayment(bookingId) {
-  return { success: true };
-}
 
 export async function sendCheckInOtp(bookingId) {
   const res = await apiRequest("POST", "/booking/send-checkin-otp", { bookingId }, true);

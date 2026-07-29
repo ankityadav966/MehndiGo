@@ -122,27 +122,18 @@ export default function CustomerProfileScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
-<<<<<<< HEAD
           <Text style={styles.name}>{profile.name}</Text>
           <View style={styles.badgeRow}>
             {profile.current_level !== undefined && (
               <View style={[styles.badgeContainer, { backgroundColor: "#FFE5EC", borderColor: Colors.primary, borderWidth: 1, marginBottom: 8 }]}>
-=======
-          <Text style={[styles.name, { color: currentTextColor }]}>{profile.name}</Text>
-          <View style={styles.badgeRow}>
-            {profile.current_level !== undefined && (
-              <View style={[styles.badgeContainer, { backgroundColor: isDarkMode ? "#333" : "#FFE5EC", borderColor: Colors.primary, borderWidth: 1, marginBottom: 8 }]}>
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
+
                 <Ionicons name="sparkles-outline" size={12} color={Colors.primary} />
                 <Text style={[styles.badgeText, { color: Colors.primary }]}>Level {profile.current_level}</Text>
               </View>
             )}
             {profile.ambassador_tier && (
-<<<<<<< HEAD
               <View style={[styles.badgeContainer, { backgroundColor: "#FFF8E1", borderColor: "#FFA000", borderWidth: 1, marginBottom: 8 }]}>
-=======
-              <View style={[styles.badgeContainer, { backgroundColor: isDarkMode ? "#333" : "#FFF8E1", borderColor: "#FFA000", borderWidth: 1, marginBottom: 8 }]}>
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
+
                 <Ionicons name="trophy-outline" size={12} color="#FFA000" />
                 <Text style={[styles.badgeText, { color: "#FFA000" }]}>{profile.ambassador_tier} Tier</Text>
               </View>
@@ -237,27 +228,6 @@ const styles = StyleSheet.create({
   menuLabel: { fontSize: 13, fontWeight: "700", color: Colors.text },
   logoutButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: Colors.white, marginHorizontal: 16, marginBottom: 40, height: 48, borderRadius: 14, borderWidth: 1, borderColor: Colors.error },
   logoutText: { fontSize: 13, fontWeight: "800", color: Colors.error, marginLeft: 8 },
-<<<<<<< HEAD
   badgeRow: { flexDirection: "row", gap: 8, justifyContent: "center", alignItems: "center" }
-=======
-  badgeRow: { flexDirection: "row", gap: 8, justifyContent: "center", alignItems: "center" },
-  toggleSwitch: {
-    width: 42,
-    height: 24,
-    borderRadius: 12,
-    paddingVertical: 2,
-    justifyContent: "center"
-  },
-  toggleCircle: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: Colors.white,
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    shadowOffset: { width: 0, height: 1 }
-  }
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
+
 });

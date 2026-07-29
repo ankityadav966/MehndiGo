@@ -841,42 +841,12 @@ class CustomerService {
     if (user.profile_image) filledFields++;
     const profileCompletion = Math.round((filledFields / totalFields) * 100);
 
-<<<<<<< HEAD
     let finalPendingReviewBooking = null;
     if (pendingReviewBooking) {
       const isReviewed = await db.Review.findOne({ where: { booking_id: pendingReviewBooking.id } });
       if (!isReviewed) {
         finalPendingReviewBooking = pendingReviewBooking;
-=======
-    // Find completed & paid bookings for this user that are not skipped
-    const completedBookings = await db.Booking.findAll({
-      where: {
-        user_id: userId,
-        booking_status: "COMPLETED",
-        payment_status: "PAID",
-        review_skipped: { [Op.ne]: true }
-      },
-      include: [
-        {
-          model: db.ArtistProfile,
-          as: "artist",
-          include: [{ model: db.User, as: "user", attributes: ["name", "profile_image"] }]
-        },
-        {
-          model: db.Service,
-          as: "service",
-          attributes: ["specialization_name"]
-        }
-      ]
-    });
 
-    let pendingReviewBooking = null;
-    for (const b of completedBookings) {
-      const review = await db.Review.findOne({ where: { booking_id: b.id } });
-      if (!review) {
-        pendingReviewBooking = b;
-        break;
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
       }
     }
 
@@ -894,12 +864,9 @@ class CustomerService {
       walletBalance: wallet ? wallet.balance : 0,
       totalBookings,
       recentBookings,
-<<<<<<< HEAD
       pendingReviewBooking: finalPendingReviewBooking,
       pendingSettlementBooking: pendingSettlementBooking
-=======
-      pendingReviewBooking
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
+
     };
   }
 

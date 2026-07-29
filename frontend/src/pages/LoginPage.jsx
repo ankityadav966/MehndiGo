@@ -168,7 +168,6 @@ const LoginPage = ({ showToast }) => {
             </div>
 
             <div className="form-group">
-<<<<<<< HEAD
               <label className="form-label">Select Account Role</label>
               <div style={{ position: "relative" }}>
                 <UserCheck
@@ -190,17 +189,7 @@ const LoginPage = ({ showToast }) => {
                   <option value="ARTIST">Talent / Artist</option>
                   <option value="ADMIN">ADMIN</option>
                 </select>
-=======
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <label className="form-label" style={{ marginBottom: 0 }}>Password</label>
-                <button type="button" onClick={() => setStep("FORGOT_PASSWORD")} style={{ background: "none", border: "none", color: "var(--accent-color)", fontSize: "0.85rem", cursor: "pointer", padding: 0 }}>
-                  Forgot Password?
-                </button>
-              </div>
-              <div style={{ position: "relative", marginTop: "0.5rem" }}>
-                <Lock style={{ position: "absolute", left: "12px", top: "10px", color: "var(--text-secondary)", width: "16px" }} />
-                <input type="password" className="form-control" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} style={{ paddingLeft: "2.5rem" }} required />
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
+
               </div>
             </div>
 

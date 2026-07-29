@@ -18,13 +18,8 @@ import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import CustomButton from "../../components/CustomButton";
-<<<<<<< HEAD
 import { getBookingDetails, acceptBooking, rejectBooking, updateOnTheWay, startService, completeService, confirmCashPayment, rejectCashPayment } from "../../services/booking";
-=======
-import { getBookingDetails, acceptBooking, rejectBooking, updateOnTheWay, updateArrived, startService, completeService, confirmCashPayment, rejectCashPayment, sendCheckInOtp, verifyCheckInOtp, sendCheckOutOtp, verifyCheckOutOtp } from "../../services/booking";
-import * as Location from "expo-location";
-import LeafletMapView from "../../components/LeafletMapView";
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
+
 
 // Stepper steps for artist tracking
 const STEPS = [
@@ -655,30 +650,6 @@ export default function BookingDetailsScreen({ route, navigation }) {
     }
   };
 
-  const handleConfirmCash = async () => {
-    setLoading(true);
-    try {
-      await confirmCashPayment(bookingId);
-      Alert.alert("Payment Confirmed", "You confirmed that cash payment was received. Booking completed & settled.");
-      loadDetails();
-    } catch (err) {
-      Alert.alert("Error", err.message || "Failed to confirm cash payment.");
-      setLoading(false);
-    }
-  };
-
-  const handleRejectCash = async () => {
-    setLoading(true);
-    try {
-      await rejectCashPayment(bookingId);
-      Alert.alert("Dispute Logged", "You reported that cash payment was not received. Admin has been notified.");
-      loadDetails();
-    } catch (err) {
-      Alert.alert("Error", err.message || "Failed to reject cash payment.");
-      setLoading(false);
-    }
-  };
-
   if (loading || !booking) {
     return (
       <View style={styles.centerContainer}>
@@ -825,7 +796,6 @@ export default function BookingDetailsScreen({ route, navigation }) {
       );
     }
 
-<<<<<<< HEAD
     if (currentDetailedStatus === "AWAITING_CASH_CONFIRMATION") {
       return (
         <View style={styles.footerActions}>
@@ -838,9 +808,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
         </View>
       );
     }
-=======
 
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
 
     return (
       <View style={styles.completedBanner}>

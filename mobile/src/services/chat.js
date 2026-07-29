@@ -1,8 +1,5 @@
-<<<<<<< HEAD
 import apiRequest, { getNormalizedUrl } from "./api";
-=======
-import apiRequest, { BASE_URL, getNormalizedUrl } from "./api";
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
+
 
 // Fetch chat room listings for active bookings
 export async function getChatList() {
@@ -46,13 +43,9 @@ export async function uploadChatMedia(fileUri, fileType, fileName) {
   else if (fileType === "pdf") type = "application/pdf";
   else if (fileType === "voice") type = "audio/m4a";
 
-<<<<<<< HEAD
   const url = getNormalizedUrl("/chat/upload");
   console.log(`[API REQUEST] POST (uploadAsync) -> ${url}`);
-=======
-  const finalUri = getSafeUri(fileUri);
-  const url = getNormalizedUrl("/api/v1/mehndigo/chat/upload");
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
+
   const token = await require("../utils/storage").secureStorage.getAccessToken();
 
   const FileSystem = require("expo-file-system/legacy");

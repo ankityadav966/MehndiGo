@@ -67,15 +67,10 @@ export default function MyBookingsScreen({ navigation }) {
     return bookings.filter((item) => {
       const status = item.detailed_status || item.booking_status;
       if (selectedTab === "Pending") {
-<<<<<<< HEAD
         return ["PENDING", "VIEWED", "CONFIRMED"].includes(status);
       } else if (selectedTab === "Accepted") {
         return ["ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED", "RESCHEDULED"].includes(status);
-=======
-        return ["PENDING", "VIEWED", "CONFIRMED", "WAITING_FOR_USER_PAYMENT"].includes(status);
-      } else if (selectedTab === "Accepted") {
-        return ["ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "ARTIST_ARRIVED", "SERVICE_STARTED", "RESCHEDULED", "CASH_PAYMENT_PENDING", "CASH_DISPUTED"].includes(status);
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
+
       } else if (selectedTab === "Completed") {
         return ["COMPLETED", "AWAITING_CASH_CONFIRMATION", "COMPLETED_CLOSED"].includes(status);
       } else {

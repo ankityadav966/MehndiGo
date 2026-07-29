@@ -28,10 +28,6 @@
     "pg": "^8.21.0",
     "pg-hstore": "^2.3.4",
     "razorpay": "^2.9.8",
-<<<<<<< HEAD
-    "redis": "^6.1.0",
-=======
->>>>>>> afabfdb10c22b33fcbde282630fffc7bd8f57736
     "sequelize": "^6.37.8",
     "socket.io": "^4.8.3"
   }

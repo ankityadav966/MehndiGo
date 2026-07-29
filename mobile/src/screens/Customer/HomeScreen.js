@@ -13,10 +13,7 @@ import {
   ActivityIndicator,
   Animated,
   Platform,
-<<<<<<< HEAD
-=======
-  Modal,
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
+
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
@@ -24,10 +21,7 @@ import Colors from "../../constants/Colors";
 import LoadingSkeleton from "../../components/LoadingSkeleton";
 import { useAuth } from "../../context/AuthContext";
 import { getHomeDashboard, getNearbyArtists, getCustomerProfile, getFavorites, addFavorite, removeFavorite, getCustomerDashboard } from "../../services/customer";
-<<<<<<< HEAD
-=======
-import { getPendingPayment } from "../../services/booking";
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
+
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -102,7 +96,6 @@ export default function HomeScreen({ navigation }) {
         console.log("Failed to load favorites on dashboard:", favErr.message);
       }
 
-<<<<<<< HEAD
       // Check for pending unreviewed or unpaid completed bookings!
       try {
         const custDash = await getCustomerDashboard();
@@ -120,29 +113,7 @@ export default function HomeScreen({ navigation }) {
             artistImage: pending.artist?.user?.profile_image,
             specializationName: pending.service?.specialization_name
           });
-=======
-      // Check for split payment pending remaining amount
-      try {
-        const pendingBooking = await getPendingPayment();
-        if (pendingBooking) {
-          setPendingPaymentBooking(pendingBooking);
-          setPaymentModalVisible(true);
-        } else {
-          setPendingPaymentBooking(null);
-          setPaymentModalVisible(false);
 
-          // If no pending payment, check for pending unreviewed bookings
-          const custDash = await getCustomerDashboard();
-          if (custDash?.pendingReviewBooking) {
-            const pending = custDash.pendingReviewBooking;
-            navigation.navigate("ReviewSubmission", {
-              bookingId: pending.id,
-              artistName: pending.artist?.user?.name,
-              artistImage: pending.artist?.user?.profile_image,
-              specializationName: pending.service?.specialization_name
-            });
-          }
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
         }
       } catch (dashErr) {
         console.log("Failed to check pending reviews/settlements on startup:", dashErr.message);
@@ -369,11 +340,8 @@ export default function HomeScreen({ navigation }) {
       >
         <View style={[styles.categoryIcon, { overflow: "hidden" }]}>
           <Image
-<<<<<<< HEAD
-            source={hasError ? require("../../assets/images/logo.jpg") : getCategoryImage(item)}
-=======
-            source={hasError ? require("../../assets/images/logo.png") : getCategoryImage(item)}
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
+            source={hasError ? require("../../../assets/images/icon.png") : getCategoryImage(item)}
+
             onError={() => {
               setImageErrors((prev) => ({ ...prev, [item.id]: true }));
             }}
