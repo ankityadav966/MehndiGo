@@ -34,6 +34,66 @@ export default function MyBookingsScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [dashboardFilter, setDashboardFilter] = useState("This Month");
+  const [imageErrors, setImageErrors] = useState({});
+
+  const LOCAL_CATEGORY_IMAGES = {
+    "bridal": require("../../assets/images/categories/bridal.png"),
+    "royal": require("../../assets/images/categories/royal.png"),
+    "arabic": require("../../assets/images/categories/arabic.png"),
+    "traditional": require("../../assets/images/categories/traditional.png"),
+    "floral": require("../../assets/images/categories/floral.png"),
+    "minimal": require("../../assets/images/categories/minimal.png"),
+    "modern": require("../../assets/images/categories/modern.png"),
+    "finger": require("../../assets/images/categories/finger.png"),
+    "full-hand": require("../../assets/images/categories/full_hand.png"),
+    "back-hand": require("../../assets/images/categories/back_hand.png"),
+    "front-hand": require("../../assets/images/categories/front_hand.png"),
+    "leg": require("../../assets/images/categories/leg.png"),
+    "kids": require("../../assets/images/categories/kids.png"),
+    "groom": require("../../assets/images/categories/groom.png"),
+    "engagement": require("../../assets/images/categories/engagement.png"),
+    "wedding": require("../../assets/images/categories/wedding.png"),
+    "karwa-chauth": require("../../assets/images/categories/karwa_chauth.png"),
+    "eid": require("../../assets/images/categories/eid.png"),
+    "festival": require("../../assets/images/categories/festival.png"),
+    "indo-arabic": require("../../assets/images/categories/indo_arabic.png"),
+    "custom": require("../../assets/images/categories/custom.png")
+  };
+
+  const getCategoryFallback = (item) => {
+    const name = (item?.service?.specialization_name || item?.service?.category || "").toLowerCase();
+    let key = "custom";
+    if (name.includes("bridal") || name.includes("royal")) key = "bridal";
+    else if (name.includes("arabic")) key = "arabic";
+    else if (name.includes("traditional")) key = "traditional";
+    else if (name.includes("minimal")) key = "minimal";
+    else if (name.includes("finger")) key = "finger";
+    else if (name.includes("full")) key = "full-hand";
+    else if (name.includes("back")) key = "back-hand";
+    else if (name.includes("leg") || name.includes("feet")) key = "leg";
+    else if (name.includes("kid")) key = "kids";
+    return LOCAL_CATEGORY_IMAGES[key] || LOCAL_CATEGORY_IMAGES.custom;
+  };
+
+  const resolveBookingImage = (item) => {
+    if (imageErrors[item.id]) {
+      return getCategoryFallback(item);
+    }
+
+    const rawUri = item?.artist?.user?.profile_image || item?.service?.image;
+    if (!rawUri || typeof rawUri !== "string") {
+      return getCategoryFallback(item);
+    }
+
+    if (rawUri.startsWith("http://") || rawUri.startsWith("https://") || rawUri.startsWith("file://") || rawUri.startsWith("content://")) {
+      return { uri: rawUri };
+    }
+
+    const { BASE_URL } = require("../../services/api");
+    const cleanBase = (BASE_URL || "").replace(/\/api\/v1\/?$/, "");
+    const cleanPath = rawUri.startsWith("/") ? rawUri : `/${rawUri}`;
+    return { uri: `${cleanBase}${cleanPath}` };
+  };
 
   const fetchHistory = async () => {
     try {
@@ -213,8 +273,12 @@ export default function MyBookingsScreen({ navigation }) {
     return (
       <View style={[styles.card, { backgroundColor: currentCardBg, borderColor: currentBorderColor }]}>
         <Image
-          source={{ uri: resolveImage(item.artist?.user?.profile_image) }}
+          source={resolveBookingImage(item)}
+          onError={() => {
+            setImageErrors((prev) => ({ ...prev, [item.id]: true }));
+          }}
           style={styles.artistImage}
+          resizeMode="cover"
         />
         <View style={styles.info}>
           <View style={styles.cardHeader}>
@@ -275,22 +339,6 @@ export default function MyBookingsScreen({ navigation }) {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: currentBgColor }]}>
       <Text style={[styles.header, { color: currentTextColor }]}>My Bookings</Text>
-
-      {/* Booking Statistics Carousel */}
-      <View style={{ maxHeight: 110, marginBottom: 12 }}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 6 }}
-        >
-          {renderStatsCard("Total Bookings", stats.total, "calendar", Colors.primary)}
-          {renderStatsCard("Today's Bookings", stats.todayCount, "today", "#2196F3")}
-          {renderStatsCard("Weekly Bookings", stats.weeklyCount, "time", "#9C27B0")}
-          {renderStatsCard("Monthly Bookings", stats.monthlyCount, "calendar-number", "#E91E63")}
-          {renderStatsCard("Completed Bookings", stats.completedCount, "checkmark-circle", "#4CAF50")}
-          {renderStatsCard("Upcoming Bookings", stats.upcomingCount, "hourglass", "#FF9800")}
-        </ScrollView>
-      </View>
 
       {/* Time Range Stats Filters */}
       <Text style={[styles.sectionSubtitle, { color: currentSecTextColor }]}>Time Range Dashboard</Text>

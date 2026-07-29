@@ -5,7 +5,7 @@ async function createSession(req, res) {
   try {
     const { bookingId, amount } = req.body;
     const response = await PaymentService.createSession(bookingId, req.user.id, amount);
-    return res.status(200).json(SuccessResponse("Cashfree payment session created successfully", response));
+    return res.status(200).json(SuccessResponse("Razorpay payment order created successfully", response));
   } catch (error) {
     return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
   }

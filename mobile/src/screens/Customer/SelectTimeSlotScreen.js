@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View, ActivityIndicator } from "react-native";
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View, ActivityIndicator } from "react-native";
 import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -9,16 +9,18 @@ import moment from "moment";
 import { fetchArtistAvailability } from "../../services/customer";
 
 export default function SelectTimeSlotScreen({ route, navigation }) {
-  const { artistId, serviceId, selectedDates } = route.params || {};
-  const dateList = Array.isArray(selectedDates) ? selectedDates : [selectedDates || new Date().toISOString().split("T")[0]];
+  const { artistId, serviceId, selectedDate: paramDate } = route.params || {};
 
-  const [slots, setSlots] = useState({});
-  const [selectedSlotIds, setSelectedSlotIds] = useState([]);
+  // Single Date & Single Slot Rule: Exactly 1 Date (string YYYY-MM-DD)
+  const targetDate = typeof paramDate === "string" ? paramDate : (Array.isArray(paramDate) ? paramDate[0] : moment().format("YYYY-MM-DD"));
+
+  const [availableSlots, setAvailableSlots] = useState([]);
+  const [selectedSlotId, setSelectedSlotId] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!artistId || dateList.length === 0) {
-      Alert.alert("Error", "Missing context.");
+    if (!artistId || !targetDate) {
+      Alert.alert("Error", "Missing booking date context.");
       navigation.goBack();
       return;
     }
@@ -27,90 +29,72 @@ export default function SelectTimeSlotScreen({ route, navigation }) {
       try {
         const data = await fetchArtistAvailability(artistId);
         
-        // Filter slots that match selected dates and are not booked
+        // Filter slots matching the target date
         const daySlots = (data || []).filter((slot) => {
           const slotDate = moment(slot.start_time).format("YYYY-MM-DD");
-          return dateList.includes(slotDate) && !slot.is_booked;
+          return slotDate === targetDate;
         });
 
-        // Group slots by date
-        const grouped = {};
-        dateList.forEach((date) => {
-          grouped[date] = daySlots.filter((slot) => moment(slot.start_time).format("YYYY-MM-DD") === date);
-        });
+        // Fallback standard time slots if no availability record is seeded for this date
+        let finalSlots = daySlots;
+        if (daySlots.length === 0) {
+          finalSlots = [
+            { id: `slot_${targetDate}_10am`, start_time: `${targetDate}T10:00:00.000Z`, end_time: `${targetDate}T13:00:00.000Z`, is_booked: false },
+            { id: `slot_${targetDate}_02pm`, start_time: `${targetDate}T14:00:00.000Z`, end_time: `${targetDate}T17:00:00.000Z`, is_booked: false },
+            { id: `slot_${targetDate}_06pm`, start_time: `${targetDate}T18:00:00.000Z`, end_time: `${targetDate}T21:00:00.000Z`, is_booked: false }
+          ];
+        }
 
-        // If a date has no available slots, populate dummy slots for that date!
-        dateList.forEach((date) => {
-          if (grouped[date].length === 0) {
-            grouped[date] = [
-              { id: `dummy_${date}_1`, start_time: `${date}T10:00:00.000Z`, end_time: `${date}T13:00:00.000Z` },
-              { id: `dummy_${date}_2`, start_time: `${date}T14:00:00.000Z`, end_time: `${date}T17:00:00.000Z` },
-              { id: `dummy_${date}_3`, start_time: `${date}T18:00:00.000Z`, end_time: `${date}T21:00:00.000Z` }
-            ];
-          }
-        });
+        setAvailableSlots(finalSlots);
 
-        setSlots(grouped);
-
-        // Pre-select first slot of each date
-        const initialSelected = [];
-        Object.keys(grouped).forEach((date) => {
-          if (grouped[date].length > 0) {
-            initialSelected.push(grouped[date][0].id);
-          }
-        });
-        setSelectedSlotIds(initialSelected);
+        // Pre-select first non-booked slot
+        const firstAvailable = finalSlots.find(s => !s.is_booked);
+        if (firstAvailable) {
+          setSelectedSlotId(firstAvailable.id);
+        }
       } catch (err) {
-        Alert.alert("Error", "Failed to fetch time slot schedules.");
+        Alert.alert("Error", "Failed to fetch time slots for selected date.");
       } finally {
         setLoading(false);
       }
     };
 
     loadSlots();
-  }, [artistId, selectedDates]);
+  }, [artistId, targetDate]);
 
-  const handleSlotPress = (itemId) => {
-    if (selectedSlotIds.includes(itemId)) {
-      if (selectedSlotIds.length > 1) {
-        setSelectedSlotIds((prev) => prev.filter((id) => id !== itemId));
-      } else {
-        Alert.alert("Notice", "You must keep at least one time slot selected.");
-      }
-    } else {
-      setSelectedSlotIds((prev) => [...prev, itemId]);
+  const handleSlotPress = (slot) => {
+    if (slot.is_booked) {
+      Alert.alert("Unavailable", "This time slot is already booked. Please select another slot.");
+      return;
     }
+    // Single Time Slot Rule: Selecting a slot replaces any previous selection automatically!
+    setSelectedSlotId(slot.id);
   };
 
   const handleContinue = () => {
-    if (selectedSlotIds.length === 0) {
-      Alert.alert("Required", "Please choose a booking time slot to proceed.");
+    if (!selectedSlotId) {
+      Alert.alert("Required", "Please choose 1 time slot to proceed with your booking.");
       return;
     }
 
-    const labels = [];
-    const dbSlotIds = [];
-    
-    Object.keys(slots).forEach((date) => {
-      slots[date].forEach((slot) => {
-        if (selectedSlotIds.includes(slot.id)) {
-          const formattedDate = moment(date).format("DD MMM");
-          const startStr = moment(slot.start_time).format("hh:mm A");
-          const endStr = moment(slot.end_time).format("hh:mm A");
-          labels.push(`${formattedDate} (${startStr} - ${endStr})`);
-          if (!String(slot.id).startsWith("dummy_")) {
-            dbSlotIds.push(slot.id);
-          }
-        }
-      });
-    });
+    const chosenSlot = availableSlots.find((s) => s.id === selectedSlotId);
+    if (!chosenSlot) {
+      Alert.alert("Error", "Selected time slot is invalid.");
+      return;
+    }
 
+    const startStr = moment(chosenSlot.start_time).format("hh:mm A");
+    const endStr = moment(chosenSlot.end_time).format("hh:mm A");
+    const timeLabel = `${startStr} - ${endStr}`;
+    const cleanSlotId = String(chosenSlot.id).startsWith("slot_") ? null : chosenSlot.id;
+
+    // Pass strictly 1 date & 1 time slot to AddressSelection
     navigation.navigate("AddressSelection", {
       artistId,
       serviceId,
-      selectedDate: dateList.join(","),
-      slotId: dbSlotIds,
-      timeLabel: labels.join(", ")
+      selectedDate: targetDate,
+      slotId: cleanSlotId,
+      timeLabel: timeLabel
     });
   };
 
@@ -121,7 +105,7 @@ export default function SelectTimeSlotScreen({ route, navigation }) {
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
           <Ionicons name="chevron-back" size={22} color={Colors.text} />
         </TouchableOpacity>
-        <Text style={styles.title}>Select Time Slots</Text>
+        <Text style={styles.title}>Select 1 Time Slot</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -131,43 +115,64 @@ export default function SelectTimeSlotScreen({ route, navigation }) {
         </View>
       ) : (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
-          <View style={styles.introBlock}>
-            <Text style={styles.subtitle}>Choose one or more time slots for your selected dates:</Text>
+          <View style={styles.dateHeaderCard}>
+            <Ionicons name="calendar" size={20} color={Colors.primary} />
+            <Text style={styles.dateHeaderText}>
+              {moment(targetDate).format("dddd, DD MMMM YYYY")}
+            </Text>
           </View>
 
-          {Object.keys(slots).map((date) => (
-            <View key={date} style={{ marginBottom: 20, paddingHorizontal: 16 }}>
-              <Text style={{ fontSize: 14, fontWeight: "700", color: Colors.primary, marginBottom: 8, textTransform: "uppercase" }}>
-                📅 {moment(date).format("dddd, DD MMMM YYYY")}
-              </Text>
-              
-              <View style={styles.slotContainer}>
-                {slots[date].map((item) => {
-                  const startLabel = moment(item.start_time).format("hh:mm A");
-                  const endLabel = moment(item.end_time).format("hh:mm A");
-                  const label = `${startLabel} - ${endLabel}`;
-                  const isSelected = selectedSlotIds.includes(item.id);
-                  return (
-                    <TouchableOpacity
-                      key={item.id}
-                      activeOpacity={0.8}
-                      onPress={() => handleSlotPress(item.id)}
-                      style={[styles.slotCard, isSelected && styles.selectedSlot]}
-                    >
-                      <Text style={[styles.slotText, isSelected && styles.selectedText]}>{label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-          ))}
+          <Text style={styles.instructionText}>
+            Select exactly 1 time slot for your mehndi session:
+          </Text>
+
+          <View style={styles.slotContainer}>
+            {availableSlots.map((item) => {
+              const startLabel = moment(item.start_time).format("hh:mm A");
+              const endLabel = moment(item.end_time).format("hh:mm A");
+              const label = `${startLabel} - ${endLabel}`;
+              const isSelected = selectedSlotId === item.id;
+              const isBooked = item.is_booked;
+
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  activeOpacity={isBooked ? 1 : 0.8}
+                  disabled={isBooked}
+                  onPress={() => handleSlotPress(item)}
+                  style={[
+                    styles.slotCard,
+                    isSelected && styles.selectedSlot,
+                    isBooked && styles.bookedSlot
+                  ]}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center" }}>
+                    <Ionicons
+                      name={isBooked ? "close-circle" : isSelected ? "radio-button-on" : "radio-button-off"}
+                      size={20}
+                      color={isBooked ? Colors.error : isSelected ? Colors.white : Colors.textTertiary}
+                      style={{ marginRight: 10 }}
+                    />
+                    <Text style={[styles.slotText, isSelected && styles.selectedText, isBooked && styles.bookedText]}>
+                      {label}
+                    </Text>
+                  </View>
+                  {isBooked ? (
+                    <Text style={styles.bookedBadge}>Already Booked</Text>
+                  ) : isSelected ? (
+                    <Text style={styles.selectedBadge}>Selected</Text>
+                  ) : null}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </ScrollView>
       )}
 
       <View style={styles.footer}>
         <CustomButton
-          title={`Book ${selectedSlotIds.length} Slot${selectedSlotIds.length > 1 ? "s" : ""} & Continue`}
-          disabled={selectedSlotIds.length === 0 || loading}
+          title="Continue to Address"
+          disabled={!selectedSlotId || loading}
           onPress={handleContinue}
         />
       </View>
@@ -182,15 +187,17 @@ const styles = StyleSheet.create({
   title: { fontSize: 18, fontWeight: "700", color: Colors.text },
   centerContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
   content: { paddingBottom: 100 },
-  introBlock: { paddingHorizontal: 16, marginVertical: 12 },
-  subtitle: { fontSize: 13, color: Colors.textSecondary },
+  dateHeaderCard: { flexDirection: "row", alignItems: "center", backgroundColor: Colors.white, marginHorizontal: 16, marginVertical: 12, padding: 14, borderRadius: 14, elevation: 1 },
+  dateHeaderText: { fontSize: 14, fontWeight: "700", color: Colors.text, marginLeft: 10 },
+  instructionText: { fontSize: 12, color: Colors.textSecondary, marginHorizontal: 16, marginBottom: 12 },
   slotContainer: { paddingHorizontal: 16 },
-  slotCard: { height: 50, borderRadius: 12, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.white, justifyContent: "center", alignItems: "center", marginBottom: 10, elevation: 1 },
+  slotCard: { height: 56, borderRadius: 14, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.white, paddingHorizontal: 16, flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12, elevation: 1 },
   selectedSlot: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  slotText: { fontSize: 13, fontWeight: "600", color: Colors.textSecondary },
+  bookedSlot: { backgroundColor: "#F3F4F6", borderColor: "#E5E7EB", opacity: 0.7 },
+  slotText: { fontSize: 14, fontWeight: "600", color: Colors.text },
   selectedText: { color: Colors.white, fontWeight: "700" },
-  footer: { padding: 16, backgroundColor: Colors.white, borderTopWidth: 1, borderTopColor: Colors.border },
-  emptyContainer: { paddingVertical: 80, alignItems: "center", justifyContent: "center" },
-  emptyText: { fontSize: 14, fontWeight: "700", color: Colors.text, marginTop: 12 },
-  emptySub: { fontSize: 12, color: Colors.textSecondary, marginTop: 4 }
+  bookedText: { color: Colors.textTertiary, textDecorationLine: "line-through" },
+  selectedBadge: { fontSize: 11, fontWeight: "700", color: Colors.white },
+  bookedBadge: { fontSize: 11, fontWeight: "700", color: Colors.error },
+  footer: { padding: 16, backgroundColor: Colors.white, borderTopWidth: 1, borderTopColor: Colors.border }
 });

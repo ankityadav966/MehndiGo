@@ -48,13 +48,14 @@ class WalletService {
     const paymentService = require("./payment.services");
     
     const verifyData = {
-      cashfree_order_id: data.cashfree_order_id || data.order_id || data.orderId,
-      payment_session_id: data.payment_session_id
+      razorpay_order_id: data.razorpay_order_id || data.cashfree_order_id || data.order_id || data.orderId,
+      razorpay_payment_id: data.razorpay_payment_id || data.payment_id,
+      razorpay_signature: data.razorpay_signature || data.signature
     };
     
     console.log("[WALLET_SERVICE] Calling paymentService.verifyPayment with payload:", JSON.stringify(verifyData, null, 2));
-    await paymentService.verifyPayment(userId, verifyData);
-    console.log("[WALLET_SERVICE] paymentService.verifyPayment succeeded. Proceeding to credit wallet.");
+    const result = await paymentService.verifyPayment(userId, verifyData);
+    console.log("[WALLET_SERVICE] paymentService.verifyPayment succeeded. Returning updated wallet.");
     
     const wallet = await this.getOrCreateWallet(userId);
     const tx = await db.WalletTransaction.findOne({
@@ -62,7 +63,7 @@ class WalletService {
       order: [["createdAt", "DESC"]]
     });
     
-    return { wallet, tx };
+    return { wallet, tx, result };
   }
 
   async initiateWithdrawal(userId, amount) {

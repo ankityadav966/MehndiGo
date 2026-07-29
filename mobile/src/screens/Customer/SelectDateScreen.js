@@ -13,8 +13,10 @@ import { checkRestrictedBooking } from "../../services/booking";
 export default function SelectDateScreen({ route, navigation }) {
   const { artistId, serviceId, selectedDate: initialDate, selectedTimeSlot } = route.params || {};
 
-  const [selectedDates, setSelectedDates] = useState(
-    initialDate ? [initialDate] : [new Date().toISOString().split("T")[0]]
+  // Single Date Selection Rule: Exactly 1 selected date string (YYYY-MM-DD)
+  const todayStr = moment().format("YYYY-MM-DD");
+  const [selectedDate, setSelectedDate] = useState(
+    initialDate && moment(initialDate, "YYYY-MM-DD", true).isValid() ? initialDate : todayStr
   );
   const [availabilityDates, setAvailabilityDates] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -86,10 +88,16 @@ export default function SelectDateScreen({ route, navigation }) {
   }, [artistId, serviceId]);
 
   const handleContinue = () => {
+    if (!selectedDate) {
+      Alert.alert("Required", "Please select a booking date to proceed.");
+      return;
+    }
+
+    // Pass strictly 1 selected date to SelectTimeSlotScreen
     navigation.navigate("SelectTimeSlot", {
       artistId,
       serviceId,
-      selectedDates,
+      selectedDate,
       selectedTimeSlot
     });
   };
@@ -97,24 +105,23 @@ export default function SelectDateScreen({ route, navigation }) {
   const getMarkedDates = () => {
     const marked = {};
     
-    // Mark all dates where the artist has available slots
+    // Mark dates where artist is available
     availabilityDates.forEach(date => {
       marked[date] = {
         marked: true,
-        dotColor: Colors.primary,
-        activeOpacity: 0
+        dotColor: Colors.primary
       };
     });
 
-    // Mark the selected dates
-    selectedDates.forEach(date => {
-      marked[date] = {
-        ...marked[date],
+    // Highlight the single selected date
+    if (selectedDate) {
+      marked[selectedDate] = {
+        ...marked[selectedDate],
         selected: true,
         selectedColor: Colors.primary,
         selectedTextColor: Colors.white
       };
-    });
+    }
 
     return marked;
   };
@@ -126,7 +133,7 @@ export default function SelectDateScreen({ route, navigation }) {
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
           <Ionicons name="chevron-back" size={22} color={Colors.text} />
         </TouchableOpacity>
-        <Text style={styles.title}>Select Date</Text>
+        <Text style={styles.title}>Select 1 Booking Date</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -137,21 +144,23 @@ export default function SelectDateScreen({ route, navigation }) {
           </View>
         ) : (
           <>
+            <View style={styles.selectedDateBadge}>
+              <Ionicons name="calendar-outline" size={18} color={Colors.primary} />
+              <Text style={styles.selectedDateBadgeText}>
+                Selected Date: {moment(selectedDate).format("dddd, DD MMMM YYYY")}
+              </Text>
+            </View>
+
             <Calendar
-              current={selectedDates[0]}
+              current={selectedDate}
               onDayPress={(day) => {
                 const dateStr = day.dateString;
-                if (selectedDates.includes(dateStr)) {
-                  if (selectedDates.length > 1) {
-                    setSelectedDates(prev => prev.filter(d => d !== dateStr));
-                  }
-                } else {
-                  setSelectedDates(prev => [...prev, dateStr]);
-                }
+                // Single Date Rule: Selecting a date automatically replaces previous date!
+                setSelectedDate(dateStr);
               }}
               hideExtraDays
               enableSwipeMonths
-              minDate={new Date().toISOString().split("T")[0]}
+              minDate={todayStr}
               renderArrow={(direction) => (
                 <Ionicons name={direction === "left" ? "chevron-back" : "chevron-forward"} size={20} color={Colors.text} />
               )}
@@ -173,14 +182,18 @@ export default function SelectDateScreen({ route, navigation }) {
             />
             <View style={styles.legendContainer}>
               <View style={styles.legendDot} />
-              <Text style={styles.legendText}>Dates with pink dots indicate when artist is available.</Text>
+              <Text style={styles.legendText}>Dates with dots indicate artist availability. Tap any date to select 1 date.</Text>
             </View>
           </>
         )}
       </View>
 
       <View style={styles.footer}>
-        <CustomButton title="Continue" onPress={handleContinue} />
+        <CustomButton
+          title={`Continue with ${moment(selectedDate).format("DD MMM YYYY")}`}
+          onPress={handleContinue}
+          disabled={!selectedDate || loading}
+        />
       </View>
     </SafeAreaView>
   );
@@ -192,9 +205,11 @@ const styles = StyleSheet.create({
   backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.background, justifyContent: "center", alignItems: "center" },
   title: { fontSize: 18, fontWeight: "700", color: Colors.text },
   calendarCard: { flex: 1, paddingHorizontal: 16, marginTop: 10 },
+  selectedDateBadge: { flexDirection: "row", alignItems: "center", backgroundColor: Colors.primary + "10", padding: 12, borderRadius: 12, marginBottom: 14 },
+  selectedDateBadgeText: { fontSize: 13, fontWeight: "700", color: Colors.primary, marginLeft: 8 },
   centerContainer: { flex: 1, justifyContent: "center", alignItems: "center", minHeight: 300 },
   legendContainer: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, marginTop: 20 },
   legendDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.primary, marginRight: 8 },
-  legendText: { fontSize: 12, color: Colors.textSecondary },
+  legendText: { fontSize: 11, color: Colors.textSecondary, flex: 1 },
   footer: { padding: 16, backgroundColor: Colors.white, borderTopWidth: 1, borderTopColor: Colors.border },
 });
