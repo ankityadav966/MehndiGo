@@ -67,55 +67,38 @@ class BookingService {
 
     const { serviceId, artistId, slotId, address, landmark, notes, couponCode, latitude, longitude, selectedDate, timeLabel } = data;
 
-    const slotIds = Array.isArray(slotId) ? slotId : (slotId ? [slotId] : []);
-    const slotCount = slotIds.length > 0 ? slotIds.length : 1;
+    // 1. Strict Validation: Reject multi-date or multi-slot arrays (1 Booking = 1 Service + 1 Date + 1 Time Slot)
+    if (Array.isArray(slotId) && slotId.length > 1) {
+      throw new AppError("Only 1 Date and 1 Time Slot can be selected per booking. Multi-slot booking is not allowed.", 400);
+    }
+    if (typeof selectedDate === "string" && selectedDate.includes(",")) {
+      throw new AppError("Only 1 Date and 1 Time Slot can be selected per booking. Multi-date booking is not allowed.", 400);
+    }
+    if (typeof timeLabel === "string" && timeLabel.includes(",")) {
+      throw new AppError("Only 1 Date and 1 Time Slot can be selected per booking. Multi-slot booking is not allowed.", 400);
+    }
 
-    // 1. Validate Customer Exists
+    const singleSlotId = Array.isArray(slotId) ? slotId[0] : slotId;
+
+    // 2. Validate Customer Exists
     const customer = await db.User.findByPk(userId);
     if (!customer) {
       throw new AppError("Customer not found", 404);
     }
 
-    // 2. Validate Artist Exists
+    // 3. Validate Artist Exists
     const artist = await db.ArtistProfile.findByPk(artistId);
     if (!artist) {
       throw new AppError("Artist profile not found", 404);
     }
 
-    // 3. Validate Service Exists
+    // 4. Validate Service Exists
     const service = await db.Service.findByPk(serviceId);
     if (!service) {
       throw new AppError("Service not found", 404);
     }
     if (service.artist_id !== artistId) {
       throw new AppError("Service does not belong to the selected artist", 400);
-    }
-
-    // 4. Validate Slots Exist, belong to artist, are not already booked, and check duplicate slots for user
-    if (slotIds.length > 0) {
-      for (const id of slotIds) {
-        const slot = await db.AvailabilitySlot.findByPk(id);
-        if (!slot) {
-          throw new AppError("Availability slot not found", 404);
-        }
-        if (slot.artist_id !== artistId) {
-          throw new AppError("Availability slot does not belong to this artist", 400);
-        }
-        if (slot.is_booked) {
-          throw new AppError("Selected time slot is already booked", 400);
-        }
-      }
-
-      const duplicate = await db.Booking.findOne({
-        where: {
-          user_id: userId,
-          slot_id: { [Op.in]: slotIds },
-          booking_status: { [Op.ne]: "CANCELLED" }
-        }
-      });
-      if (duplicate) {
-        throw new AppError("You already have an active booking for this time slot", 400);
-      }
     }
 
     // 5. Check Restricted Booking Rules
@@ -133,56 +116,84 @@ class BookingService {
       throw new AppError("Booking restricted. You have too many active bookings or pending disputes.", 400);
     }
 
+    // 6. Execute Transaction with Double Booking Protection & Row Lock
     const bookingResult = await db.sequelize.transaction(async (t) => {
-      let finalSlotId = slotIds[0] || null;
+      let finalSlotId = singleSlotId || null;
 
-      // Handle placeholder/dummy slot creations
-      if (slotIds.length === 0 && selectedDate && timeLabel) {
-        const dates = String(selectedDate).split(",");
-        const labels = String(timeLabel).split(",");
-        
-        for (let i = 0; i < dates.length; i++) {
-          const d = dates[i].trim();
-          const lbl = labels[i] ? labels[i].trim() : timeLabel;
-          
-          let startTime = new Date(`${d}T10:00:00.000Z`);
-          let endTime = new Date(`${d}T13:00:00.000Z`);
-          if (lbl.includes("02:00 PM") || lbl.includes("14:00")) {
-            startTime = new Date(`${d}T14:00:00.000Z`);
-            endTime = new Date(`${d}T17:00:00.000Z`);
-          } else if (lbl.includes("06:00 PM") || lbl.includes("18:00")) {
-            startTime = new Date(`${d}T18:00:00.000Z`);
-            endTime = new Date(`${d}T21:00:00.000Z`);
-          }
+      if (singleSlotId) {
+        // Lock row to prevent race conditions during simultaneous booking attempts
+        const slot = await db.AvailabilitySlot.findByPk(singleSlotId, {
+          transaction: t,
+          lock: t.LOCK.UPDATE
+        });
 
-          const newSlot = await db.AvailabilitySlot.create({
+        if (!slot) {
+          throw new AppError("Selected availability slot not found", 404);
+        }
+        if (slot.artist_id !== artistId) {
+          throw new AppError("Availability slot does not belong to the selected artist", 400);
+        }
+        if (slot.is_booked) {
+          throw new AppError("This time slot is no longer available. Please select another time.", 400);
+        }
+
+        // Check if an active booking already exists for this slot
+        const existingBooking = await db.Booking.findOne({
+          where: {
+            artist_id: artistId,
+            slot_id: singleSlotId,
+            booking_status: { [Op.ne]: "CANCELLED" }
+          },
+          transaction: t,
+          lock: t.LOCK.UPDATE
+        });
+
+        if (existingBooking) {
+          throw new AppError("This time slot is no longer available. Please select another time.", 400);
+        }
+
+        // Mark slot as booked atomically
+        await slot.update({ is_booked: true }, { transaction: t });
+      } else if (selectedDate && timeLabel) {
+        const d = String(selectedDate).trim();
+        const lbl = String(timeLabel).trim();
+
+        let startTime = new Date(`${d}T10:00:00.000Z`);
+        let endTime = new Date(`${d}T13:00:00.000Z`);
+        if (lbl.includes("02:00 PM") || lbl.includes("14:00")) {
+          startTime = new Date(`${d}T14:00:00.000Z`);
+          endTime = new Date(`${d}T17:00:00.000Z`);
+        } else if (lbl.includes("06:00 PM") || lbl.includes("18:00")) {
+          startTime = new Date(`${d}T18:00:00.000Z`);
+          endTime = new Date(`${d}T21:00:00.000Z`);
+        }
+
+        // Double booking check for custom date & time window
+        const existingSlotForDate = await db.AvailabilitySlot.findOne({
+          where: {
             artist_id: artistId,
             start_time: startTime,
-            end_time: endTime,
             is_booked: true
-          }, { transaction: t });
-          
-          if (i === 0) {
-            finalSlotId = newSlot.id;
-          }
+          },
+          transaction: t
+        });
+
+        if (existingSlotForDate) {
+          throw new AppError("This time slot is no longer available. Please select another time.", 400);
         }
-      } else {
-        // Mark all real slots as booked
-        for (const id of slotIds) {
-          const slot = await db.AvailabilitySlot.findByPk(id, {
-            transaction: t,
-            lock: t.LOCK.UPDATE
-          });
-          if (slot) {
-            if (slot.is_booked) {
-              throw new AppError("One or more selected slots are already booked", 400);
-            }
-            await slot.update({ is_booked: true }, { transaction: t });
-          }
-        }
+
+        const newSlot = await db.AvailabilitySlot.create({
+          artist_id: artistId,
+          start_time: startTime,
+          end_time: endTime,
+          is_booked: true
+        }, { transaction: t });
+
+        finalSlotId = newSlot.id;
       }
 
-      const pricing = await this.calculatePriceDetails(serviceId, couponCode, userId, slotCount);
+      // Calculate price for 1 slot always
+      const pricing = await this.calculatePriceDetails(serviceId, couponCode, userId, 1);
       const bookingCode = `BK-${Math.floor(100000 + Math.random() * 900000)}`;
 
       const booking = await db.Booking.create({
@@ -206,7 +217,7 @@ class BookingService {
         coupon_code: couponCode || null,
         address,
         landmark: landmark || null,
-        notes: notes || `Total Booked Slots: ${slotCount}`,
+        notes: notes || `Single Slot Booking (${selectedDate || ''} ${timeLabel || ''})`.trim(),
         latitude: latitude || 26.9124,
         longitude: longitude || 75.7873
       }, { transaction: t });
@@ -216,7 +227,7 @@ class BookingService {
         booking_id: booking.id,
         status: "PENDING",
         changed_by: userId,
-        notes: `Booking requested by customer for ${slotCount} slots`
+        notes: `Single slot booking created for date: ${selectedDate || 'N/A'}`
       }, { transaction: t });
 
       return booking;

@@ -13,10 +13,7 @@ import {
   ActivityIndicator,
   Animated,
   Platform,
-<<<<<<< HEAD
-=======
   Modal,
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
@@ -24,10 +21,7 @@ import Colors from "../../constants/Colors";
 import LoadingSkeleton from "../../components/LoadingSkeleton";
 import { useAuth } from "../../context/AuthContext";
 import { getHomeDashboard, getNearbyArtists, getCustomerProfile, getFavorites, addFavorite, removeFavorite, getCustomerDashboard } from "../../services/customer";
-<<<<<<< HEAD
-=======
 import { getPendingPayment } from "../../services/booking";
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -102,25 +96,6 @@ export default function HomeScreen({ navigation }) {
         console.log("Failed to load favorites on dashboard:", favErr.message);
       }
 
-<<<<<<< HEAD
-      // Check for pending unreviewed or unpaid completed bookings!
-      try {
-        const custDash = await getCustomerDashboard();
-        if (custDash?.pendingSettlementBooking) {
-          const pending = custDash.pendingSettlementBooking;
-          navigation.navigate("BookingSettlement", {
-            bookingId: pending.id
-          });
-        } else if (custDash?.pendingReviewBooking) {
-          const pending = custDash.pendingReviewBooking;
-          // Navigate to ReviewSubmission screen
-          navigation.navigate("ReviewSubmission", {
-            bookingId: pending.id,
-            artistName: pending.artist?.user?.name,
-            artistImage: pending.artist?.user?.profile_image,
-            specializationName: pending.service?.specialization_name
-          });
-=======
       // Check for split payment pending remaining amount
       try {
         const pendingBooking = await getPendingPayment();
@@ -142,7 +117,6 @@ export default function HomeScreen({ navigation }) {
               specializationName: pending.service?.specialization_name
             });
           }
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
         }
       } catch (dashErr) {
         console.log("Failed to check pending reviews/settlements on startup:", dashErr.message);
@@ -325,18 +299,27 @@ export default function HomeScreen({ navigation }) {
     "karwa-chauth": require("../../assets/images/categories/karwa_chauth.png"),
     "eid": require("../../assets/images/categories/eid.png"),
     "festival": require("../../assets/images/categories/festival.png"),
+    "indo-arabic": require("../../assets/images/categories/indo_arabic.png"),
     "custom": require("../../assets/images/categories/custom.png")
   };
 
   const getCategoryImage = (item) => {
-    if (item && item.image && (item.image.startsWith("http://") || item.image.startsWith("https://"))) {
-      return { uri: item.image };
+    if (item && item.image && typeof item.image === "string") {
+      if (item.image.startsWith("http://") || item.image.startsWith("https://")) {
+        return { uri: item.image };
+      }
+      if (item.image.startsWith("/")) {
+        const { BASE_URL } = require("../../services/api");
+        const cleanBase = (BASE_URL || "").replace(/\/api\/v1\/?$/, "");
+        return { uri: `${cleanBase}${item.image}` };
+      }
     }
-    const name = (item.name || "").toLowerCase();
-    const slug = (item.slug || "").toLowerCase();
+    const name = (item?.name || "").toLowerCase();
+    const slug = (item?.slug || "").toLowerCase();
 
     let key = "custom";
-    if (slug.includes("royal") || name.includes("royal")) key = "royal";
+    if (slug.includes("indo-arabic") || slug.includes("indo_arabic") || name.includes("indo-arabic") || name.includes("indo arabic") || name.includes("fusion")) key = "indo-arabic";
+    else if (slug.includes("royal") || name.includes("royal")) key = "royal";
     else if (slug.includes("bridal") || name.includes("bridal")) key = "bridal";
     else if (slug.includes("arabic") || name.includes("arabic")) key = "arabic";
     else if (slug.includes("traditional") || name.includes("traditional")) key = "traditional";
@@ -344,10 +327,10 @@ export default function HomeScreen({ navigation }) {
     else if (slug.includes("minimal") || name.includes("minimal")) key = "minimal";
     else if (slug.includes("modern") || name.includes("modern")) key = "modern";
     else if (slug.includes("finger") || name.includes("finger")) key = "finger";
-    else if (slug.includes("full-hand") || name.includes("full hand") || name.includes("full-hand")) key = "full-hand";
+    else if (slug.includes("full-hand") || name.includes("full hand") || name.includes("full-hand") || name.includes("hand mehendi") || name.includes("hand mehndi")) key = "full-hand";
     else if (slug.includes("back-hand") || name.includes("back hand") || name.includes("back-hand")) key = "back-hand";
     else if (slug.includes("front-hand") || name.includes("front hand") || name.includes("front-hand")) key = "front-hand";
-    else if (slug.includes("leg") || name.includes("leg")) key = "leg";
+    else if (slug.includes("leg") || name.includes("leg") || slug.includes("feet") || name.includes("feet")) key = "leg";
     else if (slug.includes("kids") || name.includes("kid") || slug.includes("kid")) key = "kids";
     else if (slug.includes("groom") || name.includes("groom")) key = "groom";
     else if (slug.includes("engagement") || name.includes("engagement")) key = "engagement";
@@ -369,11 +352,7 @@ export default function HomeScreen({ navigation }) {
       >
         <View style={[styles.categoryIcon, { overflow: "hidden" }]}>
           <Image
-<<<<<<< HEAD
-            source={hasError ? require("../../assets/images/logo.jpg") : getCategoryImage(item)}
-=======
-            source={hasError ? require("../../assets/images/logo.png") : getCategoryImage(item)}
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
+            source={hasError ? LOCAL_CATEGORY_IMAGES.custom : getCategoryImage(item)}
             onError={() => {
               setImageErrors((prev) => ({ ...prev, [item.id]: true }));
             }}
@@ -683,7 +662,7 @@ export default function HomeScreen({ navigation }) {
         </View>
       )}
 
-      {/* 4. Categories Section */}
+      {/* 4. Categories Section (Exactly 8 categories on HomeScreen) */}
       <View style={styles.sectionHeader}>
         <Text style={[styles.sectionTitle, { color: currentTextColor }]}>Mehndi Categories</Text>
         <TouchableOpacity onPress={() => navigation.navigate("Categories")}>
@@ -691,7 +670,16 @@ export default function HomeScreen({ navigation }) {
         </TouchableOpacity>
       </View>
       <FlatList
-        data={categories}
+        data={(categories && categories.length > 0 ? categories : [
+          { id: 1, name: "Bridal Mehendi", slug: "bridal-mehendi" },
+          { id: 2, name: "Arabic Mehendi", slug: "arabic-mehendi" },
+          { id: 3, name: "Indo-Arabic", slug: "indo-arabic" },
+          { id: 4, name: "Traditional", slug: "traditional-mehendi" },
+          { id: 5, name: "Minimalist", slug: "minimalist-mehendi" },
+          { id: 6, name: "Full Hand", slug: "full-hand-mehendi" },
+          { id: 7, name: "Back Hand", slug: "back-hand-mehendi" },
+          { id: 8, name: "Leg & Feet", slug: "leg-feet-mehendi" }
+        ]).slice(0, 8)}
         keyExtractor={(item) => String(item.id)}
         horizontal
         nestedScrollEnabled={true}
@@ -699,7 +687,7 @@ export default function HomeScreen({ navigation }) {
         contentContainerStyle={{ paddingLeft: 16, paddingBottom: 8 }}
         renderItem={renderCategoryItem}
         initialNumToRender={8}
-        maxToRenderPerBatch={4}
+        maxToRenderPerBatch={8}
         windowSize={5}
       />
 

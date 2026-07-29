@@ -53,6 +53,18 @@ module.exports = (sequelize, DataTypes) => {
       description: {
         type: DataTypes.STRING,
         allowNull: true
+      },
+      razorpay_order_id: {
+        type: DataTypes.STRING,
+        allowNull: true
+      },
+      razorpay_payment_id: {
+        type: DataTypes.STRING,
+        allowNull: true
+      },
+      razorpay_signature: {
+        type: DataTypes.STRING,
+        allowNull: true
       }
     },
     {

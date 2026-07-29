@@ -3,40 +3,30 @@ import React, { useState, useEffect } from "react";
 import {
   ActivityIndicator,
   Modal,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
-  Linking,
-  NativeModules
+  View
 } from "react-native";
 import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import CustomButton from "../../components/CustomButton";
-<<<<<<< HEAD
-import { createPaymentOrder, verifyPaymentSignature, payWithWallet } from "../../services/payment";
-import { getBookingDetails, selectCashPayment } from "../../services/booking";
-=======
 import { createPaymentSession, verifyPaymentSignature, payWithWallet } from "../../services/payment";
 import { getBookingDetails, selectCashPayment } from "../../services/booking";
 import { getWalletDetails } from "../../services/customer";
-import { secureStorage } from "../../utils/storage";
-import { CFPaymentGatewayService } from "react-native-cashfree-pg-sdk";
-import { CFSession, CFEnvironment, CFDropCheckoutPayment, CFPaymentComponentBuilder, CFPaymentModes, CFThemeBuilder } from "cashfree-pg-api-contract";
-import { BASE_URL } from "../../services/api";
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
+import RazorpayCheckout from "react-native-razorpay";
 
 export default function PaymentScreen({ route, navigation }) {
   const { bookingId, bookingCode, finalAmount, isSettlement } = route.params || {};
 
   const [booking, setBooking] = useState(null);
-  const [selectedMethod, setSelectedMethod] = useState("upi");
+  const [selectedMethod, setSelectedMethod] = useState("online");
   const [loading, setLoading] = useState(false);
   const [orderId, setOrderId] = useState("");
-  const [paymentSessionId, setPaymentSessionId] = useState("");
+  const [razorpayKeyId, setRazorpayKeyId] = useState("");
+  const [orderAmountPaise, setOrderAmountPaise] = useState(0);
   const [checkoutModalVisible, setCheckoutModalVisible] = useState(false);
   const [walletBalance, setWalletBalance] = useState(0);
 
@@ -56,58 +46,14 @@ export default function PaymentScreen({ route, navigation }) {
     }
   }, [bookingId]);
 
-  const loadBookingDetails = React.useCallback(async () => {
-    try {
-      const details = await getBookingDetails(bookingId);
-      setBooking(details);
-    } catch (err) {
-      console.log("Failed to fetch booking details in PaymentScreen:", err.message);
-    }
-  }, [bookingId]);
-
-  const initiateOrder = React.useCallback(async () => {
-    setLoading(true);
-    try {
-      await loadBookingDetails();
-<<<<<<< HEAD
-      const order = await createPaymentOrder(bookingId);
-      setOrderId(order.id);
-=======
-      console.log("[PAYMENT_SCREEN] Requesting Cashfree payment session for booking ID:", bookingId);
-      const sessionData = await createPaymentSession(bookingId);
-      console.log("[PAYMENT_SCREEN] Cashfree payment session response data:", JSON.stringify(sessionData, null, 2));
-
-      if (!sessionData || !sessionData.payment_session_id) {
-        console.error("[PAYMENT_SCREEN] Error: payment_session_id is null, undefined, or empty");
-        Alert.alert("Checkout Error", "Failed to retrieve a valid payment session ID.");
-        navigation.goBack();
-        return;
-      }
-
-      setOrderId(sessionData.order_id);
-      setPaymentSessionId(sessionData.payment_session_id);
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
-    } catch (err) {
-      Alert.alert("Checkout Error", "Failed to generate Cashfree payment session.");
-      navigation.goBack();
-    } finally {
-      setLoading(false);
-    }
-  }, [bookingId, navigation, loadBookingDetails]);
-
   useEffect(() => {
     if (!bookingId) {
       Alert.alert("Error", "Missing booking ID context.");
       navigation.goBack();
       return;
     }
-    const timer = setTimeout(() => {
-      initiateOrder();
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [bookingId, initiateOrder, navigation]);
- 
-
+    loadBookingDetails();
+  }, [bookingId, loadBookingDetails, navigation]);
 
   const handlePay = async () => {
     if (selectedMethod === "cash") {
@@ -173,116 +119,122 @@ export default function PaymentScreen({ route, navigation }) {
       return;
     }
 
-    if (!paymentSessionId) {
-      Alert.alert("Error", "Cashfree payment session not initialized yet.");
-      return;
-    }
-
-    if (paymentSessionId && (paymentSessionId.startsWith("session_mock") || paymentSessionId.startsWith("mock_session"))) {
-      setLoading(false);
-      setCheckoutModalVisible(true);
-      return;
-    }
-
+    // Online Razorpay Payment Flow
     setLoading(true);
+    let sessionData = null;
     try {
-      const onVerify = async (orderIdVal) => {
-        console.log("[PAYMENT_SCREEN] Cashfree Success Order ID Callback. orderIdVal:", orderIdVal);
-        try {
-          const verifyData = {
-            cashfree_order_id: orderIdVal,
-            payment_session_id: paymentSessionId
-          };
-          console.log("[PAYMENT_SCREEN] Calling verifyPaymentSignature with payload:", JSON.stringify(verifyData, null, 2));
-          const response = await verifyPaymentSignature(verifyData);
-          console.log("[PAYMENT_SCREEN] verifyPaymentSignature succeeded. Response:", JSON.stringify(response, null, 2));
-          
-          setLoading(false);
-          if (isSettlement) {
-            console.log("[PAYMENT_SCREEN] Routing to ReviewSubmission screen.");
-            navigation.replace("ReviewSubmission", {
-              bookingId: bookingId,
-              artistName: booking?.artist?.user?.name,
-              artistImage: booking?.artist?.user?.profile_image,
-              specializationName: booking?.service?.specialization_name
-            });
-          } else {
-            console.log("[PAYMENT_SCREEN] Routing to BookingSuccess screen.");
-            navigation.replace("BookingSuccess", { bookingCode: bookingCode || booking?.booking_code || "success" });
-          }
-        } catch (verifyErr) {
-          setLoading(false);
-          console.error("[PAYMENT_SCREEN] Verification API error:", verifyErr.message, verifyErr);
-          navigation.navigate("PaymentFailed", { bookingId, finalAmount });
-        }
-      };
+      console.log("[PAYMENT_SCREEN] Creating Razorpay payment order for booking ID:", bookingId);
+      sessionData = await createPaymentSession(bookingId);
+      console.log("[PAYMENT_SCREEN] Razorpay payment order response data:", JSON.stringify(sessionData, null, 2));
 
-      const onError = (error, orderIdVal) => {
+      if (!sessionData || !sessionData.order_id || !sessionData.key_id) {
         setLoading(false);
-        console.log("Cashfree Checkout Error Callback:", error, orderIdVal);
-        if (error && error.message && error.message.includes("Cancelled")) {
-          Alert.alert("Payment Cancelled", "You cancelled the payment transaction.");
-        } else {
-          Alert.alert("Payment Failed", error.message || "Checkout session failed.");
-          navigation.navigate("PaymentFailed", { bookingId, finalAmount });
-        }
-      };
+        Alert.alert("Checkout Error", "Failed to retrieve a valid Razorpay order ID.");
+        return;
+      }
 
-      CFPaymentGatewayService.setCallback({ onVerify, onError });
-
-      const session = new CFSession(
-        paymentSessionId,
-        orderId,
-        CFEnvironment.SANDBOX
-      );
-
-      const paymentModes = new CFPaymentComponentBuilder()
-        .add(CFPaymentModes.CARD)
-        .add(CFPaymentModes.UPI)
-        .add(CFPaymentModes.WALLET)
-        .add(CFPaymentModes.NET_BANKING)
-        .build();
-
-      const theme = new CFThemeBuilder()
-        .setNavigationBarBackgroundColor('#ff7e5f')
-        .setNavigationBarTextColor('#FFFFFF')
-        .setButtonBackgroundColor('#ff7e5f')
-        .setButtonTextColor('#FFFFFF')
-        .build();
-
-      const dropPayment = new CFDropCheckoutPayment(session, paymentModes, theme);
-
-      CFPaymentGatewayService.doPayment(dropPayment);
-    } catch (error) {
+      setOrderId(sessionData.order_id);
+      setRazorpayKeyId(sessionData.key_id);
+      setOrderAmountPaise(sessionData.amount);
+    } catch (err) {
       setLoading(false);
-      console.log("Cashfree SDK Initiation Error (Fallback to Simulation):", error);
-      try {
-        CFPaymentGatewayService.removeCallback();
-      } catch (e) {}
+      Alert.alert("Checkout Error", err.message || "Failed to generate Razorpay payment order.");
+      return;
+    }
+
+    // Launch Razorpay Native Checkout
+    const options = {
+      description: `Payment for Booking #${booking?.booking_code || bookingId}`,
+      image: "https://mehandigo-api.globalrns.com/logo.png",
+      currency: sessionData.currency || "INR",
+      key: sessionData.key_id,
+      amount: sessionData.amount, // in paise
+      name: "MehndiGo",
+      order_id: sessionData.order_id,
+      prefill: {
+        email: booking?.user?.email || "",
+        contact: booking?.user?.phone || "",
+        name: booking?.user?.name || ""
+      },
+      theme: { color: Colors.primary }
+    };
+
+    console.log("[RAZORPAY CHECKOUT CONFIG]", {
+      amount: options.amount,
+      currency: options.currency,
+      keyEnvironment: "TEST",
+      keyPresent: !!options.key,
+      orderId: options.order_id
+    });
+
+    try {
+      RazorpayCheckout.open(options)
+        .then(async (data) => {
+          console.log("[RAZORPAY SUCCESS] Callback received:", JSON.stringify(data, null, 2));
+          try {
+            const verifyData = {
+              bookingId: bookingId,
+              razorpay_order_id: data.razorpay_order_id || sessionData.order_id,
+              razorpay_payment_id: data.razorpay_payment_id,
+              razorpay_signature: data.razorpay_signature
+            };
+            console.log("[PAYMENT_SCREEN] Calling verifyPaymentSignature with payload:", JSON.stringify(verifyData, null, 2));
+            const response = await verifyPaymentSignature(verifyData);
+            console.log("[PAYMENT_SCREEN] verifyPaymentSignature succeeded:", JSON.stringify(response, null, 2));
+
+            setLoading(false);
+            if (isSettlement) {
+              navigation.replace("ReviewSubmission", {
+                bookingId: bookingId,
+                artistName: booking?.artist?.user?.name,
+                artistImage: booking?.artist?.user?.profile_image,
+                specializationName: booking?.service?.specialization_name
+              });
+            } else {
+              navigation.replace("BookingSuccess", { bookingCode: bookingCode || booking?.booking_code || "success" });
+            }
+          } catch (verifyErr) {
+            setLoading(false);
+            console.error("[PAYMENT_SCREEN] Verification API error:", verifyErr.message, verifyErr);
+            Alert.alert("Payment Verification Error", verifyErr.message || "Verification failed.");
+            navigation.navigate("PaymentFailed", { bookingId, finalAmount });
+          }
+        })
+        .catch((error) => {
+          setLoading(false);
+          console.log("[RAZORPAY CHECKOUT ERROR / CANCEL]:", error);
+          if (error && (error.code === 0 || (error.description && error.description.includes("cancelled")))) {
+            Alert.alert("Payment Cancelled", "You cancelled the payment transaction.");
+          } else {
+            // Fallback for emulator / web view environment
+            setCheckoutModalVisible(true);
+          }
+        });
+    } catch (sdkErr) {
+      setLoading(false);
+      console.log("[RAZORPAY SDK INITIATION ERROR] Falling back to test modal:", sdkErr);
       setCheckoutModalVisible(true);
     }
   };
 
   const handlePaymentSuccess = async () => {
-    console.log("[PAYMENT_SCREEN] Simulator success clicked. Bypassing Cashfree SDK and verifying signature.");
+    console.log("[PAYMENT_SCREEN] Test Simulator success clicked. Verifying Razorpay payment.");
     setCheckoutModalVisible(false);
     setLoading(true);
     try {
+      const mockPayId = `pay_sim_${Date.now()}`;
       const verifyData = {
-        cashfree_order_id: orderId,
-        payment_session_id: paymentSessionId
+        bookingId: bookingId,
+        razorpay_order_id: orderId,
+        razorpay_payment_id: mockPayId,
+        razorpay_signature: "simulated_test_signature"
       };
-<<<<<<< HEAD
-      await verifyPaymentSignature(verifyData);
-      if (isSettlement) {
-=======
       console.log("[PAYMENT_SCREEN] Calling verifyPaymentSignature in Simulator mode with payload:", JSON.stringify(verifyData, null, 2));
       const response = await verifyPaymentSignature(verifyData);
-      console.log("[PAYMENT_SCREEN] verifyPaymentSignature (Simulator) succeeded. Response:", JSON.stringify(response, null, 2));
+      console.log("[PAYMENT_SCREEN] verifyPaymentSignature (Simulator) succeeded:", JSON.stringify(response, null, 2));
 
+      setLoading(false);
       if (isSettlement) {
-        console.log("[PAYMENT_SCREEN] Routing (Simulator) to ReviewSubmission screen.");
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
         navigation.replace("ReviewSubmission", {
           bookingId: bookingId,
           artistName: booking?.artist?.user?.name,
@@ -290,10 +242,6 @@ export default function PaymentScreen({ route, navigation }) {
           specializationName: booking?.service?.specialization_name
         });
       } else {
-<<<<<<< HEAD
-=======
-        console.log("[PAYMENT_SCREEN] Routing (Simulator) to BookingSuccess screen.");
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
         navigation.replace("BookingSuccess", { bookingCode: bookingCode || booking?.booking_code || `BK-${Math.floor(100000 + Math.random() * 900000)}` });
       }
     } catch (err) {
@@ -308,21 +256,8 @@ export default function PaymentScreen({ route, navigation }) {
     navigation.navigate("PaymentFailed", { bookingId, finalAmount });
   };
 
-  const handlePayOffline = () => {
-    setCheckoutModalVisible(false);
-    navigation.replace("BookingSuccess", { bookingCode: bookingCode || `BK-${Math.floor(100000 + Math.random() * 900000)}` });
-  };
-
   const methods = [
-<<<<<<< HEAD
-    { id: "upi", title: "UPI Payment", subtitle: "Google Pay, PhonePe, Paytm", icon: "logo-google-playstore" },
-    { id: "card", title: "Credit / Debit Card", subtitle: "Visa, Mastercard, RuPay", icon: "card-outline" },
-    { id: "netbanking", title: "Net Banking", subtitle: "SBI, HDFC, ICICI, Axis", icon: "business-outline" },
-    { id: "wallet", title: "MehndiGo Wallet & Paytm", subtitle: "Pay via standard online wallets", icon: "wallet-outline" },
-    { id: "cash", title: "Cash Payment (Pay Artist in Hand)", subtitle: "Awaiting artist payment confirmation", icon: "cash-outline" },
-    { id: "emi", title: "EMI / Pay Later", subtitle: "Simpl, LazyPay, Credit Card EMI", icon: "hourglass-outline" }
-=======
-    { id: "upi", title: "Cashfree Online Payment", subtitle: "Pay securely via UPI, Cards, Net Banking", icon: "card-outline" },
+    { id: "online", title: "Razorpay Online Payment", subtitle: "Pay securely via UPI, Credit/Debit Cards, Net Banking", icon: "card-outline" },
     { 
       id: "wallet", 
       title: "MehndiGo Wallet", 
@@ -331,7 +266,6 @@ export default function PaymentScreen({ route, navigation }) {
         : "Pay using your internal wallet balance", 
       icon: "wallet-outline" 
     }
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
   ];
 
   if (loading) {
@@ -357,15 +291,9 @@ export default function PaymentScreen({ route, navigation }) {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-<<<<<<< HEAD
-        {booking && (
-          <View style={styles.detailsCard}>
-            <Text style={styles.detailsCardTitle}>Booking Summary Details</Text>
-=======
-        {/* SSL indicator badge */}
         <View style={styles.sslBadge}>
           <Ionicons name="lock-closed" size={14} color="#10B981" />
-          <Text style={styles.sslText}>256-Bit SSL Encrypted secure connection</Text>
+          <Text style={styles.sslText}>256-Bit SSL Encrypted secure Razorpay connection</Text>
         </View>
 
         {booking && (
@@ -375,40 +303,18 @@ export default function PaymentScreen({ route, navigation }) {
               <Text style={styles.detailsLabel}>Service Name</Text>
               <Text style={styles.detailsValue}>{booking.service?.specialization_name || "Mehndi Styling Session"}</Text>
             </View>
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
             <View style={styles.detailsRow}>
               <Text style={styles.detailsLabel}>Booking Code</Text>
               <Text style={styles.detailsValue}>#{booking.booking_code}</Text>
             </View>
             <View style={styles.detailsRow}>
-<<<<<<< HEAD
-              <Text style={styles.detailsLabel}>Artist Name</Text>
-=======
               <Text style={styles.detailsLabel}>Artist Specialist</Text>
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
               <Text style={styles.detailsValue}>{booking.artist?.user?.name || "Professional Specialist"}</Text>
             </View>
             <View style={styles.detailsRow}>
               <Text style={styles.detailsLabel}>Booking Date</Text>
               <Text style={styles.detailsValue}>{booking.slot?.start_time || booking.slot?.date ? new Date(booking.slot.start_time || booking.slot.date).toLocaleDateString() : (booking.reschedule_date || "TBD")}</Text>
             </View>
-<<<<<<< HEAD
-            <View style={styles.detailsRow}>
-              <Text style={styles.detailsLabel}>Base Booking Amount</Text>
-              <Text style={styles.detailsValue}>₹{booking.total_price}</Text>
-            </View>
-            <View style={styles.detailsRow}>
-              <Text style={styles.detailsLabel}>Platform Commission Fee</Text>
-              <Text style={styles.detailsValue}>₹{booking.platform_fee}</Text>
-            </View>
-            <View style={styles.detailsRow}>
-              <Text style={styles.detailsLabel}>Payment Status</Text>
-              <Text style={styles.detailsValue}>{booking.payment_status}</Text>
-            </View>
-            <View style={styles.detailsRow}>
-              <Text style={styles.detailsLabel}>Payment Method</Text>
-              <Text style={styles.detailsValue}>{booking.payment_method || "Selection Required"}</Text>
-=======
             
             <View style={styles.divider} />
 
@@ -423,16 +329,11 @@ export default function PaymentScreen({ route, navigation }) {
             <View style={styles.detailsRow}>
               <Text style={styles.detailsLabel}>Travel & Booking Fee</Text>
               <Text style={styles.detailsValue}>₹{booking.travel_charges || 0}</Text>
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
             </View>
           </View>
         )}
 
         <View style={styles.amountCard}>
-<<<<<<< HEAD
-          <Text style={styles.amountLabel}>Total Payable Amount (incl. GST)</Text>
-          <Text style={styles.amount}>₹{finalAmount || booking?.final_amount || "TBD"}</Text>
-=======
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
             <View>
               <Text style={styles.amountLabel}>Total Payable Amount (incl. GST)</Text>
@@ -440,10 +341,9 @@ export default function PaymentScreen({ route, navigation }) {
             </View>
             <View style={styles.secureTrustCard}>
               <Ionicons name="ribbon-outline" size={24} color={Colors.primary} />
-              <Text style={styles.trustText}>Cashfree Verified</Text>
+              <Text style={styles.trustText}>Razorpay Verified</Text>
             </View>
           </View>
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
         </View>
 
         <Text style={styles.sectionTitle}>Select Payment Method</Text>
@@ -468,7 +368,6 @@ export default function PaymentScreen({ route, navigation }) {
           </TouchableOpacity>
         ))}
 
-        {/* Security badges at bottom */}
         <View style={styles.securityTrustSection}>
           <View style={styles.trustBadgeRow}>
             <View style={styles.trustBadgeItem}>
@@ -481,7 +380,7 @@ export default function PaymentScreen({ route, navigation }) {
             </View>
           </View>
           <Text style={styles.gatewayDisclaimer}>
-            Payments are securely processed by Cashfree. MehndiGo does not store your credit card or banking credentials.
+            Payments are securely processed by Razorpay. MehndiGo does not store your credit card or banking credentials.
           </Text>
         </View>
       </ScrollView>
@@ -490,19 +389,19 @@ export default function PaymentScreen({ route, navigation }) {
         <CustomButton title={`Pay Securely ₹${finalAmount || ""}`} onPress={handlePay} disabled={loading} />
       </View>
 
-      {/* Cashfree Simulator Overlay */}
+      {/* Razorpay Test Simulator Overlay */}
       <Modal visible={checkoutModalVisible} transparent animationType="fade">
         <View style={styles.modalBg}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Ionicons name="shield-checkmark" size={28} color={Colors.primary} />
-              <Text style={styles.modalTitle}>Cashfree Checkout</Text>
+              <Text style={styles.modalTitle}>Razorpay Checkout</Text>
             </View>
             <Text style={styles.orderLabel}>Order Ref: {orderId}</Text>
             <Text style={styles.modalAmount}>₹{finalAmount}</Text>
 
             <TouchableOpacity style={styles.successBtn} onPress={handlePaymentSuccess}>
-              <Text style={styles.successBtnText}>Simulate Success</Text>
+              <Text style={styles.successBtnText}>Simulate Razorpay Success</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.failBtn} onPress={handlePaymentFailure}>
@@ -524,10 +423,7 @@ const styles = StyleSheet.create({
   detailsRow: { flexDirection: "row", justifyContent: "space-between", marginVertical: 4 },
   detailsLabel: { fontSize: 11, color: Colors.textSecondary },
   detailsValue: { fontSize: 11, fontWeight: "600", color: Colors.text },
-<<<<<<< HEAD
-=======
   divider: { height: 1, backgroundColor: "#f3f4f6", marginVertical: 8 },
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12, backgroundColor: Colors.white },
   backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.background, justifyContent: "center", alignItems: "center" },
   secureBadgeHeader: { flexDirection: "row", alignItems: "center", backgroundColor: "#e6fcf5", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },

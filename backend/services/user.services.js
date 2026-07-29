@@ -337,11 +337,11 @@ class UserService {
 
     // Create User (phone is nullable/optional)
     const user = await UserRepositor.create({
-      name: payload.name,
-      phone: payload.phone || null,
-      email: payload.email,
-      password: payload.password,
-      role: payload.role,
+      name: payload.name || "User",
+      phone: payload.phone ? String(payload.phone).trim() : null,
+      email: trimmedEmail,
+      password: payload.password || null,
+      role: payload.role || "USER",
       is_verified: true,
       last_login_at: new Date(),
       is_verified: true,
