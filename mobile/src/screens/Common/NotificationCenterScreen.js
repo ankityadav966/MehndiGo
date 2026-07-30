@@ -4,11 +4,13 @@ import {
   ActivityIndicator,
   FlatList,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View
 } from "react-native";
+
 import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
@@ -74,11 +76,22 @@ function groupNotificationsByDate(notifications) {
 export default function NotificationCenterScreen({ navigation }) {
   const { setUnreadCount } = useNotifications();
   const [notifications, setNotifications] = useState([]);
+
+  const [activeCategory, setActiveCategory] = useState("ALL");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+
+  const CATEGORY_FILTERS = [
+    { id: "ALL", label: "All" },
+    { id: "BOOKING", label: "Bookings", icon: "calendar-outline" },
+    { id: "PAYMENT", label: "Payments", icon: "card-outline" },
+    { id: "WALLET", label: "Wallet", icon: "wallet-outline" },
+    { id: "PROMO", label: "Promos", icon: "pricetag-outline" },
+  ];
+
 
   const fetchNotifications = useCallback(async (pageNum = 1, isRefresh = false) => {
     try {
@@ -198,8 +211,13 @@ export default function NotificationCenterScreen({ navigation }) {
     );
   };
 
-  const grouped = groupNotificationsByDate(notifications);
+  const filteredNotifications = activeCategory === "ALL"
+    ? notifications
+    : notifications.filter(n => (n.type || "").toUpperCase() === activeCategory);
+
+  const grouped = groupNotificationsByDate(filteredNotifications);
   const sections = Object.entries(grouped);
+
 
   const renderNotificationItem = (item) => {
     const iconName = NOTIF_ICONS[item.type?.toLowerCase()] || "notifications-outline";
@@ -264,6 +282,35 @@ export default function NotificationCenterScreen({ navigation }) {
           </View>
         )}
       </View>
+
+      {/* Category Filter Chips */}
+      <View style={styles.filterBar}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
+          {CATEGORY_FILTERS.map((cat) => {
+            const isActive = activeCategory === cat.id;
+            return (
+              <TouchableOpacity
+                key={cat.id}
+                style={[styles.filterChip, isActive && styles.activeFilterChip]}
+                onPress={() => setActiveCategory(cat.id)}
+              >
+                {cat.icon && (
+                  <Ionicons
+                    name={cat.icon}
+                    size={14}
+                    color={isActive ? "#FFFFFF" : Colors.primary}
+                    style={{ marginRight: 4 }}
+                  />
+                )}
+                <Text style={[styles.filterChipText, isActive && styles.activeFilterChipText]}>
+                  {cat.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+
 
       {loading ? (
         <View style={styles.loadingContainer}>
@@ -330,6 +377,39 @@ const styles = StyleSheet.create({
   headerActions: { flexDirection: "row", alignItems: "center" },
   headerActionBtn: { marginLeft: 14, paddingVertical: 4 },
   headerActionText: { fontSize: 12, fontWeight: "700", color: Colors.primary },
+  filterBar: {
+    backgroundColor: Colors.white,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  filterScroll: {
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  filterChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.inputBackground || "#F3F4F6",
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.border || "#E5E7EB",
+  },
+  activeFilterChip: {
+    backgroundColor: Colors.primary || "#9C1344",
+    borderColor: Colors.primary || "#9C1344",
+  },
+  filterChipText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: Colors.text || "#1D1D1D",
+  },
+  activeFilterChipText: {
+    color: "#FFFFFF",
+  },
+
   listContent: { paddingBottom: 50 },
   section: { marginBottom: 8 },
   sectionDate: {

@@ -31,8 +31,10 @@ import {
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
+import { useFocusEffect } from "@react-navigation/native";
+
 export default function ArtistProfileScreen({ route, navigation }) {
-  const { artistId } = route.params || { artistId: 1 };
+  const artistId = route.params?.artistId || route.params?.id || route.params?.artist_id || 1;
 
   // Data states
   const [profile, setProfile] = useState(null);
@@ -57,7 +59,7 @@ export default function ArtistProfileScreen({ route, navigation }) {
   const [selectedTimeSlot, setSelectedTimeSlot] = useState(null);
 
   // Load profile sub-resources
-  const loadProfileDetails = async () => {
+  const loadProfileDetails = React.useCallback(async () => {
     setLoading(true);
     setError(null);
     console.log("[ArtistProfileScreen Debug] Starting loadProfileDetails. Param artistId:", artistId);
@@ -111,14 +113,20 @@ export default function ArtistProfileScreen({ route, navigation }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [artistId]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
       loadProfileDetails();
     }, 0);
     return () => clearTimeout(timer);
-  }, [artistId]);
+  }, [loadProfileDetails]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      loadProfileDetails();
+    }, [loadProfileDetails])
+  );
 
   // Sync Favorite actions
   const handleToggleFavorite = async () => {

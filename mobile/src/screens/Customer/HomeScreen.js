@@ -19,9 +19,31 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import Colors from "../../constants/Colors";
 import LoadingSkeleton from "../../components/LoadingSkeleton";
+import OptimizedImage from "../../components/OptimizedImage";
 import { useAuth } from "../../context/AuthContext";
-import { getHomeDashboard, getNearbyArtists, getCustomerProfile, getFavorites, addFavorite, removeFavorite, getCustomerDashboard } from "../../services/customer";
+
+import {
+  getHomeDashboard,
+  getNearbyArtists,
+  getCustomerProfile,
+  getFavorites,
+  addFavorite,
+  removeFavorite,
+  getCustomerDashboard,
+  getCustomerAddresses,
+  saveCustomerAddress,
+} from "../../services/customer";
 import { getPendingPayment } from "../../services/booking";
+import {
+  getActiveAddress,
+  setActiveAddress,
+  subscribeActiveAddress,
+  checkSmartLocationChange,
+  reverseGeocodeCoords,
+} from "../../utils/locationManager";
+import * as Location from "expo-location";
+import Alert from "../../utils/Alert";
+
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -37,11 +59,21 @@ export default function HomeScreen({ navigation }) {
   const [pendingPaymentBooking, setPendingPaymentBooking] = useState(null);
   const [paymentModalVisible, setPaymentModalVisible] = useState(false);
 
+  // Smart Location Management States
+  const [activeAddressState, setActiveAddressState] = useState(null);
+  const [savedAddressesList, setSavedAddressesList] = useState([]);
+  const [locationModalVisible, setLocationModalVisible] = useState(false);
+  const [smartAlertVisible, setSmartAlertVisible] = useState(false);
+  const [smartDetectedData, setSmartDetectedData] = useState(null);
+  const [locationActionLoading, setLocationActionLoading] = useState(false);
+
   // Dashboard Aggregated States
   const [categories, setCategories] = useState([]);
+
   const [offers, setOffers] = useState([]);
   const [featuredArtists, setFeaturedArtists] = useState([]);
   const [popularArtists, setPopularArtists] = useState([]);
+  const [recommendations, setRecommendations] = useState([]);
   const [recentlyBookedArtists, setRecentlyBookedArtists] = useState([]);
 
   // Nearby Artists Paginated States
@@ -69,9 +101,101 @@ export default function HomeScreen({ navigation }) {
   const bannerFlatListRef = useRef(null);
   const bannerTimerRef = useRef(null);
 
+  // Smart Location Initialization & Background Distance Check
+  useEffect(() => {
+    const unsubscribe = subscribeActiveAddress((newAddr) => {
+      setActiveAddressState(newAddr);
+    });
+
+    async function initLocation() {
+      const cached = await getActiveAddress();
+      if (cached) {
+        setActiveAddressState(cached);
+      }
+
+      try {
+        const addresses = await getCustomerAddresses();
+        const list = addresses || [];
+        setSavedAddressesList(list);
+
+        const primary = list.find((a) => a.is_default) || list[0];
+
+        // First Login Flow: If customer has NO saved primary address, navigate to InitialLocationSetup
+        if (list.length === 0) {
+          navigation.navigate("InitialLocationSetup");
+          return;
+        }
+
+        if (!cached && primary) {
+          const norm = await setActiveAddress(primary);
+          setActiveAddressState(norm);
+        }
+
+        // Smart Background Location Check (>35km)
+        if (primary && primary.latitude && primary.longitude) {
+          const checkResult = await checkSmartLocationChange(primary, 35);
+          if (checkResult.isFar && checkResult.geocodedAddress) {
+            setSmartDetectedData(checkResult);
+            setSmartAlertVisible(true);
+          }
+        }
+      } catch (e) {
+        console.log("Error initializing location in Home:", e.message);
+      }
+    }
+
+    initLocation();
+    return () => unsubscribe();
+  }, [navigation]);
+
+  const handleUseCurrentGPSLocation = async () => {
+    try {
+      setLocationActionLoading(true);
+      const enabled = await Location.hasServicesEnabledAsync();
+      if (!enabled) {
+        Alert.alert("GPS Disabled", "Please enable location services in device settings.");
+        return;
+      }
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission Denied", "GPS access permission was denied.");
+        return;
+      }
+      let pos = await Location.getLastKnownPositionAsync({});
+      if (!pos) {
+        pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      }
+      if (pos && pos.coords) {
+        const geo = await reverseGeocodeCoords(pos.coords.latitude, pos.coords.longitude);
+        const norm = await setActiveAddress({
+          label: "Current Location",
+          fullAddress: geo.fullAddress,
+          city: geo.city,
+          state: geo.state,
+          pincode: geo.pincode,
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+        });
+        setActiveAddressState(norm);
+        setLocationModalVisible(false);
+      }
+    } catch (e) {
+      Alert.alert("Location Error", e.message || "Failed to detect current location.");
+    } finally {
+      setLocationActionLoading(false);
+    }
+  };
+
+  const handleSelectSavedAddress = async (item) => {
+    const norm = await setActiveAddress(item);
+    setActiveAddressState(norm);
+    setLocationModalVisible(false);
+  };
+
   // Default coordinate location (Jaipur)
   const MOCK_LAT = 26.9124;
   const MOCK_LNG = 75.7873;
+
 
   // Load consolidated dashboard data
   const loadDashboard = async (isRefresh = false) => {
@@ -82,7 +206,9 @@ export default function HomeScreen({ navigation }) {
       setOffers(data?.offers || []);
       setFeaturedArtists(data?.featuredArtists || []);
       setPopularArtists(data?.popularArtists || []);
+      setRecommendations(data?.recommendations || []);
       setRecentlyBookedArtists(data?.recentlyBooked || []);
+
 
       // Load favorites from database
       try {
@@ -452,10 +578,13 @@ export default function HomeScreen({ navigation }) {
         style={[styles.horizontalArtistCard, { backgroundColor: currentCardBg, borderColor: currentBorderColor }]}
         onPress={() => navigation.navigate("ArtistProfile", { artistId: item.id })}
       >
-        <Image
+        <OptimizedImage
           source={{ uri: item.user?.profile_image || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400" }}
           style={styles.horizontalArtistImage}
+          width={280}
+          height={160}
         />
+
         {item.verification_status === "APPROVED" && (
           <View style={styles.verifiedBadge}>
             <Ionicons name="checkmark-circle" size={14} color={Colors.white} />
@@ -494,10 +623,13 @@ export default function HomeScreen({ navigation }) {
         style={[styles.nearbyArtistCard, { backgroundColor: currentCardBg, borderColor: currentBorderColor }]}
         onPress={() => navigation.navigate("ArtistProfile", { artistId: item.id })}
       >
-        <Image
+        <OptimizedImage
           source={{ uri: item.user?.profile_image || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400" }}
           style={styles.nearbyArtistImage}
+          width={120}
+          height={120}
         />
+
 
         <View style={styles.nearbyArtistInfo}>
           <View style={styles.nearbyNameHeader}>
@@ -552,10 +684,16 @@ export default function HomeScreen({ navigation }) {
           <View style={styles.userMeta}>
             <Text style={[styles.helloText, { color: currentSecTextColor }]}>Welcome back 👋</Text>
             <Text style={[styles.userNameText, { color: currentTextColor }]}>{user?.name || "Customer"}</Text>
-            <View style={styles.locationWrapper}>
-              <Ionicons name="location" size={14} color={Colors.primary} />
-              <Text style={[styles.locationText, { color: currentSecTextColor }]} numberOfLines={1}>{user?.city || "Jaipur, Rajasthan"}</Text>
-            </View>
+            <TouchableOpacity style={styles.locationWrapper} onPress={() => setLocationModalVisible(true)} activeOpacity={0.8}>
+              <Ionicons name="location-sharp" size={14} color={Colors.primary} />
+              <Text style={[styles.locationText, { color: currentSecTextColor, maxWidth: 180 }]} numberOfLines={1}>
+                {activeAddressState?.label
+                  ? `${activeAddressState.label}: ${activeAddressState.fullAddress}`
+                  : activeAddressState?.fullAddress || user?.city || "Jaipur, Rajasthan"}
+              </Text>
+              <Ionicons name="chevron-down" size={12} color={currentSecTextColor} style={{ marginLeft: 4 }} />
+            </TouchableOpacity>
+
           </View>
         </View>
         <TouchableOpacity
@@ -872,7 +1010,7 @@ export default function HomeScreen({ navigation }) {
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.5}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 100 }}
+        contentContainerStyle={{ paddingBottom: 180 }}
       />
 
       <Modal
@@ -1016,9 +1154,157 @@ export default function HomeScreen({ navigation }) {
           </View>
         </View>
       </Modal>
+
+      {/* Location Switcher Bottom Sheet Modal */}
+      <Modal visible={locationModalVisible} animationType="slide" transparent>
+        <View style={styles.sheetOverlay}>
+          <View style={[styles.sheetContainer, { backgroundColor: currentCardBg }]}>
+            <View style={styles.sheetHeader}>
+              <Text style={[styles.sheetTitle, { color: currentTextColor }]}>Select Service Location</Text>
+              <TouchableOpacity onPress={() => setLocationModalVisible(false)}>
+                <Ionicons name="close" size={24} color={currentSecTextColor} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Active Selected Location Banner */}
+            {activeAddressState && (
+              <View style={styles.activeLocationCard}>
+                <Ionicons name="checkmark-circle-sharp" size={20} color="#059669" style={{ marginRight: 10 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.activeLocLabel}>{activeAddressState.label || "Active Location"}</Text>
+                  <Text style={styles.activeLocSub} numberOfLines={2}>{activeAddressState.fullAddress}</Text>
+                </View>
+              </View>
+            )}
+
+            {/* Use GPS Location Button */}
+            <TouchableOpacity style={styles.gpsActionBtn} onPress={handleUseCurrentGPSLocation} disabled={locationActionLoading}>
+              {locationActionLoading ? (
+                <ActivityIndicator size="small" color={Colors.primary} style={{ marginRight: 10 }} />
+              ) : (
+                <Ionicons name="navigate-circle-outline" size={22} color={Colors.primary} style={{ marginRight: 10 }} />
+              )}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.gpsActionTitle}>Use Current GPS Location</Text>
+                <Text style={styles.gpsActionSub}>Detect your precise location automatically</Text>
+              </View>
+            </TouchableOpacity>
+
+            <Text style={[styles.sheetSectionHeader, { color: currentSecTextColor }]}>SAVED ADDRESSES</Text>
+
+            <FlatList
+              data={savedAddressesList}
+              keyExtractor={(item) => item.id?.toString() || Math.random().toString()}
+              renderItem={({ item }) => {
+                const isSelected = activeAddressState?.id === item.id;
+                const tag = item.label || item.name || "Home";
+
+                return (
+                  <TouchableOpacity
+                    style={[styles.savedAddressItem, isSelected && styles.savedAddressItemActive]}
+                    onPress={() => handleSelectSavedAddress(item)}
+                  >
+                    <Ionicons
+                      name={tag === "Home" ? "home-outline" : tag === "Work" ? "briefcase-outline" : "location-outline"}
+                      size={20}
+                      color={isSelected ? Colors.primary : currentSecTextColor}
+                      style={{ marginRight: 12 }}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: "row", alignItems: "center" }}>
+                        <Text style={[styles.savedAddrTag, { color: currentTextColor }]}>{tag}</Text>
+                        {item.is_default && (
+                          <View style={styles.miniPrimaryBadge}>
+                            <Text style={styles.miniPrimaryBadgeText}>Primary</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={[styles.savedAddrLine, { color: currentSecTextColor }]} numberOfLines={1}>
+                        {[item.house_flat || item.houseFlat, item.landmark, item.address_line_1 || item.fullAddress]
+                          .filter(Boolean)
+                          .join(", ")}
+                      </Text>
+                    </View>
+                    {isSelected && <Ionicons name="checkmark" size={20} color={Colors.primary} />}
+                  </TouchableOpacity>
+                );
+              }}
+              style={{ maxHeight: 200 }}
+            />
+
+            <TouchableOpacity
+              style={styles.manageAddrBtn}
+              onPress={() => {
+                setLocationModalVisible(false);
+                navigation.navigate("SavedAddresses");
+              }}
+            >
+              <Ionicons name="settings-outline" size={18} color={Colors.primary} style={{ marginRight: 8 }} />
+              <Text style={styles.manageAddrText}>Add or Manage Addresses</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Smart Location Alert Bottom Sheet Modal */}
+      <Modal visible={smartAlertVisible} animationType="slide" transparent>
+        <View style={styles.sheetOverlay}>
+          <View style={[styles.sheetContainer, { backgroundColor: currentCardBg }]}>
+            <View style={styles.smartHeader}>
+              <View style={styles.smartIconWrap}>
+                <Ionicons name="location-sharp" size={28} color={Colors.primary} />
+              </View>
+              <Text style={[styles.smartTitle, { color: currentTextColor }]}>You're in a new location</Text>
+              <Text style={[styles.smartSub, { color: currentSecTextColor }]}>
+                We detected you are ~{smartDetectedData?.distanceKm || 40} km away from your saved home address. Would you like to view Mehendi artists near your current location?
+              </Text>
+            </View>
+
+            {smartDetectedData?.geocodedAddress && (
+              <View style={styles.detectedCard}>
+                <Ionicons name="navigate-outline" size={18} color="#1E40AF" style={{ marginRight: 8 }} />
+                <Text style={styles.detectedText} numberOfLines={2}>
+                  {smartDetectedData.geocodedAddress.fullAddress}
+                </Text>
+              </View>
+            )}
+
+            <View style={styles.smartBtnRow}>
+              <TouchableOpacity
+                style={styles.smartBtnPrimary}
+                onPress={async () => {
+                  if (smartDetectedData?.geocodedAddress) {
+                    const norm = await setActiveAddress({
+                      label: "Current Location",
+                      fullAddress: smartDetectedData.geocodedAddress.fullAddress,
+                      city: smartDetectedData.geocodedAddress.city,
+                      state: smartDetectedData.geocodedAddress.state,
+                      pincode: smartDetectedData.geocodedAddress.pincode,
+                      latitude: smartDetectedData.currentCoords?.latitude,
+                      longitude: smartDetectedData.currentCoords?.longitude,
+                    });
+                    setActiveAddressState(norm);
+                  }
+                  setSmartAlertVisible(false);
+                }}
+              >
+                <Text style={styles.smartBtnPrimaryText}>Use Current Location</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.smartBtnSecondary}
+                onPress={() => setSmartAlertVisible(false)}
+              >
+                <Text style={styles.smartBtnSecondaryText}>Keep Home Address</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
+
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
@@ -1657,7 +1943,189 @@ const styles = StyleSheet.create({
   },
   modalPayText: {
     color: Colors.white,
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "700"
-  }
+  },
+  sheetOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "flex-end",
+  },
+  sheetContainer: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    maxHeight: "80%",
+  },
+  sheetHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  sheetTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  activeLocationCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ECFDF5",
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+  },
+  activeLocLabel: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#047857",
+  },
+  activeLocSub: {
+    fontSize: 12,
+    color: "#065F46",
+    marginTop: 2,
+  },
+  gpsActionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#EFF6FF",
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+  },
+  gpsActionTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1E40AF",
+  },
+  gpsActionSub: {
+    fontSize: 12,
+    color: "#3B82F6",
+    marginTop: 2,
+  },
+  sheetSectionHeader: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    marginBottom: 10,
+    marginTop: 6,
+  },
+  savedAddressItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    marginBottom: 8,
+    backgroundColor: "#F9FAFB",
+  },
+  savedAddressItemActive: {
+    backgroundColor: "#FFF1F2",
+    borderWidth: 1,
+    borderColor: Colors.primary,
+  },
+  savedAddrTag: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  miniPrimaryBadge: {
+    backgroundColor: "#D1FAE5",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    marginLeft: 8,
+  },
+  miniPrimaryBadgeText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#047857",
+  },
+  savedAddrLine: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  manageAddrBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 14,
+    marginTop: 10,
+    borderTopWidth: 1,
+    borderColor: "#F3F4F6",
+  },
+  manageAddrText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: Colors.primary,
+  },
+
+  // Smart Alert Bottom Sheet Styles
+  smartHeader: {
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  smartIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#FFF1F2",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  smartTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  smartSub: {
+    fontSize: 13,
+    textAlign: "center",
+    marginTop: 6,
+    lineHeight: 18,
+  },
+  detectedCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#EFF6FF",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 20,
+  },
+  detectedText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#1E3A8A",
+    flex: 1,
+  },
+  smartBtnRow: {
+    width: "100%",
+  },
+  smartBtnPrimary: {
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  smartBtnPrimaryText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  smartBtnSecondary: {
+    backgroundColor: "#F3F4F6",
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  smartBtnSecondaryText: {
+    color: "#374151",
+    fontSize: 15,
+    fontWeight: "600",
+  },
 });

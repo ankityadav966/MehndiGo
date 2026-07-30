@@ -12,5 +12,7 @@ router.get("/bookings", authenticate, authorize("ADMIN"), apiCache(60), Analytic
 router.get("/customers", authenticate, authorize("ADMIN"), AnalyticsController.getCustomers);
 router.get("/artists", authenticate, authorize("ADMIN"), AnalyticsController.getArtists);
 router.get("/export", authenticate, authorize("ADMIN"), AnalyticsController.exportCSV);
+router.get("/export-report", authenticate, authorize("ADMIN"), AnalyticsController.exportBusinessReport);
 
 module.exports = router;
+

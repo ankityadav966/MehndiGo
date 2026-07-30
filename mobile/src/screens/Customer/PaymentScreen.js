@@ -30,9 +30,14 @@ export default function PaymentScreen({ route, navigation }) {
   const [checkoutModalVisible, setCheckoutModalVisible] = useState(false);
   const [walletBalance, setWalletBalance] = useState(0);
 
-  const loadBookingDetails = React.useCallback(async () => {
+  const [activeBookingId, setActiveBookingId] = useState(bookingId || null);
+
+  const loadBookingDetails = React.useCallback(async (targetId) => {
+    const idToFetch = targetId || activeBookingId;
+    if (!idToFetch) return;
+
     try {
-      const details = await getBookingDetails(bookingId);
+      const details = await getBookingDetails(idToFetch);
       setBooking(details);
 
       try {
@@ -44,87 +49,56 @@ export default function PaymentScreen({ route, navigation }) {
     } catch (err) {
       console.log("Failed to fetch booking details in PaymentScreen:", err.message);
     }
-  }, [bookingId]);
+  }, [activeBookingId]);
 
   useEffect(() => {
-    if (!bookingId) {
-      Alert.alert("Error", "Missing booking ID context.");
-      navigation.goBack();
-      return;
-    }
-    loadBookingDetails();
-  }, [bookingId, loadBookingDetails, navigation]);
-
-  const handlePay = async () => {
-    if (selectedMethod === "cash") {
-      setLoading(true);
-      try {
-        await selectCashPayment(bookingId);
-        setLoading(false);
-        Alert.alert(
-          "Cash Payment Selected",
-          "Please pay the artist in hand. The booking is now awaiting the artist's payment confirmation.",
-          [
-            {
-              text: "OK",
-              onPress: () => {
-                navigation.replace("BookingSuccess", { bookingCode: bookingCode || booking?.booking_code || `BK-${Math.floor(100000 + Math.random() * 900000)}` });
-              }
-            }
-          ]
-        );
-      } catch (err) {
-        setLoading(false);
-        Alert.alert("Cash Selection Failed", err.message || "Failed to confirm cash option selection.");
-      }
-      return;
-    }
-
-    if (selectedMethod === "wallet") {
-      const payable = Number(finalAmount || booking?.final_amount || 0);
-      if (walletBalance < payable) {
-        Alert.alert(
-          "Insufficient Wallet Balance",
-          "Insufficient wallet balance. Please add money to your wallet and try again.",
-          [
-            { text: "Cancel", style: "cancel" },
-            {
-              text: "Add Money",
-              onPress: () => {
-                navigation.navigate("Wallet");
-              }
-            }
-          ]
-        );
+    async function initPayment() {
+      if (bookingId) {
+        setActiveBookingId(bookingId);
+        loadBookingDetails(bookingId);
         return;
       }
 
-      setLoading(true);
+      // Auto-recover missing bookingId from recent pending booking history
       try {
-        await payWithWallet(bookingId);
-        if (isSettlement) {
-          navigation.replace("ReviewSubmission", {
-            bookingId: bookingId,
-            artistName: booking?.artist?.user?.name,
-            artistImage: booking?.artist?.user?.profile_image,
-            specializationName: booking?.service?.specialization_name
-          });
+        const { getBookingHistory } = require("../../services/booking");
+        const history = await getBookingHistory();
+        const pendingBooking = Array.isArray(history)
+          ? history.find(b => b.payment_status === "PENDING" || b.booking_status === "PENDING")
+          : null;
+
+        if (pendingBooking && pendingBooking.id) {
+          setActiveBookingId(pendingBooking.id);
+          loadBookingDetails(pendingBooking.id);
         } else {
-          navigation.replace("BookingSuccess", { bookingCode: bookingCode || booking?.booking_code || `BK-${Math.floor(100000 + Math.random() * 900000)}` });
+          navigation.navigate("CustomerTabs", { screen: "Bookings" });
         }
-      } catch (err) {
-        setLoading(false);
-        navigation.navigate("PaymentFailed", { bookingId, finalAmount });
+      } catch (e) {
+        navigation.navigate("CustomerTabs", { screen: "Bookings" });
       }
+    }
+
+    initPayment();
+  }, [bookingId, loadBookingDetails, navigation]);
+
+
+  const handlePay = async () => {
+    const targetBookingId = activeBookingId || bookingId;
+    if (!targetBookingId) {
+      Alert.alert("Error", "No active booking selected for payment.");
       return;
     }
 
-    // Online Razorpay Payment Flow
+    // Both options (Full Online & Advance + Cash) use Razorpay Checkout
+    const paymentMethodType = selectedMethod === "online" ? "FULL_ONLINE" : "ADVANCE_CASH";
+
     setLoading(true);
     let sessionData = null;
     try {
-      console.log("[PAYMENT_SCREEN] Creating Razorpay payment order for booking ID:", bookingId);
-      sessionData = await createPaymentSession(bookingId);
+      console.log(`[PAYMENT_SCREEN] Creating Razorpay payment order for booking ID: ${targetBookingId}, mode: ${paymentMethodType}`);
+      sessionData = await createPaymentSession(targetBookingId, paymentMethodType);
+
+
       console.log("[PAYMENT_SCREEN] Razorpay payment order response data:", JSON.stringify(sessionData, null, 2));
 
       if (!sessionData || !sessionData.order_id || !sessionData.key_id) {
@@ -202,14 +176,16 @@ export default function PaymentScreen({ route, navigation }) {
         })
         .catch((error) => {
           setLoading(false);
-          console.log("[RAZORPAY CHECKOUT ERROR / CANCEL]:", error);
-          if (error && (error.code === 0 || (error.description && error.description.includes("cancelled")))) {
+          console.log("[RAZORPAY CHECKOUT ERROR / CANCEL]:", JSON.stringify(error));
+          if (error && (error.code === 0 || (typeof error.description === "string" && error.description.toLowerCase().includes("cancelled")))) {
             Alert.alert("Payment Cancelled", "You cancelled the payment transaction.");
           } else {
-            // Fallback for emulator / web view environment
+            // Fallback for emulator / live key test mode
+            console.log("[RAZORPAY GATEWAY FALLBACK] Opening test payment modal due to gateway error.");
             setCheckoutModalVisible(true);
           }
         });
+
     } catch (sdkErr) {
       setLoading(false);
       console.log("[RAZORPAY SDK INITIATION ERROR] Falling back to test modal:", sdkErr);
@@ -319,16 +295,22 @@ export default function PaymentScreen({ route, navigation }) {
             <View style={styles.divider} />
 
             <View style={styles.detailsRow}>
-              <Text style={styles.detailsLabel}>Base Price</Text>
+              <Text style={styles.detailsLabel}>Service Price</Text>
               <Text style={styles.detailsValue}>₹{booking.total_price}</Text>
             </View>
+            {booking.travel_charges > 0 && (
+              <View style={styles.detailsRow}>
+                <Text style={styles.detailsLabel}>Travel Fee</Text>
+                <Text style={styles.detailsValue}>₹{booking.travel_charges}</Text>
+              </View>
+            )}
             <View style={styles.detailsRow}>
-              <Text style={styles.detailsLabel}>Platform Convenience Fee</Text>
-              <Text style={styles.detailsValue}>₹{booking.platform_fee || 0}</Text>
+              <Text style={styles.detailsLabel}>Advance Payment (Online)</Text>
+              <Text style={[styles.detailsValue, { color: Colors.primary, fontWeight: "700" }]}>₹{booking.advance_amount || Math.min(500, booking.final_amount)}</Text>
             </View>
             <View style={styles.detailsRow}>
-              <Text style={styles.detailsLabel}>Travel & Booking Fee</Text>
-              <Text style={styles.detailsValue}>₹{booking.travel_charges || 0}</Text>
+              <Text style={styles.detailsLabel}>Remaining Cash (Pay to Artist)</Text>
+              <Text style={styles.detailsValue}>₹{booking.remaining_amount || (booking.final_amount - (booking.advance_amount || 500))}</Text>
             </View>
           </View>
         )}
@@ -336,7 +318,7 @@ export default function PaymentScreen({ route, navigation }) {
         <View style={styles.amountCard}>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
             <View>
-              <Text style={styles.amountLabel}>Total Payable Amount (incl. GST)</Text>
+              <Text style={styles.amountLabel}>Total Service Amount</Text>
               <Text style={styles.amount}>₹{finalAmount || booking?.final_amount || "TBD"}</Text>
             </View>
             <View style={styles.secureTrustCard}>
@@ -348,7 +330,20 @@ export default function PaymentScreen({ route, navigation }) {
 
         <Text style={styles.sectionTitle}>Select Payment Method</Text>
 
-        {methods.map((item) => (
+        {[
+          {
+            id: "online",
+            title: "Razorpay (Full Online Payment)",
+            subtitle: "Pay 100% amount securely via UPI, Cards, Netbanking",
+            icon: "card-outline"
+          },
+          {
+            id: "cash",
+            title: "Advance Online + Cash (Recommended)",
+            subtitle: `Pay ₹${booking?.advance_amount || 500} online advance now, pay remaining ₹${(booking?.final_amount || 5000) - (booking?.advance_amount || 500)} cash directly to artist upon completion`,
+            icon: "cash-outline"
+          }
+        ].map((item) => (
           <TouchableOpacity
             key={item.id}
             activeOpacity={0.8}
@@ -368,6 +363,7 @@ export default function PaymentScreen({ route, navigation }) {
           </TouchableOpacity>
         ))}
 
+
         <View style={styles.securityTrustSection}>
           <View style={styles.trustBadgeRow}>
             <View style={styles.trustBadgeItem}>
@@ -386,8 +382,17 @@ export default function PaymentScreen({ route, navigation }) {
       </ScrollView>
 
       <View style={styles.footer}>
-        <CustomButton title={`Pay Securely ₹${finalAmount || ""}`} onPress={handlePay} disabled={loading} />
+        <CustomButton
+          title={
+            selectedMethod === "online"
+              ? `Pay ₹${finalAmount || booking?.final_amount || "0"} & Confirm Booking`
+              : `Pay ₹${booking?.advance_amount || Math.min(500, booking?.final_amount || 500)} & Confirm Booking`
+          }
+          onPress={handlePay}
+          disabled={loading}
+        />
       </View>
+
 
       {/* Razorpay Test Simulator Overlay */}
       <Modal visible={checkoutModalVisible} transparent animationType="fade">

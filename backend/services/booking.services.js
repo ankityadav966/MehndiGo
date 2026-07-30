@@ -45,19 +45,20 @@ class BookingService {
     }
 
     const priceAfterDiscount = basePrice - couponDiscount;
-    const taxableAmount = priceAfterDiscount + travelCharges + platformFee;
-    const gst = Math.round(taxableAmount * 0.18); // 18% GST
-    const finalAmount = taxableAmount + gst;
+    const finalAmount = Math.max(0, priceAfterDiscount + travelCharges);
 
     return {
       servicePrice: basePrice,
       travelCharges,
       couponDiscount,
-      platformFee,
-      gst,
+      platformFee: 0,
+      gst: 0,
+      advanceAmount: Math.min(500, finalAmount),
+      remainingCash: Math.max(0, finalAmount - Math.min(500, finalAmount)),
       finalAmount
     };
   }
+
 
   async createBooking(userId, data) {
     const hasRestricted = await this.hasRestrictedBooking(userId);
@@ -133,23 +134,38 @@ class BookingService {
         if (slot.artist_id !== artistId) {
           throw new AppError("Availability slot does not belong to the selected artist", 400);
         }
-        if (slot.is_booked) {
-          throw new AppError("This time slot is no longer available. Please select another time.", 400);
-        }
 
-        // Check if an active booking already exists for this slot
-        const existingBooking = await db.Booking.findOne({
+        // Check if an active confirmed/accepted booking already exists for this slot
+        const existingConfirmedBooking = await db.Booking.findOne({
           where: {
             artist_id: artistId,
             slot_id: singleSlotId,
-            booking_status: { [Op.ne]: "CANCELLED" }
+            [Op.or]: [
+              { booking_status: { [Op.in]: ["CONFIRMED", "COMPLETED"] } },
+              { detailed_status: { [Op.in]: ["ACCEPTED", "ARTIST_ACCEPTED", "CONFIRMED", "COMPLETED"] } }
+            ]
           },
           transaction: t,
           lock: t.LOCK.UPDATE
         });
 
-        if (existingBooking) {
+        if (existingConfirmedBooking) {
           throw new AppError("This time slot is no longer available. Please select another time.", 400);
+        }
+
+        // If current customer has an existing PENDING booking for this exact slot, reuse it
+        const userPendingBooking = await db.Booking.findOne({
+          where: {
+            user_id: userId,
+            artist_id: artistId,
+            slot_id: singleSlotId,
+            booking_status: "PENDING"
+          },
+          transaction: t
+        });
+
+        if (userPendingBooking) {
+          return userPendingBooking;
         }
 
         // Mark slot as booked atomically
@@ -169,16 +185,26 @@ class BookingService {
         }
 
         // Double booking check for custom date & time window
-        const existingSlotForDate = await db.AvailabilitySlot.findOne({
+        const existingConfirmedSlot = await db.Booking.findOne({
           where: {
             artist_id: artistId,
-            start_time: startTime,
-            is_booked: true
+            [Op.or]: [
+              { booking_status: { [Op.in]: ["CONFIRMED", "COMPLETED"] } },
+              { detailed_status: { [Op.in]: ["ACCEPTED", "ARTIST_ACCEPTED", "CONFIRMED", "COMPLETED"] } }
+            ]
           },
+          include: [
+            {
+              model: db.AvailabilitySlot,
+              as: "slot",
+              where: { start_time: startTime }
+            }
+          ],
           transaction: t
         });
 
-        if (existingSlotForDate) {
+
+        if (existingConfirmedSlot) {
           throw new AppError("This time slot is no longer available. Please select another time.", 400);
         }
 
@@ -192,6 +218,7 @@ class BookingService {
         finalSlotId = newSlot.id;
       }
 
+
       // Calculate price for 1 slot always
       const pricing = await this.calculatePriceDetails(serviceId, couponCode, userId, 1);
       const bookingCode = `BK-${Math.floor(100000 + Math.random() * 900000)}`;
@@ -204,16 +231,17 @@ class BookingService {
         slot_id: finalSlotId || null,
         total_price: pricing.servicePrice,
         advance_paid: 0,
-        remaining_amount: pricing.finalAmount - Math.round(pricing.finalAmount * 0.10),
+        remaining_amount: pricing.remainingCash,
         booking_status: "PENDING",
         payment_status: "PENDING",
         detailed_status: "PENDING",
         travel_charges: pricing.travelCharges,
         offer_price: pricing.servicePrice,
         coupon_discount: pricing.couponDiscount,
-        platform_fee: pricing.platformFee,
-        gst: pricing.gst,
+        platform_fee: 0,
+        gst: 0,
         final_amount: pricing.finalAmount,
+
         coupon_code: couponCode || null,
         address,
         landmark: landmark || null,
@@ -273,8 +301,15 @@ class BookingService {
   }
 
   async getBookingDetails(bookingId, userId, role) {
-    let where = { id: bookingId };
+    let where = {};
+    if (isNaN(Number(bookingId)) || String(bookingId).toUpperCase().startsWith("BK-")) {
+      where.booking_code = bookingId;
+    } else {
+      where.id = bookingId;
+    }
+
     if (role === "CUSTOMER") {
+
       where.user_id = userId;
     } else if (role === "ARTIST") {
       // Find artist profile id for user
@@ -328,10 +363,16 @@ class BookingService {
         {
           model: db.Invoice,
           as: "invoice"
+        },
+        {
+          model: db.Review,
+          as: "review",
+          required: false
         }
       ],
       order: [[{ model: db.BookingStatusHistory, as: "status_history" }, "createdAt", "DESC"]]
     });
+
 
     return booking;
   }
@@ -349,6 +390,11 @@ class BookingService {
     return await db.Booking.findAll({
       where,
       include: [
+        {
+          model: db.AvailabilitySlot,
+          as: "slot",
+          required: false
+        },
         {
           model: db.User,
           as: "user",
@@ -373,6 +419,7 @@ class BookingService {
       ],
       order: [["createdAt", "DESC"]]
     });
+
   }
 
   async applyCoupon(userId, couponCode, serviceId) {
@@ -1250,32 +1297,15 @@ class BookingService {
       service_duration: duration
     });
 
-    // Credit remaining 90% directly to Artist Wallet on service completion
+    // Process financial escrow release or outstanding commission settlement via SettlementService
     try {
-      const remainingPaid = booking.remaining_amount || 0;
-      const artistProfile = await db.ArtistProfile.findByPk(booking.artist_id);
-      if (artistProfile) {
-        const [artistWallet] = await db.Wallet.findOrCreate({
-          where: { user_id: artistProfile.user_id },
-          defaults: { balance: 0 }
-        });
-        await artistWallet.increment("balance", { by: remainingPaid });
-        
-        const customerUser = await db.User.findByPk(booking.user_id);
-        const customerName = customerUser ? customerUser.name : "Client";
-        await db.WalletTransaction.create({
-          wallet_id: artistWallet.id,
-          booking_id: booking.id,
-          transaction_type: "PAYMENT",
-          amount: remainingPaid,
-          status: "SUCCESS",
-          description: `Mehndi application service payment from customer ${customerName}`
-        });
-        console.log(`[completeService-OTP] Credited remaining ₹${remainingPaid} to Artist Wallet`);
-      }
-    } catch (artistErr) {
-      console.error("Error crediting Artist Wallet upon completion:", artistErr.message);
+      const settlementService = require("./settlement.services");
+      await settlementService.processBookingSettlement(booking.id);
+      console.log(`[completeService-OTP] Financial settlement & ledger entries created for booking #${booking.id}`);
+    } catch (settleErr) {
+      console.error("Error processing financial settlement upon completion:", settleErr.message);
     }
+
 
     // Create success transaction record
     try {

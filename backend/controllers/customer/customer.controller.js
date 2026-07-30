@@ -456,6 +456,24 @@ async function addAddress(req, res) {
   }
 }
 
+async function updateAddress(req, res) {
+  try {
+    const response = await CustomerService.updateAddress(req.user.id, req.params.id, req.body);
+    return res.status(200).json(SuccessResponse("Address updated successfully", response));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+async function setDefaultAddress(req, res) {
+  try {
+    const response = await CustomerService.setDefaultAddress(req.user.id, req.params.id);
+    return res.status(200).json(SuccessResponse("Primary address updated successfully", response));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
 async function deleteAddress(req, res) {
   try {
     const response = await CustomerService.deleteAddress(req.user.id, req.params.id);
@@ -464,6 +482,7 @@ async function deleteAddress(req, res) {
     return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
   }
 }
+
 
 async function createSupportTicket(req, res) {
   try {
@@ -615,7 +634,10 @@ module.exports = {
   getAddresses,
   getReviews,
   addAddress,
+  updateAddress,
+  setDefaultAddress,
   deleteAddress,
+
   getSupportTickets,
   getSupportTicketDetails,
   replySupportTicket,

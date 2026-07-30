@@ -887,6 +887,10 @@ export default function ChatRoomScreen({ route, navigation }) {
             data={messages}
             keyExtractor={(item) => item.id.toString()}
             renderItem={renderItem}
+            initialNumToRender={12}
+            maxToRenderPerBatch={10}
+            windowSize={7}
+            removeClippedSubviews={true}
             contentContainerStyle={styles.listContent}
             onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
           />

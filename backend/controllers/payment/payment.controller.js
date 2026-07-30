@@ -3,13 +3,15 @@ const { SuccessResponse, ErrorResponse } = require("../../utils/common");
 
 async function createSession(req, res) {
   try {
-    const { bookingId, amount } = req.body;
-    const response = await PaymentService.createSession(bookingId, req.user.id, amount);
+    const { bookingId, amount, paymentMethod, payment_method } = req.body;
+    const pMethod = paymentMethod || payment_method || "ADVANCE_CASH";
+    const response = await PaymentService.createSession(bookingId, req.user.id, amount, pMethod);
     return res.status(200).json(SuccessResponse("Razorpay payment order created successfully", response));
   } catch (error) {
     return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
   }
 }
+
 
 async function verifyPayment(req, res) {
   try {

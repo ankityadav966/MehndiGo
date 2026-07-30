@@ -28,6 +28,17 @@ async function addMoney(req, res) {
   }
 }
 
+async function payCommission(req, res) {
+  try {
+    const SettlementService = require("../../services/settlement.services");
+    const response = await SettlementService.payOutstandingCommission(req.user.id, req.body);
+    return res.status(200).json(SuccessResponse("Outstanding commission settled successfully", response));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+
 async function initiateWithdrawal(req, res) {
   try {
     const { amount } = req.body;
@@ -106,6 +117,7 @@ module.exports = {
   getWallet,
   getWalletHistory,
   addMoney,
+  payCommission,
   initiateWithdrawal,
   cancelWithdrawal,
   getWithdrawHistory,
@@ -115,3 +127,4 @@ module.exports = {
   getBankAccount,
   upsertBankAccount
 };
+

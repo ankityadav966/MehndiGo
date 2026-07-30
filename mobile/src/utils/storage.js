@@ -25,10 +25,21 @@ export const secureStorage = {
     await AsyncStorage.removeItem(TOKEN_KEYS.ACCESS_TOKEN);
   },
 
+  // Save Tokens
+  saveTokens: async (accessToken, refreshToken) => {
+    const pairs = [];
+    if (accessToken) pairs.push([TOKEN_KEYS.ACCESS_TOKEN, accessToken]);
+    if (refreshToken) pairs.push([TOKEN_KEYS.REFRESH_TOKEN, refreshToken]);
+    if (pairs.length > 0) {
+      await AsyncStorage.multiSet(pairs);
+    }
+  },
+
   // Refresh Token
   setRefreshToken: async (token) => {
     await AsyncStorage.setItem(TOKEN_KEYS.REFRESH_TOKEN, token);
   },
+
 
   getRefreshToken: async () => {
     return await AsyncStorage.getItem(TOKEN_KEYS.REFRESH_TOKEN);
@@ -120,9 +131,24 @@ export const secureStorage = {
     return await AsyncStorage.getItem("app_theme") || "light";
   },
 
+  // Draft Booking State Recovery
+  saveDraftBooking: async (draft) => {
+    await AsyncStorage.setItem("@mehndigo_draft_booking", JSON.stringify(draft));
+  },
+
+  getDraftBooking: async () => {
+    const raw = await AsyncStorage.getItem("@mehndigo_draft_booking");
+    return raw ? JSON.parse(raw) : null;
+  },
+
+  clearDraftBooking: async () => {
+    await AsyncStorage.removeItem("@mehndigo_draft_booking");
+  },
+
   // Clear All
   clearAll: async () => {
-    const keys = [...Object.values(TOKEN_KEYS), "artist_onboarding_done", "app_theme"];
+    const keys = [...Object.values(TOKEN_KEYS), "artist_onboarding_done", "app_theme", "@mehndigo_draft_booking"];
     await AsyncStorage.multiRemove(keys);
   },
 };
+

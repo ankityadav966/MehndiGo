@@ -253,10 +253,21 @@ export async function saveCustomerAddress(addressData) {
   return res?.data || res;
 }
 
+export async function updateCustomerAddress(addressId, addressData) {
+  const res = await apiRequest("PUT", `/customer/addresses/${addressId}`, addressData, true);
+  return res?.data || res;
+}
+
+export async function setDefaultCustomerAddress(addressId) {
+  const res = await apiRequest("PATCH", `/customer/addresses/${addressId}/default`, null, true);
+  return res?.data || res;
+}
+
 export async function deleteCustomerAddress(addressId) {
   const res = await apiRequest("DELETE", `/customer/addresses/${addressId}`, null, true);
   return res?.data || res;
 }
+
 
 export async function submitSupportTicket(ticketData) {
   const res = await apiRequest("POST", "/customer/support/ticket", ticketData, true);
