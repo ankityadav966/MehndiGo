@@ -133,7 +133,6 @@ export default function BookingSettlementScreen({ route, navigation }) {
             <Text style={styles.label}>Remaining Payable Amount</Text>
             <Text style={[styles.value, { color: Colors.primary, fontWeight: "800" }]}>₹{booking.remaining_amount || booking.final_amount}</Text>
           </View>
-          </View>
 
           <View style={styles.row}>
             <Text style={styles.label}>Payment Status</Text>

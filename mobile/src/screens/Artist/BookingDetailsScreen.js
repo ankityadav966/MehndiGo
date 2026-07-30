@@ -650,30 +650,6 @@ export default function BookingDetailsScreen({ route, navigation }) {
     }
   };
 
-  const handleConfirmCash = async () => {
-    setLoading(true);
-    try {
-      await confirmCashPayment(bookingId);
-      Alert.alert("Payment Confirmed", "You confirmed that cash payment was received. Booking completed & settled.");
-      loadDetails();
-    } catch (err) {
-      Alert.alert("Error", err.message || "Failed to confirm cash payment.");
-      setLoading(false);
-    }
-  };
-
-  const handleRejectCash = async () => {
-    setLoading(true);
-    try {
-      await rejectCashPayment(bookingId);
-      Alert.alert("Dispute Logged", "You reported that cash payment was not received. Admin has been notified.");
-      loadDetails();
-    } catch (err) {
-      Alert.alert("Error", err.message || "Failed to reject cash payment.");
-      setLoading(false);
-    }
-  };
-
   if (loading || !booking) {
     return (
       <View style={styles.centerContainer}>

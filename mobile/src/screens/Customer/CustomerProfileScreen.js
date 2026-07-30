@@ -245,5 +245,4 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     shadowOffset: { width: 0, height: 1 }
   }
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
 });
