@@ -11,7 +11,7 @@ import { secureStorage } from "../utils/storage";
  * for release and the correct URL will be resolved automatically.
  */
 const getBaseUrl = () => {
-  let envUrl = process.env.EXPO_PUBLIC_API_URL || "http://98.70.11.123:3000/api/v1";
+  let envUrl = process.env.EXPO_PUBLIC_API_URL || "http://192.168.1.17:8000/api/v1";
   return envUrl.endsWith("/") ? envUrl.slice(0, -1) : envUrl;
 };
 

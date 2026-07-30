@@ -7,12 +7,13 @@ const { authenticate } = require("../../middleware/auth.middleware");
 const { validateBody } = require("../../middleware/validate.middleware");
 
 // Routes
-router.post("/register-send-otp", validateBody(["name", "email", "role"]), UserController.registerSendOtp);
-router.post("/register-verify-otp", validateBody(["email", "otp"]), UserController.registerVerifyOtp);
+router.post("/register-send-otp", validateBody(["name", "role"]), UserController.registerSendOtp);
+router.post("/register-verify-otp", validateBody(["otp"]), UserController.registerVerifyOtp);
 
-router.post("/send-otp", validateBody(["email"]), UserController.sendOtp);
-router.post("/verify-otp", validateBody(["email", "otp"]), UserController.verifyOtp);
-router.post("/login", validateBody(["email"]), UserController.login);
+router.post("/send-otp", UserController.sendOtp);
+router.post("/resend-otp", UserController.sendOtp);
+router.post("/verify-otp", validateBody(["otp"]), UserController.verifyOtp);
+router.post("/login", UserController.login);
 router.post("/admin-send-otp", validateBody(["email", "password"]), UserController.adminSendOtp);
 router.post("/admin-verify-otp", validateBody(["email", "otp"]), UserController.adminVerifyOtp);
 

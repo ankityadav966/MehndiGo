@@ -1543,12 +1543,6 @@ async createReview(data) {
 
     const user = await db.User.findByPk(userId);
     if (user) {
-<<<<<<< HEAD
-      await user.update({
-        name: data.name !== undefined ? data.name : user.name,
-        profile_image: data.profileImage !== undefined ? data.profileImage : (data.profile_image !== undefined ? data.profile_image : user.profile_image)
-      });
-=======
       const userUpdates = {};
       if (data.name && data.name.trim()) userUpdates.name = data.name.trim();
 
@@ -1569,7 +1563,6 @@ async createReview(data) {
       if (Object.keys(userUpdates).length > 0) {
         await user.update(userUpdates);
       }
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
     }
 
     return await this.getProfile(userId);

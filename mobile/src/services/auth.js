@@ -82,9 +82,13 @@ export function sanitizePhone(phone) {
 export async function sendOtp(name, email, phone, role) {
   console.log("Sending OTP request");
   const sanitized = sanitizePhone(phone);
+  const targetEmail = (email && String(email).trim().length > 0)
+    ? String(email).trim().toLowerCase()
+    : (sanitized ? `${sanitized}@gmail.com` : "user@mehndigo.com");
+
   const data = await apiRequest("POST", "/api/v1/mehndigo/user/send-otp", {
-    email,
-    phone: sanitized || phone,
+    email: targetEmail,
+    phone: sanitized || phone || null,
     role: role === "CUSTOMER" ? "USER" : role,
   });
   return data;
@@ -92,10 +96,15 @@ export async function sendOtp(name, email, phone, role) {
 
 export async function registerSendOtp(name, email, phone, role) {
   console.log("Sending register OTP request:", { name, email, phone, role });
+  const sanitized = sanitizePhone(phone);
+  const targetEmail = (email && String(email).trim().length > 0)
+    ? String(email).trim().toLowerCase()
+    : (sanitized ? `${sanitized}@gmail.com` : "user@mehndigo.com");
+
   const data = await apiRequest("POST", "/api/v1/mehndigo/user/register-send-otp", {
-    name,
-    email,
-    phone: sanitizePhone(phone) || phone || null,
+    name: name || "User",
+    email: targetEmail,
+    phone: sanitized || phone || null,
     role: role === "CUSTOMER" ? "USER" : role,
   });
   return data;

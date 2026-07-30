@@ -89,7 +89,6 @@ export default function CustomerStack() {
       <Stack.Screen name="ReferralDashboard" component={ReferralDashboardScreen} />
       <Stack.Screen name="SupportTicket" component={SupportTicketScreen} />
       <Stack.Screen name="SupportTicketDetails" component={SupportTicketDetailsScreen} />
-      <Stack.Screen name="BookingSettlement" component={BookingSettlementScreen} />
       <Stack.Screen name="VideoPlayer" component={VideoPlayerScreen} />
     </Stack.Navigator>
   );

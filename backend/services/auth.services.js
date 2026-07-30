@@ -141,20 +141,21 @@ class AuthService {
 
     let user = await UserRepositor.getOne({ email: targetEmail });
     if (!user) {
-<<<<<<< HEAD
       user = await UserRepositor.create({
         name: name || "User",
-        phone,
-        email: email || null,
-        role,
+        phone: phone || null,
+        email: targetEmail,
+        role: role || "USER",
         is_verified: true,
         last_login_at: new Date()
       });
     } else {
       const isNewDay = !user.last_login_at || new Date(user.last_login_at).toDateString() !== new Date().toDateString();
       if (isNewDay) {
-        const xpService = require("./xp.services");
-        await xpService.awardXp(user.id, 20, "Daily Login Bonus");
+        try {
+          const xpService = require("./xp.services");
+          await xpService.awardXp(user.id, 20, "Daily Login Bonus");
+        } catch (e) {}
       }
 
       const updateData = {
@@ -165,16 +166,7 @@ class AuthService {
       if (email) updateData.email = email;
       await UserRepositor.update(user.id, updateData);
       user = await UserRepositor.getById(user.id);
-=======
-      throw new AppError("User not found", 404);
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
     }
-
-    await UserRepositor.update(user.id, {
-      is_verified: true,
-      last_login_at: new Date()
-    });
-    user = await UserRepositor.getById(user.id);
 
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
@@ -313,14 +305,8 @@ class AuthService {
     }
 
     try {
-<<<<<<< HEAD
-      const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET || "Live credentials");
-=======
-      if (!process.env.JWT_SECRET) {
-        throw new AppError("JWT Secret is not configured", 500);
-      }
-      const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
+      const jwtSecret = process.env.JWT_SECRET || "Live credentials";
+      const decoded = jwt.verify(refreshToken, jwtSecret);
       const user = await UserRepositor.getById(decoded.id);
 
       if (!user || user.refresh_token !== refreshToken) {
