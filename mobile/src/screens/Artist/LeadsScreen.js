@@ -287,6 +287,10 @@ export default function LeadsScreen({ route, navigation }) {
           data={leadsList}
           keyExtractor={(item) => item.id.toString()}
           renderItem={renderLeadCard}
+          initialNumToRender={5}
+          maxToRenderPerBatch={5}
+          windowSize={5}
+          removeClippedSubviews={true}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.listContainer}
           refreshControl={

@@ -15,8 +15,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import Colors from "../../constants/Colors";
 import CustomButton from "../../components/CustomButton";
+import OptimizedImage from "../../components/OptimizedImage";
 import { getPriceDetails, createBooking } from "../../services/booking";
 import { getArtistById } from "../../services/customer";
+
 
 export default function BookingSummaryScreen({ route, navigation }) {
   const params = route.params || {};
@@ -239,17 +241,15 @@ export default function BookingSummaryScreen({ route, navigation }) {
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Price Breakdown</Text>
               <View style={styles.row}>
-                <Text style={styles.label}>Service Base Price</Text>
+                <Text style={styles.label}>Service Price</Text>
                 <Text style={styles.value}>₹{priceDetails.servicePrice}</Text>
               </View>
-              <View style={styles.row}>
-                <Text style={styles.label}>Travel Charges</Text>
-                <Text style={styles.value}>₹{priceDetails.travelCharges}</Text>
-              </View>
-              <View style={styles.row}>
-                <Text style={styles.label}>Platform Fee</Text>
-                <Text style={styles.value}>₹{priceDetails.platformFee}</Text>
-              </View>
+              {priceDetails.travelCharges > 0 && (
+                <View style={styles.row}>
+                  <Text style={styles.label}>Travel Fee</Text>
+                  <Text style={styles.value}>₹{priceDetails.travelCharges}</Text>
+                </View>
+              )}
               {priceDetails.couponDiscount > 0 && (
                 <View style={styles.row}>
                   <Text style={[styles.label, { color: Colors.primary }]}>Discount</Text>
@@ -258,17 +258,14 @@ export default function BookingSummaryScreen({ route, navigation }) {
                   </Text>
                 </View>
               )}
-              <View style={styles.row}>
-                <Text style={styles.label}>GST (18%)</Text>
-                <Text style={styles.value}>₹{priceDetails.gst}</Text>
-              </View>
               <View style={styles.divider} />
               <View style={styles.row}>
-                <Text style={styles.totalLabel}>Total Payable Amount</Text>
+                <Text style={styles.totalLabel}>Total Booking Amount</Text>
                 <Text style={styles.totalAmount}>₹{priceDetails.finalAmount}</Text>
               </View>
             </View>
           )}
+
         </ScrollView>
       )}
 

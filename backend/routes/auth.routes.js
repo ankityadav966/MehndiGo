@@ -2,10 +2,12 @@ const express = require("express");
 const router = express.Router();
 const AuthController = require("../controllers/auth/auth.controller");
 const { authenticate } = require("../middleware/auth.middleware");
+const { otpRateLimiter } = require("../middleware/rateLimiter.middleware");
 
 // Public authentication routes
-router.post("/send-otp", AuthController.sendOtp);
+router.post("/send-otp", otpRateLimiter, AuthController.sendOtp);
 router.post("/verify-otp", AuthController.verifyOtp);
+
 router.post("/register", AuthController.register);
 router.post("/login", AuthController.login);
 router.post("/refresh-token", AuthController.refreshToken);

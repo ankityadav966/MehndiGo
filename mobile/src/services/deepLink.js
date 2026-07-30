@@ -144,15 +144,19 @@ export function resolveNotificationRoute(notification, role) {
       event = "system_notification";
     }
 
-    // 3. Regex ID Extractor
+    // 3. Regex BK-Code & ID Extractor
+    const bkMatch = msgText.match(/(BK-[0-9]+)/i) || titleText.match(/(BK-[0-9]+)/i);
     const numberMatch = msgText.match(/(?:booking|lead|refund|id|#)\s*:?\s*#?\s*([0-9]+)/i);
-    const resolvedNumId = numberMatch ? numberMatch[1] : null;
 
-    if (resolvedNumId) {
-      if (type === "booking" || type === "chat") bookingId = resolvedNumId;
+    if (bkMatch) {
+      bookingId = bkMatch[1];
+    } else if (numberMatch) {
+      const resolvedNumId = numberMatch[1];
+      if (type === "booking" || type === "chat" || type === "payment") bookingId = resolvedNumId;
       else if (type === "payment" && event.includes("refund")) refundId = resolvedNumId;
       else leadId = resolvedNumId;
     }
+
   }
 
   const fallbackScreen = normalizedRole === "artist" ? "Notifications" : "NotificationCenter";

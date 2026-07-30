@@ -65,6 +65,31 @@ export default function CustomerProfileScreen({ navigation }) {
     ]);
   };
 
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      "Delete Account",
+      "Are you sure you want to permanently delete your account? All saved addresses, referral history, and wallet data will be removed.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete Permanently",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const { deleteCustomerAccount } = require("../../services/customer");
+              if (deleteCustomerAccount) await deleteCustomerAccount();
+            } catch (e) {
+              console.log("Delete account error:", e);
+            } finally {
+              logout();
+            }
+          }
+        }
+      ]
+    );
+  };
+
+
   if (loading) {
     return (
       <View style={styles.centerContainer}>
@@ -81,13 +106,17 @@ export default function CustomerProfileScreen({ navigation }) {
 
   const quickActions = [
     { icon: "calendar-outline", label: "My Bookings", screen: "MyBookings" },
+    { icon: "location-outline", label: "Saved Addresses", screen: "SavedAddresses" },
+    { icon: "wallet-outline", label: "Wallet & Payments", screen: "Wallet" },
+
     { icon: "heart-outline", label: "Wishlist", screen: "Wishlist" },
-    { icon: "wallet-outline", label: "Wallet", screen: "Wallet" },
     { icon: "share-social-outline", label: "Refer & Earn", screen: "ReferralDashboard" },
-    { icon: "pricetag-outline", label: "Coupons", screen: "Coupons" },
+    { icon: "pricetag-outline", label: "Coupons & Offers", screen: "Coupons" },
     { icon: "star-outline", label: "My Reviews", screen: "Reviews" },
+    { icon: "shield-checkmark-outline", label: "Security & Privacy", screen: "EditProfile" },
     { icon: "headset-outline", label: "Support Helpdesk", screen: "Support" },
   ];
+
 
   const currentBgColor = isDarkMode ? "#000000" : Colors.background;
   const currentCardBg = isDarkMode ? "#121212" : Colors.white;
@@ -186,10 +215,17 @@ export default function CustomerProfileScreen({ navigation }) {
         </View>
 
         {/* Logout Button */}
-        <TouchableOpacity style={[styles.logoutButton, { backgroundColor: currentCardBg }]} activeOpacity={0.8} onPress={handleLogout}>
+        <TouchableOpacity style={[styles.logoutButton, { backgroundColor: currentCardBg, marginBottom: 12 }]} activeOpacity={0.8} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={18} color={Colors.error} />
           <Text style={styles.logoutText}>Logout Session</Text>
         </TouchableOpacity>
+
+        {/* Delete Account Button */}
+        <TouchableOpacity style={[styles.logoutButton, { backgroundColor: currentCardBg, borderColor: "#DC2626", marginBottom: 40 }]} activeOpacity={0.8} onPress={handleDeleteAccount}>
+          <Ionicons name="trash-outline" size={18} color="#DC2626" />
+          <Text style={[styles.logoutText, { color: "#DC2626" }]}>Delete Account</Text>
+        </TouchableOpacity>
+
       </ScrollView>
     </SafeAreaView>
   );

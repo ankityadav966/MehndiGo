@@ -366,11 +366,27 @@ async function verifyCheckOutOtp(req, res) {
     const response = await BookingService.verifyCheckOutOtp(bookingId, otp, req.user.id);
     return res.status(200).json(SuccessResponse("Check-Out OTP verified successfully", response));
   } catch (error) {
+
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+async function getInvoice(req, res) {
+  try {
+    const bookingId = req.query.bookingId || req.params.bookingId || req.params.id;
+    if (!bookingId) {
+      return res.status(400).json(ErrorResponse("Missing required parameter: bookingId"));
+    }
+    const response = await BookingService.getInvoice(bookingId);
+    return res.status(200).json(SuccessResponse("Invoice retrieved successfully", response));
+  } catch (error) {
     return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
   }
 }
 
 module.exports = {
+
+
   calculatePriceDetails,
   createBooking,
   getBookingDetails,

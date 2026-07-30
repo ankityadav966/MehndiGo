@@ -1,28 +1,29 @@
-import Ionicons from "@expo/vector-icons/Ionicons";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   FlatList,
-  Image,
-  Platform,
+  Share,
   StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
   ActivityIndicator,
-  RefreshControl
+  RefreshControl,
 } from "react-native";
-import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import Colors from "../../constants/Colors";
+import Alert from "../../utils/Alert";
 import { getCustomerWishlist, removeArtistFavorite } from "../../services/customer";
+import OptimizedImage from "../../components/OptimizedImage";
+import CustomButton from "../../components/CustomButton";
 
 export default function WishlistScreen({ navigation }) {
   const [wishlist, setWishlist] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchWishlist = React.useCallback(async () => {
+  const fetchWishlist = useCallback(async () => {
     try {
       const data = await getCustomerWishlist();
       setWishlist(data || []);
@@ -35,10 +36,7 @@ export default function WishlistScreen({ navigation }) {
   }, []);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      fetchWishlist();
-    }, 0);
-    return () => clearTimeout(timer);
+    fetchWishlist();
   }, [fetchWishlist]);
 
   useEffect(() => {
@@ -50,18 +48,45 @@ export default function WishlistScreen({ navigation }) {
 
   const handleRemoveFavorite = async (artistId) => {
     try {
-      await removeArtistFavorite(artistId);
+      // Optimistic removal
       setWishlist((prev) => prev.filter((item) => item.id !== artistId));
-      Alert.alert("Wishlist Updated", "Artist removed from favorites.");
+      await removeArtistFavorite(artistId);
     } catch (err) {
-      Alert.alert("Error", "Could not update wishlist.");
+      console.log("Remove favorite error:", err.message);
+      fetchWishlist(); // Revert on failure
+    }
+  };
+
+  const handleShareWishlist = async () => {
+    if (wishlist.length === 0) return;
+    try {
+      const names = wishlist.map((a) => a.user?.name || a.name || "Mehndi Specialist").join(", ");
+      await Share.share({
+        message: `Check out my favorite MehndiGo artists collection: ${names}\n\nBook top home mehendi specialists on MehndiGo!`,
+        title: "My Favorite Mehndi Artists Collection",
+      });
+    } catch (e) {
+      console.log("Share wishlist error:", e.message);
     }
   };
 
   const renderItem = ({ item }) => {
     const artist = item || {};
     const userObj = artist.user || {};
-    const artistImage = userObj.profile_image || "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=500";
+    const artistName = userObj.name || artist.name || "Mehndi Specialist";
+    const artistImage =
+      userObj.profile_image ||
+      artist.profile_image ||
+      "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400";
+
+    const ratingVal = Number(artist.avg_rating || 4.8).toFixed(1);
+    const reviewsCount = artist.total_reviews ? `(${artist.total_reviews})` : "(45+)";
+    const expText = artist.experience_years ? `${artist.experience_years} Yrs Exp` : "3+ Yrs Exp";
+    const cityText = artist.city || "Jaipur, Rajasthan";
+    const minPrice = artist.services?.[0]?.minimum_price
+      ? `Starting ₹${artist.services[0].minimum_price}`
+      : "Starting ₹1,500";
+    const isApproved = artist.verification_status === "APPROVED";
 
     return (
       <TouchableOpacity
@@ -69,50 +94,119 @@ export default function WishlistScreen({ navigation }) {
         style={styles.card}
         onPress={() => navigation.navigate("ArtistProfile", { artistId: artist.id })}
       >
-        <Image source={{ uri: artistImage }} style={styles.artistImage} />
-        <View style={styles.infoContainer}>
-          <Text numberOfLines={1} style={styles.artistName}>{userObj.name || "Mehndi Artist"}</Text>
-          <Text style={styles.location}>📍 {artist.city || "Jaipur, Rajasthan"}</Text>
-          <View style={styles.bottomRow}>
-            <View style={styles.ratingBadge}>
-              <Ionicons name="star" size={11} color={Colors.warning} />
-              <Text style={styles.ratingText}>{artist.avg_rating || "4.8"}</Text>
+        {/* Left Avatar */}
+        <View style={styles.imageWrap}>
+          <OptimizedImage
+            source={{ uri: artistImage }}
+            style={styles.artistImage}
+            width={84}
+            height={84}
+          />
+          {isApproved && (
+            <View style={styles.verifiedBadge}>
+              <Ionicons name="checkmark" size={10} color="#FFFFFF" />
             </View>
-            <Text style={styles.price}>Exp. {artist.experience_years || "3"}+ Yrs</Text>
-          </View>
+          )}
         </View>
-        <TouchableOpacity style={styles.heartButton} onPress={() => handleRemoveFavorite(artist.id)}>
-          <Ionicons name="heart" size={18} color={Colors.primary} />
-        </TouchableOpacity>
+
+        {/* Center Details */}
+        <View style={styles.infoContainer}>
+          <View style={styles.nameRow}>
+            <Text numberOfLines={1} style={styles.artistName}>
+              {artistName}
+            </Text>
+            <TouchableOpacity
+              style={styles.heartButton}
+              onPress={() => handleRemoveFavorite(artist.id)}
+            >
+              <Ionicons name="heart" size={20} color={Colors.primary || "#9C1344"} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Specialization Badge */}
+          <View style={styles.specBadge}>
+            <Text style={styles.specBadgeText}>Bridal & Festival Specialist</Text>
+          </View>
+
+          {/* Rating & Exp Row */}
+          <View style={styles.metaRow}>
+            <View style={styles.ratingBadge}>
+              <Ionicons name="star" size={12} color="#FFB800" />
+              <Text style={styles.ratingText}>{ratingVal}</Text>
+            </View>
+            <Text style={styles.reviewsText}>{reviewsCount}</Text>
+            <Text style={styles.dotSeparator}>•</Text>
+            <Text style={styles.metaText}>{expText}</Text>
+          </View>
+
+          {/* Location & Price Row */}
+          <View style={styles.bottomRow}>
+            <View style={styles.locRow}>
+              <Ionicons name="location-outline" size={12} color={Colors.textSecondary || "#666666"} />
+              <Text style={styles.locationText} numberOfLines={1}>
+                {cityText}
+              </Text>
+            </View>
+            <Text style={styles.priceText}>{minPrice}</Text>
+          </View>
+
+          {/* Book Now Action */}
+          <TouchableOpacity
+            style={styles.bookNowBtn}
+            onPress={() => navigation.navigate("ArtistProfile", { artistId: artist.id })}
+          >
+            <Text style={styles.bookNowText}>Book Artist</Text>
+            <Ionicons name="arrow-forward" size={14} color="#FFFFFF" style={{ marginLeft: 4 }} />
+          </TouchableOpacity>
+        </View>
       </TouchableOpacity>
     );
   };
 
-  if (loading) {
+  if (loading && !refreshing) {
     return (
       <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color={Colors.primary} />
+        <ActivityIndicator size="large" color={Colors.primary || "#9C1344"} />
       </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.white} />
+    <SafeAreaView style={styles.container} edges={["top"]}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+
+      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Ionicons name="chevron-back" size={22} color={Colors.text} />
+          <Ionicons name="chevron-back" size={22} color={Colors.text || "#1D1D1D"} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Favorite Mehndi Artists</Text>
+
+        <View style={styles.headerTitleWrap}>
+          <Text style={styles.headerTitle}>Wishlist Collection</Text>
+          <Text style={styles.headerSubtitle}>{wishlist.length} Saved Artists</Text>
+        </View>
+
+        {wishlist.length > 0 ? (
+          <TouchableOpacity onPress={handleShareWishlist} style={styles.shareBtn}>
+            <Ionicons name="share-social-outline" size={20} color={Colors.primary || "#9C1344"} />
+          </TouchableOpacity>
+        ) : (
+          <View style={{ width: 40 }} />
+        )}
       </View>
 
+      {/* List Body */}
       {wishlist.length > 0 ? (
         <FlatList
           data={wishlist}
           renderItem={renderItem}
-          keyExtractor={(item, index) => item?.id ? item.id.toString() : index.toString()}
+          keyExtractor={(item, index) => (item?.id ? item.id.toString() : index.toString())}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={fetchWishlist} colors={[Colors.primary]} />
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={fetchWishlist}
+              colors={[Colors.primary || "#9C1344"]}
+            />
           }
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.listContainer}
@@ -120,10 +214,12 @@ export default function WishlistScreen({ navigation }) {
       ) : (
         <View style={styles.emptyContainer}>
           <View style={styles.iconContainer}>
-            <Ionicons name="heart-outline" size={50} color={Colors.primary} />
+            <Ionicons name="heart-outline" size={54} color={Colors.primary || "#9C1344"} />
           </View>
           <Text style={styles.emptyTitle}>Your Wishlist is Empty</Text>
-          <Text style={styles.emptySubtitle}>Save your favorite artists by tapping the heart icon on their profiles.</Text>
+          <Text style={styles.emptySubtitle}>
+            Save your favorite Mehendi artists by tapping the heart icon on their profiles.
+          </Text>
           <TouchableOpacity
             style={styles.exploreBtn}
             onPress={() => navigation.navigate("Categories")}
@@ -137,27 +233,239 @@ export default function WishlistScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
-  centerContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
-  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8, backgroundColor: Colors.white, borderBottomWidth: 1, borderBottomColor: Colors.border },
-  backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.background, justifyContent: "center", alignItems: "center", marginRight: 12 },
-  headerTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },
-  headerSubTitle: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
-  listContainer: { paddingVertical: 14, paddingBottom: 100 },
-  card: { flexDirection: "row", alignItems: "center", backgroundColor: Colors.white, marginHorizontal: 16, marginBottom: 12, borderRadius: 16, padding: 12, borderWidth: 1, borderColor: Colors.border, elevation: 1 },
-  artistImage: { width: 64, height: 64, borderRadius: 12 },
-  infoContainer: { flex: 1, marginLeft: 12 },
-  artistName: { fontSize: 14, fontWeight: "700", color: Colors.text },
-  location: { marginTop: 4, fontSize: 11, color: Colors.textSecondary },
-  bottomRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 8 },
-  ratingBadge: { flexDirection: "row", alignItems: "center", backgroundColor: "#FFF0F4", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
-  ratingText: { marginLeft: 4, fontSize: 10, fontWeight: "700", color: Colors.primary },
-  price: { fontSize: 11, fontWeight: "700", color: Colors.primary },
-  heartButton: { width: 36, height: 36, borderRadius: 18, backgroundColor: "#FFF0F2", justifyContent: "center", alignItems: "center" },
-  emptyContainer: { flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 32 },
-  iconContainer: { width: 100, height: 100, borderRadius: 50, backgroundColor: "#FFF0F2", justifyContent: "center", alignItems: "center", marginBottom: 24 },
-  emptyTitle: { fontSize: 20, fontWeight: "800", color: Colors.text, textAlign: "center", marginBottom: 10 },
-  emptySubtitle: { fontSize: 14, color: Colors.textSecondary, textAlign: "center", lineHeight: 22, paddingHorizontal: 16 },
-  exploreBtn: { backgroundColor: Colors.primary, paddingVertical: 14, paddingHorizontal: 36, borderRadius: 12, marginTop: 24 },
-  exploreBtnText: { color: Colors.white, fontSize: 14, fontWeight: "700" }
+  container: {
+    flex: 1,
+    backgroundColor: "#F9FAFB",
+  },
+  centerContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: "#FFFFFF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: "#F3F4F6",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  headerTitleWrap: {
+    alignItems: "center",
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  headerSubtitle: {
+    fontSize: 12,
+    color: "#6B7280",
+    marginTop: 2,
+  },
+  shareBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: "#FFF0F4",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  listContainer: {
+    paddingVertical: 16,
+    paddingBottom: 180,
+  },
+
+  card: {
+    flexDirection: "row",
+    backgroundColor: "#FFFFFF",
+    marginHorizontal: 16,
+    marginBottom: 14,
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  imageWrap: {
+    position: "relative",
+  },
+  artistImage: {
+    width: 84,
+    height: 84,
+    borderRadius: 14,
+  },
+  verifiedBadge: {
+    position: "absolute",
+    bottom: -4,
+    right: -4,
+    backgroundColor: "#059669",
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1.5,
+    borderColor: "#FFFFFF",
+  },
+  infoContainer: {
+    flex: 1,
+    marginLeft: 14,
+  },
+  nameRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  artistName: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#111827",
+    flex: 1,
+    marginRight: 8,
+  },
+  heartButton: {
+    padding: 4,
+  },
+  specBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: "#FFF1F2",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    marginTop: 4,
+    marginBottom: 6,
+  },
+  specBadgeText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: Colors.primary || "#9C1344",
+  },
+  metaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  ratingBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFBEB",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginRight: 4,
+  },
+  ratingText: {
+    marginLeft: 4,
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#D97706",
+  },
+  reviewsText: {
+    fontSize: 12,
+    color: "#6B7280",
+  },
+  dotSeparator: {
+    fontSize: 12,
+    color: "#9CA3AF",
+    marginHorizontal: 6,
+  },
+  metaText: {
+    fontSize: 12,
+    color: "#4B5563",
+    fontWeight: "500",
+  },
+  bottomRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  locRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    marginRight: 6,
+  },
+  locationText: {
+    fontSize: 12,
+    color: "#6B7280",
+    marginLeft: 3,
+  },
+  priceText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: Colors.primary || "#9C1344",
+  },
+  bookNowBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Colors.primary || "#9C1344",
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    alignSelf: "flex-start",
+  },
+  bookNowText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 32,
+  },
+  iconContainer: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: "#FFF0F4",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#111827",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: "#6B7280",
+    textAlign: "center",
+    lineHeight: 20,
+    paddingHorizontal: 16,
+  },
+  exploreBtn: {
+    backgroundColor: Colors.primary || "#9C1344",
+    paddingVertical: 14,
+    paddingHorizontal: 36,
+    borderRadius: 12,
+    marginTop: 24,
+  },
+  exploreBtnText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
+  },
 });

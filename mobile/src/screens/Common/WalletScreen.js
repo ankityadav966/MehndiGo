@@ -313,26 +313,8 @@ export default function WalletScreen({ navigation }) {
               </View>
             </View>
 
-            {/* Quick Top-Up Bar */}
-            <View style={styles.quickTopupSection}>
-              <Text style={styles.quickSectionTitle}>Quick Recharge</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsScroll}>
-                {quickAmounts.map((amt) => (
-                  <TouchableOpacity
-                    key={amt}
-                    style={styles.quickChip}
-                    onPress={() => {
-                      setCustomAmount(String(amt));
-                      setShowAddModal(true);
-                    }}
-                  >
-                    <Text style={styles.quickChipText}>+₹{amt}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-
             {/* Transaction Section Header */}
+
             <View style={styles.txHeaderRow}>
               <Text style={styles.sectionTitle}>Transaction History</Text>
               <Text style={styles.txCount}>{filteredTransactions.length} Items</Text>
@@ -574,75 +556,78 @@ const styles = StyleSheet.create({
   },
   headerIconBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#F3F4F6", justifyContent: "center", alignItems: "center" },
   headerTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },
-  scrollContent: { paddingBottom: 110 },
+  scrollContent: { paddingBottom: 180 },
+
   
   // Balance Card Styling
   balanceCard: {
-    margin: 16,
-    borderRadius: 22,
-    padding: 20,
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 12,
+    borderRadius: 18,
+    padding: 16,
     backgroundColor: "#9C1344", // Deep rich burgundy/rose theme
-    elevation: 6,
+    elevation: 4,
     shadowColor: "#9C1344",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 10
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
   },
-  cardHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
+  cardHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
   cardHeaderLeft: { flexDirection: "row", alignItems: "center" },
-  walletIconCircle: { width: 32, height: 32, borderRadius: 16, backgroundColor: "rgba(255,255,255,0.2)", justifyContent: "center", alignItems: "center", marginRight: 10 },
-  balanceLabel: { fontSize: 13, color: "rgba(255,255,255,0.9)", fontWeight: "600" },
+  walletIconCircle: { width: 28, height: 28, borderRadius: 14, backgroundColor: "rgba(255,255,255,0.2)", justifyContent: "center", alignItems: "center", marginRight: 8 },
+  balanceLabel: { fontSize: 12, color: "rgba(255,255,255,0.9)", fontWeight: "600" },
   eyeBtn: { padding: 4 },
-  balanceValue: { fontSize: 34, fontWeight: "800", color: "#FFFFFF", marginBottom: 18, letterSpacing: 0.5 },
+  balanceValue: { fontSize: 26, fontWeight: "800", color: "#FFFFFF", marginBottom: 10, letterSpacing: 0.5 },
   
-  cardSubStatsRow: { flexDirection: "row", backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, marginBottom: 18 },
+  cardSubStatsRow: { flexDirection: "row", backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 10, paddingVertical: 6, paddingHorizontal: 10, marginBottom: 12 },
   subStatItem: { flex: 1, alignItems: "center" },
-  subStatLabel: { fontSize: 10, color: "rgba(255,255,255,0.8)", fontWeight: "600", marginBottom: 2 },
-  subStatValue: { fontSize: 13, fontWeight: "700", color: "#FFFFFF" },
+  subStatLabel: { fontSize: 10, color: "rgba(255,255,255,0.8)", fontWeight: "600", marginBottom: 1 },
+  subStatValue: { fontSize: 12, fontWeight: "700", color: "#FFFFFF" },
   subStatDivider: { width: 1, backgroundColor: "rgba(255,255,255,0.2)", height: "100%" },
   
-  cardActionRow: { flexDirection: "row", gap: 10 },
+  cardActionRow: { flexDirection: "row", gap: 8 },
   addMoneyMainBtn: {
     flex: 1.4,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#FFFFFF",
-    paddingVertical: 12,
-    borderRadius: 14,
-    elevation: 2
+    paddingVertical: 9,
+    borderRadius: 12,
+    elevation: 1,
   },
-  addMoneyMainText: { color: Colors.primary, fontWeight: "800", fontSize: 14, marginLeft: 6 },
+  addMoneyMainText: { color: Colors.primary, fontWeight: "800", fontSize: 13, marginLeft: 6 },
   quickHelpBtn: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(255,255,255,0.2)",
-    paddingVertical: 12,
-    borderRadius: 14,
+    paddingVertical: 9,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.3)"
+    borderColor: "rgba(255,255,255,0.3)",
   },
-  quickHelpText: { color: "#FFFFFF", fontWeight: "700", fontSize: 13, marginLeft: 6 },
+  quickHelpText: { color: "#FFFFFF", fontWeight: "700", fontSize: 12, marginLeft: 6 },
 
   // Quick Topup Chips Bar
-  quickTopupSection: { paddingHorizontal: 16, marginBottom: 14 },
-  quickSectionTitle: { fontSize: 12, fontWeight: "700", color: Colors.textSecondary, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 },
-  chipsScroll: { gap: 8 },
-  quickChip: { backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, elevation: 1 },
-  quickChipText: { fontSize: 13, fontWeight: "700", color: Colors.text },
+  quickTopupSection: { paddingHorizontal: 16, marginBottom: 10 },
+  quickSectionTitle: { fontSize: 11, fontWeight: "700", color: Colors.textSecondary, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 },
+  chipsScroll: { gap: 6 },
+  quickChip: { backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16, elevation: 1 },
+  quickChipText: { fontSize: 12, fontWeight: "700", color: Colors.text },
 
   // Transactions Header
-  txHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, marginTop: 6, marginBottom: 8 },
-  sectionTitle: { fontSize: 16, fontWeight: "700", color: Colors.text },
-  txCount: { fontSize: 12, color: Colors.textSecondary, fontWeight: "600" },
+  txHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, marginTop: 4, marginBottom: 6 },
+  sectionTitle: { fontSize: 15, fontWeight: "700", color: Colors.text },
+  txCount: { fontSize: 11, color: Colors.textSecondary, fontWeight: "600" },
 
   // Segmented Tabs
-  tabContainer: { flexDirection: "row", paddingHorizontal: 16, marginBottom: 12, gap: 6 },
-  tabBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: "#EFEFEF" },
+  tabContainer: { flexDirection: "row", paddingHorizontal: 16, marginBottom: 10, gap: 6 },
+  tabBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, backgroundColor: "#EFEFEF" },
   activeTabBtn: { backgroundColor: Colors.primary },
-  tabBtnText: { fontSize: 12, fontWeight: "600", color: Colors.textSecondary },
+  tabBtnText: { fontSize: 11, fontWeight: "600", color: Colors.textSecondary },
   activeTabBtnText: { color: Colors.white, fontWeight: "700" },
 
   // Transaction Cards
@@ -651,12 +636,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: Colors.white,
     marginHorizontal: 16,
-    marginBottom: 8,
-    padding: 14,
-    borderRadius: 16,
+    marginBottom: 6,
+    padding: 10,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: "#F0F3F6",
-    elevation: 1
+    elevation: 1,
   },
   txIconWrapper: { width: 44, height: 44, borderRadius: 22, justifyContent: "center", alignItems: "center", marginRight: 12 },
   txInfo: { flex: 1, marginRight: 8 },

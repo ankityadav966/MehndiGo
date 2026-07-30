@@ -40,17 +40,32 @@ import RewardStoreScreen from "../screens/Customer/RewardStoreScreen";
 import SupportTicketScreen from "../screens/Customer/SupportTicketScreen";
 import SupportTicketDetailsScreen from "../screens/Common/SupportTicketDetailsScreen";
 
+import WishlistScreen from "../screens/Customer/WishlistScreen";
+import CompareArtistsScreen from "../screens/Customer/CompareArtistsScreen";
+import InitialLocationSetupScreen from "../screens/Customer/InitialLocationSetupScreen";
+import SavedAddressesScreen from "../screens/Customer/SavedAddressesScreen";
+
 import BottomTab from "./BottomTab";
 import ChatListScreen from "../screens/Common/ChatListScreen";
 import ChatRoomScreen from "../screens/Common/ChatRoomScreen";
+import WalletScreen from "../screens/Common/WalletScreen";
 
 const Stack = createNativeStackNavigator();
 
 export default function CustomerStack() {
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator screenOptions={{ headerShown: false, freezeOnBlur: true, animation: "slide_from_right" }}>
       <Stack.Screen name="CustomerTabs" component={BottomTab} initialParams={{ role: "customer" }} />
+      <Stack.Screen name="InitialLocationSetup" component={InitialLocationSetupScreen} />
+      <Stack.Screen name="SavedAddresses" component={SavedAddressesScreen} />
+      <Stack.Screen name="Wallet" component={WalletScreen} />
+
+      <Stack.Screen name="Wishlist" component={WishlistScreen} />
+      <Stack.Screen name="CompareArtists" component={CompareArtistsScreen} />
       <Stack.Screen name="ChatList" component={ChatListScreen} />
+
+
+
       <Stack.Screen name="ChatRoom" component={ChatRoomScreen} />
       <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />
       <Stack.Screen name="RewardStore" component={RewardStoreScreen} />

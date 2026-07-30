@@ -104,11 +104,10 @@ export default function BookingDetailsScreen({ route, navigation }) {
               }
             ]
           );
-        } else if (data.payment_status === "PAID" && !data.review_skipped && !hasPromptedReview) {
-          setHasPromptedReview(true);
-          setReviewModalVisible(true);
         }
       }
+
+
     } catch (e) {
       Alert.alert("Error", "Could not retrieve booking details.");
       navigation.goBack();
@@ -162,6 +161,14 @@ export default function BookingDetailsScreen({ route, navigation }) {
   }, [socket, bookingId]);
 
   // Socket listeners for realtime OTP events, service start, and completion
+  useEffect(() => {
+    if (!bookingId) {
+      navigation.replace("CustomerTabs", { screen: "Bookings" });
+      return;
+    }
+    loadDetails();
+  }, [bookingId]);
+
   useEffect(() => {
     if (!socket || !bookingId) return;
 
@@ -349,7 +356,10 @@ export default function BookingDetailsScreen({ route, navigation }) {
       });
       setSubmittingReview(false);
       setReviewModalVisible(false);
+      setHasPromptedReview(true);
+      setCurrentDetailedStatus("COMPLETED_CLOSED");
       const artistName = booking.artist?.user?.name || "the artist";
+
       Alert.alert(
         "Review Published",
         `Thank you for reviewing ${artistName}! Your feedback has been shared.`
@@ -637,15 +647,44 @@ export default function BookingDetailsScreen({ route, navigation }) {
             </View>
           </View>
 
-          <Text style={styles.artistName}>
-            {booking.service?.specialization_name || "Custom Mehndi Design"}
-          </Text>
-          <Text style={styles.service}>
-            Professional Service by {booking.artist?.user?.name || "Specialist"}
-          </Text>
+          {/* Assigned Specialist Card */}
+          {booking.artist && (
+            <View style={styles.artistCardContainer}>
+              <Text style={styles.artistCardHeaderTitle}>Assigned Specialist Details</Text>
+              <View style={styles.artistCardBody}>
+                <Image
+                  source={{ uri: booking.artist.user?.profile_image || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400" }}
+                  style={styles.artistCardAvatar}
+                />
+                <View style={styles.artistCardMeta}>
+                  <View style={styles.artistCardNameRow}>
+                    <Text style={styles.artistCardName}>{booking.artist.user?.name || "Mehndi Specialist"}</Text>
+                    <View style={styles.verifiedTag}>
+                      <Ionicons name="checkmark" size={10} color="#FFFFFF" />
+                    </View>
+                  </View>
+                  <Text style={styles.artistCardSubText}>
+                    Exp: {booking.artist.experience_years || 3}+ Years • ⭐ {Number(booking.artist.avg_rating || 4.8).toFixed(1)} Rating
+                  </Text>
+                  <Text style={styles.artistCardPhone}>
+                    📞 {booking.artist.user?.phone || "Phone verified"}
+                  </Text>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={styles.viewArtistProfileBtn}
+                onPress={() => navigation.navigate("ArtistProfile", { artistId: booking.artist_id })}
+              >
+                <Text style={styles.viewArtistProfileText}>View Full Artist Profile</Text>
+                <Ionicons name="arrow-forward" size={14} color={Colors.primary} />
+              </TouchableOpacity>
+            </View>
+          )}
 
           <View style={styles.card}>
             <DetailRow icon="person-outline" label="Artist ID" value={`ART-${booking.artist_id}`} />
+
             <DetailRow icon="bookmark-outline" label="Booking ID" value={`#${booking.booking_code}`} />
             <DetailRow icon="information-circle-outline" label="Booking Status" value={currentDetailedStatus} />
             <DetailRow icon="cash-outline" label="Payment Status" value={booking.payment_status} />
@@ -677,33 +716,28 @@ export default function BookingDetailsScreen({ route, navigation }) {
           <View style={styles.card}>
             <Text style={styles.cardSectionTitle}>Pricing Details</Text>
             <View style={styles.pricingRow}>
-              <Text style={styles.priceLabel}>Base Amount</Text>
+              <Text style={styles.priceLabel}>Service Price</Text>
               <Text style={styles.priceVal}>₹{booking.total_price}</Text>
             </View>
-            <View style={styles.pricingRow}>
-              <Text style={styles.priceLabel}>Travel Charges</Text>
-              <Text style={styles.priceVal}>₹{booking.travel_charges}</Text>
-            </View>
+            {booking.travel_charges > 0 && (
+              <View style={styles.pricingRow}>
+                <Text style={styles.priceLabel}>Travel Fee</Text>
+                <Text style={styles.priceVal}>₹{booking.travel_charges}</Text>
+              </View>
+            )}
             {booking.coupon_discount > 0 && (
               <View style={styles.pricingRow}>
                 <Text style={[styles.priceLabel, { color: Colors.primary }]}>Discount</Text>
                 <Text style={[styles.priceVal, { color: Colors.primary }]}>-₹{booking.coupon_discount}</Text>
               </View>
             )}
-            <View style={styles.pricingRow}>
-              <Text style={styles.priceLabel}>Platform Fee</Text>
-              <Text style={styles.priceVal}>₹{booking.platform_fee}</Text>
-            </View>
-            <View style={styles.pricingRow}>
-              <Text style={styles.priceLabel}>GST (18%)</Text>
-              <Text style={styles.priceVal}>₹{booking.gst}</Text>
-            </View>
             <View style={styles.cardDivider} />
             <View style={styles.pricingRow}>
-              <Text style={styles.priceTotalLabel}>Final Paid Amount</Text>
-              <Text style={styles.priceTotalVal}>₹{booking.final_amount}</Text>
+              <Text style={styles.totalPriceLabel}>Total Booking Amount</Text>
+              <Text style={styles.totalPriceVal}>₹{booking.final_amount}</Text>
             </View>
           </View>
+
 
           {/* Action options */}
           {canChat && (
@@ -757,7 +791,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
           )}
 
           {/* Invoice option */}
-          {booking.payment_status === "PAID" && (
+          {(["PAID", "SUCCESS", "ADVANCE_PAID", "SETTLED"].includes(booking.payment_status) || ["COMPLETED", "COMPLETED_CLOSED", "ACCEPTED", "CONFIRMED"].includes(currentDetailedStatus)) && (
             <TouchableOpacity
               style={[styles.secondaryBtn, { marginTop: 10 }]}
               onPress={handleDownloadInvoice}
@@ -768,16 +802,34 @@ export default function BookingDetailsScreen({ route, navigation }) {
           )}
 
           {/* Review options */}
-          {currentDetailedStatus === "COMPLETED" && (
-            <TouchableOpacity
-              style={[styles.secondaryBtn, { marginTop: 10, borderColor: Colors.success }]}
-              onPress={() => setReviewModalVisible(true)}
-            >
-              <Ionicons name="star" size={16} color={Colors.success} />
-              <Text style={[styles.secondaryBtnText, { color: Colors.success }]}>Write Professional Review</Text>
-            </TouchableOpacity>
-          )}
+          {(() => {
+            const isAlreadyReviewed = currentDetailedStatus === "COMPLETED_CLOSED" || !!booking?.review || booking?.is_reviewed || booking?.has_reviewed;
+            if (isAlreadyReviewed) {
+              return (
+                <View style={styles.reviewedBanner}>
+                  <Ionicons name="checkmark-circle-sharp" size={18} color="#059669" style={{ marginRight: 8 }} />
+                  <Text style={styles.reviewedBannerText}>
+                    {booking?.review?.rating ? `Reviewed ⭐ ${booking.review.rating}/5 • Thank you for your feedback!` : "Review Submitted • Thank you for your feedback!"}
+                  </Text>
+                </View>
+              );
+            }
+            if (currentDetailedStatus === "COMPLETED") {
+              return (
+                <TouchableOpacity
+                  style={[styles.secondaryBtn, { marginTop: 10, borderColor: Colors.success }]}
+                  onPress={() => setReviewModalVisible(true)}
+                >
+                  <Ionicons name="star" size={16} color={Colors.success} />
+                  <Text style={[styles.secondaryBtnText, { color: Colors.success }]}>Write Professional Review</Text>
+                </TouchableOpacity>
+              );
+            }
+            return null;
+          })()}
         </View>
+
+
       </ScrollView>
 
       {/* Reschedule Modal */}
@@ -916,7 +968,8 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12 },
   backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.background, justifyContent: "center", alignItems: "center" },
   headerTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },
-  scrollContent: { paddingBottom: 60 },
+  scrollContent: { paddingBottom: 180 },
+
   timelineCard: { margin: 16, padding: 14, backgroundColor: Colors.background, borderRadius: 14 },
   cardTitle: { fontSize: 13, fontWeight: "700", color: Colors.text, marginBottom: 12 },
   stepperWrapper: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
@@ -994,5 +1047,104 @@ const styles = StyleSheet.create({
   statLabel: { fontSize: 10, color: Colors.textSecondary, marginBottom: 2 },
   statVal: { fontSize: 14, fontWeight: "800", color: Colors.primary },
   statDivider: { width: 1, height: "80%", backgroundColor: Colors.border, alignSelf: "center" },
-  lastUpdatedText: { fontSize: 9, color: Colors.textTertiary, marginTop: 8 }
+  lastUpdatedText: { fontSize: 9, color: Colors.textTertiary, marginTop: 8 },
+  reviewedBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ECFDF5",
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 10,
+  },
+  reviewedBannerText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#047857",
+    flex: 1,
+  },
+
+  // Assigned Specialist Card Styles
+  artistCardContainer: {
+    backgroundColor: Colors.white,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+  },
+  artistCardHeaderTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: Colors.textSecondary,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 12,
+  },
+  artistCardBody: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  artistCardAvatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 14,
+  },
+  artistCardMeta: {
+    flex: 1,
+    marginLeft: 14,
+  },
+  artistCardNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  artistCardName: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: Colors.text,
+  },
+  verifiedTag: {
+    backgroundColor: "#059669",
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: 6,
+  },
+  artistCardSubText: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginTop: 3,
+  },
+  artistCardPhone: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: Colors.primary,
+    marginTop: 3,
+  },
+  viewArtistProfileBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingTop: 12,
+    marginTop: 12,
+    borderTopWidth: 1,
+    borderColor: "#F3F4F6",
+  },
+
+  viewArtistProfileText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: Colors.primary,
+    marginRight: 6,
+  },
 });
+
+

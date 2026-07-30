@@ -15,8 +15,18 @@ const OtpRepositor = new OtpRepository();
 const otpFailedAttempts = new Map();
 
 function hashPassword(password) {
-  return crypto.createHash("sha256").update(password).digest("hex");
+  const salt = process.env.JWT_SECRET || "live_mehndigo_salt_key_2026";
+  return crypto.createHmac("sha256", salt).update(String(password)).digest("hex");
 }
+
+function verifyPassword(inputPassword, storedHash) {
+  if (!storedHash || !inputPassword) return false;
+  const hmacHash = hashPassword(inputPassword);
+  if (hmacHash === storedHash) return true;
+  const legacyHash = crypto.createHash("sha256").update(String(inputPassword)).digest("hex");
+  return legacyHash === storedHash;
+}
+
 
 function generateAccessToken(user) {
   if (!process.env.JWT_SECRET) {
@@ -266,10 +276,10 @@ class AuthService {
       throw new AppError("Invalid credentials", 401);
     }
 
-    const hashedPassword = hashPassword(password);
-    if (user.password !== hashedPassword) {
+    if (!verifyPassword(password, user.password)) {
       throw new AppError("Invalid credentials", 401);
     }
+
 
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);

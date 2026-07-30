@@ -18,13 +18,16 @@ import {
 } from "react-native";
 import Colors from "../../constants/Colors";
 import LoadingSkeleton from "../../components/LoadingSkeleton";
+import OptimizedImage from "../../components/OptimizedImage";
 import {
   searchArtists,
+
   getFilterMetadata,
   addFavorite,
   removeFavorite,
   getFavorites
 } from "../../services/customer";
+import { getThumbnailUrl } from "../../utils/cloudinary";
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -240,12 +243,19 @@ export default function ArtistListingScreen({ route, navigation }) {
     const categoryName = item.services?.[0]?.category || "General Mehndi";
 
     return (
-      <View style={styles.listCard}>
+      <TouchableOpacity
+        style={styles.listCard}
+        activeOpacity={0.9}
+        onPress={() => navigation.navigate("ArtistProfile", { artistId: item.id })}
+      >
         <View style={styles.imageContainer}>
-          <Image
+          <OptimizedImage
             source={{ uri: item.user?.profile_image || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400" }}
             style={styles.listArtistImage}
+            width={120}
+            height={120}
           />
+
           <TouchableOpacity
             style={styles.favoriteBtn}
             onPress={() => handleToggleFavorite(item.id)}
@@ -312,8 +322,9 @@ export default function ArtistListingScreen({ route, navigation }) {
             </TouchableOpacity>
           </View>
         </View>
-      </View>
+      </TouchableOpacity>
     );
+
   };
 
   // Render Grid View Item Card
@@ -327,10 +338,13 @@ export default function ArtistListingScreen({ route, navigation }) {
         style={styles.gridCard}
         onPress={() => navigation.navigate("ArtistProfile", { artistId: item.id })}
       >
-        <Image
+        <OptimizedImage
           source={{ uri: item.user?.profile_image || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400" }}
           style={styles.gridArtistImage}
+          width={180}
+          height={140}
         />
+
         
         <TouchableOpacity
           style={styles.gridFavBtn}
