@@ -7,12 +7,6 @@ import { getGlobalStyles } from '../theme/globalStyles';
 import { Colors } from '../theme/colors';
 import { chatService, adminService, artistService, SOCKET_URL } from '../services/api';
 import { Send, User, ChevronLeft, MessageSquare } from 'lucide-react-native';
-
-<<<<<<< HEAD
-=======
-const SOCKET_URL = 'https://mehandigo-api.globalrns.com';
-
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
 export default function ChatScreen() {
   const { user, theme } = useAuth();
   const styles = getGlobalStyles(theme);

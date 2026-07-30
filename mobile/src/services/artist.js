@@ -1,8 +1,4 @@
-<<<<<<< HEAD
 import apiRequest, { getNormalizedUrl } from "./api";
-=======
-import apiRequest, { BASE_URL, getNormalizedUrl } from "./api";
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
 import { secureStorage } from "../utils/storage";
 
 async function getUploadBlob(uri, mimeType) {
@@ -69,13 +65,9 @@ export async function createArtistProfile(profileData) {
 
   const token = await secureStorage.getAccessToken();
   console.log("createArtistProfile FormData parts:", formData._parts);
-<<<<<<< HEAD
   const url = getNormalizedUrl("/api/v1/mehndigo/artist/profile");
   console.log(`[API REQUEST] POST (fetch) -> ${url}`);
   const response = await fetch(url, {
-=======
-  const response = await fetch(getNormalizedUrl("/api/v1/mehndigo/artist/profile"), {
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
     method: "POST",
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: formData,
@@ -187,32 +179,6 @@ async function uploadToServerMultipart(localUri, mimeType) {
       headers: token ? { Authorization: `Bearer ${token}` } : {}
     });
 
-<<<<<<< HEAD
-    const token = await secureStorage.getAccessToken();
-    const url = getNormalizedUrl("/api/v1/mehndigo/artist/portfolio");
-    console.log(`[API REQUEST] POST (uploadAsync) -> ${url}`);
-    const response = await FileSystem.uploadAsync(
-      url,
-      mediaUri,
-      {
-        fieldName: "portfolio_image",
-        httpMethod: "POST",
-        uploadType: UploadType.MULTIPART,
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        parameters: params,
-        mimeType: isVideo ? "video/mp4" : "image/jpeg"
-      }
-    );
-
-    let data;
-    try {
-      data = JSON.parse(response.body);
-    } catch {
-      data = { message: response.body };
-    }
-
-=======
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
     if (response.status < 200 || response.status >= 300) {
       throw new Error(`Server file upload failed with status ${response.status}: ${response.body}`);
     }
@@ -336,22 +302,6 @@ export async function uploadPortfolioMedia(mediaFiles, onProgress) {
       type = "video/mp4";
     }
 
-<<<<<<< HEAD
-    const name = file?.name || `media_${index}_${Date.now()}.${type === "video/mp4" ? "mp4" : "jpg"}`;
-    
-    if (uri.startsWith("file://") || uri.startsWith("content://")) {
-      const url = getNormalizedUrl("/api/v1/mehndigo/artist/portfolio/upload");
-      console.log(`[API REQUEST] POST (uploadAsync) -> ${url}`);
-      const response = await FileSystem.uploadAsync(
-        url,
-        uri,
-        {
-          fieldName: "media",
-          httpMethod: "POST",
-          uploadType: UploadType.MULTIPART,
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-          mimeType: type
-=======
     if (isLocal(uri)) {
       const finalUri = getSafeUri(uri);
       const secureUrl = await uploadMediaWithFallback(
@@ -363,7 +313,6 @@ export async function uploadPortfolioMedia(mediaFiles, onProgress) {
             const totalProgress = (index + progress) / mediaFiles.length;
             onProgress(totalProgress);
           }
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
         }
       );
 

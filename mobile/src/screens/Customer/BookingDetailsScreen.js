@@ -18,11 +18,8 @@ import { Calendar } from "react-native-calendars";
 import Colors from "../../constants/Colors";
 import CustomButton from "../../components/CustomButton";
 import { getBookingDetails, cancelBooking, rescheduleBooking, getInvoice, selectCashPayment } from "../../services/booking";
-<<<<<<< HEAD
-=======
 import { useSocket } from "../../context/SocketContext";
 import LeafletMapView from "../../components/LeafletMapView";
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
 
 // Visual mapping for timeline checkpoints
 const STEPS = [

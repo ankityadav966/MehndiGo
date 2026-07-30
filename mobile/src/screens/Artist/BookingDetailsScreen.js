@@ -17,14 +17,9 @@ import {
 import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
-import CustomButton from "../../components/CustomButton";
-<<<<<<< HEAD
-import { getBookingDetails, acceptBooking, rejectBooking, updateOnTheWay, startService, completeService, confirmCashPayment, rejectCashPayment } from "../../services/booking";
-=======
 import { getBookingDetails, acceptBooking, rejectBooking, updateOnTheWay, updateArrived, startService, completeService, confirmCashPayment, rejectCashPayment, sendCheckInOtp, verifyCheckInOtp, sendCheckOutOtp, verifyCheckOutOtp } from "../../services/booking";
 import * as Location from "expo-location";
 import LeafletMapView from "../../components/LeafletMapView";
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
 
 // Stepper steps for artist tracking
 const STEPS = [
@@ -825,7 +820,6 @@ export default function BookingDetailsScreen({ route, navigation }) {
       );
     }
 
-<<<<<<< HEAD
     if (currentDetailedStatus === "AWAITING_CASH_CONFIRMATION") {
       return (
         <View style={styles.footerActions}>
@@ -838,9 +832,6 @@ export default function BookingDetailsScreen({ route, navigation }) {
         </View>
       );
     }
-=======
-
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
 
     return (
       <View style={styles.completedBanner}>

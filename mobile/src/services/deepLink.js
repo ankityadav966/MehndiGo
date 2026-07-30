@@ -80,7 +80,6 @@ export function resolveNotificationRoute(notification, role) {
 
   let { type, event, bookingId, leadId, refundId } = data;
 
-<<<<<<< HEAD
   // Normalize socket.io notification structures
   if (!type && data.type) type = data.type;
   
@@ -104,22 +103,6 @@ export function resolveNotificationRoute(notification, role) {
     }
   }
 
-  // Fallback to Notifications/NotificationCenter
-  const fallbackScreen = normalizedRole === "artist" ? "Notifications" : "NotificationCenter";
-
-  if (!type || !event) {
-    return { screen: fallbackScreen };
-  }
-
-  const typeRoutes = NOTIFICATION_ROUTES[type];
-  if (!typeRoutes) return { screen: fallbackScreen };
-
-  const roleRoutes = typeRoutes[normalizedRole];
-  if (!roleRoutes) return { screen: fallbackScreen };
-
-  const route = roleRoutes[event];
-  if (!route) return { screen: fallbackScreen };
-=======
   // Smart Dynamic Fallback Parser if type or event metadata is missing
   if (!type || !event) {
     const titleText = (notification?.title || "").toLowerCase();
@@ -172,209 +155,48 @@ export function resolveNotificationRoute(notification, role) {
     }
   }
 
-  const fallbackCenter = role === "artist" ? "Notifications" : "NotificationCenter";
+  const fallbackScreen = normalizedRole === "artist" ? "Notifications" : "NotificationCenter";
 
   if (!type || !event) {
-    return { screen: fallbackCenter };
+    return { screen: fallbackScreen };
   }
 
   const typeRoutes = NOTIFICATION_ROUTES[type];
-  if (!typeRoutes) return { screen: fallbackCenter };
+  if (!typeRoutes) return { screen: fallbackScreen };
 
-  const roleRoutes = typeRoutes[role];
-  if (!roleRoutes) return { screen: fallbackCenter };
+  const roleRoutes = typeRoutes[normalizedRole];
+  if (!roleRoutes) return { screen: fallbackScreen };
 
   const route = roleRoutes[event];
-  if (!route) return { screen: fallbackCenter };
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
+  if (!route) return { screen: fallbackScreen };
 
   const resolvedParams = { ...route.params };
   
   if (resolvedParams.id) {
-<<<<<<< HEAD
-    // Fallback to id or booking_id keys if bookingId is missing
     const bid = bookingId || data.bookingId || data.id || data.booking_id || "";
+    const lid = leadId || data.leadId || data.id || "";
+    const rid = refundId || data.refundId || data.id || "";
+    if (!bid && !lid && !rid) {
+      return { screen: normalizedRole === "artist" ? "Bookings" : "MyBookings" };
+    }
     resolvedParams.id = resolvedParams.id.replace(":bookingId", bid);
-    resolvedParams.id = resolvedParams.id.replace(":leadId", leadId || data.leadId || data.id || "");
-    resolvedParams.id = resolvedParams.id.replace(":refundId", refundId || data.refundId || data.id || "");
+    resolvedParams.id = resolvedParams.id.replace(":leadId", lid);
+    resolvedParams.id = resolvedParams.id.replace(":refundId", rid);
   }
   if (resolvedParams.bookingId) {
     const bid = bookingId || data.bookingId || data.id || data.booking_id || "";
+    if (!bid) {
+      return { screen: normalizedRole === "artist" ? "Bookings" : "MyBookings" };
+    }
     resolvedParams.bookingId = resolvedParams.bookingId.replace(":bookingId", bid);
-=======
-    if (!bookingId && !leadId && !refundId) {
-      return { screen: role === "artist" ? "Bookings" : "MyBookings" };
-    }
-    resolvedParams.id = resolvedParams.id.replace(":bookingId", bookingId || "");
-    resolvedParams.id = resolvedParams.id.replace(":leadId", leadId || "");
-    resolvedParams.id = resolvedParams.id.replace(":refundId", refundId || "");
-  }
-  if (resolvedParams.bookingId) {
-    if (!bookingId) {
-      return { screen: role === "artist" ? "Bookings" : "MyBookings" };
-    }
-    resolvedParams.bookingId = resolvedParams.bookingId.replace(":bookingId", bookingId || "");
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
   }
 
   return { screen: route.screen, params: resolvedParams };
 }
 
 export function handleNotificationNavigation(notification, navigation, role) {
-<<<<<<< HEAD
   if (!notification || !navigation) return;
 
-  const content = notification.request?.content || {};
-  let title = (notification.title || content.title || "").toLowerCase();
-  let message = (notification.message || notification.body || content.body || "").toLowerCase();
-  
-  let meta = {};
-  const rawData = notification.data || content.data || {};
-  if (rawData) {
-    try {
-      meta = typeof rawData === "string" ? JSON.parse(rawData) : rawData;
-    } catch (e) {
-      meta = {};
-    }
-  }
-
-  let type = (notification.type || meta.type || content.data?.type || "").toUpperCase();
-  if (!type) {
-    if (title.includes("booking") || message.includes("booking") || title.includes("lead") || message.includes("lead")) {
-      type = "BOOKING";
-    } else if (title.includes("chat") || message.includes("message") || title.includes("message")) {
-      type = "CHAT";
-    } else if (title.includes("payment") || message.includes("payment") || title.includes("cash") || message.includes("cash") || title.includes("transaction")) {
-      type = "PAYMENT";
-    } else if (title.includes("wallet") || message.includes("wallet") || title.includes("credit") || message.includes("debit")) {
-      type = "WALLET";
-    } else if (title.includes("review") || message.includes("review") || title.includes("rating")) {
-      type = "REVIEW";
-    } else if (title.includes("profile") || title.includes("kyc") || title.includes("verification")) {
-      type = "PROFILE";
-    } else if (title.includes("service")) {
-      type = "SERVICE";
-    } else if (title.includes("referral") || message.includes("referral")) {
-      type = "REFERRAL";
-    }
-  }
-
-  const referenceId = meta.referenceId || meta.reference_id || meta.bookingId || meta.booking_id || meta.leadId || meta.lead_id || meta.chatId || meta.chat_id || meta.serviceId || meta.service_id || meta.id || "";
-  const bookingId = meta.bookingId || meta.booking_id || (type === "BOOKING" || type === "CHAT" || type === "PAYMENT" ? referenceId : "");
-  const leadId = meta.leadId || meta.lead_id || (type === "LEAD" ? referenceId : "");
-  const serviceId = meta.serviceId || meta.service_id || (type === "SERVICE" ? referenceId : "");
-  const recipientId = meta.recipientId || meta.recipient_id || meta.senderId || meta.sender_id || "";
-  const bookingCode = meta.bookingCode || meta.booking_code || "";
-
-  if (meta.file_url) {
-    try {
-      const { Linking } = require("react-native");
-      Linking.openURL(meta.file_url);
-      return;
-    } catch (e) {
-      console.warn("Failed to open file_url:", e.message);
-    }
-  }
-
-  const normalizedRole = String(role || "").toUpperCase();
-
-  try {
-    switch (type) {
-      case "BOOKING":
-      case "LEAD":
-        if (normalizedRole === "ARTIST") {
-          if (title.includes("lead") || message.includes("lead") || type === "LEAD") {
-            if (leadId || referenceId) {
-              navigation.navigate("LeadDetails", { id: leadId || referenceId });
-              return;
-            }
-          }
-        }
-        if (bookingId) {
-          navigation.navigate("BookingDetails", { bookingId: bookingId });
-        } else {
-          navigation.navigate(normalizedRole === "ARTIST" ? "BookingRequests" : "MyBookings");
-        }
-        break;
-
-      case "CHAT":
-        if (bookingId) {
-          navigation.navigate("ChatRoom", {
-            bookingId: bookingId,
-            receiverId: recipientId,
-            bookingCode: bookingCode
-          });
-        } else {
-          navigation.navigate("ChatList");
-        }
-        break;
-
-      case "PAYMENT":
-      case "WALLET":
-        if (normalizedRole === "ARTIST") {
-          navigation.navigate("Wallet");
-        } else {
-          if (bookingId) {
-            const isPaymentRejected = title.includes("reject") || message.includes("not received");
-            if (isPaymentRejected) {
-              navigation.navigate("BookingSettlement", { bookingId: bookingId });
-            } else {
-              navigation.navigate("BookingDetails", { bookingId: bookingId });
-            }
-          } else {
-            navigation.navigate("Wallet");
-          }
-        }
-        break;
-
-      case "REVIEW":
-        if (normalizedRole === "ARTIST") {
-          navigation.navigate("Reviews");
-        } else {
-          if (bookingId) {
-            navigation.navigate("BookingDetails", { bookingId: bookingId });
-          }
-        }
-        break;
-
-      case "PROFILE":
-        if (normalizedRole === "ARTIST") {
-          if (title.includes("reject") || message.includes("reject") || title.includes("fail") || message.includes("fail")) {
-            navigation.navigate("Kyc");
-          } else {
-            navigation.navigate("Profile");
-          }
-        } else {
-          navigation.navigate("Profile");
-        }
-        break;
-
-      case "SERVICE":
-        if (normalizedRole === "ARTIST") {
-          navigation.navigate("Services");
-        }
-        break;
-
-      case "REFERRAL":
-        if (normalizedRole === "CUSTOMER") {
-          navigation.navigate("ReferralDashboard");
-        } else {
-          navigation.navigate("Wallet");
-        }
-        break;
-
-      default:
-        navigation.navigate("NotificationDetails", { id: notification.id, notification: notification });
-        break;
-    }
-  } catch (err) {
-    console.error("Centralized notification navigation failed:", err.message);
-    navigation.navigate("NotificationDetails", { id: notification.id, notification: notification });
-  }
-}
-
-
-=======
   try {
     const route = resolveNotificationRoute(notification, role);
     if (route && route.screen) {
@@ -384,15 +206,15 @@ export function handleNotificationNavigation(notification, navigation, role) {
         navigation.navigate(route.screen);
       }
     } else {
-      navigation.navigate(role === "artist" ? "Notifications" : "NotificationCenter");
+      const normalizedRole = String(role || "").toLowerCase();
+      navigation.navigate(normalizedRole === "artist" ? "Notifications" : "NotificationCenter");
     }
   } catch (err) {
-    console.log("Failed to navigate from notification:", err.message);
-    navigation.navigate(role === "artist" ? "Notifications" : "NotificationCenter");
+    console.error("Centralized notification navigation failed:", err.message);
+    const normalizedRole = String(role || "").toLowerCase();
+    navigation.navigate(normalizedRole === "artist" ? "Notifications" : "NotificationCenter");
   }
 }
-
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
 export const linkingConfig = {
   prefixes: ["mehendigoo://", "https://mehendigoo.com", "https://mehendigo.app", "https://www.mehendigo.app"],
   config: {
