@@ -60,7 +60,7 @@ export default function LoginScreen({ navigation }) {
     } catch (e) {
       console.log("Send OTP Error:", e);
       const msg = e?.response?.data?.message || e.message || "";
-      if (msg.toLowerCase().includes("not found") || msg.toLowerCase().includes("register")) {
+      if (e?.response?.status === 404 || msg.toLowerCase().includes("user not found")) {
         setShowRegistration(true);
         Alert.alert("Create Account", "This email address is not registered. Please enter your details below to sign up.");
       } else {

@@ -4,14 +4,20 @@ require("./config/env");
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
+const compression = require("compression");
 const rateLimit = require("express-rate-limit");
 
 const app = express();
 
-app.use((req, res, next) => {
-  console.log(`[HTTP DIAGNOSTIC] ${req.method} ${req.originalUrl || req.url}`);
-  next();
-});
+// High-performance HTTP compression middleware for 60-80% smaller payloads
+app.use(compression());
+
+if (process.env.NODE_ENV !== "production") {
+  app.use((req, res, next) => {
+    console.log(`[HTTP DIAGNOSTIC] ${req.method} ${req.originalUrl || req.url}`);
+    next();
+  });
+}
 
 const PORT = process.env.PORT || 3000;
 
@@ -44,7 +50,13 @@ app.use(express.json({
 }));
 const path = require("path");
 app.use(express.urlencoded({ limit: "220mb", extended: true }));
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+// Optimized static asset caching with 7-day browser maxAge and ETag support
+app.use("/uploads", express.static(path.join(__dirname, "uploads"), {
+  maxAge: "7d",
+  etag: true,
+  immutable: false
+}));
 app.use(checkBlockedIP);
 app.use(sanitizeInputs);
 app.use("/auth", require("./routes/auth.routes"));

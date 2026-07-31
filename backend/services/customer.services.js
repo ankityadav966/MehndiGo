@@ -46,12 +46,17 @@ const trendingSearchesList = [
 class CustomerService {
   async getCategories() {
     try {
+      const { getCache, setCache } = require("../utils/cache.utils");
+      const cached = await getCache("mehndigo:categories");
+      if (cached) return cached;
+
       const db = require("../models");
       const list = await db.Category.findAll({
         where: { status: "ACTIVE" },
         order: [["sort_order", "ASC"]]
       });
       if (list && list.length > 0) {
+        await setCache("mehndigo:categories", list, 600);
         return list;
       }
     } catch (err) {
@@ -61,6 +66,13 @@ class CustomerService {
   }
 
   async getOffers() {
+    try {
+      const { getCache, setCache } = require("../utils/cache.utils");
+      const cached = await getCache("mehndigo:offers");
+      if (cached) return cached;
+
+      await setCache("mehndigo:offers", offersList, 600);
+    } catch (err) {}
     return offersList;
   }
 
@@ -102,6 +114,10 @@ class CustomerService {
       verification_status: "APPROVED"
     };
 
+    const isPostgres = db.sequelize.getDialect() === "postgres";
+    const ilikeStr = isPostgres ? "ILIKE" : "LIKE";
+    const likeOp = isPostgres ? Op.iLike : Op.like;
+
     if (filters.category) {
       const normalizedCategory = filters.category.toLowerCase().replace(/\s+mehndi/g, "").replace(/\s+design/g, "").trim();
       where[Op.and] = where[Op.and] || [];
@@ -109,7 +125,7 @@ class CustomerService {
         db.sequelize.literal(`EXISTS (
           SELECT 1 FROM "Services" AS s 
           WHERE s.artist_id = "ArtistProfile".id 
-          AND (s.category Ilike '%${normalizedCategory}%' OR s.specialization_name Ilike '%${normalizedCategory}%')
+          AND (s.category ${ilikeStr} '%${normalizedCategory}%' OR s.specialization_name ${ilikeStr} '%${normalizedCategory}%')
         )`)
       );
     }
@@ -161,19 +177,19 @@ class CustomerService {
     if (query) {
       const searchPattern = `%${query}%`;
       where[Op.or] = [
-        { bio: { [Op.iLike || Op.like]: searchPattern } },
-        { city: { [Op.iLike || Op.like]: searchPattern } },
-        { state: { [Op.iLike || Op.like]: searchPattern } },
-        { pincode: { [Op.iLike || Op.like]: searchPattern } },
+        { bio: { [likeOp]: searchPattern } },
+        { city: { [likeOp]: searchPattern } },
+        { state: { [likeOp]: searchPattern } },
+        { pincode: { [likeOp]: searchPattern } },
         db.sequelize.literal(`EXISTS (
           SELECT 1 FROM "Users" AS u 
           WHERE u.id = "ArtistProfile".user_id 
-          AND u.name Ilike '${searchPattern}'
+          AND u.name ${ilikeStr} '${searchPattern}'
         )`),
         db.sequelize.literal(`EXISTS (
           SELECT 1 FROM "Services" AS s 
           WHERE s.artist_id = "ArtistProfile".id 
-          AND (s.specialization_name Ilike '${searchPattern}' OR s.category Ilike '${searchPattern}')
+          AND (s.specialization_name ${ilikeStr} '${searchPattern}' OR s.category ${ilikeStr} '${searchPattern}')
         )`)
       ];
     }
@@ -185,7 +201,9 @@ class CustomerService {
 
     let distanceSql = null;
     if (lat && lng) {
-      distanceSql = `(6371 * acos(cos(radians(${Number(lat)})) * cos(radians(latitude::double precision)) * cos(radians(longitude::double precision) - radians(${Number(lng)})) + sin(radians(${Number(lat)})) * sin(radians(latitude::double precision))))`;
+      distanceSql = isPostgres
+        ? `(6371 * acos(cos(radians(${Number(lat)})) * cos(radians(latitude::double precision)) * cos(radians(longitude::double precision) - radians(${Number(lng)})) + sin(radians(${Number(lat)})) * sin(radians(latitude::double precision))))`
+        : `(((latitude - (${Number(lat)})) * (latitude - (${Number(lat)}))) + ((longitude - (${Number(lng)})) * (longitude - (${Number(lng)})))) * 111`;
       attributes.include.push([db.sequelize.literal(distanceSql), "distance"]);
       
       if (filters.radius) {
@@ -384,11 +402,12 @@ class CustomerService {
   async getSuggestions(query) {
     if (!query) return [];
     const searchPattern = `%${query}%`;
+    const likeOp = db.sequelize.getDialect() === "postgres" ? Op.iLike : Op.like;
 
     const matchingArtists = await db.User.findAll({
       where: {
         role: "ARTIST",
-        name: { [Op.iLike]: searchPattern }
+        name: { [likeOp]: searchPattern }
       },
       attributes: ["name"],
       limit: 3
@@ -396,7 +415,7 @@ class CustomerService {
 
     const matchingServices = await db.Service.findAll({
       where: {
-        specialization_name: { [Op.iLike]: searchPattern }
+        specialization_name: { [likeOp]: searchPattern }
       },
       attributes: [
         [db.sequelize.fn("DISTINCT", db.sequelize.col("specialization_name")), "specialization_name"]
@@ -406,7 +425,7 @@ class CustomerService {
 
     const matchingCities = await db.ArtistProfile.findAll({
       where: {
-        city: { [Op.iLike]: searchPattern }
+        city: { [likeOp]: searchPattern }
       },
       attributes: [
         [db.sequelize.fn("DISTINCT", db.sequelize.col("city")), "city"]

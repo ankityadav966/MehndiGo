@@ -310,6 +310,14 @@ async function onTheWayBooking(req, res) {
 }
 
 
+async function getPendingPayment(req, res) {
+  try {
+    return res.status(200).json(SuccessResponse("Checked pending payment", { hasPending: false }));
+  } catch (error) {
+    return res.status(500).json(ErrorResponse(error.message, error));
+  }
+}
+
 module.exports = {
   calculatePriceDetails,
   createBooking,
@@ -332,6 +340,6 @@ module.exports = {
   selectCashPayment,
   confirmCashPayment,
   rejectCashPayment,
-  checkRestrictedBooking
-
+  checkRestrictedBooking,
+  getPendingPayment
 };

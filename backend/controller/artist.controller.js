@@ -426,7 +426,9 @@ async function uploadPortfolioImage(req, res) {
 
 async function uploadPortfolioMedia(req, res) {
   try {
-    const files = req.files || [];
+    const files = req.files
+      ? (Array.isArray(req.files) ? req.files : Object.values(req.files).flat())
+      : (req.file ? [req.file] : []);
     const mediaList = [];
     const db = require("../models");
 

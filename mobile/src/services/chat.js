@@ -29,14 +29,10 @@ export async function deleteMessage(messageId, deleteType = "me") {
 
 // Upload file to Cloudinary via REST API
 export async function uploadChatMedia(fileUri, fileType, fileName) {
-  const getSafeUri = (uri) => {
-    if (!uri) return uri;
-    let cleanUri = uri;
-    if (cleanUri.startsWith("/")) {
-      cleanUri = `file://${cleanUri}`;
-    }
-    return cleanUri;
-  };
+  let cleanUri = fileUri || "";
+  if (cleanUri.startsWith("/")) {
+    cleanUri = `file://${cleanUri}`;
+  }
 
   let type = "image/jpeg";
   if (fileType === "video") type = "video/mp4";
@@ -44,22 +40,33 @@ export async function uploadChatMedia(fileUri, fileType, fileName) {
   else if (fileType === "voice") type = "audio/m4a";
 
   const url = getNormalizedUrl("/chat/upload");
-  console.log(`[API REQUEST] POST (uploadAsync) -> ${url}`);
+  console.log(`[API REQUEST] POST (FormData) -> ${url}`);
 
   const token = await require("../utils/storage").secureStorage.getAccessToken();
 
-  const FileSystem = require("expo-file-system/legacy");
-  const response = await FileSystem.uploadAsync(url, finalUri, {
-    httpMethod: "POST",
-    uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-    fieldName: "file",
-    mimeType: type,
-    headers: token ? { Authorization: `Bearer ${token}` } : {}
+  const formData = new FormData();
+  formData.append("file", {
+    uri: cleanUri,
+    name: fileName || `file_${Date.now()}.${type.split("/")[1] || "jpg"}`,
+    type: type
   });
 
-  const responseData = JSON.parse(response.body);
+  const response = await fetch(url, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData
+  });
 
-  if (response.status < 200 || response.status >= 300) {
+  let responseData;
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    responseData = await response.json();
+  } else {
+    const text = await response.text();
+    try { responseData = JSON.parse(text); } catch { responseData = { message: text }; }
+  }
+
+  if (!response.ok) {
     throw new Error(responseData?.message || `Upload failed with status ${response.status}`);
   }
 

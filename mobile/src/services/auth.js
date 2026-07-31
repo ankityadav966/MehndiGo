@@ -79,30 +79,107 @@ export function sanitizePhone(phone) {
   return cleaned;
 }
 
-export async function sendOtp(name, email, phone, role) {
-  console.log("Sending OTP request");
-  const sanitized = sanitizePhone(phone);
+export async function sendOtp(arg1, arg2, arg3, arg4) {
+  let name = "";
+  let email = "";
+  let phone = "";
+  let role = "USER";
 
-  const data = await apiRequest("POST", "/api/v1/mehndigo/user/send-otp", {
+  if (typeof arg1 === "object" && arg1 !== null) {
+    name = arg1.name || "";
+    email = arg1.email || arg1.identifier || "";
+    phone = arg1.phone || "";
+    role = arg1.role || "USER";
+  } else if (typeof arg1 === "string" && arg1.includes("@")) {
+    email = arg1;
+    role = arg2 || "USER";
+  } else if (typeof arg2 === "string" && arg2.includes("@")) {
+    name = arg1;
+    email = arg2;
+    role = arg3 || "USER";
+  } else {
+    email = String(arg1 || "").trim();
+    phone = String(arg2 || "").trim();
+    role = arg3 || "USER";
+  }
+
+  email = String(email || "").trim();
+  const sanitized = phone ? sanitizePhone(phone) : undefined;
+  const targetRole = role === "CUSTOMER" ? "USER" : (role || "USER");
+
+  console.log("Sending OTP request for email:", email, "role:", targetRole);
+
+  const payload = {
     email,
-    role: role === "CUSTOMER" ? "USER" : role, // Map CUSTOMER role to USER backend enum value
-    phone: sanitized,
+    role: targetRole,
+  };
+  if (sanitized) payload.phone = sanitized;
+  if (name) payload.name = name;
 
-  });
+  const data = await apiRequest("POST", "/api/v1/mehndigo/user/send-otp", payload);
   return data;
 }
 
-export async function verifyUserOtp(phone, otp, role, name, email, referralCode = "") {
-  const sanitized = sanitizePhone(phone);
-  const data = await apiRequest("POST", "/api/v1/mehndigo/user/verify-otp", {
-    phone: sanitized,
-    otp,
-    role: role === "CUSTOMER" ? "USER" : role, // Map CUSTOMER role to USER backend enum value
-    name: name || "",
-    email: email || "",
-    referralCode,
+export async function registerSendOtp(name, email, phone, role) {
+  const sanitized = phone ? sanitizePhone(phone) : undefined;
+  const payload = {
+    name: name || "User",
+    email: String(email || "").trim(),
+    role: role === "CUSTOMER" ? "USER" : (role || "USER"),
+  };
+  if (sanitized) payload.phone = sanitized;
 
-  });
+  const data = await apiRequest("POST", "/api/v1/mehndigo/user/register-send-otp", payload);
+  return data;
+}
+
+export async function verifyUserOtp(arg1, arg2, arg3) {
+  let email = "";
+  let phone = "";
+  let otp = "";
+
+  if (typeof arg1 === "object" && arg1 !== null) {
+    email = arg1.email || arg1.identifier || "";
+    phone = arg1.phone || "";
+    otp = arg1.otp || "";
+  } else if (typeof arg1 === "string" && arg1.includes("@")) {
+    email = arg1;
+    otp = arg2 || "";
+  } else {
+    phone = arg1;
+    otp = arg2;
+  }
+
+  const payload = { otp: String(otp) };
+  if (email) payload.email = String(email).trim();
+  if (phone) payload.phone = sanitizePhone(phone);
+
+  const data = await apiRequest("POST", "/api/v1/mehndigo/user/verify-otp", payload);
+  return persistAuthData(data);
+}
+
+export async function registerVerifyOtp(arg1, arg2, arg3) {
+  let email = "";
+  let phone = "";
+  let otp = "";
+
+  if (typeof arg1 === "object" && arg1 !== null) {
+    email = arg1.email || arg1.identifier || "";
+    phone = arg1.phone || "";
+    otp = arg1.otp || "";
+  } else if (typeof arg1 === "string" && arg1.includes("@")) {
+    email = arg1;
+    otp = arg2 || "";
+  } else {
+    phone = arg1;
+    otp = arg2;
+  }
+
+  const payload = { otp: String(otp) };
+  if (email) payload.email = String(email).trim();
+  if (phone) payload.phone = sanitizePhone(phone);
+
+  const data = await apiRequest("POST", "/api/v1/mehndigo/user/register-verify-otp", payload);
   return persistAuthData(data);
 }
 
@@ -156,3 +233,17 @@ export async function signOut() {
   } catch (_) {}
   await secureStorage.clearAll();
 }
+
+export const authService = {
+  register: (data) => apiRequest("POST", "/api/v1/mehndigo/user/register-send-otp", data),
+  registerSendOtp: (data) => apiRequest("POST", "/api/v1/mehndigo/user/register-send-otp", data),
+  registerVerifyOtp: (data) => apiRequest("POST", "/api/v1/mehndigo/user/register-verify-otp", data),
+  verifyEmailOtp: (data) => apiRequest("POST", "/api/v1/mehndigo/user/verify-otp", data),
+  login: (data) => apiRequest("POST", "/api/v1/mehndigo/user/send-otp", data),
+  sendOtp: (data) => apiRequest("POST", "/api/v1/mehndigo/user/send-otp", data),
+  verifyOtp: (data) => apiRequest("POST", "/api/v1/mehndigo/user/verify-otp", data),
+  forgotPassword: (data) => apiRequest("POST", "/api/v1/mehndigo/user/forgot-password", data),
+  verifyForgotPasswordOtp: (data) => apiRequest("POST", "/api/v1/mehndigo/user/verify-forgot-password-otp", data),
+  resetPassword: (data) => apiRequest("POST", "/api/v1/mehndigo/user/reset-password", data),
+  resendOtp: (data) => apiRequest("POST", "/api/v1/mehndigo/user/send-otp", data),
+};

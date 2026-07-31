@@ -489,18 +489,7 @@ class UserService {
     };
   }
 
-  // Legacy/Compatibility fallbacks
-  async sendOtp(data) {
-    return this.loginSendOtp(data);
-  }
 
-  async verifyOtp(data) {
-    return this.loginVerifyOtp(data);
-  }
-
-  async login(data) {
-    return this.sendOtp(data);
-  }
 
   async adminSendOtp(data) {
     const { email, password } = data;

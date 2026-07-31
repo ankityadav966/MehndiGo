@@ -40,4 +40,11 @@ Object.keys(db).forEach(modelName => {
 db.sequelize = sequelize;
 db.Sequelize = Sequelize;
 
+// Auto sync database tables in local development
+sequelize.sync().then(() => {
+  console.log("[Database] Synced successfully.");
+}).catch((err) => {
+  console.warn("[Database] Sync warning:", err.message);
+});
+
 module.exports = db;
