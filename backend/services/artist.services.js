@@ -1560,13 +1560,11 @@ async createReview(data) {
         }
         userUpdates.phone = cleanPhone;
       }
-      }
     }
 
     if (Object.keys(userUpdates).length > 0) {
       await user.update(userUpdates);
     }
-
   }
 
   return await this.getProfile(userId);

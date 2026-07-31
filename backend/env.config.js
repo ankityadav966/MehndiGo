@@ -24,6 +24,9 @@ function validateEnv() {
   const warnings = [];
 
   REQUIRED_ENV_VARS.forEach((key) => {
+    if (process.env.USE_LOCAL_SQLITE === "true" && key.startsWith("DB_")) {
+      return;
+    }
     if (!process.env[key] || process.env[key].trim() === "") {
       missing.push(key);
     }

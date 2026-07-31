@@ -413,4 +413,3 @@ module.exports = {
   sendCheckOutOtp,
   verifyCheckOutOtp
 };
-};

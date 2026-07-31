@@ -461,17 +461,6 @@ class BookingService {
   }
 
   async verifyPayment(userId, data) {
-<<<<<<< HEAD
-    const paymentService = require("./payment.services");
-    // Translate booking-side verifyPayment structure to generic verifyPayment structure
-    const verifyData = {
-      razorpay_order_id: data.razorpay_order_id || data.order_id || data.orderId,
-      payment_session_id: data.payment_session_id
-    };
-    await paymentService.verifyPayment(userId, verifyData);
-    return await this.getBookingDetails(data.bookingId || verifyData.razorpay_order_id.split('_')[1], userId, "CUSTOMER");
-
-=======
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = data;
 
     if (!razorpay_order_id) {
@@ -493,6 +482,7 @@ class BookingService {
 
     let isValid = true;
     if (razorpay_signature && !razorpay_order_id.startsWith("order_mock") && process.env.NODE_ENV !== "development") {
+      const crypto = require("crypto");
       const generated_signature = crypto
         .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET || "key_secret")
         .update(`${razorpay_order_id}|${razorpay_payment_id}`)
@@ -571,7 +561,6 @@ class BookingService {
     }
 
     return await this.getBookingDetails(tx.booking_id, userId, "CUSTOMER");
->>>>>>> 1671ebeeac41231ca68072d7aae9a50d402a2362
   }
 
   async updateBookingStatus(bookingId, userId, role, newStatus, extraData = {}) {
@@ -596,8 +585,6 @@ class BookingService {
           { where: { id: booking.slot_id } }
         );
       }
-<<<<<<< HEAD
-=======
       try {
         const escrow = await db.EscrowRecord.findOne({ where: { booking_id: bookingId, status: "HELD" } });
         if (escrow) {
@@ -620,7 +607,6 @@ class BookingService {
       } catch (escrowErr) {
         console.error("Failed to rollback escrow on booking cancellation:", escrowErr.message);
       }
->>>>>>> 1671ebeeac41231ca68072d7aae9a50d402a2362
     } else if (newStatus === "COMPLETED") {
       updates.booking_status = "COMPLETED";
       updates.detailed_status = "COMPLETED";
@@ -631,36 +617,9 @@ class BookingService {
 
       const PaymentService = require("./payment.services");
       try {
-<<<<<<< HEAD
-        const remainingPaid = booking.remaining_amount || 0;
-        const artistProfile = await db.ArtistProfile.findByPk(booking.artist_id);
-        if (artistProfile) {
-          const [artistWallet] = await db.Wallet.findOrCreate({
-            where: { user_id: artistProfile.user_id },
-            defaults: { balance: 0 }
-          });
-          await artistWallet.increment("balance", { by: remainingPaid });
-          
-          const customerUser = await db.User.findByPk(booking.user_id);
-          const customerName = customerUser ? customerUser.name : "Client";
-          await db.WalletTransaction.create({
-            wallet_id: artistWallet.id,
-            booking_id: booking.id,
-            transaction_type: "PAYMENT",
-            amount: remainingPaid,
-            status: "SUCCESS",
-            description: `Mehndi application service payment from customer ${customerName}`
-          });
-          console.log(`[completeService] Credited remaining ₹${remainingPaid} to Artist Wallet`);
-
-        }
-      } catch (artistErr) {
-        console.error("Error crediting Artist Wallet upon completion:", artistErr.message);
-=======
         await PaymentService.completeBookingSettlement(booking.id);
       } catch (settleErr) {
         console.error("Error in completeBookingSettlement:", settleErr.message);
->>>>>>> 1671ebeeac41231ca68072d7aae9a50d402a2362
       }
 
       // Create success transaction record
@@ -747,22 +706,10 @@ class BookingService {
 
       await db.Notification.create({
         user_id: userToNotify,
-<<<<<<< HEAD
-        title: `Booking Update: ${newStatus}`,
-        message: `Booking #${booking.booking_code} status has been updated to ${newStatus}`,
-        type: "BOOKING",
-        data: {
-          type: "booking",
-          event: "booking_confirmed",
-          bookingId: booking.id
-        }
-
-=======
         title: notificationTitle,
         message: notificationMessage,
         type: notificationType,
         data: JSON.stringify(notificationData)
->>>>>>> 1671ebeeac41231ca68072d7aae9a50d402a2362
       });
     }
 
@@ -789,8 +736,6 @@ class BookingService {
     }
     return invoice;
   }
-<<<<<<< HEAD
-=======
 
   async selectCashPayment(bookingId, userId) {
     const booking = await db.Booking.findOne({ where: { id: bookingId, user_id: userId } });
@@ -1027,7 +972,6 @@ class BookingService {
     });
     return !!activeBooking;
   }
->>>>>>> 1671ebeeac41231ca68072d7aae9a50d402a2362
 
   async getPendingPayment(userId) {
     const booking = await db.Booking.findOne({
@@ -1406,10 +1350,6 @@ class BookingService {
     }
 
     return { success: true, booking };
-<<<<<<< HEAD
-
-=======
->>>>>>> 1671ebeeac41231ca68072d7aae9a50d402a2362
   }
 }
 

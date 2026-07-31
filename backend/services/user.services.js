@@ -382,9 +382,6 @@ class UserService {
 
     const token = generateToken(user);
     console.log("Verified User:", user.id, "| Token generated.");
-=======
-    const token = generateToken(user);
->>>>>>> 1671ebeeac41231ca68072d7aae9a50d402a2362
 
     return {
       token,
@@ -393,13 +390,9 @@ class UserService {
         name: user.name,
         phone: user.phone,
         email: user.email,
-    return this.login(data);
-  }
-
-  async loginSendOtp(data) {
-    const { email, phone, role, name } = data;
-    const loginValue = email || phone;
-    // Implementation details...
+        role: user.role,
+      },
+    };
   }
 
   async login(data) {
@@ -441,9 +434,6 @@ class UserService {
       }
     }
 
-    const mappedRole = role === "CUSTOMER" ? "USER" : (role || "USER");
-
-    if (!user) {
     if (!user) {
       throw new AppError("User not found. Please register first.", 404);
     }
@@ -455,7 +445,6 @@ class UserService {
     await OtpRepositor.create({
       user_id: user.id,
       phone: user.phone || null,
-<<<<<<< HEAD
       email: trimmedEmail,
       otp: String(otp),
       expires_at: new Date(Date.now() + 5 * 60 * 1000), // 5 min expiry
@@ -499,30 +488,6 @@ class UserService {
       throw new AppError("User not found", 404);
     }
     return await ArtistProfileRepositor.getArtists(query);
-  }
-
-
-=======
-      email: user.email || trimmedEmail || null,
-      otp,
-      expires_at: new Date(Date.now() + 5 * 60 * 1000),
-      verified: false,
-    });
-
-    const targetEmail = user.email || (isEmail ? trimmedEmail : null);
-    if (targetEmail) {
-      try { await sendOtpEmail(targetEmail, otp, user.name); } catch(e) {}
-    }
-
-    console.log(`\n==================================\nLOGIN OTP (GMAIL)\nEmail: ${targetEmail || loginValue}\nOTP: ${otp}\n==================================\n`);
-
-    return {
-      exists: true,
-      email: targetEmail,
-      phone: user.phone,
-      role: user.role,
-      otp,
-    };
   }
 
   // 4. Unified Login - Verify OTP
@@ -633,7 +598,6 @@ class UserService {
   async login(data) {
     return this.loginSendOtp(data);
   }
->>>>>>> 1671ebeeac41231ca68072d7aae9a50d402a2362
 
   async adminSendOtp(data) {
     const { email, password } = data;
