@@ -65,6 +65,31 @@ export default function CustomerProfileScreen({ navigation }) {
     ]);
   };
 
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      "Delete Account",
+      "Are you sure you want to permanently delete your account? All saved addresses, referral history, and wallet data will be removed.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete Permanently",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const { deleteCustomerAccount } = require("../../services/customer");
+              if (deleteCustomerAccount) await deleteCustomerAccount();
+            } catch (e) {
+              console.log("Delete account error:", e);
+            } finally {
+              logout();
+            }
+          }
+        }
+      ]
+    );
+  };
+
+
   if (loading) {
     return (
       <View style={styles.centerContainer}>
@@ -81,13 +106,17 @@ export default function CustomerProfileScreen({ navigation }) {
 
   const quickActions = [
     { icon: "calendar-outline", label: "My Bookings", screen: "MyBookings" },
+    { icon: "location-outline", label: "Saved Addresses", screen: "SavedAddresses" },
+    { icon: "wallet-outline", label: "Wallet & Payments", screen: "Wallet" },
+
     { icon: "heart-outline", label: "Wishlist", screen: "Wishlist" },
-    { icon: "wallet-outline", label: "Wallet", screen: "Wallet" },
     { icon: "share-social-outline", label: "Refer & Earn", screen: "ReferralDashboard" },
-    { icon: "pricetag-outline", label: "Coupons", screen: "Coupons" },
+    { icon: "pricetag-outline", label: "Coupons & Offers", screen: "Coupons" },
     { icon: "star-outline", label: "My Reviews", screen: "Reviews" },
+    { icon: "shield-checkmark-outline", label: "Security & Privacy", screen: "EditProfile" },
     { icon: "headset-outline", label: "Support Helpdesk", screen: "Support" },
   ];
+
 
   const currentBgColor = isDarkMode ? "#000000" : Colors.background;
   const currentCardBg = isDarkMode ? "#121212" : Colors.white;
@@ -122,17 +151,17 @@ export default function CustomerProfileScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          <Text style={styles.name}>{profile.name}</Text>
+          <Text style={[styles.name, { color: currentTextColor }]}>{profile.name}</Text>
           <View style={styles.badgeRow}>
             {profile.current_level !== undefined && (
-              <View style={[styles.badgeContainer, { backgroundColor: "#FFE5EC", borderColor: Colors.primary, borderWidth: 1, marginBottom: 8 }]}>
+              <View style={[styles.badgeContainer, { backgroundColor: isDarkMode ? "#333" : "#FFE5EC", borderColor: Colors.primary, borderWidth: 1, marginBottom: 8 }]}>
 
                 <Ionicons name="sparkles-outline" size={12} color={Colors.primary} />
                 <Text style={[styles.badgeText, { color: Colors.primary }]}>Level {profile.current_level}</Text>
               </View>
             )}
             {profile.ambassador_tier && (
-              <View style={[styles.badgeContainer, { backgroundColor: "#FFF8E1", borderColor: "#FFA000", borderWidth: 1, marginBottom: 8 }]}>
+              <View style={[styles.badgeContainer, { backgroundColor: isDarkMode ? "#333" : "#FFF8E1", borderColor: "#FFA000", borderWidth: 1, marginBottom: 8 }]}>
 
                 <Ionicons name="trophy-outline" size={12} color="#FFA000" />
                 <Text style={[styles.badgeText, { color: "#FFA000" }]}>{profile.ambassador_tier} Tier</Text>
@@ -188,10 +217,17 @@ export default function CustomerProfileScreen({ navigation }) {
         </View>
 
         {/* Logout Button */}
-        <TouchableOpacity style={[styles.logoutButton, { backgroundColor: currentCardBg }]} activeOpacity={0.8} onPress={handleLogout}>
+        <TouchableOpacity style={[styles.logoutButton, { backgroundColor: currentCardBg, marginBottom: 12 }]} activeOpacity={0.8} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={18} color={Colors.error} />
           <Text style={styles.logoutText}>Logout Session</Text>
         </TouchableOpacity>
+
+        {/* Delete Account Button */}
+        <TouchableOpacity style={[styles.logoutButton, { backgroundColor: currentCardBg, borderColor: "#DC2626", marginBottom: 40 }]} activeOpacity={0.8} onPress={handleDeleteAccount}>
+          <Ionicons name="trash-outline" size={18} color="#DC2626" />
+          <Text style={[styles.logoutText, { color: "#DC2626" }]}>Delete Account</Text>
+        </TouchableOpacity>
+
       </ScrollView>
     </SafeAreaView>
   );
@@ -228,6 +264,24 @@ const styles = StyleSheet.create({
   menuLabel: { fontSize: 13, fontWeight: "700", color: Colors.text },
   logoutButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: Colors.white, marginHorizontal: 16, marginBottom: 40, height: 48, borderRadius: 14, borderWidth: 1, borderColor: Colors.error },
   logoutText: { fontSize: 13, fontWeight: "800", color: Colors.error, marginLeft: 8 },
-  badgeRow: { flexDirection: "row", gap: 8, justifyContent: "center", alignItems: "center" }
+  badgeRow: { flexDirection: "row", gap: 8, justifyContent: "center", alignItems: "center" },
+  toggleSwitch: {
+    width: 42,
+    height: 24,
+    borderRadius: 12,
+    paddingVertical: 2,
+    justifyContent: "center"
+  },
+  toggleCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: Colors.white,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 1 }
+  }
 
 });

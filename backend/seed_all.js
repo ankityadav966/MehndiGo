@@ -575,8 +575,15 @@ async function seed() {
       per_user_limit: 1,
       usage_limit: 500,
       first_booking_only: true
-    });
     console.log("Coupons seeded.");
+
+    console.log("Resetting PostgreSQL primary key sequences...");
+    const tablesToReset = ['"Users"', 'artist_profiles', '"Bookings"', '"Services"', '"Portfolios"', '"Reviews"', '"Otps"', '"AvailabilitySlots"', '"Coupons"'];
+    for (const tbl of tablesToReset) {
+      try {
+        await db.sequelize.query(`SELECT setval(pg_get_serial_sequence('${tbl}', 'id'), COALESCE((SELECT MAX(id) FROM ${tbl}), 1));`);
+      } catch (e) {}
+    }
 
     console.log("Database expanded seeding completed successfully!");
     process.exit(0);

@@ -39,8 +39,9 @@ export async function uploadChatMedia(fileUri, fileType, fileName) {
   else if (fileType === "pdf") type = "application/pdf";
   else if (fileType === "voice") type = "audio/m4a";
 
+  const finalUri = getSafeUri(fileUri);
   const url = getNormalizedUrl("/chat/upload");
-  console.log(`[API REQUEST] POST (FormData) -> ${url}`);
+  console.log(`[API REQUEST] POST (uploadAsync) -> ${url}`);
 
   const token = await require("../utils/storage").secureStorage.getAccessToken();
 

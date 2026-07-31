@@ -164,25 +164,9 @@ async function uploadToServerMultipart(localUri, mimeType) {
       type: mimeType || "image/jpeg"
     });
 
-    console.log(`[API REQUEST] POST (FormData) -> ${endpoint}`);
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(`Server file upload failed with status ${response.status}: ${response.body}`);
 
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: formData
-    });
-
-    let responseData;
-    const contentType = response.headers.get("content-type") || "";
-    if (contentType.includes("application/json")) {
-      responseData = await response.json();
-    } else {
-      const text = await response.text();
-      try { responseData = JSON.parse(text); } catch { responseData = { message: text }; }
-    }
-
-    if (!response.ok) {
-      throw new Error(`Server file upload failed with status ${response.status}: ${responseData?.message || response.statusText}`);
     }
 
     const uploadedUrl = responseData?.data?.[0]?.url || responseData?.data?.url || responseData?.url;

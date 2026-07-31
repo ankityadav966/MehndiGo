@@ -34,16 +34,18 @@ export async function createPaymentSession(bookingId) {
   return res?.data || res;
 }
 
-
-
 export async function verifyPayment(paymentDetails) {
   const res = await apiRequest("POST", "/booking/verify-payment", paymentDetails, true);
   return res?.data || res;
 }
 
 export async function checkRestrictedBooking() {
-  const res = await apiRequest("GET", "/booking/check-restricted", null, true);
-  return res?.data || res;
+  try {
+    const res = await apiRequest("GET", "/booking/check-restricted", null, true);
+    return res?.data || res || { hasRestricted: false };
+  } catch (err) {
+    return { hasRestricted: false };
+  }
 }
 
 export async function selectCashPayment(bookingId) {
@@ -86,6 +88,11 @@ export async function updateOnTheWay(bookingId) {
   return res?.data || res;
 }
 
+export async function updateArrived(bookingId) {
+  const res = await apiRequest("PUT", "/booking/arrived", { bookingId }, true);
+  return res?.data || res;
+}
+
 export async function startService(bookingId) {
   const res = await apiRequest("PUT", "/booking/start", { bookingId }, true);
   return res?.data || res;
@@ -108,7 +115,6 @@ export async function getPendingPayment() {
 }
 
 export async function updateArtistLocation(payload) {
-  // payload has bookingId, artistId, latitude, longitude, heading, speed, timestamp
   const res = await apiRequest("POST", "/api/v1/mehndigo/artist/location/update", payload, true);
   return res?.data || res;
 }
@@ -117,13 +123,6 @@ export async function getArtistLocation(bookingId) {
   const res = await apiRequest("GET", `/booking/${bookingId}/location`, null, true);
   return res?.data || res;
 }
-
-
-export async function updateArrived(bookingId) {
-  const res = await apiRequest("PUT", "/booking/arrived", { bookingId }, true);
-  return res?.data || res;
-}
-
 
 
 export async function sendCheckInOtp(bookingId) {

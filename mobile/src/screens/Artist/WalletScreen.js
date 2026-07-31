@@ -1,5 +1,5 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -9,7 +9,8 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
+  ScrollView
 } from "react-native";
 import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -23,6 +24,7 @@ import {
   getBankAccountDetails,
   saveBankAccountDetails
 } from "../../services/wallet";
+import moment from "moment";
 
 export default function WalletScreen({ route, navigation }) {
   const [balance, setBalance] = useState(0);
@@ -38,10 +40,15 @@ export default function WalletScreen({ route, navigation }) {
       setActiveTab(route.params.initialTab);
     }
   }, [route?.params?.initialTab]);
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [showBalance, setShowBalance] = useState(true);
 
-  // Modal forms
+  // Selected Transaction for modal popup
+  const [selectedItem, setSelectedItem] = useState(null);
+
+  // Modals
   const [withdrawModalVisible, setWithdrawModalVisible] = useState(false);
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [withdrawLoading, setWithdrawLoading] = useState(false);
@@ -56,17 +63,17 @@ export default function WalletScreen({ route, navigation }) {
     upiId: ""
   });
 
-  const loadWalletDataset = React.useCallback(async () => {
+  const loadWalletDataset = useCallback(async () => {
     try {
       const wallet = await getUserWallet();
       setWalletData(wallet);
       setBalance(wallet?.balance || 0);
 
       const history = await getWalletHistory();
-      setTransactions(history || []);
+      setTransactions(Array.isArray(history) ? history : []);
 
       const requests = await getWithdrawalHistory();
-      setWithdraws(requests || []);
+      setWithdraws(Array.isArray(requests) ? requests : []);
 
       const bank = await getBankAccountDetails();
       setBankAccount(bank);
@@ -88,10 +95,7 @@ export default function WalletScreen({ route, navigation }) {
   }, []);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      loadWalletDataset();
-    }, 0);
-    return () => clearTimeout(timer);
+    loadWalletDataset();
   }, [loadWalletDataset]);
 
   useEffect(() => {
@@ -109,21 +113,24 @@ export default function WalletScreen({ route, navigation }) {
   const handleWithdrawalRequest = async () => {
     const amt = Number(withdrawAmount);
     if (isNaN(amt) || amt <= 0) {
-      Alert.alert("Invalid Amount", "Please enter a valid positive amount.");
+      Alert.alert("Invalid Amount", "Please enter a valid amount to withdraw.");
       return;
     }
     if (amt > balance) {
-      Alert.alert("Insufficient Balance", "You don't have enough wallet balance to complete this transaction.");
+      Alert.alert("Insufficient Balance", "Your payout request exceeds your current available balance.");
       return;
     }
     if (!bankAccount) {
-      Alert.alert("Bank Required", "Please register your bank account details first before requesting payout.");
+      Alert.alert("Bank Details Required", "Please link your bank account details first before requesting payout.");
+      setWithdrawModalVisible(false);
+      setBankModalVisible(true);
       return;
     }
+
     setWithdrawLoading(true);
     try {
       await requestWithdrawal(amt);
-      Alert.alert("Request Submitted 🎉", `Withdrawal request of ₹${amt} is pending approval.`);
+      Alert.alert("Request Submitted 🎉", `Withdrawal request of ₹${amt} has been submitted for bank transfer.`);
       setWithdrawModalVisible(false);
       setWithdrawAmount("");
       loadWalletDataset();
@@ -137,74 +144,107 @@ export default function WalletScreen({ route, navigation }) {
   const handleSaveBankDetails = async () => {
     const { accountHolderName, accountNumber, ifscCode, bankName } = bankForm;
     if (!accountHolderName || !accountNumber || !ifscCode || !bankName) {
-      Alert.alert("Incomplete Details", "Please fill in all required fields.");
+      Alert.alert("Incomplete Details", "Please fill in Account Name, Account Number, IFSC, and Bank Name.");
       return;
     }
     setBankLoading(true);
     try {
       await saveBankAccountDetails(bankForm);
-      Alert.alert("Success", "Bank account details saved successfully.");
+      Alert.alert("Bank Linked Success", "Your payout bank credentials have been updated.");
       setBankModalVisible(false);
       loadWalletDataset();
     } catch (err) {
-      Alert.alert("Save Error", "Failed to save bank information.");
+      Alert.alert("Save Error", "Failed to save bank credentials.");
     } finally {
       setBankLoading(false);
     }
   };
 
   const renderTransaction = ({ item }) => {
-    const isCredit = [
-      "RECHARGE",
-      "REFUND",
-      "CASHBACK",
-      "SETTLEMENT",
-      "MANUAL_CREDIT"
-    ].includes(item.transaction_type);
+    const isCredit = ["RECHARGE", "REFUND", "CASHBACK", "SETTLEMENT", "MANUAL_CREDIT", "EARNING"].includes(item.transaction_type);
 
     return (
-      <View style={styles.transactionCard}>
-        <View>
-          <Text style={styles.transactionTitle}>{item.transaction_type}</Text>
-          <Text style={styles.transactionDate}>{new Date(item.createdAt).toLocaleString()}</Text>
+      <TouchableOpacity 
+        style={styles.cardItem} 
+        activeOpacity={0.7}
+        onPress={() => setSelectedItem(item)}
+      >
+        <View style={[styles.iconCircle, { backgroundColor: isCredit ? "#ECFDF5" : "#FEF2F2" }]}>
+          <Ionicons
+            name={isCredit ? "arrow-down" : "arrow-up"}
+            size={20}
+            color={isCredit ? Colors.success : Colors.error}
+          />
         </View>
-        <Text style={[styles.amount, isCredit ? styles.credit : styles.debit]}>
-          {isCredit ? "+" : "-"}₹{item.amount}
+
+        <View style={styles.cardInfo}>
+          <Text style={styles.cardTitle} numberOfLines={1}>
+            {item.description || item.transaction_type?.replace(/_/g, " ")}
+          </Text>
+          <Text style={styles.cardSubtitle}>{moment(item.createdAt).format("DD MMM YYYY, hh:mm A")}</Text>
+        </View>
+
+        <Text style={[styles.cardAmount, { color: isCredit ? Colors.success : Colors.error }]}>
+          {isCredit ? "+" : "-"}₹{Number(item.amount).toLocaleString("en-IN")}
         </Text>
-      </View>
+      </TouchableOpacity>
     );
   };
 
-  if (loading) {
+  const renderWithdrawItem = ({ item }) => {
+    const statusUpper = String(item.status || "").toUpperCase();
+    let badgeBg = "#FEF3C7";
+    let badgeColor = "#B45309";
+    if (statusUpper === "SUCCESS" || statusUpper === "APPROVED" || statusUpper === "COMPLETED") {
+      badgeBg = "#DCFCE7";
+      badgeColor = "#15803D";
+    } else if (statusUpper === "REJECTED" || statusUpper === "FAILED") {
+      badgeBg = "#FEE2E2";
+      badgeColor = "#B91C1C";
+    }
+
     return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-      </View>
+      <TouchableOpacity 
+        style={styles.cardItem}
+        activeOpacity={0.7}
+        onPress={() => setSelectedItem(item)}
+      >
+        <View style={[styles.iconCircle, { backgroundColor: "#EFF6FF" }]}>
+          <Ionicons name="cash-outline" size={20} color={Colors.primary} />
+        </View>
+
+        <View style={styles.cardInfo}>
+          <Text style={styles.cardTitle}>Bank Transfer Request</Text>
+          <Text style={styles.cardSubtitle}>{moment(item.createdAt).format("DD MMM YYYY, hh:mm A")}</Text>
+        </View>
+
+        <View style={{ alignItems: "flex-end" }}>
+          <Text style={styles.cardAmount}>₹{Number(item.amount).toLocaleString("en-IN")}</Text>
+          <View style={[styles.badgePill, { backgroundColor: badgeBg }]}>
+            <Text style={[styles.badgeText, { color: badgeColor }]}>{item.status}</Text>
+          </View>
+        </View>
+      </TouchableOpacity>
     );
-  }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <Ionicons name="chevron-back" size={22} color={Colors.text} />
+        <TouchableOpacity style={styles.headerIconBtn} onPress={() => navigation.goBack()}>
+          <Ionicons name="arrow-back" size={22} color={Colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Earnings Wallet</Text>
-        <View style={{ width: 40 }} />
+        <Text style={styles.headerTitle}>Earnings & Payouts</Text>
+        <TouchableOpacity style={styles.headerIconBtn} onPress={() => setBankModalVisible(true)}>
+          <Ionicons name="card-outline" size={22} color={Colors.primary} />
+        </TouchableOpacity>
       </View>
 
       <FlatList
         data={activeTab === "Transactions" ? transactions : withdraws}
-        renderItem={activeTab === "Transactions" ? renderTransaction : ({ item }) => (
-          <View style={styles.transactionCard}>
-            <View>
-              <Text style={styles.transactionTitle}>Withdrawal request</Text>
-              <Text style={styles.transactionDate}>Status: {item.status} • {new Date(item.createdAt).toDateString()}</Text>
-            </View>
-            <Text style={styles.amount}>₹{item.amount}</Text>
-          </View>
-        )}
-        keyExtractor={(item) => item.id.toString()}
+        renderItem={activeTab === "Transactions" ? renderTransaction : renderWithdrawItem}
+        keyExtractor={(item) => String(item.id)}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[Colors.primary]} />
         }
@@ -212,83 +252,163 @@ export default function WalletScreen({ route, navigation }) {
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={
           <>
-            <View style={styles.walletCard}>
-              <View style={styles.walletTop}>
-                <Text style={styles.balanceLabel}>Available Balance</Text>
-                <Ionicons name="wallet-outline" size={20} color={Colors.white} />
-              </View>
-              <Text style={styles.balance}>₹{balance.toLocaleString()}</Text>
-              <Text style={styles.available}>Processed and ready for bank payout</Text>
-            </View>
-
-            <View style={styles.statsContainer}>
-              <View style={styles.miniCard}>
-                <Text style={styles.miniLabel}>Total Earnings</Text>
-                <Text style={styles.miniValue}>₹{(walletData?.lifetime_earnings || 0).toLocaleString()}</Text>
-              </View>
-              <View style={styles.miniCard}>
-                <Text style={styles.miniLabel}>Pending Earnings</Text>
-                <Text style={styles.miniValue}>₹{(walletData?.pending_balance || 0).toLocaleString()}</Text>
-              </View>
-            </View>
-
-            <View style={styles.tabContainer}>
-              <TouchableOpacity
-                style={[styles.tab, activeTab === "Withdraw" && styles.activeTab]}
-                onPress={() => setActiveTab("Withdraw")}
-              >
-                <Text style={[styles.tabText, activeTab === "Withdraw" && styles.activeTabText]}>Payouts</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.tab, activeTab === "Transactions" && styles.activeTab]}
-                onPress={() => setActiveTab("Transactions")}
-              >
-                <Text style={[styles.tabText, activeTab === "Transactions" && styles.activeTabText]}>Ledger</Text>
-              </TouchableOpacity>
-            </View>
-
-            {activeTab === "Withdraw" && (
-              <View style={styles.withdrawSection}>
-                <CustomButton title="Request Bank Payout" onPress={() => setWithdrawModalVisible(true)} />
-                <TouchableOpacity style={styles.bankLinkBtn} onPress={() => setBankModalVisible(true)}>
-                  <Text style={styles.bankLinkText}>
-                    {bankAccount ? "Modify Registered Payout Bank" : "Link bank credentials"}
-                  </Text>
+            {/* Hero Earnings Card */}
+            <View style={styles.heroCard}>
+              <View style={styles.heroTopRow}>
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <View style={styles.walletBadgeIcon}>
+                    <Ionicons name="wallet-outline" size={18} color="#FFFFFF" />
+                  </View>
+                  <Text style={styles.heroLabel}>Available Payout Balance</Text>
+                </View>
+                <TouchableOpacity onPress={() => setShowBalance(!showBalance)}>
+                  <Ionicons name={showBalance ? "eye-outline" : "eye-off-outline"} size={20} color="rgba(255,255,255,0.85)" />
                 </TouchableOpacity>
               </View>
-            )}
 
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>
-                {activeTab === "Transactions" ? "Ledger entries log" : "Payout requests history"}
+              <Text style={styles.heroBalance}>
+                {showBalance ? `₹${Number(balance).toLocaleString("en-IN")}` : "••••••••"}
+              </Text>
+              
+              <Text style={styles.heroSubtitle}>
+                {bankAccount ? `Linked: ${bankAccount.bank_name} (••${String(bankAccount.account_number).slice(-4)})` : "⚠️ No bank account linked for automatic payout"}
+              </Text>
+
+              {/* Action Bar */}
+              <View style={styles.heroActionRow}>
+                <TouchableOpacity 
+                  style={styles.payoutBtn} 
+                  activeOpacity={0.85}
+                  onPress={() => {
+                    if (!bankAccount) {
+                      Alert.alert("Link Bank Account", "Please link your bank credentials before requesting withdrawal.", [
+                        { text: "Cancel" },
+                        { text: "Link Now", onPress: () => setBankModalVisible(true) }
+                      ]);
+                    } else {
+                      setWithdrawModalVisible(true);
+                    }
+                  }}
+                >
+                  <Ionicons name="arrow-up-circle" size={18} color={Colors.primary} />
+                  <Text style={styles.payoutBtnText}>Request Payout</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={styles.bankManageBtn}
+                  activeOpacity={0.85}
+                  onPress={() => setBankModalVisible(true)}
+                >
+                  <Ionicons name="business-outline" size={16} color="#FFFFFF" />
+                  <Text style={styles.bankManageText}>{bankAccount ? "Edit Bank" : "+ Link Bank"}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Metrics Breakdown */}
+            <View style={styles.statsRow}>
+              <View style={styles.statMiniCard}>
+                <View style={styles.statIconBadge}>
+                  <Ionicons name="trending-up" size={16} color={Colors.success} />
+                </View>
+                <Text style={styles.statMiniLabel}>Lifetime Earnings</Text>
+                <Text style={styles.statMiniValue}>₹{(walletData?.lifetime_earnings || 0).toLocaleString("en-IN")}</Text>
+              </View>
+
+              <View style={styles.statMiniCard}>
+                <View style={[styles.statIconBadge, { backgroundColor: "#FFFBEB" }]}>
+                  <Ionicons name="time-outline" size={16} color={Colors.warning} />
+                </View>
+                <Text style={styles.statMiniLabel}>Escrow Pending</Text>
+                <Text style={styles.statMiniValue}>₹{(walletData?.pending_balance || 0).toLocaleString("en-IN")}</Text>
+              </View>
+            </View>
+
+            {/* Tabs Bar */}
+            <View style={styles.tabContainer}>
+              <TouchableOpacity
+                style={[styles.tabBtn, activeTab === "Withdraw" && styles.activeTabBtn]}
+                onPress={() => setActiveTab("Withdraw")}
+              >
+                <Text style={[styles.tabBtnText, activeTab === "Withdraw" && styles.activeTabBtnText]}>
+                  Payout Requests ({withdraws.length})
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.tabBtn, activeTab === "Transactions" && styles.activeTabBtn]}
+                onPress={() => setActiveTab("Transactions")}
+              >
+                <Text style={[styles.tabBtnText, activeTab === "Transactions" && styles.activeTabBtnText]}>
+                  Ledger Logs ({transactions.length})
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Section Heading */}
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionHeaderTitle}>
+                {activeTab === "Transactions" ? "Earnings & Settlement Ledger" : "Bank Transfer History"}
               </Text>
             </View>
           </>
         }
+        ListEmptyComponent={
+          !loading && (
+            <View style={styles.emptyState}>
+              <Ionicons name="receipt-outline" size={40} color={Colors.textTertiary} />
+              <Text style={styles.emptyText}>
+                No {activeTab === "Transactions" ? "ledger entries" : "payout requests"} recorded yet.
+              </Text>
+            </View>
+          )
+        }
       />
 
-      {/* 1. Withdraw Request Modal */}
+      {/* 1. Request Payout Modal */}
       <Modal visible={withdrawModalVisible} transparent animationType="slide">
         <View style={styles.modalBg}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Request Bank Withdrawal</Text>
-            <Text style={styles.inputLabel}>Amount (₹)</Text>
-            <TextInput
-              keyboardType="number-pad"
-              value={withdrawAmount}
-              onChangeText={setWithdrawAmount}
-              placeholder={`Available balance: ₹${balance}`}
-              style={styles.inputField}
-            />
-            {withdrawLoading ? (
-              <ActivityIndicator color={Colors.primary} />
-            ) : (
-              <View style={styles.modalBtnRow}>
-                <TouchableOpacity style={styles.cancelModalBtn} onPress={() => setWithdrawModalVisible(false)}>
-                  <Text style={styles.cancelModalText}>Cancel</Text>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalSheetTitle}>Request Payout Transfer</Text>
+            <Text style={styles.modalSheetSubtitle}>Available Balance: ₹{Number(balance).toLocaleString("en-IN")}</Text>
+
+            <Text style={styles.inputLabel}>Enter Amount (₹)</Text>
+            <View style={styles.inputWrapper}>
+              <Text style={styles.currencyPrefix}>₹</Text>
+              <TextInput
+                keyboardType="number-pad"
+                value={withdrawAmount}
+                onChangeText={setWithdrawAmount}
+                placeholder="e.g. 1000"
+                placeholderTextColor={Colors.placeholder}
+                style={styles.amountInput}
+                autoFocus
+              />
+            </View>
+
+            <View style={styles.chipsRow}>
+              {[500, 1000, 2500, 5000].map((amt) => (
+                <TouchableOpacity
+                  key={amt}
+                  style={styles.chipBtn}
+                  onPress={() => setWithdrawAmount(String(amt))}
+                >
+                  <Text style={styles.chipText}>₹{amt}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.confirmModalBtn} onPress={handleWithdrawalRequest}>
-                  <Text style={styles.confirmModalText}>Submit</Text>
+              ))}
+            </View>
+
+            {withdrawLoading ? (
+              <ActivityIndicator color={Colors.primary} style={{ marginVertical: 16 }} />
+            ) : (
+              <View style={styles.modalActionRow}>
+                <TouchableOpacity style={styles.cancelBtn} onPress={() => setWithdrawModalVisible(false)}>
+                  <Text style={styles.cancelText}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.confirmBtn} onPress={handleWithdrawalRequest}>
+                  <Text style={styles.confirmText}>Submit Request</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -296,47 +416,92 @@ export default function WalletScreen({ route, navigation }) {
         </View>
       </Modal>
 
-      {/* 2. Link/Edit Bank Account details Modal */}
+      {/* 2. Link/Edit Bank Account Modal */}
       <Modal visible={bankModalVisible} transparent animationType="slide">
         <View style={styles.modalBg}>
-          <View style={[styles.modalContent, { width: "90%" }]}>
-            <Text style={styles.modalTitle}>Update Bank Credentials</Text>
-            <Text style={styles.inputLabel}>Account Holder Name</Text>
-            <TextInput
-              value={bankForm.accountHolderName}
-              onChangeText={(val) => setBankForm({ ...bankForm, accountHolderName: val })}
-              style={styles.inputField}
-            />
-            <Text style={styles.inputLabel}>Bank Account Number</Text>
-            <TextInput
-              value={bankForm.accountNumber}
-              onChangeText={(val) => setBankForm({ ...bankForm, accountNumber: val })}
-              style={styles.inputField}
-            />
-            <Text style={styles.inputLabel}>IFSC Code</Text>
-            <TextInput
-              value={bankForm.ifscCode}
-              onChangeText={(val) => setBankForm({ ...bankForm, ifscCode: val })}
-              style={styles.inputField}
-            />
-            <Text style={styles.inputLabel}>Bank Name</Text>
-            <TextInput
-              value={bankForm.bankName}
-              onChangeText={(val) => setBankForm({ ...bankForm, bankName: val })}
-              style={styles.inputField}
-            />
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalSheetTitle}>Bank Account Credentials</Text>
+            <Text style={styles.modalSheetSubtitle}>Enter your official bank details for automatic payout transfers.</Text>
+
+            <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
+              <Text style={styles.inputLabel}>Account Holder Name</Text>
+              <TextInput
+                value={bankForm.accountHolderName}
+                onChangeText={(val) => setBankForm({ ...bankForm, accountHolderName: val })}
+                placeholder="Name as registered with Bank"
+                style={styles.fieldInput}
+              />
+
+              <Text style={styles.inputLabel}>Account Number</Text>
+              <TextInput
+                value={bankForm.accountNumber}
+                keyboardType="number-pad"
+                onChangeText={(val) => setBankForm({ ...bankForm, accountNumber: val })}
+                placeholder="e.g. 987654321012"
+                style={styles.fieldInput}
+              />
+
+              <Text style={styles.inputLabel}>IFSC Code</Text>
+              <TextInput
+                value={bankForm.ifscCode}
+                autoCapitalize="characters"
+                onChangeText={(val) => setBankForm({ ...bankForm, ifscCode: val })}
+                placeholder="e.g. SBIN0001234"
+                style={styles.fieldInput}
+              />
+
+              <Text style={styles.inputLabel}>Bank Name</Text>
+              <TextInput
+                value={bankForm.bankName}
+                onChangeText={(val) => setBankForm({ ...bankForm, bankName: val })}
+                placeholder="e.g. State Bank of India / HDFC"
+                style={styles.fieldInput}
+              />
+            </ScrollView>
+
             {bankLoading ? (
-              <ActivityIndicator color={Colors.primary} />
+              <ActivityIndicator color={Colors.primary} style={{ marginVertical: 16 }} />
             ) : (
-              <View style={styles.modalBtnRow}>
-                <TouchableOpacity style={styles.cancelModalBtn} onPress={() => setBankModalVisible(false)}>
-                  <Text style={styles.cancelModalText}>Cancel</Text>
+              <View style={styles.modalActionRow}>
+                <TouchableOpacity style={styles.cancelBtn} onPress={() => setBankModalVisible(false)}>
+                  <Text style={styles.cancelText}>Cancel</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.confirmModalBtn} onPress={handleSaveBankDetails}>
-                  <Text style={styles.confirmModalText}>Save Details</Text>
+
+                <TouchableOpacity style={styles.confirmBtn} onPress={handleSaveBankDetails}>
+                  <Text style={styles.confirmText}>Save Credentials</Text>
                 </TouchableOpacity>
               </View>
             )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* 3. Item Detail Modal */}
+      <Modal visible={!!selectedItem} transparent animationType="fade">
+        <View style={styles.modalBg}>
+          <View style={styles.detailCard}>
+            <Text style={styles.detailTitle}>{selectedItem?.transaction_type || "Payout Request"}</Text>
+            <Text style={styles.detailAmount}>₹{Number(selectedItem?.amount || 0).toLocaleString("en-IN")}</Text>
+
+            <View style={styles.detailDivider} />
+
+            <View style={styles.detailRow}>
+              <Text style={styles.detailKey}>Status</Text>
+              <Text style={[styles.detailVal, { color: Colors.primary, fontWeight: "700" }]}>{selectedItem?.status || "SUCCESS"}</Text>
+            </View>
+            <View style={styles.detailRow}>
+              <Text style={styles.detailKey}>Date & Time</Text>
+              <Text style={styles.detailVal}>{moment(selectedItem?.createdAt).format("DD MMM YYYY, hh:mm A")}</Text>
+            </View>
+            <View style={styles.detailRow}>
+              <Text style={styles.detailKey}>Reference ID</Text>
+              <Text style={styles.detailVal}>REF-{selectedItem?.id}</Text>
+            </View>
+
+            <TouchableOpacity style={styles.closeDetailBtn} onPress={() => setSelectedItem(null)}>
+              <Text style={styles.closeDetailText}>Close</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -345,45 +510,138 @@ export default function WalletScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
-  centerContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
-  statsContainer: { flexDirection: "row", justifyContent: "space-between", marginHorizontal: 12, marginTop: 12 },
-  miniCard: { flex: 1, backgroundColor: Colors.white, borderRadius: 14, padding: 12, marginHorizontal: 4, alignItems: "center", borderWidth: 1, borderColor: Colors.border, elevation: 1 },
-  miniLabel: { fontSize: 10, fontWeight: "700", color: Colors.textSecondary, marginBottom: 4 },
-  miniValue: { fontSize: 14, fontWeight: "800", color: Colors.text },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12, backgroundColor: Colors.white, borderBottomWidth: 1, borderBottomColor: Colors.border },
-  backButton: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.background, justifyContent: "center", alignItems: "center" },
+  container: { flex: 1, backgroundColor: "#F8FAF9" },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: Colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: "#EEF2F6"
+  },
+  headerIconBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#F3F4F6", justifyContent: "center", alignItems: "center" },
   headerTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },
-  walletCard: { backgroundColor: Colors.primary, marginHorizontal: 16, borderRadius: 20, padding: 20, marginTop: 16, elevation: 1 },
-  walletTop: { flexDirection: "row", justifyContent: "space-between" },
-  balanceLabel: { color: Colors.white, fontSize: 12 },
-  balance: { color: Colors.white, fontSize: 32, fontWeight: "800", marginTop: 8 },
-  available: { color: Colors.white, fontSize: 11, marginTop: 4, opacity: 0.9 },
-  tabContainer: { flexDirection: "row", backgroundColor: Colors.white, marginHorizontal: 16, marginTop: 16, borderRadius: 12, padding: 4, borderWidth: 1, borderColor: Colors.border },
-  tab: { flex: 1, alignItems: "center", paddingVertical: 10, borderRadius: 8 },
-  activeTab: { backgroundColor: Colors.primary },
-  tabText: { fontWeight: "700", color: Colors.textSecondary, fontSize: 12 },
-  activeTabText: { color: Colors.white },
-  withdrawSection: { paddingHorizontal: 16, paddingTop: 16 },
-  bankLinkBtn: { alignItems: "center", marginTop: 12, padding: 8 },
-  bankLinkText: { color: Colors.primary, fontWeight: "700", fontSize: 12 },
-  sectionHeader: { marginTop: 20, marginHorizontal: 16, marginBottom: 8 },
-  sectionTitle: { fontSize: 13, fontWeight: "700", color: Colors.textSecondary },
-  listContainer: { paddingBottom: 120 },
-  transactionCard: { backgroundColor: Colors.white, borderRadius: 14, padding: 14, marginHorizontal: 16, marginBottom: 10, flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderWidth: 1, borderColor: Colors.border, elevation: 1 },
-  transactionTitle: { fontSize: 13, fontWeight: "700", color: Colors.text },
-  transactionDate: { fontSize: 11, color: Colors.textSecondary, marginTop: 4 },
-  amount: { fontSize: 13, fontWeight: "800" },
-  credit: { color: Colors.success },
-  debit: { color: Colors.error },
-  modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" },
-  modalContent: { backgroundColor: Colors.white, width: "85%", borderRadius: 20, padding: 24, alignItems: "center" },
-  modalTitle: { fontSize: 16, fontWeight: "800", color: Colors.text, marginBottom: 16 },
-  inputLabel: { fontSize: 12, color: Colors.textSecondary, alignSelf: "flex-start", marginBottom: 6 },
-  inputField: { width: "100%", height: 44, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, paddingHorizontal: 12, fontSize: 13, color: Colors.text, marginBottom: 18 },
-  modalBtnRow: { flexDirection: "row", width: "100%", justifyContent: "space-between" },
-  cancelModalBtn: { width: "48%", height: 44, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, justifyContent: "center", alignItems: "center" },
-  cancelModalText: { color: Colors.textSecondary, fontWeight: "700", fontSize: 13 },
-  confirmModalBtn: { width: "48%", height: 44, borderRadius: 10, backgroundColor: Colors.primary, justifyContent: "center", alignItems: "center" },
-  confirmModalText: { color: Colors.white, fontWeight: "700", fontSize: 13 }
+  listContainer: { paddingBottom: 110 },
+
+  // Hero Earnings Card
+  heroCard: {
+    margin: 16,
+    borderRadius: 22,
+    padding: 20,
+    backgroundColor: "#9C1344", // Royal Rose / Burgundy
+    elevation: 5,
+    shadowColor: "#9C1344",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10
+  },
+  heroTopRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
+  walletBadgeIcon: { width: 32, height: 32, borderRadius: 16, backgroundColor: "rgba(255,255,255,0.2)", justifyContent: "center", alignItems: "center", marginRight: 8 },
+  heroLabel: { fontSize: 13, color: "rgba(255,255,255,0.9)", fontWeight: "600" },
+  heroBalance: { fontSize: 34, fontWeight: "800", color: "#FFFFFF", marginBottom: 6 },
+  heroSubtitle: { fontSize: 11, color: "rgba(255,255,255,0.85)", marginBottom: 18 },
+  heroActionRow: { flexDirection: "row", gap: 10 },
+  
+  payoutBtn: {
+    flex: 1.3,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+    paddingVertical: 12,
+    borderRadius: 14,
+    elevation: 2
+  },
+  payoutBtnText: { color: Colors.primary, fontWeight: "800", fontSize: 14, marginLeft: 6 },
+
+  bankManageBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.2)",
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.3)"
+  },
+  bankManageText: { color: "#FFFFFF", fontWeight: "700", fontSize: 13, marginLeft: 6 },
+
+  // Stats Grid
+  statsRow: { flexDirection: "row", paddingHorizontal: 16, gap: 12, marginBottom: 14 },
+  statMiniCard: { flex: 1, backgroundColor: Colors.white, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: "#EEF2F6", elevation: 1 },
+  statIconBadge: { width: 28, height: 28, borderRadius: 14, backgroundColor: "#ECFDF5", justifyContent: "center", alignItems: "center", marginBottom: 8 },
+  statMiniLabel: { fontSize: 11, color: Colors.textSecondary, fontWeight: "600", marginBottom: 2 },
+  statMiniValue: { fontSize: 16, fontWeight: "800", color: Colors.text },
+
+  // Tabs Bar
+  tabContainer: { flexDirection: "row", marginHorizontal: 16, backgroundColor: Colors.white, borderRadius: 14, padding: 4, borderWidth: 1, borderColor: "#EEF2F6", marginBottom: 12 },
+  tabBtn: { flex: 1, alignItems: "center", paddingVertical: 10, borderRadius: 10 },
+  activeTabBtn: { backgroundColor: Colors.primary },
+  tabBtnText: { fontSize: 12, fontWeight: "600", color: Colors.textSecondary },
+  activeTabBtnText: { color: Colors.white, fontWeight: "700" },
+
+  sectionHeaderRow: { paddingHorizontal: 16, marginVertical: 6 },
+  sectionHeaderTitle: { fontSize: 15, fontWeight: "700", color: Colors.text },
+
+  // Card List Items
+  cardItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.white,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#F0F3F6",
+    elevation: 1
+  },
+  iconCircle: { width: 42, height: 42, borderRadius: 21, justifyContent: "center", alignItems: "center", marginRight: 12 },
+  cardInfo: { flex: 1, marginRight: 8 },
+  cardTitle: { fontSize: 14, fontWeight: "600", color: Colors.text, marginBottom: 2 },
+  cardSubtitle: { fontSize: 11, color: Colors.textTertiary },
+  cardAmount: { fontSize: 15, fontWeight: "800", color: Colors.text },
+  badgePill: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8, marginTop: 3 },
+  badgeText: { fontSize: 9, fontWeight: "700" },
+
+  emptyState: { alignItems: "center", justifyContent: "center", paddingVertical: 40 },
+  emptyText: { color: Colors.textTertiary, fontSize: 13, marginTop: 8 },
+
+  // Modals Base
+  modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "flex-end" },
+  modalSheet: { backgroundColor: Colors.white, borderTopLeftRadius: 26, borderTopRightRadius: 26, padding: 20, paddingBottom: 34 },
+  modalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: "#E0E0E0", alignSelf: "center", marginBottom: 14 },
+  modalSheetTitle: { fontSize: 18, fontWeight: "800", color: Colors.text, marginBottom: 2 },
+  modalSheetSubtitle: { fontSize: 12, color: Colors.textSecondary, marginBottom: 14 },
+
+  inputLabel: { fontSize: 12, color: Colors.textSecondary, fontWeight: "600", marginBottom: 6, marginTop: 6 },
+  inputWrapper: { flexDirection: "row", alignItems: "center", borderWidth: 1.5, borderColor: Colors.primary, borderRadius: 14, paddingHorizontal: 16, height: 52, marginBottom: 12, backgroundColor: "#FFF8FA" },
+  currencyPrefix: { fontSize: 20, fontWeight: "800", color: Colors.primary, marginRight: 8 },
+  amountInput: { flex: 1, fontSize: 20, fontWeight: "800", color: Colors.text },
+  
+  fieldInput: { borderWidth: 1, borderColor: Colors.border, borderRadius: 12, paddingHorizontal: 14, height: 46, fontSize: 14, color: Colors.text, marginBottom: 10, backgroundColor: "#FAFAFA" },
+
+  chipsRow: { flexDirection: "row", gap: 8, marginBottom: 18 },
+  chipBtn: { flex: 1, backgroundColor: "#F3F4F6", paddingVertical: 8, borderRadius: 10, alignItems: "center" },
+  chipText: { fontSize: 12, fontWeight: "700", color: Colors.text },
+
+  modalActionRow: { flexDirection: "row", gap: 12, marginTop: 10 },
+  cancelBtn: { flex: 1, height: 48, borderRadius: 12, borderWidth: 1, borderColor: Colors.border, justifyContent: "center", alignItems: "center" },
+  cancelText: { color: Colors.textSecondary, fontWeight: "700", fontSize: 14 },
+  confirmBtn: { flex: 1.2, height: 48, borderRadius: 12, backgroundColor: Colors.primary, justifyContent: "center", alignItems: "center" },
+  confirmText: { color: Colors.white, fontWeight: "800", fontSize: 14 },
+
+  // Details Modal Card
+  detailCard: { backgroundColor: Colors.white, width: "90%", alignSelf: "center", borderRadius: 22, padding: 22, marginBottom: "auto", marginTop: "auto", elevation: 8, alignItems: "center" },
+  detailTitle: { fontSize: 16, fontWeight: "700", color: Colors.textSecondary, marginBottom: 4 },
+  detailAmount: { fontSize: 30, fontWeight: "800", color: Colors.text, marginBottom: 12 },
+  detailDivider: { height: 1, backgroundColor: "#EEF2F6", width: "100%", marginVertical: 10 },
+  detailRow: { flexDirection: "row", justifyContent: "space-between", width: "100%", marginBottom: 10 },
+  detailKey: { fontSize: 13, color: Colors.textSecondary },
+  detailVal: { fontSize: 13, color: Colors.text, fontWeight: "600" },
+  closeDetailBtn: { backgroundColor: Colors.primary, height: 44, width: "100%", borderRadius: 12, justifyContent: "center", alignItems: "center", marginTop: 14 },
+  closeDetailText: { color: Colors.white, fontWeight: "700", fontSize: 14 }
 });

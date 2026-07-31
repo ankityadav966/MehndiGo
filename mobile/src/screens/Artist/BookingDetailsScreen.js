@@ -17,8 +17,9 @@ import {
 import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
-import CustomButton from "../../components/CustomButton";
-import { getBookingDetails, acceptBooking, rejectBooking, updateOnTheWay, startService, completeService, confirmCashPayment, rejectCashPayment } from "../../services/booking";
+import { getBookingDetails, acceptBooking, rejectBooking, updateOnTheWay, updateArrived, startService, completeService, confirmCashPayment, rejectCashPayment, sendCheckInOtp, verifyCheckInOtp, sendCheckOutOtp, verifyCheckOutOtp } from "../../services/booking";
+import * as Location from "expo-location";
+import LeafletMapView from "../../components/LeafletMapView";
 
 
 // Stepper steps for artist tracking

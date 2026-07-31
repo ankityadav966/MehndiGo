@@ -70,25 +70,28 @@ export default function CategoriesScreen({ navigation }) {
     "karwa-chauth": require("../../assets/images/categories/karwa_chauth.png"),
     "eid": require("../../assets/images/categories/eid.png"),
     "festival": require("../../assets/images/categories/festival.png"),
+    "indo-arabic": require("../../assets/images/categories/indo_arabic.png"),
     "custom": require("../../assets/images/categories/custom.png")
   };
 
   const getCategoryImage = (item) => {
-    if (item.image) {
+    if (item && item.image && typeof item.image === "string") {
       if (item.image.startsWith("http://") || item.image.startsWith("https://")) {
         return { uri: item.image };
       }
-      const { BASE_URL } = require("../../services/api");
-      const cleanBase = (BASE_URL || "").replace(/\/api\/v1\/?$/, "");
-      const cleanPath = item.image.startsWith("/") ? item.image : `/${item.image}`;
-      return { uri: `${cleanBase}${cleanPath}` };
+      if (item.image.startsWith("/")) {
+        const { BASE_URL } = require("../../services/api");
+        const cleanBase = (BASE_URL || "").replace(/\/api\/v1\/?$/, "");
+        return { uri: `${cleanBase}${item.image}` };
+      }
     }
 
-    const name = (item.name || "").toLowerCase();
-    const slug = (item.slug || "").toLowerCase();
+    const name = (item?.name || "").toLowerCase();
+    const slug = (item?.slug || "").toLowerCase();
 
     let key = "custom";
-    if (slug.includes("royal") || name.includes("royal")) key = "royal";
+    if (slug.includes("indo-arabic") || slug.includes("indo_arabic") || name.includes("indo-arabic") || name.includes("indo arabic") || name.includes("fusion")) key = "indo-arabic";
+    else if (slug.includes("royal") || name.includes("royal")) key = "royal";
     else if (slug.includes("bridal") || name.includes("bridal")) key = "bridal";
     else if (slug.includes("arabic") || name.includes("arabic")) key = "arabic";
     else if (slug.includes("traditional") || name.includes("traditional")) key = "traditional";
@@ -96,10 +99,10 @@ export default function CategoriesScreen({ navigation }) {
     else if (slug.includes("minimal") || name.includes("minimal")) key = "minimal";
     else if (slug.includes("modern") || name.includes("modern")) key = "modern";
     else if (slug.includes("finger") || name.includes("finger")) key = "finger";
-    else if (slug.includes("full-hand") || name.includes("full hand") || name.includes("full-hand")) key = "full-hand";
+    else if (slug.includes("full-hand") || name.includes("full hand") || name.includes("full-hand") || name.includes("hand mehendi") || name.includes("hand mehndi")) key = "full-hand";
     else if (slug.includes("back-hand") || name.includes("back hand") || name.includes("back-hand")) key = "back-hand";
     else if (slug.includes("front-hand") || name.includes("front hand") || name.includes("front-hand")) key = "front-hand";
-    else if (slug.includes("leg") || name.includes("leg")) key = "leg";
+    else if (slug.includes("leg") || name.includes("leg") || slug.includes("feet") || name.includes("feet")) key = "leg";
     else if (slug.includes("kids") || name.includes("kid") || slug.includes("kid")) key = "kids";
     else if (slug.includes("groom") || name.includes("groom")) key = "groom";
     else if (slug.includes("engagement") || name.includes("engagement")) key = "engagement";
@@ -124,7 +127,7 @@ export default function CategoriesScreen({ navigation }) {
         }
       >
         <Image
-          source={hasError ? require("../../../assets/images/icon.png") : getCategoryImage(item)}
+          source={hasError ? LOCAL_CATEGORY_IMAGES.custom : getCategoryImage(item)}
 
           onError={() => {
             setImageErrors((prev) => ({ ...prev, [item.id]: true }));

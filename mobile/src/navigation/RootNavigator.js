@@ -26,7 +26,7 @@ export default function RootNavigator() {
   }
 
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator screenOptions={{ headerShown: false, freezeOnBlur: true, animation: "slide_from_right" }}>
       {!isAuthenticated ? (
         <>
           <Stack.Screen name="Splash" component={SplashScreen} />

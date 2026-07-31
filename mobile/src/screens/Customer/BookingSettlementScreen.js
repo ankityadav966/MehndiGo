@@ -48,7 +48,7 @@ export default function BookingSettlementScreen({ route, navigation }) {
     navigation.navigate("Payment", {
       bookingId: booking.id,
       bookingCode: booking.booking_code,
-      finalAmount: booking.final_amount,
+      finalAmount: booking.remaining_amount || booking.final_amount,
 
       isSettlement: true
     });
@@ -120,12 +120,20 @@ export default function BookingSettlementScreen({ route, navigation }) {
           
           <View style={styles.row}>
             <Text style={styles.label}>Total Price Amount</Text>
-            <Text style={styles.value}>₹{booking.total_price}</Text>
+            <Text style={styles.value}>₹{booking.total_price || booking.final_amount}</Text>
+
           </View>
+
+          {booking.advance_paid !== undefined && (
+            <View style={styles.row}>
+              <Text style={styles.label}>Advance Paid (10%)</Text>
+              <Text style={styles.value}>₹{booking.advance_paid}</Text>
+            </View>
+          )}
 
           <View style={styles.row}>
             <Text style={styles.label}>Remaining Payable Amount</Text>
-            <Text style={[styles.value, { color: Colors.primary, fontWeight: "800" }]}>₹{booking.final_amount}</Text>
+            <Text style={[styles.value, { color: Colors.primary, fontWeight: "800" }]}>₹{booking.remaining_amount || booking.final_amount}</Text>
 
           </View>
 

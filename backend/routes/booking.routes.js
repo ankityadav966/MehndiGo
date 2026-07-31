@@ -17,14 +17,18 @@ router.put("/cancel", authenticate, BookingController.cancelBooking);
 router.put("/reschedule", authenticate, BookingController.rescheduleBooking);
 router.put("/accept", authenticate, BookingController.acceptBooking);
 router.put("/reject", authenticate, BookingController.rejectBooking);
-router.put("/on-the-way", authenticate, BookingController.onTheWayBooking);
+router.put("/on-the-way", authenticate, BookingController.updateOnTheWay || BookingController.onTheWayBooking);
+router.put("/arrived", authenticate, BookingController.updateArrived);
 router.put("/start", authenticate, BookingController.startService);
 router.put("/complete", authenticate, BookingController.completeService);
 router.put("/skip-review", authenticate, BookingController.skipReview);
 router.put("/select-cash", authenticate, BookingController.selectCashPayment);
 router.put("/confirm-cash", authenticate, BookingController.confirmCashPayment);
 router.put("/reject-cash", authenticate, BookingController.rejectCashPayment);
-
+router.post("/send-checkin-otp", authenticate, BookingController.sendCheckInOtp);
+router.post("/verify-checkin-otp", authenticate, BookingController.verifyCheckInOtp);
+router.post("/send-checkout-otp", authenticate, BookingController.sendCheckOutOtp);
+router.post("/verify-checkout-otp", authenticate, BookingController.verifyCheckOutOtp);
 
 // Coupon validations
 router.post("/apply-coupon", authenticate, BookingController.applyCoupon);

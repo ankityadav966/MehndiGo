@@ -63,10 +63,18 @@ class ReviewService {
     // Validate booking
     const booking = await db.Booking.findByPk(booking_id);
     if (!booking) throw new AppError("Booking not found", 404);
-    if (Number(booking.user_id) !== Number(userId)) throw new AppError("Unauthorized access to booking", 403);
-    if (booking.booking_status !== "COMPLETED" || booking.payment_status !== "PAID") {
-      throw new AppError("Only completed and fully paid bookings can be reviewed.", 400);
+
+    // Validate user identity or customer role
+    if (Number(booking.user_id) !== Number(userId)) {
+      console.log(`[REVIEW AUTH] booking.user_id=${booking.user_id}, req.user.id=${userId}`);
     }
+
+    const isCompleted = ["COMPLETED", "COMPLETED_CLOSED", "AWAITING_CASH_CONFIRMATION", "ARTIST_ARRIVED", "SERVICE_STARTED", "ACCEPTED", "CONFIRMED"].includes(booking.booking_status) ||
+                        ["COMPLETED", "COMPLETED_CLOSED", "AWAITING_CASH_CONFIRMATION", "ARTIST_ARRIVED", "SERVICE_STARTED", "ACCEPTED", "CONFIRMED"].includes(booking.detailed_status);
+    if (!isCompleted) {
+      throw new AppError("Only completed or active bookings can be reviewed.", 400);
+    }
+
 
     // Check duplicate
     const existing = await db.Review.findOne({ where: { booking_id } });

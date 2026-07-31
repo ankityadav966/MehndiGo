@@ -23,7 +23,6 @@ const getBaseUrl = () => {
 
 export const BASE_URL = getBaseUrl();
 
-// Dynamically construct the SOCKET_URL from the base URL (extracting protocol, host, and port)
 const getSocketUrl = () => {
   const targetUrl = verifiedWorkingBaseUrl || BASE_URL;
   if (!targetUrl) return "";
@@ -45,106 +44,66 @@ export function getNormalizedUrl(endpoint, customBaseUrl = null) {
   let baseUrl = customBaseUrl || verifiedWorkingBaseUrl || BASE_URL;
   let cleanEndpoint = endpoint;
 
-  // Ensure endpoint starts with a slash
   if (!cleanEndpoint.startsWith("/")) {
     cleanEndpoint = "/" + cleanEndpoint;
   }
 
   // Normalize endpoints to avoid double prefixing and handle root vs /api/v1 namespaces
+  if (baseUrl.endsWith("/api/v1/mehndigo")) {
+    baseUrl = baseUrl.substring(0, baseUrl.length - 9);
+  }
   if (cleanEndpoint.startsWith("/api/v1/")) {
     if (baseUrl.endsWith("/api/v1")) {
-      cleanEndpoint = cleanEndpoint.substring(7); // strip /api/v1 from endpoint
+      cleanEndpoint = cleanEndpoint.substring(7);
     }
   } else {
-    // Root level endpoints (e.g. /wallet, /auth/login) shouldn't be prefixed with /api/v1
     if (baseUrl.endsWith("/api/v1")) {
       baseUrl = baseUrl.substring(0, baseUrl.length - 7);
     }
   }
 
-  // Construct URL
   if (baseUrl.endsWith("/")) {
     baseUrl = baseUrl.slice(0, -1);
   }
-  let url = `${baseUrl}${cleanEndpoint}`;
-
-  return url;
+  return `${baseUrl}${cleanEndpoint}`;
 }
 
-const apiCache = new Map();
-const CACHE_TTL_MS = 60 * 1000;
-
-export function clearApiCache() {
-  apiCache.clear();
+// Token mask utility for diagnostic logs
+export function sanitizeLogData(str) {
+  if (typeof str !== "string") return str;
+  return str.replace(/Bearer\s+[A-Za-z0-9-_=]+\.[A-Za-z0-9-_=]+\.?[A-Za-z0-9-_.+/=]*/gi, "Bearer ***MASKED***");
 }
+
+// Deduplication map for in-flight GET requests
+const inflightGetRequests = new Map();
+
 
 async function apiRequest(method, endpoint, body = null, auth = false) {
-  const isGet = method.toUpperCase() === "GET";
-  const cacheKey = `${method.toUpperCase()}:${endpoint}:${auth ? "auth" : "anon"}`;
-
-  if (isGet) {
-    const cached = apiCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) {
-      return cached.data;
-    }
-  } else {
-    // Invalidate cache on mutations
-    apiCache.clear();
+  const url = getNormalizedUrl(endpoint);
+  
+  // In-flight GET request deduplication
+  const requestKey = `${method.toUpperCase()}:${url}:${auth}`;
+  if (method.toUpperCase() === "GET" && inflightGetRequests.has(requestKey)) {
+    return inflightGetRequests.get(requestKey);
   }
 
-  const headers = { "Content-Type": "application/json" };
+  const fetchPromise = (async () => {
+    const headers = { "Content-Type": "application/json" };
 
-  if (auth) {
-    const token = await secureStorage.getAccessToken();
-    if (token) {
-      headers.Authorization = `Bearer ${token}`;
-    }
-  }
-
-  const options = { method, headers };
-  if (body) {
-    options.body = JSON.stringify(body);
-  }
-
-  // Construct prioritized list of candidate base URLs
-  const candidateBases = [];
-  if (verifiedWorkingBaseUrl) {
-    candidateBases.push(verifiedWorkingBaseUrl);
-  }
-  const defaultBase = getBaseUrl();
-  if (!candidateBases.includes(defaultBase)) {
-    candidateBases.push(defaultBase);
-  }
-  for (const fallbackBase of FALLBACK_URLS) {
-    if (!candidateBases.includes(fallbackBase)) {
-      candidateBases.push(fallbackBase);
-    }
-  }
-
-  let lastError = null;
-
-  for (const candidateBase of candidateBases) {
-    const url = getNormalizedUrl(endpoint, candidateBase);
-    if (process.env.NODE_ENV !== "production") {
-      console.log(`[API REQUEST] ${method} -> ${url}`);
+    if (auth) {
+      const token = await secureStorage.getAccessToken();
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
     }
 
-    // Create an AbortController with a fast 2.5-second timeout per candidate
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => {
-      controller.abort();
-    }, 2500);
+    const options = { method, headers };
+    if (body) {
+      options.body = JSON.stringify(body);
+    }
 
     try {
-      const response = await fetch(url, {
-        ...options,
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-
-      // Remember working base URL for future instant API calls!
-      verifiedWorkingBaseUrl = candidateBase;
+      const response = await fetch(url, options);
 
       let data;
       const contentType = response.headers.get("content-type") || "";
@@ -160,10 +119,40 @@ async function apiRequest(method, endpoint, body = null, auth = false) {
       }
 
       if (response.status === 401) {
+        // Attempt automatic refresh token rotation
+        const storedRefreshToken = await secureStorage.getRefreshToken();
+        if (storedRefreshToken && !options._isRetry) {
+          try {
+            const refreshUrl = getNormalizedUrl("/auth/refresh-token");
+            const refreshRes = await fetch(refreshUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ refreshToken: storedRefreshToken })
+            });
+
+            if (refreshRes.ok) {
+              const refreshData = await refreshRes.json();
+              const newAccess = refreshData?.data?.token || refreshData?.token;
+              const newRefresh = refreshData?.data?.refreshToken || refreshData?.refreshToken;
+
+              if (newAccess) {
+                await secureStorage.saveTokens(newAccess, newRefresh || storedRefreshToken);
+                headers.Authorization = `Bearer ${newAccess}`;
+                options._isRetry = true;
+                const retryResponse = await fetch(url, options);
+                return await retryResponse.json();
+              }
+            }
+          } catch (refreshErr) {
+            if (__DEV__) console.log("[API] Automatic token refresh failed:", refreshErr.message);
+          }
+        }
+
         await secureStorage.clearAll();
         if (global.logoutHandler) {
           global.logoutHandler();
         }
+        throw new Error(data.message || "Unauthorized session");
       }
 
       if (!response.ok) {
@@ -172,31 +161,24 @@ async function apiRequest(method, endpoint, body = null, auth = false) {
         throw err;
       }
 
-      if (isGet) {
-        apiCache.set(cacheKey, {
-          data,
-          expiresAt: Date.now() + CACHE_TTL_MS,
-        });
-      }
-
       return data;
     } catch (error) {
-      clearTimeout(timeoutId);
-      lastError = error;
-
-      // If it was an HTTP status response error (like 400, 404, 500), don't try other candidate hosts
-      if (error.response?.status) {
-        console.warn(`[API ERROR] ${method} ${endpoint} (Status: ${error.response.status}):`, error.message);
-        throw error;
+      if (__DEV__) {
+        console.warn(`[API ERROR] ${method} ${endpoint}:`, error.message);
       }
-
-      const reason = error.name === "AbortError" ? "Request Timed Out (2.5s limit)" : error.message;
-      console.warn(`[API NETWORK ATTEMPT FAILED] ${url}: ${reason}. Trying next candidate...`);
+      throw error;
+    } finally {
+      if (method.toUpperCase() === "GET") {
+        inflightGetRequests.delete(requestKey);
+      }
     }
+  })();
+
+  if (method.toUpperCase() === "GET") {
+    inflightGetRequests.set(requestKey, fetchPromise);
   }
 
-  console.warn(`[API ERROR] ${method} ${endpoint} (Status: NETWORK_ERROR):`, lastError?.message);
-  throw lastError;
+  return fetchPromise;
 }
 
 export default apiRequest;

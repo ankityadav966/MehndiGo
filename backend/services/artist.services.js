@@ -872,8 +872,29 @@ class ArtistService {
         paid_at: new Date()
 
       });
-    }
+      // Real-time Socket.IO alert to artist
+      try {
+        const io = getIO();
+        io.to(artistUserId.toString()).emit("new_notification", {
+          title: "Payment Success",
+          message: "Booking payment completed",
+          type: "PAYMENT",
+        });
+        // Also notify the user
+        io.to(booking.user_id.toString()).emit("new_notification", {
+          title: "Payment Confirmed",
+          message: "Your payment has been confirmed successfully",
+          type: "PAYMENT",
+        });
+      } catch (e) { /* socket not initialized */ }
 
+      return {
+        success: true,
+        message: "Payment verified successfully",
+        order_id: orderId,
+        payment_id: paymentId
+      };
+    }
     // Real-time Socket.IO alert to artist
     try {
       const io = getIO();
@@ -1538,6 +1559,7 @@ async createReview(data) {
           throw new AppError("This phone number is already registered with another account.", 400);
         }
         userUpdates.phone = cleanPhone;
+      }
       }
     }
 

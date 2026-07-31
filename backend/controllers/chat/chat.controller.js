@@ -707,7 +707,6 @@ async function sendMessage(req, res) {
       type: "CHAT",
       booking_id: bookingId,
       data: JSON.stringify({ bookingId: bookingId, booking_id: bookingId, senderId: req.user.id })
-
     });
 
     return res.status(201).json(SuccessResponse("Message sent", completeMsg));

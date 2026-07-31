@@ -425,8 +425,13 @@ export default function ArtistDashboardScreen({ navigation }) {
         {/* 6. Active Actions (Pending Bookings) */}
         {dashboard?.recentBookings?.filter(b => b.booking_status === "PENDING" || (b.booking_status === "CONFIRMED" && b.detailed_status === "CONFIRMED")).length > 0 && (
           <View style={styles.cashSection}>
-            <Text style={styles.sectionTitle}>New Pending Bookings</Text>
-            {dashboard.recentBookings.filter(b => b.booking_status === "PENDING" || (b.booking_status === "CONFIRMED" && b.detailed_status === "CONFIRMED")).map((item) => {
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+              <Text style={styles.sectionTitle}>New Pending Bookings</Text>
+              <Pressable onPress={() => navigation.navigate("BookingRequests", { initialTab: "Pending" })}>
+                <Text style={styles.viewAll}>View All</Text>
+              </Pressable>
+            </View>
+            {dashboard.recentBookings.filter(b => b.booking_status === "PENDING" || (b.booking_status === "CONFIRMED" && b.detailed_status === "CONFIRMED")).slice(0, 3).map((item) => {
 
               const slotDate = item.slot?.start_time ? new Date(item.slot.start_time).toLocaleDateString() : (item.reschedule_date || "TBD");
               const slotTime = item.slot ? `${new Date(item.slot.start_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - ${new Date(item.slot.end_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` : (item.reschedule_time || "TBD");
@@ -585,7 +590,7 @@ export default function ArtistDashboardScreen({ navigation }) {
           </Pressable>
         </View>
 
-        {dashboard?.recentBookings?.map((item) => (
+        {dashboard?.recentBookings?.slice(0, 3).map((item) => (
 
           <Pressable
             key={item.id}

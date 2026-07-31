@@ -80,6 +80,30 @@ export function resolveNotificationRoute(notification, role) {
 
   let { type, event, bookingId, leadId, refundId } = data;
 
+  // Normalize socket.io notification structures
+  if (!type && data.type) type = data.type;
+  
+  // Map type to lowercase to match config keys (e.g. "BOOKING" -> "booking")
+  if (type) type = type.toLowerCase();
+
+  const normalizedRole = String(role || "").toLowerCase();
+
+  // If event is missing, map it using type
+  if (type && !event) {
+    if (type === "booking") {
+      event = normalizedRole === "artist" ? "new_booking_request" : "booking_confirmed";
+    } else if (type === "payment") {
+      event = normalizedRole === "artist" ? "payment_received" : "payment_success";
+    } else if (type === "wallet") {
+      event = "wallet_credit";
+    } else if (type === "review") {
+      event = normalizedRole === "artist" ? "new_review" : "review_reminder";
+    } else if (type === "chat") {
+      event = "new_message";
+    }
+  }
+
+
   // Smart Dynamic Fallback Parser if type or event metadata is missing
   if (!type || !event) {
     const titleText = (notification?.title || "").toLowerCase();
@@ -121,48 +145,56 @@ export function resolveNotificationRoute(notification, role) {
       event = "system_notification";
     }
 
-    // 3. Regex ID Extractor
+    // 3. Regex BK-Code & ID Extractor
+    const bkMatch = msgText.match(/(BK-[0-9]+)/i) || titleText.match(/(BK-[0-9]+)/i);
     const numberMatch = msgText.match(/(?:booking|lead|refund|id|#)\s*:?\s*#?\s*([0-9]+)/i);
-    const resolvedNumId = numberMatch ? numberMatch[1] : null;
 
-    if (resolvedNumId) {
-      if (type === "booking" || type === "chat") bookingId = resolvedNumId;
+    if (bkMatch) {
+      bookingId = bkMatch[1];
+    } else if (numberMatch) {
+      const resolvedNumId = numberMatch[1];
+      if (type === "booking" || type === "chat" || type === "payment") bookingId = resolvedNumId;
       else if (type === "payment" && event.includes("refund")) refundId = resolvedNumId;
       else leadId = resolvedNumId;
     }
+
   }
 
-  const fallbackCenter = role === "artist" ? "Notifications" : "NotificationCenter";
+  const fallbackScreen = normalizedRole === "artist" ? "Notifications" : "NotificationCenter";
 
   if (!type || !event) {
-    return { screen: fallbackCenter };
+    return { screen: fallbackScreen };
   }
 
   const typeRoutes = NOTIFICATION_ROUTES[type];
-  if (!typeRoutes) return { screen: fallbackCenter };
+  if (!typeRoutes) return { screen: fallbackScreen };
 
-  const roleRoutes = typeRoutes[role];
-  if (!roleRoutes) return { screen: fallbackCenter };
+  const roleRoutes = typeRoutes[normalizedRole];
+  if (!roleRoutes) return { screen: fallbackScreen };
 
   const route = roleRoutes[event];
-  if (!route) return { screen: fallbackCenter };
+  if (!route) return { screen: fallbackScreen };
 
 
   const resolvedParams = { ...route.params };
   
   if (resolvedParams.id) {
-    if (!bookingId && !leadId && !refundId) {
-      return { screen: role === "artist" ? "Bookings" : "MyBookings" };
+    const bid = bookingId || data.bookingId || data.id || data.booking_id || "";
+    const lid = leadId || data.leadId || data.id || "";
+    const rid = refundId || data.refundId || data.id || "";
+    if (!bid && !lid && !rid) {
+      return { screen: normalizedRole === "artist" ? "Bookings" : "MyBookings" };
     }
-    resolvedParams.id = resolvedParams.id.replace(":bookingId", bookingId || "");
-    resolvedParams.id = resolvedParams.id.replace(":leadId", leadId || "");
-    resolvedParams.id = resolvedParams.id.replace(":refundId", refundId || "");
+    resolvedParams.id = resolvedParams.id.replace(":bookingId", bid);
+    resolvedParams.id = resolvedParams.id.replace(":leadId", lid);
+    resolvedParams.id = resolvedParams.id.replace(":refundId", rid);
   }
   if (resolvedParams.bookingId) {
-    if (!bookingId) {
-      return { screen: role === "artist" ? "Bookings" : "MyBookings" };
+    const bid = bookingId || data.bookingId || data.id || data.booking_id || "";
+    if (!bid) {
+      return { screen: normalizedRole === "artist" ? "Bookings" : "MyBookings" };
     }
-    resolvedParams.bookingId = resolvedParams.bookingId.replace(":bookingId", bookingId || "");
+    resolvedParams.bookingId = resolvedParams.bookingId.replace(":bookingId", bid);
 
   }
 
@@ -170,6 +202,9 @@ export function resolveNotificationRoute(notification, role) {
 }
 
 export function handleNotificationNavigation(notification, navigation, role) {
+  if (!notification || !navigation) return;
+
+
   try {
     const route = resolveNotificationRoute(notification, role);
     if (route && route.screen) {
@@ -179,14 +214,15 @@ export function handleNotificationNavigation(notification, navigation, role) {
         navigation.navigate(route.screen);
       }
     } else {
-      navigation.navigate(role === "artist" ? "Notifications" : "NotificationCenter");
+      const normalizedRole = String(role || "").toLowerCase();
+      navigation.navigate(normalizedRole === "artist" ? "Notifications" : "NotificationCenter");
     }
   } catch (err) {
-    console.log("Failed to navigate from notification:", err.message);
-    navigation.navigate(role === "artist" ? "Notifications" : "NotificationCenter");
+    console.error("Centralized notification navigation failed:", err.message);
+    const normalizedRole = String(role || "").toLowerCase();
+    navigation.navigate(normalizedRole === "artist" ? "Notifications" : "NotificationCenter");
   }
 }
-
 
 export const linkingConfig = {
   prefixes: ["mehendigoo://", "https://mehendigoo.com", "https://mehendigo.app", "https://www.mehendigo.app"],
