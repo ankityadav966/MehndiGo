@@ -15,11 +15,11 @@ const getDbConfig = () => {
     };
   }
 
-  const host = process.env.DB_HOST || "127.0.0.1";
-  const port = parseInt(process.env.DB_PORT || "5432", 10);
-  const username = process.env.DB_USER || "postgres";
-  const password = process.env.DB_PASSWORD || process.env.DB_PASS || "12345678";
-  const database = process.env.DB_NAME || "mehndigo_db";
+  const host = (process.env.DB_HOST || "127.0.0.1").trim();
+  const port = parseInt((process.env.DB_PORT || "5432").trim(), 10);
+  const username = (process.env.DB_USER || "postgres").trim();
+  const password = (process.env.DB_PASSWORD || process.env.DB_PASS || "12345678").trim();
+  const database = (process.env.DB_NAME || "mehndigo_db").trim();
 
   return {
     username,

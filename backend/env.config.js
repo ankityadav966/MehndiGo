@@ -1,6 +1,43 @@
 const path = require("path");
+const fs = require("fs");
 const dotenv = require("dotenv");
 
+function loadEnvFile(envPath) {
+  if (!fs.existsSync(envPath)) return false;
+  try {
+    const content = fs.readFileSync(envPath, "utf8");
+    const lines = content.split(/\r?\n/);
+    lines.forEach((line) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) return;
+      const eqIdx = line.indexOf("=");
+      if (eqIdx !== -1) {
+        const key = line.substring(0, eqIdx).trim();
+        let val = line.substring(eqIdx + 1).trim();
+        if (
+          (val.startsWith('"') && val.endsWith('"')) ||
+          (val.startsWith("'") && val.endsWith("'"))
+        ) {
+          val = val.slice(1, -1);
+        } else {
+          const commentIdx = val.search(/\s+#/);
+          if (commentIdx !== -1) {
+            val = val.substring(0, commentIdx).trim();
+          }
+        }
+        process.env[key] = val;
+      }
+    });
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+const envPath = path.resolve(__dirname, ".env");
+if (fs.existsSync(envPath)) {
+  loadEnvFile(envPath);
+}
 // Load .env file
 dotenv.config(); 
 
