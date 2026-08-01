@@ -2,7 +2,7 @@ const path = require("path");
 const dotenv = require("dotenv");
 
 // Load .env file
-dotenv.config();
+dotenv.config(); 
 
 const REQUIRED_ENV_VARS = [
   "PORT",
