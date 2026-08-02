@@ -2,8 +2,13 @@ const db = require("./models");
 
 async function main() {
   try {
-    console.log("Synchronizing Bookings model to add review_skipped column...");
-    await db.sequelize.query(`ALTER TABLE "Bookings" ADD COLUMN IF NOT EXISTS "review_skipped" BOOLEAN NOT NULL DEFAULT FALSE;`);
+    const queryInterface = db.sequelize.getQueryInterface();
+    try {
+      const desc = await queryInterface.describeTable("Bookings");
+      if (!desc["review_skipped"]) {
+        await queryInterface.addColumn("Bookings", "review_skipped", { type: db.Sequelize.BOOLEAN, defaultValue: false, allowNull: false });
+      }
+    } catch(err){}
     console.log("review_skipped column synchronized successfully!");
     process.exit(0);
   } catch (error) {

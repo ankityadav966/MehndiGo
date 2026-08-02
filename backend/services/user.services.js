@@ -395,7 +395,7 @@ class UserService {
     };
   }
 
-  async login(data) {
+  async loginSendOtp(data) {
     let { email, phone, role, identifier } = data;
     const loginValue = email || identifier || phone || "";
     const cleaned = String(loginValue).trim();
@@ -588,11 +588,25 @@ class UserService {
   }
 
   async sendOtp(data) {
-    return this.loginSendOtp(data);
+    if (data && (data.name || data.isRegister)) {
+      return this.registerSendOtp(data);
+    }
+    try {
+      return await this.loginSendOtp(data);
+    } catch (err) {
+      if (err.statusCode === 404 && (data.phone || data.email)) {
+        return await this.registerSendOtp(data);
+      }
+      throw err;
+    }
   }
 
   async verifyOtp(data) {
-    return this.loginVerifyOtp(data);
+    try {
+      return await this.loginVerifyOtp(data);
+    } catch (err) {
+      return await this.registerVerifyOtp(data);
+    }
   }
 
   async login(data) {

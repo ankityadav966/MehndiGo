@@ -25,11 +25,19 @@ const getDbConfig = () => {
     };
   }
 
+<<<<<<< HEAD
   const host = process.env.DB_HOST || "98.70.11.123";
   const port = parseInt(process.env.DB_PORT || "5432", 10);
   const username = process.env.DB_USER || "admin";
   const password = process.env.DB_PASSWORD || process.env.DB_PASS || "password@Secret#2190";
   const database = process.env.DB_NAME || "mehandigoapp";
+=======
+  const host = (process.env.DB_HOST || "127.0.0.1").trim();
+  const port = parseInt((process.env.DB_PORT || "5432").trim(), 10);
+  const username = (process.env.DB_USER || "postgres").trim();
+  const password = (process.env.DB_PASSWORD || process.env.DB_PASS || "12345678").trim();
+  const database = (process.env.DB_NAME || "mehndigo_db").trim();
+>>>>>>> 1bb0d8e3107c9be0f3a4e35ca97a5ef60e896263
 
   return {
     username,

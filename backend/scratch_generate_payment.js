@@ -18,15 +18,15 @@ class PaymentService {
     }
 
     const orderId = isRecharge 
-      ? \\\`recharge_\\\${userId}_\\\${Date.now()}\\\` 
-      : \\\`booking_\\\${bookingId}_\\\${Date.now()}\\\`;
+      ? `recharge_${userId}_${Date.now()}` 
+      : `booking_${bookingId}_${Date.now()}`;
 
     if (isRecharge) {
       if (!amount) {
         throw new AppError("Amount is required for wallet recharge", 400);
       }
       orderAmount = Number(amount);
-      note = \\\`Wallet Recharge for User #\\\${userId}\\\`;
+      note = `Wallet Recharge for User #${userId}`;
     } else {
       const booking = await db.Booking.findOne({
         where: { id: bookingId, user_id: userId }
@@ -37,13 +37,13 @@ class PaymentService {
       
       if (booking.booking_status === "PENDING" && booking.payment_status === "PENDING") {
         orderAmount = Math.round(booking.final_amount * 0.10);
-        note = \\\`Advance Payment (10%) for Booking #\\\${booking.booking_code}\\\`;
+        note = `Advance Payment (10%) for Booking #${booking.booking_code}`;
       } else if (booking.detailed_status === "WAITING_FOR_USER_PAYMENT") {
         orderAmount = booking.remaining_amount;
-        note = \\\`Remaining Payment (90%) for Booking #\\\${booking.booking_code}\\\`;
+        note = `Remaining Payment (90%) for Booking #${booking.booking_code}`;
       } else {
         orderAmount = booking.final_amount;
-        note = \\\`Payment for Booking #\\\${booking.booking_code}\\\`;
+        note = `Payment for Booking #${booking.booking_code}`;
       }
     }
 
@@ -115,7 +115,7 @@ class PaymentService {
     }
 
     if (tx.status === "SUCCESS") {
-      console.log(\\\`[VERIFY_PAYMENT] Transaction \\\${razorpay_order_id} is already SUCCESS. Returning early.\\\`);
+      console.log(`[VERIFY_PAYMENT] Transaction ${razorpay_order_id} is already SUCCESS. Returning early.`);
       return tx;
     }
 
@@ -143,11 +143,11 @@ class PaymentService {
         const isAdvance = booking.payment_status === "PENDING";
         const isRemaining = booking.detailed_status === "WAITING_FOR_USER_PAYMENT";
 
-        console.log(\\\`[VERIFY_PAYMENT] Booking #\\\${booking.booking_code} status BEFORE update: booking_status=\\\${booking.booking_status}, payment_status=\\\${booking.payment_status}, detailed_status=\\\${booking.detailed_status}\\\`);
+        console.log(`[VERIFY_PAYMENT] Booking #${booking.booking_code} status BEFORE update: booking_status=${booking.booking_status}, payment_status=${booking.payment_status}, detailed_status=${booking.detailed_status}`);
 
         if (isAdvance) {
           const advancePaid = Math.round(booking.final_amount * 0.10);
-          console.log(\\\`[VERIFY_PAYMENT] Processing 10% ADVANCE payment of ₹\\\${advancePaid} for Booking #\\\${booking.booking_code}\\\`);
+          console.log(`[VERIFY_PAYMENT] Processing 10% ADVANCE payment of ₹${advancePaid} for Booking #${booking.booking_code}`);
           
           await booking.update({
             payment_status: "PARTIAL",
@@ -160,15 +160,15 @@ class PaymentService {
             booking_id: booking.id,
             status: "CONFIRMED",
             changed_by: userId,
-            notes: \\\`Advance payment of ₹\\\${advancePaid} verified successfully. Booking confirmed.\\\`
+            notes: `Advance payment of ₹${advancePaid} verified successfully. Booking confirmed.`
           });
 
           // Create Invoice record
-          const invoiceNum = \\\`INV-\\\${Date.now()}\\\`;
+          const invoiceNum = `INV-${Date.now()}`;
           await db.Invoice.create({
             booking_id: booking.id,
             invoice_number: invoiceNum,
-            invoice_url: \\\`/payment/receipt/\\\${booking.id}\\\`
+            invoice_url: `/payment/receipt/${booking.id}`
           });
 
           // Credit 10% to Admin Wallet
@@ -186,7 +186,7 @@ class PaymentService {
                 transaction_type: "COMMISSION",
                 amount: advancePaid,
                 status: "SUCCESS",
-                description: \\\`Admin Commission from booking #\\\${booking.booking_code}\\\`
+                description: `Admin Commission from booking #${booking.booking_code}`
               });
             }
           } catch (adminErr) {
@@ -197,7 +197,7 @@ class PaymentService {
           await db.Notification.create({
             user_id: booking.user_id,
             title: "Payment Received Successfully! 🎉",
-            message: \\\`Your advance payment of ₹\\\${advancePaid} for booking #\\\${booking.booking_code} was received.\\\`,
+            message: `Your advance payment of ₹${advancePaid} for booking #${booking.booking_code} was received.`,
             type: "SYSTEM"
           });
           try {
@@ -206,7 +206,7 @@ class PaymentService {
               await db.Notification.create({
                 user_id: artistProfile.user_id,
                 title: "New Booking Confirmed 📅",
-                message: \\\`Mehndi booking request #\\\${booking.booking_code} has been paid and confirmed.\\\`,
+                message: `Mehndi booking request #${booking.booking_code} has been paid and confirmed.`,
                 type: "SYSTEM"
               });
             }
@@ -214,7 +214,7 @@ class PaymentService {
 
         } else if (isRemaining) {
           const remainingPaid = booking.remaining_amount;
-          console.log(\\\`[VERIFY_PAYMENT] Processing 90% REMAINING payment of ₹\\\${remainingPaid} for Booking #\\\${booking.booking_code}\\\`);
+          console.log(`[VERIFY_PAYMENT] Processing 90% REMAINING payment of ₹${remainingPaid} for Booking #${booking.booking_code}`);
 
           await booking.update({
             payment_status: "PAID",
@@ -227,7 +227,7 @@ class PaymentService {
             booking_id: booking.id,
             status: "COMPLETED",
             changed_by: userId,
-            notes: \\\`Remaining payment of ₹\\\${remainingPaid} verified successfully. Booking completed.\\\`
+            notes: `Remaining payment of ₹${remainingPaid} verified successfully. Booking completed.`
           });
 
           // Credit remaining 90% directly to Artist Wallet
@@ -248,14 +248,14 @@ class PaymentService {
                 transaction_type: "PAYMENT",
                 amount: remainingPaid,
                 status: "SUCCESS",
-                description: \\\`Remaining payment from \\\${customerName} (#\\\${booking.booking_code})\\\`
+                description: `Remaining payment from ${customerName} (#${booking.booking_code})`
               });
 
               // Notify artist
               await db.Notification.create({
                 user_id: artistProfile.user_id,
                 title: "Remaining Payment Received! 💰",
-                message: \\\`You received ₹\\\${remainingPaid} for completed booking #\\\${booking.booking_code}.\\\`,
+                message: `You received ₹${remainingPaid} for completed booking #${booking.booking_code}.`,
                 type: "SYSTEM"
               });
             }
@@ -267,7 +267,7 @@ class PaymentService {
           await db.Notification.create({
             user_id: booking.user_id,
             title: "Payment Completed Successfully! 🎉",
-            message: \\\`Your remaining payment of ₹\\\${remainingPaid} for booking #\\\${booking.booking_code} was received. Booking is now complete!\\\`,
+            message: `Your remaining payment of ₹${remainingPaid} for booking #${booking.booking_code} was received. Booking is now complete!`,
             type: "SYSTEM"
           });
         }
@@ -296,9 +296,9 @@ class PaymentService {
         transaction_type: "RECHARGE",
         amount: tx.amount,
         status: "SUCCESS",
-        description: \\\`Wallet recharge via Razorpay (Order: \\\${tx.razorpay_order_id})\\\`
+        description: `Wallet recharge via Razorpay (Order: ${tx.razorpay_order_id})`
       });
-      console.log(\\\`[Recharge Success] Credited ₹\\\${tx.amount} to user ID \\\${tx.user_id} wallet\\\`);
+      console.log(`[Recharge Success] Credited ₹${tx.amount} to user ID ${tx.user_id} wallet`);
     }
 
     return tx;
@@ -321,7 +321,7 @@ class PaymentService {
     try {
       const payload = JSON.parse(rawBody);
       const event = payload.event;
-      console.log(\\\`Razorpay Webhook Event Received: \\\${event}\\\`);
+      console.log(`Razorpay Webhook Event Received: ${event}`);
 
       if (event === "payment.captured" || event === "order.paid") {
         const orderId = payload.payload.payment.entity.order_id;
@@ -388,7 +388,7 @@ class PaymentService {
     });
 
     const refundAmount = booking.final_amount;
-    let refundId = \\\`ref_mock_\\\${Math.floor(100000 + Math.random() * 900000)}\\\`;
+    let refundId = `ref_mock_${Math.floor(100000 + Math.random() * 900000)}`;
 
     if (payment && payment.razorpay_payment_id && !payment.razorpay_payment_id.startsWith("wallet_pay_")) {
       try {
@@ -423,7 +423,7 @@ class PaymentService {
       booking_id: bookingId,
       status: "CANCELLED",
       changed_by: userId,
-      notes: \\\`Refund initiated successfully. Booking Cancelled: \\\${reason}\\\`
+      notes: `Refund initiated successfully. Booking Cancelled: ${reason}`
     });
 
     // Debit the artist's wallet if they were credited
@@ -457,7 +457,7 @@ class PaymentService {
                 transaction_type: "WITHDRAWAL",
                 amount: artistTx.amount,
                 status: "SUCCESS",
-                description: \\\`Deduction for refunded booking #\\\${booking.booking_code}\\\`
+                description: `Deduction for refunded booking #${booking.booking_code}`
               }, { transaction: t });
             }
           }
@@ -544,7 +544,7 @@ class PaymentService {
         amount: payableAmount,
         status: "SUCCESS",
         booking_id: booking.id,
-        description: \\\`Deducted for booking #\\\${booking.booking_code} (Wallet Checkout)\\\`
+        description: `Deducted for booking #${booking.booking_code} (Wallet Checkout)`
       }, { transaction: t });
 
       await db.Transaction.create({
@@ -552,8 +552,8 @@ class PaymentService {
         booking_id: booking.id,
         amount: payableAmount,
         status: "SUCCESS",
-        razorpay_order_id: \\\`wallet_mock_\\\${Date.now()}\\\`,
-        razorpay_payment_id: \\\`wallet_pay_\\\${Date.now()}\\\`
+        razorpay_order_id: `wallet_mock_${Date.now()}`,
+        razorpay_payment_id: `wallet_pay_${Date.now()}`
       }, { transaction: t });
 
       if (booking.booking_status === "PENDING" && booking.payment_status === "PENDING") {
@@ -580,7 +580,7 @@ class PaymentService {
           amount: payableAmount,
           status: "SUCCESS",
           booking_id: booking.id,
-          description: \\\`Admin Commission for Booking #\\\${booking.booking_code}\\\`
+          description: `Admin Commission for Booking #${booking.booking_code}`
         }, { transaction: t });
       } else {
         await booking.update({
@@ -608,7 +608,7 @@ class PaymentService {
             amount: payableAmount,
             status: "SUCCESS",
             booking_id: booking.id,
-            description: \\\`Settlement for completed booking #\\\${booking.booking_code}\\\`
+            description: `Settlement for completed booking #${booking.booking_code}`
           }, { transaction: t });
         }
       }
@@ -617,14 +617,14 @@ class PaymentService {
         booking_id: booking.id,
         status: booking.booking_status,
         changed_by: userId,
-        notes: \\\`Paid ₹\\\${payableAmount} via MehndiGo Wallet.\\\`
+        notes: `Paid ₹${payableAmount} via MehndiGo Wallet.`
       }, { transaction: t });
 
-      const invoiceNum = \\\`INV-\\\${Date.now()}\\\`;
+      const invoiceNum = `INV-${Date.now()}`;
       await db.Invoice.create({
         booking_id: booking.id,
         invoice_number: invoiceNum,
-        invoice_url: \\\`/payment/receipt/\\\${booking.id}\\\`
+        invoice_url: `/payment/receipt/${booking.id}`
       }, { transaction: t });
 
       await t.commit();

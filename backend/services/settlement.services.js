@@ -1,7 +1,7 @@
 "use strict";
 
 const db = require("../models");
-const AppError = require("../utils/appError");
+const AppError = require("../utils/errors/app.error");
 const ledgerService = require("./ledger.services");
 
 class SettlementService {

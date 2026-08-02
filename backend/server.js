@@ -181,22 +181,32 @@ connectRedis();
 const db = require("./models");
 (async () => {
   try {
-    await db.sequelize.query('ALTER TABLE "Addresses" ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION;');
-    await db.sequelize.query('ALTER TABLE "Addresses" ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;');
-    await db.sequelize.query('ALTER TABLE "Addresses" ADD COLUMN IF NOT EXISTS landmark VARCHAR(255);');
-    await db.sequelize.query('ALTER TABLE "Addresses" ADD COLUMN IF NOT EXISTS house_flat VARCHAR(255);');
-    await db.sequelize.query('ALTER TABLE "Addresses" ADD COLUMN IF NOT EXISTS label VARCHAR(255);');
-    
-    await db.sequelize.query('ALTER TABLE "Wallets" ADD COLUMN IF NOT EXISTS available_balance DOUBLE PRECISION DEFAULT 0;');
-    await db.sequelize.query('ALTER TABLE "Wallets" ADD COLUMN IF NOT EXISTS pending_settlement DOUBLE PRECISION DEFAULT 0;');
-    await db.sequelize.query('ALTER TABLE "Wallets" ADD COLUMN IF NOT EXISTS processing_settlement DOUBLE PRECISION DEFAULT 0;');
-    await db.sequelize.query('ALTER TABLE "Wallets" ADD COLUMN IF NOT EXISTS outstanding_commission DOUBLE PRECISION DEFAULT 0;');
-    await db.sequelize.query('ALTER TABLE "Wallets" ADD COLUMN IF NOT EXISTS today_earnings DOUBLE PRECISION DEFAULT 0;');
-    await db.sequelize.query('ALTER TABLE "Wallets" ADD COLUMN IF NOT EXISTS weekly_earnings DOUBLE PRECISION DEFAULT 0;');
-    await db.sequelize.query('ALTER TABLE "Wallets" ADD COLUMN IF NOT EXISTS monthly_earnings DOUBLE PRECISION DEFAULT 0;');
+    const queryInterface = db.sequelize.getQueryInterface();
+    const safeAdd = async (table, col, spec) => {
+      try {
+        const desc = await queryInterface.describeTable(table);
+        if (!desc[col]) {
+          await queryInterface.addColumn(table, col, spec);
+        }
+      } catch (err) {}
+    };
 
-    await db.LedgerEntry.sync({ alter: true });
-    await db.OutstandingCommission.sync({ alter: true });
+    await safeAdd("Addresses", "latitude", { type: db.Sequelize.DOUBLE });
+    await safeAdd("Addresses", "longitude", { type: db.Sequelize.DOUBLE });
+    await safeAdd("Addresses", "landmark", { type: db.Sequelize.STRING });
+    await safeAdd("Addresses", "house_flat", { type: db.Sequelize.STRING });
+    await safeAdd("Addresses", "label", { type: db.Sequelize.STRING });
+
+    await safeAdd("Wallets", "available_balance", { type: db.Sequelize.DOUBLE, defaultValue: 0 });
+    await safeAdd("Wallets", "pending_settlement", { type: db.Sequelize.DOUBLE, defaultValue: 0 });
+    await safeAdd("Wallets", "processing_settlement", { type: db.Sequelize.DOUBLE, defaultValue: 0 });
+    await safeAdd("Wallets", "outstanding_commission", { type: db.Sequelize.DOUBLE, defaultValue: 0 });
+    await safeAdd("Wallets", "today_earnings", { type: db.Sequelize.DOUBLE, defaultValue: 0 });
+    await safeAdd("Wallets", "weekly_earnings", { type: db.Sequelize.DOUBLE, defaultValue: 0 });
+    await safeAdd("Wallets", "monthly_earnings", { type: db.Sequelize.DOUBLE, defaultValue: 0 });
+
+    if (db.LedgerEntry) await db.LedgerEntry.sync();
+    if (db.OutstandingCommission) await db.OutstandingCommission.sync();
     console.log("[DB MIGRATION] Ledger, Wallets, and OutstandingCommissions schema updated successfully.");
   } catch (err) {
     console.log("[DB MIGRATION] Self-healing migration note:", err.message);

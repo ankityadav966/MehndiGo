@@ -18,7 +18,7 @@ async function testFlow() {
 
     // Fetch the OTP from the database
     const otpRecord = await db.Otp.findOne({
-      where: { phone: testPhone },
+      where: { phone: "9999999999" },
       order: [["createdAt", "DESC"]]
     });
     if (!otpRecord) {

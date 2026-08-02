@@ -5,6 +5,9 @@ async function seed() {
   console.log("Starting expanded database seeding...");
   
   try {
+    try { await db.sequelize.query('PRAGMA foreign_keys = OFF;'); } catch(e){}
+    await db.sequelize.sync({ force: true });
+    try { await db.sequelize.query('PRAGMA foreign_keys = ON;'); } catch(e){}
     // Clear old data in order
     console.log("Cleaning existing database tables...");
     await db.Message.destroy({ where: {} });
@@ -575,6 +578,7 @@ async function seed() {
       per_user_limit: 1,
       usage_limit: 500,
       first_booking_only: true
+    });
     console.log("Coupons seeded.");
 
     console.log("Resetting PostgreSQL primary key sequences...");

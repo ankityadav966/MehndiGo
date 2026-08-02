@@ -110,7 +110,7 @@ class AuthService {
   }
 
   async verifyOtp(data) {
-    const { email, otp } = data;
+    const { email, otp, name, phone, role } = data;
 
     if (!email || !otp) {
       throw new AppError("Email and OTP are required", 400);
