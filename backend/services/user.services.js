@@ -36,6 +36,27 @@ class UserService {
     return cleaned.replace(/[^0-9]/g, "");
   }
 
+  normalizeEmail(email) {
+    if (!email) return null;
+    const trimmed = String(email).trim().toLowerCase();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  async checkEmail(data) {
+    const email = this.normalizeEmail(data?.email);
+    if (!email) {
+      throw new AppError("Valid email address is required", 400);
+    }
+
+    const user = await UserRepositor.getOne({ email });
+    return {
+      exists: !!user,
+      email,
+      role: user ? user.role : null,
+      is_verified: user ? user.is_verified : false,
+    };
+  }
+
   // 1. Unified Registration - Send OTP
   async registerSendOtp(data) {
     console.log("Registration Data received:", data);
@@ -484,7 +505,24 @@ class UserService {
   async getProfile(id) {
     const user = await UserRepositor.getById(id);
     if (!user) throw new AppError("User not found", 404);
-    return user;
+
+    let artistProfileCompleted = false;
+    if (user.role === "ARTIST") {
+      const profile = await ArtistProfileRepositor.getOne({ user_id: user.id });
+      if (profile) {
+        artistProfileCompleted = profile.verification_status === "APPROVED" || !!profile.aadhaar_number;
+      }
+    }
+
+    return {
+      id: user.id,
+      name: user.name,
+      phone: user.phone,
+      email: user.email,
+      role: user.role,
+      is_verified: user.is_verified,
+      artistProfileCompleted,
+    };
   }
 
   async updateProfile(id, data) {

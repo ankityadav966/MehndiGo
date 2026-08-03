@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -8,86 +8,95 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Image,
 } from "react-native";
+import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
-import Ionicons from "@expo/vector-icons/Ionicons";
 import Colors from "../../constants/Colors";
-import { sendOtp } from "../../services/auth";
+import { registerSendOtp, checkEmail } from "../../services/auth";
 
 export default function RegisterScreen({ navigation }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [mobile, setMobile] = useState("");
-  const [role, setRole] = useState("USER");
+  const [selectedRole, setSelectedRole] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [nameError, setNameError] = useState("");
-  const [emailError, setEmailError] = useState("");
-  const [mobileError, setMobileError] = useState("");
-  const [apiError, setApiError] = useState("");
-  const [referralCode, setReferralCode] = useState("");
+  const [error, setError] = useState("");
 
-  useEffect(() => {
-    const checkReferral = async () => {
-      try {
-        const AsyncStorage = require("@react-native-async-storage/async-storage").default;
-        const code = await AsyncStorage.getItem("pendingReferralCode");
-        if (code) {
-          setReferralCode(code);
-        }
-      } catch (err) {
-        console.log("Error reading referral code:", err.message);
-      }
-    };
-    checkReferral();
-  }, []);
+  const handleNameChange = (text) => {
+    setName(text);
+    if (error) setError("");
+  };
+
+  const handleEmailChange = (text) => {
+    setEmail(text);
+    if (error) setError("");
+  };
 
   const handleRegister = async () => {
-    setNameError("");
-    setEmailError("");
-    setMobileError("");
-    setApiError("");
+    if (loading) return;
 
+    setError("");
     const trimmedName = name.trim();
-    const trimmedEmail = email.trim();
-    let trimmedPhone = mobile.trim();
-    if (trimmedPhone && !trimmedPhone.startsWith("+")) {
-      trimmedPhone = `+91${trimmedPhone}`;
-    }
+    const trimmedEmail = email.trim().toLowerCase();
 
     if (!trimmedName) {
-      setNameError("Please enter your name");
+      const msg = "Please enter your full name";
+      setError(msg);
+      Alert.alert("Required Field", msg);
       return;
     }
 
     if (!trimmedEmail) {
-      setEmailError("Please enter your email");
+      const msg = "Please enter your email address";
+      setError(msg);
+      Alert.alert("Required Field", msg);
       return;
     }
 
-    if (!trimmedPhone || trimmedPhone.length < 10) {
-      setMobileError("Please enter a valid mobile number");
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmedEmail)) {
+      const msg = "Please enter a valid email address (e.g. user@example.com)";
+      setError(msg);
+      Alert.alert("Invalid Email", msg);
+      return;
+    }
+
+    if (!selectedRole || (selectedRole !== "USER" && selectedRole !== "ARTIST")) {
+      const msg = "Please select whether you want to use MehendiGo as a Customer or Artist";
+      setError(msg);
+      Alert.alert("Role Required", msg);
       return;
     }
 
     setLoading(true);
     try {
-      const otpRes = await sendOtp(trimmedName, trimmedEmail, trimmedPhone, role);
-      const otp = otpRes?.data?.otp ? String(otpRes.data.otp) : "";
-      navigation.navigate("Otp", {
-        phone: trimmedPhone,
-        name: trimmedName,
-        email: trimmedEmail,
-        role,
-        otp,
-        referralCode: referralCode || "",
-      });
-    } catch (error) {
-      console.log("Register Screen sendOtp error:", error);
-      const message =
-        error?.response?.data?.message ||
-        error.message ||
-        "Failed to send OTP. Please try again.";
-      setApiError(message);
+      const checkRes = await checkEmail(trimmedEmail);
+      const emailStatus = checkRes?.data || checkRes;
+
+      if (emailStatus && emailStatus.exists) {
+        const msg = "An account already exists with this email. Please log in.";
+        setError(msg);
+        Alert.alert("Account Already Exists", msg);
+      } else {
+        const res = await registerSendOtp({ name: trimmedName, email: trimmedEmail, role: selectedRole });
+        const data = res?.data || res;
+        const otp = data.otp ? String(data.otp) : "";
+
+        Alert.alert("Registration OTP Sent", `Verification OTP has been sent to your email. (Dev code: ${otp})`);
+        navigation.navigate("Otp", {
+          name: trimmedName,
+          email: trimmedEmail,
+          role: selectedRole,
+          isRegistering: true,
+          mode: "register",
+          otp,
+        });
+      }
+    } catch (e) {
+      console.log("[REGISTER ERROR]:", e);
+      const msg = e?.response?.data?.message || e.message || "Failed to process registration. Please try again.";
+      setError(msg);
+      Alert.alert("Registration Error", msg);
     } finally {
       setLoading(false);
     }
@@ -99,112 +108,92 @@ export default function RegisterScreen({ navigation }) {
         style={styles.container}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <Text style={styles.title}>Create Account</Text>
-        <Text style={styles.subtitle}>Register to continue</Text>
-
-        {referralCode ? (
-          <View style={styles.referralBadge}>
-            <Ionicons name="gift-outline" size={16} color={Colors.primary} style={{ marginRight: 6 }} />
-            <Text style={styles.referralBadgeText}>Referral Code Applied: {referralCode}</Text>
-          </View>
-        ) : null}
-
-        <View style={[styles.inputContainer, nameError ? styles.inputError : null]}>
-          <TextInput
-            value={name}
-            onChangeText={(text) => {
-              setName(text);
-              setNameError("");
-            }}
-            style={styles.input}
-            placeholder="Full Name"
-            placeholderTextColor={Colors.placeholder}
+        <View style={styles.logoContainer}>
+          <Image
+            source={require("../../assets/images/logo.png")}
+            style={styles.logo}
+            resizeMode="contain"
           />
         </View>
-        {nameError ? <Text style={styles.errorText}>{nameError}</Text> : null}
 
-        <View style={[styles.inputContainer, emailError ? styles.inputError : null]}>
+        <Text style={styles.title}>Create Account</Text>
+        <Text style={styles.subtitle}>Fill in your details to sign up</Text>
+
+        <View style={styles.inputContainer}>
+          <TextInput
+            value={name}
+            onChangeText={handleNameChange}
+            editable={!loading}
+            style={[styles.input, loading && styles.disabledInput]}
+            placeholder="Full Name"
+            placeholderTextColor={Colors.placeholder}
+            maxLength={50}
+          />
+        </View>
+
+        <View style={[styles.inputContainer, { marginTop: 6 }]}>
           <TextInput
             value={email}
-            onChangeText={(text) => {
-              setEmail(text);
-              setEmailError("");
-            }}
-            style={styles.input}
+            onChangeText={handleEmailChange}
+            editable={!loading}
+            style={[styles.input, loading && styles.disabledInput]}
             placeholder="Email Address"
             placeholderTextColor={Colors.placeholder}
             keyboardType="email-address"
             autoCapitalize="none"
+            maxLength={100}
           />
         </View>
-        {emailError ? <Text style={styles.errorText}>{emailError}</Text> : null}
 
-        <View style={[styles.inputContainer, mobileError ? styles.inputError : null]}>
-          <TextInput
-            value={mobile}
-            onChangeText={(text) => {
-              setMobile(text);
-              setMobileError("");
-            }}
-            style={styles.input}
-            placeholder="Mobile Number"
-            placeholderTextColor={Colors.placeholder}
-            keyboardType="phone-pad"
-            maxLength={15}
-          />
-        </View>
-        {mobileError ? <Text style={styles.errorText}>{mobileError}</Text> : null}
-
-        {apiError ? <Text style={styles.errorText}>{apiError}</Text> : null}
-
-        <Text style={styles.roleLabel}>I want to</Text>
+        <Text style={styles.roleLabel}>I want to use MehendiGo as</Text>
+        
         <View style={styles.roleRow}>
           <TouchableOpacity
             activeOpacity={0.8}
-            style={[
-              styles.roleCard,
-              role === "USER" && styles.selectedRoleCard,
-            ]}
-            onPress={() => setRole("USER")}
+            disabled={loading}
+            style={[styles.roleCard, selectedRole === "USER" && styles.selectedRoleCard]}
+            onPress={() => {
+              setSelectedRole("USER");
+              setError("");
+            }}
           >
-            <View
-              style={[styles.radio, role === "USER" && styles.selectedRadio]}
-            >
-              {role === "USER" && <Text style={styles.radioDot}>✓</Text>}
+            <View style={[styles.radio, selectedRole === "USER" && styles.selectedRadio]}>
+              {selectedRole === "USER" && <Text style={styles.radioDot}>✓</Text>}
             </View>
-            <Text
-              style={[
-                styles.roleText,
-                role === "USER" && styles.selectedRoleText,
-              ]}
-            >
+            <Text style={[styles.roleText, selectedRole === "USER" && styles.selectedRoleText]}>
               Customer
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             activeOpacity={0.8}
-            style={[
-              styles.roleCard,
-              role === "ARTIST" && styles.selectedRoleCard,
-            ]}
-            onPress={() => setRole("ARTIST")}
+            disabled={loading}
+            style={[styles.roleCard, selectedRole === "ARTIST" && styles.selectedRoleCard]}
+            onPress={() => {
+              setSelectedRole("ARTIST");
+              setError("");
+            }}
           >
-            <View
-              style={[styles.radio, role === "ARTIST" && styles.selectedRadio]}
-            >
-              {role === "ARTIST" && <Text style={styles.radioDot}>✓</Text>}
+            <View style={[styles.radio, selectedRole === "ARTIST" && styles.selectedRadio]}>
+              {selectedRole === "ARTIST" && <Text style={styles.radioDot}>✓</Text>}
             </View>
-            <Text
-              style={[
-                styles.roleText,
-                role === "ARTIST" && styles.selectedRoleText,
-              ]}
-            >
-              Mehendi Artist
+            <Text style={[styles.roleText, selectedRole === "ARTIST" && styles.selectedRoleText]}>
+              Artist
             </Text>
           </TouchableOpacity>
         </View>
+
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+        <TouchableOpacity
+          disabled={loading}
+          onPress={() => {
+            setError("");
+            navigation.navigate("Login");
+          }}
+        >
+          <Text style={styles.linkText}>Already have an account? Log In</Text>
+        </TouchableOpacity>
 
         <TouchableOpacity
           style={[styles.registerButton, loading && styles.disabledButton]}
@@ -214,12 +203,8 @@ export default function RegisterScreen({ navigation }) {
           {loading ? (
             <ActivityIndicator color={Colors.white} size="small" />
           ) : (
-            <Text style={styles.registerText}>Register</Text>
+            <Text style={styles.registerText}>Register & Send OTP</Text>
           )}
-        </TouchableOpacity>
-
-        <TouchableOpacity onPress={() => navigation.navigate("Login")}>
-          <Text style={styles.loginLink}>Already have an account? Login</Text>
         </TouchableOpacity>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -228,109 +213,36 @@ export default function RegisterScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: Colors.white },
-  container: {
-    flex: 1,
-    backgroundColor: Colors.white,
-    paddingHorizontal: 24,
-    justifyContent: "center",
-  },
-  title: { fontSize: 30, fontWeight: "700", color: Colors.text },
-  subtitle: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    marginTop: 6,
-    marginBottom: 35,
-  },
-  referralBadge: {
-    flexDirection: "row",
+  container: { flex: 1, backgroundColor: Colors.white, paddingHorizontal: 24, justifyContent: "center" },
+  logoContainer: {
     alignItems: "center",
-    backgroundColor: "#FFF0F5",
-    borderColor: Colors.primary,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    marginBottom: 20,
+    marginBottom: 14,
+    marginTop: -16,
   },
-  referralBadgeText: {
-    fontSize: 13,
-    color: Colors.primary,
-    fontWeight: "600",
-  },
-  inputContainer: {
-    height: 58,
-    borderWidth: 1,
+  logo: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    borderWidth: 1.5,
     borderColor: Colors.border,
-    borderRadius: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 15,
-    marginBottom: 4,
-    backgroundColor: Colors.inputBackground,
   },
-  inputError: {
-    borderColor: Colors.error || "#FF3B30",
-  },
+  title: { fontSize: 26, fontWeight: "700", color: Colors.text, textAlign: "center" },
+  subtitle: { fontSize: 13, color: Colors.textSecondary, marginTop: 4, marginBottom: 16, textAlign: "center" },
+  inputContainer: { height: 52, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, flexDirection: "row", alignItems: "center", paddingHorizontal: 15, marginBottom: 4, backgroundColor: Colors.inputBackground },
   input: { flex: 1, fontSize: 15, color: Colors.text },
-  errorText: {
-    color: Colors.error || "#FF3B30",
-    fontSize: 12,
-    marginBottom: 12,
-    marginLeft: 4,
-  },
-  roleLabel: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: Colors.text,
-    marginBottom: 12,
-  },
-  roleRow: { flexDirection: "row", gap: 12, marginBottom: 24 },
-  roleCard: {
-    flex: 1,
-    height: 56,
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-    borderRadius: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 14,
-    backgroundColor: Colors.inputBackground,
-  },
-  selectedRoleCard: {
-    borderColor: Colors.primary,
-    backgroundColor: Colors.primaryLight + "20",
-  },
-  radio: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 10,
-  },
-  selectedRadio: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
-  },
-  radioDot: { color: Colors.white, fontWeight: "700", fontSize: 12 },
-  roleText: { fontSize: 14, fontWeight: "500", color: Colors.textSecondary },
+  disabledInput: { opacity: 0.6, color: Colors.textSecondary },
+  errorText: { color: Colors.error || "#FF3B30", fontSize: 12, marginBottom: 8, textAlign: "center" },
+  roleLabel: { fontSize: 14, fontWeight: "600", color: Colors.text, marginBottom: 8, marginTop: 10 },
+  roleRow: { flexDirection: "row", gap: 12, marginBottom: 14 },
+  roleCard: { flex: 1, height: 52, borderWidth: 1.5, borderColor: Colors.border, borderRadius: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingHorizontal: 12, backgroundColor: Colors.inputBackground },
+  selectedRoleCard: { borderColor: Colors.primary, backgroundColor: Colors.primaryLight + "20" },
+  radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, borderColor: Colors.border, justifyContent: "center", alignItems: "center", marginRight: 8 },
+  selectedRadio: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  radioDot: { color: Colors.white, fontWeight: "700", fontSize: 11 },
+  roleText: { fontSize: 14, fontWeight: "600", color: Colors.textSecondary },
   selectedRoleText: { color: Colors.primary, fontWeight: "700" },
-  registerButton: {
-    height: 55,
-    backgroundColor: Colors.primary,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: 8,
-  },
+  registerButton: { height: 52, backgroundColor: Colors.primary, borderRadius: 12, justifyContent: "center", alignItems: "center", marginTop: 10 },
   disabledButton: { opacity: 0.7 },
   registerText: { color: Colors.white, fontWeight: "700", fontSize: 16 },
-  loginLink: {
-    textAlign: "center",
-    marginTop: 30,
-    color: Colors.primary,
-    fontWeight: "600",
-  },
+  linkText: { color: Colors.primary, textAlign: "center", fontWeight: "600", marginBottom: 10, marginTop: 4 },
 });

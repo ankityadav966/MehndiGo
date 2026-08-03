@@ -132,6 +132,10 @@ export default function OtpScreen({ navigation, route }) {
           role: userRole,
         },
       });
+
+      if (isRegistering) {
+        navigation.navigate("RoleSelection");
+      }
     } catch (error) {
       console.log("Otp Verification error:", error);
       const message =

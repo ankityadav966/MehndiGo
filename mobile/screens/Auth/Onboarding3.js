@@ -57,9 +57,15 @@ export default function Onboarding3({ navigation }) {
       </Text>
 
       {/* Next Button */}
-      {/* <Pressable
+      <Pressable
         style={styles.button}
-        onPress={() => navigation.replace("Login")}
+        onPress={async () => {
+          try {
+            const AsyncStorage = require("@react-native-async-storage/async-storage").default;
+            await AsyncStorage.setItem("hasSeenOnboarding", "true");
+          } catch (e) {}
+          navigation.replace("Login");
+        }}
       >
         <Text style={styles.buttonText}>Get Started</Text>
 

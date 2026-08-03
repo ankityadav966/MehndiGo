@@ -1,6 +1,19 @@
 const UserService = require("../services/user.services");
-
 const { SuccessResponse, ErrorResponse } = require("../utils/common");
+
+async function checkEmail(req, res) {
+  console.log("\n[AUTH] Incoming Request: checkEmail");
+  console.log("[AUTH] Request Body:", req.body);
+  try {
+    const response = await UserService.checkEmail(req.body);
+    return res.status(200).json(SuccessResponse("Email checked successfully", response));
+  } catch (error) {
+    console.error("[AUTH] Final API Error:", error.message);
+    return res
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
+  }
+}
 
 async function registerSendOtp(req, res) {
   console.log("\n[AUTH] Incoming Request: registerSendOtp");
@@ -159,6 +172,7 @@ async function adminVerifyOtp(req, res) {
 }
 
 module.exports = {
+  checkEmail,
   registerSendOtp,
   registerVerifyOtp,
   sendOtp,

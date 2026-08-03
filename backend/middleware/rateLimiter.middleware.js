@@ -6,7 +6,8 @@ const rateLimit = require("express-rate-limit");
  */
 const otpRateLimiter = rateLimit({
   windowMs: 10 * 60 * 1000, // 10 minutes
-  max: 5, // Maximum 5 OTP attempts per window
+  max: 10,
+  skip: (req) => req.ip === "127.0.0.1" || req.ip === "::1" || req.ip === "::ffff:127.0.0.1",
   standardHeaders: true,
   legacyHeaders: false,
   message: {

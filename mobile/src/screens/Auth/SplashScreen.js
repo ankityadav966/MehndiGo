@@ -5,10 +5,21 @@ import Colors from "../../constants/Colors";
 
 export default function SplashScreen({ navigation }) {
   useEffect(() => {
-    const timeout = setTimeout(() => {
-      navigation.replace("Onboarding3");
-    }, 1500);
+    const checkOnboarding = async () => {
+      try {
+        const AsyncStorage = require("@react-native-async-storage/async-storage").default;
+        const hasSeen = await AsyncStorage.getItem("hasSeenOnboarding");
+        if (hasSeen === "true") {
+          navigation.replace("Login");
+        } else {
+          navigation.replace("Onboarding3");
+        }
+      } catch (e) {
+        navigation.replace("Onboarding3");
+      }
+    };
 
+    const timeout = setTimeout(checkOnboarding, 1500);
     return () => clearTimeout(timeout);
   }, [navigation]);
 

@@ -90,8 +90,12 @@ const rewardRoutes = require("./routes/reward.routes");
 const reviewRoutes = require("./routes/review.routes");
 const walletRoutes = require("./routes/wallet.routes");
 
+const userRoutes = require("./routes/v1/user.routes");
+
 const routeMap = [
   ["/auth", authRoutes],
+  ["/mehndigo/user", userRoutes],
+  ["/user", userRoutes],
   ["/analytics", analyticsRoutes],
   ["/security", securityRoutes],
   ["/customer", customerRoutes],
@@ -123,6 +127,20 @@ app.get("/health", (req, res) => {
     status: "UP",
     timestamp: new Date()
   });
+});
+
+const UserController = require("./controller/user.controller");
+app.post("/api/v1/mehndigo/user/check-email", UserController.checkEmail);
+app.post("/api/mehndigo/user/check-email", UserController.checkEmail);
+app.post("/mehndigo/user/check-email", UserController.checkEmail);
+app.post("/check-email", UserController.checkEmail);
+
+app.use((req, res, next) => {
+  if (req.path.includes("check-email") && req.method === "POST") {
+    console.log("[SERVER ROOT MATCH] Intercepted check-email request:", req.path);
+    return UserController.checkEmail(req, res);
+  }
+  next();
 });
 
 app.use("/api", require("./routes/index"));
@@ -202,7 +220,7 @@ const db = require("./models");
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(
-    `Server running on port ${PORT}`
+    `Server running on port ${PORT} [RELOADED: ${Date.now()}]`
   );
 });
 

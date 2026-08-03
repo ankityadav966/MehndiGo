@@ -8,6 +8,7 @@ const { validateBody } = require("../../middleware/validate.middleware");
 const { otpRateLimiter } = require("../../middleware/rateLimiter.middleware");
 
 // Routes
+router.post("/check-email", UserController.checkEmail);
 router.post("/register-send-otp", otpRateLimiter, validateBody(["name", "role"]), UserController.registerSendOtp);
 router.post("/register-verify-otp", validateBody(["otp"]), UserController.registerVerifyOtp);
 

@@ -8,96 +8,76 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  Image
+  Image,
 } from "react-native";
 import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
-import { sendOtp, registerSendOtp } from "../../services/auth";
+import { sendOtp, checkEmail } from "../../services/auth";
 
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState("");
-  const [name, setName] = useState("");
-
-  const [role, setRole] = useState("USER");
-  const [showRegistration, setShowRegistration] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const handleEmailChange = (text) => {
+    setEmail(text);
+    if (error) setError("");
+  };
+
   const handleContinue = async () => {
+    if (loading) return;
+
     setError("");
-    const trimmedEmail = email.trim();
+    const trimmedEmail = email.trim().toLowerCase();
 
     if (!trimmedEmail) {
-      setError("Please enter your email address");
+      const msg = "Please enter your email address";
+      setError(msg);
+      Alert.alert("Invalid Email", msg);
       return;
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(trimmedEmail)) {
-      setError("Please enter a valid email address");
+      const msg = "Please enter a valid email address (e.g. user@example.com)";
+      setError(msg);
+      Alert.alert("Invalid Email", msg);
       return;
     }
 
     setLoading(true);
     try {
-      const res = await sendOtp(trimmedEmail, undefined);
-      const data = res?.data || res;
+      // Step 1: Check account existence in Database (Read-only check, 0 OTPs sent)
+      const checkRes = await checkEmail(trimmedEmail);
+      const emailStatus = checkRes?.data || checkRes;
 
-      if (data.exists) {
-        const otp = data.otp ? String(data.otp) : "";
-        Alert.alert("Verification OTP", `OTP has been sent to your email. (Dev code: ${otp})`);
+      if (emailStatus && emailStatus.exists) {
+        // CASE A: EXISTING ACCOUNT -> Send Login OTP & Navigate to OTP Screen
+        const otpRes = await sendOtp({ email: trimmedEmail });
+        const otpData = otpRes?.data || otpRes;
+        const otp = otpData.otp ? String(otpData.otp) : "";
+        const existingRole = otpData.role || emailStatus.role || "USER";
+
+        Alert.alert("Login OTP Sent", `Verification OTP has been sent to your email. (Dev code: ${otp})`);
         navigation.navigate("Otp", {
           email: trimmedEmail,
-          role: data.role || "USER",
+          role: existingRole,
           isRegistering: false,
+          mode: "login",
           otp,
         });
       } else {
-        setShowRegistration(true);
-        Alert.alert("Create Account", "This email address is not registered. Please enter your details below to sign up.");
+        // CASE B: NO ACCOUNT FOUND -> Toast error and stay on Login screen (NO auto signup, NO role ask)
+        const msg = "No account found with this email. Please sign up first.";
+        setError(msg);
+        Alert.alert("Account Not Found", msg);
       }
     } catch (e) {
-      console.log("Send OTP Error:", e);
-      const msg = e?.response?.data?.message || e.message || "";
-      if (msg.toLowerCase().includes("not found") || msg.toLowerCase().includes("register")) {
-        setShowRegistration(true);
-        Alert.alert("Create Account", "This email address is not registered. Please enter your details below to sign up.");
-      } else {
-        setError(msg || "Failed to proceed. Please try again.");
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleRegister = async () => {
-    setError("");
-    const trimmedEmail = email.trim();
-    const trimmedName = name.trim();
-
-
-    if (!trimmedName) {
-      setError("Please enter your name");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const res = await registerSendOtp(trimmedName, trimmedEmail, null, role);
-      const data = res?.data || res;
-      const otp = data.otp ? String(data.otp) : "";
-
-      Alert.alert("Verification OTP", `OTP has been sent to your email. (Dev code: ${otp})`);
-      navigation.navigate("Otp", {
-        email: trimmedEmail,
-        role,
-        isRegistering: true,
-        otp,
-      });
-    } catch (e) {
-      console.log("Register Send OTP Error:", e);
-      setError(e?.response?.data?.message || e.message || "Failed to send registration OTP. Please try again.");
+      console.log("[LOGIN ERROR]:", e);
+      const msg = e?.response?.data?.message || e.message || "Failed to check email. Please try again.";
+      setError(msg);
+      Alert.alert("Error", msg);
     } finally {
       setLoading(false);
     }
@@ -118,21 +98,14 @@ export default function LoginScreen({ navigation }) {
         </View>
 
         <Text style={styles.title}>MehndiGo</Text>
-        <Text style={styles.subtitle}>
-          {showRegistration
-            ? "Complete your profile to register"
-            : "Enter your email address to continue"}
-        </Text>
+        <Text style={styles.subtitle}>Enter your email address to log in</Text>
 
         <View style={styles.inputContainer}>
           <TextInput
             value={email}
-            onChangeText={(text) => {
-              setEmail(text);
-              setError("");
-            }}
-            editable={!showRegistration}
-            style={[styles.input, showRegistration && styles.disabledInput]}
+            onChangeText={handleEmailChange}
+            editable={!loading}
+            style={[styles.input, loading && styles.disabledInput]}
             placeholder="Email Address"
             placeholderTextColor={Colors.placeholder}
             keyboardType="email-address"
@@ -141,79 +114,27 @@ export default function LoginScreen({ navigation }) {
           />
         </View>
 
-        {showRegistration && (
-          <>
-            <View style={[styles.inputContainer, { marginTop: 8 }]}>
-              <TextInput
-                value={name}
-                onChangeText={setName}
-                style={styles.input}
-                placeholder="Full Name"
-                placeholderTextColor={Colors.placeholder}
-                maxLength={50}
-              />
-            </View>
-
-
-            <Text style={styles.roleLabel}>I want to register as a</Text>
-            <View style={styles.roleRow}>
-              <TouchableOpacity
-                activeOpacity={0.8}
-                style={[styles.roleCard, role === "USER" && styles.selectedRoleCard]}
-                onPress={() => setRole("USER")}
-              >
-                <View style={[styles.radio, role === "USER" && styles.selectedRadio]}>
-                  {role === "USER" && <Text style={styles.radioDot}>✓</Text>}
-                </View>
-                <Text style={[styles.roleText, role === "USER" && styles.selectedRoleText]}>
-                  Customer
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                activeOpacity={0.8}
-                style={[styles.roleCard, role === "ARTIST" && styles.selectedRoleCard]}
-                onPress={() => setRole("ARTIST")}
-              >
-                <View style={[styles.radio, role === "ARTIST" && styles.selectedRadio]}>
-                  {role === "ARTIST" && <Text style={styles.radioDot}>✓</Text>}
-                </View>
-                <Text style={[styles.roleText, role === "ARTIST" && styles.selectedRoleText]}>
-                  Mehendi Artist
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </>
-        )}
-
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
         <TouchableOpacity
+          disabled={loading}
           onPress={() => {
-            setShowRegistration(!showRegistration);
-            setName("");
-
             setError("");
+            navigation.navigate("Register");
           }}
         >
-          <Text style={styles.linkText}>
-            {showRegistration
-              ? "Already have an account? Log In"
-              : "Don't have an account? Sign Up"}
-          </Text>
+          <Text style={styles.linkText}>Don't have an account? Sign Up</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={[styles.loginButton, loading && styles.disabledButton]}
-          onPress={showRegistration ? handleRegister : handleContinue}
+          onPress={handleContinue}
           disabled={loading}
         >
           {loading ? (
             <ActivityIndicator color={Colors.white} size="small" />
           ) : (
-            <Text style={styles.loginText}>
-              {showRegistration ? "Create Account" : "Continue"}
-            </Text>
+            <Text style={styles.loginText}>Continue</Text>
           )}
         </TouchableOpacity>
       </KeyboardAvoidingView>
@@ -226,33 +147,24 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.white, paddingHorizontal: 24, justifyContent: "center" },
   logoContainer: {
     alignItems: "center",
-    marginBottom: 24,
-    marginTop: -40,
+    marginBottom: 16,
+    marginTop: -20,
   },
   logo: {
-    width: 130,
-    height: 130,
-    borderRadius: 65,
+    width: 110,
+    height: 110,
+    borderRadius: 55,
     borderWidth: 1.5,
     borderColor: Colors.border,
   },
-  title: { fontSize: 30, fontWeight: "700", color: Colors.text, textAlign: "center" },
-  subtitle: { fontSize: 14, color: Colors.textSecondary, marginTop: 6, marginBottom: 25, textAlign: "center" },
-  inputContainer: { height: 58, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, flexDirection: "row", alignItems: "center", paddingHorizontal: 15, marginBottom: 4, backgroundColor: Colors.inputBackground },
+  title: { fontSize: 28, fontWeight: "700", color: Colors.text, textAlign: "center" },
+  subtitle: { fontSize: 13, color: Colors.textSecondary, marginTop: 4, marginBottom: 22, textAlign: "center" },
+  inputContainer: { height: 54, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, flexDirection: "row", alignItems: "center", paddingHorizontal: 15, marginBottom: 8, backgroundColor: Colors.inputBackground },
   input: { flex: 1, fontSize: 15, color: Colors.text },
   disabledInput: { opacity: 0.6, color: Colors.textSecondary },
-  errorText: { color: Colors.error || "#FF3B30", fontSize: 12, marginBottom: 12, marginLeft: 4, textAlign: "center" },
-  roleLabel: { fontSize: 15, fontWeight: "600", color: Colors.text, marginBottom: 12, marginTop: 12 },
-  roleRow: { flexDirection: "row", gap: 12, marginBottom: 16 },
-  roleCard: { flex: 1, height: 56, borderWidth: 1.5, borderColor: Colors.border, borderRadius: 14, flexDirection: "row", alignItems: "center", paddingHorizontal: 14, backgroundColor: Colors.inputBackground },
-  selectedRoleCard: { borderColor: Colors.primary, backgroundColor: Colors.primaryLight + "20" },
-  radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: Colors.border, justifyContent: "center", alignItems: "center", marginRight: 10 },
-  selectedRadio: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  radioDot: { color: Colors.white, fontWeight: "700", fontSize: 12 },
-  roleText: { fontSize: 14, fontWeight: "500", color: Colors.textSecondary },
-  selectedRoleText: { color: Colors.primary, fontWeight: "700" },
-  loginButton: { height: 55, backgroundColor: Colors.primary, borderRadius: 12, justifyContent: "center", alignItems: "center", marginTop: 15 },
+  errorText: { color: Colors.error || "#FF3B30", fontSize: 12, marginBottom: 8, textAlign: "center" },
+  loginButton: { height: 52, backgroundColor: Colors.primary, borderRadius: 12, justifyContent: "center", alignItems: "center", marginTop: 14 },
   disabledButton: { opacity: 0.7 },
   loginText: { color: Colors.white, fontWeight: "700", fontSize: 16 },
-  linkText: { color: Colors.primary, textAlign: "center", fontWeight: "600", marginBottom: 12, marginTop: 5 },
+  linkText: { color: Colors.primary, textAlign: "center", fontWeight: "600", marginBottom: 12, marginTop: 6 },
 });

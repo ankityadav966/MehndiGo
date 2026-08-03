@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useReducer, useCallback, useState } from "react";
 import { secureStorage } from "../utils/storage";
+import apiRequest from "../services/api";
 import {
   signInWithGoogle,
   signInWithEmail,
@@ -8,7 +9,7 @@ import {
   sendOtp as sendOtpService,
   verifyUserOtp as verifyUserOtpService,
   signOut as authSignOut,
-  refreshAccessToken,
+  checkEmail as checkEmailService,
 } from "../services/auth";
 
 const AuthContext = createContext(null);
@@ -24,24 +25,28 @@ const initialState = {
 
 function authReducer(state, action) {
   switch (action.type) {
-    case "RESTORE_SESSION":
+    case "RESTORE_SESSION": {
+      const userRole = action.payload.user?.role || action.payload.role;
       return {
         ...state,
         user: action.payload.user,
         token: action.payload.token,
-        role: action.payload.role,
+        role: userRole,
         isAuthenticated: !!action.payload.user,
         isLoading: false,
       };
-    case "LOGIN":
+    }
+    case "LOGIN": {
+      const userRole = action.payload.user?.role || action.payload.role;
       return {
         ...state,
         user: action.payload.user,
         token: action.payload.token,
-        role: action.payload.user?.role || action.payload.role,
+        role: userRole,
         isAuthenticated: true,
         isLoading: false,
       };
+    }
     case "SET_ROLE":
       return { ...state, role: action.payload };
     case "UPDATE_USER":
@@ -63,42 +68,73 @@ export function AuthProvider({ children }) {
     setIsDarkMode(false);
   }, []);
 
-  const toggleTheme = useCallback(async () => {
-    // No-op
-  }, []);
+  const toggleTheme = useCallback(async () => {}, []);
 
   useEffect(() => {
     try {
       const { applyTheme } = require("../theme/ThemeManager");
       applyTheme(isDarkMode);
-      console.log("[ThemeManager] Applied theme state:", isDarkMode ? "dark" : "light");
-    } catch (err) {
-      console.warn("[ThemeManager] Theme switch error:", err.message);
-    }
+    } catch (err) {}
   }, [isDarkMode]);
 
   useEffect(() => {
     global.logoutHandler = () => {
       dispatch({ type: "LOGOUT" });
     };
+
     async function restoreSession() {
       try {
         const token = await secureStorage.getAccessToken();
-        const user = await secureStorage.getUserData();
-        const role = await secureStorage.getUserRole();
-        if (token && user) {
-          dispatch({ type: "RESTORE_SESSION", payload: { user, token, role } });
-        } else {
-          dispatch({ type: "RESTORE_SESSION", payload: { user: null, token: null, role: null } });
+        const storedUser = await secureStorage.getUserData();
+        const storedRole = await secureStorage.getUserRole();
+
+        if (token && storedUser) {
+          // Instantly restore logged-in session so user goes DIRECTLY to Home!
+          dispatch({
+            type: "RESTORE_SESSION",
+            payload: {
+              user: storedUser,
+              token,
+              role: storedRole || storedUser.role || "USER",
+            },
+          });
+
+          // Background sync latest profile & artist completion status from backend
+          try {
+            const profileRes = await apiRequest("GET", "/api/v1/mehndigo/user/profile", null, true);
+            const freshUser = profileRes?.data || profileRes?.user || profileRes;
+            if (freshUser && typeof freshUser === "object") {
+              const freshRole = freshUser.role || storedRole || "USER";
+              await secureStorage.setUserData(freshUser);
+              await secureStorage.setUserRole(freshRole);
+              if (freshUser.artistProfileCompleted !== undefined) {
+                await secureStorage.setArtistProfileCompleted(freshUser.artistProfileCompleted);
+              }
+              dispatch({
+                type: "UPDATE_USER",
+                payload: freshUser,
+              });
+            }
+          } catch (bgErr) {
+            console.log("[AuthContext] Background profile sync note:", bgErr.message);
+          }
+          return;
         }
+
+        dispatch({ type: "RESTORE_SESSION", payload: { user: null, token: null, role: null } });
       } catch (e) {
         dispatch({ type: "RESTORE_SESSION", payload: { user: null, token: null, role: null } });
       }
     }
+
     restoreSession();
     return () => {
       global.logoutHandler = null;
     };
+  }, []);
+
+  const checkEmail = useCallback(async (email) => {
+    return await checkEmailService(email);
   }, []);
 
   const loginWithGoogle = useCallback(async (idToken) => {
@@ -147,19 +183,21 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  const sendOtp = useCallback(async (name, email, phone, role) => {
-    return await sendOtpService(name, email, phone, role);
+  const sendOtp = useCallback(async (options) => {
+    return await sendOtpService(options);
   }, []);
 
-  const verifyOtpAndAuthenticate = useCallback(async (phone, otp) => {
+  const verifyOtpAndAuthenticate = useCallback(async (email, otp) => {
     try {
-      const data = await verifyUserOtpService(phone, otp);
+      const data = await verifyUserOtpService(email, otp);
+      const user = data.user;
+      const role = user?.role || "USER";
       dispatch({
         type: "LOGIN",
         payload: {
-          user: data.user,
-          token: data.token,
-          role: data.user.role,
+          user,
+          token: data.token || data.accessToken,
+          role,
         },
       });
       return data;
@@ -188,6 +226,7 @@ export function AuthProvider({ children }) {
       ...state,
       isDarkMode,
       toggleTheme,
+      checkEmail,
       loginWithGoogle,
       loginWithEmail,
       register,
@@ -199,7 +238,21 @@ export function AuthProvider({ children }) {
       setOnboardingComplete,
       dispatch,
     }),
-    [state, isDarkMode, toggleTheme, loginWithGoogle, loginWithEmail, register, verifyOtpAndLogin, sendOtp, verifyOtpAndAuthenticate, logout, setUserRole, setOnboardingComplete],
+    [
+      state,
+      isDarkMode,
+      toggleTheme,
+      checkEmail,
+      loginWithGoogle,
+      loginWithEmail,
+      register,
+      verifyOtpAndLogin,
+      sendOtp,
+      verifyOtpAndAuthenticate,
+      logout,
+      setUserRole,
+      setOnboardingComplete,
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
