@@ -13,6 +13,22 @@ import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import { deletePortfolioItem } from "../../services/artist";
+import { getNormalizedUrl } from "../../services/api";
+
+const resolveImage = (uri) => {
+  if (!uri || typeof uri !== "string") return "";
+  const trimmed = uri.trim();
+  if (
+    trimmed.startsWith("http://") ||
+    trimmed.startsWith("https://") ||
+    trimmed.startsWith("file://") ||
+    trimmed.startsWith("content://") ||
+    trimmed.startsWith("data:")
+  ) {
+    return trimmed;
+  }
+  return getNormalizedUrl(trimmed);
+};
 
 let VideoComponent = null;
 
@@ -89,14 +105,14 @@ export default function PortfolioDetailScreen({ route, navigation }) {
               isLooping={true}
               useNativeControls
               usePoster={true}
-              posterSource={{ uri: portfolio.image_url }}
+              posterSource={{ uri: resolveImage(portfolio.image_url) }}
               posterStyle={{ resizeMode: "cover" }}
               style={styles.videoPlayer}
             />
           ) : (
             <TouchableOpacity style={styles.videoPlaceholder} onPress={handlePlayVideo} activeOpacity={0.9}>
               <Image
-                source={{ uri: portfolio.image_url }}
+                source={{ uri: resolveImage(portfolio.image_url) }}
                 style={styles.coverImage}
                 resizeMode="cover"
               />
@@ -108,7 +124,7 @@ export default function PortfolioDetailScreen({ route, navigation }) {
           )
         ) : (
           <Image
-            source={{ uri: portfolio.image_url }}
+            source={{ uri: resolveImage(portfolio.image_url) }}
             style={styles.coverImage}
             resizeMode="cover"
           />

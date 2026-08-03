@@ -78,8 +78,7 @@ class PortfolioRepository
       .findAll({
 
         where: {
-          artist_id,
-          title: { [db.Sequelize.Op.ne]: null }
+          artist_id
         },
 
         include: [

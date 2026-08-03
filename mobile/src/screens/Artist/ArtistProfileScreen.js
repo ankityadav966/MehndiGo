@@ -189,18 +189,20 @@ export default function ArtistProfileScreen({ navigation }) {
     }
   };
 
-  const resolveImage = (uri) => {
+  const resolveImage = (uri, videoUrl) => {
+    const target = uri || videoUrl;
     const placeholder = "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=300";
-    if (!uri) return placeholder;
-    if (uri.startsWith("http://") || uri.startsWith("https://") || uri.startsWith("file://") || uri.startsWith("content://")) {
-      return uri;
+    if (!target) return placeholder;
+    let finalUrl = target;
+    if (!target.startsWith("http://") && !target.startsWith("https://") && !target.startsWith("file://") && !target.startsWith("content://")) {
+      const cleanUri = target.startsWith("/") ? target : `/${target}`;
+      const { SOCKET_URL } = require("../../services/api");
+      finalUrl = `${SOCKET_URL}${cleanUri}`;
     }
-    const cleanUri = uri.startsWith("/") ? uri : `/${uri}`;
-    const { SOCKET_URL } = require("../../services/api");
-    if (!SOCKET_URL) return placeholder;
-    const finalUrl = `${SOCKET_URL}${cleanUri}`;
-    if (!finalUrl.startsWith("http://") && !finalUrl.startsWith("https://")) {
-      return placeholder;
+    if (finalUrl.includes("/video/upload/")) {
+      return finalUrl
+        .replace("/video/upload/", "/video/upload/so_0,f_jpg/")
+        .replace(/\.(mp4|mov|3gp|mkv|webm|avi|flv)$/i, ".jpg");
     }
     return finalUrl;
   };
@@ -337,7 +339,8 @@ export default function ArtistProfileScreen({ navigation }) {
 
   const renderGridItem = (item, index) => {
     const isService = activeTab === "Services";
-    const uri = isService ? item.image : item.image_url;
+    const rawUri = isService ? item.image : (item.image_url || item.video_url);
+    const uri = resolveImage(rawUri, item.video_url);
     const isVideo = !isService && !!item.video_url;
     const title = isService ? item.serviceName : item.title;
 
@@ -349,6 +352,12 @@ export default function ArtistProfileScreen({ navigation }) {
         onPress={() => {
           if (isService) {
             navigation.navigate("ServiceDetails", { id: item.id });
+          } else if (isVideo) {
+            console.log("[PORTFOLIO VIDEO URL]", item.video_url);
+            navigation.navigate("VideoPlayer", {
+              videoUrl: item.video_url,
+              title: item.title || "Portfolio Video"
+            });
           } else {
             navigation.navigate("PortfolioDetail", { portfolio: item });
           }

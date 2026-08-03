@@ -188,9 +188,12 @@ const db = require("./models");
     await db.sequelize.query('ALTER TABLE "Wallets" ADD COLUMN IF NOT EXISTS weekly_earnings DOUBLE PRECISION DEFAULT 0;');
     await db.sequelize.query('ALTER TABLE "Wallets" ADD COLUMN IF NOT EXISTS monthly_earnings DOUBLE PRECISION DEFAULT 0;');
 
+    await db.User.sync({ alter: true });
+    await db.Wallet.sync({ alter: true });
+    await db.WalletTransaction.sync({ alter: true });
     await db.LedgerEntry.sync({ alter: true });
     await db.OutstandingCommission.sync({ alter: true });
-    console.log("[DB MIGRATION] Ledger, Wallets, and OutstandingCommissions schema updated successfully.");
+    console.log("[DB MIGRATION] Users, Wallets, WalletTransactions, Ledger, and OutstandingCommissions schema updated successfully.");
   } catch (err) {
     console.log("[DB MIGRATION] Self-healing migration note:", err.message);
   }

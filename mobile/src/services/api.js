@@ -51,6 +51,31 @@ export function getNormalizedUrl(endpoint) {
   return `${baseUrl}${cleanEndpoint}`;
 }
 
+export function resolvePortfolioImage(imageUrl, videoUrl) {
+  const url = imageUrl || videoUrl;
+  if (!url || typeof url !== "string") return "";
+  const trimmed = url.trim();
+  let resolved = trimmed;
+  if (
+    !trimmed.startsWith("http://") &&
+    !trimmed.startsWith("https://") &&
+    !trimmed.startsWith("file://") &&
+    !trimmed.startsWith("content://") &&
+    !trimmed.startsWith("data:")
+  ) {
+    resolved = getNormalizedUrl(trimmed);
+  }
+
+  // If it's a Cloudinary video URL, generate Cloudinary image frame thumbnail
+  if (resolved.includes("/video/upload/")) {
+    return resolved
+      .replace("/video/upload/", "/video/upload/so_0,f_jpg/")
+      .replace(/\.(mp4|mov|3gp|mkv|webm|avi|flv)$/i, ".jpg");
+  }
+
+  return resolved;
+}
+
 // Token mask utility for diagnostic logs
 export function sanitizeLogData(str) {
   if (typeof str !== "string") return str;
@@ -60,14 +85,18 @@ export function sanitizeLogData(str) {
 // Deduplication map for in-flight GET requests
 const inflightGetRequests = new Map();
 
-
 async function apiRequest(method, endpoint, body = null, auth = false) {
   const url = getNormalizedUrl(endpoint);
-  
+
   // In-flight GET request deduplication
   const requestKey = `${method.toUpperCase()}:${url}:${auth}`;
   if (method.toUpperCase() === "GET" && inflightGetRequests.has(requestKey)) {
-    return inflightGetRequests.get(requestKey);
+    try {
+      const cachedResult = await inflightGetRequests.get(requestKey);
+      return JSON.parse(JSON.stringify(cachedResult));
+    } catch {
+      // Fall through if cache read fails
+    }
   }
 
   const fetchPromise = (async () => {
@@ -80,13 +109,35 @@ async function apiRequest(method, endpoint, body = null, auth = false) {
       }
     }
 
-    const options = { method, headers };
-    if (body) {
-      options.body = JSON.stringify(body);
-    }
+    const makeFetch = async (reqHeaders) => {
+      const reqOptions = {
+        method: method.toUpperCase(),
+        headers: { ...reqHeaders }
+      };
+      if (body) {
+        reqOptions.body = typeof body === "string" ? body : JSON.stringify(body);
+      }
+
+      try {
+        return await fetch(url, reqOptions);
+      } catch (err) {
+        if (err && err.message && err.message.includes("NativeRequest")) {
+          console.warn("[API] Retrying fetch due to Expo NativeRequest error:", err.message);
+          const freshOptions = {
+            method: method.toUpperCase(),
+            headers: { ...reqHeaders }
+          };
+          if (body) {
+            freshOptions.body = typeof body === "string" ? body : JSON.stringify(body);
+          }
+          return await fetch(url, freshOptions);
+        }
+        throw err;
+      }
+    };
 
     try {
-      const response = await fetch(url, options);
+      const response = await makeFetch(headers);
 
       let data;
       const contentType = response.headers.get("content-type") || "";
@@ -102,9 +153,8 @@ async function apiRequest(method, endpoint, body = null, auth = false) {
       }
 
       if (response.status === 401) {
-        // Attempt automatic refresh token rotation
         const storedRefreshToken = await secureStorage.getRefreshToken();
-        if (storedRefreshToken && !options._isRetry) {
+        if (storedRefreshToken) {
           try {
             const refreshUrl = getNormalizedUrl("/auth/refresh-token");
             const refreshRes = await fetch(refreshUrl, {
@@ -120,9 +170,8 @@ async function apiRequest(method, endpoint, body = null, auth = false) {
 
               if (newAccess) {
                 await secureStorage.saveTokens(newAccess, newRefresh || storedRefreshToken);
-                headers.Authorization = `Bearer ${newAccess}`;
-                options._isRetry = true;
-                const retryResponse = await fetch(url, options);
+                const retryHeaders = { ...headers, Authorization: `Bearer ${newAccess}` };
+                const retryResponse = await makeFetch(retryHeaders);
                 return await retryResponse.json();
               }
             }
@@ -135,7 +184,7 @@ async function apiRequest(method, endpoint, body = null, auth = false) {
         if (global.logoutHandler) {
           global.logoutHandler();
         }
-        throw new Error(data.message || "Unauthorized session");
+        throw new Error(data?.message || "Unauthorized session");
       }
 
       if (!response.ok) {

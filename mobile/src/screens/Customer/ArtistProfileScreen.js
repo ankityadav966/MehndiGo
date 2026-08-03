@@ -16,6 +16,22 @@ import {
 } from "react-native";
 import Alert from "../../utils/Alert";
 import Colors from "../../constants/Colors";
+import { getNormalizedUrl } from "../../services/api";
+
+const resolveImage = (uri) => {
+  if (!uri || typeof uri !== "string") return "";
+  const trimmed = uri.trim();
+  if (
+    trimmed.startsWith("http://") ||
+    trimmed.startsWith("https://") ||
+    trimmed.startsWith("file://") ||
+    trimmed.startsWith("content://") ||
+    trimmed.startsWith("data:")
+  ) {
+    return trimmed;
+  }
+  return getNormalizedUrl(trimmed);
+};
 import { createBooking, getBookingHistory } from "../../services/booking";
 import {
   fetchArtistProfile,
@@ -484,7 +500,7 @@ export default function ArtistProfileScreen({ route, navigation }) {
                     }
                   }}
                 >
-                  <Image source={{ uri: item.image_url }} style={styles.portfolioThumb} />
+                  <Image source={{ uri: resolveImage(item.image_url) }} style={styles.portfolioThumb} />
                   {item.video_url && (
                     <View style={styles.videoBadge}>
                       <Ionicons name="play" size={12} color={Colors.white} />

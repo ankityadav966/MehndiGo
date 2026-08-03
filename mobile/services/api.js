@@ -1,15 +1,5 @@
 import { secureStorage } from "../utils/storage";
 
-/**
- * ENVIRONMENT SWITCHING GUIDE:
- * - Local Development: Expo CLI automatically loads the `.env.local` file when you start the project
- *   using `npx expo start`. It resolves requests to: http://98.70.11.123:3000/api/v1
- * - Production Build: Expo's builder (or eas-cli) automatically loads `.env.production` during the
- *   bundling phase. It resolves requests to: https://mehandigo-api.globalrns.com/api/v1
- * 
- * You do NOT need to modify the source code to change environments. Simply start development or bundle
- * for release and the correct URL will be resolved automatically.
- */
 const getBaseUrl = () => {
   let envUrl = process.env.EXPO_PUBLIC_API_URL || "http://192.168.1.17:8000/api/v1";
   return envUrl.endsWith("/") ? envUrl.slice(0, -1) : envUrl;
@@ -17,7 +7,6 @@ const getBaseUrl = () => {
 
 export const BASE_URL = getBaseUrl();
 
-// Dynamically construct the SOCKET_URL from the base URL (extracting protocol, host, and port)
 const getSocketUrl = () => {
   if (!BASE_URL) return "";
   try {
@@ -38,88 +27,190 @@ export function getNormalizedUrl(endpoint) {
   let baseUrl = BASE_URL;
   let cleanEndpoint = endpoint;
 
-  // Ensure endpoint starts with a slash
   if (!cleanEndpoint.startsWith("/")) {
     cleanEndpoint = "/" + cleanEndpoint;
   }
 
-  // Defensive: Strip trailing /mehndigo from base URL if present to prevent double-prefixing
   if (baseUrl.endsWith("/api/v1/mehndigo")) {
     baseUrl = baseUrl.substring(0, baseUrl.length - 9);
   }
 
-  // Normalize endpoints to avoid double prefixing and handle root vs /api/v1 namespaces
   if (cleanEndpoint.startsWith("/api/v1/")) {
     if (baseUrl.endsWith("/api/v1")) {
-      cleanEndpoint = cleanEndpoint.substring(7); // strip /api/v1 from endpoint
+      cleanEndpoint = cleanEndpoint.substring(7);
     }
   } else {
-    // Root level endpoints (e.g. /wallet, /auth/login) shouldn't be prefixed with /api/v1
     if (baseUrl.endsWith("/api/v1")) {
       baseUrl = baseUrl.substring(0, baseUrl.length - 7);
     }
   }
 
-  // Construct URL
   if (baseUrl.endsWith("/")) {
     baseUrl = baseUrl.slice(0, -1);
   }
-  let url = `${baseUrl}${cleanEndpoint}`;
-
-  return url;
+  return `${baseUrl}${cleanEndpoint}`;
 }
+
+export function resolvePortfolioImage(imageUrl, videoUrl) {
+  const url = imageUrl || videoUrl;
+  if (!url || typeof url !== "string") return "";
+  const trimmed = url.trim();
+  let resolved = trimmed;
+  if (
+    !trimmed.startsWith("http://") &&
+    !trimmed.startsWith("https://") &&
+    !trimmed.startsWith("file://") &&
+    !trimmed.startsWith("content://") &&
+    !trimmed.startsWith("data:")
+  ) {
+    resolved = getNormalizedUrl(trimmed);
+  }
+
+  // If it's a Cloudinary video URL, generate Cloudinary image frame thumbnail
+  if (resolved.includes("/video/upload/")) {
+    return resolved
+      .replace("/video/upload/", "/video/upload/so_0,f_jpg/")
+      .replace(/\.(mp4|mov|3gp|mkv|webm|avi|flv)$/i, ".jpg");
+  }
+
+  return resolved;
+}
+
+// Token mask utility for diagnostic logs
+export function sanitizeLogData(str) {
+  if (typeof str !== "string") return str;
+  return str.replace(/Bearer\s+[A-Za-z0-9-_=]+\.[A-Za-z0-9-_=]+\.?[A-Za-z0-9-_.+/=]*/gi, "Bearer ***MASKED***");
+}
+
+// Deduplication map for in-flight GET requests
+const inflightGetRequests = new Map();
 
 async function apiRequest(method, endpoint, body = null, auth = false) {
   const url = getNormalizedUrl(endpoint);
-  console.log(`[API REQUEST] ${method} -> ${url}`);
 
-  const headers = { "Content-Type": "application/json" };
-
-  if (auth) {
-    const token = await secureStorage.getAccessToken();
-    if (token) {
-      headers.Authorization = `Bearer ${token}`;
+  // In-flight GET request deduplication
+  const requestKey = `${method.toUpperCase()}:${url}:${auth}`;
+  if (method.toUpperCase() === "GET" && inflightGetRequests.has(requestKey)) {
+    try {
+      const cachedResult = await inflightGetRequests.get(requestKey);
+      return JSON.parse(JSON.stringify(cachedResult));
+    } catch {
+      // Fall through if cache read fails
     }
   }
 
-  const options = { method, headers };
-  if (body) {
-    options.body = JSON.stringify(body);
-  }
-  try {
-    const response = await fetch(url, options);
+  const fetchPromise = (async () => {
+    const headers = { "Content-Type": "application/json" };
 
-    let data;
-    const contentType = response.headers.get("content-type") || "";
-    if (contentType.includes("application/json")) {
-      data = await response.json();
-    } else {
-      const text = await response.text();
+    if (auth) {
+      const token = await secureStorage.getAccessToken();
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+    }
+
+    const makeFetch = async (reqHeaders) => {
+      const reqOptions = {
+        method: method.toUpperCase(),
+        headers: { ...reqHeaders }
+      };
+      if (body) {
+        reqOptions.body = typeof body === "string" ? body : JSON.stringify(body);
+      }
+
       try {
-        data = JSON.parse(text);
-      } catch {
-        data = { message: text };
+        return await fetch(url, reqOptions);
+      } catch (err) {
+        if (err && err.message && err.message.includes("NativeRequest")) {
+          console.warn("[API] Retrying fetch due to Expo NativeRequest error:", err.message);
+          const freshOptions = {
+            method: method.toUpperCase(),
+            headers: { ...reqHeaders }
+          };
+          if (body) {
+            freshOptions.body = typeof body === "string" ? body : JSON.stringify(body);
+          }
+          return await fetch(url, freshOptions);
+        }
+        throw err;
+      }
+    };
+
+    try {
+      const response = await makeFetch(headers);
+
+      let data;
+      const contentType = response.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = { message: text };
+        }
+      }
+
+      if (response.status === 401) {
+        const storedRefreshToken = await secureStorage.getRefreshToken();
+        if (storedRefreshToken) {
+          try {
+            const refreshUrl = getNormalizedUrl("/auth/refresh-token");
+            const refreshRes = await fetch(refreshUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ refreshToken: storedRefreshToken })
+            });
+
+            if (refreshRes.ok) {
+              const refreshData = await refreshRes.json();
+              const newAccess = refreshData?.data?.token || refreshData?.token;
+              const newRefresh = refreshData?.data?.refreshToken || refreshData?.refreshToken;
+
+              if (newAccess) {
+                await secureStorage.saveTokens(newAccess, newRefresh || storedRefreshToken);
+                const retryHeaders = { ...headers, Authorization: `Bearer ${newAccess}` };
+                const retryResponse = await makeFetch(retryHeaders);
+                return await retryResponse.json();
+              }
+            }
+          } catch (refreshErr) {
+            if (__DEV__) console.log("[API] Automatic token refresh failed:", refreshErr.message);
+          }
+        }
+
+        await secureStorage.clearAll();
+        if (global.logoutHandler) {
+          global.logoutHandler();
+        }
+        throw new Error(data?.message || "Unauthorized session");
+      }
+
+      if (!response.ok) {
+        const err = new Error(data?.message || data?.error || response.statusText || "Something went wrong");
+        err.response = { data, status: response.status, statusText: response.statusText };
+        throw err;
+      }
+
+      return data;
+    } catch (error) {
+      if (__DEV__) {
+        console.warn(`[API ERROR] ${method} ${endpoint}:`, error.message);
+      }
+      throw error;
+    } finally {
+      if (method.toUpperCase() === "GET") {
+        inflightGetRequests.delete(requestKey);
       }
     }
+  })();
 
-    if (response.status === 401) {
-      await secureStorage.clearAll();
-      if (global.logoutHandler) {
-        global.logoutHandler();
-      }
-    }
-
-    if (!response.ok) {
-      const err = new Error(data?.message || data?.error || response.statusText || "Something went wrong");
-      err.response = { data, status: response.status, statusText: response.statusText };
-      throw err;
-    }
-
-    return data;
-  } catch (error) {
-    console.warn(`[API ERROR] ${method} ${endpoint} (Status: ${error.response?.status || "NETWORK_ERROR"}):`, error.message);
-    throw error;
+  if (method.toUpperCase() === "GET") {
+    inflightGetRequests.set(requestKey, fetchPromise);
   }
+
+  return fetchPromise;
 }
 
 export default apiRequest;
