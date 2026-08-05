@@ -1,4 +1,6 @@
 # Environment files
 node_modules
 .env
-
+backend/uploads/
+backend/temp_uploads/
+*.mp4

@@ -34,7 +34,7 @@ export default function RootNavigator() {
           <Stack.Screen name="Login" component={LoginScreen} />
           <Stack.Screen name="Otp" component={OtpScreen} />
         </>
-      ) : user?.role === "ARTIST" ? (
+      ) : (user?.role || "").toUpperCase() === "ARTIST" ? (
         artistProfileCompleted ? (
           <>
             <Stack.Screen name="ArtistStack" component={ArtistStack} />

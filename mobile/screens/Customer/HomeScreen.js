@@ -198,31 +198,13 @@ export default function HomeScreen({ navigation }) {
             if (hasChanges) {
               dispatch({ type: "UPDATE_USER", payload: profileData });
             }
-
-            // Check if phone number is missing
-            if (!profileData.phone) {
-              const { Alert } = require("react-native");
-              Alert.alert(
-                "Phone Number Required",
-                "Please update your phone number to continue using MehndiGo.",
-                [
-                  {
-                    text: "Update Now",
-                    onPress: () => navigation.navigate("EditProfile")
-                  }
-                ],
-                { cancelable: false }
-              );
-            }
           }
         } catch (e) {
           console.log("Failed to sync customer profile on Home:", e.message);
         }
       }
 
-      if (user && !user.phone) {
-        syncUserProfile();
-      } else if (!user?.profile_image || !user?.city) {
+      if (user && (!user?.profile_image || !user?.city)) {
         syncUserProfile();
       }
 

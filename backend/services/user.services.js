@@ -62,27 +62,41 @@ class UserService {
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const hashPassword = password ? crypto.createHash("sha256").update(password).digest("hex") : null;
 
+    const normalizedRole = (String(role).toUpperCase() === "ARTIST") ? "ARTIST" : "USER";
+
+    const trimmedName = String(name).trim();
+    const cleanPhone = phone ? String(phone).trim().replace(/[\s-()]/g, "") : null;
+
     // Store registration data temporarily in OTP table
     const payload = JSON.stringify({
-      name,
+      name: trimmedName,
       email: trimmedEmail,
-      phone: phone ? phone.trim() : null,
+      phone: cleanPhone,
       password: hashPassword,
-      role
+      role: normalizedRole
     });
 
     await OtpRepositor.create({
-      phone: phone || null,
+      phone: cleanPhone,
       email: trimmedEmail,
       otp,
       registration_payload: payload,
       expires_at: new Date(Date.now() + 5 * 60 * 1000),
     });
 
-    await sendOtpEmail(trimmedEmail, otp, name);
+    await sendOtpEmail(trimmedEmail, otp, trimmedName);
     console.log(`\n==================================\nEMAIL OTP (Register)\nEmail: ${trimmedEmail}\nOTP: ${otp}\n==================================\n`);
 
     return { email: trimmedEmail, otp }; // OTP returned for dev testing easily
+  }
+
+  // Aliases for UserController
+  async sendOtp(data) {
+    return this.loginSendOtp(data);
+  }
+
+  async verifyOtp(data) {
+    return this.loginVerifyOtp(data);
   }
 
   // 2. Registration - Verify OTP & Create Account
@@ -122,17 +136,18 @@ class UserService {
     }
 
     const payload = JSON.parse(otpData.registration_payload);
+    const dbRole = (String(payload.role).toUpperCase() === "ARTIST") ? "ARTIST" : "USER";
 
     // Verify OTP
     await OtpRepositor.update(otpData.id, { verified: true });
 
-    // Create User (phone is nullable/optional)
+    // Create User (preserves exact name, phone, email, and dbRole)
     const user = await UserRepositor.create({
       name: payload.name,
-      phone: payload.phone || null,
+      phone: payload.phone,
       email: payload.email,
       password: payload.password,
-      role: payload.role,
+      role: dbRole,
       is_verified: true,
       last_login_at: new Date(),
     });

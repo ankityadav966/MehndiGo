@@ -889,15 +889,6 @@ async updateBookingStatus(
       });
     }
 
-    return {
-      success: true,
-      message: "Payment verified successfully",
-      order_id: orderId,
-      payment_id: paymentId
-    };
-  }
-
-
     // Real-time Socket.IO alert to artist
     try {
       const io = getIO();
@@ -914,7 +905,12 @@ async updateBookingStatus(
       });
     } catch (e) { /* socket not initialized */ }
 
-    return { success: true };
+    return {
+      success: true,
+      message: "Payment verified successfully",
+      order_id: orderId,
+      payment_id: paymentId
+    };
   }
 
 async createReview(data) {
