@@ -482,7 +482,7 @@ export default function ArtistListingScreen({ route, navigation }) {
           key={layoutMode === "grid" ? "grid-view-list" : "list-view-list"}
           data={artists}
           numColumns={layoutMode === "grid" ? 2 : 1}
-          keyExtractor={(item) => String(item.id)}
+          keyExtractor={(item, index) => String(item.id || item.user_id || item.artist_id || index)}
           renderItem={layoutMode === "grid" ? renderGridArtistCard : renderListArtistCard}
           columnWrapperStyle={layoutMode === "grid" ? styles.gridRowWrapper : null}
           initialNumToRender={6}

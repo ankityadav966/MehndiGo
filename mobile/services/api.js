@@ -100,7 +100,6 @@ async function apiRequest(method, endpoint, body = null, auth = false) {
       err.response = { data, status: response.status, statusText: response.statusText };
       throw err;
     }
-
     return data;
   } catch (error) {
     console.warn(`[API ERROR] ${method} ${endpoint} (Status: ${error.response?.status || "NETWORK_ERROR"}):`, error.message);

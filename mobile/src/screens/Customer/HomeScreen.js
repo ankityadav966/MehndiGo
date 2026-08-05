@@ -78,11 +78,12 @@ export default function HomeScreen({ navigation }) {
     if (!isRefresh) setDashboardLoading(true);
     try {
       const data = await getHomeDashboard(MOCK_LAT, MOCK_LNG);
+      console.log("[HOME DASHBOARD SUCCESS DATA]:", JSON.stringify(data, null, 2));
       setCategories(data?.categories || []);
-      setOffers(data?.offers || []);
-      setFeaturedArtists(data?.featuredArtists || []);
-      setPopularArtists(data?.popularArtists || []);
-      setRecentlyBookedArtists(data?.recentlyBooked || []);
+      setOffers(data?.offers || data?.banners || []);
+      setFeaturedArtists(data?.featured_artists || data?.featuredArtists || []);
+      setPopularArtists(data?.popular_artists || data?.popularArtists || []);
+      setRecentlyBookedArtists(data?.recently_booked || data?.recentlyBooked || []);
 
       // Load favorites from database
       try {
@@ -239,6 +240,7 @@ export default function HomeScreen({ navigation }) {
 
   // Toggle favorite
   const toggleFavorite = async (artistId) => {
+    if (!artistId) return;
     const isFav = !!favorites[artistId];
     // Optimistic UI update
     setFavorites((prev) => ({
@@ -419,24 +421,30 @@ export default function HomeScreen({ navigation }) {
 
   // Render an artist horizontal card (Featured & Popular)
   const renderHorizontalArtistItem = ({ item }) => {
-    const isFav = !!favorites[item.id];
+    const artistId = item.id || item.user_id || item.artist_id;
+    const isFav = !!favorites[artistId];
+    const artistName = item.name || item.full_name || item.user?.name || "Artist";
+    const artistImage = item.profile_image || item.user?.profile_image || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400";
+    const startingPrice = item.starting_price || item.services?.[0]?.minimum_price || 1500;
+    const ratingVal = Number(item.rating || item.avg_rating || 4.8).toFixed(1);
+
     return (
       <TouchableOpacity
         style={[styles.horizontalArtistCard, { backgroundColor: currentCardBg, borderColor: currentBorderColor }]}
-        onPress={() => navigation.navigate("ArtistProfile", { artistId: item.id })}
+        onPress={() => navigation.navigate("ArtistProfile", { artistId })}
       >
         <Image
-          source={{ uri: item.user?.profile_image || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400" }}
+          source={{ uri: artistImage }}
           style={styles.horizontalArtistImage}
         />
-        {item.verification_status === "APPROVED" && (
+        {(item.status === "approved" || item.status === "APPROVED" || item.verification_status === "APPROVED") && (
           <View style={styles.verifiedBadge}>
             <Ionicons name="checkmark-circle" size={14} color={Colors.white} />
           </View>
         )}
         <TouchableOpacity
           style={styles.favoriteBadge}
-          onPress={() => toggleFavorite(item.id)}
+          onPress={() => toggleFavorite(artistId)}
         >
           <Ionicons
             name={isFav ? "heart" : "heart-outline"}
@@ -445,13 +453,13 @@ export default function HomeScreen({ navigation }) {
           />
         </TouchableOpacity>
         <View style={styles.horizontalArtistInfo}>
-          <Text style={[styles.horizontalArtistName, { color: currentTextColor }]} numberOfLines={1}>{item.user?.name || "Artist"}</Text>
+          <Text style={[styles.horizontalArtistName, { color: currentTextColor }]} numberOfLines={1}>{artistName}</Text>
           <View style={styles.ratingRow}>
             <Ionicons name="star" size={14} color="#FFB800" />
-            <Text style={[styles.ratingText, { color: currentTextColor }]}>{Number(item.avg_rating || 0).toFixed(1)}</Text>
+            <Text style={[styles.ratingText, { color: currentTextColor }]}>{ratingVal}</Text>
             <Text style={[styles.experienceText, { color: currentSecTextColor }]}>• {item.experience_years || 2} yrs exp</Text>
           </View>
-          <Text style={[styles.startingPriceText, { color: currentTextColor }]}>From ₹{item.services?.[0]?.minimum_price || 1500}</Text>
+          <Text style={[styles.startingPriceText, { color: currentTextColor }]}>From ₹{startingPrice}</Text>
         </View>
       </TouchableOpacity>
     );
@@ -459,28 +467,33 @@ export default function HomeScreen({ navigation }) {
 
   // Render Nearby Artist Vertical Item
   const renderNearbyArtistItem = ({ item }) => {
-    const isFav = !!favorites[item.id];
+    const artistId = item.id || item.user_id || item.artist_id;
+    const isFav = !!favorites[artistId];
+    const artistName = item.name || item.full_name || item.user?.name || "Artist";
+    const artistImage = item.profile_image || item.user?.profile_image || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400";
+    const startingPrice = item.starting_price || item.services?.[0]?.minimum_price || 1500;
+    const ratingVal = Number(item.rating || item.avg_rating || 4.8).toFixed(1);
     const distanceVal = item.distance ? `${Number(item.distance).toFixed(1)} km` : "Nearby";
 
     return (
       <TouchableOpacity
         style={[styles.nearbyArtistCard, { backgroundColor: currentCardBg, borderColor: currentBorderColor }]}
-        onPress={() => navigation.navigate("ArtistProfile", { artistId: item.id })}
+        onPress={() => navigation.navigate("ArtistProfile", { artistId })}
       >
         <Image
-          source={{ uri: item.user?.profile_image || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400" }}
+          source={{ uri: artistImage }}
           style={styles.nearbyArtistImage}
         />
 
         <View style={styles.nearbyArtistInfo}>
           <View style={styles.nearbyNameHeader}>
             <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-              <Text style={[styles.nearbyArtistName, { color: currentTextColor }]} numberOfLines={1}>{item.user?.name || "Artist"}</Text>
-              {item.verification_status === "APPROVED" && (
+              <Text style={[styles.nearbyArtistName, { color: currentTextColor }]} numberOfLines={1}>{artistName}</Text>
+              {(item.status === "approved" || item.status === "APPROVED" || item.verification_status === "APPROVED") && (
                 <Ionicons name="checkmark-circle" size={16} color={Colors.primary} style={{ marginLeft: 4 }} />
               )}
             </View>
-            <TouchableOpacity onPress={() => toggleFavorite(item.id)} style={styles.nearbyFavBtn}>
+            <TouchableOpacity onPress={() => toggleFavorite(artistId)} style={styles.nearbyFavBtn}>
               <Ionicons
                 name={isFav ? "heart" : "heart-outline"}
                 size={20}
@@ -492,7 +505,7 @@ export default function HomeScreen({ navigation }) {
           <View style={styles.nearbyStatsRow}>
             <View style={styles.ratingBadge}>
               <Ionicons name="star" size={12} color="#FFB800" />
-              <Text style={styles.ratingBadgeText}>{Number(item.avg_rating || 0).toFixed(1)}</Text>
+              <Text style={styles.ratingBadgeText}>{ratingVal}</Text>
             </View>
             <Text style={[styles.nearbyBulletText, { color: currentSecTextColor }]}>•</Text>
             <Text style={[styles.nearbyStatsText, { color: currentSecTextColor }]}>{item.experience_years || 2} Years Exp</Text>
@@ -501,7 +514,7 @@ export default function HomeScreen({ navigation }) {
           </View>
 
           <View style={styles.nearbyFooter}>
-            <Text style={[styles.nearbyPriceText, { color: currentTextColor }]}>Starting from ₹{item.services?.[0]?.minimum_price || 1500}</Text>
+            <Text style={[styles.nearbyPriceText, { color: currentTextColor }]}>Starting from ₹{startingPrice}</Text>
             <View style={styles.availableTodayBadge}>
               <View style={styles.activeDot} />
               <Text style={styles.availableTodayText}>Available Today</Text>
@@ -593,7 +606,7 @@ export default function HomeScreen({ navigation }) {
           <FlatList
             ref={bannerFlatListRef}
             data={offers}
-            keyExtractor={(item) => String(item.id)}
+            keyExtractor={(item, index) => String(item.id || item.user_id || item.artist_id || index)}
             horizontal
             pagingEnabled
             nestedScrollEnabled={true}
@@ -644,7 +657,7 @@ export default function HomeScreen({ navigation }) {
       </View>
       <FlatList
         data={categories}
-        keyExtractor={(item) => String(item.id)}
+        keyExtractor={(item, index) => String(item.id || item.user_id || item.artist_id || index)}
         horizontal
         nestedScrollEnabled={true}
         showsHorizontalScrollIndicator={false}
@@ -666,7 +679,7 @@ export default function HomeScreen({ navigation }) {
           </View>
           <FlatList
             data={featuredArtists}
-            keyExtractor={(item) => String(item.id)}
+            keyExtractor={(item, index) => String(item.id || item.user_id || item.artist_id || index)}
             horizontal
             nestedScrollEnabled={true}
             showsHorizontalScrollIndicator={false}
@@ -690,7 +703,7 @@ export default function HomeScreen({ navigation }) {
           </View>
           <FlatList
             data={popularArtists}
-            keyExtractor={(item) => String(item.id)}
+            keyExtractor={(item, index) => String(item.id || item.user_id || item.artist_id || index)}
             horizontal
             nestedScrollEnabled={true}
             showsHorizontalScrollIndicator={false}
@@ -710,7 +723,7 @@ export default function HomeScreen({ navigation }) {
           </View>
           <FlatList
             data={recentlyBookedArtists}
-            keyExtractor={(item) => String(item.id)}
+            keyExtractor={(item, index) => String(item.id || item.user_id || item.artist_id || index)}
             horizontal
             nestedScrollEnabled={true}
             showsHorizontalScrollIndicator={false}
@@ -817,7 +830,7 @@ export default function HomeScreen({ navigation }) {
     <SafeAreaView style={styles.container} edges={["top"]}>
       <FlatList
         data={processedNearbyArtists}
-        keyExtractor={(item) => String(item.id)}
+        keyExtractor={(item, index) => String(item.id || item.user_id || item.artist_id || index)}
         renderItem={renderNearbyArtistItem}
         ListHeaderComponent={renderListHeader}
         ListFooterComponent={renderListFooter}

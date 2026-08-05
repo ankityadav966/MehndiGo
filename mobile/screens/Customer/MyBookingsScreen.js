@@ -362,7 +362,7 @@ export default function MyBookingsScreen({ navigation }) {
       ) : (
         <FlatList
           data={filteredData}
-          keyExtractor={(item) => String(item.id)}
+          keyExtractor={(item, index) => String(item.id || item.booking_id || index)}
           renderItem={renderBooking}
           showsVerticalScrollIndicator={false}
           refreshControl={
