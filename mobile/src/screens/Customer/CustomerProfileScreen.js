@@ -105,6 +105,7 @@ export default function CustomerProfileScreen({ navigation }) {
   const initials = profile.name ? profile.name.split(" ").map((n) => n[0]).join("").toUpperCase() : "ME";
 
   const quickActions = [
+    { icon: "person-outline", label: "Edit Profile", screen: "EditProfile" },
     { icon: "calendar-outline", label: "My Bookings", screen: "MyBookings" },
     { icon: "location-outline", label: "Saved Addresses", screen: "SavedAddresses" },
     { icon: "wallet-outline", label: "Wallet & Payments", screen: "Wallet" },
@@ -113,7 +114,7 @@ export default function CustomerProfileScreen({ navigation }) {
     { icon: "share-social-outline", label: "Refer & Earn", screen: "ReferralDashboard" },
     { icon: "pricetag-outline", label: "Coupons & Offers", screen: "Coupons" },
     { icon: "star-outline", label: "My Reviews", screen: "Reviews" },
-    { icon: "shield-checkmark-outline", label: "Security & Privacy", screen: "EditProfile" },
+    { icon: "shield-checkmark-outline", label: "Security & Privacy", screen: "PrivacyPolicy" },
     { icon: "headset-outline", label: "Support Helpdesk", screen: "Support" },
   ];
 

@@ -103,7 +103,7 @@ export default function MyBookingsScreen({ navigation }) {
 
   const getFilteredBookings = () => {
     return bookings.filter((item) => {
-      const status = item.detailed_status || item.booking_status;
+      const status = (item.detailed_status || item.booking_status || item.status || "PENDING").toUpperCase();
       if (selectedTab === "All") return true;
       if (selectedTab === "Pending") {
         return ["PENDING", "VIEWED", "CONFIRMED", "WAITING_FOR_USER_PAYMENT"].includes(status);

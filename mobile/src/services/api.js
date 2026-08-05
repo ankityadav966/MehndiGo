@@ -1,7 +1,7 @@
 import { secureStorage } from "../utils/storage";
 
 const getBaseUrl = () => {
-  let envUrl = process.env.EXPO_PUBLIC_API_URL || "http://192.168.1.17:8000/api/v1";
+  let envUrl = process.env.EXPO_PUBLIC_API_URL || "https://api.mehndigo.in/api/v1";
   return envUrl.endsWith("/") ? envUrl.slice(0, -1) : envUrl;
 };
 

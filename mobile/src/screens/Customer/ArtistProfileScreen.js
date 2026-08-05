@@ -105,7 +105,19 @@ export default function ArtistProfileScreen({ route, navigation }) {
       setProfile(prof);
       setServices(servs || []);
       setPortfolio(port || []);
-      setReviewsData(revs || { reviews: [], distribution: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 } });
+      
+      const revList = Array.isArray(revs)
+        ? revs
+        : (Array.isArray(revs?.reviews) ? revs.reviews : (Array.isArray(revs?.data) ? revs.data : []));
+      const dist = (!Array.isArray(revs) && revs?.distribution) ? revs.distribution : {
+        5: revList.filter(r => Number(r?.rating) === 5).length,
+        4: revList.filter(r => Number(r?.rating) === 4).length,
+        3: revList.filter(r => Number(r?.rating) === 3).length,
+        2: revList.filter(r => Number(r?.rating) === 2).length,
+        1: revList.filter(r => Number(r?.rating) === 1).length,
+      };
+
+      setReviewsData({ reviews: revList, distribution: dist });
       setAvailability(avail || []);
       setSimilar(sim || []);
 
@@ -581,7 +593,7 @@ export default function ArtistProfileScreen({ route, navigation }) {
 
         {/* Section: Reviews List & Star Distribution */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Customer Reviews ({reviewsData.reviews.length})</Text>
+          <Text style={styles.sectionTitle}>Customer Reviews ({(reviewsData?.reviews || []).length})</Text>
           <View style={styles.reviewDistributionCard}>
             <View style={styles.avgRatingCol}>
               <Text style={styles.ratingBigVal}>{Number(profile.avg_rating || 0).toFixed(1)}</Text>
@@ -598,46 +610,46 @@ export default function ArtistProfileScreen({ route, navigation }) {
               <View style={styles.distRow}>
                 <Text style={styles.distStarText}>5 ★</Text>
                 <View style={styles.distTrack}>
-                  <View style={[styles.distFill, { width: `${reviewsData.reviews.length ? (reviewsData.distribution[5] / reviewsData.reviews.length) * 100 : 0}%` }]} />
+                  <View style={[styles.distFill, { width: `${(reviewsData?.reviews || []).length ? ((reviewsData?.distribution?.[5] || 0) / reviewsData.reviews.length) * 100 : 0}%` }]} />
                 </View>
-                <Text style={styles.distCountText}>{reviewsData.distribution[5] || 0}</Text>
+                <Text style={styles.distCountText}>{reviewsData?.distribution?.[5] || 0}</Text>
               </View>
               <View style={styles.distRow}>
                 <Text style={styles.distStarText}>4 ★</Text>
                 <View style={styles.distTrack}>
-                  <View style={[styles.distFill, { width: `${reviewsData.reviews.length ? (reviewsData.distribution[4] / reviewsData.reviews.length) * 100 : 0}%` }]} />
+                  <View style={[styles.distFill, { width: `${(reviewsData?.reviews || []).length ? ((reviewsData?.distribution?.[4] || 0) / reviewsData.reviews.length) * 100 : 0}%` }]} />
                 </View>
-                <Text style={styles.distCountText}>{reviewsData.distribution[4] || 0}</Text>
+                <Text style={styles.distCountText}>{reviewsData?.distribution?.[4] || 0}</Text>
               </View>
               <View style={styles.distRow}>
                 <Text style={styles.distStarText}>3 ★</Text>
                 <View style={styles.distTrack}>
-                  <View style={[styles.distFill, { width: `${reviewsData.reviews.length ? (reviewsData.distribution[3] / reviewsData.reviews.length) * 100 : 0}%` }]} />
+                  <View style={[styles.distFill, { width: `${(reviewsData?.reviews || []).length ? ((reviewsData?.distribution?.[3] || 0) / reviewsData.reviews.length) * 100 : 0}%` }]} />
                 </View>
-                <Text style={styles.distCountText}>{reviewsData.distribution[3] || 0}</Text>
+                <Text style={styles.distCountText}>{reviewsData?.distribution?.[3] || 0}</Text>
               </View>
               <View style={styles.distRow}>
                 <Text style={styles.distStarText}>2 ★</Text>
                 <View style={styles.distTrack}>
-                  <View style={[styles.distFill, { width: `${reviewsData.reviews.length ? (reviewsData.distribution[2] / reviewsData.reviews.length) * 100 : 0}%` }]} />
+                  <View style={[styles.distFill, { width: `${(reviewsData?.reviews || []).length ? ((reviewsData?.distribution?.[2] || 0) / reviewsData.reviews.length) * 100 : 0}%` }]} />
                 </View>
-                <Text style={styles.distCountText}>{reviewsData.distribution[2] || 0}</Text>
+                <Text style={styles.distCountText}>{reviewsData?.distribution?.[2] || 0}</Text>
               </View>
               <View style={styles.distRow}>
                 <Text style={styles.distStarText}>1 ★</Text>
                 <View style={styles.distTrack}>
-                  <View style={[styles.distFill, { width: `${reviewsData.reviews.length ? (reviewsData.distribution[1] / reviewsData.reviews.length) * 100 : 0}%` }]} />
+                  <View style={[styles.distFill, { width: `${(reviewsData?.reviews || []).length ? ((reviewsData?.distribution?.[1] || 0) / reviewsData.reviews.length) * 100 : 0}%` }]} />
                 </View>
-                <Text style={styles.distCountText}>{reviewsData.distribution[1] || 0}</Text>
+                <Text style={styles.distCountText}>{reviewsData?.distribution?.[1] || 0}</Text>
               </View>
             </View>
           </View>
 
           {/* Individual Reviews Rows */}
-          {reviewsData.reviews.length === 0 ? (
+          {(reviewsData?.reviews || []).length === 0 ? (
             <Text style={styles.emptyText}>No reviews submitted yet.</Text>
           ) : (
-            reviewsData.reviews.map((rev, index) => (
+            (reviewsData?.reviews || []).map((rev, index) => (
               <View key={`review-${rev.id || 'idx'}-${index}`} style={styles.reviewCard}>
                 <View style={styles.reviewerHeader}>
                   <Image

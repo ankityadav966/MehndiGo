@@ -108,9 +108,11 @@ export default function HomeScreen({ navigation }) {
     });
 
     async function initLocation() {
+      // 1. Check if user already has a cached address in local storage
       const cached = await getActiveAddress();
-      if (cached) {
+      if (cached && (cached.fullAddress || cached.address_line_1 || cached.city)) {
         setActiveAddressState(cached);
+        return; // Address exists! Never force navigate to InitialLocationSetup
       }
 
       try {
@@ -120,24 +122,15 @@ export default function HomeScreen({ navigation }) {
 
         const primary = list.find((a) => a.is_default) || list[0];
 
-        // First Login Flow: If customer has NO saved primary address, navigate to InitialLocationSetup
-        if (list.length === 0) {
-          navigation.navigate("InitialLocationSetup");
-          return;
-        }
-
-        if (!cached && primary) {
+        if (primary) {
           const norm = await setActiveAddress(primary);
           setActiveAddressState(norm);
+          return; // Backend address found! Never force navigate
         }
 
-        // Smart Background Location Check (>35km)
-        if (primary && primary.latitude && primary.longitude) {
-          const checkResult = await checkSmartLocationChange(primary, 35);
-          if (checkResult.isFar && checkResult.geocodedAddress) {
-            setSmartDetectedData(checkResult);
-            setSmartAlertVisible(true);
-          }
+        // 2. First Login Flow: ONLY navigate to InitialLocationSetup if NO address exists anywhere
+        if (!cached && list.length === 0) {
+          navigation.navigate("InitialLocationSetup");
         }
       } catch (e) {
         console.log("Error initializing location in Home:", e.message);
@@ -204,10 +197,10 @@ export default function HomeScreen({ navigation }) {
       const data = await getHomeDashboard(MOCK_LAT, MOCK_LNG);
       setCategories(data?.categories || []);
       setOffers(data?.offers || []);
-      setFeaturedArtists(data?.featuredArtists || []);
-      setPopularArtists(data?.popularArtists || []);
-      setRecommendations(data?.recommendations || []);
-      setRecentlyBookedArtists(data?.recentlyBooked || []);
+      setFeaturedArtists(data?.featured_artists || data?.featuredArtists || []);
+      setPopularArtists(data?.popular_artists || data?.popularArtists || []);
+      setRecommendations(data?.recommended_artists || data?.recommendations || []);
+      setRecentlyBookedArtists(data?.recently_booked || data?.recentlyBooked || []);
 
 
       // Load favorites from database
@@ -263,8 +256,8 @@ export default function HomeScreen({ navigation }) {
     setNearbyLoading(true);
     try {
       const data = await getNearbyArtists(MOCK_LAT, MOCK_LNG, 100, page, 6);
-      const list = data?.rows || [];
-      const total = data?.count || 0;
+      const list = Array.isArray(data) ? data : (data?.rows || data?.nearby_artists || data?.artists || []);
+      const total = Array.isArray(data) ? data.length : (data?.count || list.length);
 
       if (page === 1) {
         setNearbyArtists(list);
@@ -430,14 +423,15 @@ export default function HomeScreen({ navigation }) {
   };
 
   const getCategoryImage = (item) => {
-    if (item && item.image && typeof item.image === "string") {
-      if (item.image.startsWith("http://") || item.image.startsWith("https://")) {
-        return { uri: item.image };
+    const img = item?.image || item?.image_url;
+    if (img && typeof img === "string") {
+      if (img.startsWith("http://") || img.startsWith("https://")) {
+        return { uri: img };
       }
-      if (item.image.startsWith("/")) {
+      if (img.startsWith("/")) {
         const { BASE_URL } = require("../../services/api");
         const cleanBase = (BASE_URL || "").replace(/\/api\/v1\/?$/, "");
-        return { uri: `${cleanBase}${item.image}` };
+        return { uri: `${cleanBase}${img}` };
       }
     }
     const name = (item?.name || "").toLowerCase();
@@ -492,6 +486,10 @@ export default function HomeScreen({ navigation }) {
   };
 
   const getBannerImage = (item) => {
+    const img = item?.image_url || item?.image;
+    if (img && typeof img === "string" && (img.startsWith("http://") || img.startsWith("https://"))) {
+      return { uri: img };
+    }
     const id = String(item.id);
     const LOCAL_BANNERS = {
       "1": require("../../assets/images/categories/bridal.png"),
@@ -758,7 +756,7 @@ export default function HomeScreen({ navigation }) {
           <FlatList
             ref={bannerFlatListRef}
             data={offers}
-            keyExtractor={(item) => String(item.id)}
+            keyExtractor={(item, index) => String(item?.id || item?.code || index)}
             horizontal
             pagingEnabled
             nestedScrollEnabled={true}
@@ -818,7 +816,7 @@ export default function HomeScreen({ navigation }) {
           { id: 7, name: "Back Hand", slug: "back-hand-mehendi" },
           { id: 8, name: "Leg & Feet", slug: "leg-feet-mehendi" }
         ]).slice(0, 8)}
-        keyExtractor={(item) => String(item.id)}
+        keyExtractor={(item, index) => String(item?.id || item?.slug || index)}
         horizontal
         nestedScrollEnabled={true}
         showsHorizontalScrollIndicator={false}
@@ -840,7 +838,7 @@ export default function HomeScreen({ navigation }) {
           </View>
           <FlatList
             data={featuredArtists}
-            keyExtractor={(item) => String(item.id)}
+            keyExtractor={(item, index) => String(item?.id || item?.user_id || index)}
             horizontal
             nestedScrollEnabled={true}
             showsHorizontalScrollIndicator={false}
@@ -864,7 +862,7 @@ export default function HomeScreen({ navigation }) {
           </View>
           <FlatList
             data={popularArtists}
-            keyExtractor={(item) => String(item.id)}
+            keyExtractor={(item, index) => String(item?.id || item?.user_id || index)}
             horizontal
             nestedScrollEnabled={true}
             showsHorizontalScrollIndicator={false}
@@ -884,7 +882,7 @@ export default function HomeScreen({ navigation }) {
           </View>
           <FlatList
             data={recentlyBookedArtists}
-            keyExtractor={(item) => String(item.id)}
+            keyExtractor={(item, index) => String(item?.id || item?.user_id || index)}
             horizontal
             nestedScrollEnabled={true}
             showsHorizontalScrollIndicator={false}
@@ -991,7 +989,7 @@ export default function HomeScreen({ navigation }) {
     <SafeAreaView style={styles.container} edges={["top"]}>
       <FlatList
         data={processedNearbyArtists}
-        keyExtractor={(item) => String(item.id)}
+        keyExtractor={(item, index) => String(item?.id || item?.user_id || index)}
         renderItem={renderNearbyArtistItem}
         ListHeaderComponent={renderListHeader}
         ListFooterComponent={renderListFooter}

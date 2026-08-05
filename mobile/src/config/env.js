@@ -1,6 +1,6 @@
 import { Constants } from "expo-constants";
 
-const DEFAULT_API_URL = "https://mehandigo-api.globalrns.com/api/v1";
+const DEFAULT_API_URL = "https://api.mehndigo.in/api/v1";
 
 const rawApiUrl = process.env.EXPO_PUBLIC_API_URL || DEFAULT_API_URL;
 
