@@ -144,8 +144,28 @@ const handleRegisterSendOtp = async (c) => {
   const db = getDb(c.env);
   const body = await c.req.json().catch(() => ({}));
   const { name, email, phone } = body;
-  const identifier = (email || phone || "user").trim().toLowerCase();
+  const cleanEmail = (email && typeof email === "string") ? email.trim().toLowerCase() : "";
+  const cleanPhone = (phone && typeof phone === "string") ? phone.trim().replace(/[^0-9]/g, "") : "";
 
+  if (cleanEmail) {
+    const existingEmail = await db.first("SELECT id FROM users WHERE LOWER(email) = ?", [cleanEmail]).catch(() => null);
+    if (existingEmail) {
+      return jsonRes(c, false, null, "Email address already registered. Please login instead.", 400);
+    }
+  }
+
+  if (cleanPhone) {
+    const last10 = cleanPhone.slice(-10);
+    const existingPhone = await db.first(
+      "SELECT id FROM users WHERE phone = ? OR phone = ? OR phone LIKE ?",
+      [last10, `+91${last10}`, `%${last10}`]
+    ).catch(() => null);
+    if (existingPhone) {
+      return jsonRes(c, false, null, "Phone number already registered. Please use another number or login.", 400);
+    }
+  }
+
+  const identifier = (cleanEmail || cleanPhone || "user").toLowerCase();
   const otp = generate6DigitOtp();
   try {
     await db.run(
@@ -156,8 +176,8 @@ const handleRegisterSendOtp = async (c) => {
     console.log("OTP DB insert notice:", e.message);
   }
 
-  if (email && email.includes("@")) {
-    c.executionCtx?.waitUntil?.(sendRealOtpEmail(c, email, otp, name || "User"));
+  if (cleanEmail && cleanEmail.includes("@")) {
+    c.executionCtx?.waitUntil?.(sendRealOtpEmail(c, cleanEmail, otp, name || "User"));
   }
 
   return jsonRes(c, true, {
@@ -173,52 +193,35 @@ const handleRegisterVerifyOtp = async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const { name, full_name, email, phone, role, password } = body;
 
-    const targetEmail = (email && typeof email === "string" && email.trim()) ? email.trim().toLowerCase() : `user_${Date.now()}@mehndigo.com`;
+    const targetEmail = (email && typeof email === "string" && email.trim()) ? email.trim().toLowerCase() : null;
     const targetName = name || full_name || "Mehndi User";
-    const targetPhone = (phone && typeof phone === "string" && phone.trim()) ? phone.trim() : null;
+    const targetPhone = (phone && typeof phone === "string" && phone.trim()) ? phone.trim().replace(/[^0-9]/g, "") : null;
     const targetRole = (role === "ARTIST" || role === "artist") ? "ARTIST" : "USER";
 
-    // Lookup existing user by email or phone
-    let user = null;
-    if (targetPhone) {
-      user = await db.first("SELECT * FROM users WHERE email = ? OR phone = ?", [targetEmail, targetPhone]);
-    } else {
-      user = await db.first("SELECT * FROM users WHERE email = ?", [targetEmail]);
+    if (targetEmail) {
+      const existingEmail = await db.first("SELECT id FROM users WHERE LOWER(email) = ?", [targetEmail]);
+      if (existingEmail) {
+        return jsonRes(c, false, null, "Email address already registered. Please login instead.", 400);
+      }
     }
 
-    if (!user) {
-      try {
-        const res = await db.run(
-          "INSERT INTO users (full_name, email, phone, password_hash, role, is_verified) VALUES (?, ?, ?, ?, ?, 1)",
-          [targetName, targetEmail, targetPhone, password || "secret123", targetRole]
-        );
-        const newUserId = res.meta?.last_row_id || Date.now();
-        user = { id: newUserId, full_name: targetName, email: targetEmail, phone: targetPhone, role: targetRole, is_verified: 1 };
-      } catch (insertErr) {
-        console.log("D1 Insert Fallback Notice:", insertErr.message);
-        const fallbackUser = await db.first("SELECT * FROM users WHERE email = ? OR phone = ?", [targetEmail, targetPhone]);
-        if (fallbackUser) {
-          user = fallbackUser;
-        } else {
-          user = { id: Date.now(), full_name: targetName, email: targetEmail, phone: targetPhone, role: targetRole, is_verified: 1 };
-        }
-      }
-    } else {
-      // User exists - update full_name, phone, role if provided
-      try {
-        await db.run("UPDATE users SET full_name = ?, phone = COALESCE(?, phone), role = ? WHERE id = ?", [
-          targetName,
-          targetPhone,
-          targetRole,
-          user.id
-        ]);
-        user.full_name = targetName;
-        if (targetPhone) user.phone = targetPhone;
-        user.role = targetRole;
-      } catch (updErr) {
-        console.log("D1 Update Notice:", updErr.message);
+    if (targetPhone) {
+      const last10 = targetPhone.slice(-10);
+      const existingPhone = await db.first(
+        "SELECT id FROM users WHERE phone = ? OR phone = ? OR phone LIKE ?",
+        [last10, `+91${last10}`, `%${last10}`]
+      );
+      if (existingPhone) {
+        return jsonRes(c, false, null, "Phone number already registered. Please use another number or login.", 400);
       }
     }
+
+    const res = await db.run(
+      "INSERT INTO users (full_name, email, phone, password_hash, role, is_verified) VALUES (?, ?, ?, ?, ?, 1)",
+      [targetName, targetEmail, targetPhone, password || "secret123", targetRole]
+    );
+    const newUserId = res.meta?.last_row_id || Date.now();
+    const user = { id: newUserId, full_name: targetName, email: targetEmail, phone: targetPhone, role: targetRole, is_verified: 1 };
 
     const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
     const payload = btoa(JSON.stringify({ id: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1000) + (86400 * 7) }));
