@@ -1,6 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "mehndigo-backend",
+  "main": "src/index.js",
   "compatibility_date": "2026-08-04",
   "d1_databases": [
     {

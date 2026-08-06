@@ -65,7 +65,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "postinstall": "node ./scripts/fix-cashfree.js"
+    "postinstall": "node ./scripts/fix-image-viewing.js"
   },
   "private": true
 }

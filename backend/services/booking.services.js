@@ -308,8 +308,7 @@ class BookingService {
       where.id = bookingId;
     }
 
-    if (role === "CUSTOMER") {
-
+    if (role === "USER" || role === "CUSTOMER") {
       where.user_id = userId;
     } else if (role === "ARTIST") {
       // Find artist profile id for user
@@ -319,6 +318,12 @@ class BookingService {
       } else {
         throw new AppError("Artist profile not found", 404);
       }
+    } else {
+      // If Admin or other roles, maybe don't restrict, or restrict based on requirements.
+      // For now, if it's neither user nor artist, let it pass (Admin case) or throw error?
+      // Keeping it simple, if no specific restriction, it might fetch any booking if ID is known.
+      // But better to be explicit. If we want strictly auth, we should restrict.
+      // Assuming Admin can access without user_id restriction.
     }
 
     const booking = await db.Booking.findOne({
@@ -379,12 +384,16 @@ class BookingService {
 
   async getBookingHistory(userId, role) {
     let where = {};
-    if (role === "CUSTOMER") {
+    // JWT stores customer role as 'USER', handle both 'USER' and 'CUSTOMER' for safety
+    if (role === "USER" || role === "CUSTOMER") {
       where.user_id = userId;
     } else if (role === "ARTIST") {
       const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
       if (!artist) return [];
       where.artist_id = artist.id;
+    } else {
+      // Unknown role — return empty to avoid leaking all bookings
+      return [];
     }
 
     return await db.Booking.findAll({

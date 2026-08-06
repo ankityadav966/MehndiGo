@@ -14,6 +14,7 @@ import {
   Animated,
   Platform,
   Modal,
+  ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
@@ -934,28 +935,48 @@ export default function HomeScreen({ navigation }) {
       {/* 7. Quick Filters Row */}
       <View style={styles.sectionHeader}>
         <Text style={[styles.sectionTitle, { color: currentTextColor }]}>All Nearby Artists</Text>
+        <TouchableOpacity onPress={() => navigation.navigate("ArtistListing", { filter: "nearest" })}>
+          <Text style={styles.viewAllText}>See All</Text>
+        </TouchableOpacity>
       </View>
-      <View style={styles.filtersWrapper}>
-        {["Nearest", "Top Rated", "Price Low-High", "5+ Exp Years"].map((filter) => (
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.filtersWrapper}
+        style={{ marginBottom: 4 }}
+      >
+        {[
+          { label: "📍 Nearest", value: "Nearest" },
+          { label: "⭐ Top Rated", value: "Top Rated" },
+          { label: "💰 Price Low-High", value: "Price Low-High" },
+          { label: "🏆 5+ Exp Years", value: "5+ Exp Years" },
+        ].map((filter) => (
           <TouchableOpacity
-            key={filter}
+            key={filter.value}
             style={[
               styles.filterBadge,
-              selectedFilter === filter ? styles.activeFilterBadge : null
+              selectedFilter === filter.value ? styles.activeFilterBadge : null
             ]}
-            onPress={() => setSelectedFilter(filter)}
+            onPress={() => setSelectedFilter(filter.value)}
           >
             <Text
               style={[
                 styles.filterBadgeText,
-                selectedFilter === filter ? styles.activeFilterBadgeText : null
+                selectedFilter === filter.value ? styles.activeFilterBadgeText : null
               ]}
             >
-              {filter}
+              {filter.label}
             </Text>
           </TouchableOpacity>
         ))}
-      </View>
+        <TouchableOpacity
+          style={styles.filterBadgeMore}
+          onPress={() => navigation.navigate("ArtistListing", { filter: "nearest" })}
+        >
+          <Ionicons name="options-outline" size={13} color={Colors.primary} style={{ marginRight: 4 }} />
+          <Text style={styles.filterBadgeMoreText}>More Filters</Text>
+        </TouchableOpacity>
+      </ScrollView>
     </View>
   );
 
@@ -1001,8 +1022,15 @@ export default function HomeScreen({ navigation }) {
         return priceA - priceB;
       });
     } else if (selectedFilter === "5+ Exp Years") {
-      result = result.filter(item => Number(item.experience_years || item.experience || 5) >= 5);
-      result.sort((a, b) => (Number(b.experience_years || b.experience) || 0) - (Number(a.experience_years || a.experience) || 0));
+      result = result.filter(item => {
+        const exp = item.experience_years != null ? Number(item.experience_years) : (item.experience != null ? Number(item.experience) : 0);
+        return exp >= 5;
+      });
+      result.sort((a, b) => {
+        const expA = a.experience_years != null ? Number(a.experience_years) : (a.experience != null ? Number(a.experience) : 0);
+        const expB = b.experience_years != null ? Number(b.experience_years) : (b.experience != null ? Number(b.experience) : 0);
+        return expB - expA;
+      });
     }
 
     return result;
@@ -1682,18 +1710,41 @@ const styles = StyleSheet.create({
   filtersWrapper: {
     flexDirection: "row",
     paddingHorizontal: 16,
-    marginBottom: 16
+    paddingBottom: 12,
+    alignItems: "center",
   },
   filterBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 20,
     backgroundColor: Colors.inputBackground,
-    marginRight: 8
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
-  activeFilterBadge: { backgroundColor: Colors.primary },
+  activeFilterBadge: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+    shadowColor: Colors.primary,
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
   filterBadgeText: { fontSize: 12, color: Colors.textSecondary, fontWeight: "500" },
-  activeFilterBadgeText: { color: Colors.white, fontWeight: "600" },
+  activeFilterBadgeText: { color: Colors.white, fontWeight: "700" },
+  filterBadgeMore: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: Colors.primaryLight + "15",
+    borderWidth: 1,
+    borderColor: Colors.primaryLight + "40",
+    marginRight: 8,
+  },
+  filterBadgeMoreText: { fontSize: 12, color: Colors.primary, fontWeight: "600" },
   nearbyArtistCard: {
     flexDirection: "row",
     marginHorizontal: 16,

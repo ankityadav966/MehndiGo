@@ -81,6 +81,30 @@ export default function PaymentScreen({ route, navigation }) {
   }, [bookingId, loadBookingDetails, navigation]);
 
 
+  // MOCK PAYMENT LOGIC FOR EXPO GO
+  const simulateMockPayment = async (targetBookingId) => {
+    setLoading(true);
+    try {
+      console.log(`[MOCK_PAYMENT] Simulating payment for booking ID: ${targetBookingId}`);
+      setTimeout(() => {
+        setLoading(false);
+        if (isSettlement) {
+          navigation.replace("ReviewSubmission", {
+            bookingId: bookingId,
+            artistName: booking?.artist?.user?.name,
+            artistImage: booking?.artist?.user?.profile_image,
+            specializationName: booking?.service?.specialization_name
+          });
+        } else {
+          navigation.replace("BookingSuccess", { bookingCode: booking?.booking_code || "success" });
+        }
+      }, 1500);
+    } catch (e) {
+      setLoading(false);
+      Alert.alert("Mock Error", e.message);
+    }
+  };
+
   const handlePay = async () => {
     const targetBookingId = activeBookingId || bookingId;
     if (!targetBookingId) {
@@ -88,16 +112,19 @@ export default function PaymentScreen({ route, navigation }) {
       return;
     }
 
-    // Native Module Availability Pre-Check to prevent creating un-openable LIVE orders
+    // Native Module Availability Pre-Check
     const nativeModule = NativeModules.RNRazorpayCheckout || NativeModules.RazorpayCheckout;
     const isRazorpayAvailable = !!(nativeModule && typeof nativeModule.open === "function");
 
     if (!isRazorpayAvailable) {
-      setLoading(false);
-      console.error("[RAZORPAY NATIVE CHECK] NativeModules.RNRazorpayCheckout is null or undefined!");
+      console.warn("[RAZORPAY NATIVE CHECK] Razorpay not available in Expo Go. Mocking successful payment for development.");
       Alert.alert(
-        "Razorpay Module Missing",
-        "The Razorpay native module is not available in this running app build (Expo Go / uncompiled binary). Please launch the compiled native Android development build."
+        "Development Mode",
+        "Razorpay module is missing (Expo Go). Simulating a successful payment to continue testing your booking flow.",
+        [
+          { text: "Cancel", style: "cancel", onPress: () => setLoading(false) },
+          { text: "Simulate Payment", onPress: () => simulateMockPayment(targetBookingId) }
+        ]
       );
       return;
     }

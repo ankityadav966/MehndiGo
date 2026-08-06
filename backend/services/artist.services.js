@@ -12,7 +12,6 @@ const {
 } = require("../repositories");
 
 const AppError = require("../utils/errors/app.error");
-const cashfree = require("../utils/cashfree");
 const razorpayUtil = require("../utils/razorpay");
 const { getIO } = require("../sockets/socket");
 const db = require("../models");

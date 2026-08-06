@@ -1868,7 +1868,7 @@ const handleCustomerDynamic = async (c) => {
       const bookings = await db.all(`
         SELECT b.id as id, b.id as booking_id, b.customer_id, b.artist_id, b.service_id, b.booking_number,
                b.booking_date, b.booking_time, b.status, b.payment_status, b.total_amount, b.advance_paid,
-               b.remaining_amount, b.address, b.notes, b.created_at,
+               b.remaining_amount, b.address, b.notes,
                u.full_name as artist_name, ap.profile_image as artist_image, ap.city as artist_city, s.title as service_title
         FROM bookings b
         LEFT JOIN users u ON (b.artist_id = u.id OR CAST(b.artist_id AS TEXT) = CAST(u.id AS TEXT))

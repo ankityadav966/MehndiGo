@@ -340,7 +340,7 @@ class PaymentService {
 
   async getPaymentHistory(userId, role) {
     let where = {};
-    if (role === "CUSTOMER") {
+    if (role === "USER" || role === "CUSTOMER") {
       where.user_id = userId;
     } else if (role === "ARTIST") {
       const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
@@ -468,7 +468,7 @@ class PaymentService {
 
   async getRefundHistory(userId, role) {
     let where = {};
-    if (role === "CUSTOMER") {
+    if (role === "USER" || role === "CUSTOMER") {
       const bookings = await db.Booking.findAll({ where: { user_id: userId }, attributes: ["id"] });
       where = { booking_id: { [db.Sequelize.Op.in]: bookings.map(b => b.id) } };
     } else if (role === "ARTIST") {

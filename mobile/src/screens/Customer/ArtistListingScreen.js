@@ -108,8 +108,8 @@ export default function ArtistListingScreen({ route, navigation }) {
     return filters;
   };
 
-  // Main fetch query list
-  const fetchArtistsList = async (pageNum = 1, isRefresh = false) => {
+  // Main fetch query list — accepts explicit params to avoid stale closure
+  const fetchArtistsList = async (pageNum = 1, isRefresh = false, overrideSort = null) => {
     if (pageNum === 1) {
       if (!isRefresh) setLoading(true);
     } else {
@@ -117,8 +117,20 @@ export default function ArtistListingScreen({ route, navigation }) {
     }
 
     try {
-      const filters = getActiveFilters();
-      const response = await searchArtists(query, filters, sort, MOCK_LAT, MOCK_LNG, pageNum, 8);
+      const filters = {
+        ...(selectedCategory ? { category: selectedCategory } : {}),
+        ...(minPrice ? { minPrice } : {}),
+        ...(maxPrice ? { maxPrice } : {}),
+        ...(rating ? { rating } : {}),
+        ...(experience ? { experience } : {}),
+        ...(verified ? { verified: true } : {}),
+        ...(homeService ? { homeService: true } : {}),
+        ...(studioService ? { studioService: true } : {}),
+        ...(gender ? { gender } : {}),
+        ...(language ? { language } : {}),
+      };
+      const activeSort = overrideSort || sort;
+      const response = await searchArtists(query, filters, activeSort, MOCK_LAT, MOCK_LNG, pageNum, 8);
       const rows = Array.isArray(response) ? response : (response?.rows || response?.data || []);
       const total = Array.isArray(response) ? response.length : (response?.count || rows.length);
 
@@ -182,7 +194,8 @@ export default function ArtistListingScreen({ route, navigation }) {
 
   const applyFilters = () => {
     setFilterModalVisible(false);
-    fetchArtistsList(1);
+    // Use setTimeout to ensure state is committed before fetch
+    setTimeout(() => fetchArtistsList(1), 50);
   };
 
   const resetFilters = () => {
@@ -422,26 +435,78 @@ export default function ArtistListingScreen({ route, navigation }) {
         </View>
       </View>
 
-      {/* Sorting bar & Filtering details */}
-      <View style={styles.sortBar}>
-        <TouchableOpacity
-          style={styles.sortSelector}
-          onPress={() => setSortDropdownVisible(!sortDropdownVisible)}
-        >
-          <Text style={styles.sortLabel}>Sort: </Text>
-          <Text style={styles.sortValue}>
-            {sortOptions.find((o) => o.value === sort)?.label || "Nearest"}
-          </Text>
-          <Ionicons name="chevron-down" size={14} color={Colors.primary} style={{ marginLeft: 4 }} />
-        </TouchableOpacity>
+      {/* Combined Sort + Filter bar */}
+      <View style={styles.sortFilterBlock}>
+        {/* Row 1: Sort selector + Filters button */}
+        <View style={styles.sortBar}>
+          <TouchableOpacity
+            style={styles.sortSelector}
+            onPress={() => setSortDropdownVisible(!sortDropdownVisible)}
+          >
+            <Ionicons name="swap-vertical-outline" size={14} color={Colors.primary} style={{ marginRight: 4 }} />
+            <Text style={styles.sortLabel}>Sort: </Text>
+            <Text style={styles.sortValue} numberOfLines={1}>
+              {sortOptions.find((o) => o.value === sort)?.label || "Nearest"}
+            </Text>
+            <Ionicons name={sortDropdownVisible ? "chevron-up" : "chevron-down"} size={14} color={Colors.primary} style={{ marginLeft: 4 }} />
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.filterToggleBtn}
-          onPress={() => setFilterModalVisible(true)}
+          <TouchableOpacity
+            style={[
+              styles.filterToggleBtn,
+              (selectedCategory || minPrice || maxPrice || rating || experience || verified || homeService || studioService || gender || language) ? styles.filterToggleBtnActive : null
+            ]}
+            onPress={() => setFilterModalVisible(true)}
+          >
+            <Ionicons
+              name="funnel-outline"
+              size={14}
+              color={(selectedCategory || minPrice || maxPrice || rating || experience || verified || homeService || studioService || gender || language) ? Colors.white : Colors.primary}
+              style={{ marginRight: 4 }}
+            />
+            <Text style={[
+              styles.filterToggleBtnText,
+              (selectedCategory || minPrice || maxPrice || rating || experience || verified || homeService || studioService || gender || language) ? styles.filterToggleBtnTextActive : null
+            ]}>Filters</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Row 2: Quick sort chip tabs — horizontally scrollable */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.chipsScrollView}
+          contentContainerStyle={styles.chipsContentContainer}
+          bounces={false}
         >
-          <Ionicons name="funnel-outline" size={14} color={Colors.primary} style={{ marginRight: 4 }} />
-          <Text style={styles.filterToggleBtnText}>Filters</Text>
-        </TouchableOpacity>
+          {[
+            { label: "📍 Nearest", value: "nearest" },
+            { label: "⭐ Top Rated", value: "highest_rated" },
+            { label: "💰 Price Low→High", value: "lowest_price" },
+            { label: "🏆 5+ Yrs Exp", value: "highest_experience" },
+            { label: "🔥 Trending", value: "trending" },
+          ].map((chip) => (
+            <TouchableOpacity
+              key={chip.value}
+              activeOpacity={0.75}
+              style={[
+                styles.sortChip,
+                sort === chip.value ? styles.sortChipActive : null
+              ]}
+              onPress={() => {
+                setSort(chip.value);
+                setSortDropdownVisible(false);
+              }}
+            >
+              <Text style={[
+                styles.sortChipText,
+                sort === chip.value ? styles.sortChipTextActive : null
+              ]}>
+                {chip.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
       </View>
 
       {/* Sort Options dropdown list overlay */}
@@ -558,7 +623,11 @@ export default function ArtistListingScreen({ route, navigation }) {
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: 20 }}
+              keyboardShouldPersistTaps="handled"
+            >
               {/* Category selector */}
               <Text style={styles.filterTitle}>Mehendi Styling Category</Text>
               <View style={styles.filterGrid}>
@@ -745,9 +814,11 @@ export default function ArtistListingScreen({ route, navigation }) {
               </View>
             </ScrollView>
 
-            {/* Filter buttons action footer */}
+            {/* Filter buttons action footer — outside ScrollView so always visible */}
             <View style={styles.filterFooter}>
-              <TouchableOpacity style={styles.resetBtn} onPress={resetFilters}>
+              <TouchableOpacity style={styles.resetBtn} onPress={() => {
+                resetFilters();
+              }}>
                 <Text style={styles.resetBtnText}>Reset All</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.applyBtn} onPress={applyFilters}>
@@ -791,14 +862,18 @@ const styles = StyleSheet.create({
     alignItems: "center"
   },
   activeLayoutBtn: { borderColor: Colors.primary, backgroundColor: Colors.primaryLight + "10" },
+  sortFilterBlock: {
+    backgroundColor: Colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
   sortBar: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border
+    paddingTop: 10,
+    paddingBottom: 8,
   },
   sortSelector: { flexDirection: "row", alignItems: "center" },
   sortLabel: { fontSize: 13, color: Colors.textSecondary },
@@ -813,20 +888,65 @@ const styles = StyleSheet.create({
     borderRadius: 15
   },
   filterToggleBtnText: { fontSize: 12, fontWeight: "700", color: Colors.primary },
+  filterToggleBtnActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  filterToggleBtnTextActive: {
+    color: Colors.white,
+  },
+  chipsScrollView: {
+    backgroundColor: Colors.white,
+  },
+  chipsContentContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    paddingRight: 24,
+  },
+  sortChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: Colors.inputBackground,
+    marginRight: 8,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+  },
+  sortChipActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+    shadowColor: Colors.primary,
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
+  sortChipText: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    fontWeight: "600",
+  },
+  sortChipTextActive: {
+    color: Colors.white,
+    fontWeight: "800",
+  },
   sortDropdown: {
     position: "absolute",
-    top: 102,
+    top: 160,
     left: 16,
     right: 16,
     backgroundColor: Colors.white,
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: Colors.border,
-    zIndex: 99,
-    elevation: 5,
+    zIndex: 9999,
+    elevation: 20,
     shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 5
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 }
   },
   sortDropdownItem: {
     flexDirection: "row",
@@ -998,13 +1118,15 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary
   },
   resetSearchBtnText: { color: Colors.white, fontWeight: "700", fontSize: 13 },
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "flex-end" },
   modalContent: {
     backgroundColor: Colors.white,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    maxHeight: SCREEN_HEIGHT * 0.85,
-    padding: 20
+    maxHeight: SCREEN_HEIGHT * 0.88,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 0,
   },
   modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
   modalTitle: { fontSize: 18, fontWeight: "800", color: Colors.text },
@@ -1037,11 +1159,12 @@ const styles = StyleSheet.create({
   checkboxLabel: { fontSize: 13, color: Colors.textSecondary },
   filterFooter: {
     flexDirection: "row",
-    marginTop: 30,
     borderTopWidth: 1,
     borderTopColor: Colors.border,
-    paddingTop: 16,
-    justifyContent: "space-between"
+    paddingTop: 14,
+    paddingBottom: 20,
+    justifyContent: "space-between",
+    backgroundColor: Colors.white,
   },
   resetBtn: {
     flex: 1,
