@@ -73,17 +73,20 @@ export default function WishlistScreen({ navigation }) {
   const renderItem = ({ item }) => {
     const artist = item || {};
     const userObj = artist.user || {};
-    const artistName = userObj.name || artist.name || "Mehndi Specialist";
+    const artistName = artist.name || artist.full_name || userObj.name || "Mehndi Specialist";
     const artistImage =
-      userObj.profile_image ||
       artist.profile_image ||
+      artist.avatar ||
+      userObj.profile_image ||
       "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400";
 
-    const ratingVal = Number(artist.avg_rating || 4.8).toFixed(1);
+    const ratingVal = Number(artist.rating || artist.avg_rating || 4.8).toFixed(1);
     const reviewsCount = artist.total_reviews ? `(${artist.total_reviews})` : "(45+)";
     const expText = artist.experience_years ? `${artist.experience_years} Yrs Exp` : "3+ Yrs Exp";
     const cityText = artist.city || "Jaipur, Rajasthan";
-    const minPrice = artist.services?.[0]?.minimum_price
+    const minPrice = artist.starting_price
+      ? `Starting ₹${artist.starting_price}`
+      : artist.services?.[0]?.minimum_price
       ? `Starting ₹${artist.services[0].minimum_price}`
       : "Starting ₹1,500";
     const isApproved = artist.verification_status === "APPROVED";

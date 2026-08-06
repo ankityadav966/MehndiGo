@@ -40,8 +40,8 @@ export default function LoginScreen({ navigation }) {
       const res = await sendOtp(trimmedEmail);
       const data = res?.data || res;
 
-      if (data && data.exists !== false) {
-        console.log("[AUTH DEBUG] Login OTP send success - existing user found");
+      if (data) {
+        console.log("[AUTH DEBUG] Login OTP send success - existing user found:", data.role);
         const otp = data.otp ? String(data.otp) : "";
         Alert.alert("Verification OTP", `OTP has been sent to your email. (Dev code: ${otp})`);
         navigation.navigate("Otp", {
@@ -51,21 +51,20 @@ export default function LoginScreen({ navigation }) {
           flow: "LOGIN",
           otp,
         });
-      } else {
-        // Email does NOT exist -> Automatically navigate to RegisterScreen with prefilled email
-        console.log("[AUTH DEBUG] Email does not exist. Auto-navigating to Sign Up screen");
-        navigation.navigate("Register", { email: trimmedEmail });
       }
     } catch (e) {
       console.log("Send OTP Error:", e);
-      const msg = e?.response?.data?.message || e.message || "";
+      const status = e?.response?.status;
+      const msg = e?.response?.data?.message || e?.message || "";
+      
       if (
+        status === 404 ||
         msg.toLowerCase().includes("not found") ||
-        msg.toLowerCase().includes("sign up") ||
-        msg.toLowerCase().includes("register")
+        msg.toLowerCase().includes("please register") ||
+        msg.toLowerCase().includes("register first")
       ) {
-        // Email does NOT exist -> Automatically navigate to RegisterScreen with prefilled email
-        console.log("[AUTH DEBUG] User not found (404). Auto-navigating to Sign Up screen");
+        // Email does NOT exist in DB -> Confirmed by API 404 response -> Navigate to Register Screen
+        console.log("[AUTH DEBUG] Backend confirmed 404 (User Not Found). Navigating to Register screen with email:", trimmedEmail);
         navigation.navigate("Register", { email: trimmedEmail });
       } else {
         setError(msg || "Failed to proceed. Please try again.");

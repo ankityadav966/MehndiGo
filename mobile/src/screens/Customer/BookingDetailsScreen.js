@@ -541,7 +541,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
         )}
 
         <Image
-          source={{ uri: resolveImage(booking.artist?.user?.profile_image) }}
+          source={{ uri: resolveImage(booking.artist_image || booking.artist?.profile_image || booking.artist?.user?.profile_image) || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400" }}
           style={styles.artistImage}
         />
 
@@ -648,26 +648,26 @@ export default function BookingDetailsScreen({ route, navigation }) {
           </View>
 
           {/* Assigned Specialist Card */}
-          {booking.artist && (
+          {(booking.artist_name || booking.artist_id || booking.artist) && (
             <View style={styles.artistCardContainer}>
               <Text style={styles.artistCardHeaderTitle}>Assigned Specialist Details</Text>
               <View style={styles.artistCardBody}>
                 <Image
-                  source={{ uri: booking.artist.user?.profile_image || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400" }}
+                  source={{ uri: resolveImage(booking.artist_image || booking.artist?.profile_image || booking.artist?.user?.profile_image) || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400" }}
                   style={styles.artistCardAvatar}
                 />
                 <View style={styles.artistCardMeta}>
                   <View style={styles.artistCardNameRow}>
-                    <Text style={styles.artistCardName}>{booking.artist.user?.name || "Mehndi Specialist"}</Text>
+                    <Text style={styles.artistCardName}>{booking.artist_name || booking.artist?.user?.name || booking.artist?.name || "Mehndi Specialist"}</Text>
                     <View style={styles.verifiedTag}>
                       <Ionicons name="checkmark" size={10} color="#FFFFFF" />
                     </View>
                   </View>
                   <Text style={styles.artistCardSubText}>
-                    Exp: {booking.artist.experience_years || 3}+ Years • ⭐ {Number(booking.artist.avg_rating || 4.8).toFixed(1)} Rating
+                    Location: {booking.artist_city || booking.artist?.city || "Jaipur"} • ⭐ 4.8 Rating
                   </Text>
                   <Text style={styles.artistCardPhone}>
-                    📞 {booking.artist.user?.phone || "Phone verified"}
+                    📞 {booking.artist_phone || booking.artist?.phone || booking.artist?.user?.phone || "Phone verified"}
                   </Text>
                 </View>
               </View>

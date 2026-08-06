@@ -11,7 +11,7 @@ import { secureStorage } from "../utils/storage";
  * for release and the correct URL will be resolved automatically.
  */
 const getBaseUrl = () => {
-  let envUrl = process.env.EXPO_PUBLIC_API_URL || "https://api.mehndigo.in";
+  let envUrl = process.env.EXPO_PUBLIC_API_URL || "https://api.mehndigo.in/api/v1";
   return envUrl.endsWith("/") ? envUrl.slice(0, -1) : envUrl;
 };
 
@@ -35,38 +35,24 @@ const getSocketUrl = () => {
 export const SOCKET_URL = getSocketUrl();
 
 export function getNormalizedUrl(endpoint) {
-  let baseUrl = BASE_URL;
-  let cleanEndpoint = endpoint;
+  let base = BASE_URL.replace(/\/+$/, "");
+  let path = (endpoint || "").trim();
 
-  // Ensure endpoint starts with a slash
-  if (!cleanEndpoint.startsWith("/")) {
-    cleanEndpoint = "/" + cleanEndpoint;
+  if (!path.startsWith("/")) {
+    path = "/" + path;
   }
 
-  // Defensive: Strip trailing /mehndigo from base URL if present to prevent double-prefixing
-  if (baseUrl.endsWith("/api/v1/mehndigo")) {
-    baseUrl = baseUrl.substring(0, baseUrl.length - 9);
+  // Ensure base contains /api/v1 if not present
+  if (!base.endsWith("/api/v1") && !path.startsWith("/api/v1/")) {
+    base = `${base}/api/v1`;
   }
 
-  // Normalize endpoints to avoid double prefixing and handle root vs /api/v1 namespaces
-  if (cleanEndpoint.startsWith("/api/v1/")) {
-    if (baseUrl.endsWith("/api/v1")) {
-      cleanEndpoint = cleanEndpoint.substring(7); // strip /api/v1 from endpoint
-    }
-  } else {
-    // Root level endpoints (e.g. /wallet, /auth/login) shouldn't be prefixed with /api/v1
-    if (baseUrl.endsWith("/api/v1")) {
-      baseUrl = baseUrl.substring(0, baseUrl.length - 7);
-    }
+  // If base ends with /api/v1 and path starts with /api/v1/, strip duplicate from path
+  if (base.endsWith("/api/v1") && path.startsWith("/api/v1/")) {
+    path = path.substring(7);
   }
 
-  // Construct URL
-  if (baseUrl.endsWith("/")) {
-    baseUrl = baseUrl.slice(0, -1);
-  }
-  let url = `${baseUrl}${cleanEndpoint}`;
-
-  return url;
+  return `${base}${path}`;
 }
 
 async function apiRequest(method, endpoint, body = null, auth = false) {

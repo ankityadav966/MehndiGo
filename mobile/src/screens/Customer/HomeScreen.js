@@ -47,6 +47,54 @@ import Alert from "../../utils/Alert";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
+const DEFAULT_BANNERS = [
+  {
+    id: 1,
+    title: "Bridal Season Special",
+    subtitle: "25% OFF on Premium Packages",
+    description: "Full Arm & Leg Royal Dulhan Patterns with FREE Touchup Kit",
+    discount: "25% OFF",
+    image: "https://images.unsplash.com/photo-1610189012906-799d10787a71?auto=format&fit=crop&w=800&q=80",
+    image_url: "https://images.unsplash.com/photo-1610189012906-799d10787a71?auto=format&fit=crop&w=800&q=80"
+  },
+  {
+    id: 2,
+    title: "Festive Collection 2026",
+    subtitle: "Book Top Rated Artists from ₹499",
+    description: "Trendsetting Engagement & Sangeet party henna designs at home",
+    discount: "FLAT ₹499",
+    image: "https://images.unsplash.com/photo-1596704017254-9b121068fb31?auto=format&fit=crop&w=800&q=80",
+    image_url: "https://images.unsplash.com/photo-1596704017254-9b121068fb31?auto=format&fit=crop&w=800&q=80"
+  },
+  {
+    id: 3,
+    title: "Arabic & Floral Henna",
+    subtitle: "Exclusive Modern Arabic Styles",
+    description: "Bold flowing vines & shaded mandala motifs by certified experts",
+    discount: "SPECIAL 20%",
+    image: "https://images.unsplash.com/photo-1600003014755-ba31aa59c4b6?auto=format&fit=crop&w=800&q=80",
+    image_url: "https://images.unsplash.com/photo-1600003014755-ba31aa59c4b6?auto=format&fit=crop&w=800&q=80"
+  },
+  {
+    id: 4,
+    title: "Express At-Home Service",
+    subtitle: "Verified Artists in 60 Mins",
+    description: "Instant doorstep booking with zero extra travel charges",
+    discount: "FREE TRAVEL",
+    image: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=800&q=80",
+    image_url: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=800&q=80"
+  },
+  {
+    id: 5,
+    title: "Group Booking Combo",
+    subtitle: "Save up to ₹1,500 on Sangeet Henna",
+    description: "Special group packages for family & guests at unbeatable prices",
+    discount: "SAVE ₹1500",
+    image: "https://images.unsplash.com/photo-1567401893414-76b7b1e5a7a5?auto=format&fit=crop&w=800&q=80",
+    image_url: "https://images.unsplash.com/photo-1567401893414-76b7b1e5a7a5?auto=format&fit=crop&w=800&q=80"
+  }
+];
+
 export default function HomeScreen({ navigation }) {
   const { user, dispatch, isDarkMode } = useAuth();
 
@@ -70,7 +118,7 @@ export default function HomeScreen({ navigation }) {
   // Dashboard Aggregated States
   const [categories, setCategories] = useState([]);
 
-  const [offers, setOffers] = useState([]);
+  const [offers, setOffers] = useState(DEFAULT_BANNERS);
   const [featuredArtists, setFeaturedArtists] = useState([]);
   const [popularArtists, setPopularArtists] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
@@ -202,7 +250,6 @@ export default function HomeScreen({ navigation }) {
     if (!isRefresh) setDashboardLoading(true);
     try {
       const data = await getHomeDashboard(MOCK_LAT, MOCK_LNG);
-      console.log("[HOME DASHBOARD SUCCESS DATA]:", JSON.stringify(data, null, 2));
       setCategories(data?.categories || []);
       setOffers(data?.offers || data?.banners || []);
       setFeaturedArtists(data?.featured_artists || data?.featuredArtists || []);
@@ -534,7 +581,7 @@ export default function HomeScreen({ navigation }) {
         </View>
         <View style={styles.recentArtistDetails}>
           <Text style={[styles.recentArtistName, { color: currentTextColor }]} numberOfLines={1}>
-            {item.name || "Specialist"}
+            {item.name || item.full_name || item.user?.name || "Specialist"}
           </Text>
           <Text style={[styles.recentArtistCat, { color: currentSecTextColor }]} numberOfLines={1}>
             {item.specialization_name || "Bridal Mehndi"}
@@ -941,18 +988,18 @@ export default function HomeScreen({ navigation }) {
     let result = [...nearbyArtists];
 
     if (selectedFilter === "Nearest") {
-      result.sort((a, b) => (Number(a.distance) || 0) - (Number(b.distance) || 0));
+      result.sort((a, b) => (Number(a.distance) || Number(a.id) || 0) - (Number(b.distance) || Number(b.id) || 0));
     } else if (selectedFilter === "Top Rated") {
-      result.sort((a, b) => (Number(b.avg_rating) || 0) - (Number(a.avg_rating) || 0));
+      result.sort((a, b) => (Number(b.rating || b.avg_rating) || 0) - (Number(a.rating || a.avg_rating) || 0));
     } else if (selectedFilter === "Price Low-High") {
       result.sort((a, b) => {
-        const priceA = a.services?.[0]?.minimum_price || 1500;
-        const priceB = b.services?.[0]?.minimum_price || 1500;
+        const priceA = Number(a.starting_price || a.minimum_price || a.price || a.services?.[0]?.minimum_price || 1500);
+        const priceB = Number(b.starting_price || b.minimum_price || b.price || b.services?.[0]?.minimum_price || 1500);
         return priceA - priceB;
       });
     } else if (selectedFilter === "5+ Exp Years") {
-      result = result.filter(item => (item.experience_years || 0) >= 5);
-      result.sort((a, b) => (b.experience_years || 0) - (a.experience_years || 0));
+      result = result.filter(item => Number(item.experience_years || item.experience || 5) >= 5);
+      result.sort((a, b) => (Number(b.experience_years || b.experience) || 0) - (Number(a.experience_years || a.experience) || 0));
     }
 
     return result;
@@ -1178,7 +1225,7 @@ export default function HomeScreen({ navigation }) {
 
             <FlatList
               data={savedAddressesList}
-              keyExtractor={(item) => item.id?.toString() || Math.random().toString()}
+              keyExtractor={(item, index) => String(item.id || index)}
               renderItem={({ item }) => {
                 const isSelected = activeAddressState?.id === item.id;
                 const tag = item.label || item.name || "Home";

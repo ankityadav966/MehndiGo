@@ -9,6 +9,8 @@ routes = [
 [vars]
 ENVIRONMENT = "production"
 JWT_SECRET = "mehndigo-super-secret-jwt-token-key-2026"
+RAZORPAY_KEY_ID = "rzp_live_TJIF5fG3LByErG"
+RAZORPAY_KEY_SECRET = "xMxDHNwnadR2sr5uiEk7QmH6"
 
 [[d1_databases]]
 binding = "DB"

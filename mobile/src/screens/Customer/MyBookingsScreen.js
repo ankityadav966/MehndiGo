@@ -60,7 +60,7 @@ export default function MyBookingsScreen({ navigation }) {
     if (imageErrors[item.id]) {
       return getCategoryFallback(item);
     }
-    const rawUri = item?.artist?.user?.profile_image || item?.service?.image;
+    const rawUri = item?.artist_image || item?.artist?.profile_image || item?.artist?.user?.profile_image || item?.service?.image;
     if (!rawUri || typeof rawUri !== "string") {
       return getCategoryFallback(item);
     }
@@ -161,7 +161,7 @@ export default function MyBookingsScreen({ navigation }) {
     }
 
     const isLiveBooking = ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "ARTIST_ARRIVED", "SERVICE_STARTED"].includes(status);
-    const artistName = item.artist?.user?.name || item.service?.specialization_name || "Mehndi Booking";
+    const artistName = item.artist_name || item.artist?.user?.name || item.service_title || item.service?.specialization_name || "Mehndi Booking";
 
     return (
       <TouchableOpacity

@@ -309,22 +309,17 @@ export default function ArtistProfileScreen({ navigation }) {
   };
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      fetchPortfolios();
-      fetchProfile();
-      fetchArtistPortfolioItems();
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [fetchPortfolios]);
+    fetchProfile();
+    fetchArtistPortfolioItems();
+  }, []);
 
   useEffect(() => {
     const unsubscribe = navigation.addListener("focus", () => {
-      fetchPortfolios();
       fetchProfile();
       fetchArtistPortfolioItems();
     });
     return unsubscribe;
-  }, [navigation, fetchPortfolios]);
+  }, [navigation]);
 
   const filteredPortfolios = useMemo(() => {
     if (activeTab === "Services") {

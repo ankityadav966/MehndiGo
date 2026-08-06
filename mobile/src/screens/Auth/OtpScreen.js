@@ -17,7 +17,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useArtistOnboarding } from "../../context/ArtistOnboardingContext";
 
 export default function OtpScreen({ navigation, route }) {
-  const { email, role, otp: initialOtp, isRegistering } = route.params || {};
+  const { name, email, phone, role, otp: initialOtp, isRegistering } = route.params || {};
   const [otp, setOtp] = useState(initialOtp ? initialOtp.split("") : ["", "", "", "", "", ""]);
   const inputRefs = useRef([]);
   const { dispatch } = useAuth();
@@ -83,7 +83,7 @@ export default function OtpScreen({ navigation, route }) {
     try {
       let data;
       if (isRegistering) {
-        data = await registerVerifyOtp(email, otpStr);
+        data = await registerVerifyOtp(email, otpStr, name, phone, role);
       } else {
         data = await verifyUserOtp(email, otpStr);
       }

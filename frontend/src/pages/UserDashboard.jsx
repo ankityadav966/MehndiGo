@@ -84,7 +84,7 @@ const UserDashboard = ({ showToast }) => {
         throw new Error("Order ID not returned from server");
       }
 
-      const keyId = import.meta.env.VITE_RAZORPAY_KEY_ID || "rzp_test_TGoR6mRPZ6Isma";
+      const keyId = import.meta.env.VITE_RAZORPAY_KEY_ID || "rzp_live_TJIF5fG3LByErG";
 
       const options = {
         key: keyId,
