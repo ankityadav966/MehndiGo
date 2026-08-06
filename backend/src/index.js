@@ -176,7 +176,7 @@ const handleRegisterVerifyOtp = async (c) => {
     const targetEmail = (email && typeof email === "string" && email.trim()) ? email.trim().toLowerCase() : `user_${Date.now()}@mehndigo.com`;
     const targetName = name || full_name || "Mehndi User";
     const targetPhone = (phone && typeof phone === "string" && phone.trim()) ? phone.trim() : null;
-    const targetRole = (role === "ARTIST" || role === "artist") ? "artist" : "customer";
+    const targetRole = (role === "ARTIST" || role === "artist") ? "ARTIST" : "USER";
 
     // Lookup existing user by email or phone
     let user = null;
@@ -196,7 +196,6 @@ const handleRegisterVerifyOtp = async (c) => {
         user = { id: newUserId, full_name: targetName, email: targetEmail, phone: targetPhone, role: targetRole, is_verified: 1 };
       } catch (insertErr) {
         console.log("D1 Insert Fallback Notice:", insertErr.message);
-        // Fallback if phone unique constraint hit on insert
         const fallbackUser = await db.first("SELECT * FROM users WHERE email = ? OR phone = ?", [targetEmail, targetPhone]);
         if (fallbackUser) {
           user = fallbackUser;
@@ -246,26 +245,36 @@ const handleRegisterVerifyOtp = async (c) => {
 const handleSendOtp = async (c) => {
   const db = getDb(c.env);
   const body = await c.req.json().catch(() => ({}));
-  const identifier = (body.email || body.phone || body.identifier || "user").trim().toLowerCase();
+  const loginVal = (body.email || body.phone || body.identifier || "").trim().toLowerCase();
+
+  if (!loginVal) {
+    return jsonRes(c, false, null, "Email or Mobile Number is required for login", 400);
+  }
+
+  let user = await db.first("SELECT * FROM users WHERE LOWER(email) = ? OR phone = ?", [loginVal, loginVal]).catch(() => null);
+  if (!user) {
+    return jsonRes(c, false, null, "User not found. Please register first.", 404);
+  }
 
   const otp = generate6DigitOtp();
   try {
     await db.run(
       "INSERT INTO otps (identifier, code, expires_at) VALUES (?, ?, datetime('now', '+10 minutes'))",
-      [identifier, otp]
+      [loginVal, otp]
     );
   } catch (e) {
     console.log("OTP DB insert notice:", e.message);
   }
 
-  if (identifier && identifier.includes("@")) {
-    c.executionCtx?.waitUntil?.(sendRealOtpEmail(c, identifier, otp, "Mehndi User"));
+  if (loginVal && loginVal.includes("@")) {
+    c.executionCtx?.waitUntil?.(sendRealOtpEmail(c, loginVal, otp, user.full_name || "User"));
   }
 
   return jsonRes(c, true, {
     message: "OTP Sent Successfully",
     otp,
-    identifier
+    identifier: loginVal,
+    role: user.role
   }, "OTP Sent Successfully");
 };
 
@@ -274,11 +283,15 @@ const handleVerifyOtp = async (c) => {
     const db = getDb(c.env);
     const body = await c.req.json().catch(() => ({}));
     const { email, phone, identifier } = body;
-    const targetEmail = (email || phone || identifier || "user@mehndigo.com").trim().toLowerCase();
+    const targetEmail = (email || phone || identifier || "").trim().toLowerCase();
 
-    let user = await db.first("SELECT * FROM users WHERE email = ? OR phone = ?", [targetEmail, targetEmail]);
+    if (!targetEmail) {
+      return jsonRes(c, false, null, "Email or Phone is required for login", 400);
+    }
+
+    let user = await db.first("SELECT * FROM users WHERE LOWER(email) = ? OR phone = ?", [targetEmail, targetEmail]);
     if (!user) {
-      user = { id: Date.now(), full_name: "Mehndi Client", email: targetEmail, role: "customer", is_verified: 1 };
+      return jsonRes(c, false, null, "User not found. Please register first.", 404);
     }
 
     const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));

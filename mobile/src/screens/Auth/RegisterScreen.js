@@ -99,10 +99,13 @@ export default function RegisterScreen({ navigation, route }) {
 
     setLoading(true);
     try {
+      console.log("[ROLE TRACE 1] RegisterScreen selectedRole:", selectedRole);
+      console.log("[ROLE TRACE 3] /register-send-otp payload:", { trimmedName, trimmedEmail, cleanPhone, selectedRole });
       const res = await registerSendOtp(trimmedName, trimmedEmail, cleanPhone, selectedRole);
       const data = res?.data || res;
       const otp = data.otp ? String(data.otp) : "";
 
+      console.log("[ROLE TRACE 2] Role passed to OtpScreen navigation:", selectedRole);
       Alert.alert("Registration OTP Sent", `Verification OTP has been sent to your email. (Dev code: ${otp})`);
       navigation.navigate("Otp", {
         name: trimmedName,

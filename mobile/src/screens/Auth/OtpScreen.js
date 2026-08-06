@@ -94,10 +94,17 @@ export default function OtpScreen({ navigation, route }) {
         console.log("Failed to clear stored referral code:", err.message);
       }
       const token = await secureStorage.getAccessToken();
-      console.log("Verify OTP Response Token:", token);
-      console.log("Verify OTP Response Data:", JSON.stringify(data, null, 2));
+      console.log("[ROLE TRACE 4] /register-verify-otp response:", JSON.stringify(data, null, 2));
+      console.log("[ROLE TRACE 5] data.user.role from API response:", data.user?.role, "| Route param role:", role);
 
-      const userRole = data.user?.role || role;
+      const rawRole = data.user?.role || role || "";
+      const userRole = (String(rawRole).toUpperCase() === "ARTIST") ? "ARTIST" : "USER";
+
+      await secureStorage.setUserRole(userRole);
+      if (data.user) {
+        await secureStorage.setUserData({ ...data.user, role: userRole });
+      }
+      console.log("[ROLE TRACE 6] Role saved in secureStorage:", userRole);
 
       if (userRole === "ARTIST") {
         let profileCompleted = false;
@@ -124,10 +131,11 @@ export default function OtpScreen({ navigation, route }) {
         }
       }
 
+      console.log("[ROLE TRACE 7] Role passed in LOGIN dispatch:", userRole);
       dispatch({
         type: "LOGIN",
         payload: {
-          user: data.user,
+          user: data.user ? { ...data.user, role: userRole } : { role: userRole },
           token: token || data.token,
           role: userRole,
         },

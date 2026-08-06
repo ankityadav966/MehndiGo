@@ -2,6 +2,10 @@ name = "mehndigo-backend"
 main = "src/index.js"
 compatibility_date = "2024-09-23"
 
+routes = [
+  { pattern = "api.mehndigo.in", custom_domain = true }
+]
+
 [vars]
 ENVIRONMENT = "production"
 JWT_SECRET = "mehndigo-super-secret-jwt-token-key-2026"
