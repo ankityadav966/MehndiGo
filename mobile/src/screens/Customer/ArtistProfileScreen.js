@@ -104,13 +104,18 @@ export default function ArtistProfileScreen({ route, navigation }) {
 
       setProfile(prof);
       setServices(servs || []);
-      setPortfolio(port || []);
-      setReviewsData(revs || { reviews: [], distribution: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 } });
-      setAvailability(avail || []);
-      setSimilar(sim || []);
+      const reviewsList = Array.isArray(revs) ? revs : (revs?.reviews || []);
+      const reviewsDist = (!Array.isArray(revs) && revs?.distribution) ? revs.distribution : { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+      setReviewsData({
+        reviews: reviewsList,
+        distribution: reviewsDist
+      });
+      setAvailability(Array.isArray(avail) ? avail : (avail?.slots || []));
+      setSimilar(Array.isArray(sim) ? sim : []);
 
       // Check favorite
-      const isArtistFav = (favs || []).some((fav) => fav.id === prof.id);
+      const targetId = prof.id || prof.user_id;
+      const isArtistFav = (Array.isArray(favs) ? favs : []).some((fav) => fav.id === targetId || fav.user_id === targetId);
       setIsFav(isArtistFav);
 
       // Default date select

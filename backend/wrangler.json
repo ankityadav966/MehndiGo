@@ -1,0 +1,12 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mehndigo-backend",
+  "compatibility_date": "2026-08-04",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "mehndigo",
+      "database_id": "c25b4a9f-8ad2-4422-85bb-d64ddadcebaa"
+    }
+  ]
+}

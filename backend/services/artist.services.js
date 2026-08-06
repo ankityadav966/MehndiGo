@@ -919,6 +919,29 @@ async updateBookingStatus(
         payment_id: paymentId
       };
     }
+
+    // Real-time Socket.IO alert to artist
+    try {
+      const io = getIO();
+      io.to(artistUserId.toString()).emit("new_notification", {
+        title: "Payment Success",
+        message: "Booking payment completed",
+        type: "PAYMENT",
+      });
+      // Also notify the user
+      io.to(booking.user_id.toString()).emit("new_notification", {
+        title: "Payment Confirmed",
+        message: "Your payment has been confirmed successfully",
+        type: "PAYMENT",
+      });
+    } catch (e) { /* socket not initialized */ }
+
+    return {
+      success: true,
+      message: "Payment verified successfully",
+      order_id: orderId,
+      payment_id: paymentId
+    };
   }
 
 async createReview(data) {

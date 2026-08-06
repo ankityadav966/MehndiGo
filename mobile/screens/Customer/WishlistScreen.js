@@ -110,7 +110,7 @@ export default function WishlistScreen({ navigation }) {
         <FlatList
           data={wishlist}
           renderItem={renderItem}
-          keyExtractor={(item, index) => item?.id ? item.id.toString() : index.toString()}
+          keyExtractor={(item, index) => String(item.id || item.user_id || item.artist_id || index)}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={fetchWishlist} colors={[Colors.primary]} />
           }

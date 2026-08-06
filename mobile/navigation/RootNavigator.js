@@ -2,6 +2,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import SplashScreen from "../screens/Auth/SplashScreen";
 import Onboarding3 from "../screens/Auth/Onboarding3";
 import LoginScreen from "../screens/Auth/LoginScreen";
+import RegisterScreen from "../screens/Auth/RegisterScreen";
 import OtpScreen from "../screens/Auth/OtpScreen";
 import ArtistFlowStack from "./ArtistFlowStack";
 import ArtistStack from "./ArtistStack";
@@ -32,6 +33,7 @@ export default function RootNavigator() {
           <Stack.Screen name="Splash" component={SplashScreen} />
           <Stack.Screen name="Onboarding3" component={Onboarding3} />
           <Stack.Screen name="Login" component={LoginScreen} />
+          <Stack.Screen name="Register" component={RegisterScreen} />
           <Stack.Screen name="Otp" component={OtpScreen} />
         </>
       ) : user?.role === "ARTIST" ? (

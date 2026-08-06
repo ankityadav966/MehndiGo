@@ -6,7 +6,20 @@ export async function getHomeDashboard(latitude = null, longitude = null) {
     endpoint += `?latitude=${latitude}&longitude=${longitude}`;
   }
   const res = await apiRequest("GET", endpoint, null, true);
-  return res?.data || res;
+  const data = res?.data || res;
+  console.log("\n==========================================");
+  console.log("[CUSTOMER HOME API RESPONSE]:", JSON.stringify(data, null, 2));
+  console.log("==========================================\n");
+  return data;
+}
+
+export async function getCustomerDashboard() {
+  const res = await apiRequest("GET", "/customer/dashboard", null, true);
+  const data = res?.data || res;
+  console.log("\n==========================================");
+  console.log("[CUSTOMER DASHBOARD API RESPONSE]:", JSON.stringify(data, null, 2));
+  console.log("==========================================\n");
+  return data;
 }
 
 export async function getCategories() {
@@ -190,11 +203,6 @@ export async function unsavePortfolioItem(portfolioId) {
 
 export async function fetchSavedPortfolios() {
   const res = await apiRequest("GET", "/customer/portfolio/saved", null, true);
-  return res?.data || res;
-}
-
-export async function getCustomerDashboard() {
-  const res = await apiRequest("GET", "/customer/dashboard", null, true);
   return res?.data || res;
 }
 
