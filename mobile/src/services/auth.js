@@ -79,16 +79,21 @@ export function sanitizePhone(phone) {
   return cleaned;
 }
 
-export async function sendOtp(name, email, phone, role) {
-  console.log("Sending OTP request");
-  const sanitized = sanitizePhone(phone);
-  const targetEmail = (email && String(email).trim().length > 0)
-    ? String(email).trim().toLowerCase()
-    : (sanitized ? `${sanitized}@gmail.com` : "user@mehndigo.com");
+export async function sendOtp(nameOrEmail, emailParam, phone, role) {
+  console.log("Sending OTP request:", { nameOrEmail, emailParam, phone, role });
+  let targetEmail = "";
+  if (typeof nameOrEmail === "string" && nameOrEmail.includes("@")) {
+    targetEmail = nameOrEmail.trim().toLowerCase();
+  } else if (emailParam && String(emailParam).trim().length > 0) {
+    targetEmail = String(emailParam).trim().toLowerCase();
+  } else {
+    const sanitized = sanitizePhone(phone);
+    targetEmail = sanitized ? `${sanitized}@gmail.com` : "user@mehndigo.com";
+  }
 
   const data = await apiRequest("POST", "/api/v1/mehndigo/user/send-otp", {
     email: targetEmail,
-    phone: sanitized || phone || null,
+    phone: phone ? sanitizePhone(phone) : null,
     role: role === "CUSTOMER" ? "USER" : role,
   });
 
@@ -111,11 +116,14 @@ export async function registerSendOtp(name, email, phone, role) {
   return data;
 }
 
-export async function registerVerifyOtp(email, otp) {
-  console.log("Verifying register OTP:", { email, otp });
+export async function registerVerifyOtp(email, otp, name, phone, role) {
+  console.log("Verifying register OTP:", { email, otp, name, phone, role });
   const data = await apiRequest("POST", "/api/v1/mehndigo/user/register-verify-otp", {
     email,
     otp,
+    name,
+    phone,
+    role,
   });
   return persistAuthData(data);
 }

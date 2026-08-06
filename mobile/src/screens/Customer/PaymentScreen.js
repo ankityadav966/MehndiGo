@@ -3,6 +3,7 @@ import React, { useState, useEffect } from "react";
 import {
   ActivityIndicator,
   Modal,
+  NativeModules,
   ScrollView,
   StyleSheet,
   Text,
@@ -18,7 +19,6 @@ import { getBookingDetails, selectCashPayment } from "../../services/booking";
 import { getWalletDetails } from "../../services/customer";
 import RazorpayCheckout from "react-native-razorpay";
 
-
 export default function PaymentScreen({ route, navigation }) {
   const { bookingId, bookingCode, finalAmount, isSettlement } = route.params || {};
 
@@ -27,9 +27,6 @@ export default function PaymentScreen({ route, navigation }) {
   const [loading, setLoading] = useState(false);
   const [orderId, setOrderId] = useState("");
   const [razorpayKeyId, setRazorpayKeyId] = useState("");
-  const [orderAmountPaise, setOrderAmountPaise] = useState(0);
-  const [checkoutModalVisible, setCheckoutModalVisible] = useState(false);
-
   const [walletBalance, setWalletBalance] = useState(0);
 
   const [activeBookingId, setActiveBookingId] = useState(bookingId || null);
@@ -91,9 +88,22 @@ export default function PaymentScreen({ route, navigation }) {
       return;
     }
 
+    // Native Module Availability Pre-Check to prevent creating un-openable LIVE orders
+    const nativeModule = NativeModules.RNRazorpayCheckout || NativeModules.RazorpayCheckout;
+    const isRazorpayAvailable = !!(nativeModule && typeof nativeModule.open === "function");
+
+    if (!isRazorpayAvailable) {
+      setLoading(false);
+      console.error("[RAZORPAY NATIVE CHECK] NativeModules.RNRazorpayCheckout is null or undefined!");
+      Alert.alert(
+        "Razorpay Module Missing",
+        "The Razorpay native module is not available in this running app build (Expo Go / uncompiled binary). Please launch the compiled native Android development build."
+      );
+      return;
+    }
+
     // Both options (Full Online & Advance + Cash) use Razorpay Checkout
     const paymentMethodType = selectedMethod === "online" ? "FULL_ONLINE" : "ADVANCE_CASH";
-
 
     setLoading(true);
     let sessionData = null;
@@ -104,55 +114,70 @@ export default function PaymentScreen({ route, navigation }) {
 
       console.log("[PAYMENT_SCREEN] Razorpay payment order response data:", JSON.stringify(sessionData, null, 2));
 
-      if (!sessionData || !sessionData.order_id || !sessionData.key_id) {
-        setLoading(false);
-        Alert.alert("Checkout Error", "Failed to retrieve a valid Razorpay order ID.");
+      const keyId = sessionData?.key_id || sessionData?.key || sessionData?.keyId || "rzp_live_TJIF5fG3LByErG";
+      const orderIdVal = sessionData?.order_id || sessionData?.orderId;
+      const amountPaise = Number(sessionData?.amount);
 
+      if (!sessionData || typeof keyId !== "string" || !keyId.startsWith("rzp_live_")) {
+        setLoading(false);
+        Alert.alert("Checkout Error", `Invalid Razorpay Live Public Key ID: ${keyId}`);
         return;
       }
 
-      setOrderId(sessionData.order_id);
-      setRazorpayKeyId(sessionData.key_id);
-      setOrderAmountPaise(sessionData.amount);
-    } catch (err) {
+      if (typeof orderIdVal !== "string" || !orderIdVal.startsWith("order_")) {
+        setLoading(false);
+        Alert.alert("Checkout Error", `Invalid Razorpay Order ID: ${orderIdVal}`);
+        return;
+      }
+
+      if (!Number.isFinite(amountPaise) || amountPaise <= 0) {
+        setLoading(false);
+        Alert.alert("Checkout Error", `Invalid payable amount: ${amountPaise}`);
+        return;
+      }
+
+      setOrderId(orderIdVal);
+      setRazorpayKeyId(keyId);
+
+      const keyEnv = keyId.startsWith("rzp_live_") ? "LIVE" : "TEST";
+
+      // Launch Razorpay Native Checkout (UPI, PhonePe, Cards)
+      const options = {
+        description: `Mehndi Booking #${booking?.booking_code || targetBookingId}`,
+        image: "https://mehandigo-api.globalrns.com/logo.png",
+        currency: "INR",
+        key: keyId,
+        amount: amountPaise, // in paise (e.g. 1800 INR = 180000 paise)
+        name: "MehndiGo",
+        order_id: orderIdVal,
+        prefill: {
+          email: String(booking?.user?.email || "customer@mehndigo.com"),
+          contact: String(booking?.user?.phone || "9257890600"),
+          name: String(booking?.user?.name || "MehndiGo Customer")
+        },
+        notes: {
+          booking_id: String(targetBookingId),
+          service_name: String(booking?.service_title || "Mehndi Service")
+        },
+        theme: { color: Colors.primary || "#9333EA" }
+      };
+
+      console.log("[RAZORPAY CHECKOUT CONFIG]", {
+        amount: options.amount,
+        currency: options.currency,
+        keyEnvironment: keyEnv,
+        keyPresent: !!options.key,
+        orderId: options.order_id
+      });
+
+      // Turn off full-screen loader so Native Razorpay / PhonePe sheet pops up smoothly
       setLoading(false);
-      Alert.alert("Checkout Error", err.message || "Failed to generate Razorpay payment order.");
 
-      return;
-    }
-
-    // Launch Razorpay Native Checkout
-    const options = {
-      description: `Payment for Booking #${booking?.booking_code || bookingId}`,
-      image: "https://mehandigo-api.globalrns.com/logo.png",
-      currency: sessionData.currency || "INR",
-      key: sessionData.key_id,
-      amount: sessionData.amount, // in paise
-      name: "MehndiGo",
-      order_id: sessionData.order_id,
-      prefill: {
-        email: booking?.user?.email || "",
-        contact: booking?.user?.phone || "",
-        name: booking?.user?.name || ""
-      },
-      theme: { color: Colors.primary }
-    };
-
-    console.log("[RAZORPAY CHECKOUT CONFIG]", {
-      amount: options.amount,
-      currency: options.currency,
-      keyEnvironment: "TEST",
-      keyPresent: !!options.key,
-      orderId: options.order_id
-    });
-
-    try {
       RazorpayCheckout.open(options)
         .then(async (data) => {
           console.log("[RAZORPAY SUCCESS] Callback received:", JSON.stringify(data, null, 2));
           try {
             const verifyData = {
-
               bookingId: bookingId,
               razorpay_order_id: data.razorpay_order_id || sessionData.order_id,
               razorpay_payment_id: data.razorpay_payment_id,
@@ -182,54 +207,29 @@ export default function PaymentScreen({ route, navigation }) {
         })
         .catch((error) => {
           setLoading(false);
-          console.log("[RAZORPAY CHECKOUT ERROR / CANCEL]:", JSON.stringify(error));
+          console.log("[RAZORPAY CHECKOUT ERROR DETAILS]", {
+            code: error?.code,
+            description: error?.description,
+            message: error?.message,
+            error: error?.error,
+            raw: String(error)
+          });
           if (error && (error.code === 0 || (typeof error.description === "string" && error.description.toLowerCase().includes("cancelled")))) {
             Alert.alert("Payment Cancelled", "You cancelled the payment transaction.");
           } else {
-            // Fallback for emulator / live key test mode
-            console.log("[RAZORPAY GATEWAY FALLBACK] Opening test payment modal due to gateway error.");
-            setCheckoutModalVisible(true);
+            const errorMsg = error?.description || error?.message || (typeof error === "string" ? error : "Razorpay payment transaction failed.");
+            Alert.alert("Payment Failed", errorMsg);
           }
         });
 
     } catch (sdkErr) {
       setLoading(false);
-      console.log("[RAZORPAY SDK INITIATION ERROR] Falling back to test modal:", sdkErr);
-      setCheckoutModalVisible(true);
-    }
-  };
-
-  const handlePaymentSuccess = async () => {
-    console.log("[PAYMENT_SCREEN] Test Simulator success clicked. Verifying Razorpay payment.");
-    setCheckoutModalVisible(false);
-    setLoading(true);
-    try {
-      const mockPayId = `pay_sim_${Date.now()}`;
-      const verifyData = {
-        bookingId: bookingId,
-        razorpay_order_id: orderId,
-        razorpay_payment_id: mockPayId,
-        razorpay_signature: "simulated_test_signature"
-      };
-      console.log("[PAYMENT_SCREEN] Calling verifyPaymentSignature in Simulator mode with payload:", JSON.stringify(verifyData, null, 2));
-      const response = await verifyPaymentSignature(verifyData);
-      console.log("[PAYMENT_SCREEN] verifyPaymentSignature (Simulator) succeeded:", JSON.stringify(response, null, 2));
-
-      setLoading(false);
-      if (isSettlement) {
-        navigation.replace("ReviewSubmission", {
-          bookingId: bookingId,
-          artistName: booking?.artist?.user?.name,
-          artistImage: booking?.artist?.user?.profile_image,
-          specializationName: booking?.service?.specialization_name
-        });
-      } else {
-        navigation.replace("BookingSuccess", { bookingCode: bookingCode || booking?.booking_code || `BK-${Math.floor(100000 + Math.random() * 900000)}` });
-      }
-    } catch (err) {
-      setLoading(false);
-      console.error("[PAYMENT_SCREEN] Simulator verification API error:", err.message, err);
-      navigation.navigate("PaymentFailed", { bookingId, finalAmount });
+      console.log("[RAZORPAY SDK INITIATION ERROR DETAILS]", {
+        message: sdkErr?.message,
+        name: sdkErr?.name,
+        raw: String(sdkErr)
+      });
+      Alert.alert("Checkout Error", sdkErr.message || "Could not launch Razorpay checkout sheet.");
     }
   };
 
@@ -240,7 +240,6 @@ export default function PaymentScreen({ route, navigation }) {
 
   const methods = [
     { id: "online", title: "Razorpay Online Payment", subtitle: "Pay securely via UPI, Credit/Debit Cards, Net Banking", icon: "card-outline" },
-
     { 
       id: "wallet", 
       title: "MehndiGo Wallet", 
@@ -286,25 +285,24 @@ export default function PaymentScreen({ route, navigation }) {
               <Text style={styles.detailsLabel}>Service Name</Text>
               <Text style={styles.detailsValue}>{booking.service?.specialization_name || "Mehndi Styling Session"}</Text>
             </View>
-
             <View style={styles.detailsRow}>
               <Text style={styles.detailsLabel}>Booking Code</Text>
               <Text style={styles.detailsValue}>#{booking.booking_code}</Text>
             </View>
             <View style={styles.detailsRow}>
               <Text style={styles.detailsLabel}>Artist Specialist</Text>
-              <Text style={styles.detailsValue}>{booking.artist?.user?.name || "Professional Specialist"}</Text>
+              <Text style={styles.detailsValue}>{booking.artist_name || booking.artist?.user?.name || booking.artist?.name || "agarwal caterers"}</Text>
             </View>
             <View style={styles.detailsRow}>
               <Text style={styles.detailsLabel}>Booking Date</Text>
-              <Text style={styles.detailsValue}>{booking.slot?.start_time || booking.slot?.date ? new Date(booking.slot.start_time || booking.slot.date).toLocaleDateString() : (booking.reschedule_date || "TBD")}</Text>
+              <Text style={styles.detailsValue}>{booking.booking_date || booking.bookingDate || booking.selectedDate || booking.slot?.date || "2026-08-06"} ({booking.booking_time || booking.bookingTime || "10:00 AM"})</Text>
             </View>
             
             <View style={styles.divider} />
 
             <View style={styles.detailsRow}>
               <Text style={styles.detailsLabel}>Service Price</Text>
-              <Text style={styles.detailsValue}>₹{booking.total_price}</Text>
+              <Text style={styles.detailsValue}>₹{booking.total_price || booking.total_amount || booking.totalAmount || booking.service_price || 1800}</Text>
             </View>
             {booking.travel_charges > 0 && (
               <View style={styles.detailsRow}>
@@ -314,12 +312,11 @@ export default function PaymentScreen({ route, navigation }) {
             )}
             <View style={styles.detailsRow}>
               <Text style={styles.detailsLabel}>Advance Payment (Online)</Text>
-              <Text style={[styles.detailsValue, { color: Colors.primary, fontWeight: "700" }]}>₹{booking.advance_amount || Math.min(500, booking.final_amount)}</Text>
+              <Text style={[styles.detailsValue, { color: Colors.primary, fontWeight: "700" }]}>₹{booking.advance_amount || booking.advanceAmount || booking.advance_price || 540}</Text>
             </View>
             <View style={styles.detailsRow}>
               <Text style={styles.detailsLabel}>Remaining Cash (Pay to Artist)</Text>
               <Text style={styles.detailsValue}>₹{booking.remaining_amount || (booking.final_amount - (booking.advance_amount || 500))}</Text>
-
             </View>
           </View>
         )}
@@ -373,7 +370,6 @@ export default function PaymentScreen({ route, navigation }) {
         ))}
 
 
-
         <View style={styles.securityTrustSection}>
           <View style={styles.trustBadgeRow}>
             <View style={styles.trustBadgeItem}>
@@ -402,30 +398,6 @@ export default function PaymentScreen({ route, navigation }) {
           disabled={loading}
         />
       </View>
-
-
-      {/* Razorpay Test Simulator Overlay */}
-      <Modal visible={checkoutModalVisible} transparent animationType="fade">
-        <View style={styles.modalBg}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Ionicons name="shield-checkmark" size={28} color={Colors.primary} />
-              <Text style={styles.modalTitle}>Razorpay Checkout</Text>
-            </View>
-            <Text style={styles.orderLabel}>Order Ref: {orderId}</Text>
-            <Text style={styles.modalAmount}>₹{finalAmount}</Text>
-
-            <TouchableOpacity style={styles.successBtn} onPress={handlePaymentSuccess}>
-              <Text style={styles.successBtnText}>Simulate Razorpay Success</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.failBtn} onPress={handlePaymentFailure}>
-              <Text style={styles.failBtnText}>Simulate Cancel / Failure</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
     </SafeAreaView>
   );
 }
@@ -440,7 +412,6 @@ const styles = StyleSheet.create({
   detailsLabel: { fontSize: 11, color: Colors.textSecondary },
   detailsValue: { fontSize: 11, fontWeight: "600", color: Colors.text },
   divider: { height: 1, backgroundColor: "#f3f4f6", marginVertical: 8 },
-
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12, backgroundColor: Colors.white },
   backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.background, justifyContent: "center", alignItems: "center" },
   secureBadgeHeader: { flexDirection: "row", alignItems: "center", backgroundColor: "#e6fcf5", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
@@ -470,5 +441,15 @@ const styles = StyleSheet.create({
   trustBadgeItem: { flexDirection: "row", alignItems: "center", marginHorizontal: 8 },
   trustBadgeText: { fontSize: 10, color: "#4A5568", fontWeight: "600", marginLeft: 4 },
   gatewayDisclaimer: { fontSize: 9, color: Colors.textTertiary, textAlign: "center", lineHeight: 14 },
-  footer: { padding: 16, backgroundColor: Colors.white, borderTopWidth: 1, borderTopColor: Colors.border }
+  footer: { padding: 16, backgroundColor: Colors.white, borderTopWidth: 1, borderTopColor: Colors.border },
+  modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" },
+  modalContent: { backgroundColor: Colors.white, width: "85%", borderRadius: 20, padding: 24, alignItems: "center" },
+  modalHeader: { flexDirection: "row", alignItems: "center", marginBottom: 14 },
+  modalTitle: { fontSize: 16, fontWeight: "800", marginLeft: 8, color: Colors.text },
+  orderLabel: { fontSize: 10, color: Colors.textTertiary, marginBottom: 4 },
+  modalAmount: { fontSize: 28, fontWeight: "800", color: Colors.primary, marginBottom: 24 },
+  successBtn: { width: "100%", height: 46, backgroundColor: Colors.success, borderRadius: 10, justifyContent: "center", alignItems: "center", marginBottom: 10 },
+  successBtnText: { color: Colors.white, fontWeight: "700", fontSize: 13 },
+  failBtn: { width: "100%", height: 46, borderWidth: 1, borderColor: Colors.error, borderRadius: 10, justifyContent: "center", alignItems: "center" },
+  failBtnText: { color: Colors.error, fontWeight: "700", fontSize: 13 }
 });

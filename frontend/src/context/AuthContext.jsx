@@ -12,7 +12,7 @@ export const AuthProvider = ({ children }) => {
     }
   });
   const [token, setToken] = useState(localStorage.getItem("token") || null);
-  const [theme, setTheme] = useState(localStorage.getItem("theme") || "dark");
+  const [theme, setTheme] = useState(localStorage.getItem("theme") || "light");
 
   useEffect(() => {
     if (token) {

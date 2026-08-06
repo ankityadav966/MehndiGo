@@ -241,7 +241,7 @@ export default function SavedAddressesScreen({ navigation }) {
       ) : (
         <FlatList
           data={addresses}
-          keyExtractor={(item) => item.id?.toString() || Math.random().toString()}
+          keyExtractor={(item, index) => String(item.id || index)}
           renderItem={renderAddressItem}
           contentContainerStyle={styles.listContent}
           refreshing={refreshing}

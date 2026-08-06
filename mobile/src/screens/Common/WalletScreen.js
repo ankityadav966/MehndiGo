@@ -1,5 +1,5 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -18,7 +18,6 @@ import Colors from "../../constants/Colors";
 import { getWalletDetails, getWalletTransactions } from "../../services/customer";
 import { createPaymentSession } from "../../services/payment";
 import RazorpayCheckout from "react-native-razorpay";
-
 import apiRequest from "../../services/api";
 import moment from "moment";
 
@@ -68,7 +67,11 @@ export default function WalletScreen({ navigation }) {
     loadWalletData();
   };
 
+  const isProcessingPaymentRef = useRef(false);
+
   const handleAddMoney = async (amountToRecharge) => {
+    if (isProcessingPaymentRef.current || addingMoney) return;
+
     const amt = Number(amountToRecharge);
     if (!amt || isNaN(amt) || amt <= 0) {
       Alert.alert("Validation Error", "Please enter a valid amount (e.g. ₹100 or more).");
@@ -79,13 +82,15 @@ export default function WalletScreen({ navigation }) {
       return;
     }
 
+    isProcessingPaymentRef.current = true;
     setAddingMoney(true);
     let sessionData = null;
     try {
       console.log("[WALLET_SCREEN] Creating Razorpay recharge order for amount:", amt);
       sessionData = await createPaymentSession(1, amt);
 
-      if (!sessionData || !sessionData.order_id || !sessionData.key_id) {
+      if (!sessionData || !sessionData.order_id || (!sessionData.key_id && !sessionData.key)) {
+        isProcessingPaymentRef.current = false;
         setAddingMoney(false);
         Alert.alert("Checkout Error", "Failed to generate payment session. Please try again.");
         return;
@@ -98,7 +103,7 @@ export default function WalletScreen({ navigation }) {
         description: `MehndiGo Wallet Top-Up ₹${amt}`,
         image: "https://mehandigo-api.globalrns.com/logo.png",
         currency: sessionData.currency || "INR",
-        key: sessionData.key_id,
+        key: sessionData.key_id || sessionData.key,
         amount: sessionData.amount, // in paise
         name: "MehndiGo Wallet",
         order_id: sessionData.order_id,
@@ -122,10 +127,12 @@ export default function WalletScreen({ navigation }) {
             console.error("Verification error in wallet recharge:", verifyErr);
             Alert.alert("Verification Failed", verifyErr.message || "Failed to confirm payment signature.");
           } finally {
+            isProcessingPaymentRef.current = false;
             setAddingMoney(false);
           }
         })
         .catch((error) => {
+          isProcessingPaymentRef.current = false;
           setAddingMoney(false);
           console.log("[WALLET RAZORPAY ERROR / CANCEL]:", error);
           if (error && (error.code === 0 || (error.description && error.description.includes("cancelled")))) {
@@ -136,7 +143,7 @@ export default function WalletScreen({ navigation }) {
           }
         });
     } catch (err) {
-
+      isProcessingPaymentRef.current = false;
       setAddingMoney(false);
       Alert.alert("Recharge Error", err.message || "Failed to initiate wallet recharge.");
     }
@@ -153,7 +160,6 @@ export default function WalletScreen({ navigation }) {
         razorpay_signature: "simulated_test_signature"
       }, true);
       Alert.alert("Success 🎉", `₹${customAmount || 500} credited to your wallet balance successfully!`);
-
       setCustomAmount("");
       loadWalletData();
     } catch (err) {

@@ -1,5 +1,4 @@
 import apiRequest, { getNormalizedUrl } from "./api";
-
 import { secureStorage } from "../utils/storage";
 
 async function getUploadBlob(uri, mimeType) {
@@ -69,7 +68,6 @@ export async function createArtistProfile(profileData) {
   const url = getNormalizedUrl("/api/v1/mehndigo/artist/profile");
   console.log(`[API REQUEST] POST (fetch) -> ${url}`);
   const response = await fetch(url, {
-
     method: "POST",
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: formData,
@@ -112,40 +110,58 @@ async function uploadDirectToCloudinary(localUri, mimeType, isVideo, onProgress)
     const resourceType = isVideo ? "video" : "image";
     const url = `https://api.cloudinary.com/v1_1/${cloud_name}/${resourceType}/upload`;
 
-    const cleanUri = localUri.startsWith("/") ? `file://${localUri}` : localUri;
-    const ext = isVideo ? "mp4" : "jpg";
+    const FileSystem = require("expo-file-system/legacy");
 
-    const formData = new FormData();
-    formData.append("file", {
-      uri: cleanUri,
-      name: `upload_${Date.now()}.${ext}`,
-      type: mimeType || (isVideo ? "video/mp4" : "image/jpeg")
-    });
-    formData.append("signature", signature);
-    formData.append("timestamp", String(timestamp));
-    formData.append("api_key", api_key);
-    formData.append("folder", folder);
+    const uploadOptions = {
+      httpMethod: "POST",
+      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+      fieldName: "file",
+      mimeType: mimeType,
+      parameters: {
+        signature: signature,
+        timestamp: String(timestamp),
+        api_key: api_key,
+        folder: folder
+      }
+    };
 
-    const response = await fetch(url, {
-      method: "POST",
-      body: formData
-    });
-
-    const responseData = await response.json();
-    if (!response.ok) {
-      throw new Error(`Cloudinary direct upload failed: ${responseData?.error?.message || response.statusText}`);
+    if (onProgress) {
+      const uploadTask = FileSystem.createUploadTask(
+        url,
+        localUri,
+        uploadOptions,
+        (data) => {
+          if (data.totalBytesExpectedToSend && data.totalBytesExpectedToSend > 0) {
+            const progress = data.totalBytesSent / data.totalBytesExpectedToSend;
+            onProgress(progress);
+          }
+        }
+      );
+      const result = await uploadTask.uploadAsync();
+      if (result.status < 200 || result.status >= 300) {
+        throw new Error(`Cloudinary direct upload failed with status ${result.status}: ${result.body}`);
+      }
+      const responseData = JSON.parse(result.body);
+      return responseData.secure_url;
+    } else {
+      const response = await FileSystem.uploadAsync(url, localUri, uploadOptions);
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(`Cloudinary direct upload failed with status ${response.status}: ${response.body}`);
+      }
+      const responseData = JSON.parse(response.body);
+      return responseData.secure_url;
     }
-    return responseData.secure_url;
   } catch (error) {
     console.error("[uploadDirectToCloudinary] Error:", error);
     throw error;
   }
 }
 
-async function uploadToServerMultipart(localUri, mimeType) {
+async function uploadToServerMultipart(localUri, mimeType, isVideo = false) {
   try {
     const { getNormalizedUrl } = require("./api");
     const { secureStorage } = require("../utils/storage");
+    const FileSystem = require("expo-file-system/legacy");
 
     const endpoint = getNormalizedUrl("/api/v1/mehndigo/artist/portfolio/upload");
     const token = await secureStorage.getAccessToken();
@@ -155,21 +171,24 @@ async function uploadToServerMultipart(localUri, mimeType) {
       cleanUri = `file://${cleanUri}`;
     }
 
-    const ext = (mimeType || "image/jpeg").includes("video") ? "mp4" : "jpg";
-
-    const formData = new FormData();
-    formData.append("media", {
-      uri: cleanUri,
-      name: `media_${Date.now()}.${ext}`,
-      type: mimeType || "image/jpeg"
+    const response = await FileSystem.uploadAsync(endpoint, cleanUri, {
+      httpMethod: "POST",
+      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+      fieldName: "media",
+      mimeType: mimeType || (isVideo ? "video/mp4" : "image/jpeg"),
+      parameters: {
+        type: isVideo ? "video" : "image",
+        is_video: isVideo ? "true" : "false"
+      },
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
     });
 
     if (response.status < 200 || response.status >= 300) {
       throw new Error(`Server file upload failed with status ${response.status}: ${response.body}`);
-
     }
 
-    const uploadedUrl = responseData?.data?.[0]?.url || responseData?.data?.url || responseData?.url;
+    const responseData = JSON.parse(response.body);
+    const uploadedUrl = responseData?.data?.[0]?.url;
     if (!uploadedUrl) {
       throw new Error("No media URL returned from server upload");
     }
@@ -185,7 +204,7 @@ async function uploadMediaWithFallback(localUri, mimeType, isVideo, onProgress) 
     return await uploadDirectToCloudinary(localUri, mimeType, isVideo, onProgress);
   } catch (err) {
     console.warn("[uploadMediaWithFallback] Direct Cloudinary upload failed, using backend server fallback:", err.message);
-    return await uploadToServerMultipart(localUri, mimeType);
+    return await uploadToServerMultipart(localUri, mimeType, isVideo);
   }
 }
 
@@ -217,21 +236,31 @@ export async function createPortfolioItem(itemData, onProgress) {
           if (onProgress) onProgress(0.01 + progress * 0.79);
         }
       );
+      console.log("[VIDEO UPLOAD RESPONSE]", { videoUrl });
     }
 
-    // 2. Upload Image if it is local
+    // 2. Upload Image if it is local and distinct from video
     if (imageUrl && isLocal(imageUrl)) {
-      const imageUri = getSafeUri(imageUrl);
-      imageUrl = await uploadMediaWithFallback(
-        imageUri,
-        "image/jpeg",
-        false,
-        (progress) => {
-          if (!videoUrl && onProgress) {
-            onProgress(0.01 + progress * 0.79);
+      const isVideoFile = (itemData.video_url && imageUrl === itemData.video_url) || /\.(mp4|mov|3gp|mkv)$/i.test(imageUrl);
+      if (isVideoFile) {
+        imageUrl = videoUrl;
+      } else {
+        const imageUri = getSafeUri(imageUrl);
+        imageUrl = await uploadMediaWithFallback(
+          imageUri,
+          "image/jpeg",
+          false,
+          (progress) => {
+            if (!videoUrl && onProgress) {
+              onProgress(0.01 + progress * 0.79);
+            }
           }
-        }
-      );
+        );
+      }
+    }
+
+    if (!imageUrl && videoUrl) {
+      imageUrl = videoUrl;
     }
 
     if (onProgress) onProgress(0.9);
@@ -242,8 +271,19 @@ export async function createPortfolioItem(itemData, onProgress) {
       video_url: videoUrl
     };
 
+    console.log("[PORTFOLIO SAVE PAYLOAD]", {
+      image_url: finalItemData.image_url,
+      video_url: finalItemData.video_url,
+      title: finalItemData.title
+    });
+
     if (onProgress) onProgress(0.95);
     const data = await apiRequest("POST", "/api/v1/mehndigo/artist/portfolio", finalItemData, true);
+    console.log("[VIDEO SAVED URL]", {
+      id: data?.data?.id || data?.id,
+      image_url: data?.data?.image_url || data?.image_url,
+      video_url: data?.data?.video_url || data?.video_url
+    });
     if (onProgress) onProgress(1.0);
     return data?.data || data;
   } catch (err) {
@@ -282,7 +322,7 @@ export async function uploadPortfolioMedia(mediaFiles, onProgress) {
     if (!uri) continue;
 
     let type = "image/jpeg";
-    const isVideo = uri.endsWith(".mp4") || uri.endsWith(".mov") || file?.type?.startsWith("video");
+    const isVideo = (file?.type === "video" || file?.type?.startsWith("video") || (file?.mimeType && file?.mimeType.startsWith("video")) || /\.(mp4|mov|3gp|mkv|webm|avi|flv)$/i.test(uri));
     if (isVideo) {
       type = "video/mp4";
     }

@@ -96,14 +96,14 @@ export default function WalletScreen({ route, navigation }) {
 
   useEffect(() => {
     loadWalletDataset();
-  }, [loadWalletDataset]);
+  }, []);
 
   useEffect(() => {
     const unsubscribe = navigation.addListener("focus", () => {
       loadWalletDataset();
     });
     return unsubscribe;
-  }, [navigation, loadWalletDataset]);
+  }, [navigation]);
 
   const handleRefresh = () => {
     setRefreshing(true);

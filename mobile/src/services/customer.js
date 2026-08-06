@@ -9,6 +9,11 @@ export async function getHomeDashboard(latitude = null, longitude = null) {
   return res?.data || res;
 }
 
+export async function getCustomerDashboard() {
+  const res = await apiRequest("GET", "/customer/dashboard", null, true);
+  return res?.data || res;
+}
+
 export async function getCategories() {
   const res = await apiRequest("GET", "/customer/categories", null, true);
   return res?.data || res;
@@ -190,11 +195,6 @@ export async function unsavePortfolioItem(portfolioId) {
 
 export async function fetchSavedPortfolios() {
   const res = await apiRequest("GET", "/customer/portfolio/saved", null, true);
-  return res?.data || res;
-}
-
-export async function getCustomerDashboard() {
-  const res = await apiRequest("GET", "/customer/dashboard", null, true);
   return res?.data || res;
 }
 

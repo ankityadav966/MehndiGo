@@ -12,7 +12,7 @@ const {
 } = require("../repositories");
 
 const AppError = require("../utils/errors/app.error");
-// const cashfree = require("../utils/cashfree");
+const cashfree = require("../utils/cashfree");
 const razorpayUtil = require("../utils/razorpay");
 const { getIO } = require("../sockets/socket");
 const db = require("../models");
@@ -82,14 +82,14 @@ class ArtistService {
     if (!artist) {
       throw new AppError("Artist profile not found", 404);
     }
-
+    
     // Update User table if name or profileImage is passed
     const userUpdates = {};
     if (data.name !== undefined) userUpdates.name = data.name;
     if (data.profileImage !== undefined) userUpdates.profile_image = data.profileImage;
     if (data.profile_image !== undefined) userUpdates.profile_image = data.profile_image;
     if (data.phone !== undefined) userUpdates.phone = data.phone;
-
+    
     if (Object.keys(userUpdates).length > 0) {
       await UserRepositor.update(userId, userUpdates);
     }
@@ -108,7 +108,7 @@ class ArtistService {
       intro_video_thumbnail: data.intro_video_thumbnail !== undefined ? data.intro_video_thumbnail : artist.intro_video_thumbnail,
       portfolio_video_thumbnail: data.portfolio_video_thumbnail !== undefined ? data.portfolio_video_thumbnail : artist.portfolio_video_thumbnail,
     };
-
+    
     await ArtistProfileRepositor.update(artist.id, allowedUpdates);
 
     // Trigger referred artist milestones evaluation
@@ -141,12 +141,12 @@ class ArtistService {
       throw new AppError("Artist not found", 404);
     }
 
-    const reviews =
-      artist.reviews || [];
+  const reviews =
+    artist.reviews || [];
 
-    const average_rating =
-      reviews.length > 0
-        ? Number(
+  const average_rating =
+    reviews.length > 0
+      ? Number(
           (
             reviews.reduce(
               (sum, item) =>
@@ -155,23 +155,23 @@ class ArtistService {
             ) / reviews.length
           ).toFixed(1)
         )
-        : 0;
+      : 0;
 
-    const artistData =
-      artist.toJSON();
+  const artistData =
+    artist.toJSON();
 
-    delete artistData.avg_rating;
-    delete artistData.total_reviews;
+  delete artistData.avg_rating;
+  delete artistData.total_reviews;
 
-    return {
-      ...artistData,
+  return {
+    ...artistData,
 
-      average_rating,
+    average_rating,
 
-      review_count:
-        reviews.length,
-    };
-  }
+    review_count:
+      reviews.length,
+  };
+}
 
   async getArtistDetailsById(id) {
     const artist = await UserRepositor.getArtistDetails(id);
@@ -185,10 +185,10 @@ class ArtistService {
     const average_rating =
       reviews.length > 0
         ? Number(
-          (
-            reviews.reduce((sum, item) => sum + item.rating, 0) / reviews.length
-          ).toFixed(1)
-        )
+            (
+              reviews.reduce((sum, item) => sum + item.rating, 0) / reviews.length
+            ).toFixed(1)
+          )
         : 0;
 
     const artistData = artist.toJSON();
@@ -409,229 +409,183 @@ class ArtistService {
 
   async createBooking(data) {
 
-    const {
+  const {
+    user_id,
+    artist_id,
+    service_id,
+    slot_id,
+    address,
+    notes,
+  } = data;
+
+  const user =
+    await UserRepositor.getById(user_id);
+
+  if (!user) {
+    throw new AppError(
+      "User not found",
+      404
+    );
+  }
+
+  if (user.role !== "USER") {
+    throw new AppError(
+      "Only users can create bookings",
+      403
+    );
+  }
+
+  const artist =
+    await ArtistProfileRepositor.getById(
+      artist_id
+    );
+
+  if (!artist) {
+    throw new AppError(
+      "Artist not found",
+      404
+    );
+  }
+
+  const service =
+    await ServiceRepositor.getById(
+      service_id
+    );
+
+  if (!service) {
+    throw new AppError(
+      "Service not found",
+      404
+    );
+  }
+
+  if (
+    service.artist_id !== artist.id
+  ) {
+    throw new AppError(
+      "Invalid service",
+      400
+    );
+  }
+
+  const slot =
+    await SlotRepositor.getById(
+      slot_id
+    );
+
+  if (!slot) {
+    throw new AppError(
+      "Slot not found",
+      404
+    );
+  }
+
+  if (
+    slot.artist_id !== artist.id
+  ) {
+    throw new AppError(
+      "Invalid slot",
+      400
+    );
+  }
+
+  if (slot.is_booked) {
+    throw new AppError(
+      "Slot already booked",
+      400
+    );
+  }
+
+  const booking_code =
+    `BOOK-${Date.now()}`;
+
+  const total_price =
+    service.minimum_price;
+
+  const advance_paid = 0;
+
+  const remaining_amount =
+    total_price -
+    advance_paid;
+
+  const booking =
+    await BookingRepositor.createBooking({
+
+      booking_code,
+
       user_id,
+
       artist_id,
+
       service_id,
+
       slot_id,
+
+      total_price,
+
+      advance_paid,
+
+      remaining_amount,
+
+      booking_status:
+        "PENDING",
+
+      payment_status:
+        "PENDING",
+
       address,
+
       notes,
-    } = data;
+    });
 
-    const user =
-      await UserRepositor.getById(user_id);
+  // Notification
+  await NotificationRepositor.createNotification({
+    user_id: artist.user_id,
+    title: "New Booking",
+    message: `New booking received from ${user.name}`,
+    type: "BOOKING",
+  });
 
-    if (!user) {
-      throw new AppError(
-        "User not found",
-        404
-      );
-    }
-
-    if (user.role !== "USER") {
-      throw new AppError(
-        "Only users can create bookings",
-        403
-      );
-    }
-
-    const artist =
-      await ArtistProfileRepositor.getById(
-        artist_id
-      );
-
-    if (!artist) {
-      throw new AppError(
-        "Artist not found",
-        404
-      );
-    }
-
-    const service =
-      await ServiceRepositor.getById(
-        service_id
-      );
-
-    if (!service) {
-      throw new AppError(
-        "Service not found",
-        404
-      );
-    }
-
-    if (
-      service.artist_id !== artist.id
-    ) {
-      throw new AppError(
-        "Invalid service",
-        400
-      );
-    }
-
-    const slot =
-      await SlotRepositor.getById(
-        slot_id
-      );
-
-    if (!slot) {
-      throw new AppError(
-        "Slot not found",
-        404
-      );
-    }
-
-    if (
-      slot.artist_id !== artist.id
-    ) {
-      throw new AppError(
-        "Invalid slot",
-        400
-      );
-    }
-
-    if (slot.is_booked) {
-      throw new AppError(
-        "Slot already booked",
-        400
-      );
-    }
-
-    const booking_code =
-      `BOOK-${Date.now()}`;
-
-    const total_price =
-      service.minimum_price;
-
-    const advance_paid = 0;
-
-    const remaining_amount =
-      total_price -
-      advance_paid;
-
-    const booking =
-      await BookingRepositor.createBooking({
-
-        booking_code,
-
-        user_id,
-
-        artist_id,
-
-        service_id,
-
-        slot_id,
-
-        total_price,
-
-        advance_paid,
-
-        remaining_amount,
-
-        booking_status:
-          "PENDING",
-
-        payment_status:
-          "PENDING",
-
-        address,
-
-        notes,
-      });
-
-    // Notification
-    await NotificationRepositor.createNotification({
-      user_id: artist.user_id,
+  // Real-time Socket.IO alert
+  try {
+    const io = getIO();
+    io.to(artist.user_id.toString()).emit("new_notification", {
       title: "New Booking",
       message: `New booking received from ${user.name}`,
       type: "BOOKING",
     });
+  } catch (e) { /* socket not initialized */ }
 
-    // Real-time Socket.IO alert
-    try {
-      const io = getIO();
-      io.to(artist.user_id.toString()).emit("new_notification", {
-        title: "New Booking",
-        message: `New booking received from ${user.name}`,
-        type: "BOOKING",
-      });
-    } catch (e) { /* socket not initialized */ }
+  await SlotRepositor.update(slot_id, { is_booked: true });
 
-    await SlotRepositor.update(slot_id, { is_booked: true });
+  return booking;
+}
 
-    return booking;
-  }
+async getMyBookings(user_id) {
 
-  async getMyBookings(user_id) {
+  const user =
+    await UserRepositor.getById(
+      user_id
+    );
 
-    const user =
-      await UserRepositor.getById(
-        user_id
-      );
-
-    if (!user) {
-      throw new AppError(
-        "User not found",
-        404
-      );
-    }
-
-    // USER LOGIN
-    if (user.role === "USER") {
-
-      return await BookingRepositor
-        .getUserBookings(
-          user_id
-        );
-    }
-
-    // ARTIST LOGIN
-    if (user.role === "ARTIST") {
-
-      const artist =
-        await ArtistProfileRepositor.getOne({
-          user_id,
-        });
-
-      if (!artist) {
-        throw new AppError(
-          "Artist profile not found",
-          404
-        );
-      }
-
-      return await BookingRepositor
-        .getArtistBookings(
-          artist.id
-        );
-    }
-
+  if (!user) {
     throw new AppError(
-      "Invalid role",
-      400
+      "User not found",
+      404
     );
   }
-  async getArtistBookings(user_id) {
 
-    const user =
-      await UserRepositor.getById(
+  // USER LOGIN
+  if (user.role === "USER") {
+
+    return await BookingRepositor
+      .getUserBookings(
         user_id
       );
+  }
 
-    if (!user) {
-      throw new AppError(
-        "User not found",
-        404
-      );
-    }
-
-    if (
-      user.role !== "ARTIST"
-    ) {
-      throw new AppError(
-        "Only artist can access bookings",
-        403
-      );
-    }
+  // ARTIST LOGIN
+  if (user.role === "ARTIST") {
 
     const artist =
       await ArtistProfileRepositor.getOne({
@@ -650,140 +604,186 @@ class ArtistService {
         artist.id
       );
   }
-  async updateBookingStatus(
-    booking_id,
-    user_id,
-    data
+
+  throw new AppError(
+    "Invalid role",
+    400
+  );
+}
+async getArtistBookings(user_id) {
+
+  const user =
+    await UserRepositor.getById(
+      user_id
+    );
+
+  if (!user) {
+    throw new AppError(
+      "User not found",
+      404
+    );
+  }
+
+  if (
+    user.role !== "ARTIST"
+  ) {
+    throw new AppError(
+      "Only artist can access bookings",
+      403
+    );
+  }
+
+  const artist =
+    await ArtistProfileRepositor.getOne({
+      user_id,
+    });
+
+  if (!artist) {
+    throw new AppError(
+      "Artist profile not found",
+      404
+    );
+  }
+
+  return await BookingRepositor
+    .getArtistBookings(
+      artist.id
+    );
+}
+async updateBookingStatus(
+  booking_id,
+  user_id,
+  data
+) {
+
+  const {
+    booking_status,
+    cancel_reason,
+  } = data;
+
+  const booking =
+    await BookingRepositor.getById(
+      booking_id
+    );
+
+  if (!booking) {
+    throw new AppError(
+      "Booking not found",
+      404
+    );
+  }
+
+  const user =
+    await UserRepositor.getById(
+      user_id
+    );
+
+  if (!user) {
+    throw new AppError(
+      "User not found",
+      404
+    );
+  }
+
+  // Artist Validation
+
+  const artist =
+    await ArtistProfileRepositor.getOne({
+      user_id,
+    });
+
+  if (
+    !artist ||
+    artist.id !== booking.artist_id
+  ) {
+    throw new AppError(
+      "Only booking artist can update status",
+      403
+    );
+  }
+
+  const allowedStatus = [
+    "PENDING",
+    "CONFIRMED",
+    "COMPLETED",
+    "CANCELLED",
+  ];
+
+  if (
+    !allowedStatus.includes(
+      booking_status
+    )
+  ) {
+    throw new AppError(
+      "Invalid booking status",
+      400
+    );
+  }
+
+  const updateData = {
+    booking_status,
+  };
+
+  if (
+    booking_status ===
+    "CANCELLED"
   ) {
 
-    const {
-      booking_status,
-      cancel_reason,
-    } = data;
+    if (!cancel_reason) {
 
-    const booking =
-      await BookingRepositor.getById(
-        booking_id
-      );
-
-    if (!booking) {
       throw new AppError(
-        "Booking not found",
-        404
-      );
-    }
-
-    const user =
-      await UserRepositor.getById(
-        user_id
-      );
-
-    if (!user) {
-      throw new AppError(
-        "User not found",
-        404
-      );
-    }
-
-    // Artist Validation
-
-    const artist =
-      await ArtistProfileRepositor.getOne({
-        user_id,
-      });
-
-    if (
-      !artist ||
-      artist.id !== booking.artist_id
-    ) {
-      throw new AppError(
-        "Only booking artist can update status",
-        403
-      );
-    }
-
-    const allowedStatus = [
-      "PENDING",
-      "CONFIRMED",
-      "COMPLETED",
-      "CANCELLED",
-    ];
-
-    if (
-      !allowedStatus.includes(
-        booking_status
-      )
-    ) {
-      throw new AppError(
-        "Invalid booking status",
+        "Cancel reason required",
         400
       );
     }
 
-    const updateData = {
-      booking_status,
-    };
+    updateData.cancel_reason =
+      cancel_reason;
 
-    if (
-      booking_status ===
-      "CANCELLED"
-    ) {
+    if (booking.slot_id) {
 
-      if (!cancel_reason) {
-
-        throw new AppError(
-          "Cancel reason required",
-          400
-        );
-      }
-
-      updateData.cancel_reason =
-        cancel_reason;
-
-      if (booking.slot_id) {
-
-        await SlotRepositor.update(
-          booking.slot_id,
-          {
-            is_booked: false,
-          }
-        );
-      }
-    }
-
-    await BookingRepositor.update(booking_id, updateData);
-
-    // Notify user about booking status change
-    try {
-      const NotificationService = require("./notification.services");
-      await NotificationService.sendToUser(
-        booking.user_id,
-        `Booking ${booking_status}`,
-        `Your booking has been ${booking_status.toLowerCase()}`,
-        { type: "BOOKING", bookingId: booking.id }
+      await SlotRepositor.update(
+        booking.slot_id,
+        {
+          is_booked: false,
+        }
       );
-    } catch (err) {
-      console.log("Failed to send push notification on booking update:", err.message);
-      await NotificationRepositor.createNotification({
-        user_id: booking.user_id,
-        title: `Booking ${booking_status}`,
-        message: `Your booking has been ${booking_status.toLowerCase()}`,
-        type: "BOOKING",
-      });
     }
-
-    // Real-time Socket.IO alert
-    try {
-      const io = getIO();
-      io.to(booking.user_id.toString()).emit("new_notification", {
-        title: `Booking ${booking_status}`,
-        message: `Your booking has been ${booking_status.toLowerCase()}`,
-        type: "BOOKING",
-      });
-    } catch (e) { /* socket not initialized */ }
-
-    return await BookingRepositor.getById(booking_id);
   }
+
+  await BookingRepositor.update(booking_id, updateData);
+
+  // Notify user about booking status change
+  try {
+    const NotificationService = require("./notification.services");
+    await NotificationService.sendToUser(
+      booking.user_id,
+      `Booking ${booking_status}`,
+      `Your booking has been ${booking_status.toLowerCase()}`,
+      { type: "BOOKING", bookingId: booking.id }
+    );
+  } catch (err) {
+    console.log("Failed to send push notification on booking update:", err.message);
+    await NotificationRepositor.createNotification({
+      user_id: booking.user_id,
+      title: `Booking ${booking_status}`,
+      message: `Your booking has been ${booking_status.toLowerCase()}`,
+      type: "BOOKING",
+    });
+  }
+
+  // Real-time Socket.IO alert
+  try {
+    const io = getIO();
+    io.to(booking.user_id.toString()).emit("new_notification", {
+      title: `Booking ${booking_status}`,
+      message: `Your booking has been ${booking_status.toLowerCase()}`,
+      type: "BOOKING",
+    });
+  } catch (e) { /* socket not initialized */ }
+
+  return await BookingRepositor.getById(booking_id);
+}
 
 
   async createOrder(booking_id, customAmountPaise = null) {
@@ -809,33 +809,32 @@ class ArtistService {
     if (isNaN(amountPaise) || amountPaise < 100) {
       throw new AppError("Minimum order amount must be at least 100 paise", 400);
     }
-    const amount = booking.total_price;
-    const user = await UserRepositor.getById(booking.user_id);
-    let order;
-    try {
-      order = await razorpay.createRazorpayOrder({
-        customerId: booking.user_id,
-        customerName: user ? user.name : "Customer",
-        customerEmail: user ? user.email : "test@test.com",
-        customerPhone: user ? user.phone : "9999999999",
-        orderId: `booking_${booking_id}_${Date.now()}`,
-        amount: amount,
-        note: `Payment for Booking #${booking.booking_code}`
-      });
-    } catch (e) {
-      throw new AppError("Razorpay order creation failed: " + e.message, 400);
-    }
-    await PaymentRepositor.create({
-      booking_id,
-      razorpay_order_id: order.id,
-      amount,
-      payment_method: "ONLINE",
-      status: "PENDING",
-      gateway: "RAZORPAY",
-      currency: "INR"
-    });
-    return { order_id: order.id, amount };
 
+    const order = await razorpayUtil.createRazorpayOrder({
+      amount: amountPaise,
+      currency: "INR",
+      receipt
+    });
+
+    if (booking_id) {
+      await PaymentRepositor.create({
+        booking_id,
+        cashfree_order_id: order.order_id,
+        transaction_id: order.order_id,
+        amount: Math.round(amountPaise / 100),
+        payment_method: "ONLINE",
+        status: "PENDING",
+        gateway: "RAZORPAY",
+        currency: "INR"
+      });
+    }
+
+    return {
+      order_id: order.order_id,
+      id: order.order_id,
+      amount: order.amount,
+      currency: order.currency
+    };
   }
 
   async verifyPayment(data) {
@@ -843,34 +842,59 @@ class ArtistService {
       booking_id,
       razorpay_order_id,
       razorpay_payment_id,
-      razorpay_signature
+      razorpay_signature,
+      cashfree_order_id
     } = data;
 
-    const isValid = razorpay.verifyRazorpaySignature(razorpay_order_id, razorpay_payment_id, razorpay_signature);
-    if (!isValid) {
-      throw new AppError("Failed to verify payment with Razorpay", 400);
+    const orderId = razorpay_order_id || cashfree_order_id;
+    const paymentId = razorpay_payment_id;
+    const signature = razorpay_signature;
+
+    if (!orderId || !paymentId || !signature) {
+      throw new AppError("Missing payment verification parameters (razorpay_order_id, razorpay_payment_id, razorpay_signature)", 400);
     }
 
-    const booking = await BookingRepositor.getById(booking_id);
-    if (!booking) {
-      throw new AppError("Booking not found", 404);
-    }
-    await BookingRepositor.update(booking_id, {
-      payment_status: "PAID",
-      booking_status: "CONFIRMED",
-      advance_paid: booking.total_price,
-      remaining_amount: 0
+    const isValid = razorpayUtil.verifyRazorpaySignature({
+      razorpay_order_id: orderId,
+      razorpay_payment_id: paymentId,
+      razorpay_signature: signature
     });
 
-    const payments = await PaymentRepositor.getAll({ booking_id });
-    const payment = payments[0];
-    if (payment) {
-      await PaymentRepositor.update(payment.id, {
-        razorpay_payment_id: razorpay_payment_id,
-        razorpay_signature: razorpay_signature,
-        status: "SUCCESS",
-        paid_at: new Date()
+    if (!isValid) {
+      throw new AppError("Invalid payment signature. Payment verification failed.", 400);
+    }
 
+    if (booking_id) {
+      const booking = await BookingRepositor.getById(booking_id);
+      if (!booking) {
+        throw new AppError("Booking not found", 404);
+      }
+      await BookingRepositor.update(booking_id, {
+        payment_status: "PAID",
+        booking_status: "CONFIRMED",
+        advance_paid: booking.total_price,
+        remaining_amount: 0
+      });
+
+      const payments = await PaymentRepositor.getAll({ booking_id });
+      const payment = payments[0];
+      if (payment) {
+        await PaymentRepositor.update(payment.id, {
+          cashfree_payment_id: paymentId,
+          transaction_id: paymentId,
+          status: "SUCCESS",
+          paid_at: new Date()
+        });
+      }
+
+      const artist = await ArtistProfileRepositor.getById(booking.artist_id);
+      const artistUserId = artist ? artist.user_id : booking.artist_id;
+
+      await NotificationRepositor.createNotification({
+        user_id: artistUserId,
+        title: "Payment Success",
+        message: "Booking payment completed via Razorpay",
+        type: "PAYMENT",
       });
       // Real-time Socket.IO alert to artist
       try {
@@ -895,31 +919,28 @@ class ArtistService {
         payment_id: paymentId
       };
     }
+
     // Real-time Socket.IO alert to artist
     try {
       const io = getIO();
-      if (booking && booking.artist_id) {
-        io.to(booking.artist_id.toString()).emit("new_notification", {
-          title: "Payment Success",
-          message: "Booking payment completed",
-          type: "PAYMENT",
-        });
-      }
+      io.to(artistUserId.toString()).emit("new_notification", {
+        title: "Payment Success",
+        message: "Booking payment completed",
+        type: "PAYMENT",
+      });
       // Also notify the user
-      if (booking && booking.user_id) {
-        io.to(booking.user_id.toString()).emit("new_notification", {
-          title: "Payment Confirmed",
-          message: "Your payment has been confirmed successfully",
-          type: "PAYMENT",
-        });
-      }
+      io.to(booking.user_id.toString()).emit("new_notification", {
+        title: "Payment Confirmed",
+        message: "Your payment has been confirmed successfully",
+        type: "PAYMENT",
+      });
     } catch (e) { /* socket not initialized */ }
 
     return {
       success: true,
       message: "Payment verified successfully",
-      order_id: razorpay_order_id,
-      payment_id: razorpay_payment_id
+      order_id: orderId,
+      payment_id: paymentId
     };
   }
 
@@ -1096,11 +1117,11 @@ async createReview(data) {
   const avgRating =
     totalReviews > 0
       ? Number(
-        (
-          totalRating /
-          totalReviews
-        ).toFixed(1)
-      )
+          (
+            totalRating /
+            totalReviews
+          ).toFixed(1)
+        )
       : 0;
 
   return {
@@ -1113,345 +1134,297 @@ async createReview(data) {
 
   // notification management
   async createNotification(data) {
-  return await NotificationRepositor.createNotification(data);
-}
+    return await NotificationRepositor.createNotification(data);
+  }
   async getMyNotifications(user_id) {
-  return await NotificationRepositor.getUserNotifications(user_id);
-}
+    return await NotificationRepositor.getUserNotifications(user_id);
+  }
   async markAsRead(id, user_id) {
-  const notification = await NotificationRepositor.getById(id);
-  if (!notification) {
-    throw new AppError("Notification not found", 404);
+    const notification = await NotificationRepositor.getById(id);
+    if (!notification) {
+      throw new AppError("Notification not found", 404);
+    }
+    if (notification.user_id !== user_id) {
+      throw new AppError("Unauthorized", 403);
+    }
+    await NotificationRepositor.markAsRead(id);
+    return true;
   }
-  if (notification.user_id !== user_id) {
-    throw new AppError("Unauthorized", 403);
-  }
-  await NotificationRepositor.markAsRead(id);
-  return true;
-}
 
   // Portfolio Management
   async createPortfolio(data) {
-  const artist = await ArtistProfileRepositor.getOne({ user_id: data.artist_id });
-  if (!artist) {
-    throw new AppError("Artist profile not found", 404);
+    const artist = await ArtistProfileRepositor.getOne({ user_id: data.artist_id });
+    if (!artist) {
+      throw new AppError("Artist profile not found", 404);
+    }
+    
+    const portfolioData = {
+      artist_id: artist.id,
+      image_url: data.image_url,
+      video_url: data.video_url || null,
+      title: data.title || null,
+      caption: data.caption || null,
+      description: data.description || null,
+      category: data.category || null,
+      occasion: data.occasion || null,
+      tags: data.tags || null,
+      location: data.location || null,
+      visibility: data.visibility !== undefined ? data.visibility : true,
+      display_order: data.display_order !== undefined ? Number(data.display_order) : 0
+    };
+
+    return await PortfolioRepositor.createPortfolio(portfolioData);
   }
-
-  const portfolioData = {
-    artist_id: artist.id,
-    image_url: data.image_url,
-    video_url: data.video_url || null,
-    title: data.title || null,
-    caption: data.caption || null,
-    description: data.description || null,
-    category: data.category || null,
-    occasion: data.occasion || null,
-    tags: data.tags || null,
-    location: data.location || null,
-    visibility: data.visibility !== undefined ? data.visibility : true,
-    display_order: data.display_order !== undefined ? Number(data.display_order) : 0
-  };
-
-  return await PortfolioRepositor.createPortfolio(portfolioData);
-}
 
   async getMyPortfolio(userId) {
-  const artist = await ArtistProfileRepositor.getOne({ user_id: userId });
-  if (!artist) {
-    throw new AppError("Artist profile not found", 404);
+    const artist = await ArtistProfileRepositor.getOne({ user_id: userId });
+    if (!artist) {
+      throw new AppError("Artist profile not found", 404);
+    }
+    return await PortfolioRepositor.getArtistPortfolio(artist.id);
   }
-  return await PortfolioRepositor.getArtistPortfolio(artist.id);
-}
 
   async getPortfolioById(id) {
-  const item = await PortfolioRepositor.getById(id);
-  if (!item) {
-    throw new AppError("Portfolio item not found", 404);
+    const item = await PortfolioRepositor.getById(id);
+    if (!item) {
+      throw new AppError("Portfolio item not found", 404);
+    }
+    return item;
   }
-  return item;
-}
 
   async updatePortfolio(id, userId, data) {
-  const artist = await ArtistProfileRepositor.getOne({ user_id: userId });
-  if (!artist) {
-    throw new AppError("Artist profile not found", 404);
-  }
-  const item = await PortfolioRepositor.getById(id);
-  if (!item) {
-    throw new AppError("Portfolio item not found", 404);
-  }
-  if (item.artist_id !== artist.id) {
-    throw new AppError("Unauthorized access to portfolio", 403);
-  }
+    const artist = await ArtistProfileRepositor.getOne({ user_id: userId });
+    if (!artist) {
+      throw new AppError("Artist profile not found", 404);
+    }
+    const item = await PortfolioRepositor.getById(id);
+    if (!item) {
+      throw new AppError("Portfolio item not found", 404);
+    }
+    if (item.artist_id !== artist.id) {
+      throw new AppError("Unauthorized access to portfolio", 403);
+    }
 
-  const updates = {};
-  if (data.title !== undefined) updates.title = data.title;
-  if (data.caption !== undefined) updates.caption = data.caption;
-  if (data.description !== undefined) updates.description = data.description;
-  if (data.category !== undefined) updates.category = data.category;
-  if (data.occasion !== undefined) updates.occasion = data.occasion;
-  if (data.tags !== undefined) updates.tags = data.tags;
-  if (data.location !== undefined) updates.location = data.location;
-  if (data.visibility !== undefined) updates.visibility = data.visibility;
-  if (data.display_order !== undefined) updates.display_order = Number(data.display_order);
+    const updates = {};
+    if (data.title !== undefined) updates.title = data.title;
+    if (data.caption !== undefined) updates.caption = data.caption;
+    if (data.description !== undefined) updates.description = data.description;
+    if (data.category !== undefined) updates.category = data.category;
+    if (data.occasion !== undefined) updates.occasion = data.occasion;
+    if (data.tags !== undefined) updates.tags = data.tags;
+    if (data.location !== undefined) updates.location = data.location;
+    if (data.visibility !== undefined) updates.visibility = data.visibility;
+    if (data.display_order !== undefined) updates.display_order = Number(data.display_order);
 
-  await PortfolioRepositor.update(id, updates);
-  return await PortfolioRepositor.getById(id);
-}
+    await PortfolioRepositor.update(id, updates);
+    return await PortfolioRepositor.getById(id);
+  }
 
   async deletePortfolio(id, userId) {
-  const artist = await ArtistProfileRepositor.getOne({ user_id: userId });
-  if (!artist) {
-    throw new AppError("Artist profile not found", 404);
+    const artist = await ArtistProfileRepositor.getOne({ user_id: userId });
+    if (!artist) {
+      throw new AppError("Artist profile not found", 404);
+    }
+    const item = await PortfolioRepositor.getById(id);
+    if (!item) {
+      throw new AppError("Portfolio item not found", 404);
+    }
+    if (item.artist_id !== artist.id) {
+      throw new AppError("Unauthorized access to portfolio", 403);
+    }
+    await PortfolioRepositor.delete(id);
+    return true;
   }
-  const item = await PortfolioRepositor.getById(id);
-  if (!item) {
-    throw new AppError("Portfolio item not found", 404);
-  }
-  if (item.artist_id !== artist.id) {
-    throw new AppError("Unauthorized access to portfolio", 403);
-  }
-  await PortfolioRepositor.delete(id);
-  return true;
-}
 
   async getDashboard(userId) {
-  let artist = await db.ArtistProfile.findOne({
-    where: { user_id: userId },
-    include: [{ model: db.User, as: "user", attributes: ["name", "profile_image"] }]
-  });
-  if (!artist) {
-    await db.ArtistProfile.create({
-      user_id: userId,
-      bio: "Creative Mehndi Artist",
-      experience_years: 5,
-      home_service: true,
-      salon_service: false,
-      verification_status: "APPROVED"
-    });
-    artist = await db.ArtistProfile.findOne({
+    let artist = await db.ArtistProfile.findOne({
       where: { user_id: userId },
       include: [{ model: db.User, as: "user", attributes: ["name", "profile_image"] }]
     });
-  }
-  if (!artist) {
-    throw new AppError("Artist profile not found", 404);
-  }
+    if (!artist) {
+      await db.ArtistProfile.create({
+        user_id: userId,
+        bio: "Creative Mehndi Artist",
+        experience_years: 5,
+        home_service: true,
+        salon_service: false,
+        verification_status: "APPROVED"
+      });
+      artist = await db.ArtistProfile.findOne({
+        where: { user_id: userId },
+        include: [{ model: db.User, as: "user", attributes: ["name", "profile_image"] }]
+      });
+    }
+    if (!artist) {
+      throw new AppError("Artist profile not found", 404);
+    }
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-  const todayBookings = await db.Booking.count({
-    where: { artist_id: artist.id, createdAt: { [db.Sequelize.Op.gte]: today } }
-  });
+    const todayBookings = await db.Booking.count({
+      where: { artist_id: artist.id, createdAt: { [db.Sequelize.Op.gte]: today } }
+    });
 
-  const WalletService = require("./wallet.services");
-  const walletSummary = await WalletService.getWalletSummary(userId);
+    const WalletService = require("./wallet.services");
+    const walletSummary = await WalletService.getWalletSummary(userId);
 
-  let todayEarnings = 0;
-  if (walletSummary) {
-    const wallet = await db.Wallet.findOne({ where: { user_id: userId } });
-    if (wallet) {
-      todayEarnings = await db.WalletTransaction.sum("amount", {
+    let todayEarnings = 0;
+    if (walletSummary) {
+      const wallet = await db.Wallet.findOne({ where: { user_id: userId } });
+      if (wallet) {
+        todayEarnings = await db.WalletTransaction.sum("amount", {
+          where: {
+            wallet_id: wallet.id,
+            status: "SUCCESS",
+            transaction_type: { [db.Sequelize.Op.in]: ["SETTLEMENT", "RECHARGE", "REFUND", "MANUAL_CREDIT"] },
+            createdAt: { [db.Sequelize.Op.gte]: today }
+          }
+        }) || 0;
+      }
+    }
+
+    const [
+      pendingRequests,
+      upcomingBookingsCount,
+      acceptedBookingsCount,
+      ongoingBookingsCount,
+      completedBookingsCount,
+      awaitingSettlementCount,
+      pendingCashApprovalCount,
+      cancelledBookingsCount
+    ] = await Promise.all([
+      db.Booking.count({
         where: {
-          wallet_id: wallet.id,
-          status: "SUCCESS",
-          transaction_type: { [db.Sequelize.Op.in]: ["SETTLEMENT", "RECHARGE", "REFUND", "MANUAL_CREDIT"] },
-          createdAt: { [db.Sequelize.Op.gte]: today }
+          artist_id: artist.id,
+          [db.Sequelize.Op.or]: [
+            { booking_status: "PENDING" },
+            { booking_status: "CONFIRMED", detailed_status: "CONFIRMED" }
+          ]
         }
-      }) || 0;
-    }
+      }),
+      db.Booking.count({
+        where: {
+          artist_id: artist.id,
+          booking_status: "CONFIRMED",
+          detailed_status: { [db.Sequelize.Op.ne]: "CONFIRMED" }
+        }
+      }),
+      db.Booking.count({ where: { artist_id: artist.id, detailed_status: "ARTIST_ACCEPTED" } }),
+      db.Booking.count({ where: { artist_id: artist.id, detailed_status: "SERVICE_STARTED" } }),
+      db.Booking.count({ where: { artist_id: artist.id, booking_status: "COMPLETED" } }),
+      db.Booking.count({
+        where: {
+          artist_id: artist.id,
+          booking_status: "COMPLETED",
+          detailed_status: { [db.Sequelize.Op.ne]: "COMPLETED_CLOSED" },
+          payment_status: "PENDING"
+        }
+      }),
+      db.Booking.count({ where: { artist_id: artist.id, detailed_status: "AWAITING_CASH_CONFIRMATION" } }),
+      db.Booking.count({ where: { artist_id: artist.id, booking_status: "CANCELLED" } })
+    ]);
+
+    const pendingBookingsCount = pendingRequests;
+
+    const recentBookings = await db.Booking.findAll({
+      where: { artist_id: artist.id },
+      limit: 20,
+      order: [["createdAt", "DESC"]],
+      include: [
+        { model: db.User, as: "user", attributes: ["name", "profile_image"] },
+        { model: db.Service, as: "service", attributes: ["specialization_name"] },
+        { model: db.AvailabilitySlot, as: "slot", attributes: ["start_time", "end_time"] },
+        { model: db.Payment, as: "payments", attributes: ["payment_method", "status"] }
+      ]
+    });
+
+    return {
+      artist: {
+        id: artist.id,
+        name: artist.user.name,
+        profile_image: artist.user.profile_image,
+        verification_status: artist.verification_status,
+        experience_years: artist.experience_years,
+        avg_rating: artist.avg_rating,
+        total_reviews: artist.total_reviews
+      },
+      todayBookings,
+      todayEarnings: todayEarnings || 0,
+      pendingRequests,
+      walletBalance: walletSummary.balance,
+      pendingEarnings: walletSummary.pending_balance,
+      lifetimeEarnings: walletSummary.lifetime_earnings,
+      recentBookings,
+      bookingCounts: {
+        PENDING: pendingBookingsCount,
+        UPCOMING: upcomingBookingsCount,
+        ACCEPTED: acceptedBookingsCount,
+        ONGOING: ongoingBookingsCount,
+        COMPLETED: completedBookingsCount,
+        AWAITING_SETTLEMENT: awaitingSettlementCount,
+        PENDING_CASH_APPROVAL: pendingCashApprovalCount,
+        CANCELLED: cancelledBookingsCount
+      }
+    };
   }
-
-  const [
-    pendingRequests,
-    upcomingBookingsCount,
-    acceptedBookingsCount,
-    ongoingBookingsCount,
-    completedBookingsCount,
-    awaitingSettlementCount,
-    pendingCashApprovalCount,
-    cancelledBookingsCount
-  ] = await Promise.all([
-    db.Booking.count({
-      where: {
-        artist_id: artist.id,
-        [db.Sequelize.Op.or]: [
-          { booking_status: "PENDING" },
-          { booking_status: "CONFIRMED", detailed_status: "CONFIRMED" }
-        ]
-      }
-    }),
-    db.Booking.count({
-      where: {
-        artist_id: artist.id,
-        booking_status: "CONFIRMED",
-        detailed_status: { [db.Sequelize.Op.ne]: "CONFIRMED" }
-      }
-    }),
-    db.Booking.count({ where: { artist_id: artist.id, detailed_status: "ARTIST_ACCEPTED" } }),
-    db.Booking.count({ where: { artist_id: artist.id, detailed_status: "SERVICE_STARTED" } }),
-    db.Booking.count({ where: { artist_id: artist.id, booking_status: "COMPLETED" } }),
-    db.Booking.count({
-      where: {
-        artist_id: artist.id,
-        booking_status: "COMPLETED",
-        detailed_status: { [db.Sequelize.Op.ne]: "COMPLETED_CLOSED" },
-        payment_status: "PENDING"
-      }
-    }),
-    db.Booking.count({ where: { artist_id: artist.id, detailed_status: "AWAITING_CASH_CONFIRMATION" } }),
-    db.Booking.count({ where: { artist_id: artist.id, booking_status: "CANCELLED" } })
-  ]);
-
-  const pendingBookingsCount = pendingRequests;
-
-  const recentBookings = await db.Booking.findAll({
-    where: { artist_id: artist.id },
-    limit: 20,
-    order: [["createdAt", "DESC"]],
-    include: [
-      { model: db.User, as: "user", attributes: ["name", "profile_image"] },
-      { model: db.Service, as: "service", attributes: ["specialization_name"] },
-      { model: db.AvailabilitySlot, as: "slot", attributes: ["start_time", "end_time"] },
-      { model: db.Payment, as: "payments", attributes: ["payment_method", "status"] }
-    ]
-  });
-
-  return {
-    artist: {
-      id: artist.id,
-      name: artist.user.name,
-      profile_image: artist.user.profile_image,
-      verification_status: artist.verification_status,
-      experience_years: artist.experience_years,
-      avg_rating: artist.avg_rating,
-      total_reviews: artist.total_reviews
-    },
-    todayBookings,
-    todayEarnings: todayEarnings || 0,
-    pendingRequests,
-    walletBalance: walletSummary.balance,
-    pendingEarnings: walletSummary.pending_balance,
-    lifetimeEarnings: walletSummary.lifetime_earnings,
-    recentBookings,
-    bookingCounts: {
-      PENDING: pendingBookingsCount,
-      UPCOMING: upcomingBookingsCount,
-      ACCEPTED: acceptedBookingsCount,
-      ONGOING: ongoingBookingsCount,
-      COMPLETED: completedBookingsCount,
-      AWAITING_SETTLEMENT: awaitingSettlementCount,
-      PENDING_CASH_APPROVAL: pendingCashApprovalCount,
-      CANCELLED: cancelledBookingsCount
-    }
-  };
-}
 
   async getBookings(userId) {
-  const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
-  if (!artist) throw new AppError("Artist profile not found", 404);
+    const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
+    if (!artist) throw new AppError("Artist profile not found", 404);
 
-  return await db.Booking.findAll({
-    where: { artist_id: artist.id },
-    include: [
-      { model: db.User, as: "user", attributes: ["id", "name", "phone", "profile_image"] },
-      { model: db.Service, as: "service", attributes: ["specialization_name"] },
-      { model: db.AvailabilitySlot, as: "slot" }
-    ],
-    order: [["createdAt", "DESC"]]
-  });
-}
+    return await db.Booking.findAll({
+      where: { artist_id: artist.id },
+      include: [
+        { model: db.User, as: "user", attributes: ["id", "name", "phone", "profile_image"] },
+        { model: db.Service, as: "service", attributes: ["specialization_name"] },
+        { model: db.AvailabilitySlot, as: "slot" }
+      ],
+      order: [["createdAt", "DESC"]]
+    });
+  }
 
   async getEarnings(userId) {
-  const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
-  if (!artist) throw new AppError("Artist profile not found", 404);
+    const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
+    if (!artist) throw new AppError("Artist profile not found", 404);
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-  const todayVal = await db.Booking.sum("total_price", { where: { artist_id: artist.id, booking_status: "COMPLETED", createdAt: { [db.Sequelize.Op.gte]: today } } });
-  const lifetimeVal = await db.Booking.sum("total_price", { where: { artist_id: artist.id, booking_status: "COMPLETED" } });
+    const todayVal = await db.Booking.sum("total_price", { where: { artist_id: artist.id, booking_status: "COMPLETED", createdAt: { [db.Sequelize.Op.gte]: today } } });
+    const lifetimeVal = await db.Booking.sum("total_price", { where: { artist_id: artist.id, booking_status: "COMPLETED" } });
 
-  return {
-    today: todayVal || 0,
-    weekly: Math.round((lifetimeVal || 0) * 0.25),
-    monthly: Math.round((lifetimeVal || 0) * 0.65),
-    lifetime: lifetimeVal || 0,
-    commissionDeducted: Math.round((lifetimeVal || 0) * 0.15)
-  };
-}
+    return {
+      today: todayVal || 0,
+      weekly: Math.round((lifetimeVal || 0) * 0.25),
+      monthly: Math.round((lifetimeVal || 0) * 0.65),
+      lifetime: lifetimeVal || 0,
+      commissionDeducted: Math.round((lifetimeVal || 0) * 0.15)
+    };
+  }
 
   async getAnalytics(userId) {
-  const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
-  if (!artist) throw new AppError("Artist profile not found", 404);
+    const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
+    if (!artist) throw new AppError("Artist profile not found", 404);
 
-  const total = await db.Booking.count({ where: { artist_id: artist.id } });
-  const completed = await db.Booking.count({ where: { artist_id: artist.id, booking_status: "COMPLETED" } });
+    const total = await db.Booking.count({ where: { artist_id: artist.id } });
+    const completed = await db.Booking.count({ where: { artist_id: artist.id, booking_status: "COMPLETED" } });
 
-  return {
-    totalBookings: total,
-    completedBookings: completed,
-    conversionRate: total > 0 ? Math.round((completed / total) * 100) : 100,
-    profileViews: artist.total_bookings * 4 + 20,
-    customerRetention: 85
-  };
-}
+    return {
+      totalBookings: total,
+      completedBookings: completed,
+      conversionRate: total > 0 ? Math.round((completed / total) * 100) : 100,
+      profileViews: artist.total_bookings * 4 + 20,
+      customerRetention: 85
+    };
+  }
 
   async getWalletDetails(userId) {
-  let wallet = await db.Wallet.findOne({ where: { user_id: userId } });
-  if (!wallet) {
-    wallet = await db.Wallet.create({ user_id: userId, balance: 10500 });
-  }
-  let history = await db.WalletTransaction.findAll({
-    where: { wallet_id: wallet.id },
-    include: [
-      {
-        model: db.Booking,
-        as: "booking",
-        required: false,
-        include: [
-          {
-            model: db.User,
-            as: "user",
-            required: false,
-            attributes: ["name", "profile_image"]
-          }
-        ]
-      }
-    ],
-    order: [["createdAt", "DESC"]]
-  });
-
-  if (!history || history.length === 0) {
-    await wallet.update({ balance: 10500 });
-    await db.WalletTransaction.bulkCreate([
-      {
-        wallet_id: wallet.id,
-        transaction_type: "PAYMENT",
-        amount: 3500,
-        status: "SUCCESS",
-        description: "Payment from Ananya Sharma (#BC-887652)",
-        createdAt: new Date(Date.now() - 3600000 * 2)
-      },
-      {
-        wallet_id: wallet.id,
-        transaction_type: "PAYMENT",
-        amount: 2500,
-        status: "SUCCESS",
-        description: "Payment from Ritika Patel (#BC-192834)",
-        createdAt: new Date(Date.now() - 3600000 * 24)
-      },
-      {
-        wallet_id: wallet.id,
-        transaction_type: "PAYMENT",
-        amount: 4500,
-        status: "SUCCESS",
-        description: "Payment from Neha Gupta (#BC-239487)",
-        createdAt: new Date(Date.now() - 3600000 * 48)
-      }
-    ]);
-    history = await db.WalletTransaction.findAll({
+    let wallet = await db.Wallet.findOne({ where: { user_id: userId } });
+    if (!wallet) {
+      wallet = await db.Wallet.create({ user_id: userId, balance: 10500 });
+    }
+    let history = await db.WalletTransaction.findAll({
       where: { wallet_id: wallet.id },
       include: [
         {
@@ -1470,762 +1443,802 @@ async createReview(data) {
       ],
       order: [["createdAt", "DESC"]]
     });
-  }
 
-  const transactions = (history || []).map((tx) => {
-    const txData = tx.toJSON();
-    if (txData.booking && txData.booking.user) {
-      txData.description = `Payment from ${txData.booking.user.name} (#${txData.booking.booking_code})`;
+    if (!history || history.length === 0) {
+      await wallet.update({ balance: 10500 });
+      await db.WalletTransaction.bulkCreate([
+        {
+          wallet_id: wallet.id,
+          transaction_type: "PAYMENT",
+          amount: 3500,
+          status: "SUCCESS",
+          description: "Payment from Ananya Sharma (#BC-887652)",
+          createdAt: new Date(Date.now() - 3600000 * 2)
+        },
+        {
+          wallet_id: wallet.id,
+          transaction_type: "PAYMENT",
+          amount: 2500,
+          status: "SUCCESS",
+          description: "Payment from Ritika Patel (#BC-192834)",
+          createdAt: new Date(Date.now() - 3600000 * 24)
+        },
+        {
+          wallet_id: wallet.id,
+          transaction_type: "PAYMENT",
+          amount: 4500,
+          status: "SUCCESS",
+          description: "Payment from Neha Gupta (#BC-239487)",
+          createdAt: new Date(Date.now() - 3600000 * 48)
+        }
+      ]);
+      history = await db.WalletTransaction.findAll({
+        where: { wallet_id: wallet.id },
+        include: [
+          {
+            model: db.Booking,
+            as: "booking",
+            required: false,
+            include: [
+              {
+                model: db.User,
+                as: "user",
+                required: false,
+                attributes: ["name", "profile_image"]
+              }
+            ]
+          }
+        ],
+        order: [["createdAt", "DESC"]]
+      });
     }
-    return txData;
-  });
 
-  return {
-    balance: wallet.balance,
-    transactions: transactions
-  };
-}
+    const transactions = (history || []).map((tx) => {
+      const txData = tx.toJSON();
+      if (txData.booking && txData.booking.user) {
+        txData.description = `Payment from ${txData.booking.user.name} (#${txData.booking.booking_code})`;
+      }
+      return txData;
+    });
+
+    return {
+      balance: wallet.balance,
+      transactions: transactions
+    };
+  }
 
   async getReviews(userId) {
-  const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
-  if (!artist) throw new AppError("Artist profile not found", 404);
+    const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
+    if (!artist) throw new AppError("Artist profile not found", 404);
 
-  return await db.Review.findAll({
-    where: { artist_id: artist.id },
-    include: [{ model: db.User, as: "user", attributes: ["name"] }],
-    order: [["createdAt", "DESC"]]
-  });
-}
-
-  async getProfile(userId) {
-  const artist = await db.ArtistProfile.findOne({
-    where: { user_id: userId },
-    include: [{ model: db.User, as: "user", attributes: ["name", "phone", "email", "profile_image"] }]
-  });
-  if (!artist) throw new AppError("Artist profile not found", 404);
-
-  const [totalBookings, completedBookings, pendingBookings, cancelledBookings, rejectedBookings] = await Promise.all([
-    db.Booking.count({ where: { artist_id: artist.id } }),
-    db.Booking.count({ where: { artist_id: artist.id, booking_status: "COMPLETED" } }),
-    db.Booking.count({ where: { artist_id: artist.id, booking_status: "PENDING" } }),
-    db.Booking.count({ where: { artist_id: artist.id, booking_status: "CANCELLED", detailed_status: { [db.Sequelize.Op.ne]: "REJECTED" } } }),
-    db.Booking.count({ where: { artist_id: artist.id, detailed_status: "REJECTED" } })
-  ]);
-
-  const artistJSON = artist.toJSON();
-  artistJSON.bookingStats = {
-    total: totalBookings,
-    completed: completedBookings,
-    pending: pendingBookings,
-    cancelled: cancelledBookings,
-    rejected: rejectedBookings
-  };
-
-  return artistJSON;
-}
-
-  async updateProfileDetails(userId, data) {
-  const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
-  if (!artist) throw new AppError("Artist profile not found", 404);
-
-  await artist.update({
-    bio: data.bio !== undefined ? data.bio : artist.bio,
-    experience_years: data.experience_years !== undefined ? Number(data.experience_years) : (data.experience !== undefined ? Number(data.experience) : artist.experience_years),
-    location: data.location !== undefined ? data.location : artist.location,
-    city: data.city !== undefined ? data.city : artist.city,
-    state: data.state !== undefined ? data.state : artist.state,
-    pincode: data.pincode !== undefined ? data.pincode : artist.pincode,
-    cover_image: data.coverImage !== undefined ? data.coverImage : (data.cover_image !== undefined ? data.cover_image : artist.cover_image),
-    languages: data.languages !== undefined ? data.languages : artist.languages,
-    intro_video: data.intro_video !== undefined ? data.intro_video : artist.intro_video,
-    portfolio_video: data.portfolio_video !== undefined ? data.portfolio_video : artist.portfolio_video,
-    intro_video_thumbnail: data.intro_video_thumbnail !== undefined ? data.intro_video_thumbnail : artist.intro_video_thumbnail,
-    portfolio_video_thumbnail: data.portfolio_video_thumbnail !== undefined ? data.portfolio_video_thumbnail : artist.portfolio_video_thumbnail,
-  });
-
-  const user = await db.User.findByPk(userId);
-  if (user) {
-    const userUpdates = {};
-    if (data.name && data.name.trim()) userUpdates.name = data.name.trim();
-
-    const newAvatar = data.profileImage || data.profile_image;
-    if (newAvatar) userUpdates.profile_image = newAvatar;
-
-    if (data.phone) {
-      const cleanPhone = String(data.phone).trim().replace(/[^0-9]/g, "");
-      if (cleanPhone && cleanPhone !== user.phone) {
-        const existingPhone = await db.User.findOne({ where: { phone: cleanPhone } });
-        if (existingPhone && Number(existingPhone.id) !== Number(userId)) {
-          throw new AppError("This phone number is already registered with another account.", 400);
-        }
-        userUpdates.phone = cleanPhone;
-      }
-    }
-
-    if (Object.keys(userUpdates).length > 0) {
-      await user.update(userUpdates);
-    }
-  }
-
-  return await this.getProfile(userId);
-}
-
-  async getNotifications(userId) {
-  return await db.Notification.findAll({
-    where: { user_id: userId },
-    order: [["createdAt", "DESC"]]
-  });
-}
-
-  async getServicesList(userId) {
-  const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
-  if (!artist) throw new AppError("Artist profile not found", 404);
-
-  return await db.Service.findAll({
-    where: { artist_id: artist.id },
-    include: [
-      { model: db.ServicePackage, as: "packages" },
-      { model: db.ServiceAddon, as: "addons" }
-    ],
-    order: [["createdAt", "DESC"]]
-  });
-}
-
-  async getServiceDetails(id) {
-  const service = await db.Service.findByPk(id, {
-    include: [
-      { model: db.ServicePackage, as: "packages" },
-      { model: db.ServiceAddon, as: "addons" },
-      { model: db.ArtistProfile, as: "artist", include: [{ model: db.User, as: "user", attributes: ["name"] }] }
-    ]
-  });
-  if (!service) throw new AppError("Service not found", 404);
-  return service;
-}
-
-  async createNewService(userId, data) {
-  let artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
-  if (!artist) {
-    artist = await db.ArtistProfile.create({
-      user_id: userId,
-      bio: "Professional Mehndi Artist",
-      verification_status: "APPROVED",
-      city: "Jaipur",
-      state: "Rajasthan"
+    return await db.Review.findAll({
+      where: { artist_id: artist.id },
+      include: [{ model: db.User, as: "user", attributes: ["name"] }],
+      order: [["createdAt", "DESC"]]
     });
   }
 
-  const service = await db.Service.create({
-    artist_id: artist.id,
-    specialization_name: data.specialization_name,
-    category: data.category,
-    description: data.description || "",
-    minimum_price: Number(data.minimum_price),
-    maximum_price: data.maximum_price ? Number(data.maximum_price) : null,
-    duration_minutes: Number(data.duration_minutes || 60),
-    service_image: data.service_image || null,
-    is_home_service: data.is_home_service !== undefined ? data.is_home_service : true,
-    is_salon_service: data.is_salon_service !== undefined ? data.is_salon_service : false,
-    offer_price: data.offer_price ? Number(data.offer_price) : null,
-    travel_charges: data.travel_charges ? Number(data.travel_charges) : 0,
-    minimum_booking_amount: data.minimum_booking_amount ? Number(data.minimum_booking_amount) : 0,
-    advance_payment_percentage: data.advance_payment_percentage ? Number(data.advance_payment_percentage) : 0,
-    tags: data.tags || ""
-  });
+  async getProfile(userId) {
+    const artist = await db.ArtistProfile.findOne({
+      where: { user_id: userId },
+      include: [{ model: db.User, as: "user", attributes: ["name", "phone", "email", "profile_image"] }]
+    });
+    if (!artist) throw new AppError("Artist profile not found", 404);
 
-  if (data.packages && Array.isArray(data.packages)) {
-    for (const p of data.packages) {
-      await db.ServicePackage.create({
-        service_id: service.id,
-        package_name: p.package_name,
-        package_price: Number(p.package_price),
-        included_designs: p.included_designs || "",
-        duration: Number(p.duration || 60),
-        number_of_hands: Number(p.number_of_hands || 0),
-        number_of_feet: Number(p.number_of_feet || 0),
-        home_visit: p.home_visit !== undefined ? p.home_visit : true,
-        touch_up_included: p.touch_up_included !== undefined ? p.touch_up_included : false,
-        aftercare_included: p.aftercare_included !== undefined ? p.aftercare_included : false
-      });
-    }
+    const [totalBookings, completedBookings, pendingBookings, cancelledBookings, rejectedBookings] = await Promise.all([
+      db.Booking.count({ where: { artist_id: artist.id } }),
+      db.Booking.count({ where: { artist_id: artist.id, booking_status: "COMPLETED" } }),
+      db.Booking.count({ where: { artist_id: artist.id, booking_status: "PENDING" } }),
+      db.Booking.count({ where: { artist_id: artist.id, booking_status: "CANCELLED", detailed_status: { [db.Sequelize.Op.ne]: "REJECTED" } } }),
+      db.Booking.count({ where: { artist_id: artist.id, detailed_status: "REJECTED" } })
+    ]);
+
+    const artistJSON = artist.toJSON();
+    artistJSON.bookingStats = {
+      total: totalBookings,
+      completed: completedBookings,
+      pending: pendingBookings,
+      cancelled: cancelledBookings,
+      rejected: rejectedBookings
+    };
+
+    return artistJSON;
   }
 
-  if (data.addons && Array.isArray(data.addons)) {
-    for (const a of data.addons) {
-      await db.ServiceAddon.create({
-        service_id: service.id,
-        addon_name: a.addon_name,
-        addon_price: Number(a.addon_price),
-        description: a.description || ""
-      });
+  async updateProfileDetails(userId, data) {
+    const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
+    if (!artist) throw new AppError("Artist profile not found", 404);
+
+    await artist.update({
+      bio: data.bio !== undefined ? data.bio : artist.bio,
+      experience_years: data.experience_years !== undefined ? Number(data.experience_years) : (data.experience !== undefined ? Number(data.experience) : artist.experience_years),
+      location: data.location !== undefined ? data.location : artist.location,
+      city: data.city !== undefined ? data.city : artist.city,
+      state: data.state !== undefined ? data.state : artist.state,
+      pincode: data.pincode !== undefined ? data.pincode : artist.pincode,
+      cover_image: data.coverImage !== undefined ? data.coverImage : (data.cover_image !== undefined ? data.cover_image : artist.cover_image),
+      languages: data.languages !== undefined ? data.languages : artist.languages,
+      intro_video: data.intro_video !== undefined ? data.intro_video : artist.intro_video,
+      portfolio_video: data.portfolio_video !== undefined ? data.portfolio_video : artist.portfolio_video,
+      intro_video_thumbnail: data.intro_video_thumbnail !== undefined ? data.intro_video_thumbnail : artist.intro_video_thumbnail,
+      portfolio_video_thumbnail: data.portfolio_video_thumbnail !== undefined ? data.portfolio_video_thumbnail : artist.portfolio_video_thumbnail,
+    });
+
+    const user = await db.User.findByPk(userId);
+    if (user) {
+      const userUpdates = {};
+      if (data.name && data.name.trim()) userUpdates.name = data.name.trim();
+
+      const newAvatar = data.profileImage || data.profile_image;
+      if (newAvatar) userUpdates.profile_image = newAvatar;
+
+      if (data.phone) {
+        const cleanPhone = String(data.phone).trim().replace(/[^0-9]/g, "");
+        if (cleanPhone && cleanPhone !== user.phone) {
+          const existingPhone = await db.User.findOne({ where: { phone: cleanPhone } });
+          if (existingPhone && Number(existingPhone.id) !== Number(userId)) {
+            throw new AppError("This phone number is already registered with another account.", 400);
+          }
+          userUpdates.phone = cleanPhone;
+        }
+      }
+
+      if (Object.keys(userUpdates).length > 0) {
+        await user.update(userUpdates);
+      }
     }
+
+    return await this.getProfile(userId);
   }
 
-  return await this.getServiceDetails(service.id);
-}
+  async getNotifications(userId) {
+    return await db.Notification.findAll({
+      where: { user_id: userId },
+      order: [["createdAt", "DESC"]]
+    });
+  }
+
+  async getServicesList(userId) {
+    const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
+    if (!artist) throw new AppError("Artist profile not found", 404);
+
+    return await db.Service.findAll({
+      where: { artist_id: artist.id },
+      include: [
+        { model: db.ServicePackage, as: "packages" },
+        { model: db.ServiceAddon, as: "addons" }
+      ],
+      order: [["createdAt", "DESC"]]
+    });
+  }
+
+  async getServiceDetails(id) {
+    const service = await db.Service.findByPk(id, {
+      include: [
+        { model: db.ServicePackage, as: "packages" },
+        { model: db.ServiceAddon, as: "addons" },
+        { model: db.ArtistProfile, as: "artist", include: [{ model: db.User, as: "user", attributes: ["name"] }] }
+      ]
+    });
+    if (!service) throw new AppError("Service not found", 404);
+    return service;
+  }
+
+  async createNewService(userId, data) {
+    const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
+    if (!artist) throw new AppError("Artist profile not found", 404);
+
+    const service = await db.Service.create({
+      artist_id: artist.id,
+      specialization_name: data.specialization_name,
+      category: data.category,
+      description: data.description || "",
+      minimum_price: Number(data.minimum_price),
+      maximum_price: data.maximum_price ? Number(data.maximum_price) : null,
+      duration_minutes: Number(data.duration_minutes || 60),
+      service_image: data.service_image || null,
+      is_home_service: data.is_home_service !== undefined ? data.is_home_service : true,
+      is_salon_service: data.is_salon_service !== undefined ? data.is_salon_service : false,
+      offer_price: data.offer_price ? Number(data.offer_price) : null,
+      travel_charges: data.travel_charges ? Number(data.travel_charges) : 0,
+      minimum_booking_amount: data.minimum_booking_amount ? Number(data.minimum_booking_amount) : 0,
+      advance_payment_percentage: data.advance_payment_percentage ? Number(data.advance_payment_percentage) : 0,
+      tags: data.tags || ""
+    });
+
+    if (data.packages && Array.isArray(data.packages)) {
+      for (const p of data.packages) {
+        await db.ServicePackage.create({
+          service_id: service.id,
+          package_name: p.package_name,
+          package_price: Number(p.package_price),
+          included_designs: p.included_designs || "",
+          duration: Number(p.duration || 60),
+          number_of_hands: Number(p.number_of_hands || 0),
+          number_of_feet: Number(p.number_of_feet || 0),
+          home_visit: p.home_visit !== undefined ? p.home_visit : true,
+          touch_up_included: p.touch_up_included !== undefined ? p.touch_up_included : false,
+          aftercare_included: p.aftercare_included !== undefined ? p.aftercare_included : false
+        });
+      }
+    }
+
+    if (data.addons && Array.isArray(data.addons)) {
+      for (const a of data.addons) {
+        await db.ServiceAddon.create({
+          service_id: service.id,
+          addon_name: a.addon_name,
+          addon_price: Number(a.addon_price),
+          description: a.description || ""
+        });
+      }
+    }
+
+    return await this.getServiceDetails(service.id);
+  }
 
   async updateServiceDetails(id, userId, data) {
-  const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
-  if (!artist) throw new AppError("Artist profile not found", 404);
+    const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
+    if (!artist) throw new AppError("Artist profile not found", 404);
 
-  const service = await db.Service.findByPk(id);
-  if (!service) throw new AppError("Service not found", 404);
-  if (service.artist_id !== artist.id) throw new AppError("Unauthorized access to service", 403);
+    const service = await db.Service.findByPk(id);
+    if (!service) throw new AppError("Service not found", 404);
+    if (service.artist_id !== artist.id) throw new AppError("Unauthorized access to service", 403);
 
-  await service.update({
-    specialization_name: data.specialization_name || service.specialization_name,
-    category: data.category || service.category,
-    description: data.description !== undefined ? data.description : service.description,
-    minimum_price: data.minimum_price !== undefined ? Number(data.minimum_price) : service.minimum_price,
-    maximum_price: data.maximum_price !== undefined ? Number(data.maximum_price) : service.maximum_price,
-    duration_minutes: data.duration_minutes !== undefined ? Number(data.duration_minutes) : service.duration_minutes,
-    service_image: data.service_image !== undefined ? data.service_image : service.service_image,
-    is_home_service: data.is_home_service !== undefined ? data.is_home_service : service.is_home_service,
-    is_salon_service: data.is_salon_service !== undefined ? data.is_salon_service : service.is_salon_service,
-    offer_price: data.offer_price !== undefined ? Number(data.offer_price) : service.offer_price,
-    travel_charges: data.travel_charges !== undefined ? Number(data.travel_charges) : service.travel_charges,
-    minimum_booking_amount: data.minimum_booking_amount !== undefined ? Number(data.minimum_booking_amount) : service.minimum_booking_amount,
-    advance_payment_percentage: data.advance_payment_percentage !== undefined ? Number(data.advance_payment_percentage) : service.advance_payment_percentage,
-    tags: data.tags !== undefined ? data.tags : service.tags
-  });
+    await service.update({
+      specialization_name: data.specialization_name || service.specialization_name,
+      category: data.category || service.category,
+      description: data.description !== undefined ? data.description : service.description,
+      minimum_price: data.minimum_price !== undefined ? Number(data.minimum_price) : service.minimum_price,
+      maximum_price: data.maximum_price !== undefined ? Number(data.maximum_price) : service.maximum_price,
+      duration_minutes: data.duration_minutes !== undefined ? Number(data.duration_minutes) : service.duration_minutes,
+      service_image: data.service_image !== undefined ? data.service_image : service.service_image,
+      is_home_service: data.is_home_service !== undefined ? data.is_home_service : service.is_home_service,
+      is_salon_service: data.is_salon_service !== undefined ? data.is_salon_service : service.is_salon_service,
+      offer_price: data.offer_price !== undefined ? Number(data.offer_price) : service.offer_price,
+      travel_charges: data.travel_charges !== undefined ? Number(data.travel_charges) : service.travel_charges,
+      minimum_booking_amount: data.minimum_booking_amount !== undefined ? Number(data.minimum_booking_amount) : service.minimum_booking_amount,
+      advance_payment_percentage: data.advance_payment_percentage !== undefined ? Number(data.advance_payment_percentage) : service.advance_payment_percentage,
+      tags: data.tags !== undefined ? data.tags : service.tags
+    });
 
-  // Recreate packages
-  if (data.packages && Array.isArray(data.packages)) {
-    await db.ServicePackage.destroy({ where: { service_id: service.id } });
-    for (const p of data.packages) {
-      await db.ServicePackage.create({
-        service_id: service.id,
-        package_name: p.package_name,
-        package_price: Number(p.package_price),
-        included_designs: p.included_designs || "",
-        duration: Number(p.duration || 60),
-        number_of_hands: Number(p.number_of_hands || 0),
-        number_of_feet: Number(p.number_of_feet || 0),
-        home_visit: p.home_visit !== undefined ? p.home_visit : true,
-        touch_up_included: p.touch_up_included !== undefined ? p.touch_up_included : false,
-        aftercare_included: p.aftercare_included !== undefined ? p.aftercare_included : false
-      });
+    // Recreate packages
+    if (data.packages && Array.isArray(data.packages)) {
+      await db.ServicePackage.destroy({ where: { service_id: service.id } });
+      for (const p of data.packages) {
+        await db.ServicePackage.create({
+          service_id: service.id,
+          package_name: p.package_name,
+          package_price: Number(p.package_price),
+          included_designs: p.included_designs || "",
+          duration: Number(p.duration || 60),
+          number_of_hands: Number(p.number_of_hands || 0),
+          number_of_feet: Number(p.number_of_feet || 0),
+          home_visit: p.home_visit !== undefined ? p.home_visit : true,
+          touch_up_included: p.touch_up_included !== undefined ? p.touch_up_included : false,
+          aftercare_included: p.aftercare_included !== undefined ? p.aftercare_included : false
+        });
+      }
     }
-  }
 
-  // Recreate addons
-  if (data.addons && Array.isArray(data.addons)) {
-    await db.ServiceAddon.destroy({ where: { service_id: service.id } });
-    for (const a of data.addons) {
-      await db.ServiceAddon.create({
-        service_id: service.id,
-        addon_name: a.addon_name,
-        addon_price: Number(a.addon_price),
-        description: a.description || ""
-      });
+    // Recreate addons
+    if (data.addons && Array.isArray(data.addons)) {
+      await db.ServiceAddon.destroy({ where: { service_id: service.id } });
+      for (const a of data.addons) {
+        await db.ServiceAddon.create({
+          service_id: service.id,
+          addon_name: a.addon_name,
+          addon_price: Number(a.addon_price),
+          description: a.description || ""
+        });
+      }
     }
-  }
 
-  return await this.getServiceDetails(service.id);
-}
+    return await this.getServiceDetails(service.id);
+  }
 
   async deleteServiceItem(id, userId) {
-  const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
-  if (!artist) throw new AppError("Artist profile not found", 404);
+    const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
+    if (!artist) throw new AppError("Artist profile not found", 404);
 
-  const service = await db.Service.findByPk(id);
-  if (!service) throw new AppError("Service not found", 404);
-  if (service.artist_id !== artist.id) throw new AppError("Unauthorized access to service", 403);
+    const service = await db.Service.findByPk(id);
+    if (!service) throw new AppError("Service not found", 404);
+    if (service.artist_id !== artist.id) throw new AppError("Unauthorized access to service", 403);
 
-  await service.destroy();
-  return true;
-}
+    await service.destroy();
+    return true;
+  }
 
   async updateServiceActiveStatus(id, userId, isActive) {
-  const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
-  if (!artist) throw new AppError("Artist profile not found", 404);
+    const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
+    if (!artist) throw new AppError("Artist profile not found", 404);
 
-  const service = await db.Service.findByPk(id);
-  if (!service) throw new AppError("Service not found", 404);
-  if (service.artist_id !== artist.id) throw new AppError("Unauthorized access to service", 403);
+    const service = await db.Service.findByPk(id);
+    if (!service) throw new AppError("Service not found", 404);
+    if (service.artist_id !== artist.id) throw new AppError("Unauthorized access to service", 403);
 
-  await service.update({ is_active: isActive });
-  return service;
-}
+    await service.update({ is_active: isActive });
+    return service;
+  }
 
   async uploadServiceMedia(id, userId, imageUrl) {
-  const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
-  if (!artist) throw new AppError("Artist profile not found", 404);
+    const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
+    if (!artist) throw new AppError("Artist profile not found", 404);
 
-  const service = await db.Service.findByPk(id);
-  if (!service) throw new AppError("Service not found", 404);
-  if (service.artist_id !== artist.id) throw new AppError("Unauthorized access to service", 403);
+    const service = await db.Service.findByPk(id);
+    if (!service) throw new AppError("Service not found", 404);
+    if (service.artist_id !== artist.id) throw new AppError("Unauthorized access to service", 403);
 
-  await service.update({ service_image: imageUrl });
-  return service;
-}
+    await service.update({ service_image: imageUrl });
+    return service;
+  }
 
   async getCustomerServicesList() {
-  return await db.Service.findAll({
-    where: { is_active: true },
-    include: [
-      { model: db.ServicePackage, as: "packages" },
-      { model: db.ServiceAddon, as: "addons" },
-      { model: db.ArtistProfile, as: "artist", include: [{ model: db.User, as: "user", attributes: ["name"] }] }
-    ]
-  });
-}
+    return await db.Service.findAll({
+      where: { is_active: true },
+      include: [
+        { model: db.ServicePackage, as: "packages" },
+        { model: db.ServiceAddon, as: "addons" },
+        { model: db.ArtistProfile, as: "artist", include: [{ model: db.User, as: "user", attributes: ["name"] }] }
+      ]
+    });
+  }
 
   async getLeads(userId, query = {}) {
-  const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
-  if (!artist) throw new AppError("Artist profile not found", 404);
+    const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
+    if (!artist) throw new AppError("Artist profile not found", 404);
 
-  const { status, dateRange, city, category, minPrice, maxPrice, search, sort, page = 1, limit = 10 } = query;
-  const offset = (page - 1) * limit;
+    const { status, dateRange, city, category, minPrice, maxPrice, search, sort, page = 1, limit = 10 } = query;
+    const offset = (page - 1) * limit;
 
-  const where = { artist_id: artist.id };
+    const where = { artist_id: artist.id };
 
-  // 1. Search filter
-  if (search) {
-    const searchPattern = `%${search}%`;
-    where[db.Sequelize.Op.or] = [
-      { booking_code: { [db.Sequelize.Op.iLike]: searchPattern } },
-      { address: { [db.Sequelize.Op.iLike]: searchPattern } }
+    // 1. Search filter
+    if (search) {
+      const searchPattern = `%${search}%`;
+      where[db.Sequelize.Op.or] = [
+        { booking_code: { [db.Sequelize.Op.iLike]: searchPattern } },
+        { address: { [db.Sequelize.Op.iLike]: searchPattern } }
+      ];
+    }
+
+    // 2. Budget price filter
+    if (minPrice || maxPrice) {
+      where.total_price = {};
+      if (minPrice) where.total_price[db.Sequelize.Op.gte] = Number(minPrice);
+      if (maxPrice) where.total_price[db.Sequelize.Op.lte] = Number(maxPrice);
+    }
+
+    // 3. Status filter
+    if (status) {
+      if (status === "Completed") {
+        where.detailed_status = { [db.Sequelize.Op.in]: ["WAITING_FOR_USER_PAYMENT", "COMPLETED", "COMPLETED_CLOSED"] };
+      } else if (status === "Accepted") {
+        where.booking_status = "CONFIRMED";
+        where.detailed_status = { [db.Sequelize.Op.in]: ["CONFIRMED", "ACCEPTED", "ARTIST_ACCEPTED", "ARTIST_ON_THE_WAY", "ARTIST_ARRIVED", "SERVICE_STARTED", "RESCHEDULED"] };
+      } else if (status === "Rejected") {
+        where.booking_status = "CANCELLED";
+        where.detailed_status = "REJECTED";
+      } else if (status === "Cancelled") {
+        where.booking_status = "CANCELLED";
+        where.detailed_status = { [db.Sequelize.Op.ne]: "REJECTED" };
+      } else if (status === "Pending") {
+        where.booking_status = "PENDING";
+        where.detailed_status = { [db.Sequelize.Op.ne]: "VIEWED" };
+      } else if (status === "Viewed") {
+        where.booking_status = "PENDING";
+        where.detailed_status = "VIEWED";
+      }
+    }
+
+    // 4. Date range filter
+    if (dateRange) {
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+
+      const endOfToday = new Date();
+      endOfToday.setHours(23, 59, 59, 999);
+
+      if (dateRange === "Today") {
+        where.createdAt = {
+          [db.Sequelize.Op.between]: [startOfToday, endOfToday]
+        };
+      } else if (dateRange === "Tomorrow") {
+        const startOfTomorrow = new Date(startOfToday);
+        startOfTomorrow.setDate(startOfTomorrow.getDate() + 1);
+        const endOfTomorrow = new Date(endOfToday);
+        endOfTomorrow.setDate(endOfTomorrow.getDate() + 1);
+        where.createdAt = {
+          [db.Sequelize.Op.between]: [startOfTomorrow, endOfTomorrow]
+        };
+      } else if (dateRange === "This Week") {
+        const endOfWeek = new Date(startOfToday);
+        endOfWeek.setDate(endOfWeek.getDate() + 7);
+        where.createdAt = {
+          [db.Sequelize.Op.between]: [startOfToday, endOfWeek]
+        };
+      }
+    }
+
+    // Include relations
+    const include = [
+      {
+        model: db.User,
+        as: "user",
+        attributes: ["id", "name", "phone", "email", "profile_image"]
+      },
+      {
+        model: db.Service,
+        as: "service",
+        attributes: ["id", "specialization_name", "category", "minimum_price"]
+      },
+      {
+        model: db.AvailabilitySlot,
+        as: "slot",
+        required: false
+      }
     ];
-  }
 
-  // 2. Budget price filter
-  if (minPrice || maxPrice) {
-    where.total_price = {};
-    if (minPrice) where.total_price[db.Sequelize.Op.gte] = Number(minPrice);
-    if (maxPrice) where.total_price[db.Sequelize.Op.lte] = Number(maxPrice);
-  }
-
-  // 3. Status filter
-  if (status) {
-    if (status === "Completed") {
-      where.detailed_status = { [db.Sequelize.Op.in]: ["WAITING_FOR_USER_PAYMENT", "COMPLETED", "COMPLETED_CLOSED"] };
-    } else if (status === "Accepted") {
-      where.booking_status = "CONFIRMED";
-      where.detailed_status = { [db.Sequelize.Op.in]: ["CONFIRMED", "ACCEPTED", "ARTIST_ACCEPTED", "ARTIST_ON_THE_WAY", "ARTIST_ARRIVED", "SERVICE_STARTED", "RESCHEDULED"] };
-    } else if (status === "Rejected") {
-      where.booking_status = "CANCELLED";
-      where.detailed_status = "REJECTED";
-    } else if (status === "Cancelled") {
-      where.booking_status = "CANCELLED";
-      where.detailed_status = { [db.Sequelize.Op.ne]: "REJECTED" };
-    } else if (status === "Pending") {
-      where.booking_status = "PENDING";
-      where.detailed_status = { [db.Sequelize.Op.ne]: "VIEWED" };
-    } else if (status === "Viewed") {
-      where.booking_status = "PENDING";
-      where.detailed_status = "VIEWED";
-    }
-  }
-
-  // 4. Date range filter
-  if (dateRange) {
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-
-    const endOfToday = new Date();
-    endOfToday.setHours(23, 59, 59, 999);
-
-    if (dateRange === "Today") {
-      where.createdAt = {
-        [db.Sequelize.Op.between]: [startOfToday, endOfToday]
+    // User search filters
+    if (search) {
+      const searchPattern = `%${search}%`;
+      include[0].where = {
+        [db.Sequelize.Op.or]: [
+          { name: { [db.Sequelize.Op.iLike]: searchPattern } },
+          { phone: { [db.Sequelize.Op.iLike]: searchPattern } }
+        ]
       };
-    } else if (dateRange === "Tomorrow") {
-      const startOfTomorrow = new Date(startOfToday);
-      startOfTomorrow.setDate(startOfTomorrow.getDate() + 1);
-      const endOfTomorrow = new Date(endOfToday);
-      endOfTomorrow.setDate(endOfTomorrow.getDate() + 1);
-      where.createdAt = {
-        [db.Sequelize.Op.between]: [startOfTomorrow, endOfTomorrow]
-      };
-    } else if (dateRange === "This Week") {
-      const endOfWeek = new Date(startOfToday);
-      endOfWeek.setDate(endOfWeek.getDate() + 7);
-      where.createdAt = {
-        [db.Sequelize.Op.between]: [startOfToday, endOfWeek]
-      };
+      include[0].required = true;
     }
-  }
 
-  // Include relations
-  const include = [
-    {
-      model: db.User,
-      as: "user",
-      attributes: ["id", "name", "phone", "email", "profile_image"]
-    },
-    {
-      model: db.Service,
-      as: "service",
-      attributes: ["id", "specialization_name", "category", "minimum_price"]
-    },
-    {
-      model: db.AvailabilitySlot,
-      as: "slot",
-      required: false
+    // Category filter
+    if (category) {
+      include[1].where = {
+        category: { [db.Sequelize.Op.iLike]: `%${category}%` }
+      };
+      include[1].required = true;
     }
-  ];
 
-  // User search filters
-  if (search) {
-    const searchPattern = `%${search}%`;
-    include[0].where = {
-      [db.Sequelize.Op.or]: [
-        { name: { [db.Sequelize.Op.iLike]: searchPattern } },
-        { phone: { [db.Sequelize.Op.iLike]: searchPattern } }
+    // Sorting order
+    let order = [["createdAt", "DESC"]];
+    if (sort === "Oldest") {
+      order = [["createdAt", "ASC"]];
+    } else if (sort === "Highest Budget") {
+      order = [["total_price", "DESC"]];
+    } else if (sort === "Lowest Budget") {
+      order = [["total_price", "ASC"]];
+    }
+
+    const { rows: bookings, count } = await db.Booking.findAndCountAll({
+      where,
+      include,
+      order,
+      limit: Number(limit),
+      offset: Number(offset),
+      distinct: true
+    });
+
+    // Format leads list
+    const leadsList = bookings.map((b) => {
+      let distance = "0.5 km";
+      if (b.latitude && b.longitude && artist.latitude && artist.longitude) {
+        const lat1 = Number(artist.latitude);
+        const lon1 = Number(artist.longitude);
+        const lat2 = Number(b.latitude);
+        const lon2 = Number(b.longitude);
+        const R = 6371;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                  Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                  Math.sin(dLon/2) * Math.sin(dLon/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        distance = `${(R * c).toFixed(1)} km`;
+      }
+
+      return {
+        id: b.id,
+        booking_code: b.booking_code,
+        customer_name: b.user?.name || "Customer",
+        customer_image: b.user?.profile_image || null,
+        service_name: b.service?.specialization_name || "Mehndi Service",
+        category: b.service?.category || "Regular Mehndi",
+        city: b.city || artist.city || "Goa",
+        address: b.address,
+        booking_date: b.reschedule_date || b.createdAt,
+        booking_time: b.reschedule_time || "10:00 AM",
+        price: b.total_price,
+        distance,
+        status: getLeadStatus(b),
+        detailed_status: b.detailed_status,
+        booking_status: b.booking_status
+      };
+    });
+
+    let finalLeads = leadsList;
+    if (status === "Expired") {
+      finalLeads = leadsList.filter(l => l.status === "Expired");
+    } else if (status === "New Lead") {
+      finalLeads = leadsList.filter(l => l.status === "New Lead");
+    }
+
+    const allLeadsForStats = await db.Booking.findAll({
+      where: { artist_id: artist.id },
+      include: [
+        { model: db.AvailabilitySlot, as: "slot", required: false }
       ]
+    });
+
+    const stats = {
+      todayLeads: 0,
+      pendingLeads: 0,
+      acceptedLeads: 0,
+      rejectedLeads: 0,
+      completedLeads: 0,
+      expiredLeads: 0,
+      totalEarnings: 0,
+      conversionRate: 100,
+      responseTime: "12 mins"
     };
-    include[0].required = true;
-  }
 
-  // Category filter
-  if (category) {
-    include[1].where = {
-      category: { [db.Sequelize.Op.iLike]: `%${category}%` }
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    let totalAcceptTime = 0;
+    let acceptCount = 0;
+
+    allLeadsForStats.forEach((lead) => {
+      const leadStatus = getLeadStatus(lead);
+      const leadCreated = new Date(lead.createdAt);
+
+      if (leadCreated >= todayStart) stats.todayLeads++;
+      if (leadStatus === "Pending" || leadStatus === "New Lead" || leadStatus === "Viewed") stats.pendingLeads++;
+      if (leadStatus === "Accepted") stats.acceptedLeads++;
+      if (leadStatus === "Rejected") stats.rejectedLeads++;
+      if (leadStatus === "Completed") stats.completedLeads++;
+      if (leadStatus === "Expired") stats.expiredLeads++;
+
+    });
+
+    const wallet = await db.Wallet.findOne({ where: { user_id: userId } });
+    stats.totalEarnings = wallet ? wallet.balance : 0;
+
+    const totalLeads = allLeadsForStats.length;
+    if (totalLeads > 0) {
+      stats.conversionRate = Math.round(((stats.acceptedLeads + stats.completedLeads) / totalLeads) * 100);
+    }
+
+    const activities = await db.LeadActivity.findAll({
+      where: { activity_type: ["ACCEPTED", "REJECTED"] },
+      include: [{
+        model: db.Booking,
+        as: "booking",
+        where: { artist_id: artist.id },
+        required: true
+      }]
+    });
+
+    activities.forEach((act) => {
+      const created = new Date(act.booking.createdAt);
+      const updated = new Date(act.createdAt);
+      const diffMins = Math.round((updated - created) / 60000);
+      if (diffMins > 0) {
+        totalAcceptTime += diffMins;
+        acceptCount++;
+      }
+    });
+
+    if (acceptCount > 0) {
+      stats.responseTime = `${Math.round(totalAcceptTime / acceptCount)} mins`;
+    }
+
+    return {
+      leads: finalLeads,
+      stats,
+      totalCount: count
     };
-    include[1].required = true;
   }
 
-  // Sorting order
-  let order = [["createdAt", "DESC"]];
-  if (sort === "Oldest") {
-    order = [["createdAt", "ASC"]];
-  } else if (sort === "Highest Budget") {
-    order = [["total_price", "DESC"]];
-  } else if (sort === "Lowest Budget") {
-    order = [["total_price", "ASC"]];
-  }
+  async getLeadById(id, userId) {
+    const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
+    if (!artist) throw new AppError("Artist profile not found", 404);
 
-  const { rows: bookings, count } = await db.Booking.findAndCountAll({
-    where,
-    include,
-    order,
-    limit: Number(limit),
-    offset: Number(offset),
-    distinct: true
-  });
+    const booking = await db.Booking.findByPk(id, {
+      include: [
+        { model: db.User, as: "user", attributes: ["id", "name", "phone", "email", "profile_image"] },
+        { model: db.Service, as: "service", attributes: ["id", "specialization_name", "category", "minimum_price", "description"] },
+        { model: db.AvailabilitySlot, as: "slot", required: false }
+      ]
+    });
 
-  // Format leads list
-  const leadsList = bookings.map((b) => {
+    if (!booking) throw new AppError("Lead booking not found", 404);
+    if (booking.artist_id !== artist.id) throw new AppError("Unauthorized access to lead", 403);
+
     let distance = "0.5 km";
-    if (b.latitude && b.longitude && artist.latitude && artist.longitude) {
+    if (booking.latitude && booking.longitude && artist.latitude && artist.longitude) {
       const lat1 = Number(artist.latitude);
       const lon1 = Number(artist.longitude);
-      const lat2 = Number(b.latitude);
-      const lon2 = Number(b.longitude);
+      const lat2 = Number(booking.latitude);
+      const lon2 = Number(booking.longitude);
       const R = 6371;
       const dLat = (lat2 - lat1) * Math.PI / 180;
       const dLon = (lon2 - lon1) * Math.PI / 180;
-      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-        Math.sin(dLon / 2) * Math.sin(dLon / 2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon/2) * Math.sin(dLon/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
       distance = `${(R * c).toFixed(1)} km`;
     }
 
     return {
-      id: b.id,
-      booking_code: b.booking_code,
-      customer_name: b.user?.name || "Customer",
-      customer_image: b.user?.profile_image || null,
-      service_name: b.service?.specialization_name || "Mehndi Service",
-      category: b.service?.category || "Regular Mehndi",
-      city: b.city || artist.city || "Goa",
-      address: b.address,
-      booking_date: b.reschedule_date || b.createdAt,
-      booking_time: b.reschedule_time || "10:00 AM",
-      price: b.total_price,
-      distance,
-      status: getLeadStatus(b),
-      detailed_status: b.detailed_status,
-      booking_status: b.booking_status
+      id: booking.id,
+      booking_code: booking.booking_code,
+      customer: {
+        id: booking.user?.id,
+        name: booking.user?.name || "Customer",
+        phone: booking.user?.phone || "",
+        email: booking.user?.email || "",
+        profile_image: booking.user?.profile_image || null
+      },
+      service: {
+        id: booking.service?.id,
+        name: booking.service?.specialization_name || "Mehndi Service",
+        category: booking.service?.category || "Regular Mehndi",
+        description: booking.service?.description || "",
+        price: booking.total_price
+      },
+      address: booking.address,
+      landmark: booking.landmark,
+      latitude: booking.latitude,
+      longitude: booking.longitude,
+      notes: booking.notes,
+      booking_date: booking.reschedule_date || booking.createdAt,
+      booking_time: booking.reschedule_time || "10:00 AM",
+      status: getLeadStatus(booking),
+      detailed_status: booking.detailed_status,
+      booking_status: booking.booking_status,
+      payment_status: booking.payment_status,
+      distance
     };
-  });
-
-  let finalLeads = leadsList;
-  if (status === "Expired") {
-    finalLeads = leadsList.filter(l => l.status === "Expired");
-  } else if (status === "New Lead") {
-    finalLeads = leadsList.filter(l => l.status === "New Lead");
   }
-
-  const allLeadsForStats = await db.Booking.findAll({
-    where: { artist_id: artist.id },
-    include: [
-      { model: db.AvailabilitySlot, as: "slot", required: false }
-    ]
-  });
-
-  const stats = {
-    todayLeads: 0,
-    pendingLeads: 0,
-    acceptedLeads: 0,
-    rejectedLeads: 0,
-    completedLeads: 0,
-    expiredLeads: 0,
-    totalEarnings: 0,
-    conversionRate: 100,
-    responseTime: "12 mins"
-  };
-
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-
-  let totalAcceptTime = 0;
-  let acceptCount = 0;
-
-  allLeadsForStats.forEach((lead) => {
-    const leadStatus = getLeadStatus(lead);
-    const leadCreated = new Date(lead.createdAt);
-
-    if (leadCreated >= todayStart) stats.todayLeads++;
-    if (leadStatus === "Pending" || leadStatus === "New Lead" || leadStatus === "Viewed") stats.pendingLeads++;
-    if (leadStatus === "Accepted") stats.acceptedLeads++;
-    if (leadStatus === "Rejected") stats.rejectedLeads++;
-    if (leadStatus === "Completed") stats.completedLeads++;
-    if (leadStatus === "Expired") stats.expiredLeads++;
-
-  });
-
-  const wallet = await db.Wallet.findOne({ where: { user_id: userId } });
-  stats.totalEarnings = wallet ? wallet.balance : 0;
-
-  const totalLeads = allLeadsForStats.length;
-  if (totalLeads > 0) {
-    stats.conversionRate = Math.round(((stats.acceptedLeads + stats.completedLeads) / totalLeads) * 100);
-  }
-
-  const activities = await db.LeadActivity.findAll({
-    where: { activity_type: ["ACCEPTED", "REJECTED"] },
-    include: [{
-      model: db.Booking,
-      as: "booking",
-      where: { artist_id: artist.id },
-      required: true
-    }]
-  });
-
-  activities.forEach((act) => {
-    const created = new Date(act.booking.createdAt);
-    const updated = new Date(act.createdAt);
-    const diffMins = Math.round((updated - created) / 60000);
-    if (diffMins > 0) {
-      totalAcceptTime += diffMins;
-      acceptCount++;
-    }
-  });
-
-  if (acceptCount > 0) {
-    stats.responseTime = `${Math.round(totalAcceptTime / acceptCount)} mins`;
-  }
-
-  return {
-    leads: finalLeads,
-    stats,
-    totalCount: count
-  };
-}
-
-  async getLeadById(id, userId) {
-  const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
-  if (!artist) throw new AppError("Artist profile not found", 404);
-
-  const booking = await db.Booking.findByPk(id, {
-    include: [
-      { model: db.User, as: "user", attributes: ["id", "name", "phone", "email", "profile_image"] },
-      { model: db.Service, as: "service", attributes: ["id", "specialization_name", "category", "minimum_price", "description"] },
-      { model: db.AvailabilitySlot, as: "slot", required: false }
-    ]
-  });
-
-  if (!booking) throw new AppError("Lead booking not found", 404);
-  if (booking.artist_id !== artist.id) throw new AppError("Unauthorized access to lead", 403);
-
-  let distance = "0.5 km";
-  if (booking.latitude && booking.longitude && artist.latitude && artist.longitude) {
-    const lat1 = Number(artist.latitude);
-    const lon1 = Number(artist.longitude);
-    const lat2 = Number(booking.latitude);
-    const lon2 = Number(booking.longitude);
-    const R = 6371;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-      Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    distance = `${(R * c).toFixed(1)} km`;
-  }
-
-  return {
-    id: booking.id,
-    booking_code: booking.booking_code,
-    customer: {
-      id: booking.user?.id,
-      name: booking.user?.name || "Customer",
-      phone: booking.user?.phone || "",
-      email: booking.user?.email || "",
-      profile_image: booking.user?.profile_image || null
-    },
-    service: {
-      id: booking.service?.id,
-      name: booking.service?.specialization_name || "Mehndi Service",
-      category: booking.service?.category || "Regular Mehndi",
-      description: booking.service?.description || "",
-      price: booking.total_price
-    },
-    address: booking.address,
-    landmark: booking.landmark,
-    latitude: booking.latitude,
-    longitude: booking.longitude,
-    notes: booking.notes,
-    booking_date: booking.reschedule_date || booking.createdAt,
-    booking_time: booking.reschedule_time || "10:00 AM",
-    status: getLeadStatus(booking),
-    detailed_status: booking.detailed_status,
-    booking_status: booking.booking_status,
-    payment_status: booking.payment_status,
-    distance
-  };
-}
 
   async viewLead(id, userId) {
-  const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
-  if (!artist) throw new AppError("Artist profile not found", 404);
+    const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
+    if (!artist) throw new AppError("Artist profile not found", 404);
 
-  const booking = await db.Booking.findByPk(id);
-  if (!booking) throw new AppError("Lead booking not found", 404);
-  if (booking.artist_id !== artist.id) throw new AppError("Unauthorized access to lead", 403);
+    const booking = await db.Booking.findByPk(id);
+    if (!booking) throw new AppError("Lead booking not found", 404);
+    if (booking.artist_id !== artist.id) throw new AppError("Unauthorized access to lead", 403);
 
-  if (booking.booking_status === "PENDING" && booking.detailed_status === "PENDING") {
-    await booking.update({ detailed_status: "VIEWED" });
-    await db.LeadActivity.create({
-      booking_id: booking.id,
-      activity_type: "VIEWED",
-      notes: "Lead opened and viewed by artist"
-    });
+    if (booking.booking_status === "PENDING" && booking.detailed_status === "PENDING") {
+      await booking.update({ detailed_status: "VIEWED" });
+      await db.LeadActivity.create({
+        booking_id: booking.id,
+        activity_type: "VIEWED",
+        notes: "Lead opened and viewed by artist"
+      });
+    }
+
+    return { success: true };
   }
-
-  return { success: true };
-}
 
   async acceptLead(id, userId) {
-  const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
-  if (!artist) throw new AppError("Artist profile not found", 404);
+    const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
+    if (!artist) throw new AppError("Artist profile not found", 404);
 
-  const booking = await db.Booking.findByPk(id, {
-    include: [{ model: db.AvailabilitySlot, as: "slot", required: false }]
-  });
+    const booking = await db.Booking.findByPk(id, {
+      include: [{ model: db.AvailabilitySlot, as: "slot", required: false }]
+    });
 
-  if (!booking) throw new AppError("Lead booking not found", 404);
-  if (booking.artist_id !== artist.id) throw new AppError("Unauthorized access to lead", 403);
+    if (!booking) throw new AppError("Lead booking not found", 404);
+    if (booking.artist_id !== artist.id) throw new AppError("Unauthorized access to lead", 403);
 
-  const leadStatus = getLeadStatus(booking);
-  if (leadStatus === "Accepted" || leadStatus === "Completed") {
-    throw new AppError("Lead already accepted or completed", 400);
-  }
-  if (leadStatus === "Expired") {
-    throw new AppError("Cannot accept an expired lead", 400);
-  }
-  if (leadStatus === "Rejected" || leadStatus === "Cancelled") {
-    throw new AppError("Cannot accept a rejected or cancelled lead", 400);
-  }
+    const leadStatus = getLeadStatus(booking);
+    if (leadStatus === "Accepted" || leadStatus === "Completed") {
+      throw new AppError("Lead already accepted or completed", 400);
+    }
+    if (leadStatus === "Expired") {
+      throw new AppError("Cannot accept an expired lead", 400);
+    }
+    if (leadStatus === "Rejected" || leadStatus === "Cancelled") {
+      throw new AppError("Cannot accept a rejected or cancelled lead", 400);
+    }
 
-  await booking.update({
-    booking_status: "CONFIRMED",
-    detailed_status: "ACCEPTED"
-  });
+    await booking.update({
+      booking_status: "CONFIRMED",
+      detailed_status: "ACCEPTED"
+    });
 
-  await db.LeadActivity.create({
-    booking_id: booking.id,
-    activity_type: "ACCEPTED",
-    notes: "Lead accepted by artist"
-  });
+    await db.LeadActivity.create({
+      booking_id: booking.id,
+      activity_type: "ACCEPTED",
+      notes: "Lead accepted by artist"
+    });
 
-  if (booking.slot_id) {
-    await db.AvailabilitySlot.update({ is_booked: true }, { where: { id: booking.slot_id } });
-  }
+    if (booking.slot_id) {
+      await db.AvailabilitySlot.update({ is_booked: true }, { where: { id: booking.slot_id } });
+    }
 
-  await db.Notification.create({
-    user_id: booking.user_id,
-    title: "Booking Accepted",
-    message: `Your booking request #${booking.booking_code} has been accepted by the artist!`,
-    type: "BOOKING",
-    data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
-  });
-
-  try {
-    const io = getIO();
-    io.to(booking.user_id.toString()).emit("new_notification", {
+    await db.Notification.create({
+      user_id: booking.user_id,
       title: "Booking Accepted",
       message: `Your booking request #${booking.booking_code} has been accepted by the artist!`,
       type: "BOOKING",
-      data: { bookingId: booking.id, booking_id: booking.id }
+      data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
     });
-  } catch { }
 
-  return { success: true };
-}
+    try {
+      const io = getIO();
+      io.to(booking.user_id.toString()).emit("new_notification", {
+        title: "Booking Accepted",
+        message: `Your booking request #${booking.booking_code} has been accepted by the artist!`,
+        type: "BOOKING",
+        data: { bookingId: booking.id, booking_id: booking.id }
+      });
+    } catch {}
+
+    return { success: true };
+  }
 
   async rejectLead(id, userId, rejectReason) {
-  const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
-  if (!artist) throw new AppError("Artist profile not found", 404);
+    const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
+    if (!artist) throw new AppError("Artist profile not found", 404);
 
-  const booking = await db.Booking.findByPk(id);
-  if (!booking) throw new AppError("Lead booking not found", 404);
-  if (booking.artist_id !== artist.id) throw new AppError("Unauthorized access to lead", 403);
+    const booking = await db.Booking.findByPk(id);
+    if (!booking) throw new AppError("Lead booking not found", 404);
+    if (booking.artist_id !== artist.id) throw new AppError("Unauthorized access to lead", 403);
 
-  const leadStatus = getLeadStatus(booking);
-  if (leadStatus === "Rejected" || leadStatus === "Cancelled") {
-    throw new AppError("Lead already rejected or cancelled", 400);
-  }
-  if (leadStatus === "Completed") {
-    throw new AppError("Cannot reject a completed lead", 400);
-  }
+    const leadStatus = getLeadStatus(booking);
+    if (leadStatus === "Rejected" || leadStatus === "Cancelled") {
+      throw new AppError("Lead already rejected or cancelled", 400);
+    }
+    if (leadStatus === "Completed") {
+      throw new AppError("Cannot reject a completed lead", 400);
+    }
 
-  await booking.update({
-    booking_status: "CANCELLED",
-    detailed_status: "REJECTED",
-    cancel_reason: rejectReason || "Rejected by artist"
-  });
+    await booking.update({
+      booking_status: "CANCELLED",
+      detailed_status: "REJECTED",
+      cancel_reason: rejectReason || "Rejected by artist"
+    });
 
-  await db.LeadActivity.create({
-    booking_id: booking.id,
-    activity_type: "REJECTED",
-    notes: `Lead rejected by artist. Reason: ${rejectReason || "No reason specified"}`
-  });
+    await db.LeadActivity.create({
+      booking_id: booking.id,
+      activity_type: "REJECTED",
+      notes: `Lead rejected by artist. Reason: ${rejectReason || "No reason specified"}`
+    });
 
-  if (booking.slot_id) {
-    await db.AvailabilitySlot.update({ is_booked: false }, { where: { id: booking.slot_id } });
-  }
+    if (booking.slot_id) {
+      await db.AvailabilitySlot.update({ is_booked: false }, { where: { id: booking.slot_id } });
+    }
 
-  await db.Notification.create({
-    user_id: booking.user_id,
-    title: "Booking Declined",
-    message: `Your booking request #${booking.booking_code} was declined by the artist.`,
-    type: "BOOKING",
-    data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
-  });
-
-  try {
-    const io = getIO();
-    io.to(booking.user_id.toString()).emit("new_notification", {
+    await db.Notification.create({
+      user_id: booking.user_id,
       title: "Booking Declined",
       message: `Your booking request #${booking.booking_code} was declined by the artist.`,
       type: "BOOKING",
-      data: { bookingId: booking.id, booking_id: booking.id }
+      data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
     });
-  } catch { }
 
-  return { success: true };
-}
+    try {
+      const io = getIO();
+      io.to(booking.user_id.toString()).emit("new_notification", {
+        title: "Booking Declined",
+        message: `Your booking request #${booking.booking_code} was declined by the artist.`,
+        type: "BOOKING",
+        data: { bookingId: booking.id, booking_id: booking.id }
+      });
+    } catch {}
+
+    return { success: true };
+  }
 }
 
 function getLeadStatus(booking) {
   if (booking.booking_status === "COMPLETED") return "Completed";
   if (["WAITING_FOR_USER_PAYMENT", "COMPLETED_CLOSED"].includes(booking.detailed_status)) return "Completed";
   if (booking.booking_status === "CONFIRMED") return "Accepted";
-
+  
   if (booking.booking_status === "PENDING") {
     const now = new Date();
     if (booking.slot && booking.slot.start_time) {

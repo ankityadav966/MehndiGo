@@ -44,6 +44,7 @@ import WishlistScreen from "../screens/Customer/WishlistScreen";
 import CompareArtistsScreen from "../screens/Customer/CompareArtistsScreen";
 import InitialLocationSetupScreen from "../screens/Customer/InitialLocationSetupScreen";
 import SavedAddressesScreen from "../screens/Customer/SavedAddressesScreen";
+import AddNewAddressScreen from "../screens/Customer/AddNewAddressScreen";
 
 import BottomTab from "./BottomTab";
 import ChatListScreen from "../screens/Common/ChatListScreen";
@@ -58,6 +59,9 @@ export default function CustomerStack() {
       <Stack.Screen name="CustomerTabs" component={BottomTab} initialParams={{ role: "customer" }} />
       <Stack.Screen name="InitialLocationSetup" component={InitialLocationSetupScreen} />
       <Stack.Screen name="SavedAddresses" component={SavedAddressesScreen} />
+      <Stack.Screen name="AddNewAddress" component={AddNewAddressScreen} />
+      <Stack.Screen name="AddAddress" component={AddNewAddressScreen} />
+      <Stack.Screen name="AddressForm" component={AddNewAddressScreen} />
       <Stack.Screen name="Wallet" component={WalletScreen} />
 
       <Stack.Screen name="Wishlist" component={WishlistScreen} />

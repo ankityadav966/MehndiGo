@@ -48,6 +48,54 @@ import Alert from "../../utils/Alert";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
+const DEFAULT_BANNERS = [
+  {
+    id: 1,
+    title: "Bridal Season Special",
+    subtitle: "25% OFF on Premium Packages",
+    description: "Full Arm & Leg Royal Dulhan Patterns with FREE Touchup Kit",
+    discount: "25% OFF",
+    image: "https://images.unsplash.com/photo-1610189012906-799d10787a71?auto=format&fit=crop&w=800&q=80",
+    image_url: "https://images.unsplash.com/photo-1610189012906-799d10787a71?auto=format&fit=crop&w=800&q=80"
+  },
+  {
+    id: 2,
+    title: "Festive Collection 2026",
+    subtitle: "Book Top Rated Artists from ₹499",
+    description: "Trendsetting Engagement & Sangeet party henna designs at home",
+    discount: "FLAT ₹499",
+    image: "https://images.unsplash.com/photo-1596704017254-9b121068fb31?auto=format&fit=crop&w=800&q=80",
+    image_url: "https://images.unsplash.com/photo-1596704017254-9b121068fb31?auto=format&fit=crop&w=800&q=80"
+  },
+  {
+    id: 3,
+    title: "Arabic & Floral Henna",
+    subtitle: "Exclusive Modern Arabic Styles",
+    description: "Bold flowing vines & shaded mandala motifs by certified experts",
+    discount: "SPECIAL 20%",
+    image: "https://images.unsplash.com/photo-1600003014755-ba31aa59c4b6?auto=format&fit=crop&w=800&q=80",
+    image_url: "https://images.unsplash.com/photo-1600003014755-ba31aa59c4b6?auto=format&fit=crop&w=800&q=80"
+  },
+  {
+    id: 4,
+    title: "Express At-Home Service",
+    subtitle: "Verified Artists in 60 Mins",
+    description: "Instant doorstep booking with zero extra travel charges",
+    discount: "FREE TRAVEL",
+    image: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=800&q=80",
+    image_url: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=800&q=80"
+  },
+  {
+    id: 5,
+    title: "Group Booking Combo",
+    subtitle: "Save up to ₹1,500 on Sangeet Henna",
+    description: "Special group packages for family & guests at unbeatable prices",
+    discount: "SAVE ₹1500",
+    image: "https://images.unsplash.com/photo-1567401893414-76b7b1e5a7a5?auto=format&fit=crop&w=800&q=80",
+    image_url: "https://images.unsplash.com/photo-1567401893414-76b7b1e5a7a5?auto=format&fit=crop&w=800&q=80"
+  }
+];
+
 export default function HomeScreen({ navigation }) {
   const { user, dispatch, isDarkMode } = useAuth();
 
@@ -71,7 +119,7 @@ export default function HomeScreen({ navigation }) {
   // Dashboard Aggregated States
   const [categories, setCategories] = useState([]);
 
-  const [offers, setOffers] = useState([]);
+  const [offers, setOffers] = useState(DEFAULT_BANNERS);
   const [featuredArtists, setFeaturedArtists] = useState([]);
   const [popularArtists, setPopularArtists] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
@@ -204,11 +252,10 @@ export default function HomeScreen({ navigation }) {
     try {
       const data = await getHomeDashboard(MOCK_LAT, MOCK_LNG);
       setCategories(data?.categories || []);
-      setOffers(data?.offers || []);
-      setFeaturedArtists(data?.featuredArtists || []);
-      setPopularArtists(data?.popularArtists || []);
-      setRecommendations(data?.recommendations || []);
-      setRecentlyBookedArtists(data?.recentlyBooked || []);
+      setOffers(data?.offers || data?.banners || []);
+      setFeaturedArtists(data?.featured_artists || data?.featuredArtists || []);
+      setPopularArtists(data?.popular_artists || data?.popularArtists || []);
+      setRecentlyBookedArtists(data?.recently_booked || data?.recentlyBooked || []);
 
 
       // Load favorites from database
@@ -326,31 +373,13 @@ export default function HomeScreen({ navigation }) {
             if (hasChanges) {
               dispatch({ type: "UPDATE_USER", payload: profileData });
             }
-
-            // Check if phone number is missing
-            if (!profileData.phone) {
-              const { Alert } = require("react-native");
-              Alert.alert(
-                "Phone Number Required",
-                "Please update your phone number to continue using MehndiGo.",
-                [
-                  {
-                    text: "Update Now",
-                    onPress: () => navigation.navigate("EditProfile")
-                  }
-                ],
-                { cancelable: false }
-              );
-            }
           }
         } catch (e) {
           console.log("Failed to sync customer profile on Home:", e.message);
         }
       }
 
-      if (user && !user.phone) {
-        syncUserProfile();
-      } else if (!user?.profile_image || !user?.city) {
+      if (user && (!user?.profile_image || !user?.city)) {
         syncUserProfile();
       }
 
@@ -385,6 +414,7 @@ export default function HomeScreen({ navigation }) {
 
   // Toggle favorite
   const toggleFavorite = async (artistId) => {
+    if (!artistId) return;
     const isFav = !!favorites[artistId];
     // Optimistic UI update
     setFavorites((prev) => ({
@@ -554,7 +584,7 @@ export default function HomeScreen({ navigation }) {
         </View>
         <View style={styles.recentArtistDetails}>
           <Text style={[styles.recentArtistName, { color: currentTextColor }]} numberOfLines={1}>
-            {item.name || "Specialist"}
+            {item.name || item.full_name || item.user?.name || "Specialist"}
           </Text>
           <Text style={[styles.recentArtistCat, { color: currentSecTextColor }]} numberOfLines={1}>
             {item.specialization_name || "Bridal Mehndi"}
@@ -575,27 +605,32 @@ export default function HomeScreen({ navigation }) {
 
   // Render an artist horizontal card (Featured & Popular)
   const renderHorizontalArtistItem = ({ item }) => {
-    const isFav = !!favorites[item.id];
+    const artistId = item.id || item.user_id || item.artist_id;
+    const isFav = !!favorites[artistId];
+    const artistName = item.name || item.full_name || item.user?.name || "Artist";
+    const artistImage = item.profile_image || item.user?.profile_image || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400";
+    const startingPrice = item.starting_price || item.services?.[0]?.minimum_price || 1500;
+    const ratingVal = Number(item.rating || item.avg_rating || 4.8).toFixed(1);
+
     return (
       <TouchableOpacity
         style={[styles.horizontalArtistCard, { backgroundColor: currentCardBg, borderColor: currentBorderColor }]}
-        onPress={() => navigation.navigate("ArtistProfile", { artistId: item.id })}
+        onPress={() => navigation.navigate("ArtistProfile", { artistId })}
       >
-        <OptimizedImage
-          source={{ uri: item.user?.profile_image || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400" }}
+        <Image
+          source={{ uri: artistImage }}
           style={styles.horizontalArtistImage}
           width={280}
           height={160}
         />
-
-        {item.verification_status === "APPROVED" && (
+        {(item.status === "approved" || item.status === "APPROVED" || item.verification_status === "APPROVED") && (
           <View style={styles.verifiedBadge}>
             <Ionicons name="checkmark-circle" size={14} color={Colors.white} />
           </View>
         )}
         <TouchableOpacity
           style={styles.favoriteBadge}
-          onPress={() => toggleFavorite(item.id)}
+          onPress={() => toggleFavorite(artistId)}
         >
           <Ionicons
             name={isFav ? "heart" : "heart-outline"}
@@ -604,13 +639,13 @@ export default function HomeScreen({ navigation }) {
           />
         </TouchableOpacity>
         <View style={styles.horizontalArtistInfo}>
-          <Text style={[styles.horizontalArtistName, { color: currentTextColor }]} numberOfLines={1}>{item.user?.name || "Artist"}</Text>
+          <Text style={[styles.horizontalArtistName, { color: currentTextColor }]} numberOfLines={1}>{artistName}</Text>
           <View style={styles.ratingRow}>
             <Ionicons name="star" size={14} color="#FFB800" />
-            <Text style={[styles.ratingText, { color: currentTextColor }]}>{Number(item.avg_rating || 0).toFixed(1)}</Text>
+            <Text style={[styles.ratingText, { color: currentTextColor }]}>{ratingVal}</Text>
             <Text style={[styles.experienceText, { color: currentSecTextColor }]}>• {item.experience_years || 2} yrs exp</Text>
           </View>
-          <Text style={[styles.startingPriceText, { color: currentTextColor }]}>From ₹{item.services?.[0]?.minimum_price || 1500}</Text>
+          <Text style={[styles.startingPriceText, { color: currentTextColor }]}>From ₹{startingPrice}</Text>
         </View>
       </TouchableOpacity>
     );
@@ -618,16 +653,21 @@ export default function HomeScreen({ navigation }) {
 
   // Render Nearby Artist Vertical Item
   const renderNearbyArtistItem = ({ item }) => {
-    const isFav = !!favorites[item.id];
+    const artistId = item.id || item.user_id || item.artist_id;
+    const isFav = !!favorites[artistId];
+    const artistName = item.name || item.full_name || item.user?.name || "Artist";
+    const artistImage = item.profile_image || item.user?.profile_image || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400";
+    const startingPrice = item.starting_price || item.services?.[0]?.minimum_price || 1500;
+    const ratingVal = Number(item.rating || item.avg_rating || 4.8).toFixed(1);
     const distanceVal = item.distance ? `${Number(item.distance).toFixed(1)} km` : "Nearby";
 
     return (
       <TouchableOpacity
         style={[styles.nearbyArtistCard, { backgroundColor: currentCardBg, borderColor: currentBorderColor }]}
-        onPress={() => navigation.navigate("ArtistProfile", { artistId: item.id })}
+        onPress={() => navigation.navigate("ArtistProfile", { artistId })}
       >
-        <OptimizedImage
-          source={{ uri: item.user?.profile_image || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400" }}
+        <Image
+          source={{ uri: artistImage }}
           style={styles.nearbyArtistImage}
           width={120}
           height={120}
@@ -637,12 +677,12 @@ export default function HomeScreen({ navigation }) {
         <View style={styles.nearbyArtistInfo}>
           <View style={styles.nearbyNameHeader}>
             <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-              <Text style={[styles.nearbyArtistName, { color: currentTextColor }]} numberOfLines={1}>{item.user?.name || "Artist"}</Text>
-              {item.verification_status === "APPROVED" && (
+              <Text style={[styles.nearbyArtistName, { color: currentTextColor }]} numberOfLines={1}>{artistName}</Text>
+              {(item.status === "approved" || item.status === "APPROVED" || item.verification_status === "APPROVED") && (
                 <Ionicons name="checkmark-circle" size={16} color={Colors.primary} style={{ marginLeft: 4 }} />
               )}
             </View>
-            <TouchableOpacity onPress={() => toggleFavorite(item.id)} style={styles.nearbyFavBtn}>
+            <TouchableOpacity onPress={() => toggleFavorite(artistId)} style={styles.nearbyFavBtn}>
               <Ionicons
                 name={isFav ? "heart" : "heart-outline"}
                 size={20}
@@ -654,7 +694,7 @@ export default function HomeScreen({ navigation }) {
           <View style={styles.nearbyStatsRow}>
             <View style={styles.ratingBadge}>
               <Ionicons name="star" size={12} color="#FFB800" />
-              <Text style={styles.ratingBadgeText}>{Number(item.avg_rating || 0).toFixed(1)}</Text>
+              <Text style={styles.ratingBadgeText}>{ratingVal}</Text>
             </View>
             <Text style={[styles.nearbyBulletText, { color: currentSecTextColor }]}>•</Text>
             <Text style={[styles.nearbyStatsText, { color: currentSecTextColor }]}>{item.experience_years || 2} Years Exp</Text>
@@ -663,7 +703,7 @@ export default function HomeScreen({ navigation }) {
           </View>
 
           <View style={styles.nearbyFooter}>
-            <Text style={[styles.nearbyPriceText, { color: currentTextColor }]}>Starting from ₹{item.services?.[0]?.minimum_price || 1500}</Text>
+            <Text style={[styles.nearbyPriceText, { color: currentTextColor }]}>Starting from ₹{startingPrice}</Text>
             <View style={styles.availableTodayBadge}>
               <View style={styles.activeDot} />
               <Text style={styles.availableTodayText}>Available Today</Text>
@@ -761,7 +801,7 @@ export default function HomeScreen({ navigation }) {
           <FlatList
             ref={bannerFlatListRef}
             data={offers}
-            keyExtractor={(item) => String(item.id)}
+            keyExtractor={(item, index) => String(item.id || item.user_id || item.artist_id || index)}
             horizontal
             pagingEnabled
             nestedScrollEnabled={true}
@@ -811,17 +851,8 @@ export default function HomeScreen({ navigation }) {
         </TouchableOpacity>
       </View>
       <FlatList
-        data={(categories && categories.length > 0 ? categories : [
-          { id: 1, name: "Bridal Mehendi", slug: "bridal-mehendi" },
-          { id: 2, name: "Arabic Mehendi", slug: "arabic-mehendi" },
-          { id: 3, name: "Indo-Arabic", slug: "indo-arabic" },
-          { id: 4, name: "Traditional", slug: "traditional-mehendi" },
-          { id: 5, name: "Minimalist", slug: "minimalist-mehendi" },
-          { id: 6, name: "Full Hand", slug: "full-hand-mehendi" },
-          { id: 7, name: "Back Hand", slug: "back-hand-mehendi" },
-          { id: 8, name: "Leg & Feet", slug: "leg-feet-mehendi" }
-        ]).slice(0, 8)}
-        keyExtractor={(item) => String(item.id)}
+        data={categories}
+        keyExtractor={(item, index) => String(item.id || item.user_id || item.artist_id || index)}
         horizontal
         nestedScrollEnabled={true}
         showsHorizontalScrollIndicator={false}
@@ -843,7 +874,7 @@ export default function HomeScreen({ navigation }) {
           </View>
           <FlatList
             data={featuredArtists}
-            keyExtractor={(item) => String(item.id)}
+            keyExtractor={(item, index) => String(item.id || item.user_id || item.artist_id || index)}
             horizontal
             nestedScrollEnabled={true}
             showsHorizontalScrollIndicator={false}
@@ -867,7 +898,7 @@ export default function HomeScreen({ navigation }) {
           </View>
           <FlatList
             data={popularArtists}
-            keyExtractor={(item) => String(item.id)}
+            keyExtractor={(item, index) => String(item.id || item.user_id || item.artist_id || index)}
             horizontal
             nestedScrollEnabled={true}
             showsHorizontalScrollIndicator={false}
@@ -887,7 +918,7 @@ export default function HomeScreen({ navigation }) {
           </View>
           <FlatList
             data={recentlyBookedArtists}
-            keyExtractor={(item) => String(item.id)}
+            keyExtractor={(item, index) => String(item.id || item.user_id || item.artist_id || index)}
             horizontal
             nestedScrollEnabled={true}
             showsHorizontalScrollIndicator={false}
@@ -960,18 +991,18 @@ export default function HomeScreen({ navigation }) {
     let result = [...nearbyArtists];
 
     if (selectedFilter === "Nearest") {
-      result.sort((a, b) => (Number(a.distance) || 0) - (Number(b.distance) || 0));
+      result.sort((a, b) => (Number(a.distance) || Number(a.id) || 0) - (Number(b.distance) || Number(b.id) || 0));
     } else if (selectedFilter === "Top Rated") {
-      result.sort((a, b) => (Number(b.avg_rating) || 0) - (Number(a.avg_rating) || 0));
+      result.sort((a, b) => (Number(b.rating || b.avg_rating) || 0) - (Number(a.rating || a.avg_rating) || 0));
     } else if (selectedFilter === "Price Low-High") {
       result.sort((a, b) => {
-        const priceA = a.services?.[0]?.minimum_price || 1500;
-        const priceB = b.services?.[0]?.minimum_price || 1500;
+        const priceA = Number(a.starting_price || a.minimum_price || a.price || a.services?.[0]?.minimum_price || 1500);
+        const priceB = Number(b.starting_price || b.minimum_price || b.price || b.services?.[0]?.minimum_price || 1500);
         return priceA - priceB;
       });
     } else if (selectedFilter === "5+ Exp Years") {
-      result = result.filter(item => (item.experience_years || 0) >= 5);
-      result.sort((a, b) => (b.experience_years || 0) - (a.experience_years || 0));
+      result = result.filter(item => Number(item.experience_years || item.experience || 5) >= 5);
+      result.sort((a, b) => (Number(b.experience_years || b.experience) || 0) - (Number(a.experience_years || a.experience) || 0));
     }
 
     return result;
@@ -994,7 +1025,7 @@ export default function HomeScreen({ navigation }) {
     <SafeAreaView style={styles.container} edges={["top"]}>
       <FlatList
         data={processedNearbyArtists}
-        keyExtractor={(item) => String(item.id)}
+        keyExtractor={(item, index) => String(item.id || item.user_id || item.artist_id || index)}
         renderItem={renderNearbyArtistItem}
         ListHeaderComponent={renderListHeader}
         ListFooterComponent={renderListFooter}
@@ -1197,7 +1228,7 @@ export default function HomeScreen({ navigation }) {
 
             <FlatList
               data={savedAddressesList}
-              keyExtractor={(item) => item.id?.toString() || Math.random().toString()}
+              keyExtractor={(item, index) => String(item.id || index)}
               renderItem={({ item }) => {
                 const isSelected = activeAddressState?.id === item.id;
                 const tag = item.label || item.name || "Home";

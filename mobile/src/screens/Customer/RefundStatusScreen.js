@@ -26,14 +26,7 @@ export default function RefundStatusScreen({ route, navigation }) {
       if (match) {
         setRefund(match);
       } else {
-        // Fallback mock refund for layout simulation
-        setRefund({
-          amount: 2500,
-          status: "SUCCESS",
-          reason: "Customer cancellation request",
-          createdAt: new Date().toISOString(),
-          booking: { booking_code: bookingId || "BK-184918" }
-        });
+        setRefund(null);
       }
     } catch (err) {
       console.log("Failed to load refund details:", err.message);

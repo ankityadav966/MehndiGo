@@ -28,12 +28,35 @@ const localUpload = multer({
   },
 });
 
+function detectVideoFile(filePath, file, req) {
+  if (file && file.mimetype && file.mimetype.startsWith("video/")) return true;
+  if (file && file.originalname && /\.(mp4|mov|3gp|mkv|webm|avi|flv)$/i.test(file.originalname)) return true;
+  if (req && (req.body?.type === "video" || req.body?.is_video === "true" || req.query?.is_video === "true")) return true;
+
+  try {
+    if (filePath && fs.existsSync(filePath)) {
+      const buffer = Buffer.alloc(12);
+      const fd = fs.openSync(filePath, "r");
+      fs.readSync(fd, buffer, 0, 12, 0);
+      fs.closeSync(fd);
+
+      const magic = buffer.toString("ascii", 4, 8);
+      if (magic === "ftyp" || magic === "moov" || magic === "mdat") return true;
+      const headerHex = buffer.toString("hex");
+      if (headerHex.startsWith("1a45dfa3")) return true; // MKV / WebM
+      if (buffer.toString("ascii", 0, 4) === "RIFF") return true; // AVI
+    }
+  } catch (e) {
+    console.warn("[detectVideoFile] Magic byte inspection error:", e.message);
+  }
+  return false;
+}
+
 /**
  * Uploads a local file to Cloudinary using standard upload or chunked upload_large
  */
-async function uploadLocalFileToCloudinary(filePath, file) {
-  const isVideo = file.mimetype.startsWith("video/") || 
-                  /\.(mp4|mov|3gp|mkv)$/i.test(file.originalname);
+async function uploadLocalFileToCloudinary(filePath, file, req) {
+  const isVideo = detectVideoFile(filePath, file, req);
   const isAudio = file.mimetype.startsWith("audio/") || 
                   /\.(mp3|wav|m4a|aac|amr)$/i.test(file.originalname);
   const isRaw = file.mimetype === "application/pdf" || 
@@ -47,7 +70,7 @@ async function uploadLocalFileToCloudinary(filePath, file) {
   }
 
   const uploadOptions = {
-    folder: "mehndigo",
+    folder: "mehndigo/portfolio",
     resource_type,
   };
 
@@ -57,7 +80,7 @@ async function uploadLocalFileToCloudinary(filePath, file) {
 
   return new Promise((resolve, reject) => {
     if (resource_type === "video" || resource_type === "raw") {
-      console.log("[uploadLocalFileToCloudinary] Starting upload_large for:", filePath);
+      console.log("[uploadLocalFileToCloudinary] Starting upload_large for VIDEO:", filePath);
       cloudinary.uploader.upload_large(filePath, {
         ...uploadOptions,
         chunk_size: 6000000, // 6MB chunks
@@ -66,18 +89,30 @@ async function uploadLocalFileToCloudinary(filePath, file) {
           console.error("[uploadLocalFileToCloudinary] upload_large Error:", error);
           reject(error);
         } else {
-          console.log("[uploadLocalFileToCloudinary] upload_large secure_url:", result?.secure_url);
+          console.log("[CLOUDINARY UPLOAD RESPONSE]", {
+            resource_type: result?.resource_type,
+            format: result?.format,
+            secure_url: result?.secure_url,
+            public_id: result?.public_id,
+            bytes: result?.bytes
+          });
           resolve(result?.secure_url);
         }
       });
     } else {
-      console.log("[uploadLocalFileToCloudinary] Starting standard upload for:", filePath);
+      console.log("[uploadLocalFileToCloudinary] Starting standard upload for IMAGE:", filePath);
       cloudinary.uploader.upload(filePath, uploadOptions, (error, result) => {
         if (error) {
           console.error("[uploadLocalFileToCloudinary] upload Error:", error);
           reject(error);
         } else {
-          console.log("[uploadLocalFileToCloudinary] upload secure_url:", result?.secure_url);
+          console.log("[CLOUDINARY UPLOAD RESPONSE]", {
+            resource_type: result?.resource_type,
+            format: result?.format,
+            secure_url: result?.secure_url,
+            public_id: result?.public_id,
+            bytes: result?.bytes
+          });
           resolve(result?.secure_url);
         }
       });
@@ -94,11 +129,11 @@ if (!fs.existsSync(uploadsDir)) {
  * Safe wrapper to upload a file object and clean up its local disk file in finally block.
  * Falls back to local disk storage in /uploads if Cloudinary is unavailable or disabled.
  */
-async function safeUploadAndCleanup(file) {
+async function safeUploadAndCleanup(file, req) {
   if (!file || !file.path) return;
   const localPath = file.path;
   try {
-    const secureUrl = await uploadLocalFileToCloudinary(localPath, file);
+    const secureUrl = await uploadLocalFileToCloudinary(localPath, file, req);
     file.path = secureUrl;
     if (fs.existsSync(localPath)) {
       fs.unlinkSync(localPath);
@@ -177,13 +212,13 @@ function cloudinaryUploadWrapper(multerMiddleware) {
 
         // 1. Process single file (req.file)
         if (req.file) {
-          await safeUploadAndCleanup(req.file);
+          await safeUploadAndCleanup(req.file, req);
         }
 
         // 2. Process array of files (req.files as array)
         if (Array.isArray(req.files)) {
           for (const file of req.files) {
-            await safeUploadAndCleanup(file);
+            await safeUploadAndCleanup(file, req);
           }
         }
 
@@ -193,7 +228,7 @@ function cloudinaryUploadWrapper(multerMiddleware) {
             const files = req.files[fieldName];
             if (Array.isArray(files)) {
               for (const file of files) {
-                await safeUploadAndCleanup(file);
+                await safeUploadAndCleanup(file, req);
               }
             }
           }

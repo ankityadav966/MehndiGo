@@ -52,7 +52,7 @@ export default function ArtistWalletScreen({ navigation }) {
         description: "Pay Outstanding Platform Commission",
         image: "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=200",
         currency: "INR",
-        key: "rzp_test_mockkey", // Production API Key populated dynamically
+        key: "rzp_live_TJIF5fG3LByErG",
         amount: dueAmount * 100,
         name: "MehndiGo Merchant Services",
         prefill: {

@@ -18,6 +18,7 @@ import {
 } from "react-native";
 import Colors from "../../constants/Colors";
 import LoadingSkeleton from "../../components/LoadingSkeleton";
+import OptimizedImage from "../../components/OptimizedImage";
 import {
   searchArtists,
   getFilterMetadata,
@@ -25,6 +26,8 @@ import {
   removeFavorite,
   getFavorites
 } from "../../services/customer";
+import { getNormalizedUrl } from "../../services/api";
+import { getThumbnailUrl } from "../../utils/cloudinary";
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -116,8 +119,8 @@ export default function ArtistListingScreen({ route, navigation }) {
     try {
       const filters = getActiveFilters();
       const response = await searchArtists(query, filters, sort, MOCK_LAT, MOCK_LNG, pageNum, 8);
-      const rows = response?.rows || [];
-      const total = response?.count || 0;
+      const rows = Array.isArray(response) ? response : (response?.rows || response?.data || []);
+      const total = Array.isArray(response) ? response.length : (response?.count || rows.length);
 
       if (pageNum === 1) {
         setArtists(rows);
@@ -235,17 +238,26 @@ export default function ArtistListingScreen({ route, navigation }) {
   // Render List View Item Card
   const renderListArtistCard = ({ item }) => {
     const isFav = favoriteArtistIds.includes(item.id);
-    const minPrice = item.services?.[0]?.minimum_price || 1500;
+    const minPrice = item.starting_price || item.services?.[0]?.minimum_price || item.services?.[0]?.price || 1500;
     const distanceVal = item.distance ? `${Number(item.distance).toFixed(1)} km` : "Nearby";
-    const categoryName = item.services?.[0]?.category || "General Mehndi";
+    const categoryName = item.services?.[0]?.category || item.categories || "General Mehndi";
+    const artistName = item.name || item.full_name || item.user?.name || "Mehndi Artist";
+    const avatarUri = getNormalizedUrl(item.profile_image || item.avatar || item.user?.profile_image) || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400";
 
     return (
-      <View style={styles.listCard}>
+      <TouchableOpacity
+        style={styles.listCard}
+        activeOpacity={0.9}
+        onPress={() => navigation.navigate("ArtistProfile", { artistId: item.id })}
+      >
         <View style={styles.imageContainer}>
-          <Image
-            source={{ uri: item.user?.profile_image || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400" }}
+          <OptimizedImage
+            source={{ uri: avatarUri }}
             style={styles.listArtistImage}
+            width={120}
+            height={120}
           />
+
           <TouchableOpacity
             style={styles.favoriteBtn}
             onPress={() => handleToggleFavorite(item.id)}
@@ -261,7 +273,7 @@ export default function ArtistListingScreen({ route, navigation }) {
         <View style={styles.listInfo}>
           <View style={styles.nameHeader}>
             <View style={styles.nameRow}>
-              <Text style={styles.name} numberOfLines={1}>{item.user?.name || "Artist"}</Text>
+              <Text style={styles.name} numberOfLines={1}>{artistName}</Text>
               {item.verification_status === "APPROVED" && (
                 <Ionicons name="checkmark-circle" size={16} color={Colors.primary} style={{ marginLeft: 4 }} />
               )}
@@ -312,28 +324,33 @@ export default function ArtistListingScreen({ route, navigation }) {
             </TouchableOpacity>
           </View>
         </View>
-      </View>
+      </TouchableOpacity>
     );
+
   };
 
   // Render Grid View Item Card
   const renderGridArtistCard = ({ item }) => {
     const isFav = favoriteArtistIds.includes(item.id);
-    const minPrice = item.services?.[0]?.minimum_price || 1500;
-    const categoryName = item.services?.[0]?.category || "General";
+    const minPrice = item.starting_price || item.services?.[0]?.minimum_price || item.services?.[0]?.price || 1500;
+    const artistName = item.name || item.full_name || item.user?.name || "Mehndi Artist";
+    const avatarUri = getNormalizedUrl(item.profile_image || item.avatar || item.user?.profile_image) || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400";
 
     return (
       <TouchableOpacity
         style={styles.gridCard}
+        activeOpacity={0.9}
         onPress={() => navigation.navigate("ArtistProfile", { artistId: item.id })}
       >
-        <Image
-          source={{ uri: item.user?.profile_image || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400" }}
+        <OptimizedImage
+          source={{ uri: avatarUri }}
           style={styles.gridArtistImage}
+          width={SCREEN_WIDTH / 2 - 24}
+          height={140}
         />
-        
+
         <TouchableOpacity
-          style={styles.gridFavBtn}
+          style={styles.gridFavoriteBtn}
           onPress={() => handleToggleFavorite(item.id)}
         >
           <Ionicons
@@ -344,7 +361,7 @@ export default function ArtistListingScreen({ route, navigation }) {
         </TouchableOpacity>
 
         <View style={styles.gridInfo}>
-          <Text style={styles.gridArtistName} numberOfLines={1}>{item.user?.name || "Artist"}</Text>
+          <Text style={styles.gridArtistName} numberOfLines={1}>{artistName}</Text>
           
           <View style={styles.gridStatsRow}>
             <View style={{ flexDirection: "row", alignItems: "center" }}>
@@ -482,7 +499,7 @@ export default function ArtistListingScreen({ route, navigation }) {
           key={layoutMode === "grid" ? "grid-view-list" : "list-view-list"}
           data={artists}
           numColumns={layoutMode === "grid" ? 2 : 1}
-          keyExtractor={(item) => String(item.id)}
+          keyExtractor={(item, index) => String(item.id || item.user_id || item.artist_id || index)}
           renderItem={layoutMode === "grid" ? renderGridArtistCard : renderListArtistCard}
           columnWrapperStyle={layoutMode === "grid" ? styles.gridRowWrapper : null}
           initialNumToRender={6}

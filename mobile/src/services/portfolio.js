@@ -1,13 +1,23 @@
 import apiRequest, { getNormalizedUrl } from "./api";
-
 import { secureStorage } from "../utils/storage";
+
+async function safeFetch(url, options) {
+  try {
+    return await fetch(url, options);
+  } catch (err) {
+    if (err && err.message && err.message.includes("NativeRequest")) {
+      console.warn("[Portfolio] Retrying fetch due to NativeRequest error:", err.message);
+      return await fetch(url, { ...options, headers: { ...options.headers } });
+    }
+    throw err;
+  }
+}
 
 export async function createPortfolio(formData) {
   const token = await secureStorage.getAccessToken();
   const url = getNormalizedUrl("/api/v1/mehndigo/artist/service");
   console.log(`[API REQUEST] POST (fetch) -> ${url}`);
-  const response = await fetch(url, {
-
+  const response = await safeFetch(url, {
     method: "POST",
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: formData,
@@ -40,8 +50,7 @@ export async function updatePortfolio(id, formData) {
   const token = await secureStorage.getAccessToken();
   const url = getNormalizedUrl(`/api/v1/mehndigo/artist/service/${id}`);
   console.log(`[API REQUEST] PUT (fetch) -> ${url}`);
-  const response = await fetch(url, {
-
+  const response = await safeFetch(url, {
     method: "PUT",
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: formData,

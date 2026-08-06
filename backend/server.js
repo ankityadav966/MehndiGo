@@ -13,11 +13,9 @@ const app = express();
 const { sanitizeInput } = require("./middleware/sanitize.middleware");
 const { monitoringMiddleware } = require("./middleware/monitoring.middleware");
 
-// High-performance HTTP compression middleware for 60-80% smaller payloads
 app.use(compression());
 app.use(sanitizeInput);
 app.use(monitoringMiddleware);
-
 app.use((req, res, next) => {
   if (process.env.NODE_ENV !== "production" || process.env.DEBUG === "true") {
     console.log(`[HTTP DIAGNOSTIC] ${req.method} ${req.originalUrl || req.url}`);
@@ -71,12 +69,7 @@ app.use(express.json({
 }));
 const path = require("path");
 app.use(express.urlencoded({ limit: "220mb", extended: true }));
-// Optimized static asset caching with 7-day browser maxAge and ETag support
-app.use("/uploads", express.static(path.join(__dirname, "uploads"), {
-  maxAge: "7d",
-  etag: true,
-  immutable: false
-}));
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use(secureHeaders);
 app.use(checkBlockedIP);
 app.use(sanitizeInputs);
@@ -181,33 +174,26 @@ connectRedis();
 const db = require("./models");
 (async () => {
   try {
-    const queryInterface = db.sequelize.getQueryInterface();
-    const safeAdd = async (table, col, spec) => {
-      try {
-        const desc = await queryInterface.describeTable(table);
-        if (!desc[col]) {
-          await queryInterface.addColumn(table, col, spec);
-        }
-      } catch (err) {}
-    };
+    await db.sequelize.query('ALTER TABLE "Addresses" ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION;');
+    await db.sequelize.query('ALTER TABLE "Addresses" ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;');
+    await db.sequelize.query('ALTER TABLE "Addresses" ADD COLUMN IF NOT EXISTS landmark VARCHAR(255);');
+    await db.sequelize.query('ALTER TABLE "Addresses" ADD COLUMN IF NOT EXISTS house_flat VARCHAR(255);');
+    await db.sequelize.query('ALTER TABLE "Addresses" ADD COLUMN IF NOT EXISTS label VARCHAR(255);');
+    
+    await db.sequelize.query('ALTER TABLE "Wallets" ADD COLUMN IF NOT EXISTS available_balance DOUBLE PRECISION DEFAULT 0;');
+    await db.sequelize.query('ALTER TABLE "Wallets" ADD COLUMN IF NOT EXISTS pending_settlement DOUBLE PRECISION DEFAULT 0;');
+    await db.sequelize.query('ALTER TABLE "Wallets" ADD COLUMN IF NOT EXISTS processing_settlement DOUBLE PRECISION DEFAULT 0;');
+    await db.sequelize.query('ALTER TABLE "Wallets" ADD COLUMN IF NOT EXISTS outstanding_commission DOUBLE PRECISION DEFAULT 0;');
+    await db.sequelize.query('ALTER TABLE "Wallets" ADD COLUMN IF NOT EXISTS today_earnings DOUBLE PRECISION DEFAULT 0;');
+    await db.sequelize.query('ALTER TABLE "Wallets" ADD COLUMN IF NOT EXISTS weekly_earnings DOUBLE PRECISION DEFAULT 0;');
+    await db.sequelize.query('ALTER TABLE "Wallets" ADD COLUMN IF NOT EXISTS monthly_earnings DOUBLE PRECISION DEFAULT 0;');
 
-    await safeAdd("Addresses", "latitude", { type: db.Sequelize.DOUBLE });
-    await safeAdd("Addresses", "longitude", { type: db.Sequelize.DOUBLE });
-    await safeAdd("Addresses", "landmark", { type: db.Sequelize.STRING });
-    await safeAdd("Addresses", "house_flat", { type: db.Sequelize.STRING });
-    await safeAdd("Addresses", "label", { type: db.Sequelize.STRING });
-
-    await safeAdd("Wallets", "available_balance", { type: db.Sequelize.DOUBLE, defaultValue: 0 });
-    await safeAdd("Wallets", "pending_settlement", { type: db.Sequelize.DOUBLE, defaultValue: 0 });
-    await safeAdd("Wallets", "processing_settlement", { type: db.Sequelize.DOUBLE, defaultValue: 0 });
-    await safeAdd("Wallets", "outstanding_commission", { type: db.Sequelize.DOUBLE, defaultValue: 0 });
-    await safeAdd("Wallets", "today_earnings", { type: db.Sequelize.DOUBLE, defaultValue: 0 });
-    await safeAdd("Wallets", "weekly_earnings", { type: db.Sequelize.DOUBLE, defaultValue: 0 });
-    await safeAdd("Wallets", "monthly_earnings", { type: db.Sequelize.DOUBLE, defaultValue: 0 });
-
-    if (db.LedgerEntry) await db.LedgerEntry.sync();
-    if (db.OutstandingCommission) await db.OutstandingCommission.sync();
-    console.log("[DB MIGRATION] Ledger, Wallets, and OutstandingCommissions schema updated successfully.");
+    await db.User.sync({ alter: true });
+    await db.Wallet.sync({ alter: true });
+    await db.WalletTransaction.sync({ alter: true });
+    await db.LedgerEntry.sync({ alter: true });
+    await db.OutstandingCommission.sync({ alter: true });
+    console.log("[DB MIGRATION] Users, Wallets, WalletTransactions, Ledger, and OutstandingCommissions schema updated successfully.");
   } catch (err) {
     console.log("[DB MIGRATION] Self-healing migration note:", err.message);
   }

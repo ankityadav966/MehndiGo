@@ -16,6 +16,22 @@ import {
 } from "react-native";
 import Alert from "../../utils/Alert";
 import Colors from "../../constants/Colors";
+import { getNormalizedUrl } from "../../services/api";
+
+const resolveImage = (uri) => {
+  if (!uri || typeof uri !== "string") return "";
+  const trimmed = uri.trim();
+  if (
+    trimmed.startsWith("http://") ||
+    trimmed.startsWith("https://") ||
+    trimmed.startsWith("file://") ||
+    trimmed.startsWith("content://") ||
+    trimmed.startsWith("data:")
+  ) {
+    return trimmed;
+  }
+  return getNormalizedUrl(trimmed);
+};
 import { createBooking, getBookingHistory } from "../../services/booking";
 import {
   fetchArtistProfile,
@@ -31,8 +47,10 @@ import {
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
+import { useFocusEffect } from "@react-navigation/native";
+
 export default function ArtistProfileScreen({ route, navigation }) {
-  const { artistId } = route.params || { artistId: 1 };
+  const artistId = route.params?.artistId || route.params?.id || route.params?.artist_id || 1;
 
   // Data states
   const [profile, setProfile] = useState(null);
@@ -57,26 +75,12 @@ export default function ArtistProfileScreen({ route, navigation }) {
   const [selectedTimeSlot, setSelectedTimeSlot] = useState(null);
 
   // Load profile sub-resources
-  const loadProfileDetails = async () => {
+  const loadProfileDetails = React.useCallback(async () => {
     setLoading(true);
     setError(null);
     console.log("[ArtistProfileScreen Debug] Starting loadProfileDetails. Param artistId:", artistId);
     try {
-      const [prof, servs, port, revs, avail, sim, favs] = await Promise.all([
-        fetchArtistProfile(artistId),
-        fetchArtistServices(artistId),
-        fetchArtistPortfolio(artistId),
-        fetchArtistReviews(artistId),
-        fetchArtistAvailability(artistId),
-        fetchSimilarArtists(artistId),
-        getFavorites()
-      ]);
-
-      console.log("[ArtistProfileScreen Debug] All fetches completed successfully.");
-      console.log("[ArtistProfileScreen Debug] prof:", prof);
-      console.log("[ArtistProfileScreen Debug] servs count:", servs?.length);
-      console.log("[ArtistProfileScreen Debug] port count:", port?.length);
-
+      const prof = await fetchArtistProfile(artistId);
       if (!prof) {
         console.log("[ArtistProfileScreen Debug] prof is null/undefined!");
         setError("Artist profile not found");
@@ -84,15 +88,30 @@ export default function ArtistProfileScreen({ route, navigation }) {
         return;
       }
 
+      console.log("[ArtistProfileScreen Debug] prof received:", prof.name || prof.full_name);
       setProfile(prof);
+
+      // Extract services, portfolio, reviews, availability if returned inside prof or fetch fallback
+      const servs = (prof.services && prof.services.length > 0) ? prof.services : await fetchArtistServices(artistId).catch(() => []);
+      const port = (prof.portfolio && prof.portfolio.length > 0) ? prof.portfolio : await fetchArtistPortfolio(artistId).catch(() => []);
+      const revs = (prof.reviews && prof.reviews.length > 0) ? prof.reviews : await fetchArtistReviews(artistId).catch(() => []);
+      const avail = prof.availability || await fetchArtistAvailability(artistId).catch(() => []);
+      const favs = await getFavorites().catch(() => []);
+
       setServices(servs || []);
       setPortfolio(port || []);
-      setReviewsData(revs || { reviews: [], distribution: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 } });
-      setAvailability(avail || []);
-      setSimilar(sim || []);
+      const reviewsList = Array.isArray(revs) ? revs : (revs?.reviews || []);
+      const reviewsDist = (!Array.isArray(revs) && revs?.distribution) ? revs.distribution : { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+      setReviewsData({
+        reviews: reviewsList,
+        distribution: reviewsDist
+      });
+      setAvailability(Array.isArray(avail) ? avail : (avail?.slots || []));
+      setSimilar([]);
 
       // Check favorite
-      const isArtistFav = (favs || []).some((fav) => fav.id === prof.id);
+      const targetId = prof.id || prof.user_id;
+      const isArtistFav = (Array.isArray(favs) ? favs : []).some((fav) => fav.id === targetId || fav.user_id === targetId);
       setIsFav(isArtistFav);
 
       // Default date select
@@ -106,19 +125,16 @@ export default function ArtistProfileScreen({ route, navigation }) {
         }
       }
     } catch (e) {
-      console.log("[ArtistProfileScreen Debug] Error loading artist details:", e.message, e);
+      console.log("[ArtistProfileScreen Debug] Error loading artist details:", e.message);
       setError("Failed to load artist details. Please try again.");
     } finally {
       setLoading(false);
     }
-  };
+  }, [artistId]);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      loadProfileDetails();
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [artistId]);
+    loadProfileDetails();
+  }, [loadProfileDetails]);
 
   // Sync Favorite actions
   const handleToggleFavorite = async () => {
@@ -279,6 +295,9 @@ export default function ArtistProfileScreen({ route, navigation }) {
   });
   const timeSlotsForSelectedDate = availability.filter((slot) => slot?.date === selectedDate);
 
+  const artistDisplayName = profile.name || profile.full_name || profile.user?.name || "Mehndi Artist";
+  const artistAvatarUri = resolveImage(profile.profile_image || profile.avatar || profile.user?.profile_image) || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=300";
+
   return (
     <View style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
@@ -295,7 +314,7 @@ export default function ArtistProfileScreen({ route, navigation }) {
             scrollEventThrottle={16}
           >
             {coverImages.map((uri, idx) => (
-              <Image key={idx} source={{ uri }} style={styles.coverImage} />
+              <Image key={idx} source={{ uri: resolveImage(uri) || uri }} style={styles.coverImage} />
             ))}
           </ScrollView>
           
@@ -336,12 +355,12 @@ export default function ArtistProfileScreen({ route, navigation }) {
         {/* Profile Card Header */}
         <View style={styles.profileCard}>
           <Image
-            source={{ uri: profile.user?.profile_image || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=300" }}
+            source={{ uri: artistAvatarUri }}
             style={styles.avatarImage}
           />
           <View style={styles.profileInfo}>
             <View style={styles.nameRow}>
-              <Text style={styles.nameText}>{profile.user?.name || "Mehndi Artist"}</Text>
+              <Text style={styles.nameText}>{artistDisplayName}</Text>
               {profile.verification_status === "APPROVED" && (
                 <Ionicons name="checkmark-circle" size={18} color={Colors.primary} style={{ marginLeft: 4 }} />
               )}
@@ -476,7 +495,7 @@ export default function ArtistProfileScreen({ route, navigation }) {
                     }
                   }}
                 >
-                  <Image source={{ uri: item.image_url }} style={styles.portfolioThumb} />
+                  <Image source={{ uri: resolveImage(item.image_url) }} style={styles.portfolioThumb} />
                   {item.video_url && (
                     <View style={styles.videoBadge}>
                       <Ionicons name="play" size={12} color={Colors.white} />

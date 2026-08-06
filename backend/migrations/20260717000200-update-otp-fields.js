@@ -2,48 +2,64 @@
 
 module.exports = {
   async up(queryInterface, Sequelize) {
+    const tableDescription = await queryInterface.describeTable("Otps");
+
     // 1. Make phone nullable
-    await queryInterface.changeColumn("Otps", "phone", {
-      type: Sequelize.STRING(15),
-      allowNull: true,
-    });
+    if (tableDescription.phone && !tableDescription.phone.allowNull) {
+      await queryInterface.changeColumn("Otps", "phone", {
+        type: Sequelize.STRING(15),
+        allowNull: true,
+      });
+    }
 
     // 2. Make user_id nullable
-    await queryInterface.changeColumn("Otps", "user_id", {
-      type: Sequelize.INTEGER,
-      allowNull: true,
-    });
+    if (tableDescription.user_id && !tableDescription.user_id.allowNull) {
+      await queryInterface.changeColumn("Otps", "user_id", {
+        type: Sequelize.INTEGER,
+        allowNull: true,
+      });
+    }
 
     // 3. Add email column
-    await queryInterface.addColumn("Otps", "email", {
-      type: Sequelize.STRING(100),
-      allowNull: true,
-    });
+    if (!tableDescription.email) {
+      await queryInterface.addColumn("Otps", "email", {
+        type: Sequelize.STRING(100),
+        allowNull: true,
+      });
+    }
 
     // 4. Add registration_payload column
-    await queryInterface.addColumn("Otps", "registration_payload", {
-      type: Sequelize.TEXT,
-      allowNull: true,
-    });
+    if (!tableDescription.registration_payload) {
+      await queryInterface.addColumn("Otps", "registration_payload", {
+        type: Sequelize.TEXT,
+        allowNull: true,
+      });
+    }
   },
 
   async down(queryInterface, Sequelize) {
-    // 1. Remove registration_payload column
-    await queryInterface.removeColumn("Otps", "registration_payload");
+    const tableDescription = await queryInterface.describeTable("Otps");
 
-    // 2. Remove email column
-    await queryInterface.removeColumn("Otps", "email");
+    if (tableDescription.registration_payload) {
+      await queryInterface.removeColumn("Otps", "registration_payload");
+    }
 
-    // 3. Revert user_id to not nullable
-    await queryInterface.changeColumn("Otps", "user_id", {
-      type: Sequelize.INTEGER,
-      allowNull: false,
-    });
+    if (tableDescription.email) {
+      await queryInterface.removeColumn("Otps", "email");
+    }
 
-    // 4. Revert phone to not nullable
-    await queryInterface.changeColumn("Otps", "phone", {
-      type: Sequelize.STRING(15),
-      allowNull: false,
-    });
+    if (tableDescription.user_id) {
+      await queryInterface.changeColumn("Otps", "user_id", {
+        type: Sequelize.INTEGER,
+        allowNull: false,
+      });
+    }
+
+    if (tableDescription.phone) {
+      await queryInterface.changeColumn("Otps", "phone", {
+        type: Sequelize.STRING(15),
+        allowNull: false,
+      });
+    }
   },
 };

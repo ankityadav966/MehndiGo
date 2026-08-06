@@ -388,21 +388,32 @@ async function getUploadSignature(req, res) {
 }
 
 async function uploadPortfolioImage(req, res) {
-  console.log("[uploadPortfolioImage Controller log]:", {
+  console.log("[PORTFOLIO BACKEND BODY]", {
     hasFile: !!req.file,
     filePath: req.file?.path,
     fileMimetype: req.file?.mimetype,
     body: req.body
   });
   try {
-    const isVideo = req.file?.mimetype?.startsWith("video/") || req.body.video_url;
-    const path = req.file?.path || req.body.image_url || null;
+    const isVideo = req.file?.mimetype?.startsWith("video/") ||
+                    (req.file?.originalname && /\.(mp4|mov|3gp|mkv)$/i.test(req.file.originalname)) ||
+                    (req.body.video_url && req.body.video_url.includes("/video/upload/")) ||
+                    (req.body.video_url && /\.(mp4|mov|3gp|mkv)$/i.test(req.body.video_url));
+
+    const path = req.file?.path || null;
+
+    let videoUrl = req.body.video_url || (isVideo ? path : null);
+    let imageUrl = req.body.image_url || (!isVideo ? path : null);
+
+    if (!imageUrl && videoUrl && videoUrl.includes("/video/upload/")) {
+      imageUrl = videoUrl.replace("/video/upload/", "/video/upload/so_0,f_jpg/").replace(/\.(mp4|mov|3gp|mkv)$/i, ".jpg");
+    }
 
     const data = {
       artist_id: req.user.id,
-      image_url: isVideo ? (req.body.image_url || path) : path,
-      video_url: isVideo ? path : (req.body.video_url || null),
-      title: req.body.title || null,
+      image_url: imageUrl,
+      video_url: videoUrl,
+      title: req.body.title || (videoUrl ? "Portfolio Video" : "Design Sample"),
       caption: req.body.caption || null,
       description: req.body.description || null,
       category: req.body.category || null,
@@ -416,6 +427,11 @@ async function uploadPortfolioImage(req, res) {
       return res.status(400).json(ErrorResponse("Portfolio media file is required"));
     }
     const response = await ArtistService.createPortfolio(data);
+    console.log("[PORTFOLIO VIDEO SAVED IN DB]", {
+      id: response?.id,
+      image_url: response?.image_url,
+      video_url: response?.video_url
+    });
     return res.status(201).json(SuccessResponse("Portfolio item created successfully", response));
   } catch (error) {
     return res
