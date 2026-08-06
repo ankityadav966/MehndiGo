@@ -196,7 +196,7 @@ const handleRegisterVerifyOtp = async (c) => {
     const targetEmail = (email && typeof email === "string" && email.trim()) ? email.trim().toLowerCase() : null;
     const targetName = name || full_name || "Mehndi User";
     const targetPhone = (phone && typeof phone === "string" && phone.trim()) ? phone.trim().replace(/[^0-9]/g, "") : null;
-    const targetRole = (role === "ARTIST" || role === "artist") ? "ARTIST" : "USER";
+    const targetRole = (role === "ARTIST" || role === "artist") ? "artist" : "customer";
 
     if (targetEmail) {
       const existingEmail = await db.first("SELECT id FROM users WHERE LOWER(email) = ?", [targetEmail]);
