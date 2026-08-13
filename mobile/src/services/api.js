@@ -61,7 +61,9 @@ export function getNormalizedUrl(endpoint) {
   return `${base}${path}`;
 }
 
-async function apiRequest(method, endpoint, body = null, auth = false, customTimeoutMs = 12000) {
+const WORKERS_FALLBACK_URL = "https://mehndigo-backend.mehendigo.workers.dev/api/v1";
+
+async function apiRequest(method, endpoint, body = null, auth = false, customTimeoutMs = 12000, isRetry = false) {
   const url = getNormalizedUrl(endpoint);
   console.log(`[API REQUEST] ${method} -> ${url}`);
 
@@ -116,6 +118,34 @@ async function apiRequest(method, endpoint, body = null, auth = false, customTim
 
     return data;
   } catch (error) {
+    if (timeoutId) clearTimeout(timeoutId);
+
+    // Fallback attempt to Cloudflare Workers direct domain if custom domain DNS fails
+    if (!isRetry && url.includes("api.mehndigo.in")) {
+      const fallbackUrl = url.replace("https://api.mehndigo.in/api/v1", WORKERS_FALLBACK_URL);
+      console.log(`[API FALLBACK] Retrying with Workers URL: ${fallbackUrl}`);
+      try {
+        const fallbackOptions = { ...options };
+        if (typeof AbortController !== "undefined") {
+          const fallbackCtrl = new AbortController();
+          fallbackOptions.signal = fallbackCtrl.signal;
+          setTimeout(() => fallbackCtrl.abort(), customTimeoutMs);
+        }
+        const response = await fetch(fallbackUrl, fallbackOptions);
+        let data;
+        const contentType = response.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+          data = await response.json();
+        } else {
+          const text = await response.text();
+          try { data = JSON.parse(text); } catch { data = { message: text }; }
+        }
+        if (response.ok) return data;
+      } catch (fallbackErr) {
+        console.warn(`[API FALLBACK ERROR] Fallback request also failed:`, fallbackErr.message);
+      }
+    }
+
     console.warn(`[API ERROR] ${method} ${endpoint} (Status: ${error.response?.status || "NETWORK_ERROR"}):`, error.message);
     throw error;
   }
