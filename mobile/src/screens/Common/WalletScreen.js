@@ -22,6 +22,8 @@ import { openRazorpayCheckout } from "../../services/razorpayHelper";
 import apiRequest from "../../services/api";
 import moment from "moment";
 
+import { useFocusEffect } from "@react-navigation/native";
+
 export default function WalletScreen({ navigation }) {
   const [balance, setBalance] = useState(0);
   const [transactions, setTransactions] = useState([]);
@@ -56,7 +58,8 @@ export default function WalletScreen({ navigation }) {
         getWalletTransactions().catch(() => [])
       ]);
       setBalance(Number(walletRes?.balance || 0));
-      setTransactions(Array.isArray(txRes) ? txRes : []);
+      const rawList = Array.isArray(txRes) ? txRes : (txRes?.transactions || txRes?.data || []);
+      setTransactions(Array.isArray(rawList) ? rawList : []);
     } catch (err) {
       console.error("Wallet loading error:", err.message);
     } finally {
@@ -64,6 +67,12 @@ export default function WalletScreen({ navigation }) {
       setRefreshing(false);
     }
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadWalletData();
+    }, [loadWalletData])
+  );
 
   useEffect(() => {
     loadWalletData();

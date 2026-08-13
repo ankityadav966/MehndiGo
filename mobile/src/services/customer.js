@@ -216,7 +216,11 @@ export async function getWalletDetails() {
 
 export async function getWalletTransactions() {
   const res = await apiRequest("GET", "/wallet/transactions", null, true);
-  return res?.data || res || [];
+  if (Array.isArray(res)) return res;
+  if (Array.isArray(res?.transactions)) return res.transactions;
+  if (Array.isArray(res?.data?.transactions)) return res.data.transactions;
+  if (Array.isArray(res?.data)) return res.data;
+  return [];
 }
 
 export async function getCustomerWishlist() {

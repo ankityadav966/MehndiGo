@@ -1495,6 +1495,58 @@ const recordMasterFinancialLedger = async (db, booking, calc, paymentInfo = {}) 
   ]).catch((e) => console.log("Master financial ledger record error:", e.message));
 };
 
+const recordCustomerAdvancePaymentTransaction = async (db, booking, paymentId, orderId, advancePaidAmount) => {
+  if (!booking || !booking.id) return null;
+  const customerId = booking.customer_id;
+  if (!customerId) return null;
+
+  const realBookingId = booking.id;
+  const refCode = `ADVANCE_PAYMENT_BK_${realBookingId}`;
+
+  // Idempotency check: verify if advance payment transaction already exists
+  const existingTx = await db.first(
+    "SELECT * FROM wallet_transactions WHERE reference_id = ? OR (user_id = ? AND booking_id = ? AND reference_id LIKE 'ADVANCE_PAYMENT%')",
+    [refCode, customerId, realBookingId]
+  ).catch(() => null);
+
+  if (existingTx) {
+    console.log(`[WALLET] Customer advance payment transaction already exists for booking #${realBookingId}`);
+    return existingTx;
+  }
+
+  // Ensure Customer Wallet exists
+  let wallet = await db.first("SELECT * FROM wallets WHERE user_id = ?", [customerId]).catch(() => null);
+  if (!wallet) {
+    await db.run(
+      "INSERT INTO wallets (user_id, artist_id, balance, available_balance, escrow_balance, total_earnings, withdrawn_amount) VALUES (?, 0, 0.0, 0.0, 0.0, 0.0, 0.0)",
+      [customerId]
+    ).catch(() => { });
+    wallet = await db.first("SELECT * FROM wallets WHERE user_id = ?", [customerId]).catch(() => null);
+  }
+  const walletId = wallet?.id || 0;
+
+  const settings = await getMarketplaceSettings(db);
+  const baseAmount = Number(booking.base_service_amount || booking.total_amount || booking.final_amount || advancePaidAmount || 100);
+  const distanceKm = Number(booking.travel_distance_km || 0);
+  const isTravelConfirmed = String(booking.travel_charge_status).toUpperCase() === 'CONFIRMED';
+  const travelCharge = Number(booking.travel_charge || 0);
+
+  const calc = calculateBookingAmounts(baseAmount, distanceKm, travelCharge, isTravelConfirmed, booking, settings);
+  const commission = calc.admin_commission || (advancePaidAmount * 0.10);
+  const payAmt = Number(advancePaidAmount || calc.required_advance || 100);
+
+  const desc = `Advance Payment for Booking #${booking.booking_number || realBookingId} (MehndiGo Commission 10%: ₹${commission.toFixed(2)})`;
+
+  await db.run(
+    `INSERT INTO wallet_transactions (wallet_id, user_id, booking_id, type, amount, description, status, reference_id)
+     VALUES (?, ?, ?, 'debit', ?, ?, 'completed', ?)`,
+    [walletId, customerId, realBookingId, payAmt, desc, refCode]
+  ).catch((e) => console.log("Insert customer advance payment tx error:", e.message));
+
+  console.log(`[CUSTOMER WALLET TX] Booking #${realBookingId} Customer ID: ${customerId} | Advance Paid: ₹${payAmt} | Commission: ₹${commission}`);
+  return { customerId, payAmt, commission };
+};
+
 const processBookingEscrow = async (db, bookingId, paymentId, paidAmount) => {
   await ensureWalletTables(db);
   const settings = await getMarketplaceSettings(db);
@@ -1512,6 +1564,9 @@ const processBookingEscrow = async (db, bookingId, paymentId, paidAmount) => {
   const realBookingId = booking.id;
   const artistId = booking.artist_id || 231;
   const refCode = `ESCROW_BK_${realBookingId}`;
+
+  // Always ensure customer advance payment transaction is also recorded
+  await recordCustomerAdvancePaymentTransaction(db, booking, paymentId, null, paidAmount).catch((e) => console.log("Customer advance payment record error:", e.message));
 
   const existingEscrow = await db.first(
     "SELECT * FROM wallet_transactions WHERE reference_id = ? OR (user_id = ? AND type = 'BOOKING_ESCROW' AND description LIKE ?)",
@@ -1588,9 +1643,9 @@ const processBookingEscrow = async (db, bookingId, paymentId, paidAmount) => {
   const desc = `Booking #${booking.booking_number || realBookingId} Earning held in Pending (Commission ${(calc.commission_rate_snapshot * 100).toFixed(0)}%: ₹${commission.toFixed(2)})`;
 
   await db.run(
-    `INSERT INTO wallet_transactions (wallet_id, user_id, type, amount, description, status, reference_id)
-     VALUES (?, ?, 'credit', ?, ?, 'escrow_held', ?)`,
-    [walletId, artistId, artistEarning, desc, refCode]
+    `INSERT INTO wallet_transactions (wallet_id, user_id, booking_id, type, amount, description, status, reference_id)
+     VALUES (?, ?, ?, 'credit', ?, ?, 'escrow_held', ?)`,
+    [walletId, artistId, realBookingId, artistEarning, desc, refCode]
   ).catch((e) => console.log("Insert escrow tx error:", e.message));
 
   // Record entry into Master Financial Ledger
@@ -1810,22 +1865,152 @@ const handleGetWalletTransactions = async (c) => {
       [u.id, walletId]
     ).catch(() => []);
 
-    const formatted = (txs || []).map(t => ({
-      id: t.id,
-      wallet_id: t.wallet_id,
-      user_id: u.id,
-      type: t.type || "credit",
-      amount: t.amount || 0,
-      description: t.description || (t.type === "debit" ? "Payout Withdrawal" : "Earnings Credited"),
-      status: t.status || "completed",
-      reference_id: t.reference_id || null,
-      created_at: t.created_at,
-      date: t.created_at
+    const formatted = await Promise.all((txs || []).map(async (t) => {
+      let bId = t.booking_id;
+      if (!bId && t.reference_id && t.reference_id.includes("BK_")) {
+        const parts = t.reference_id.split("BK_");
+        if (parts[1]) bId = Number(parts[1]);
+      }
+      let bookingNum = bId ? `MG${1000 + bId}` : null;
+      let commissionAmt = null;
+
+      if (bId) {
+        const b = await db.first("SELECT id, booking_number, admin_commission, customer_total_amount, total_amount FROM bookings WHERE id = ?", [bId]).catch(() => null);
+        if (b) {
+          bookingNum = b.booking_number || `MG${1000 + b.id}`;
+          commissionAmt = Number(b.admin_commission || (t.amount * 0.10));
+        }
+      }
+
+      if (!commissionAmt && (t.type === 'ADVANCE_PAYMENT' || t.type === 'credit' || t.type === 'escrow_held')) {
+        commissionAmt = Math.round((t.amount * 0.10) * 100) / 100;
+      }
+
+      let resolvedType = t.type || "credit";
+      if ((t.reference_id && t.reference_id.startsWith("ADVANCE_PAYMENT")) || (t.description && t.description.toLowerCase().includes("advance payment"))) {
+        resolvedType = "ADVANCE_PAYMENT";
+      }
+
+      return {
+        id: t.id,
+        wallet_id: t.wallet_id,
+        user_id: u.id,
+        booking_id: bId || null,
+        booking_number: bookingNum,
+        type: resolvedType,
+        amount: Number(t.amount || 0),
+        commission: commissionAmt || 0,
+        commission_amount: commissionAmt || 0,
+        description: t.description || (resolvedType === "debit" ? "Payout Withdrawal" : "Payment Credited"),
+        status: t.status || "completed",
+        payment_method: "UPI / Razorpay",
+        reference_id: t.reference_id || null,
+        created_at: t.created_at,
+        date: t.created_at
+      };
     }));
 
     return jsonRes(c, true, formatted);
   } catch (e) {
     return jsonRes(c, true, []);
+  }
+};
+
+const handleGetTransactionDetails = async (c) => {
+  const db = getDb(c.env);
+  const u = getUserFromHeader(c);
+  if (!u || !u.id) {
+    return jsonRes(c, false, null, "Unauthorized access", 401);
+  }
+  try {
+    const pathParts = c.req.path.split("/").filter(Boolean);
+    const txId = Number(pathParts[pathParts.length - 1]) || Number(c.req.query("id"));
+
+    const wallet = await db.first("SELECT id FROM wallets WHERE user_id = ? OR artist_id = ?", [u.id, u.id]).catch(() => null);
+    const walletId = wallet?.id || 0;
+
+    const tx = await db.first(
+      "SELECT * FROM wallet_transactions WHERE id = ? AND (user_id = ? OR wallet_id = ?)",
+      [txId, u.id, walletId]
+    ).catch(() => null);
+
+    if (!tx) {
+      return jsonRes(c, false, null, "Transaction not found", 404);
+    }
+
+    let bId = tx.booking_id;
+    if (!bId && tx.reference_id && tx.reference_id.includes("BK_")) {
+      const parts = tx.reference_id.split("BK_");
+      if (parts[1]) bId = Number(parts[1]);
+    }
+
+    let booking = null;
+    if (bId) {
+      booking = await db.first("SELECT id, booking_number, total_amount, advance_paid, remaining_amount, admin_commission, status, payment_status, created_at FROM bookings WHERE id = ?", [bId]).catch(() => null);
+    }
+
+    let resolvedType = tx.type;
+    if ((tx.reference_id && tx.reference_id.startsWith("ADVANCE_PAYMENT")) || (tx.description && tx.description.toLowerCase().includes("advance payment"))) {
+      resolvedType = "ADVANCE_PAYMENT";
+    }
+
+    const details = {
+      id: tx.id,
+      wallet_id: tx.wallet_id,
+      user_id: u.id,
+      booking_id: bId || null,
+      booking_number: booking?.booking_number || (bId ? `MG${1000 + bId}` : null),
+      type: resolvedType,
+      amount: Number(tx.amount || 0),
+      commission: Number(booking?.admin_commission || (tx.amount * 0.10)),
+      commission_amount: Number(booking?.admin_commission || (tx.amount * 0.10)),
+      description: tx.description,
+      status: tx.status || "completed",
+      payment_method: "UPI / Razorpay",
+      reference_id: tx.reference_id,
+      created_at: tx.created_at,
+      date: tx.created_at,
+      booking: booking
+    };
+
+    return jsonRes(c, true, details, "Transaction details fetched");
+  } catch (e) {
+    return jsonRes(c, false, null, e.message || "Failed to fetch transaction details", 500);
+  }
+};
+
+const handleBackfillMissingTransactions = async (c) => {
+  const db = getDb(c.env);
+  try {
+    const confirmedBookings = await db.all(
+      "SELECT * FROM bookings WHERE status = 'confirmed' OR payment_status IN ('PAID', 'PARTIAL', 'partial', 'completed') OR advance_paid > 0 ORDER BY id ASC"
+    ).catch(() => []);
+
+    let processedCount = 0;
+    const results = [];
+
+    for (const b of (confirmedBookings || [])) {
+      const p = await db.first("SELECT * FROM payments WHERE booking_id = ? ORDER BY id DESC LIMIT 1", [b.id]).catch(() => null);
+      const advAmt = Number(b.advance_paid || p?.amount || Math.round(Number(b.total_amount || 100) * 0.10));
+      const payId = p?.razorpay_payment_id || `sim_backfill_${b.id}`;
+
+      // Update payment status to completed if missing
+      if (p && p.status !== 'completed') {
+        await db.run("UPDATE payments SET status = 'completed' WHERE id = ?", [p.id]).catch(() => { });
+      }
+
+      // Record customer advance payment transaction
+      const custRes = await recordCustomerAdvancePaymentTransaction(db, b, payId, p?.razorpay_order_id, advAmt);
+      // Record artist escrow transaction
+      const escrowRes = await processBookingEscrow(db, b.id, payId, advAmt);
+
+      processedCount++;
+      results.push({ bookingId: b.id, customerRes: !!custRes, escrowRes: !!escrowRes });
+    }
+
+    return jsonRes(c, true, { processed_count: processedCount, results }, "Backfill completed successfully");
+  } catch (e) {
+    return jsonRes(c, false, null, e.message || "Backfill failed", 500);
   }
 };
 
@@ -5381,6 +5566,14 @@ addRoute("post", "/api/v1/referral/apply", handleApplyReferralCode);
 addRoute("get", "/artist/wallet/history", handleGetWalletTransactions);
 addRoute("get", "/wallet/history", handleGetWalletTransactions);
 addRoute("get", "/wallet/transactions", handleGetWalletTransactions);
+addRoute("get", "/customer/wallet/history", handleGetWalletTransactions);
+addRoute("get", "/customer/wallet/transactions", handleGetWalletTransactions);
+addRoute("get", "/wallet/transaction/:id", handleGetTransactionDetails);
+addRoute("get", "/wallet/transactions/:id", handleGetTransactionDetails);
+addRoute("get", "/customer/wallet/transaction/:id", handleGetTransactionDetails);
+addRoute("get", "/artist/wallet/transaction/:id", handleGetTransactionDetails);
+addRoute("post", "/admin/backfill-transactions", handleBackfillMissingTransactions);
+addRoute("post", "/api/v1/admin/backfill-transactions", handleBackfillMissingTransactions);
 addRoute("get", "/admin/wallet-summary", handleAdminWalletSummary);
 addRoute("get", "/admin/finance", handleAdminWalletSummary);
 addRoute("get", "/api/v1/admin/wallet-summary", handleAdminWalletSummary);
