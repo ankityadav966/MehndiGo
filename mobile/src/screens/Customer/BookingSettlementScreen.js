@@ -100,11 +100,11 @@ export default function BookingSettlementScreen({ route, navigation }) {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <View style={styles.artistCard}>
           <Image
-            source={{ uri: booking.artist?.user?.profile_image || "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=300" }}
+            source={{ uri: booking.artist?.user?.profile_image || booking.artist_image || booking.artistImage || "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=300" }}
             style={styles.avatar}
           />
-          <Text style={styles.artistName}>{booking.artist?.user?.name || "Professional Specialist"}</Text>
-          <Text style={styles.bookingCode}>Booking Reference ID: #{booking.booking_code}</Text>
+          <Text style={styles.artistName}>{booking.artist?.user?.name || booking.artist_name || booking.artistName || "Professional Specialist"}</Text>
+          <Text style={styles.bookingCode}>Booking Reference ID: #{booking.booking_code || booking.booking_number || booking.bookingCode || booking.id}</Text>
         </View>
 
         <View style={styles.detailsCard}>
@@ -113,31 +113,31 @@ export default function BookingSettlementScreen({ route, navigation }) {
           <View style={styles.row}>
             <Text style={styles.label}>Booking Date</Text>
             <Text style={styles.value}>
-              {booking.slot?.start_time || booking.slot?.date ? new Date(booking.slot.start_time || booking.slot.date).toLocaleDateString() : (booking.reschedule_date || "TBD")}
+              {booking.booking_date || booking.bookingDate || booking.slot?.date || (booking.slot?.start_time ? new Date(booking.slot.start_time).toLocaleDateString() : (booking.reschedule_date || "As Scheduled"))}
             </Text>
           </View>
           
           <View style={styles.row}>
             <Text style={styles.label}>Total Price Amount</Text>
-            <Text style={styles.value}>₹{booking.total_price || booking.final_amount}</Text>
+            <Text style={styles.value}>₹{booking.total_amount ?? booking.total_price ?? booking.final_amount ?? booking.totalAmount ?? 0}</Text>
           </View>
 
-          {booking.advance_paid !== undefined && (
-            <View style={styles.row}>
-              <Text style={styles.label}>Advance Paid (10%)</Text>
-              <Text style={styles.value}>₹{booking.advance_paid}</Text>
-            </View>
-          )}
+          <View style={styles.row}>
+            <Text style={styles.label}>Advance Paid (10%)</Text>
+            <Text style={styles.value}>₹{booking.advance_paid ?? booking.advancePaid ?? 0}</Text>
+          </View>
 
           <View style={styles.row}>
             <Text style={styles.label}>Remaining Payable Amount</Text>
-            <Text style={[styles.value, { color: Colors.primary, fontWeight: "800" }]}>₹{booking.remaining_amount || booking.final_amount}</Text>
+            <Text style={[styles.value, { color: Colors.primary, fontWeight: "800" }]}>
+              ₹{booking.remaining_amount ?? booking.remainingAmount ?? booking.final_amount ?? 0}
+            </Text>
           </View>
 
           <View style={styles.row}>
             <Text style={styles.label}>Payment Status</Text>
-            <Text style={[styles.value, { color: booking.payment_status === "PAID" ? Colors.success : Colors.primary }]}>
-              {booking.payment_status}
+            <Text style={[styles.value, { color: String(booking.payment_status).toUpperCase() === "PAID" ? Colors.success : Colors.primary }]}>
+              {booking.payment_status || "pending"}
             </Text>
           </View>
 

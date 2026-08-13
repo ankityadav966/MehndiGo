@@ -59,7 +59,7 @@ module.exports = (sequelize, DataTypes) => {
             
             // 1. Fetch registered tokens for the user
             const tokens = await db.NotificationToken.findAll({
-              where: { user_id: notification.user_id }
+              where: { user_id: notification.user_id, is_active: true }
             });
             
             if (tokens && tokens.length > 0) {

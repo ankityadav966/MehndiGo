@@ -228,26 +228,33 @@ export default function BookingDetailsScreen({ route, navigation }) {
     return () => clearInterval(timer);
   }, []);
 
-  const getDistance = () => {
-    if (roadDistance !== null) return roadDistance.toFixed(1);
-    if (!booking || !artistCoords) return null;
-    const lat1 = Number(booking.latitude || 26.9124);
-    const lon1 = Number(booking.longitude || 75.7873);
-    const lat2 = artistCoords.lat;
-    const lon2 = artistCoords.lng;
+  // Helper to validate coordinate values
+const isValidCoordinate = (value) =>
+  value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value)) &&
+  Number(value) >= -90 && Number(value) <= 90;
 
-    const R = 6371; // km
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(lat1 * Math.PI / 180) *
-        Math.cos(lat2 * Math.PI / 180) *
-        Math.sin(dLon / 2) *
-        Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return (R * c).toFixed(1);
-  };
+// Calculate straight-line distance (fallback) using Haversine formula
+const getDistance = () => {
+  if (roadDistance !== null) return roadDistance.toFixed(1);
+  if (!booking || !artistCoords) return null;
+  const lat1 = Number(booking.latitude);
+  const lon1 = Number(booking.longitude);
+  const lat2 = artistCoords.lat;
+  const lon2 = artistCoords.lng;
+
+  if (!isValidCoordinate(lat1) || !isValidCoordinate(lon1) || !isValidCoordinate(lat2) || !isValidCoordinate(lon2)) {
+    return null;
+  }
+
+  const R = 6371; // km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return (R * c).toFixed(1);
+};
 
   const getETA = (distanceKm) => {
     if (roadDuration !== null) {
@@ -324,19 +331,30 @@ export default function BookingDetailsScreen({ route, navigation }) {
 
   const handleDownloadInvoice = async () => {
     try {
+      setLoading(true);
       const inv = await getInvoice(bookingId);
-      if (inv && inv.invoice_url) {
-        let url = inv.invoice_url;
-        if (!url.startsWith("http://") && !url.startsWith("https://")) {
-          const { BASE_URL } = require("../../services/api");
-          url = `${BASE_URL}${url.startsWith("/") ? "" : "/"}${url}`;
+      setLoading(false);
+      if (inv) {
+        if (inv.invoice_url) {
+          let url = inv.invoice_url;
+          if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            const { BASE_URL } = require("../../services/api");
+            url = `${BASE_URL}${url.startsWith("/") ? "" : "/"}${url}`;
+          }
+          await Linking.openURL(url);
+        } else {
+          Alert.alert(
+            `Tax Invoice (${inv.invoice_number || "MG-" + bookingId})`,
+            `Booking Ref: ${inv.booking_number || "MG-" + bookingId}\nCustomer: ${inv.customer_name || "Valued Customer"}\nArtist: ${inv.artist_name || "Mehndi Specialist"}\nService: ${inv.service_title || "Mehndi Service"}\nDate: ${inv.booking_date || ""}\n\nTotal Amount: ₹${inv.total_amount}\nPaid Amount: ₹${inv.advance_paid}\nRemaining: ₹${inv.remaining_amount}\nStatus: ${inv.payment_status}\nTxn ID: ${inv.transaction_id || "N/A"}`,
+            [{ text: "OK" }]
+          );
         }
-        await Linking.openURL(url);
       } else {
-        Alert.alert("Error", "Invoice link is not available.");
+        Alert.alert("Notice", "Invoice document is not generated yet.");
       }
     } catch (err) {
-      Alert.alert("Error", "Invoice document is not generated yet. Payment is required.");
+      setLoading(false);
+      Alert.alert("Error", err.message || "Invoice details currently unavailable.");
     }
   };
 
@@ -378,10 +396,22 @@ export default function BookingDetailsScreen({ route, navigation }) {
     );
   }
 
-  const currentDetailedStatus = booking.detailed_status || booking.booking_status || "PENDING";
-  const activeStepIndex = STEPS.findIndex((s) => s.key === currentDetailedStatus);
+  const currentDetailedStatus = String(booking.detailed_status || booking.booking_status || booking.status || "PENDING").toUpperCase();
 
-  const canChat = ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED", "COMPLETED"].includes(currentDetailedStatus);
+  const getActiveStepIndex = (statusStr) => {
+    const st = String(statusStr || "").toUpperCase();
+    if (["COMPLETED", "COMPLETED_CLOSED", "AWAITING_CASH_CONFIRMATION"].includes(st)) return 6;
+    if (["SERVICE_STARTED", "IN_PROGRESS"].includes(st)) return 5;
+    if (["ARTIST_ARRIVED", "ARRIVED"].includes(st)) return 4;
+    if (["ARTIST_ON_THE_WAY", "ON_THE_WAY"].includes(st)) return 3;
+    if (["ARTIST_ACCEPTED", "ACCEPTED"].includes(st)) return 2;
+    if (["CONFIRMED", "WAITING_FOR_USER_PAYMENT"].includes(st)) return 1;
+    return 0;
+  };
+
+  const activeStepIndex = getActiveStepIndex(currentDetailedStatus);
+
+  const canChat = ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "ON_THE_WAY", "ARRIVED", "ARTIST_ARRIVED", "SERVICE_STARTED", "IN_PROGRESS", "COMPLETED", "COMPLETED_CLOSED"].includes(currentDetailedStatus);
 
   const getMoment = () => {
     const m = require("moment");
@@ -389,32 +419,53 @@ export default function BookingDetailsScreen({ route, navigation }) {
   };
 
   const formatTime = (timeVal) => {
-    if (!timeVal) return "";
-    const localMoment = getMoment();
-    const formats = [
-      "YYYY-MM-DD HH:mm:ss",
-      "YYYY-MM-DDTHH:mm:ssZ",
-      "YYYY-MM-DDTHH:mm:ss.SSSZ",
-      "HH:mm:ss",
-      "HH:mm",
-      "hh:mm A",
-      "hh:mm"
-    ];
-    return localMoment(timeVal, formats).format("hh:mm A");
+    if (!timeVal) return "TBD";
+    if (typeof timeVal === "string" && (timeVal.includes("AM") || timeVal.includes("PM") || timeVal.includes("-"))) {
+      return timeVal.trim();
+    }
+    try {
+      const localMoment = getMoment();
+      const formats = [
+        "YYYY-MM-DD HH:mm:ss",
+        "YYYY-MM-DDTHH:mm:ssZ",
+        "YYYY-MM-DDTHH:mm:ss.SSSZ",
+        "HH:mm:ss",
+        "HH:mm",
+        "hh:mm A",
+        "hh:mm"
+      ];
+      const m = localMoment(timeVal, formats);
+      return m.isValid() ? m.format("hh:mm A") : String(timeVal);
+    } catch (e) {
+      return String(timeVal);
+    }
   };
 
   const formatDate = (dateVal) => {
     if (!dateVal) return "TBD";
     try {
       const localMoment = getMoment();
-      return localMoment(dateVal).format("DD MMM YYYY (dddd)");
+      const m = localMoment(dateVal);
+      return m.isValid() ? m.format("DD MMM YYYY (dddd)") : String(dateVal);
     } catch (e) {
-      return dateVal;
+      return String(dateVal);
     }
   };
 
+  const getBookingDate = (b) => {
+    if (!b) return "TBD";
+    const rawDate = b.booking_date || b.date || b.event_date || b.reschedule_date || b.slot?.date || b.slot?.start_time || b.created_at;
+    return formatDate(rawDate);
+  };
+
+  const getBookingTime = (b) => {
+    if (!b) return "TBD";
+    const rawTime = b.booking_time || b.time || b.time_slot || b.reschedule_time || (b.slot ? `${formatTime(b.slot.start_time)} - ${formatTime(b.slot.end_time)}` : null) || b.slot?.time_label;
+    return formatTime(rawTime);
+  };
+
   const resolveImage = (uri) => {
-    const placeholder = "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=300";
+    const placeholder = `https://ui-avatars.com/api/?name=${encodeURIComponent(booking.artist_name || "Mehndi Artist")}&background=F3E8FF&color=7C3AED`;
     if (!uri) return placeholder;
     if (uri.startsWith("http://") || uri.startsWith("https://") || uri.startsWith("file://") || uri.startsWith("content://")) {
       return uri;
@@ -541,7 +592,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
         )}
 
         <Image
-          source={{ uri: resolveImage(booking.artist_image || booking.artist?.profile_image || booking.artist?.user?.profile_image) || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400" }}
+          source={{ uri: resolveImage(booking.artist_image || booking.artist?.profile_image || booking.artist?.user?.profile_image) || `https://ui-avatars.com/api/?name=${encodeURIComponent(booking.artist_name || "Mehndi Artist")}&background=F3E8FF&color=7C3AED` }}
           style={styles.artistImage}
         />
 
@@ -653,7 +704,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
               <Text style={styles.artistCardHeaderTitle}>Assigned Specialist Details</Text>
               <View style={styles.artistCardBody}>
                 <Image
-                  source={{ uri: resolveImage(booking.artist_image || booking.artist?.profile_image || booking.artist?.user?.profile_image) || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400" }}
+                  source={{ uri: resolveImage(booking.artist_image || booking.artist?.profile_image || booking.artist?.user?.profile_image) || `https://ui-avatars.com/api/?name=${encodeURIComponent(booking.artist_name || "Mehndi Artist")}&background=F3E8FF&color=7C3AED` }}
                   style={styles.artistCardAvatar}
                 />
                 <View style={styles.artistCardMeta}>
@@ -664,7 +715,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
                     </View>
                   </View>
                   <Text style={styles.artistCardSubText}>
-                    Location: {booking.artist_city || booking.artist?.city || "Jaipur"} • ⭐ 4.8 Rating
+                    {booking.artist_city || booking.artist?.city ? `Location: ${booking.artist_city || booking.artist?.city} • ` : ""}⭐ {booking.artist_rating || booking.artist?.rating || "5.0"} Rating
                   </Text>
                   <Text style={styles.artistCardPhone}>
                     📞 {booking.artist_phone || booking.artist?.phone || booking.artist?.user?.phone || "Phone verified"}
@@ -691,12 +742,12 @@ export default function BookingDetailsScreen({ route, navigation }) {
             <DetailRow
               icon="calendar-outline"
               label="Date"
-              value={formatDate(booking.slot?.date || booking.reschedule_date)}
+              value={getBookingDate(booking)}
             />
              <DetailRow
               icon="time-outline"
               label="Time Slot"
-              value={booking.slot ? `${formatTime(booking.slot.start_time)} - ${formatTime(booking.slot.end_time)}` : (booking.reschedule_time ? formatTime(booking.reschedule_time) : "TBD")}
+              value={getBookingTime(booking)}
             />
             <DetailRow icon="location-outline" label="Location" value={booking.address} />
             {booking.landmark && (
@@ -708,39 +759,102 @@ export default function BookingDetailsScreen({ route, navigation }) {
             <DetailRow
               icon="wallet-outline"
               label="Paid Amount"
-              value={`₹${booking.final_amount}`}
+              value={`₹${booking.advance_paid || 0}`}
+            />
+            <DetailRow
+              icon="cash-outline"
+              label="Remaining Amount"
+              value={`₹${booking.remaining_amount !== undefined ? booking.remaining_amount : ((booking.total_amount || 0) - (booking.advance_paid || 0))}`}
             />
           </View>
+
+          {/* Travel Charge Request Warning Card */}
+          {booking.travel_charge_status === "REQUESTED" && (
+            <View style={[styles.card, { backgroundColor: "#FFFBEB", borderColor: "#F59E0B", borderWidth: 1 }]}>
+              <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
+                <Ionicons name="warning-outline" size={22} color="#D97706" />
+                <Text style={{ fontSize: 15, fontWeight: "700", color: "#92400E", marginLeft: 6 }}>
+                  Additional Travel Charge Requested
+                </Text>
+              </View>
+              <Text style={{ fontSize: 13, color: "#78350F", lineHeight: 18, marginBottom: 12 }}>
+                ⚠️ The artist has requested an additional distance/travel charge of ₹{booking.travel_charge} ({booking.travel_distance_km || "N/A"} KM). Please review and confirm this amount.
+              </Text>
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                <TouchableOpacity
+                  style={{ flex: 1, backgroundColor: "#10B981", paddingVertical: 10, borderRadius: 8, alignItems: "center" }}
+                  onPress={async () => {
+                    try {
+                      const { respondTravelCharge } = require("../../services/booking");
+                      await respondTravelCharge(booking.id, "ACCEPT");
+                      Alert.alert("Success", "Travel charge accepted.");
+                      fetchBookingDetails();
+                    } catch (e) {
+                      Alert.alert("Error", e.message || "Failed to accept travel charge.");
+                    }
+                  }}
+                >
+                  <Text style={{ color: "#FFF", fontWeight: "700", fontSize: 14 }}>Accept ₹{booking.travel_charge}</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={{ flex: 1, backgroundColor: "#EF4444", paddingVertical: 10, borderRadius: 8, alignItems: "center" }}
+                  onPress={async () => {
+                    try {
+                      const { respondTravelCharge } = require("../../services/booking");
+                      await respondTravelCharge(booking.id, "REJECT");
+                      Alert.alert("Declined", "Travel charge declined.");
+                      fetchBookingDetails();
+                    } catch (e) {
+                      Alert.alert("Error", e.message || "Failed to decline travel charge.");
+                    }
+                  }}
+                >
+                  <Text style={{ color: "#FFF", fontWeight: "700", fontSize: 14 }}>Decline</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
 
           {/* Pricing detail breakdown collapse */}
           <View style={styles.card}>
             <Text style={styles.cardSectionTitle}>Pricing Details</Text>
             <View style={styles.pricingRow}>
-              <Text style={styles.priceLabel}>Service Price</Text>
-              <Text style={styles.priceVal}>₹{booking.total_price}</Text>
+              <Text style={styles.priceLabel}>Base Service Amount</Text>
+              <Text style={styles.priceVal}>₹{booking.base_service_amount || booking.service_price || booking.total_amount || 0}</Text>
             </View>
-            {booking.travel_charges > 0 && (
+            {Number(booking.travel_charge || 0) > 0 && (
               <View style={styles.pricingRow}>
-                <Text style={styles.priceLabel}>Travel Fee</Text>
-                <Text style={styles.priceVal}>₹{booking.travel_charges}</Text>
+                <Text style={styles.priceLabel}>Travel / Distance Fee ({booking.travel_charge_status || "CONFIRMED"})</Text>
+                <Text style={[styles.priceVal, { color: booking.travel_charge_status === "CONFIRMED" ? Colors.primary : "#9CA3AF" }]}>
+                  ₹{booking.travel_charge}
+                </Text>
               </View>
             )}
-            {booking.coupon_discount > 0 && (
+            {Number(booking.coupon_discount || booking.discount || 0) > 0 && (
               <View style={styles.pricingRow}>
                 <Text style={[styles.priceLabel, { color: Colors.primary }]}>Discount</Text>
-                <Text style={[styles.priceVal, { color: Colors.primary }]}>-₹{booking.coupon_discount}</Text>
+                <Text style={[styles.priceVal, { color: Colors.primary }]}>-₹{booking.coupon_discount || booking.discount}</Text>
               </View>
             )}
             <View style={styles.cardDivider} />
             <View style={styles.pricingRow}>
-              <Text style={styles.totalPriceLabel}>Total Booking Amount</Text>
-              <Text style={styles.totalPriceVal}>₹{booking.final_amount}</Text>
+              <Text style={styles.totalPriceLabel}>Total Payable Amount</Text>
+              <Text style={styles.totalPriceVal}>₹{booking.customer_total_amount || booking.total_amount || booking.service_price || 0}</Text>
+            </View>
+            <View style={styles.pricingRow}>
+              <Text style={styles.priceLabel}>Advance Paid</Text>
+              <Text style={[styles.priceVal, { color: Colors.success || "#10B981", fontWeight: "600" }]}>₹{booking.advance_paid || 0}</Text>
+            </View>
+            <View style={styles.pricingRow}>
+              <Text style={styles.priceLabel}>Remaining Due</Text>
+              <Text style={[styles.priceVal, { color: Colors.primary, fontWeight: "600" }]}>₹{booking.remaining_amount !== undefined ? booking.remaining_amount : ((booking.total_amount || 0) - (booking.advance_paid || 0))}</Text>
             </View>
           </View>
 
 
           {/* Action options */}
-          {canChat && (
+          {canChat ? (
             <View style={styles.actionsPanel}>
               {/* Call artist */}
               <TouchableOpacity
@@ -766,6 +880,10 @@ export default function BookingDetailsScreen({ route, navigation }) {
                 <Ionicons name="chatbubbles" size={16} color={Colors.white} />
                 <Text style={styles.actionBtnText}>Message Artist</Text>
               </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.pendingBanner}>
+              <Text style={styles.pendingText}>Waiting for artist to accept your booking.</Text>
             </View>
           )}
 
@@ -1023,6 +1141,8 @@ const styles = StyleSheet.create({
   modalLabel: { fontSize: 12, fontWeight: "700", color: Colors.text, marginTop: 14, marginBottom: 6 },
   modalInput: { height: 44, backgroundColor: Colors.background, borderRadius: 8, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 12, fontSize: 12, color: Colors.text },
   modalCancelLink: { marginTop: 12, alignItems: "center" },
+  pendingBanner: { backgroundColor: Colors.warning + "15", padding: 12, borderRadius: 8, alignItems: "center", marginTop: 12 },
+  pendingText: { color: Colors.warning, fontSize: 13, fontWeight: "600" },
   modalCancelLinkText: { fontSize: 12, color: Colors.textTertiary, fontWeight: "600" },
   starsRow: { flexDirection: "row", justifyContent: "center", marginVertical: 14 },
 
@@ -1144,6 +1264,22 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: Colors.primary,
     marginRight: 6,
+  },
+  pendingBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFF7E6",
+    borderWidth: 1,
+    borderColor: "#FFECB3",
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 10,
+  },
+  pendingText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#B58900",
+    flex: 1,
   },
 });
 

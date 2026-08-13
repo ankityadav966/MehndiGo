@@ -27,9 +27,10 @@ const htmlContent = `
       attributionControl: false 
     }).setView([26.9124, 75.7873], 13);
 
-    // Render OpenStreetMap tiles as explicitly requested
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19
+    // Render Official Google Maps Tiles
+    L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+      maxZoom: 20,
+      subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
     }).addTo(map);
 
     L.control.zoom({ position: 'bottomright' }).addTo(map);
@@ -136,11 +137,15 @@ const htmlContent = `
                   duration: route.duration / 60
                 }));
 
-                if (!didFitBounds) {
-                  const group = new L.featureGroup([customerMarker, artistMarker]);
-                  map.fitBounds(group.getBounds().pad(0.18));
-                  didFitBounds = true;
-                }
+                setTimeout(function() {
+                  map.invalidateSize();
+                  if (pathPolyline) {
+                    map.fitBounds(pathPolyline.getBounds().pad(0.2));
+                  } else if (customerMarker && artistMarker) {
+                    const group = new L.featureGroup([customerMarker, artistMarker]);
+                    map.fitBounds(group.getBounds().pad(0.2));
+                  }
+                }, 200);
               }
             })
             .catch(function(err) {
@@ -159,6 +164,13 @@ const htmlContent = `
               } else {
                 pathPolyline.setLatLngs(fallbackLatLngs);
               }
+              setTimeout(function() {
+                map.invalidateSize();
+                if (customerMarker && artistMarker) {
+                  const group = new L.featureGroup([customerMarker, artistMarker]);
+                  map.fitBounds(group.getBounds().pad(0.2));
+                }
+              }, 200);
             });
         }
       } catch (err) {
@@ -172,7 +184,7 @@ const htmlContent = `
 </html>
 `;
 
-export default function LeafletMapView({ customerCoords, artistCoords, onRouteUpdate }) {
+export default function LeafletMapView({ customerCoords, artistCoords, onRouteUpdate, style }) {
   const webviewRef = useRef(null);
 
   // Propagate coords updates to WebView context
@@ -208,7 +220,7 @@ export default function LeafletMapView({ customerCoords, artistCoords, onRouteUp
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, style]}>
       <WebView
         ref={webviewRef}
         originWhitelist={["*"]}
@@ -230,7 +242,7 @@ export default function LeafletMapView({ customerCoords, artistCoords, onRouteUp
 
 const styles = StyleSheet.create({
   container: {
-    height: 280,
+    flex: 1,
     width: "100%",
     borderRadius: 16,
     overflow: "hidden",

@@ -239,6 +239,10 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.INTEGER,
         allowNull: true
       },
+      arrival_verified_at: {
+        type: DataTypes.DATE,
+        allowNull: true
+      },
     },
     {
       sequelize,

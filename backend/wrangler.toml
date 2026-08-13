@@ -9,8 +9,11 @@ routes = [
 [vars]
 ENVIRONMENT = "production"
 JWT_SECRET = "mehndigo-super-secret-jwt-token-key-2026"
-RAZORPAY_KEY_ID = "rzp_live_TJIF5fG3LByErG"
-RAZORPAY_KEY_SECRET = "xMxDHNwnadR2sr5uiEk7QmH6"
+RAZORPAY_KEY_ID = "rzp_live_TOnEe0jhl1qgO5"
+RAZORPAY_KEY_SECRET = "P1O71RSSuCVTAULIlf8WJaru"
+EMAIL_USER = "sonudonyadav87@gmail.com"
+EMAIL_PASS = "kwemkkniwxyohmvm"
+RESEND_API_KEY = ""
 
 [[d1_databases]]
 binding = "DB"

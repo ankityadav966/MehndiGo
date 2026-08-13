@@ -64,6 +64,25 @@ export default function BookingDetailsScreen({ route, navigation }) {
   const [checkInOtpText, setCheckInOtpText] = useState("");
   const [checkOutOtpText, setCheckOutOtpText] = useState("");
   const [otpTimer, setOtpTimer] = useState(300);
+  const [isTravelChargeModalVisible, setIsTravelChargeModalVisible] = useState(false);
+  const [travelChargeInput, setTravelChargeInput] = useState("");
+
+  const handleSubmitTravelCharge = async () => {
+    const amount = Number(travelChargeInput);
+    if (!amount || isNaN(amount) || amount <= 0) {
+      Alert.alert("Invalid Amount", "Please enter a valid travel charge amount.");
+      return;
+    }
+    try {
+      const { requestTravelCharge } = require("../../services/booking");
+      await requestTravelCharge(booking.id || bookingId, amount, Math.round(distance || 0));
+      setIsTravelChargeModalVisible(false);
+      Alert.alert("Request Sent", "Travel charge request of ₹" + amount + " sent to customer for confirmation.");
+      loadDetails();
+    } catch (err) {
+      Alert.alert("Error", err.message || "Failed to send travel charge request.");
+    }
+  };
 
   const simulateLocation = async () => {
     const customerLat = booking && booking.latitude && parseFloat(booking.latitude) !== 0 ? parseFloat(booking.latitude) : 26.9124;
@@ -155,106 +174,112 @@ export default function BookingDetailsScreen({ route, navigation }) {
 
   const checkAndGetArtistLocation = async (showAlert = false) => {
     try {
-      const { status: currentStatus } = await Location.getForegroundPermissionsAsync();
-      let permissionStatus = currentStatus;
-      if (permissionStatus !== "granted") {
-        const { status: requestStatus } = await Location.requestForegroundPermissionsAsync();
-        permissionStatus = requestStatus;
-      }
+      const { status: fgStatus } = await Location.getForegroundPermissionsAsync();
+      const providerStatus = await Location.getProviderStatusAsync();
 
-      if (permissionStatus !== "granted") {
-        setPermissionError("Location permission denied");
+      const watcherActive = Boolean(artistCoords);
+      const latestGPSAvailable = Boolean(artistCoords && artistCoords.lat && artistCoords.lng);
+
+      console.log("[GPS FETCH]");
+      console.log("permission:", fgStatus);
+      console.log("locationServicesEnabled:", Boolean(providerStatus.locationServicesEnabled || providerStatus.gpsEnabled));
+      console.log("watcherActive:", watcherActive);
+      console.log("latestGPSAvailable:", latestGPSAvailable);
+
+      if (fgStatus !== "granted") {
+        setPermissionError("Location permission required for live tracking");
         if (showAlert) {
-          Alert.alert(
-            "Location Permission Required",
-            "Please allow MehndiGo to access your location to navigate and track your arrival for the customer.",
-            [
-              { text: "Cancel", style: "cancel" },
-              { text: "Settings", onPress: () => Linking.openSettings() }
-            ]
-          );
+          Alert.alert("Permission Required", "Location permission is required for live tracking.");
         }
         return null;
       }
 
-      const providerStatus = await Location.getProviderStatusAsync();
-      if (!providerStatus.locationServicesEnabled) {
-        if (Platform.OS === "android") {
-          try {
-            await Location.enableNetworkProviderAsync();
-          } catch (providerErr) {
-            console.warn("Failed to enable network provider, opening settings:", providerErr.message);
-            if (showAlert) {
-              Alert.alert(
-                "GPS Services Disabled",
-                "GPS location services are disabled on your device. Please turn on GPS/Location services.",
-                [
-                  { text: "Cancel", style: "cancel" },
-                  { text: "Settings", onPress: () => openLocationSettings() }
-                ]
-              );
-            }
-          }
-          // Recheck status
-          const finalStatus = await Location.getProviderStatusAsync();
-          if (!finalStatus.locationServicesEnabled) {
-            setPermissionError("GPS location services are disabled");
-            return null;
-          }
-        } else {
-          setPermissionError("GPS location services are disabled");
-          if (showAlert) {
-            Alert.alert(
-              "GPS Services Disabled",
-              "Please enable Location/GPS services in your device settings to start tracking.",
-              [
-                { text: "Cancel", style: "cancel" },
-                { text: "Settings", onPress: () => openLocationSettings() }
-              ]
-            );
-          }
-          return null;
+      if (!providerStatus.locationServicesEnabled && !providerStatus.gpsEnabled) {
+        setPermissionError("GPS location services are disabled");
+        if (showAlert) {
+          Alert.alert("GPS Services Disabled", "Please enable Location/GPS services in device settings.");
         }
+        return null;
       }
 
-      setPermissionError(null);
-      setIsLocationModalVisible(false);
+      // GUARD: If real GPS watcher is already active and we have latest Artist GPS coordinates, reuse them!
+      if (artistCoords && artistCoords.lat && artistCoords.lng) {
+        console.log("[GPS FETCH FALLBACK]");
+        console.log("reason: Real GPS watcher active & latest coordinates available.");
+        console.log("usingLatestWatcherLocation: true");
+        return artistCoords;
+      }
 
-      // Try fetching current location with 10-second timeout
-      const current = await Promise.race([
-        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("Location fetch timeout")), 10000))
-      ]);
-
-      const coords = {
-        lat: current.coords.latitude,
-        lng: current.coords.longitude
-      };
-      setArtistCoords(coords);
-      return coords;
-    } catch (err) {
-      console.warn("[BookingDetails] High accuracy location fetch failed, attempting fallback:", err.message);
-      
-      // Fallback to last known position
+      // Otherwise attempt a quick 3-tier location fetch
+      let current = null;
       try {
-        const lastKnown = await Location.getLastKnownPositionAsync({});
-        if (lastKnown) {
-          const coords = {
-            lat: lastKnown.coords.latitude,
-            lng: lastKnown.coords.longitude
-          };
-          setArtistCoords(coords);
-          setPermissionError(null);
-          setIsLocationModalVisible(false);
-          return coords;
+        current = await Promise.race([
+          Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("High accuracy timeout")), 3000))
+        ]);
+      } catch (highErr) {
+        try {
+          current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        } catch (balancedErr) {
+          try {
+            current = await Location.getLastKnownPositionAsync({});
+          } catch (_) {}
         }
-      } catch (fallbackErr) {
-        console.warn("[BookingDetails] Fallback location fetch also failed:", fallbackErr.message);
       }
-      
-      setPermissionError("Failed to obtain accurate GPS location");
+
+      if (current && current.coords) {
+        const coords = {
+          lat: current.coords.latitude,
+          lng: current.coords.longitude
+        };
+        setArtistCoords(coords);
+        setPermissionError(null);
+        setIsLocationModalVisible(false);
+
+        console.log("[GPS FETCH RESULT]");
+        console.log("success: true");
+        console.log("latitude:", coords.lat);
+        console.log("longitude:", coords.lng);
+        console.log("accuracy:", current.coords.accuracy || "High");
+
+        return coords;
+      }
+
+      console.log("[GPS FETCH FALLBACK]");
+      console.log("reason: One-time location fetch unavailable. Waiting for watchPositionAsync ticks.");
+      console.log("usingLatestWatcherLocation: false");
+
+      return null;
+    } catch (err) {
+      console.log("[GPS FETCH FALLBACK]");
+      console.log("reason:", err.message);
+      console.log("usingLatestWatcherLocation: false");
       return null;
     }
+  };
+
+  const openGoogleMapsNavigation = () => {
+    const destLat = customerCoords.lat;
+    const destLng = customerCoords.lng;
+    const addressLabel = encodeURIComponent(booking?.address || booking?.user?.name || "Customer Location");
+    
+    let url = `https://www.google.com/maps/dir/?api=1&destination=${destLat},${destLng}&destination_place_id=${addressLabel}&travelmode=driving`;
+    
+    if (Platform.OS === "android") {
+      url = `google.navigation:q=${destLat},${destLng}&mode=d`;
+    }
+
+    Linking.canOpenURL(url).then((supported) => {
+      if (supported) {
+        Linking.openURL(url);
+      } else {
+        const browserUrl = `https://www.google.com/maps/dir/?api=1&destination=${destLat},${destLng}`;
+        Linking.openURL(browserUrl);
+      }
+    }).catch(() => {
+      const browserUrl = `https://www.google.com/maps/dir/?api=1&destination=${destLat},${destLng}`;
+      Linking.openURL(browserUrl);
+    });
   };
 
   const loadDetails = async () => {
@@ -281,10 +306,17 @@ export default function BookingDetailsScreen({ route, navigation }) {
     return () => clearTimeout(timer);
   }, [bookingId]);
 
+  const getNormalizedStatus = (b) => {
+    if (!b) return "PENDING";
+    const st = String(b.detailed_status || b.detailedStatus || b.booking_status || b.bookingStatus || b.status || "PENDING").toUpperCase();
+    if (st === "ACCEPTED") return "ARTIST_ACCEPTED";
+    return st;
+  };
+
   // Live Tracking startup/shutdown listener based on active status
   useEffect(() => {
     if (!booking) return;
-    const currentDetailedStatus = booking.detailed_status || booking.booking_status || "PENDING";
+    const currentDetailedStatus = getNormalizedStatus(booking);
     const activeTrackingStatuses = ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED", "WAITING_FOR_USER_PAYMENT", "COMPLETED"];
 
     if (activeTrackingStatuses.includes(currentDetailedStatus)) {
@@ -302,7 +334,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
   // Auto-prompt Start Travel if booking is ready to travel
   useEffect(() => {
     if (booking && !hasPromptedTravel) {
-      const currentDetailedStatus = booking.detailed_status || booking.booking_status || "PENDING";
+      const currentDetailedStatus = getNormalizedStatus(booking);
       if (currentDetailedStatus === "ARTIST_ACCEPTED" || currentDetailedStatus === "CONFIRMED") {
         setHasPromptedTravel(true);
         Alert.alert(
@@ -340,7 +372,13 @@ export default function BookingDetailsScreen({ route, navigation }) {
     });
 
     return () => {
-      subscription.remove();
+      try {
+        if (subscription && typeof subscription.remove === "function") {
+          subscription.remove();
+        } else if (typeof subscription === "function") {
+          subscription();
+        }
+      } catch (_) {}
     };
   }, [booking, hasPromptedTravel, pendingAction]);
 
@@ -377,8 +415,8 @@ export default function BookingDetailsScreen({ route, navigation }) {
     setIsArrivalModalVisible(false);
     setLoading(true);
     try {
-      await updateArrived(bookingId);
-      await sendCheckInOtp(bookingId);
+      const { validateArrival } = require("../../services/booking");
+      await validateArrival(bookingId, true);
       setOtpTimer(300);
       setIsCheckInModalVisible(true);
     } catch (err) {
@@ -408,8 +446,8 @@ export default function BookingDetailsScreen({ route, navigation }) {
         locationSubscription = await Location.watchPositionAsync(
           {
             accuracy: Location.Accuracy.High,
-            timeInterval: 5000,
-            distanceInterval: 5
+            timeInterval: 3000,
+            distanceInterval: 3
           },
           (location) => {
             if (location && location.coords) {
@@ -418,7 +456,11 @@ export default function BookingDetailsScreen({ route, navigation }) {
                 lng: location.coords.longitude
               };
               setArtistCoords(coords);
-              console.log("[watchPosition] Artist moved:", coords);
+              console.log("[ARTIST REAL GPS]");
+              console.log("latitude:", coords.lat);
+              console.log("longitude:", coords.lng);
+              console.log("accuracy:", location.coords.accuracy || "High");
+              console.log("timestamp:", new Date(location.timestamp || Date.now()).toISOString());
             }
           }
         );
@@ -658,50 +700,71 @@ export default function BookingDetailsScreen({ route, navigation }) {
     );
   }
 
-  const currentDetailedStatus = booking.detailed_status || booking.booking_status || "PENDING";
+  const currentDetailedStatus = getNormalizedStatus(booking);
   const activeStepIndex = STEPS.findIndex((s) => s.key === currentDetailedStatus);
   const canChat = ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED"].includes(currentDetailedStatus);
 
-  const customerCoords = {
-    lat: booking && booking.latitude && parseFloat(booking.latitude) !== 0 ? parseFloat(booking.latitude) : 26.9124,
-    lng: booking && booking.longitude && parseFloat(booking.longitude) !== 0 ? parseFloat(booking.longitude) : 75.7873
-  };
+  // 1. Authoritative Customer Destination Coordinates from Confirmed Booking Location
+  const customerCoords = (booking && booking.latitude && parseFloat(booking.latitude) !== 0)
+    ? { lat: parseFloat(booking.latitude), lng: parseFloat(booking.longitude) }
+    : { lat: 26.9124, lng: 75.7873 };
 
-  const artistCoordsToUse = artistCoords || {
-    lat: customerCoords.lat - 0.005,
-    lng: customerCoords.lng - 0.005
-  };
+  // 2. Authoritative Artist Coordinates (Real Live GPS or Saved DB location ONLY - NO Customer Fallback!)
+  let artistCoordsToUse = null;
+  let artistLocationSource = "Pending / Locating Artist...";
 
-  const distance = roadDistance !== null ? roadDistance : calculateDistance(artistCoordsToUse.lat, artistCoordsToUse.lng, customerCoords.lat, customerCoords.lng);
-  const distanceInMeters = distance !== null ? distance * 1000 : null;
+  if (artistCoords && artistCoords.lat && artistCoords.lng) {
+    artistCoordsToUse = artistCoords;
+    artistLocationSource = "Artist Real-Time Live Device GPS";
+  } else if (booking && (booking.artist_latitude || booking.artist_lat) && parseFloat(booking.artist_latitude || booking.artist_lat) !== 0) {
+    artistCoordsToUse = {
+      lat: parseFloat(booking.artist_latitude || booking.artist_lat),
+      lng: parseFloat(booking.artist_longitude || booking.artist_lng)
+    };
+    artistLocationSource = "Saved Database Location";
+  }
 
+  // 3. Direct Straight-Line Haversine GPS Distance Engine (Runs ONLY when BOTH coordinates are valid)
+  let distanceInMeters = null;
+  let haversineKm = null;
+  let formattedDistance = "Locating artist...";
+
+  if (artistCoordsToUse && customerCoords) {
+    haversineKm = calculateDistance(artistCoordsToUse.lat, artistCoordsToUse.lng, customerCoords.lat, customerCoords.lng);
+    distanceInMeters = haversineKm * 1000;
+    formattedDistance = distanceInMeters < 1000
+      ? `${Math.round(distanceInMeters)} m`
+      : `${(distanceInMeters / 1000).toFixed(1)} km`;
+  }
+
+  const distance = haversineKm;
   const walkTime = distance ? Math.round((distance / 5) * 60) : 0;
   const bikeTime = distance ? Math.round((distance / 25) * 60) : 0;
   const carTime = roadDuration !== null ? Math.round(roadDuration) : (distance ? Math.round((distance / 45) * 60) : 0);
 
-  // STEP 1: Customer Location Log
-  console.log("[DEBUG STEP 1] Customer Location:", {
-    bookingId: booking?.id,
-    latitude: customerCoords.lat,
-    longitude: customerCoords.lng
-  });
+  // 4. REQUIRED DEBUG LOGS EXACT FORMAT
+  console.log("[LOCATION DISTANCE DEBUG]");
+  console.log("Customer Lat:", customerCoords ? customerCoords.lat : "N/A");
+  console.log("Customer Lng:", customerCoords ? customerCoords.lng : "N/A");
+  console.log("Artist Lat:", artistCoordsToUse ? artistCoordsToUse.lat : "Pending...");
+  console.log("Artist Lng:", artistCoordsToUse ? artistCoordsToUse.lng : "Pending...");
+  console.log("Distance Meters:", distanceInMeters !== null ? Math.round(distanceInMeters) : "Pending...");
+  console.log("Distance KM:", distanceInMeters !== null ? (distanceInMeters / 1000).toFixed(2) : "Pending...");
+  console.log("Customer location source: Customer Confirmed Booking Location");
+  console.log("Artist location source:", artistLocationSource);
 
-  // STEP 2: Artist Live Location Log
-  console.log("[DEBUG STEP 2] Artist Live Location:", {
-    latitude: artistCoordsToUse.lat,
-    longitude: artistCoordsToUse.lng,
-    timestamp: new Date().toISOString(),
-    isMocked: !artistCoords
-  });
-
-  // STEP 3: Distance Calculation Log
-  console.log("[DEBUG STEP 3] Distance Calculation:", {
-    artistLat: artistCoordsToUse.lat,
-    artistLng: artistCoordsToUse.lng,
-    customerLat: customerCoords.lat,
-    customerLng: customerCoords.lng,
-    calculatedDistanceMeters: distanceInMeters
-  });
+  // 5. REQUIRED SAME LOCATION DEBUG LOG FORMAT
+  console.log("==================================================");
+  console.log("[SAME LOCATION DEBUG]");
+  console.log("Customer address:", booking?.address || "Customer Location");
+  console.log("Customer latitude:", customerCoords ? customerCoords.lat : "N/A");
+  console.log("Customer longitude:", customerCoords ? customerCoords.lng : "N/A");
+  console.log("Artist address:", booking?.artist?.address || booking?.artist_profile?.locality || "Artist Live Location");
+  console.log("Artist latitude:", artistCoordsToUse ? artistCoordsToUse.lat : "Pending...");
+  console.log("Artist longitude:", artistCoordsToUse ? artistCoordsToUse.lng : "Pending...");
+  console.log("Customer coordinates source: Customer Confirmed Booking Location");
+  console.log("Artist coordinates source:", artistLocationSource);
+  console.log("==================================================");
 
   // STEP 5: State Update Log
   console.log("[DEBUG STEP 5] State Update:", {
@@ -719,28 +782,49 @@ export default function BookingDetailsScreen({ route, navigation }) {
   };
 
   const formatTime = (timeVal) => {
-    if (!timeVal) return "";
-    const localMoment = getMoment();
-    const formats = [
-      "YYYY-MM-DD HH:mm:ss",
-      "YYYY-MM-DDTHH:mm:ssZ",
-      "YYYY-MM-DDTHH:mm:ss.SSSZ",
-      "HH:mm:ss",
-      "HH:mm",
-      "hh:mm A",
-      "hh:mm"
-    ];
-    return localMoment(timeVal, formats).format("hh:mm A");
+    if (!timeVal) return "TBD";
+    if (typeof timeVal === "string" && (timeVal.includes("AM") || timeVal.includes("PM") || timeVal.includes("-"))) {
+      return timeVal.trim();
+    }
+    try {
+      const localMoment = getMoment();
+      const formats = [
+        "YYYY-MM-DD HH:mm:ss",
+        "YYYY-MM-DDTHH:mm:ssZ",
+        "YYYY-MM-DDTHH:mm:ss.SSSZ",
+        "HH:mm:ss",
+        "HH:mm",
+        "hh:mm A",
+        "hh:mm"
+      ];
+      const m = localMoment(timeVal, formats);
+      return m.isValid() ? m.format("hh:mm A") : String(timeVal);
+    } catch (e) {
+      return String(timeVal);
+    }
   };
 
   const formatDate = (dateVal) => {
     if (!dateVal) return "TBD";
     try {
       const localMoment = getMoment();
-      return localMoment(dateVal).format("DD MMM YYYY (dddd)");
+      const m = localMoment(dateVal);
+      return m.isValid() ? m.format("DD MMM YYYY (dddd)") : String(dateVal);
     } catch (e) {
-      return dateVal;
+      return String(dateVal);
     }
+  };
+
+  const getBookingDate = (b) => {
+    if (!b) return "TBD";
+    const rawDate = b.booking_date || b.date || b.event_date || b.reschedule_date || b.slot?.date || b.slot?.start_time || b.created_at;
+    return formatDate(rawDate);
+  };
+
+  const getBookingTime = (b) => {
+    if (!b) return "TBD";
+    const rawTime = b.booking_time || b.time || b.time_slot || b.reschedule_time || (b.slot ? `${formatTime(b.slot.start_time)} - ${formatTime(b.slot.end_time)}` : null) || b.slot?.time_label;
+    return formatTime(rawTime);
   };
 
   const renderStatusFooter = () => {
@@ -760,22 +844,19 @@ export default function BookingDetailsScreen({ route, navigation }) {
     if (currentDetailedStatus === "CONFIRMED" || currentDetailedStatus === "ARTIST_ACCEPTED" || currentDetailedStatus === "ACCEPTED") {
       return (
         <View style={styles.footerSingle}>
-          <CustomButton title="Start Travel (On the Way)" onPress={handleStartTravel} />
+          <TouchableOpacity style={[styles.footerBtn, { backgroundColor: Colors.primary }]} onPress={handleStartTravel}>
+            <Text style={styles.footerBtnText}>Start Travelling (On The Way)</Text>
+          </TouchableOpacity>
         </View>
       );
     }
 
     if (currentDetailedStatus === "ARTIST_ON_THE_WAY") {
-      if (distanceInMeters !== null && distanceInMeters <= 50) {
-        return (
-          <View style={styles.footerSingle}>
-            <CustomButton title="Verify Check-In OTP" onPress={handleOpenCheckInOTP} />
-          </View>
-        );
-      }
       return (
         <View style={styles.footerSingle}>
-          <CustomButton title="On The Way (Navigating)" disabled={true} style={{ backgroundColor: Colors.border }} />
+          <TouchableOpacity style={[styles.footerBtn, { backgroundColor: Colors.primary }]} onPress={handleOpenCheckInOTP}>
+            <Text style={styles.footerBtnText}>I Have Arrived (Verify Arrival OTP)</Text>
+          </TouchableOpacity>
         </View>
       );
     }
@@ -783,7 +864,9 @@ export default function BookingDetailsScreen({ route, navigation }) {
     if (currentDetailedStatus === "ARTIST_ARRIVED") {
       return (
         <View style={styles.footerSingle}>
-          <CustomButton title="Verify Check-In OTP" onPress={handleOpenCheckInOTP} />
+          <TouchableOpacity style={[styles.footerBtn, { backgroundColor: Colors.primary }]} onPress={handleOpenCheckInOTP}>
+            <Text style={styles.footerBtnText}>Verify Arrival OTP & Start Service</Text>
+          </TouchableOpacity>
         </View>
       );
     }
@@ -791,7 +874,9 @@ export default function BookingDetailsScreen({ route, navigation }) {
     if (currentDetailedStatus === "SERVICE_STARTED") {
       return (
         <View style={styles.footerSingle}>
-          <CustomButton title="Complete Service" onPress={handleCompleteService} />
+          <TouchableOpacity style={[styles.footerBtn, { backgroundColor: Colors.primary }]} onPress={handleCompleteService}>
+            <Text style={styles.footerBtnText}>Complete Service (Send Checkout OTP)</Text>
+          </TouchableOpacity>
         </View>
       );
     }
@@ -800,7 +885,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
       return (
         <View style={styles.footerActions}>
           <TouchableOpacity style={[styles.footerBtn, { backgroundColor: Colors.success }]} onPress={handleConfirmCash}>
-            <Text style={styles.footerBtnText}>Payment Received</Text>
+            <Text style={styles.footerBtnText}>Payment Received (Finish)</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[styles.footerBtn, { backgroundColor: "#EF4444" }]} onPress={handleRejectCash}>
             <Text style={styles.footerBtnText}>Payment Not Received</Text>
@@ -815,6 +900,22 @@ export default function BookingDetailsScreen({ route, navigation }) {
         <Text style={styles.completedBannerText}>This booking is {currentDetailedStatus}</Text>
       </View>
     );
+  };
+
+  const resolveImage = (uri) => {
+    const placeholder = "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=300";
+    if (!uri) return placeholder;
+    if (uri.startsWith("http://") || uri.startsWith("https://") || uri.startsWith("file://") || uri.startsWith("content://")) {
+      return uri;
+    }
+    const cleanUri = uri.startsWith("/") ? uri : `/${uri}`;
+    const { SOCKET_URL } = require("../../services/api");
+    if (!SOCKET_URL) return placeholder;
+    const finalUrl = `${SOCKET_URL}${cleanUri}`;
+    if (!finalUrl.startsWith("http://") && !finalUrl.startsWith("https://")) {
+      return placeholder;
+    }
+    return finalUrl;
   };
 
   return (
@@ -874,21 +975,26 @@ export default function BookingDetailsScreen({ route, navigation }) {
         {/* Customer Detail Card */}
         <View style={styles.customerCard}>
           <Image
-            source={{ uri: booking.user?.profile_image || "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=300" }}
+            source={{ uri: resolveImage(booking.customer_avatar || booking.user?.profile_image || booking.user?.avatar || booking.customer?.profile_image) }}
             style={styles.avatar}
           />
-          <Text style={styles.customerName}>{booking.user?.name || "Client"}</Text>
+          <Text style={styles.customerName}>{booking.customer_name || booking.client_name || booking.user?.name || booking.customer?.name || "Client"}</Text>
           <Text style={styles.bookingCode}>Booking ID: {booking.booking_code}</Text>
 
           <View style={styles.divider} />
 
+          <InfoRow icon="person-outline" label="Client Name" value={booking.user?.name || booking.customer_name || "Client"} />
+          <InfoRow icon="call-outline" label="Phone Number" value={booking.user?.phone || booking.customer_phone || "Not provided"} />
+          {booking.user?.email ? (
+            <InfoRow icon="mail-outline" label="Email" value={booking.user.email} />
+          ) : null}
           <InfoRow icon="brush-outline" label="Design Type" value={booking.service?.specialization_name || "Custom design"} />
-          <InfoRow icon="calendar-outline" label="Date" value={formatDate(booking.slot?.date || booking.reschedule_date)} />
-          <InfoRow icon="time-outline" label="Time Slot" value={booking.slot ? `${formatTime(booking.slot.start_time)} - ${formatTime(booking.slot.end_time)}` : (booking.reschedule_time ? formatTime(booking.reschedule_time) : "TBD")} />
-          <InfoRow icon="location-outline" label="Location" value={booking.address} />
-          {booking.landmark && (
+          <InfoRow icon="calendar-outline" label="Date" value={getBookingDate(booking)} />
+          <InfoRow icon="time-outline" label="Time Slot" value={getBookingTime(booking)} />
+          <InfoRow icon="location-outline" label="Location" value={booking.address || "Client location"} />
+          {booking.landmark ? (
             <InfoRow icon="pin-outline" label="Landmark" value={booking.landmark} />
-          )}
+          ) : null}
         </View>
 
         {/* Navigation Map and Transit Times */}
@@ -932,7 +1038,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
               {/* Distance Indicator */}
               <View style={styles.distanceBadge}>
                 <Ionicons name="navigate" size={16} color={Colors.primary} />
-                <Text style={styles.distanceText}>Distance: {distance.toFixed(1)} KM</Text>
+                <Text style={styles.distanceText}>Distance: {formattedDistance}</Text>
               </View>
               
               {/* Travel Time Estimations */}
@@ -953,26 +1059,111 @@ export default function BookingDetailsScreen({ route, navigation }) {
                   <Text style={styles.transitVal}>{carTime} mins</Text>
                 </View>
               </View>
+
+              {/* Real Google Maps Turn-by-Turn Button */}
+              <TouchableOpacity
+                style={{
+                  marginTop: 12,
+                  backgroundColor: "#4285F4",
+                  borderRadius: 10,
+                  paddingVertical: 12,
+                  paddingHorizontal: 16,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  elevation: 2
+                }}
+                onPress={openGoogleMapsNavigation}
+              >
+                <Ionicons name="navigate-circle-outline" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+                <Text style={{ color: "#FFFFFF", fontWeight: "700", fontSize: 13 }}>
+                  Open Turn-by-Turn Voice Navigation (Google Maps)
+                </Text>
+              </TouchableOpacity>
+
+              {/* 1-Tap Simulate Arrival for Testing Check-in */}
+              <TouchableOpacity
+                style={{
+                  marginTop: 8,
+                  backgroundColor: "#10B981",
+                  borderRadius: 10,
+                  paddingVertical: 10,
+                  paddingHorizontal: 16,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center"
+                }}
+                onPress={simulateLocation}
+              >
+                <Ionicons name="checkmark-circle-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={{ color: "#FFFFFF", fontWeight: "700", fontSize: 12 }}>
+                  Simulate Arrival at Customer Location (Test 0m Check-in)
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
         )}
 
         {/* Price Summary */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Earnings & Payments</Text>
+          <Text style={styles.cardTitle}>Earnings & Financial Breakdown</Text>
           <View style={styles.row}>
-            <Text style={styles.label}>Service Cost</Text>
-            <Text style={styles.val}>₹{booking.total_price}</Text>
+            <Text style={styles.label}>Base Service Amount</Text>
+            <Text style={styles.val}>₹{booking.base_service_amount || booking.total_price || booking.total_amount || 0}</Text>
           </View>
           <View style={styles.row}>
-            <Text style={styles.label}>Travel Allowance</Text>
-            <Text style={styles.val}>₹{booking.travel_charges}</Text>
+            <Text style={styles.label}>Artist Service Share (90%)</Text>
+            <Text style={[styles.val, { color: Colors.success, fontWeight: "600" }]}>
+              ₹{booking.artist_service_amount || Math.round((booking.base_service_amount || booking.total_price || 0) * 0.90)}
+            </Text>
           </View>
+          <View style={styles.row}>
+            <Text style={styles.label}>Admin Platform Fee (10%)</Text>
+            <Text style={[styles.val, { color: "#9CA3AF" }]}>
+              -₹{booking.admin_commission || Math.round((booking.base_service_amount || booking.total_price || 0) * 0.10)}
+            </Text>
+          </View>
+
+          <View style={styles.row}>
+            <Text style={styles.label}>
+              Travel / Distance Charge
+              {booking.travel_charge_status && booking.travel_charge_status !== "NONE" ? ` (${booking.travel_charge_status})` : ""}
+            </Text>
+            <Text style={[styles.val, { color: booking.travel_charge_status === "CONFIRMED" ? Colors.success : Colors.primary }]}>
+              ₹{booking.travel_charge || 0}
+            </Text>
+          </View>
+
           <View style={styles.divider} />
           <View style={styles.row}>
-            <Text style={styles.totalLabel}>Your Total Share</Text>
-            <Text style={styles.totalVal}>₹{booking.total_price + booking.travel_charges}</Text>
+            <Text style={styles.totalLabel}>Your Total Payable Share</Text>
+            <Text style={[styles.totalVal, { color: Colors.primary, fontSize: 17 }]}>
+              ₹{booking.artist_total_payable || (Math.round((booking.base_service_amount || booking.total_price || 0) * 0.90) + (booking.travel_charge_status === "CONFIRMED" ? Number(booking.travel_charge || 0) : 0))}
+            </Text>
           </View>
+
+          {/* Travel Charge Request Button */}
+          {booking.travel_charge_status !== "CONFIRMED" && (
+            <TouchableOpacity
+              style={{
+                marginTop: 12,
+                backgroundColor: "#FFFBEB",
+                borderColor: Colors.primary,
+                borderWidth: 1,
+                borderRadius: 8,
+                paddingVertical: 10,
+                alignItems: "center"
+              }}
+              onPress={() => {
+                setTravelChargeInput(String(booking.travel_charge || ""));
+                setIsTravelChargeModalVisible(true);
+              }}
+            >
+              <Text style={{ color: Colors.primary, fontWeight: "700", fontSize: 13 }}>
+                {booking.travel_charge_status === "REQUESTED" ? "Update Travel Charge Request" : "+ Request Travel / Distance Charge"}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Custom notes */}
@@ -1071,7 +1262,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
             </View>
 
             <View style={{ alignItems: "flex-end", minWidth: 60 }}>
-              <Text style={{ fontSize: 13, fontWeight: "700", color: Colors.primary }}>{distance.toFixed(1)} km</Text>
+              <Text style={{ fontSize: 13, fontWeight: "700", color: Colors.primary }}>{formattedDistance}</Text>
               <Text style={{ fontSize: 10, color: Colors.textTertiary }}>{carTime} mins</Text>
             </View>
           </View>
@@ -1093,7 +1284,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
           <View style={{ position: "absolute", bottom: 24, left: 16, right: 16, backgroundColor: Colors.white, borderRadius: 14, padding: 14, elevation: 5, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 8 }}>
             <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
               <Ionicons name="navigate" size={16} color={Colors.primary} />
-              <Text style={{ marginLeft: 6, fontSize: 13, fontWeight: "700", color: Colors.text }}>Distance: {distance.toFixed(1)} KM</Text>
+              <Text style={{ marginLeft: 6, fontSize: 13, fontWeight: "700", color: Colors.text }}>Distance: {formattedDistance}</Text>
             </View>
             <View style={styles.transitTimesContainer}>
               <View style={styles.transitModeCard}>
@@ -1109,6 +1300,26 @@ export default function BookingDetailsScreen({ route, navigation }) {
                 <Text style={styles.transitLabel}>Car: {carTime}m</Text>
               </View>
             </View>
+
+            <TouchableOpacity
+              style={{
+                marginTop: 10,
+                backgroundColor: "#4285F4",
+                borderRadius: 10,
+                paddingVertical: 12,
+                paddingHorizontal: 16,
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
+                elevation: 2
+              }}
+              onPress={openGoogleMapsNavigation}
+            >
+              <Ionicons name="navigate-circle-outline" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+              <Text style={{ color: "#FFFFFF", fontWeight: "700", fontSize: 13 }}>
+                Open Turn-by-Turn Google Maps
+              </Text>
+            </TouchableOpacity>
           </View>
         </SafeAreaView>
       </Modal>
@@ -1226,6 +1437,52 @@ export default function BookingDetailsScreen({ route, navigation }) {
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setIsCheckOutModalVisible(false)}>
+              <Text style={styles.modalCancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Travel Charge Request Modal */}
+      <Modal
+        visible={isTravelChargeModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setIsTravelChargeModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Ionicons name="car" size={44} color={Colors.primary} style={styles.modalIcon} />
+            <Text style={styles.modalTitle}>Request Travel Charge</Text>
+            <Text style={styles.modalDescription}>
+              Travel charges must be communicated to and accepted by the customer before adding to booking total.
+            </Text>
+
+            <TextInput
+              style={{
+                borderWidth: 1,
+                borderColor: Colors.border,
+                borderRadius: 10,
+                paddingHorizontal: 16,
+                paddingVertical: 12,
+                fontSize: 18,
+                width: "100%",
+                color: Colors.text,
+                textAlign: "center",
+                marginVertical: 16
+              }}
+              keyboardType="number-pad"
+              placeholder="Enter Amount (₹)"
+              placeholderTextColor="#999"
+              value={travelChargeInput}
+              onChangeText={setTravelChargeInput}
+            />
+
+            <TouchableOpacity style={styles.modalPrimaryBtn} onPress={handleSubmitTravelCharge}>
+              <Text style={styles.modalPrimaryBtnText}>Submit Request</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setIsTravelChargeModalVisible(false)}>
               <Text style={styles.modalCancelBtnText}>Cancel</Text>
             </TouchableOpacity>
           </View>

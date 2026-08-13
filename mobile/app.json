@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "MehdiGo",
+    "name": "MehndiGo",
     "slug": "sonu-yadav",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "mehendigoo",
@@ -11,13 +11,14 @@
       "icon": "./assets/images/icon.png"
     },
     "android": {
-      "googleServicesFile": "./google-services.json",
+      "versionCode": 2,
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/images/icon.png"
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.sonuy123.mehendigoo",
+      "googleServicesFile": "./google-services.json",
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.ACCESS_COARSE_LOCATION",

@@ -26,7 +26,10 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
-// Handler for processing location updates
+let lastUpdateTimestamp = Date.now();
+let staleCheckInterval = null;
+
+// Handler for processing real-time location updates
 async function handleLocationUpdate(location) {
   try {
     if (!activeTrackingConfig) {
@@ -44,43 +47,45 @@ async function handleLocationUpdate(location) {
 
     const { bookingId, artistId } = activeTrackingConfig;
     const { coords, timestamp } = location;
-    const { latitude, longitude, heading, speed } = coords;
+    const { latitude, longitude, heading, speed, accuracy } = coords;
 
-    // Check if location has changed significantly
-    const lastLocStored = await AsyncStorage.getItem(LAST_LOC_KEY);
-    const lastLoc = lastLocStored ? JSON.parse(lastLocStored) : null;
+    lastUpdateTimestamp = timestamp || Date.now();
 
-    if (lastLoc) {
-      const dist = calculateDistance(lastLoc.latitude, lastLoc.longitude, latitude, longitude);
-      const timeDiff = timestamp - lastLoc.timestamp;
+    // 1. [ARTIST REAL GPS] Log
+    console.log("[ARTIST REAL GPS]");
+    console.log("latitude:", latitude);
+    console.log("longitude:", longitude);
+    console.log("accuracy:", accuracy || "High");
+    console.log("timestamp:", new Date(lastUpdateTimestamp).toISOString());
 
-      // Throttle: only update if distance > 10 meters (0.01 KM) OR if more than 30 seconds passed
-      if (dist < 0.01 && timeDiff < 30000) {
-        console.log(`[TrackingService] Throttle: Distance delta ${dist.toFixed(5)} KM, time delta ${(timeDiff / 1000).toFixed(1)}s. Skipping server update.`);
-        return;
-      }
-    }
-
-    // Call API endpoint
-    await updateArtistLocation({
+    // 2. Send API Update
+    const apiRes = await updateArtistLocation({
       bookingId: Number(bookingId),
       artistId: Number(artistId),
       latitude,
       longitude,
       heading: heading || 0,
       speed: speed || 0,
-      timestamp
+      timestamp: lastUpdateTimestamp
+    }).catch(err => {
+      console.warn("[ARTIST LOCATION API] Failed:", err.message);
+      return { success: false };
     });
 
-    console.log(`[TrackingService] Location updated successfully for Booking ${bookingId}: ${latitude}, ${longitude}`);
+    // 3. [ARTIST LOCATION API] Log
+    console.log("[ARTIST LOCATION API]");
+    console.log("latitude:", latitude);
+    console.log("longitude:", longitude);
+    console.log("timestamp:", new Date(lastUpdateTimestamp).toISOString());
+    console.log("success:", apiRes?.success ?? true);
 
-    // Update last sent location
+    // Update last sent location in storage
     await AsyncStorage.setItem(
       LAST_LOC_KEY,
       JSON.stringify({
         latitude,
         longitude,
-        timestamp
+        timestamp: lastUpdateTimestamp
       })
     );
   } catch (err) {
@@ -101,26 +106,44 @@ TaskManager.defineTask(TRACKING_TASK_NAME, async ({ data: { locations }, error }
 });
 
 /**
- * Start high-accuracy tracking on the Artist side.
- * Tries background location updates, falls back to foreground if unavailable.
+ * Start real-time high-accuracy GPS tracking on the Artist side.
+ * Production tracking uses REAL device GPS ONLY (No Mock Publisher).
  */
 export async function startTracking(bookingId, artistId) {
   try {
-    console.log(`[TrackingService] Starting location tracking for Booking ${bookingId}...`);
+    // Duplicate watcher guard: if watcher is already active for this booking, reuse it!
+    if (activeTrackingConfig && Number(activeTrackingConfig.bookingId) === Number(bookingId) && foregroundSubscription) {
+      console.log(`[TrackingService] Real GPS watcher already active for Booking ${bookingId}. Reusing existing watcher.`);
+      return;
+    }
 
-    // 1. Save config to memory & AsyncStorage
+    console.log(`[TrackingService] Starting REAL GPS tracking for Booking ${bookingId}...`);
+
+    // 1. Save config
     activeTrackingConfig = { bookingId, artistId };
     await AsyncStorage.setItem(CONFIG_KEY, JSON.stringify(activeTrackingConfig));
-    await AsyncStorage.removeItem(LAST_LOC_KEY); // Clear stale location comparison cache
+    await AsyncStorage.removeItem(LAST_LOC_KEY);
+
+    // Clear any mock intervals if running
+    if (mockInterval) {
+      clearInterval(mockInterval);
+      mockInterval = null;
+    }
 
     // 2. Check and Request Location permissions
     const { status: fgStatus } = await Location.requestForegroundPermissionsAsync();
+    const providerStatus = await Location.getProviderStatusAsync();
+
+    // [GPS STATUS] Log
+    console.log("[GPS STATUS]");
+    console.log("permission:", fgStatus);
+    console.log("locationServicesEnabled:", providerStatus.locationServicesEnabled || providerStatus.gpsEnabled);
+
     if (fgStatus !== "granted") {
-      throw new Error("Foreground location permission denied");
+      throw new Error("Location permission required for live tracking. Please grant permission.");
     }
 
-    const providerStatus = await Location.getProviderStatusAsync();
-    if (!providerStatus.gpsEnabled) {
+    if (!providerStatus.gpsEnabled && !providerStatus.locationServicesEnabled) {
       const { Platform } = require("react-native");
       if (Platform.OS === "android") {
         try {
@@ -129,52 +152,45 @@ export async function startTracking(bookingId, artistId) {
           console.warn("Failed to enable network provider:", providerErr.message);
         }
       }
+      const finalStatus = await Location.getProviderStatusAsync();
+      if (!finalStatus.gpsEnabled && !finalStatus.locationServicesEnabled) {
+        throw new Error("Please enable Location/GPS services on your device to start live tracking.");
+      }
     }
 
-    const finalStatus = await Location.getProviderStatusAsync();
-    if (!finalStatus.gpsEnabled || fgStatus !== "granted") {
-      console.warn("[TrackingService] GPS/Permissions disabled. Initializing Mock Location Publisher...");
-      if (foregroundSubscription) {
-        foregroundSubscription.remove();
-        foregroundSubscription = null;
-      }
-      if (mockInterval) {
-        clearInterval(mockInterval);
-      }
-
-      mockInterval = setInterval(async () => {
-        const mockLoc = {
-          coords: {
-            latitude: 26.9201 + (Math.random() - 0.5) * 0.01,
-            longitude: 75.7891 + (Math.random() - 0.5) * 0.01,
-            heading: Math.floor(Math.random() * 360),
-            speed: 15
-          },
-          timestamp: Date.now()
-        };
-        await handleLocationUpdate(mockLoc);
-      }, 5000);
-
-      return;
-    }
-
-    // 3. Start foreground watcher (updates every 5 seconds)
+    // 3. Start real-time foreground watcher (updates every 3 seconds / 3 meters)
     if (foregroundSubscription) {
-      foregroundSubscription.remove();
+      try {
+        if (typeof foregroundSubscription.remove === "function") {
+          foregroundSubscription.remove();
+        } else if (typeof foregroundSubscription === "function") {
+          foregroundSubscription();
+        }
+      } catch (_) {}
+      foregroundSubscription = null;
     }
 
     foregroundSubscription = await Location.watchPositionAsync(
       {
         accuracy: Location.Accuracy.High,
-        timeInterval: 5000,
-        distanceInterval: 5
+        timeInterval: 3000,
+        distanceInterval: 3
       },
       async (location) => {
         await handleLocationUpdate(location);
       }
     );
 
-    // 4. Try starting background tracking
+    // Start Stale Location Watcher
+    if (staleCheckInterval) clearInterval(staleCheckInterval);
+    staleCheckInterval = setInterval(() => {
+      const elapsed = (Date.now() - lastUpdateTimestamp) / 1000;
+      if (elapsed > 20 && activeTrackingConfig) {
+        console.warn(`[ARTIST GPS STALE] Warning: No new real GPS update received for ${Math.round(elapsed)}s.`);
+      }
+    }, 10000);
+
+    // 4. Try starting background tracking if permissions allow
     try {
       const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
       if (bgStatus === "granted") {
@@ -185,20 +201,18 @@ export async function startTracking(bookingId, artistId) {
 
         await Location.startLocationUpdatesAsync(TRACKING_TASK_NAME, {
           accuracy: Location.Accuracy.High,
-          timeInterval: 5000,
-          distanceInterval: 5,
+          timeInterval: 3000,
+          distanceInterval: 3,
           foregroundService: {
-            notificationTitle: "MehendiGo Location Sharing",
-            notificationBody: "Sharing your live location with the customer.",
+            notificationTitle: "MehndiGo Location Sharing",
+            notificationBody: "Sharing your live GPS location with customer.",
             notificationColor: "#FF4D6D"
           }
         });
-        console.log("[TrackingService] Background location updates started successfully.");
-      } else {
-        console.log("[TrackingService] Background permission not granted. Running in foreground-only mode.");
+        console.log("[TrackingService] Background real GPS tracking started successfully.");
       }
     } catch (bgErr) {
-      console.warn("[TrackingService] Background location sharing failed initialization:", bgErr.message);
+      console.log("[TrackingService] Running in high-accuracy foreground tracking mode.");
     }
   } catch (err) {
     console.error("[TrackingService] startTracking failed:", err.message);
@@ -217,7 +231,15 @@ export async function stopTracking() {
     await AsyncStorage.removeItem(LAST_LOC_KEY);
 
     if (foregroundSubscription) {
-      foregroundSubscription.remove();
+      try {
+        if (typeof foregroundSubscription.remove === "function") {
+          foregroundSubscription.remove();
+        } else if (typeof foregroundSubscription === "function") {
+          foregroundSubscription();
+        }
+      } catch (subErr) {
+        console.log("[TrackingService] Subscription removal catch:", subErr.message);
+      }
       foregroundSubscription = null;
     }
 

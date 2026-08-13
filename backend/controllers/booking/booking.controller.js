@@ -112,7 +112,10 @@ async function rescheduleBooking(req, res) {
 
 async function acceptBooking(req, res) {
   try {
-    const { bookingId } = req.body;
+    const bookingId = req.body.bookingId || req.body.booking_id || req.body.id;
+    if (!bookingId) {
+      return res.status(400).json(ErrorResponse("bookingId is required"));
+    }
     const response = await BookingService.updateBookingStatus(bookingId, req.user.id, req.user.role, "ARTIST_ACCEPTED");
     return res.status(200).json(SuccessResponse("Booking accepted successfully", response));
   } catch (error) {
@@ -124,8 +127,12 @@ async function acceptBooking(req, res) {
 
 async function rejectBooking(req, res) {
   try {
-    const { bookingId, rejectReason } = req.body;
-    const response = await BookingService.updateBookingStatus(bookingId, req.user.id, req.user.role, "CANCELLED", { cancelReason: rejectReason || "Rejected by artist" });
+    const bookingId = req.body.bookingId || req.body.booking_id || req.body.id;
+    const { rejectReason, cancelReason } = req.body;
+    if (!bookingId) {
+      return res.status(400).json(ErrorResponse("bookingId is required"));
+    }
+    const response = await BookingService.updateBookingStatus(bookingId, req.user.id, req.user.role, "CANCELLED", { cancelReason: rejectReason || cancelReason || "Rejected by artist" });
     return res.status(200).json(SuccessResponse("Booking rejected successfully", response));
   } catch (error) {
     return res

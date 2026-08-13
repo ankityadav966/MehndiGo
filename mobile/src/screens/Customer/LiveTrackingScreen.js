@@ -13,11 +13,11 @@ export default function LiveTrackingScreen({ route, navigation }) {
   const { socket, connected } = useSocket();
 
   const [booking, setBooking] = useState(null);
-  const [artistCoords, setArtistCoords] = useState({ latitude: 26.9224, longitude: 75.7973 });
-  const [customerCoords, setCustomerCoords] = useState({ latitude: 26.9124, longitude: 75.7873 });
-  const [etaText, setEtaText] = useState("Arriving in 15 mins");
-  const [distanceText, setDistanceText] = useState("1.8 km away");
-  const [artistStatus, setArtistStatus] = useState("On the way");
+  const [artistCoords, setArtistCoords] = useState(null);
+  const [customerCoords, setCustomerCoords] = useState(null);
+  const [etaText, setEtaText] = useState("Calculating ETA...");
+  const [distanceText, setDistanceText] = useState("Waiting for location");
+  const [artistStatus, setArtistStatus] = useState("Waiting for artist live location");
 
   const mapRef = useRef(null);
 
@@ -35,11 +35,25 @@ export default function LiveTrackingScreen({ route, navigation }) {
               longitude: Number(details.longitude),
             });
           }
-          if (details.artist?.latitude && details.artist?.longitude) {
+        }
+
+        const { getArtistLocation } = require("../../services/booking");
+        const locData = await getArtistLocation(bookingId);
+        if (locData) {
+          if (locData.latitude && locData.longitude) {
             setArtistCoords({
-              latitude: Number(details.artist.latitude),
-              longitude: Number(details.artist.longitude),
+              latitude: Number(locData.latitude),
+              longitude: Number(locData.longitude),
             });
+          }
+          if (locData.distance_text || locData.distanceText) {
+            setDistanceText(locData.distance_text || locData.distanceText);
+          }
+          if (locData.eta_text || locData.etaText) {
+            setEtaText(locData.eta_text || locData.etaText);
+          }
+          if (locData.tracking_status) {
+            setArtistStatus(locData.tracking_status);
           }
         }
       } catch (e) {
@@ -130,33 +144,39 @@ export default function LiveTrackingScreen({ route, navigation }) {
         provider={PROVIDER_DEFAULT}
         style={styles.map}
         initialRegion={{
-          latitude: (customerCoords.latitude + artistCoords.latitude) / 2,
-          longitude: (customerCoords.longitude + artistCoords.longitude) / 2,
+          latitude: (customerCoords?.latitude || artistCoords?.latitude || 20.5937),
+          longitude: (customerCoords?.longitude || artistCoords?.longitude || 78.9629),
           latitudeDelta: 0.04,
           longitudeDelta: 0.04,
         }}
       >
         {/* Customer Location Marker */}
-        <Marker coordinate={customerCoords} title="Your Location" description="Service Address">
-          <View style={styles.customerMarkerPin}>
-            <Ionicons name="home" size={16} color="#FFFFFF" />
-          </View>
-        </Marker>
+        {customerCoords?.latitude && customerCoords?.longitude && (
+          <Marker coordinate={customerCoords} title="Your Location" description="Service Address">
+            <View style={styles.customerMarkerPin}>
+              <Ionicons name="home" size={16} color="#FFFFFF" />
+            </View>
+          </Marker>
+        )}
 
         {/* Artist Live GPS Marker */}
-        <Marker coordinate={artistCoords} title={booking?.artist?.user?.name || "Artist"} description={artistStatus}>
-          <View style={styles.artistMarkerPin}>
-            <Ionicons name="bicycle" size={18} color="#FFFFFF" />
-          </View>
-        </Marker>
+        {artistCoords?.latitude && artistCoords?.longitude && (
+          <Marker coordinate={artistCoords} title={booking?.artist_name || booking?.artist?.user?.name || "Artist"} description={artistStatus}>
+            <View style={styles.artistMarkerPin}>
+              <Ionicons name="bicycle" size={18} color="#FFFFFF" />
+            </View>
+          </Marker>
+        )}
 
         {/* Route Line Polyline */}
-        <Polyline
-          coordinates={[customerCoords, artistCoords]}
-          strokeColor={Colors.primary || "#9C1344"}
-          strokeWidth={4}
-          lineDashPattern={[1]}
-        />
+        {customerCoords?.latitude && customerCoords?.longitude && artistCoords?.latitude && artistCoords?.longitude && (
+          <Polyline
+            coordinates={[customerCoords, artistCoords]}
+            strokeColor={Colors.primary || "#9C1344"}
+            strokeWidth={4}
+            lineDashPattern={[1]}
+          />
+        )}
       </MapView>
 
       {/* Bottom Floating Info Card */}

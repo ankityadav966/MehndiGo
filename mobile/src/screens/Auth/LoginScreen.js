@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -15,10 +15,16 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import { sendOtp } from "../../services/auth";
 
-export default function LoginScreen({ navigation }) {
-  const [email, setEmail] = useState("");
+export default function LoginScreen({ navigation, route }) {
+  const [email, setEmail] = useState(route?.params?.email || "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (route?.params?.email) {
+      setEmail(route.params.email);
+    }
+  }, [route?.params?.email]);
 
   const handleContinue = async () => {
     setError("");
@@ -41,15 +47,13 @@ export default function LoginScreen({ navigation }) {
       const data = res?.data || res;
 
       if (data) {
-        console.log("[AUTH DEBUG] Login OTP send success - existing user found:", data.role);
-        const otp = data.otp ? String(data.otp) : "";
-        Alert.alert("Verification OTP", `OTP has been sent to your email. (Dev code: ${otp})`);
+        console.log(`[OTP DISPATCH SUCCESS] Real OTP sent to email: ${trimmedEmail}`);
+        Alert.alert("Verification Code Sent 📩", `A 6-digit verification code has been sent to ${trimmedEmail}. Please check your email inbox to continue.`);
         navigation.navigate("Otp", {
           email: trimmedEmail,
           role: data.role || "USER",
           isRegistering: false,
           flow: "LOGIN",
-          otp,
         });
       }
     } catch (e) {

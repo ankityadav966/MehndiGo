@@ -3,7 +3,7 @@ import { Image, View, StyleSheet, ActivityIndicator } from "react-native";
 import { getThumbnailUrl } from "../utils/cloudinary";
 import Colors from "../constants/Colors";
 
-const DEFAULT_PLACEHOLDER = "https://mehandigo-api.globalrns.com/logo.png";
+const DEFAULT_PLACEHOLDER = "https://ui-avatars.com/api/?name=MehndiGo&background=F3E8FF&color=7C3AED";
 
 /**
  * 60 FPS Fast Image Component with dynamic Cloudinary thumbnailing,
@@ -19,13 +19,15 @@ function OptimizedImage({
   ...props
 }) {
   const [loading, setLoading] = useState(false);
+  const [useRawOriginal, setUseRawOriginal] = useState(false);
   const [hasError, setHasError] = useState(false);
 
-  let rawUri = typeof source === "object" && source?.uri ? source.uri : typeof source === "string" ? source : null;
+  const initialUri = typeof source === "object" && source?.uri ? source.uri : typeof source === "string" ? source : null;
+  let rawUri = initialUri;
 
   if (hasError || !rawUri) {
     rawUri = fallbackUri;
-  } else if (typeof rawUri === "string" && rawUri.includes("cloudinary.com")) {
+  } else if (!useRawOriginal && typeof rawUri === "string" && rawUri.includes("cloudinary.com")) {
     rawUri = getThumbnailUrl(rawUri, width, height);
   }
 
@@ -38,14 +40,22 @@ function OptimizedImage({
         source={imageSource}
         style={[style, styles.imageFix]}
         resizeMode={resizeMode}
-        onLoadStart={() => setLoading(true)}
+        onLoadStart={() => {
+          if (!hasError) setLoading(true);
+        }}
+        onLoad={() => setLoading(false)}
         onLoadEnd={() => setLoading(false)}
-        onError={() => {
+        onError={(err) => {
+          console.warn("[OptimizedImage] Image load error for:", rawUri, err?.nativeEvent?.error);
           setLoading(false);
-          setHasError(true);
+          if (!useRawOriginal && initialUri && typeof initialUri === "string" && initialUri.includes("cloudinary.com")) {
+            setUseRawOriginal(true);
+          } else {
+            setHasError(true);
+          }
         }}
       />
-      {loading && (
+      {loading && !hasError && (
         <View style={[StyleSheet.absoluteFill, styles.loadingOverlay]}>
           <ActivityIndicator size="small" color={Colors.primary} />
         </View>

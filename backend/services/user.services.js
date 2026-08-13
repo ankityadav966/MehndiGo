@@ -143,35 +143,25 @@ class UserService {
     const cleanOtp = String(otp).trim();
 
     let otpData = null;
-    if (cleanOtp === "123456") {
+    if (trimmedEmail) {
       otpData = await OtpRepositor.getLatestOtp({
-        [Op.or]: [
-          ...(trimmedEmail ? [{ email: trimmedEmail }] : []),
-          ...(sanitizedPhone ? [{ phone: sanitizedPhone }] : [])
-        ],
+        email: trimmedEmail,
+        otp: cleanOtp,
         verified: false,
       });
-    } else {
-      if (trimmedEmail) {
-        otpData = await OtpRepositor.getLatestOtp({
-          email: trimmedEmail,
-          otp: cleanOtp,
-          verified: false,
-        });
-      }
-      if (!otpData && sanitizedPhone) {
-        otpData = await OtpRepositor.getLatestOtp({
-          phone: sanitizedPhone,
-          otp: cleanOtp,
-          verified: false,
-        });
-      }
-      if (!otpData) {
-        otpData = await OtpRepositor.getLatestOtp({
-          otp: cleanOtp,
-          verified: false,
-        });
-      }
+    }
+    if (!otpData && sanitizedPhone) {
+      otpData = await OtpRepositor.getLatestOtp({
+        phone: sanitizedPhone,
+        otp: cleanOtp,
+        verified: false,
+      });
+    }
+    if (!otpData) {
+      otpData = await OtpRepositor.getLatestOtp({
+        otp: cleanOtp,
+        verified: false,
+      });
     }
 
     if (!otpData) {
@@ -329,34 +319,30 @@ class UserService {
 
     let otpData = null;
 
-    if (cleanOtp === "123456") {
-      otpData = await OtpRepositor.getLatestOtp({ verified: false });
-    } else {
-      if (user) {
-        otpData = await OtpRepositor.getLatestOtp({
-          user_id: user.id,
-          otp: cleanOtp,
-          verified: false,
-        });
-      }
+    if (user) {
+      otpData = await OtpRepositor.getLatestOtp({
+        user_id: user.id,
+        otp: cleanOtp,
+        verified: false,
+      });
+    }
 
-      if (!otpData && cleaned) {
-        otpData = await OtpRepositor.getLatestOtp({
-          [Op.or]: [
-            ...(isEmail ? [{ email: cleaned.toLowerCase() }] : []),
-            { phone: this.sanitizePhone(cleaned) }
-          ],
-          otp: cleanOtp,
-          verified: false,
-        });
-      }
+    if (!otpData && cleaned) {
+      otpData = await OtpRepositor.getLatestOtp({
+        [Op.or]: [
+          ...(isEmail ? [{ email: cleaned.toLowerCase() }] : []),
+          { phone: this.sanitizePhone(cleaned) }
+        ],
+        otp: cleanOtp,
+        verified: false,
+      });
+    }
 
-      if (!otpData) {
-        otpData = await OtpRepositor.getLatestOtp({
-          otp: cleanOtp,
-          verified: false,
-        });
-      }
+    if (!otpData) {
+      otpData = await OtpRepositor.getLatestOtp({
+        otp: cleanOtp,
+        verified: false,
+      });
     }
 
     if (!otpData) {

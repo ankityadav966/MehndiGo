@@ -27,21 +27,21 @@ function ArtistProfileHeader({ profile, isFav, onToggleFavorite, onShare, onBack
 
       <View style={styles.heroRow}>
         <OptimizedImage
-          source={{ uri: profile_image || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400" }}
+          source={{ uri: profile_image || `https://ui-avatars.com/api/?name=${encodeURIComponent(name || "Artist")}&background=F3E8FF&color=7C3AED` }}
           style={styles.avatar}
           width={100}
           height={100}
         />
         <View style={styles.heroInfo}>
           <Text style={styles.name} numberOfLines={1}>{name || "Mehndi Artist"}</Text>
-          <Text style={styles.location}>📍 {city || "Jaipur"}, {state || "Rajasthan"}</Text>
+          <Text style={styles.location}>📍 {city ? `${city}${state ? `, ${state}` : ""}` : "Location on Request"}</Text>
           <View style={styles.badgeRow}>
             <View style={styles.badge}>
               <Ionicons name="star" size={12} color="#FFB800" />
-              <Text style={styles.badgeText}>{Number(avg_rating || 4.9).toFixed(1)} ({total_reviews || 0})</Text>
+              <Text style={styles.badgeText}>{avg_rating ? `${Number(avg_rating).toFixed(1)} (${total_reviews || 0})` : "New Artist"}</Text>
             </View>
             <View style={styles.badge}>
-              <Text style={styles.badgeText}>{experience_years || 2}+ Yrs Exp</Text>
+              <Text style={styles.badgeText}>{experience_years ? `${experience_years} Yrs Exp` : "Fresh Artist"}</Text>
             </View>
             <View style={styles.badge}>
               <Text style={styles.badgeText}>{total_bookings || 0} Bookings</Text>

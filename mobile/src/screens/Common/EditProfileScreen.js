@@ -22,6 +22,8 @@ import { getCustomerProfile, updateCustomerProfile } from "../../services/custom
 import { getArtistDetails, updateArtistProfileDetails, uploadPortfolioMedia } from "../../services/artist";
 import { secureStorage } from "../../utils/storage";
 
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
 export default function EditProfileScreen({ navigation }) {
   const { user, dispatch } = useAuth();
   const isArtist = user?.role === "ARTIST";
@@ -43,6 +45,8 @@ export default function EditProfileScreen({ navigation }) {
   const [location, setLocation] = useState("");
   const [pincode, setPincode] = useState("");
   const [languages, setLanguages] = useState("");
+  const [instagramHandle, setInstagramHandle] = useState("");
+  const [facebookHandle, setFacebookHandle] = useState("");
 
   const resolveImage = (uri) => {
     const placeholder = "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=300";
@@ -76,6 +80,13 @@ export default function EditProfileScreen({ navigation }) {
         setState(data.state || "");
         setPincode(data.pincode || "");
         setLanguages(data.languages || "");
+
+        if (user?.id) {
+          const insta = await AsyncStorage.getItem(`@mehndigo_insta_${user.id}`);
+          if (insta) setInstagramHandle(insta);
+          const fb = await AsyncStorage.getItem(`@mehndigo_fb_${user.id}`);
+          if (fb) setFacebookHandle(fb);
+        }
       } else {
         const data = await getCustomerProfile();
         setFullName(data.name || "");
@@ -113,7 +124,9 @@ export default function EditProfileScreen({ navigation }) {
     });
 
     if (!result.canceled && result.assets && result.assets.length > 0) {
-      setAvatarUri(result.assets[0].uri);
+      const uri = result.assets[0].uri;
+      console.log('[PICKED PROFILE IMAGE]', uri);
+      setAvatarUri(uri);
     }
   };
 
@@ -154,19 +167,23 @@ export default function EditProfileScreen({ navigation }) {
     try {
       let uploadedUrl = null;
       // If photo was changed (local file scheme)
-      if (avatarUri && (avatarUri.startsWith("file://") || avatarUri.startsWith("content://"))) {
+      if (avatarUri && (avatarUri.startsWith("file://") || avatarUri.startsWith("content://") || avatarUri.startsWith("ph://") || avatarUri.startsWith("assets-library://") || avatarUri.startsWith("/"))) {
+        console.log('[CLOUDINARY UPLOAD START]');
         const uploadResult = await uploadPortfolioMedia([{ uri: avatarUri }]);
+        console.log('[CLOUDINARY UPLOAD RESPONSE]', uploadResult);
         if (uploadResult && uploadResult.length > 0) {
           uploadedUrl = uploadResult[0].url;
+          console.log('[CLOUDINARY SECURE URL]', uploadedUrl);
         }
       }
 
       const finalAvatar = uploadedUrl || avatarUri;
 
       if (isArtist) {
-        await updateArtistProfileDetails({
+        console.log('[ARTIST PROFILE UPDATE PAYLOAD]', {
           name: fullName.trim(),
-          profileImage: finalAvatar,
+          profile_image: finalAvatar,
+          avatar: finalAvatar,
           bio: bio.trim(),
           experience_years: experience.trim() ? Number(experience) : undefined,
           location: location.trim(),
@@ -176,6 +193,35 @@ export default function EditProfileScreen({ navigation }) {
           languages: languages.trim(),
           phone: cleanPhone,
         });
+        const updateResponse = await updateArtistProfileDetails({
+          name: fullName.trim(),
+          profile_image: finalAvatar,
+          avatar: finalAvatar,
+          bio: bio.trim(),
+          experience_years: experience.trim() ? Number(experience) : undefined,
+          location: location.trim(),
+          city: city.trim(),
+          state: state.trim(),
+          pincode: pincode.trim() || undefined,
+          languages: languages.trim(),
+          phone: cleanPhone,
+        });
+        console.log('[ARTIST PROFILE UPDATE RESPONSE]', updateResponse);
+
+        if (user?.id) {
+          const cleanInsta = instagramHandle.trim().replace("@", "");
+          if (cleanInsta) {
+            await AsyncStorage.setItem(`@mehndigo_insta_${user.id}`, cleanInsta);
+          } else {
+            await AsyncStorage.removeItem(`@mehndigo_insta_${user.id}`);
+          }
+          const cleanFb = facebookHandle.trim().replace("@", "");
+          if (cleanFb) {
+            await AsyncStorage.setItem(`@mehndigo_fb_${user.id}`, cleanFb);
+          } else {
+            await AsyncStorage.removeItem(`@mehndigo_fb_${user.id}`);
+          }
+        }
       } else {
         await updateCustomerProfile({
           name: fullName.trim(),
@@ -415,6 +461,40 @@ export default function EditProfileScreen({ navigation }) {
                     onChangeText={setLanguages}
                     placeholder="Languages spoken"
                     placeholderTextColor={Colors.textTertiary}
+                    style={styles.input}
+                  />
+                </View>
+
+                <Text style={styles.label}>Instagram Username / Handle</Text>
+                <View style={styles.inputContainer}>
+                  <Ionicons
+                    name="logo-instagram"
+                    size={20}
+                    color="#E1306C"
+                  />
+                  <TextInput
+                    value={instagramHandle}
+                    onChangeText={setInstagramHandle}
+                    placeholder="e.g. username"
+                    placeholderTextColor={Colors.textTertiary}
+                    autoCapitalize="none"
+                    style={styles.input}
+                  />
+                </View>
+
+                <Text style={styles.label}>Facebook Handle / Profile URL</Text>
+                <View style={styles.inputContainer}>
+                  <Ionicons
+                    name="logo-facebook"
+                    size={20}
+                    color="#1877F2"
+                  />
+                  <TextInput
+                    value={facebookHandle}
+                    onChangeText={setFacebookHandle}
+                    placeholder="e.g. username or profile link"
+                    placeholderTextColor={Colors.textTertiary}
+                    autoCapitalize="none"
                     style={styles.input}
                   />
                 </View>

@@ -1,6 +1,7 @@
 import { Platform } from "react-native";
 import { secureStorage } from "../utils/storage";
-import apiRequest from "./api";
+import apiRequest, { BASE_URL } from "./api";
+import { removeNotificationToken } from "./notification";
 
 export function useGoogleAuth() {
   return {
@@ -79,11 +80,17 @@ export function sanitizePhone(phone) {
   return cleaned;
 }
 
-export async function sendOtp(nameOrEmail, emailParam, phone, role) {
-  console.log("Sending OTP request:", { nameOrEmail, emailParam, phone, role });
+const maskEmail = (emailStr) => {
+  if (!emailStr || !emailStr.includes("@")) return "***";
+  const [userPart, domainPart] = emailStr.split("@");
+  if (userPart.length <= 2) return `${userPart[0]}***@${domainPart}`;
+  return `${userPart[0]}***${userPart[userPart.length - 1]}@${domainPart}`;
+};
+
+export async function sendOtp(emailOrPhone, emailParam, phone, role) {
   let targetEmail = "";
-  if (typeof nameOrEmail === "string" && nameOrEmail.includes("@")) {
-    targetEmail = nameOrEmail.trim().toLowerCase();
+  if (typeof emailOrPhone === "string" && emailOrPhone.includes("@")) {
+    targetEmail = emailOrPhone.trim().toLowerCase();
   } else if (emailParam && String(emailParam).trim().length > 0) {
     targetEmail = String(emailParam).trim().toLowerCase();
   } else {
@@ -91,28 +98,51 @@ export async function sendOtp(nameOrEmail, emailParam, phone, role) {
     targetEmail = sanitized ? `${sanitized}@gmail.com` : "user@mehndigo.com";
   }
 
-  const data = await apiRequest("POST", "/api/v1/mehndigo/user/send-otp", {
-    email: targetEmail,
-    phone: phone ? sanitizePhone(phone) : null,
-    role: role === "CUSTOMER" ? "USER" : role,
-  });
-  return data;
+  const endpoint = "/api/v1/mehndigo/user/send-otp";
+  console.log("[OTP] API BASE URL:", BASE_URL);
+  console.log("[OTP] REQUEST ENDPOINT:", endpoint);
+  console.log("[OTP] EMAIL MASKED:", maskEmail(targetEmail));
+
+  try {
+    const data = await apiRequest("POST", endpoint, {
+      email: targetEmail,
+    });
+    console.log("[OTP] RESPONSE STATUS: 200");
+    console.log("[OTP] RESPONSE MESSAGE:", data?.message || "OTP Sent Successfully");
+    return data;
+  } catch (err) {
+    console.log("[OTP] RESPONSE STATUS:", err?.response?.status || 500);
+    console.log("[OTP] RESPONSE MESSAGE:", err?.response?.data?.message || err.message);
+    throw err;
+  }
 }
 
 export async function registerSendOtp(name, email, phone, role) {
-  console.log("Sending register OTP request:", { name, email, phone, role });
   const sanitized = sanitizePhone(phone);
   const targetEmail = (email && String(email).trim().length > 0)
     ? String(email).trim().toLowerCase()
     : (sanitized ? `${sanitized}@gmail.com` : "user@mehndigo.com");
 
-  const data = await apiRequest("POST", "/api/v1/mehndigo/user/register-send-otp", {
-    name: name || "User",
-    email: targetEmail,
-    phone: sanitized || phone || null,
-    role: role === "CUSTOMER" ? "USER" : role,
-  });
-  return data;
+  const endpoint = "/api/v1/mehndigo/user/register-send-otp";
+  console.log("[OTP] API BASE URL:", BASE_URL);
+  console.log("[OTP] REQUEST ENDPOINT:", endpoint);
+  console.log("[OTP] EMAIL MASKED:", maskEmail(targetEmail));
+
+  try {
+    const data = await apiRequest("POST", endpoint, {
+      name: name || "User",
+      email: targetEmail,
+      phone: sanitized || phone || null,
+      role: role === "CUSTOMER" ? "USER" : role,
+    });
+    console.log("[OTP] RESPONSE STATUS: 200");
+    console.log("[OTP] RESPONSE MESSAGE:", data?.message || "Registration OTP Sent Successfully");
+    return data;
+  } catch (err) {
+    console.log("[OTP] RESPONSE STATUS:", err?.response?.status || 500);
+    console.log("[OTP] RESPONSE MESSAGE:", err?.response?.data?.message || err.message);
+    throw err;
+  }
 }
 
 export async function registerVerifyOtp(email, otp, name, phone, role) {
@@ -204,12 +234,8 @@ export async function refreshAccessToken() {
 
 export async function signOut() {
   try {
-    const notificationToken = await secureStorage.getNotificationToken();
-    if (notificationToken) {
-      await apiRequest("POST", "/auth/remove-notification-token", {
-        token: notificationToken,
-      }, true);
-    }
+    await removeNotificationToken();
   } catch (_) {}
   await secureStorage.clearAll();
 }
+

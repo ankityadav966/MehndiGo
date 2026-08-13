@@ -196,6 +196,18 @@ module.exports = (
         type: DataTypes.STRING,
         allowNull: true,
       },
+
+      is_featured: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
+
+      featured_priority: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+      },
     },
     {
       sequelize,

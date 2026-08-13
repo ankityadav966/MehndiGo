@@ -21,6 +21,7 @@ import Colors from "../../constants/Colors";
 import LoadingSkeleton from "../../components/LoadingSkeleton";
 import OptimizedImage from "../../components/OptimizedImage";
 import { useAuth } from "../../context/AuthContext";
+import { useNotifications } from "../../context/NotificationContext";
 
 import {
   getHomeDashboard,
@@ -41,62 +42,29 @@ import {
   checkSmartLocationChange,
   reverseGeocodeCoords,
 } from "../../utils/locationManager";
-import * as Location from "expo-location";
-import Alert from "../../utils/Alert";
-
+import { getActiveFestivalOffers } from "../../utils/festivalEngine";
+import { copyAndSaveCoupon } from "../../utils/couponManager";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
-const DEFAULT_BANNERS = [
-  {
-    id: 1,
-    title: "Bridal Season Special",
-    subtitle: "25% OFF on Premium Packages",
-    description: "Full Arm & Leg Royal Dulhan Patterns with FREE Touchup Kit",
-    discount: "25% OFF",
-    image: "https://images.unsplash.com/photo-1610189012906-799d10787a71?auto=format&fit=crop&w=800&q=80",
-    image_url: "https://images.unsplash.com/photo-1610189012906-799d10787a71?auto=format&fit=crop&w=800&q=80"
-  },
-  {
-    id: 2,
-    title: "Festive Collection 2026",
-    subtitle: "Book Top Rated Artists from ₹499",
-    description: "Trendsetting Engagement & Sangeet party henna designs at home",
-    discount: "FLAT ₹499",
-    image: "https://images.unsplash.com/photo-1596704017254-9b121068fb31?auto=format&fit=crop&w=800&q=80",
-    image_url: "https://images.unsplash.com/photo-1596704017254-9b121068fb31?auto=format&fit=crop&w=800&q=80"
-  },
-  {
-    id: 3,
-    title: "Arabic & Floral Henna",
-    subtitle: "Exclusive Modern Arabic Styles",
-    description: "Bold flowing vines & shaded mandala motifs by certified experts",
-    discount: "SPECIAL 20%",
-    image: "https://images.unsplash.com/photo-1600003014755-ba31aa59c4b6?auto=format&fit=crop&w=800&q=80",
-    image_url: "https://images.unsplash.com/photo-1600003014755-ba31aa59c4b6?auto=format&fit=crop&w=800&q=80"
-  },
-  {
-    id: 4,
-    title: "Express At-Home Service",
-    subtitle: "Verified Artists in 60 Mins",
-    description: "Instant doorstep booking with zero extra travel charges",
-    discount: "FREE TRAVEL",
-    image: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=800&q=80",
-    image_url: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=800&q=80"
-  },
-  {
-    id: 5,
-    title: "Group Booking Combo",
-    subtitle: "Save up to ₹1,500 on Sangeet Henna",
-    description: "Special group packages for family & guests at unbeatable prices",
-    discount: "SAVE ₹1500",
-    image: "https://images.unsplash.com/photo-1567401893414-76b7b1e5a7a5?auto=format&fit=crop&w=800&q=80",
-    image_url: "https://images.unsplash.com/photo-1567401893414-76b7b1e5a7a5?auto=format&fit=crop&w=800&q=80"
+const resolveImage = (uri) => {
+  if (!uri) return null;
+  if (typeof uri !== "string") return null;
+  if (uri.startsWith("http://") || uri.startsWith("https://") || uri.startsWith("data:")) {
+    return uri;
   }
-];
+  if (uri.startsWith("/")) {
+    const { BASE_URL } = require("../../services/api");
+    return `${BASE_URL}${uri}`;
+  }
+  return uri;
+};
 
 export default function HomeScreen({ navigation }) {
   const { user, dispatch, isDarkMode } = useAuth();
+  const notifContext = useNotifications();
+  const unreadCount = notifContext?.unreadCount || 0;
+  const setUnreadCount = notifContext?.setUnreadCount || null;
 
   const currentBgColor = isDarkMode ? "#000000" : Colors.background;
   const currentCardBg = isDarkMode ? "#121212" : Colors.white;
@@ -118,7 +86,7 @@ export default function HomeScreen({ navigation }) {
   // Dashboard Aggregated States
   const [categories, setCategories] = useState([]);
 
-  const [offers, setOffers] = useState(DEFAULT_BANNERS);
+  const [offers, setOffers] = useState([]);
   const [featuredArtists, setFeaturedArtists] = useState([]);
   const [popularArtists, setPopularArtists] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
@@ -240,29 +208,31 @@ export default function HomeScreen({ navigation }) {
     setLocationModalVisible(false);
   };
 
-  // Default coordinate location (Jaipur)
-  const MOCK_LAT = 26.9124;
-  const MOCK_LNG = 75.7873;
-
-
   // Load consolidated dashboard data
   const loadDashboard = async (isRefresh = false) => {
     if (!isRefresh) setDashboardLoading(true);
     try {
-      const data = await getHomeDashboard(MOCK_LAT, MOCK_LNG);
+      const lat = activeAddressState?.latitude || null;
+      const lng = activeAddressState?.longitude || null;
+      const data = await getHomeDashboard(lat, lng);
       setCategories(data?.categories || []);
       setOffers(data?.offers || data?.banners || []);
       setFeaturedArtists(data?.featured_artists || data?.featuredArtists || []);
       setPopularArtists(data?.popular_artists || data?.popularArtists || []);
       setRecentlyBookedArtists(data?.recently_booked || data?.recentlyBooked || []);
-
+      if (setUnreadCount && (data?.unread_notification_count !== undefined || data?.unread_count !== undefined)) {
+        setUnreadCount(data.unread_notification_count ?? data.unread_count ?? 0);
+      }
 
       // Load favorites from database
       try {
         const favs = await getFavorites();
         const favMap = {};
         (favs || []).forEach((artist) => {
-          favMap[artist.id] = true;
+          if (artist.id) favMap[artist.id] = true;
+          if (artist.user_id) favMap[artist.user_id] = true;
+          if (artist.artist_profile_id) favMap[artist.artist_profile_id] = true;
+          if (artist.artist_id) favMap[artist.artist_id] = true;
         });
         setFavorites(favMap);
       } catch (favErr) {
@@ -304,12 +274,29 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
+  // Banner display with dynamic date-aware festival engine fallback
+  const dynamicFestivalBanners = React.useMemo(() => getActiveFestivalOffers(), []);
+  const displayOffers = (offers && offers.length > 0) ? offers : dynamicFestivalBanners;
+
+  // Deduplicated unique initial 6 categories for HomeScreen
+  const unique6Categories = React.useMemo(() => {
+    const map = new Map();
+    (categories || []).forEach((cat) => {
+      if (cat && cat.id && !map.has(String(cat.id))) {
+        map.set(String(cat.id), cat);
+      }
+    });
+    return Array.from(map.values()).slice(0, 6);
+  }, [categories]);
+
   // Load nearby artists paginated
   const loadNearby = async (page = 1, isRefresh = false) => {
     if (nearbyLoading) return;
     setNearbyLoading(true);
     try {
-      const data = await getNearbyArtists(MOCK_LAT, MOCK_LNG, 100, page, 6);
+      const lat = activeAddressState?.latitude || null;
+      const lng = activeAddressState?.longitude || null;
+      const data = await getNearbyArtists(lat, lng, null, page, 15);
       const list = data?.rows || [];
       const total = data?.count || 0;
 
@@ -319,7 +306,7 @@ export default function HomeScreen({ navigation }) {
         setNearbyArtists((prev) => [...prev, ...list]);
       }
 
-      setHasMoreNearby(list.length === 6 && nearbyArtists.length + list.length < total);
+      setHasMoreNearby(list.length === 15 && ((page === 1 ? list.length : nearbyArtists.length + list.length) < total));
       setNearbyPage(page);
     } catch (err) {
       console.log("Failed to load nearby artists:", err.message);
@@ -345,14 +332,14 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-  // Initial mount load
+  // Initial mount & location update load
   useEffect(() => {
     const timer = setTimeout(() => {
       loadDashboard();
       loadNearby(1);
     }, 0);
     return () => clearTimeout(timer);
-  }, []);
+  }, [activeAddressState?.latitude, activeAddressState?.longitude]);
 
   useFocusEffect(
     useCallback(() => {
@@ -377,25 +364,43 @@ export default function HomeScreen({ navigation }) {
         }
       }
 
+      async function syncFavorites() {
+        try {
+          const favs = await getFavorites();
+          if (!isSubscribed) return;
+          const favMap = {};
+          (favs || []).forEach((artist) => {
+            if (artist.id) favMap[artist.id] = true;
+            if (artist.user_id) favMap[artist.user_id] = true;
+            if (artist.artist_profile_id) favMap[artist.artist_profile_id] = true;
+            if (artist.artist_id) favMap[artist.artist_id] = true;
+          });
+          setFavorites(favMap);
+        } catch (e) {
+          console.log("Failed to sync favorites on focus:", e.message);
+        }
+      }
+
       if (user && (!user?.profile_image || !user?.city)) {
         syncUserProfile();
       }
+      syncFavorites();
 
       return () => {
         isSubscribed = false;
       };
-    }, [dispatch, user, navigation])
+    }, [dispatch])
   );
 
   // Banner Auto-scrolling carousel setup
   useEffect(() => {
-    if (offers.length === 0 || !isAutoPlayEnabled) return;
+    if (displayOffers.length === 0 || !isAutoPlayEnabled) return;
 
     if (bannerTimerRef.current) clearInterval(bannerTimerRef.current);
 
     bannerTimerRef.current = setInterval(() => {
       let nextIndex = activeBannerIndex + 1;
-      if (nextIndex >= offers.length) {
+      if (nextIndex >= displayOffers.length) {
         nextIndex = 0;
       }
       setActiveBannerIndex(nextIndex);
@@ -403,12 +408,12 @@ export default function HomeScreen({ navigation }) {
         index: nextIndex,
         animated: true,
       });
-    }, 4000);
+    }, 3500);
 
     return () => {
       if (bannerTimerRef.current) clearInterval(bannerTimerRef.current);
     };
-  }, [offers, activeBannerIndex, isAutoPlayEnabled]);
+  }, [displayOffers, activeBannerIndex, isAutoPlayEnabled]);
 
   // Toggle favorite
   const toggleFavorite = async (artistId) => {
@@ -504,7 +509,7 @@ export default function HomeScreen({ navigation }) {
     return (
       <TouchableOpacity
         style={styles.categoryCard}
-        onPress={() => navigation.navigate("ArtistListing", { category: item.name })}
+        onPress={() => navigation.navigate("ArtistListing", { categoryId: item.id, category: item.name })}
       >
         <View style={[styles.categoryIcon, { overflow: "hidden" }]}>
           <Image
@@ -522,41 +527,80 @@ export default function HomeScreen({ navigation }) {
   };
 
   const getBannerImage = (item) => {
-    const id = String(item.id);
-    const LOCAL_BANNERS = {
-      "1": require("../../assets/images/categories/bridal.png"),
-      "2": require("../../assets/images/categories/royal.png"),
-      "3": require("../../assets/images/categories/arabic.png"),
-      "4": require("../../assets/images/categories/traditional.png"),
-      "5": require("../../assets/images/categories/festival.png"),
-      "6": require("../../assets/images/categories/custom.png")
-    };
-    return LOCAL_BANNERS[id] || LOCAL_BANNERS["1"];
+    if (!item) return null;
+    const imgUrl = item.image_url || item.banner_image || item.image;
+    if (imgUrl && typeof imgUrl === "string") {
+      if (imgUrl.startsWith("http://") || imgUrl.startsWith("https://")) {
+        return { uri: imgUrl };
+      }
+      if (imgUrl.startsWith("/")) {
+        const { BASE_URL } = require("../../services/api");
+        const cleanBase = (BASE_URL || "").replace(/\/api\/v1\/?$/, "");
+        return { uri: `${cleanBase}${imgUrl}` };
+      }
+    }
+    return null;
   };
 
   // Render a banner item
   const renderBannerItem = ({ item }) => {
+    const bannerImg = getBannerImage(item);
+    const hasImageError = !!bannerErrors[item.id];
+
+    const handleBannerPress = () => {
+      if (!item) return;
+      if (item.target_type === "category" && item.target_id) {
+        navigation.navigate("ArtistListing", { categoryId: item.target_id, category: item.title });
+      } else if (item.target_type === "artist" && item.target_id) {
+        navigation.navigate("ArtistProfile", { artistId: item.target_id });
+      } else if (item.target_type === "coupons" || item.cta_link === "Coupons" || item.banner_type === "OFFER") {
+        navigation.navigate("Coupons");
+      } else if (item.cta_link && typeof item.cta_link === "string" && item.cta_link.startsWith("http")) {
+        const { Linking } = require("react-native");
+        Linking.openURL(item.cta_link).catch(() => {});
+      }
+    };
+
     return (
       <TouchableOpacity
         activeOpacity={0.9}
         style={{ width: SCREEN_WIDTH, height: 150, paddingHorizontal: 16 }}
-        onPress={() => navigation.navigate("Coupons")}
+        onPress={handleBannerPress}
       >
         <View style={styles.bannerSlideInner}>
-          <Image
-            source={getBannerImage(item)}
-            style={styles.bannerBgImage}
-            resizeMode="cover"
-          />
+          {bannerImg && !hasImageError ? (
+            <Image
+              source={bannerImg}
+              onError={() => setBannerErrors((prev) => ({ ...prev, [item.id]: true }))}
+              style={styles.bannerBgImage}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={[styles.bannerBgImage, { backgroundColor: Colors.primary + "20" }]} />
+          )}
           <View style={styles.bannerOverlay}>
             <View style={styles.bannerTextContainer}>
               <Text style={styles.bannerTitle} numberOfLines={1}>{item.title}</Text>
-              <Text style={styles.bannerSubTitle} numberOfLines={2}>{item.description}</Text>
-              <View style={styles.promoBadge}>
-                <Text style={styles.promoBadgeText}>Code: {item.code}</Text>
-              </View>
+              {!!(item.subtitle || item.description) && (
+                <Text style={styles.bannerSubTitle} numberOfLines={2}>{item.subtitle || item.description}</Text>
+              )}
+              {!!item.code && (
+                <TouchableOpacity
+                  style={[styles.promoBadge, { flexDirection: "row", alignItems: "center" }]}
+                  activeOpacity={0.8}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    copyAndSaveCoupon(item.code, item.title);
+                  }}
+                >
+                  <Text style={styles.promoBadgeText}>Code: {item.code}</Text>
+                  <Ionicons name="copy-outline" size={12} color="#FFF" style={{ marginLeft: 4 }} />
+                </TouchableOpacity>
+              )}
             </View>
-            <Text style={styles.bannerDiscountText}>{item.discount}</Text>
+            {!!(item.discount || item.discount_text) && (
+              <Text style={styles.bannerDiscountText}>{item.discount || item.discount_text}</Text>
+            )}
           </View>
         </View>
       </TouchableOpacity>
@@ -604,10 +648,12 @@ export default function HomeScreen({ navigation }) {
   const renderHorizontalArtistItem = ({ item }) => {
     const artistId = item.id || item.user_id || item.artist_id;
     const isFav = !!favorites[artistId];
-    const artistName = item.name || item.full_name || item.user?.name || "Artist";
-    const artistImage = item.profile_image || item.user?.profile_image || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400";
-    const startingPrice = item.starting_price || item.services?.[0]?.minimum_price || 1500;
-    const ratingVal = Number(item.rating || item.avg_rating || 4.8).toFixed(1);
+    const artistName = item.name || item.full_name || item.user?.name || "Mehndi Artist";
+    const rawImage = item.profile_image || item.user?.profile_image || item.avatar;
+    const artistImage = resolveImage(rawImage) || `https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=F3E8FF&color=7C3AED`;
+    const startingPrice = item.starting_price || item.services?.[0]?.minimum_price || item.services?.[0]?.price;
+    const ratingVal = (item.rating || item.avg_rating) ? Number(item.rating || item.avg_rating).toFixed(1) : null;
+    const expText = item.experience_years ? `${item.experience_years} yrs exp` : "Fresh Artist";
 
     return (
       <TouchableOpacity
@@ -639,10 +685,12 @@ export default function HomeScreen({ navigation }) {
           <Text style={[styles.horizontalArtistName, { color: currentTextColor }]} numberOfLines={1}>{artistName}</Text>
           <View style={styles.ratingRow}>
             <Ionicons name="star" size={14} color="#FFB800" />
-            <Text style={[styles.ratingText, { color: currentTextColor }]}>{ratingVal}</Text>
-            <Text style={[styles.experienceText, { color: currentSecTextColor }]}>• {item.experience_years || 2} yrs exp</Text>
+            <Text style={[styles.ratingText, { color: currentTextColor }]}>{ratingVal ? `⭐ ${ratingVal}` : "New Artist"}</Text>
+            <Text style={[styles.experienceText, { color: currentSecTextColor }]}>• {expText}</Text>
           </View>
-          <Text style={[styles.startingPriceText, { color: currentTextColor }]}>From ₹{startingPrice}</Text>
+          <Text style={[styles.startingPriceText, { color: currentTextColor }]}>
+            {startingPrice ? `From ₹${startingPrice}` : "View Profile"}
+          </Text>
         </View>
       </TouchableOpacity>
     );
@@ -652,11 +700,13 @@ export default function HomeScreen({ navigation }) {
   const renderNearbyArtistItem = ({ item }) => {
     const artistId = item.id || item.user_id || item.artist_id;
     const isFav = !!favorites[artistId];
-    const artistName = item.name || item.full_name || item.user?.name || "Artist";
-    const artistImage = item.profile_image || item.user?.profile_image || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400";
-    const startingPrice = item.starting_price || item.services?.[0]?.minimum_price || 1500;
-    const ratingVal = Number(item.rating || item.avg_rating || 4.8).toFixed(1);
+    const artistName = item.name || item.full_name || item.user?.name || "Mehndi Artist";
+    const rawImage = item.profile_image || item.user?.profile_image || item.avatar;
+    const artistImage = resolveImage(rawImage) || `https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=F3E8FF&color=7C3AED`;
+    const startingPrice = item.starting_price || item.services?.[0]?.minimum_price || item.services?.[0]?.price;
+    const ratingVal = (item.rating || item.avg_rating) ? Number(item.rating || item.avg_rating).toFixed(1) : null;
     const distanceVal = item.distance ? `${Number(item.distance).toFixed(1)} km` : "Nearby";
+    const expText = item.experience_years ? `${item.experience_years} yrs exp` : "Fresh Artist";
 
     return (
       <TouchableOpacity
@@ -741,6 +791,24 @@ export default function HomeScreen({ navigation }) {
           onPress={() => navigation.navigate("NotificationCenter")}
         >
           <Ionicons name="notifications-outline" size={24} color={currentTextColor} />
+          {unreadCount > 0 && (
+            <View style={{
+              position: "absolute",
+              top: 2,
+              right: 2,
+              backgroundColor: Colors.primary,
+              borderRadius: 10,
+              minWidth: 16,
+              height: 16,
+              justifyContent: "center",
+              alignItems: "center",
+              paddingHorizontal: 4,
+            }}>
+              <Text style={{ color: Colors.white, fontSize: 10, fontWeight: "bold" }}>
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </Text>
+            </View>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -793,11 +861,11 @@ export default function HomeScreen({ navigation }) {
       )}
 
       {/* 3. Promotional Banner Slider */}
-      {offers.length > 0 && (
+      {displayOffers.length > 0 && (
         <View style={styles.bannerContainer}>
           <FlatList
             ref={bannerFlatListRef}
-            data={offers}
+            data={displayOffers}
             keyExtractor={(item, index) => String(item.id || item.user_id || item.artist_id || index)}
             horizontal
             pagingEnabled
@@ -827,7 +895,7 @@ export default function HomeScreen({ navigation }) {
             }}
           />
           <View style={styles.paginationDots}>
-            {offers.map((_, i) => (
+            {displayOffers.map((_, i) => (
               <View
                 key={i}
                 style={[
@@ -840,7 +908,7 @@ export default function HomeScreen({ navigation }) {
         </View>
       )}
 
-      {/* 4. Categories Section (Exactly 8 categories on HomeScreen) */}
+      {/* 4. Categories Section (Exactly 6 unique categories on HomeScreen) */}
       <View style={styles.sectionHeader}>
         <Text style={[styles.sectionTitle, { color: currentTextColor }]}>Mehndi Categories</Text>
         <TouchableOpacity onPress={() => navigation.navigate("Categories")}>
@@ -848,15 +916,15 @@ export default function HomeScreen({ navigation }) {
         </TouchableOpacity>
       </View>
       <FlatList
-        data={categories}
+        data={unique6Categories}
         keyExtractor={(item, index) => String(item.id || item.user_id || item.artist_id || index)}
         horizontal
         nestedScrollEnabled={true}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ paddingLeft: 16, paddingBottom: 8 }}
         renderItem={renderCategoryItem}
-        initialNumToRender={8}
-        maxToRenderPerBatch={8}
+        initialNumToRender={6}
+        maxToRenderPerBatch={6}
         windowSize={5}
       />
 
@@ -866,7 +934,7 @@ export default function HomeScreen({ navigation }) {
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: currentTextColor }]}>Featured Artists</Text>
             <TouchableOpacity onPress={() => navigation.navigate("ArtistListing", { filter: "featured" })}>
-              <Text style={styles.viewAllText}>View All</Text>
+              <Text style={styles.viewAllText}>View All ({featuredArtists.length})</Text>
             </TouchableOpacity>
           </View>
           <FlatList
@@ -877,8 +945,8 @@ export default function HomeScreen({ navigation }) {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={{ paddingLeft: 16, paddingBottom: 8 }}
             renderItem={renderHorizontalArtistItem}
-            initialNumToRender={4}
-            maxToRenderPerBatch={4}
+            initialNumToRender={6}
+            maxToRenderPerBatch={6}
             windowSize={5}
           />
         </View>
@@ -890,7 +958,7 @@ export default function HomeScreen({ navigation }) {
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: currentTextColor }]}>Trending & Popular</Text>
             <TouchableOpacity onPress={() => navigation.navigate("ArtistListing", { filter: "popular" })}>
-              <Text style={styles.viewAllText}>View All</Text>
+              <Text style={styles.viewAllText}>View All ({popularArtists.length})</Text>
             </TouchableOpacity>
           </View>
           <FlatList
@@ -901,8 +969,8 @@ export default function HomeScreen({ navigation }) {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={{ paddingLeft: 16, paddingBottom: 8 }}
             renderItem={renderHorizontalArtistItem}
-            initialNumToRender={4}
-            maxToRenderPerBatch={4}
+            initialNumToRender={6}
+            maxToRenderPerBatch={6}
             windowSize={5}
           />
         </View>
@@ -928,14 +996,26 @@ export default function HomeScreen({ navigation }) {
         </View>
       )}
 
-      {/* 7. Quick Filters Row */}
+      {/* 7. Quick Filters Row & All Mehndi Artists */}
       <View style={styles.sectionHeader}>
-        <Text style={[styles.sectionTitle, { color: currentTextColor }]}>All Nearby Artists</Text>
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <Text style={[styles.sectionTitle, { color: currentTextColor }]}>All Mehndi Artists</Text>
+          <View style={{ backgroundColor: Colors.primary + "18", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, marginLeft: 8 }}>
+            <Text style={{ color: Colors.primary, fontSize: 11, fontWeight: "700" }}>{nearbyArtists.length > 0 ? `${nearbyArtists.length}+` : "All"}</Text>
+          </View>
+        </View>
+        <TouchableOpacity onPress={() => navigation.navigate("ArtistListing", { filter: "all" })}>
+          <Text style={styles.viewAllText}>View All ({nearbyArtists.length})</Text>
+        </TouchableOpacity>
       </View>
-      <View style={styles.filtersWrapper}>
-        {["Nearest", "Top Rated", "Price Low-High", "5+ Exp Years"].map((filter) => (
+      <FlatList
+        data={["All", "Nearest", "Top Rated", "Price Low-High", "5+ Exp Years", "Bridal", "Home Service", "Verified"]}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 10 }}
+        keyExtractor={(item) => item}
+        renderItem={({ item: filter }) => (
           <TouchableOpacity
-            key={filter}
             style={[
               styles.filterBadge,
               selectedFilter === filter ? styles.activeFilterBadge : null
@@ -951,8 +1031,8 @@ export default function HomeScreen({ navigation }) {
               {filter}
             </Text>
           </TouchableOpacity>
-        ))}
-      </View>
+        )}
+      />
     </View>
   );
 
@@ -969,7 +1049,7 @@ export default function HomeScreen({ navigation }) {
       return (
         <View style={styles.emptyContainer}>
           <Ionicons name="people-outline" size={48} color={Colors.textTertiary} />
-          <Text style={styles.emptyTitle}>No Artists Found Nearby</Text>
+          <Text style={styles.emptyTitle}>No Artists Found</Text>
           <Text style={styles.emptySub}>Try adjusting your coordinates or filter settings.</Text>
         </View>
       );
@@ -977,7 +1057,7 @@ export default function HomeScreen({ navigation }) {
     if (!hasMoreNearby) {
       return (
         <View style={styles.footerEnd}>
-          <Text style={styles.footerEndText}>Showing all nearest verified mehndi artists</Text>
+          <Text style={styles.footerEndText}>Showing all {nearbyArtists.length} verified mehndi artists</Text>
         </View>
       );
     }
@@ -998,12 +1078,34 @@ export default function HomeScreen({ navigation }) {
         return priceA - priceB;
       });
     } else if (selectedFilter === "5+ Exp Years") {
-      result = result.filter(item => Number(item.experience_years || item.experience || 5) >= 5);
+      result = result.filter(item => Number(item.experience_years || item.experience || 0) >= 5);
       result.sort((a, b) => (Number(b.experience_years || b.experience) || 0) - (Number(a.experience_years || a.experience) || 0));
+    } else if (selectedFilter === "Bridal") {
+      result = result.filter(item => {
+        const bio = (item.bio || "").toLowerCase();
+        const serv = (item.services || []).some(s => (s.category || "").toLowerCase().includes("bridal") || (s.specialization_name || "").toLowerCase().includes("bridal"));
+        return bio.includes("bridal") || serv;
+      });
+    } else if (selectedFilter === "Home Service") {
+      result = result.filter(item => item.home_service !== false);
+    } else if (selectedFilter === "Verified") {
+      result = result.filter(item => item.verification_status === "APPROVED" || item.status === "approved");
     }
 
     return result;
   }, [nearbyArtists, selectedFilter]);
+
+  // Home Page Preview limited to maximum 10 unique real artists
+  const homePreviewNearbyArtists = React.useMemo(() => {
+    const map = new Map();
+    (processedNearbyArtists || []).forEach((item) => {
+      const key = String(item.id || item.user_id || item.artist_id);
+      if (key && !map.has(key)) {
+        map.set(key, item);
+      }
+    });
+    return Array.from(map.values()).slice(0, 10);
+  }, [processedNearbyArtists]);
 
   if (dashboardLoading) {
     return (
@@ -1021,7 +1123,7 @@ export default function HomeScreen({ navigation }) {
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <FlatList
-        data={processedNearbyArtists}
+        data={homePreviewNearbyArtists}
         keyExtractor={(item, index) => String(item.id || item.user_id || item.artist_id || index)}
         renderItem={renderNearbyArtistItem}
         ListHeaderComponent={renderListHeader}
@@ -1139,23 +1241,43 @@ export default function HomeScreen({ navigation }) {
                 </View>
 
                 {/* Billing Summary Box */}
-                <View style={styles.modalBillingSummary}>
-                  <View style={styles.modalBillRow}>
-                    <Text style={styles.modalBillLabel}>Total Amount</Text>
-                    <Text style={styles.modalBillValue}>₹{pendingPaymentBooking.final_amount}</Text>
-                  </View>
-                  <View style={styles.modalBillRow}>
-                    <Text style={styles.modalBillLabel}>Advance Paid (10%)</Text>
-                    <Text style={[styles.modalBillValue, { color: "#2E7D32" }]}>-₹{pendingPaymentBooking.advance_paid}</Text>
-                  </View>
-                  <View style={styles.modalDividerLine} />
-                  <View style={styles.modalBillRow}>
-                    <Text style={[styles.modalBillLabel, { fontWeight: "700", color: Colors.text }]}>Remaining Balance</Text>
-                    <Text style={[styles.modalBillValue, { fontWeight: "800", color: Colors.primary, fontSize: 15 }]}>
-                      ₹{pendingPaymentBooking.remaining_amount}
-                    </Text>
-                  </View>
-                </View>
+                {(() => {
+                  const remBal = Number(pendingPaymentBooking.remaining_amount || pendingPaymentBooking.remainingAmount || 0);
+                  const totalAmt = Number(
+                    pendingPaymentBooking.customer_total_amount ||
+                    pendingPaymentBooking.total_amount ||
+                    pendingPaymentBooking.totalAmount ||
+                    pendingPaymentBooking.final_amount ||
+                    pendingPaymentBooking.finalAmount ||
+                    (remBal > 0 ? Math.round(remBal / 0.90) : 2500)
+                  );
+                  const advPaid = Number(
+                    pendingPaymentBooking.advance_paid ||
+                    pendingPaymentBooking.advance_amount ||
+                    pendingPaymentBooking.required_advance ||
+                    (totalAmt > remBal ? totalAmt - remBal : Math.round(totalAmt * 0.10))
+                  );
+
+                  return (
+                    <View style={styles.modalBillingSummary}>
+                      <View style={styles.modalBillRow}>
+                        <Text style={styles.modalBillLabel}>Total Amount</Text>
+                        <Text style={styles.modalBillValue}>₹{totalAmt}</Text>
+                      </View>
+                      <View style={styles.modalBillRow}>
+                        <Text style={styles.modalBillLabel}>Advance Paid (10%)</Text>
+                        <Text style={[styles.modalBillValue, { color: "#2E7D32" }]}>-₹{advPaid}</Text>
+                      </View>
+                      <View style={styles.modalDividerLine} />
+                      <View style={styles.modalBillRow}>
+                        <Text style={[styles.modalBillLabel, { fontWeight: "700", color: Colors.text }]}>Remaining Balance</Text>
+                        <Text style={[styles.modalBillValue, { fontWeight: "800", color: Colors.primary, fontSize: 15 }]}>
+                          ₹{remBal}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })()}
               </View>
             )}
 

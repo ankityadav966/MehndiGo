@@ -39,9 +39,9 @@ export default function SavedAddressesScreen({ navigation }) {
   const [houseFlat, setHouseFlat] = useState("");
   const [landmark, setLandmark] = useState("");
   const [fullAddress, setFullAddress] = useState("");
-  const [city, setCity] = useState("Jaipur");
-  const [state, setState] = useState("Rajasthan");
-  const [pincode, setPincode] = useState("302001");
+  const [city, setCity] = useState("");
+  const [state, setState] = useState("");
+  const [pincode, setPincode] = useState("");
   const [isDefault, setIsDefault] = useState(false);
 
   const fetchAddresses = useCallback(async () => {
@@ -73,9 +73,9 @@ export default function SavedAddressesScreen({ navigation }) {
     setHouseFlat("");
     setLandmark("");
     setFullAddress("");
-    setCity("Jaipur");
-    setState("Rajasthan");
-    setPincode("302001");
+    setCity("");
+    setState("");
+    setPincode("");
     setIsDefault(addresses.length === 0);
     setModalVisible(true);
   };
@@ -85,17 +85,22 @@ export default function SavedAddressesScreen({ navigation }) {
     setLabel(item.label || item.name || "Home");
     setHouseFlat(item.house_flat || item.houseFlat || item.address_line_2 || "");
     setLandmark(item.landmark || "");
-    setFullAddress(item.address_line_1 || item.fullAddress || "");
-    setCity(item.city || "Jaipur");
-    setState(item.state || "Rajasthan");
-    setPincode(item.pincode || "302001");
+    setFullAddress(item.full_address || item.address_line_1 || item.fullAddress || "");
+    setCity(item.city || "");
+    setState(item.state || "");
+    setPincode(item.pincode || "");
     setIsDefault(!!item.is_default);
     setModalVisible(true);
   };
 
   const handleSaveModal = async () => {
-    if (!fullAddress && !houseFlat) {
+    if (!fullAddress.trim() && !houseFlat.trim()) {
       Alert.alert("Required Field", "Please enter house/flat or full address.");
+      return;
+    }
+
+    if (pincode.trim() && (pincode.trim().length !== 6 || isNaN(Number(pincode.trim())))) {
+      Alert.alert("Validation Error", "Pincode must be exactly 6 digits.");
       return;
     }
 

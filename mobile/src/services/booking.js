@@ -123,6 +123,11 @@ export async function getArtistLocation(bookingId) {
   return res?.data || res;
 }
 
+export async function validateArrival(bookingId, force = false) {
+  const res = await apiRequest("POST", "/booking/validate-arrival", { bookingId, force }, true);
+  return res?.data || res;
+}
+
 export async function sendCheckInOtp(bookingId) {
   const res = await apiRequest("POST", "/booking/send-checkin-otp", { bookingId }, true);
   return res?.data || res;
@@ -140,5 +145,15 @@ export async function sendCheckOutOtp(bookingId) {
 
 export async function verifyCheckOutOtp(bookingId, otp) {
   const res = await apiRequest("POST", "/booking/verify-checkout-otp", { bookingId, otp }, true);
+  return res?.data || res;
+}
+
+export async function requestTravelCharge(bookingId, travelCharge, travelDistanceKm) {
+  const res = await apiRequest("POST", "/artist/booking/travel-charge/request", { bookingId, travelCharge, travelDistanceKm }, true);
+  return res?.data || res;
+}
+
+export async function respondTravelCharge(bookingId, action) {
+  const res = await apiRequest("POST", "/customer/booking/travel-charge/respond", { bookingId, action }, true);
   return res?.data || res;
 }

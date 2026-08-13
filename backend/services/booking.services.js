@@ -12,17 +12,21 @@ class BookingService {
     this.hasRestrictedBooking = this.hasRestrictedBooking.bind(this);
   }
 
-  async calculatePriceDetails(serviceId, couponCode = null, userId = null, slotCount = 1) {
+  async calculatePriceDetails(serviceId, couponCode = null, userId = null, slotCount = 1, distanceKm = 0) {
     const service = await db.Service.findByPk(serviceId);
     if (!service) {
       throw new AppError("Service not found", 404);
     }
 
-    const servicePrice = service.minimum_price || 1500;
-    const travelCharges = 150 * slotCount; // 150 INR flat per slot trip
-    const platformFee = 50; // platform fee per booking transaction
-
+    const servicePrice = service.minimum_price || 500;
     const basePrice = servicePrice * slotCount;
+
+    // Per-KM distance rules: 0-10 KM = FREE, >10 KM = ₹5/KM
+    const freeDistance = 10;
+    const ratePerKm = 5;
+    const chargeableDistance = Math.max(0, Number(distanceKm || 0) - freeDistance);
+    const travelCharges = Math.round(chargeableDistance * ratePerKm);
+
     let couponDiscount = 0;
 
     if (couponCode) {
@@ -44,8 +48,9 @@ class BookingService {
       }
     }
 
-    const priceAfterDiscount = basePrice - couponDiscount;
+    const priceAfterDiscount = Math.max(0, basePrice - couponDiscount);
     const finalAmount = Math.max(0, priceAfterDiscount + travelCharges);
+    const advanceAmount = Math.round(finalAmount * 0.10);
 
     return {
       servicePrice: basePrice,
@@ -53,8 +58,8 @@ class BookingService {
       couponDiscount,
       platformFee: 0,
       gst: 0,
-      advanceAmount: Math.min(500, finalAmount),
-      remainingCash: Math.max(0, finalAmount - Math.min(500, finalAmount)),
+      advanceAmount: advanceAmount,
+      remainingCash: Math.max(0, finalAmount - advanceAmount),
       finalAmount
     };
   }
@@ -309,16 +314,11 @@ class BookingService {
     }
 
     if (role === "CUSTOMER") {
-
       where.user_id = userId;
     } else if (role === "ARTIST") {
-      // Find artist profile id for user
       const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
-      if (artist) {
-        where.artist_id = artist.id;
-      } else {
-        throw new AppError("Artist profile not found", 404);
-      }
+      const artistIds = artist ? [artist.id, Number(userId)] : [Number(userId)];
+      where.artist_id = { [Op.in]: artistIds };
     }
 
     const booking = await db.Booking.findOne({
@@ -327,7 +327,7 @@ class BookingService {
         {
           model: db.User,
           as: "user",
-          attributes: ["id", "name", "phone", "profile_image"]
+          attributes: ["id", "name", "phone", "email", "profile_image"]
         },
         {
           model: db.ArtistProfile,
@@ -336,14 +336,14 @@ class BookingService {
             {
               model: db.User,
               as: "user",
-              attributes: ["id", "name", "phone", "profile_image"]
+              attributes: ["id", "name", "phone", "email", "profile_image"]
             }
           ]
         },
         {
           model: db.Service,
           as: "service",
-          attributes: ["id", "specialization_name", "category", "duration_minutes"]
+          attributes: ["id", "specialization_name", "category", "duration_minutes", "minimum_price"]
         },
         {
           model: db.AvailabilitySlot,
@@ -373,7 +373,6 @@ class BookingService {
       order: [[{ model: db.BookingStatusHistory, as: "status_history" }, "createdAt", "DESC"]]
     });
 
-
     return booking;
   }
 
@@ -383,8 +382,8 @@ class BookingService {
       where.user_id = userId;
     } else if (role === "ARTIST") {
       const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
-      if (!artist) return [];
-      where.artist_id = artist.id;
+      const artistIds = artist ? [artist.id, Number(userId)] : [Number(userId)];
+      where.artist_id = { [Op.in]: artistIds };
     }
 
     return await db.Booking.findAll({
@@ -398,7 +397,7 @@ class BookingService {
         {
           model: db.User,
           as: "user",
-          attributes: ["id", "name", "profile_image"]
+          attributes: ["id", "name", "phone", "email", "profile_image"]
         },
         {
           model: db.Service,
@@ -419,7 +418,6 @@ class BookingService {
       ],
       order: [["createdAt", "DESC"]]
     });
-
   }
 
   async applyCoupon(userId, couponCode, serviceId) {

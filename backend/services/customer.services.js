@@ -61,6 +61,35 @@ class CustomerService {
   }
 
   async getOffers() {
+    try {
+      const db = require("../models");
+      if (db.Banner) {
+        const banners = await db.Banner.findAll({
+          where: { is_active: true },
+          order: [["createdAt", "DESC"]]
+        });
+        if (banners && banners.length > 0) {
+          return banners.map((b) => ({
+            id: b.id,
+            title: b.title,
+            subtitle: b.subtitle || b.description,
+            description: b.description || b.subtitle,
+            code: b.promo_code || b.code || "",
+            discount: b.discount_value ? `${b.discount_value}% OFF` : (b.discount || "Special Offer"),
+            discount_text: b.discount_text || (b.discount_value ? `${b.discount_value}% OFF` : "Special Offer"),
+            image: b.image_url || b.banner_image || b.image,
+            banner: b.image_url || b.banner_image || b.image,
+            banner_image: b.image_url || b.banner_image || b.image,
+            image_url: b.image_url || b.banner_image || b.image,
+            target_type: b.target_type || "category",
+            target_id: b.target_id || null,
+            cta_link: b.cta_link || "Coupons"
+          }));
+        }
+      }
+    } catch (e) {
+      console.log("Failed to load banners from DB:", e.message);
+    }
     return offersList;
   }
 
@@ -68,8 +97,8 @@ class CustomerService {
     const response = await repo.getArtists({
       latitude: lat,
       longitude: lng,
-      sort: "rating",
-      limit: 6
+      sort: "highest_rated",
+      limit: 10
     });
     return response.rows;
   }
@@ -78,10 +107,10 @@ class CustomerService {
     const response = await repo.getArtists({
       latitude: lat,
       longitude: lng,
-      radius: radius || 50,
+      radius: radius || null,
       sort: "distance",
       page: page || 1,
-      limit: limit || 10
+      limit: limit || 15
     });
     return response;
   }
@@ -90,16 +119,16 @@ class CustomerService {
     const response = await repo.getArtists({
       latitude: lat,
       longitude: lng,
-      sort: "rating",
-      limit: 6
+      sort: "trending",
+      limit: 10
     });
     return response.rows;
   }
 
-  async searchArtists(query, filters = {}, sort = "nearest", lat = null, lng = null, page = 1, limit = 10) {
+  async searchArtists(query, filters = {}, sort = "nearest", lat = null, lng = null, page = 1, limit = 15) {
     const offset = (Number(page) - 1) * Number(limit);
     let where = {
-      verification_status: "APPROVED"
+      verification_status: { [Op.ne]: "REJECTED" }
     };
 
     if (filters.category) {
@@ -180,12 +209,12 @@ class CustomerService {
         db.sequelize.literal(`EXISTS (
           SELECT 1 FROM "Users" AS u 
           WHERE u.id = "ArtistProfile".user_id 
-          AND u.name Ilike '${searchPattern}'
+          AND u.name ILIKE '${searchPattern}'
         )`),
         db.sequelize.literal(`EXISTS (
           SELECT 1 FROM "Services" AS s 
           WHERE s.artist_id = "ArtistProfile".id 
-          AND (s.specialization_name Ilike '${searchPattern}' OR s.category Ilike '${searchPattern}')
+          AND (s.specialization_name ILIKE '${searchPattern}' OR s.category ILIKE '${searchPattern}')
         )`)
       ];
     }
@@ -197,7 +226,7 @@ class CustomerService {
 
     let distanceSql = null;
     if (lat && lng) {
-      distanceSql = `(6371 * acos(cos(radians(${Number(lat)})) * cos(radians(latitude::double precision)) * cos(radians(longitude::double precision) - radians(${Number(lng)})) + sin(radians(${Number(lat)})) * sin(radians(latitude::double precision))))`;
+      distanceSql = `(6371 * acos(LEAST(1.0, GREATEST(-1.0, cos(radians(${Number(lat)})) * cos(radians(COALESCE(latitude::double precision, ${Number(lat)}))) * cos(radians(COALESCE(longitude::double precision, ${Number(lng)})) - radians(${Number(lng)})) + sin(radians(${Number(lat)})) * sin(radians(COALESCE(latitude::double precision, ${Number(lat)})))))))`;
       attributes.include.push([db.sequelize.literal(distanceSql), "distance"]);
       
       if (filters.radius) {
@@ -210,8 +239,10 @@ class CustomerService {
 
     if (sort === "nearest" && distanceSql) {
       order.push([db.sequelize.literal(distanceSql), "ASC"]);
+      order.push(["avg_rating", "DESC"]);
     } else if (sort === "highest_rated" || sort === "rating") {
       order.push(["avg_rating", "DESC"]);
+      order.push(["total_reviews", "DESC"]);
     } else if (sort === "lowest_price") {
       order.push([
         db.sequelize.literal(`(
@@ -223,6 +254,7 @@ class CustomerService {
       order.push(["experience_years", "DESC"]);
     } else if (sort === "trending" || sort === "most_booked") {
       order.push(["total_bookings", "DESC"]);
+      order.push(["avg_rating", "DESC"]);
     } else {
       order.push(["createdAt", "DESC"]);
     }
@@ -240,6 +272,11 @@ class CustomerService {
           model: db.Service,
           as: "services",
           required: false,
+        },
+        {
+          model: db.Portfolio,
+          as: "portfolio",
+          required: false,
         }
       ],
       order,
@@ -250,7 +287,7 @@ class CustomerService {
     const mappedRows = artists.rows.map((item) => {
       const data = item.toJSON();
       data.response_time = item.id % 2 === 0 ? "15 mins" : "within 2 hours";
-      data.languages = "Hindi, English, Rajasthani";
+      data.languages = item.languages || "Hindi, English, Rajasthani";
       return data;
     });
 

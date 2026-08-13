@@ -1,9 +1,12 @@
 const db = require("../../models");
+const crypto = require('crypto');
 const { SuccessResponse, ErrorResponse } = require("../../utils/common");
 const { Op } = require("sequelize");
 
 // 1. POST /notification/register-token
 async function registerToken(req, res) {
+  // Helper to hash token for safe logging
+  const hashToken = (t) => crypto.createHash('sha256').update(t).digest('hex');
   try {
     const userId = req.user.id;
     const { token, device_type } = req.body;
@@ -20,15 +23,25 @@ async function registerToken(req, res) {
       defaults: {
         user_id: userId,
         token: token,
-        device_type: device_type || "ANDROID"
+        device_type: device_type || "ANDROID",
+        is_active: true
       }
     });
+
+    // If the token existed but was inactive, reactivate it
+    if (!created && (!notifToken.is_active || (device_type && notifToken.device_type !== device_type))) {
+      await notifToken.update({
+        is_active: true,
+        device_type: device_type || notifToken.device_type
+      });
+    }
 
     if (!created && device_type && notifToken.device_type !== device_type) {
       await notifToken.update({ device_type });
     }
 
-    return res.status(200).json(SuccessResponse("Token registered successfully", notifToken));
+    console.log(`Token registered for user ${userId}: ${hashToken(token)}`);
+      return res.status(200).json(SuccessResponse("Token registered successfully", notifToken));
   } catch (error) {
     return res.status(500).json(ErrorResponse(error.message, error));
   }
@@ -36,6 +49,7 @@ async function registerToken(req, res) {
 
 // 2. DELETE /notification/remove-token
 async function removeToken(req, res) {
+  const hashToken = (t) => crypto.createHash('sha256').update(t).digest('hex');
   try {
     const userId = req.user.id;
     const { token } = req.body;
@@ -51,7 +65,8 @@ async function removeToken(req, res) {
       }
     });
 
-    return res.status(200).json(SuccessResponse("Token removed successfully", { deletedCount: deleted }));
+    console.log(`Token removed for user ${userId}: ${hashToken(token)}`);
+      return res.status(200).json(SuccessResponse("Token removed successfully", { deletedCount: deleted }));
   } catch (error) {
     return res.status(500).json(ErrorResponse(error.message, error));
   }
@@ -178,6 +193,8 @@ async function clearAll(req, res) {
 }
 
 // 8. POST /notification/send (Admin utility)
+
+// 11. GET /debug/push/:userId (Admin debug endpoint)
 async function sendSystemNotification(req, res) {
   try {
     const { user_id, title, message } = req.body;
@@ -195,6 +212,17 @@ async function sendSystemNotification(req, res) {
     });
 
     return res.status(201).json(SuccessResponse("Notification sent successfully", notif));
+  } catch (error) {
+    return res.status(500).json(ErrorResponse(error.message, error));
+  }
+}
+
+// Admin debug endpoint to retrieve raw push tokens for a user (should be removed after testing)
+async function debugGetTokens(req, res) {
+  try {
+    const { userId } = req.params;
+    const tokens = await db.NotificationToken.findAll({ where: { user_id: userId } });
+    return res.status(200).json(SuccessResponse('Debug tokens fetched', tokens));
   } catch (error) {
     return res.status(500).json(ErrorResponse(error.message, error));
   }
@@ -275,6 +303,28 @@ async function scheduleNotification(req, res) {
   }
 }
 
+async function sendTestPush(req, res) {
+  try {
+    const userId = req.user.id;
+    const NotificationService = require("../../services/notification.services");
+
+    const result = await NotificationService.sendToUser(
+      userId,
+      req.body.title || "MehndiGo Test Push 🚀",
+      req.body.body || "Your push notifications are configured and working perfectly!",
+      req.body.data || { type: "TEST_PUSH", screen: "MyBookings" }
+    );
+
+    if (!result) {
+      return res.status(500).json(ErrorResponse("Failed to send test push notification"));
+    }
+
+    return res.status(200).json(SuccessResponse("Test push notification sent successfully", result));
+  } catch (error) {
+    return res.status(500).json(ErrorResponse(error.message, error));
+  }
+}
+
 module.exports = {
   registerToken,
   removeToken,
@@ -285,5 +335,7 @@ module.exports = {
   clearAll,
   sendSystemNotification,
   sendBroadcast,
-  scheduleNotification
+  scheduleNotification,
+  sendTestPush,
+  debugGetTokens
 };

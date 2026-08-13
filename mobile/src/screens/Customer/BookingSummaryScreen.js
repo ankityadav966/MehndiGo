@@ -239,29 +239,58 @@ export default function BookingSummaryScreen({ route, navigation }) {
           {/* Pricing calculations details */}
           {priceDetails && (
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Price Breakdown</Text>
+              <Text style={styles.cardTitle}>Bill & Price Breakdown</Text>
+              
               <View style={styles.row}>
-                <Text style={styles.label}>Service Price</Text>
-                <Text style={styles.value}>₹{priceDetails.servicePrice}</Text>
-              </View>
-              {priceDetails.travelCharges > 0 && (
-                <View style={styles.row}>
-                  <Text style={styles.label}>Travel Fee</Text>
-                  <Text style={styles.value}>₹{priceDetails.travelCharges}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.label}>Mehndi Service Rate</Text>
+                  <Text style={styles.subTextLabel}>Base price for design & application</Text>
                 </View>
-              )}
-              {priceDetails.couponDiscount > 0 && (
+                <Text style={styles.value}>₹{priceDetails.servicePrice || priceDetails.basePrice}</Text>
+              </View>
+
+              <View style={styles.row}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.label}>Artist Travel Charge</Text>
+                  <Text style={styles.subTextLabel}>0-10 KM Free • 100% Artist Earning</Text>
+                </View>
+                <Text style={[styles.value, { color: (priceDetails.confirmed_travel_charge || priceDetails.travel_charge || priceDetails.travelCharges || 0) === 0 ? "#10B981" : Colors.text }]}>
+                  {(priceDetails.confirmed_travel_charge || priceDetails.travel_charge || priceDetails.travelCharges || 0) === 0 ? "FREE (0-10 KM)" : `₹${priceDetails.confirmed_travel_charge || priceDetails.travel_charge || priceDetails.travelCharges}`}
+                </Text>
+              </View>
+
+              {(priceDetails.couponDiscount || priceDetails.discount || 0) > 0 && (
                 <View style={styles.row}>
-                  <Text style={[styles.label, { color: Colors.primary }]}>Discount</Text>
-                  <Text style={[styles.value, { color: Colors.primary }]}>
-                    -₹{priceDetails.couponDiscount}
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.label, { color: Colors.primary }]}>Promotional Discount</Text>
+                    <Text style={[styles.subTextLabel, { color: Colors.primary }]}>Coupon {appliedCoupon || ""} applied</Text>
+                  </View>
+                  <Text style={[styles.value, { color: Colors.primary, fontWeight: "700" }]}>
+                    -₹{priceDetails.couponDiscount || priceDetails.discount}
                   </Text>
                 </View>
               )}
+
               <View style={styles.divider} />
+
               <View style={styles.row}>
                 <Text style={styles.totalLabel}>Total Booking Amount</Text>
-                <Text style={styles.totalAmount}>₹{priceDetails.finalAmount}</Text>
+                <Text style={styles.totalAmount}>₹{priceDetails.finalAmount || priceDetails.totalAmount}</Text>
+              </View>
+
+              <View style={styles.splitBreakdownCard}>
+                <View style={styles.splitRow}>
+                  <Text style={styles.splitLabel}>• Advance Deposit (10% Online):</Text>
+                  <Text style={[styles.splitValue, { color: Colors.primary }]}>
+                    ₹{priceDetails.requiredAdvance || Math.round((priceDetails.finalAmount || priceDetails.totalAmount || 0) * 0.10)}
+                  </Text>
+                </View>
+                <View style={styles.splitRow}>
+                  <Text style={styles.splitLabel}>• Remaining Cash (To Artist):</Text>
+                  <Text style={[styles.splitValue, { color: "#10B981" }]}>
+                    ₹{Math.max(0, (priceDetails.finalAmount || priceDetails.totalAmount || 0) - (priceDetails.requiredAdvance || Math.round((priceDetails.finalAmount || priceDetails.totalAmount || 0) * 0.10)))}
+                  </Text>
+                </View>
               </View>
             </View>
           )}
@@ -292,7 +321,12 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 13, fontWeight: "700", marginBottom: 12, color: Colors.text },
   row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", marginBottom: 8 },
   label: { fontSize: 13, color: Colors.textSecondary },
-  value: { fontSize: 13, fontWeight: "600", color: Colors.text, flex: 1, textAlign: "right", marginLeft: 16 },
+  subTextLabel: { fontSize: 10, color: Colors.textTertiary, marginTop: 1 },
+  value: { fontSize: 13, fontWeight: "600", color: Colors.text, textAlign: "right" },
+  splitBreakdownCard: { marginTop: 10, padding: 10, backgroundColor: "#f9fafb", borderRadius: 8, borderWidth: 1, borderColor: "#f3f4f6" },
+  splitRow: { flexDirection: "row", justifyContent: "space-between", marginVertical: 3 },
+  splitLabel: { fontSize: 11, color: Colors.textSecondary },
+  splitValue: { fontSize: 11, fontWeight: "700" },
   address: { fontSize: 13, color: Colors.textSecondary, lineHeight: 18 },
   couponForm: { flexDirection: "row" },
   couponInput: { flex: 1, height: 40, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, paddingHorizontal: 10, fontSize: 12, color: Colors.text },

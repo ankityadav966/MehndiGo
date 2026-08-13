@@ -184,25 +184,30 @@ export default function BookingRequestsScreen({ route, navigation }) {
       // Only apply today's filter on the Accepted tab
       if (activeTab === "Accepted" && route.params?.filterToday) {
         const moment = require("moment");
-        const bookingDate = item.slot?.date || item.slot?.start_time || item.reschedule_date;
+        const bookingDate = item.slot?.date || item.slot?.start_time || item.reschedule_date || item.booking_date;
         if (!bookingDate || !moment(bookingDate).isSame(moment(), 'day')) {
           return false;
         }
       }
 
-      const bookingStatus = String(item.booking_status || "").toUpperCase();
-      const detailedStatus = String(item.detailed_status || "").toUpperCase();
-      const status = detailedStatus || bookingStatus;
+      const bookingStatus = String(item.booking_status || item.status || "").toUpperCase();
+      const detailedStatus = String(item.detailed_status || item.detailedStatus || item.status || "").toUpperCase();
+      let status = detailedStatus || bookingStatus;
+      if (status === "ACCEPTED") status = "ARTIST_ACCEPTED";
 
       if (activeTab === "Pending") {
-        return bookingStatus === "PENDING" || ["PENDING", "VIEWED", "CONFIRMED"].includes(status);
+        return status === "PENDING" || (bookingStatus === "PENDING" && status !== "ARTIST_ACCEPTED" && status !== "ACCEPTED" && status !== "CANCELLED" && status !== "REJECTED" && status !== "DECLINED");
       }
       
       if (activeTab === "Accepted") {
-        return ["ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "ARTIST_ARRIVED", "SERVICE_STARTED", "RESCHEDULED", "CASH_PAYMENT_PENDING", "CASH_DISPUTED", "WAITING_FOR_USER_PAYMENT"].includes(status);
-      } else {
-        return ["COMPLETED", "CANCELLED", "REJECTED", "REFUNDED", "AWAITING_CASH_CONFIRMATION", "COMPLETED_CLOSED"].includes(status);
+        return ["ARTIST_ACCEPTED", "ACCEPTED", "CONFIRMED", "ARTIST_ON_THE_WAY", "ARTIST_ARRIVED", "SERVICE_STARTED", "RESCHEDULED", "CASH_PAYMENT_PENDING", "CASH_DISPUTED", "WAITING_FOR_USER_PAYMENT"].includes(status);
       }
+
+      if (activeTab === "Cancelled") {
+        return ["CANCELLED", "REJECTED", "DECLINED", "REFUNDED"].includes(status);
+      }
+
+      return ["COMPLETED", "AWAITING_CASH_CONFIRMATION", "COMPLETED_CLOSED"].includes(status);
     });
   };
 
@@ -264,15 +269,25 @@ export default function BookingRequestsScreen({ route, navigation }) {
       : (item.reschedule_time ? formatTime(item.reschedule_time) : "TBD");
     const status = item.detailed_status || item.booking_status || "PENDING";
 
+    const customerName = item.user?.name || item.customer_name || item.client_name || item.customer?.name || "Client";
+    const customerPhone = item.user?.phone || item.customer_phone || "";
+    const customerAvatar = resolveImage(item.user?.profile_image || item.customer_avatar || item.customer?.profile_image);
+
     return (
       <View style={styles.card}>
         <View style={styles.topSection}>
           <Image
-            source={{ uri: resolveImage(item.user?.profile_image) }}
+            source={{ uri: customerAvatar }}
             style={styles.avatar}
           />
           <View style={styles.infoContainer}>
-            <Text style={styles.name}>{item.user?.name || "Client"}</Text>
+            <Text style={styles.name}>{customerName}</Text>
+            {customerPhone ? (
+              <View style={styles.row}>
+                <Ionicons name="call-outline" size={13} color={Colors.primary} />
+                <Text style={[styles.service, { color: Colors.primary, fontWeight: "600" }]}>{customerPhone}</Text>
+              </View>
+            ) : null}
             <View style={styles.row}>
               <Ionicons name="brush-outline" size={13} color={Colors.textTertiary} />
               <Text style={styles.service}>{item.service?.specialization_name || "Mehndi Service"}</Text>
@@ -282,15 +297,15 @@ export default function BookingRequestsScreen({ route, navigation }) {
               <Text style={styles.date}>{dateStr} • {timeStr}</Text>
             </View>
           </View>
-          <Text style={styles.price}>₹{item.final_amount || item.remaining_amount}</Text>
+          <Text style={styles.price}>₹{item.final_amount || item.total_price || item.remaining_amount}</Text>
         </View>
 
         {activeTab === "Pending" && (
           <View style={styles.actionContainer}>
-            <TouchableOpacity style={styles.acceptButton} onPress={() => handleAccept(item.id)}>
+            <TouchableOpacity style={styles.acceptButton} onPress={() => handleAccept(item.id || item.booking_id || item.bookingId)}>
               <Text style={styles.acceptButtonText}>Accept</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.rejectButton} onPress={() => handleReject(item.id)}>
+            <TouchableOpacity style={styles.rejectButton} onPress={() => handleReject(item.id || item.booking_id || item.bookingId)}>
               <Text style={styles.rejectButtonText}>Decline</Text>
             </TouchableOpacity>
           </View>
@@ -300,7 +315,7 @@ export default function BookingRequestsScreen({ route, navigation }) {
           <View style={styles.actionContainer}>
             <TouchableOpacity
               style={styles.viewButton}
-              onPress={() => navigation.navigate("BookingDetails", { bookingId: item.id })}
+              onPress={() => navigation.navigate("BookingDetails", { bookingId: item.id || item.booking_id || item.bookingId })}
             >
               <Text style={styles.viewButtonText}>View Status Timeline</Text>
             </TouchableOpacity>
@@ -316,7 +331,7 @@ export default function BookingRequestsScreen({ route, navigation }) {
         <Text style={styles.headerTitle}>Booking Requests</Text>
       </View>
       <View style={styles.tabsContainer}>
-        {["Pending", "Accepted", "Completed"].map((tab) => (
+        {["Pending", "Accepted", "Completed", "Cancelled"].map((tab) => (
           <TouchableOpacity key={tab} style={styles.tabButton} onPress={() => setActiveTab(tab)}>
             <Text style={[styles.tabText, activeTab === tab && styles.activeTabText]}>{tab}</Text>
             {activeTab === tab && <View style={styles.activeIndicator} />}
@@ -369,7 +384,7 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 20, fontWeight: "700", color: Colors.text },
   tabsContainer: { flexDirection: "row", backgroundColor: Colors.white, marginHorizontal: 16, borderRadius: 10, paddingVertical: 2, marginBottom: 12, elevation: 1 },
   tabButton: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 10 },
-  tabText: { fontSize: 13, fontWeight: "600", color: Colors.textTertiary },
+  tabText: { fontSize: 11, fontWeight: "600", color: Colors.textTertiary },
   activeTabText: { color: Colors.primary },
   activeIndicator: { position: "absolute", bottom: 0, width: 32, height: 3, borderRadius: 10, backgroundColor: Colors.primary },
   centerContainer: { flex: 1, justifyContent: "center", alignItems: "center" },

@@ -36,18 +36,14 @@ export default function ForgotPasswordScreen({ navigation }) {
     try {
       const otpRes = await sendOtp(trimmedEmail);
       const data = otpRes?.data || otpRes;
-
-      if (data.exists) {
-        const otp = data.otp ? String(data.otp) : "";
-        Alert.alert("Verification OTP", `OTP has been sent to your email. (Dev code: ${otp})`);
+      if (data) {
+        Alert.alert("Verification OTP 📩", `A 6-digit verification code has been sent to ${trimmedEmail}. Please check your inbox.`);
         navigation.navigate("Otp", {
           email: trimmedEmail,
           role: data.role || "USER",
           isRegistering: false,
-          otp,
+          flow: "FORGOT_PASSWORD",
         });
-      } else {
-        setError("This email address is not registered in our database.");
       }
     } catch (e) {
       setError(e?.response?.data?.message || e.message || "Failed to send OTP. Please try again.");

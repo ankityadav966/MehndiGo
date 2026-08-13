@@ -1259,11 +1259,13 @@ async createReview(data) {
       throw new AppError("Artist profile not found", 404);
     }
 
+    const artistIds = [artist.id, Number(userId)];
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     const todayBookings = await db.Booking.count({
-      where: { artist_id: artist.id, createdAt: { [db.Sequelize.Op.gte]: today } }
+      where: { artist_id: { [db.Sequelize.Op.in]: artistIds }, createdAt: { [db.Sequelize.Op.gte]: today } }
     });
 
     const WalletService = require("./wallet.services");
@@ -1296,7 +1298,7 @@ async createReview(data) {
     ] = await Promise.all([
       db.Booking.count({
         where: {
-          artist_id: artist.id,
+          artist_id: { [db.Sequelize.Op.in]: artistIds },
           [db.Sequelize.Op.or]: [
             { booking_status: "PENDING" },
             { booking_status: "CONFIRMED", detailed_status: "CONFIRMED" }
@@ -1305,36 +1307,36 @@ async createReview(data) {
       }),
       db.Booking.count({
         where: {
-          artist_id: artist.id,
+          artist_id: { [db.Sequelize.Op.in]: artistIds },
           booking_status: "CONFIRMED",
           detailed_status: { [db.Sequelize.Op.ne]: "CONFIRMED" }
         }
       }),
-      db.Booking.count({ where: { artist_id: artist.id, detailed_status: "ARTIST_ACCEPTED" } }),
-      db.Booking.count({ where: { artist_id: artist.id, detailed_status: "SERVICE_STARTED" } }),
-      db.Booking.count({ where: { artist_id: artist.id, booking_status: "COMPLETED" } }),
+      db.Booking.count({ where: { artist_id: { [db.Sequelize.Op.in]: artistIds }, detailed_status: "ARTIST_ACCEPTED" } }),
+      db.Booking.count({ where: { artist_id: { [db.Sequelize.Op.in]: artistIds }, detailed_status: "SERVICE_STARTED" } }),
+      db.Booking.count({ where: { artist_id: { [db.Sequelize.Op.in]: artistIds }, booking_status: "COMPLETED" } }),
       db.Booking.count({
         where: {
-          artist_id: artist.id,
+          artist_id: { [db.Sequelize.Op.in]: artistIds },
           booking_status: "COMPLETED",
           detailed_status: { [db.Sequelize.Op.ne]: "COMPLETED_CLOSED" },
           payment_status: "PENDING"
         }
       }),
-      db.Booking.count({ where: { artist_id: artist.id, detailed_status: "AWAITING_CASH_CONFIRMATION" } }),
-      db.Booking.count({ where: { artist_id: artist.id, booking_status: "CANCELLED" } })
+      db.Booking.count({ where: { artist_id: { [db.Sequelize.Op.in]: artistIds }, detailed_status: "AWAITING_CASH_CONFIRMATION" } }),
+      db.Booking.count({ where: { artist_id: { [db.Sequelize.Op.in]: artistIds }, booking_status: "CANCELLED" } })
     ]);
 
     const pendingBookingsCount = pendingRequests;
 
     const recentBookings = await db.Booking.findAll({
-      where: { artist_id: artist.id },
+      where: { artist_id: { [db.Sequelize.Op.in]: artistIds } },
       limit: 20,
       order: [["createdAt", "DESC"]],
       include: [
-        { model: db.User, as: "user", attributes: ["name", "profile_image"] },
-        { model: db.Service, as: "service", attributes: ["specialization_name"] },
-        { model: db.AvailabilitySlot, as: "slot", attributes: ["start_time", "end_time"] },
+        { model: db.User, as: "user", attributes: ["id", "name", "phone", "email", "profile_image"] },
+        { model: db.Service, as: "service", attributes: ["id", "specialization_name", "category"] },
+        { model: db.AvailabilitySlot, as: "slot", attributes: ["id", "start_time", "end_time", "date"] },
         { model: db.Payment, as: "payments", attributes: ["payment_method", "status"] }
       ]
     });
@@ -1371,13 +1373,13 @@ async createReview(data) {
 
   async getBookings(userId) {
     const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
-    if (!artist) throw new AppError("Artist profile not found", 404);
+    const artistIds = artist ? [artist.id, Number(userId)] : [Number(userId)];
 
     return await db.Booking.findAll({
-      where: { artist_id: artist.id },
+      where: { artist_id: { [db.Sequelize.Op.in]: artistIds } },
       include: [
-        { model: db.User, as: "user", attributes: ["id", "name", "phone", "profile_image"] },
-        { model: db.Service, as: "service", attributes: ["specialization_name"] },
+        { model: db.User, as: "user", attributes: ["id", "name", "phone", "email", "profile_image"] },
+        { model: db.Service, as: "service", attributes: ["id", "specialization_name", "category", "minimum_price"] },
         { model: db.AvailabilitySlot, as: "slot" }
       ],
       order: [["createdAt", "DESC"]]

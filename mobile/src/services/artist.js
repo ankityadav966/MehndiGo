@@ -102,8 +102,39 @@ export async function getPortfolioItemById(id) {
   return data?.data || data;
 }
 
+async function prepareSafeLocalUri(rawUri) {
+  if (!rawUri) throw new Error("No local file URI provided");
+  let uri = rawUri;
+  if (!uri.startsWith("file://") && !uri.startsWith("content://") && !uri.startsWith("ph://")) {
+    uri = `file://${uri}`;
+  }
+
+  const FileSystem = require("expo-file-system/legacy");
+  try {
+    const destDir = `${FileSystem.cacheDirectory}uploads/`;
+    const dirInfo = await FileSystem.getInfoAsync(destDir);
+    if (!dirInfo.exists) {
+      await FileSystem.makeDirectoryAsync(destDir, { intermediates: true });
+    }
+
+    const cleanFilename = (uri.split("/").pop() || `upload_${Date.now()}.jpg`).split("?")[0];
+    const safeDest = `${destDir}${Date.now()}_${cleanFilename}`;
+
+    await FileSystem.copyAsync({ from: uri, to: safeDest });
+    const checkCopied = await FileSystem.getInfoAsync(safeDest);
+    if (checkCopied.exists) {
+      return safeDest;
+    }
+  } catch (copyErr) {
+    console.warn("[prepareSafeLocalUri] Cache copy fallback error:", copyErr.message);
+  }
+
+  return uri;
+}
+
 async function uploadDirectToCloudinary(localUri, mimeType, isVideo, onProgress) {
   try {
+    const safeUri = await prepareSafeLocalUri(localUri);
     const sigRes = await apiRequest("GET", "/api/v1/mehndigo/artist/portfolio/upload-signature", null, true);
     const { signature, timestamp, folder, api_key, cloud_name } = sigRes.data || sigRes;
 
@@ -128,7 +159,7 @@ async function uploadDirectToCloudinary(localUri, mimeType, isVideo, onProgress)
     if (onProgress) {
       const uploadTask = FileSystem.createUploadTask(
         url,
-        localUri,
+        safeUri,
         uploadOptions,
         (data) => {
           if (data.totalBytesExpectedToSend && data.totalBytesExpectedToSend > 0) {
@@ -144,7 +175,7 @@ async function uploadDirectToCloudinary(localUri, mimeType, isVideo, onProgress)
       const responseData = JSON.parse(result.body);
       return responseData.secure_url;
     } else {
-      const response = await FileSystem.uploadAsync(url, localUri, uploadOptions);
+      const response = await FileSystem.uploadAsync(url, safeUri, uploadOptions);
       if (response.status < 200 || response.status >= 300) {
         throw new Error(`Cloudinary direct upload failed with status ${response.status}: ${response.body}`);
       }
@@ -159,6 +190,7 @@ async function uploadDirectToCloudinary(localUri, mimeType, isVideo, onProgress)
 
 async function uploadToServerMultipart(localUri, mimeType, isVideo = false) {
   try {
+    const safeUri = await prepareSafeLocalUri(localUri);
     const { getNormalizedUrl } = require("./api");
     const { secureStorage } = require("../utils/storage");
     const FileSystem = require("expo-file-system/legacy");
@@ -166,12 +198,7 @@ async function uploadToServerMultipart(localUri, mimeType, isVideo = false) {
     const endpoint = getNormalizedUrl("/api/v1/mehndigo/artist/portfolio/upload");
     const token = await secureStorage.getAccessToken();
 
-    let cleanUri = localUri;
-    if (cleanUri.startsWith("/")) {
-      cleanUri = `file://${cleanUri}`;
-    }
-
-    const response = await FileSystem.uploadAsync(endpoint, cleanUri, {
+    const response = await FileSystem.uploadAsync(endpoint, safeUri, {
       httpMethod: "POST",
       uploadType: FileSystem.FileSystemUploadType.MULTIPART,
       fieldName: "media",

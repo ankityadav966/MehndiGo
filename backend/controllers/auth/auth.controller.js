@@ -90,8 +90,20 @@ async function updateProfile(req, res) {
   }
 }
 
+async function sendEmailDispatch(req, res) {
+  try {
+    const response = await AuthService.sendEmailDispatch(req.body);
+    return res.status(200).json(SuccessResponse("Email Dispatched Successfully", response));
+  } catch (error) {
+    return res
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
+  }
+}
+
 module.exports = {
   sendOtp,
+  sendEmailDispatch,
   verifyOtp,
   register,
   login,

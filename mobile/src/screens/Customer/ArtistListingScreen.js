@@ -28,11 +28,12 @@ import {
 } from "../../services/customer";
 import { getNormalizedUrl } from "../../services/api";
 import { getThumbnailUrl } from "../../utils/cloudinary";
+import { getActiveAddress } from "../../utils/locationManager";
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get("window");
 
 export default function ArtistListingScreen({ route, navigation }) {
-  const { category: initialCategory, searchQuery: initialSearchQuery, filter: initialFilter } = route.params || {};
+  const { category: initialCategory, categoryId: initialCategoryId, searchQuery: initialSearchQuery, filter: initialFilter } = route.params || {};
 
   // Query & Results state
   const [query, setQuery] = useState(initialSearchQuery || "");
@@ -50,6 +51,7 @@ export default function ArtistListingScreen({ route, navigation }) {
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState(initialCategory || "");
+  const [selectedCategoryId, setSelectedCategoryId] = useState(initialCategoryId || null);
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
   const [rating, setRating] = useState("");
@@ -79,7 +81,14 @@ export default function ArtistListingScreen({ route, navigation }) {
         getFavorites()
       ]);
       setCategories(meta?.categories || []);
-      setFavoriteArtistIds((favs || []).map((artist) => artist.id));
+      const allFavIds = [];
+      (favs || []).forEach((artist) => {
+        if (artist.id) allFavIds.push(artist.id);
+        if (artist.user_id) allFavIds.push(artist.user_id);
+        if (artist.artist_profile_id) allFavIds.push(artist.artist_profile_id);
+        if (artist.artist_id) allFavIds.push(artist.artist_id);
+      });
+      setFavoriteArtistIds(allFavIds);
     } catch (e) {
       console.log("Failed to load metadata/favorites:", e.message);
     }
@@ -95,7 +104,9 @@ export default function ArtistListingScreen({ route, navigation }) {
   // Construct active filters object
   const getActiveFilters = () => {
     const filters = {};
+    if (selectedCategoryId) filters.categoryId = selectedCategoryId;
     if (selectedCategory) filters.category = selectedCategory;
+    if (initialFilter) filters.filter = initialFilter;
     if (minPrice) filters.minPrice = minPrice;
     if (maxPrice) filters.maxPrice = maxPrice;
     if (rating) filters.rating = rating;
@@ -117,8 +128,11 @@ export default function ArtistListingScreen({ route, navigation }) {
     }
 
     try {
+      const activeAddr = await getActiveAddress();
+      const lat = activeAddr?.latitude || null;
+      const lng = activeAddr?.longitude || null;
       const filters = getActiveFilters();
-      const response = await searchArtists(query, filters, sort, MOCK_LAT, MOCK_LNG, pageNum, 8);
+      const response = await searchArtists(query, filters, sort, lat, lng, pageNum, 15);
       const rows = Array.isArray(response) ? response : (response?.rows || response?.data || []);
       const total = Array.isArray(response) ? response.length : (response?.count || rows.length);
 
@@ -128,7 +142,7 @@ export default function ArtistListingScreen({ route, navigation }) {
         setArtists((prev) => [...prev, ...rows]);
       }
 
-      const hasMoreData = rows.length === 8 && (artists.length + rows.length < total);
+      const hasMoreData = rows.length === 15 && ((pageNum === 1 ? rows.length : artists.length + rows.length) < total);
       setHasMore(hasMoreData);
       setPage(pageNum);
     } catch (err) {
@@ -143,10 +157,13 @@ export default function ArtistListingScreen({ route, navigation }) {
   // Sync route params when screen parameters update
   useEffect(() => {
     if (route.params) {
-      const { category, searchQuery, filter } = route.params;
+      const { category, categoryId, searchQuery, filter } = route.params;
 
       if (searchQuery !== undefined && searchQuery !== query) {
         setQuery(searchQuery || "");
+      }
+      if (categoryId !== undefined && categoryId !== selectedCategoryId) {
+        setSelectedCategoryId(categoryId || null);
       }
       if (category !== undefined && category !== selectedCategory) {
         setSelectedCategory(category || "");
@@ -157,6 +174,10 @@ export default function ArtistListingScreen({ route, navigation }) {
         setSort("highest_rated");
       } else if (filter === "nearest" && sort !== "nearest") {
         setSort("nearest");
+      } else if (filter === "all") {
+        setSelectedCategory("");
+        setSelectedCategoryId(null);
+        setSort("highest_rated");
       }
     }
   }, [route.params]);
@@ -166,7 +187,7 @@ export default function ArtistListingScreen({ route, navigation }) {
       fetchArtistsList(1);
     }, 0);
     return () => clearTimeout(timer);
-  }, [query, sort, selectedCategory, gender, language]);
+  }, [query, sort, selectedCategory, selectedCategoryId, rating, experience, verified, homeService, studioService, gender, language]);
 
   const handleRefresh = () => {
     setRefreshing(true);
@@ -187,6 +208,7 @@ export default function ArtistListingScreen({ route, navigation }) {
 
   const resetFilters = () => {
     setSelectedCategory("");
+    setSelectedCategoryId(null);
     setMinPrice("");
     setMaxPrice("");
     setRating("");
@@ -196,6 +218,7 @@ export default function ArtistListingScreen({ route, navigation }) {
     setStudioService(false);
     setGender("");
     setLanguage("");
+    setQuery("");
   };
 
   // Sync Favorite item click
@@ -237,18 +260,20 @@ export default function ArtistListingScreen({ route, navigation }) {
 
   // Render List View Item Card
   const renderListArtistCard = ({ item }) => {
-    const isFav = favoriteArtistIds.includes(item.id);
-    const minPrice = item.starting_price || item.services?.[0]?.minimum_price || item.services?.[0]?.price || 1500;
+    const artistId = item.id || item.user_id || item.artist_id;
+    const isFav = favoriteArtistIds.includes(item.id) || favoriteArtistIds.includes(item.user_id) || favoriteArtistIds.includes(item.artist_id) || favoriteArtistIds.includes(artistId);
+    const minPrice = item.starting_price || item.startingPrice || item.price || item.services?.[0]?.minimum_price || item.services?.[0]?.price;
     const distanceVal = item.distance ? `${Number(item.distance).toFixed(1)} km` : "Nearby";
     const categoryName = item.services?.[0]?.category || item.categories || "General Mehndi";
     const artistName = item.name || item.full_name || item.user?.name || "Mehndi Artist";
-    const avatarUri = getNormalizedUrl(item.profile_image || item.avatar || item.user?.profile_image) || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400";
+    const rawImage = item.profile_image || item.profileImage || item.avatar || item.user?.profile_image || (Array.isArray(item.portfolio_images) && item.portfolio_images[0]?.url) || (Array.isArray(item.portfolio) && item.portfolio[0]?.url);
+    const avatarUri = getNormalizedUrl(rawImage) || `https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=F3E8FF&color=7C3AED`;
 
     return (
       <TouchableOpacity
         style={styles.listCard}
         activeOpacity={0.9}
-        onPress={() => navigation.navigate("ArtistProfile", { artistId: item.id })}
+        onPress={() => navigation.navigate("ArtistProfile", { artistId: artistId })}
       >
         <View style={styles.imageContainer}>
           <OptimizedImage
@@ -260,7 +285,7 @@ export default function ArtistListingScreen({ route, navigation }) {
 
           <TouchableOpacity
             style={styles.favoriteBtn}
-            onPress={() => handleToggleFavorite(item.id)}
+            onPress={() => handleToggleFavorite(artistId)}
           >
             <Ionicons
               name={isFav ? "heart" : "heart-outline"}
@@ -331,10 +356,12 @@ export default function ArtistListingScreen({ route, navigation }) {
 
   // Render Grid View Item Card
   const renderGridArtistCard = ({ item }) => {
-    const isFav = favoriteArtistIds.includes(item.id);
-    const minPrice = item.starting_price || item.services?.[0]?.minimum_price || item.services?.[0]?.price || 1500;
+    const artistId = item.id || item.user_id || item.artist_id;
+    const isFav = favoriteArtistIds.includes(item.id) || favoriteArtistIds.includes(item.user_id) || favoriteArtistIds.includes(item.artist_id) || favoriteArtistIds.includes(artistId);
+    const minPrice = item.starting_price || item.startingPrice || item.price || item.services?.[0]?.minimum_price || item.services?.[0]?.price;
     const artistName = item.name || item.full_name || item.user?.name || "Mehndi Artist";
-    const avatarUri = getNormalizedUrl(item.profile_image || item.avatar || item.user?.profile_image) || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400";
+    const rawImage = item.profile_image || item.profileImage || item.avatar || item.user?.profile_image || (Array.isArray(item.portfolio_images) && item.portfolio_images[0]?.url) || (Array.isArray(item.portfolio) && item.portfolio[0]?.url);
+    const avatarUri = getNormalizedUrl(rawImage) || `https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=F3E8FF&color=7C3AED`;
 
     return (
       <TouchableOpacity
@@ -420,6 +447,80 @@ export default function ArtistListingScreen({ route, navigation }) {
             <Ionicons name="map-outline" size={18} color={layoutMode === "map" ? Colors.primary : Colors.textSecondary} style={{ marginLeft: 4 }} />
           </TouchableOpacity>
         </View>
+      </View>
+
+      {/* Search Input Bar */}
+      <View style={styles.searchBarContainer}>
+        <Ionicons name="search-outline" size={18} color={Colors.textTertiary} style={{ marginRight: 8 }} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search artists, categories, city..."
+          placeholderTextColor={Colors.textTertiary}
+          value={query}
+          onChangeText={setQuery}
+          returnKeyType="search"
+        />
+        {query ? (
+          <TouchableOpacity onPress={() => setQuery("")} style={{ padding: 4 }}>
+            <Ionicons name="close-circle" size={18} color={Colors.textTertiary} />
+          </TouchableOpacity>
+        ) : null}
+      </View>
+
+      {/* Quick Filter Horizontal Chips */}
+      <View style={{ marginBottom: 10 }}>
+        <FlatList
+          data={[
+            { label: "All Artists", key: "all" },
+            { label: "Bridal", key: "bridal" },
+            { label: "Arabic", key: "arabic" },
+            { label: "Royal", key: "royal" },
+            { label: "⭐ 4.5+ Rated", key: "top_rated" },
+            { label: "5+ Yrs Exp", key: "5_exp" },
+            { label: "Home Service", key: "home_service" },
+            { label: "Verified Only", key: "verified" }
+          ]}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 16 }}
+          keyExtractor={(item) => item.key}
+          renderItem={({ item }) => {
+            let isActive = false;
+            if (item.key === "all") isActive = !selectedCategory && !rating && !experience && !verified && !homeService;
+            else if (item.key === "bridal") isActive = selectedCategory?.toLowerCase().includes("bridal");
+            else if (item.key === "arabic") isActive = selectedCategory?.toLowerCase().includes("arabic");
+            else if (item.key === "royal") isActive = selectedCategory?.toLowerCase().includes("royal");
+            else if (item.key === "top_rated") isActive = rating === "4.5";
+            else if (item.key === "5_exp") isActive = experience === "5";
+            else if (item.key === "home_service") isActive = homeService;
+            else if (item.key === "verified") isActive = verified;
+
+            return (
+              <TouchableOpacity
+                style={[styles.quickFilterChip, isActive && styles.activeQuickFilterChip]}
+                onPress={() => {
+                  if (item.key === "all") {
+                    resetFilters();
+                  } else if (item.key === "bridal" || item.key === "arabic" || item.key === "royal") {
+                    setSelectedCategory(isActive ? "" : item.label);
+                  } else if (item.key === "top_rated") {
+                    setRating(isActive ? "" : "4.5");
+                  } else if (item.key === "5_exp") {
+                    setExperience(isActive ? "" : "5");
+                  } else if (item.key === "home_service") {
+                    setHomeService(!homeService);
+                  } else if (item.key === "verified") {
+                    setVerified(!verified);
+                  }
+                }}
+              >
+                <Text style={[styles.quickFilterChipText, isActive && styles.activeQuickFilterChipText]}>
+                  {item.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          }}
+        />
       </View>
 
       {/* Sorting bar & Filtering details */}
@@ -791,6 +892,46 @@ const styles = StyleSheet.create({
     alignItems: "center"
   },
   activeLayoutBtn: { borderColor: Colors.primary, backgroundColor: Colors.primaryLight + "10" },
+  searchBarContainer: {
+    marginHorizontal: 16,
+    marginBottom: 10,
+    backgroundColor: Colors.inputBackground,
+    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    height: 44,
+    borderWidth: 1,
+    borderColor: Colors.border
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.text,
+    paddingVertical: 0
+  },
+  quickFilterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: Colors.inputBackground,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginRight: 8
+  },
+  activeQuickFilterChip: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary
+  },
+  quickFilterChipText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: Colors.textSecondary
+  },
+  activeQuickFilterChipText: {
+    color: Colors.white,
+    fontWeight: "700"
+  },
   sortBar: {
     flexDirection: "row",
     alignItems: "center",

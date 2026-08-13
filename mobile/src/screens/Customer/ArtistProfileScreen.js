@@ -111,7 +111,22 @@ export default function ArtistProfileScreen({ route, navigation }) {
 
       // Check favorite
       const targetId = prof.id || prof.user_id;
-      const isArtistFav = (Array.isArray(favs) ? favs : []).some((fav) => fav.id === targetId || fav.user_id === targetId);
+      const targetUserId = prof.user_id || prof.user?.id || prof.id;
+      const targetProfileId = prof.id || prof.artist_profile_id;
+      const isArtistFav = (Array.isArray(favs) ? favs : []).some((fav) => 
+        String(fav.id) === String(targetId) || 
+        String(fav.user_id) === String(targetId) ||
+        String(fav.artist_id) === String(targetId) ||
+        String(fav.artist_profile_id) === String(targetId) ||
+        String(fav.id) === String(targetUserId) ||
+        String(fav.user_id) === String(targetUserId) ||
+        String(fav.artist_id) === String(targetUserId) ||
+        String(fav.artist_profile_id) === String(targetUserId) ||
+        String(fav.id) === String(targetProfileId) ||
+        String(fav.user_id) === String(targetProfileId) ||
+        String(fav.artist_id) === String(targetProfileId) ||
+        String(fav.artist_profile_id) === String(targetProfileId)
+      );
       setIsFav(isArtistFav);
 
       // Default date select
@@ -139,11 +154,12 @@ export default function ArtistProfileScreen({ route, navigation }) {
   // Sync Favorite actions
   const handleToggleFavorite = async () => {
     try {
+      const targetId = profile?.id || profile?.user_id || artistId;
       if (isFav) {
-        await removeArtistFavorite(profile.id);
+        await removeArtistFavorite(targetId);
         setIsFav(false);
       } else {
-        await addArtistFavorite(profile.id);
+        await addArtistFavorite(targetId);
         setIsFav(true);
       }
     } catch (e) {
@@ -285,8 +301,8 @@ export default function ArtistProfileScreen({ route, navigation }) {
 
   // Cover image assets array
   const coverImages = portfolio.length > 0
-    ? portfolio.slice(0, 4).map((p) => p.image_url)
-    : ["https://images.unsplash.com/photo-1590012357675-bc55909793fb?q=80&w=800"];
+    ? portfolio.slice(0, 4).map((p) => resolveImage(p.image_url || p.url)).filter(Boolean)
+    : [];
 
   // Distinct dates in availability slots
   const availableDates = [...new Set(availability.map((slot) => slot?.date).filter(Boolean))].filter((date) => {
@@ -296,7 +312,8 @@ export default function ArtistProfileScreen({ route, navigation }) {
   const timeSlotsForSelectedDate = availability.filter((slot) => slot?.date === selectedDate);
 
   const artistDisplayName = profile.name || profile.full_name || profile.user?.name || "Mehndi Artist";
-  const artistAvatarUri = resolveImage(profile.profile_image || profile.avatar || profile.user?.profile_image) || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=300";
+  const artistAvatarUri = resolveImage(profile.profile_image || profile.avatar || profile.user?.profile_image)
+    || `https://ui-avatars.com/api/?name=${encodeURIComponent(artistDisplayName)}&background=F3E8FF&color=7C3AED`;
 
   return (
     <View style={styles.container}>

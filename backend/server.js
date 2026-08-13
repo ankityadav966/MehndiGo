@@ -188,12 +188,21 @@ const db = require("./models");
     await db.sequelize.query('ALTER TABLE "Wallets" ADD COLUMN IF NOT EXISTS weekly_earnings DOUBLE PRECISION DEFAULT 0;');
     await db.sequelize.query('ALTER TABLE "Wallets" ADD COLUMN IF NOT EXISTS monthly_earnings DOUBLE PRECISION DEFAULT 0;');
 
+    await db.sequelize.query('ALTER TABLE "Payments" ADD COLUMN IF NOT EXISTS razorpay_order_id VARCHAR(255);');
+    await db.sequelize.query('ALTER TABLE "Payments" ADD COLUMN IF NOT EXISTS razorpay_payment_id VARCHAR(255);');
+    await db.sequelize.query('ALTER TABLE "Payments" ADD COLUMN IF NOT EXISTS razorpay_signature VARCHAR(255);');
+    await db.sequelize.query('ALTER TABLE "Transactions" ADD COLUMN IF NOT EXISTS razorpay_order_id VARCHAR(255);');
+    await db.sequelize.query('ALTER TABLE "Transactions" ADD COLUMN IF NOT EXISTS razorpay_payment_id VARCHAR(255);');
+    await db.sequelize.query('ALTER TABLE "Transactions" ADD COLUMN IF NOT EXISTS razorpay_signature VARCHAR(255);');
+
     await db.User.sync({ alter: true });
+    await db.Payment.sync({ alter: true });
+    await db.Transaction.sync({ alter: true });
     await db.Wallet.sync({ alter: true });
     await db.WalletTransaction.sync({ alter: true });
     await db.LedgerEntry.sync({ alter: true });
     await db.OutstandingCommission.sync({ alter: true });
-    console.log("[DB MIGRATION] Users, Wallets, WalletTransactions, Ledger, and OutstandingCommissions schema updated successfully.");
+    console.log("[DB MIGRATION] Users, Payments, Transactions, Wallets, WalletTransactions, Ledger, and OutstandingCommissions schema updated successfully.");
   } catch (err) {
     console.log("[DB MIGRATION] Self-healing migration note:", err.message);
   }

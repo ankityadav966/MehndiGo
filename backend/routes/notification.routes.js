@@ -7,6 +7,7 @@ const { authorize } = require("../middleware/role.middleware");
 // Client device registration
 router.post("/register-token", authenticate, NotificationController.registerToken);
 router.delete("/remove-token", authenticate, NotificationController.removeToken);
+router.post("/send-test-push", authenticate, NotificationController.sendTestPush);
 
 // Client notification history
 router.get("/history", authenticate, NotificationController.getHistory);
@@ -19,5 +20,7 @@ router.delete("/:id", authenticate, NotificationController.deleteNotification);
 router.post("/send", authenticate, authorize("ADMIN"), NotificationController.sendSystemNotification);
 router.post("/broadcast", authenticate, authorize("ADMIN"), NotificationController.sendBroadcast);
 router.post("/schedule", authenticate, authorize("ADMIN"), NotificationController.scheduleNotification);
+// Admin debug endpoint (temporary, remove after testing)
+router.get('/debug/push/:userId', authenticate, authorize('ADMIN'), NotificationController.debugGetTokens);
 
 module.exports = router;
