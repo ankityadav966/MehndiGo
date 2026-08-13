@@ -168,15 +168,29 @@ export default function BookingSummaryScreen({ route, navigation }) {
             </View>
           </View>
 
-          {/* Visit location address */}
+          {/* Visit location address & snapshot card */}
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Visit Address</Text>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <Text style={styles.cardTitle}>Booking Location Snapshot</Text>
+              <TouchableOpacity onPress={() => navigation.goBack()}>
+                <Text style={{ color: Colors.primary, fontWeight: "700", fontSize: 12 }}>Change Location</Text>
+              </TouchableOpacity>
+            </View>
             <Text style={styles.address}>{address}</Text>
             {landmark ? (
               <Text style={[styles.address, { fontStyle: "italic", marginTop: 4 }]}>
-                📍 Landmark: {landmark}
+                Landmark: {landmark}
               </Text>
             ) : null}
+            <View style={{ flexDirection: "row", alignItems: "center", marginTop: 8, backgroundColor: "#F0FDF4", padding: 8, borderRadius: 8, borderWidth: 1, borderColor: "#BBF7D0" }}>
+              <Ionicons name="checkmark-circle" size={16} color="#16A34A" style={{ marginRight: 6 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 11, fontWeight: "700", color: "#15803D" }}>📍 Exact Location Confirmed</Text>
+                <Text style={{ fontSize: 10, color: "#166534", marginTop: 1 }}>
+                  Lat: {Number(latitude || 0).toFixed(4)} | Lng: {Number(longitude || 0).toFixed(4)} ({params.source || "MANUAL"})
+                </Text>
+              </View>
+            </View>
           </View>
 
           {/* Coupon codes panel */}

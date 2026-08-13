@@ -259,6 +259,10 @@ export default function BookingDetailsScreen({ route, navigation }) {
   };
 
   const openGoogleMapsNavigation = () => {
+    if (!customerCoords || !customerCoords.lat || !customerCoords.lng) {
+      Alert.alert("Location Unresolved", "Customer booking coordinates are missing or invalid. Cannot launch map route.");
+      return;
+    }
     const destLat = customerCoords.lat;
     const destLng = customerCoords.lng;
     const addressLabel = encodeURIComponent(booking?.address || booking?.user?.name || "Customer Location");
@@ -704,10 +708,12 @@ export default function BookingDetailsScreen({ route, navigation }) {
   const activeStepIndex = STEPS.findIndex((s) => s.key === currentDetailedStatus);
   const canChat = ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED"].includes(currentDetailedStatus);
 
-  // 1. Authoritative Customer Destination Coordinates from Confirmed Booking Location
-  const customerCoords = (booking && booking.latitude && parseFloat(booking.latitude) !== 0)
-    ? { lat: parseFloat(booking.latitude), lng: parseFloat(booking.longitude) }
-    : { lat: 26.9124, lng: 75.7873 };
+  // 1. Authoritative Customer Destination Coordinates from Confirmed Booking Location Snapshot
+  const rawCLat = Number(booking?.customer_latitude || booking?.customer_lat || booking?.latitude || 0);
+  const rawCLng = Number(booking?.customer_longitude || booking?.customer_lng || booking?.longitude || 0);
+  const customerCoords = (rawCLat !== 0 && rawCLng !== 0 && !isNaN(rawCLat) && !isNaN(rawCLng) && rawCLat >= -90 && rawCLat <= 90 && rawCLng >= -180 && rawCLng <= 180)
+    ? { lat: rawCLat, lng: rawCLng }
+    : null;
 
   // 2. Authoritative Artist Coordinates (Real Live GPS or Saved DB location ONLY - NO Customer Fallback!)
   let artistCoordsToUse = null;

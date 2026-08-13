@@ -2852,8 +2852,10 @@ const handleCustomerDynamic = async (c) => {
 
   // Customer Addresses
   if (path.includes("addresses")) {
-    await db.run("CREATE TABLE IF NOT EXISTS customer_addresses (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, label TEXT, full_address TEXT, house_flat TEXT, landmark TEXT, city TEXT, state TEXT, pincode TEXT, latitude REAL, longitude REAL, is_default INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)").catch(() => { });
+    await db.run("CREATE TABLE IF NOT EXISTS customer_addresses (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, label TEXT, full_address TEXT, house_flat TEXT, landmark TEXT, city TEXT, state TEXT, pincode TEXT, latitude REAL, longitude REAL, accuracy REAL DEFAULT 0.0, source TEXT DEFAULT 'MANUAL', is_default INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)").catch(() => { });
     await db.run("CREATE INDEX IF NOT EXISTS idx_customer_addresses_user_id ON customer_addresses(user_id)").catch(() => { });
+    await db.run("ALTER TABLE customer_addresses ADD COLUMN accuracy REAL DEFAULT 0.0").catch(() => { });
+    await db.run("ALTER TABLE customer_addresses ADD COLUMN source TEXT DEFAULT 'MANUAL'").catch(() => { });
 
     if (!u || !u.id) return jsonRes(c, false, null, "Unauthorized access", 401);
 
@@ -2920,6 +2922,11 @@ const handleCustomerDynamic = async (c) => {
       const city = String(body.city || "").trim();
       const state = String(body.state || "").trim();
       const pincodeRaw = String(body.pincode || "").trim();
+      const accuracy = Number(body.accuracy || 0.0);
+      let source = String(body.source || "MANUAL").toUpperCase();
+      if (!["GPS", "MANUAL", "MAP_PICKER"].includes(source)) {
+        source = "MANUAL";
+      }
 
       if (!fullAddress) {
         return jsonRes(c, false, null, "Full address is required", 400);
@@ -2928,8 +2935,8 @@ const handleCustomerDynamic = async (c) => {
       let pincode = "";
       if (pincodeRaw) {
         const cleanPin = pincodeRaw.replace(/[^0-9]/g, "");
-        if (cleanPin.length !== 6) {
-          return jsonRes(c, false, null, "Pincode must be a 6-digit number", 400);
+        if (cleanPin.length !== 6 || cleanPin.startsWith("0")) {
+          return jsonRes(c, false, null, "Pincode must be a valid 6-digit Indian postal code", 400);
         }
         pincode = cleanPin;
       }
@@ -2939,9 +2946,11 @@ const handleCustomerDynamic = async (c) => {
       if (body.latitude !== undefined && body.latitude !== null && body.longitude !== undefined && body.longitude !== null) {
         const parsedLat = Number(body.latitude);
         const parsedLng = Number(body.longitude);
-        if (!isNaN(parsedLat) && !isNaN(parsedLng) && parsedLat >= -90 && parsedLat <= 90 && parsedLng >= -180 && parsedLng <= 180) {
+        if (!isNaN(parsedLat) && !isNaN(parsedLng) && parsedLat !== 0 && parsedLng !== 0 && parsedLat >= -90 && parsedLat <= 90 && parsedLng >= -180 && parsedLng <= 180) {
           lat = parsedLat;
           lng = parsedLng;
+        } else {
+          return jsonRes(c, false, null, "Invalid location coordinates (latitude must be between -90 and 90, longitude between -180 and 180, non-zero)", 400);
         }
       }
 
@@ -2958,8 +2967,8 @@ const handleCustomerDynamic = async (c) => {
           await db.run("UPDATE customer_addresses SET is_default = 0 WHERE user_id = ?", [u.id]).catch(() => { });
         }
         await db.run(
-          "UPDATE customer_addresses SET label = ?, full_address = ?, house_flat = ?, landmark = ?, city = ?, state = ?, pincode = ?, latitude = ?, longitude = ?, is_default = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?",
-          [label, fullAddress, houseFlat, landmark, city, state, pincode, lat, lng, makeDefault ? 1 : 0, targetAddressId, u.id]
+          "UPDATE customer_addresses SET label = ?, full_address = ?, house_flat = ?, landmark = ?, city = ?, state = ?, pincode = ?, latitude = ?, longitude = ?, accuracy = ?, source = ?, is_default = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?",
+          [label, fullAddress, houseFlat, landmark, city, state, pincode, lat, lng, accuracy, source, makeDefault ? 1 : 0, targetAddressId, u.id]
         ).catch(() => { });
 
         const updated = await db.first("SELECT * FROM customer_addresses WHERE id = ?", [targetAddressId]).catch(() => null);
@@ -2971,8 +2980,8 @@ const handleCustomerDynamic = async (c) => {
       }
 
       await db.run(
-        "INSERT INTO customer_addresses (user_id, label, full_address, house_flat, landmark, city, state, pincode, latitude, longitude, is_default) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [u.id, label, fullAddress, houseFlat, landmark, city, state, pincode, lat, lng, makeDefault ? 1 : 0]
+        "INSERT INTO customer_addresses (user_id, label, full_address, house_flat, landmark, city, state, pincode, latitude, longitude, accuracy, source, is_default) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [u.id, label, fullAddress, houseFlat, landmark, city, state, pincode, lat, lng, accuracy, source, makeDefault ? 1 : 0]
       ).catch(() => null);
 
       const inserted = await db.first("SELECT * FROM customer_addresses WHERE user_id = ? ORDER BY id DESC LIMIT 1", [u.id]).catch(() => null);
@@ -3623,14 +3632,33 @@ const handleCustomerDynamic = async (c) => {
     if (method === "POST" && (path.includes("/create") || path.endsWith("/booking"))) {
       if (!u || !u.id) return jsonRes(c, false, null, "Unauthorized access", 401);
       await ensureWalletTables(db);
+      await db.run("ALTER TABLE bookings ADD COLUMN customer_latitude REAL").catch(() => { });
+      await db.run("ALTER TABLE bookings ADD COLUMN customer_longitude REAL").catch(() => { });
+      await db.run("ALTER TABLE bookings ADD COLUMN location_accuracy REAL DEFAULT 0.0").catch(() => { });
+      await db.run("ALTER TABLE bookings ADD COLUMN location_source TEXT DEFAULT 'MANUAL'").catch(() => { });
+
       const body = await c.req.json().catch(() => ({}));
       const artistId = Number(body.artist_id || body.artistId || body.artist?.id || body.artist || 0);
       const serviceId = Number(body.service_id || body.serviceId || 0);
       const bookingDate = body.booking_date || body.bookingDate || body.selectedDate || new Date().toISOString().split('T')[0];
       const bookingTime = body.booking_time || body.bookingTime || body.timeLabel || "10:00 AM";
-      const address = body.address || body.full_address || "Customer Location";
+      const address = String(body.address || body.full_address || body.fullAddress || "").trim();
       const notes = body.notes || "";
       const bookingNo = "MG-" + Date.now().toString().slice(-6);
+
+      const reqLat = Number(body.latitude || body.customer_latitude || body.lat || 0);
+      const reqLng = Number(body.longitude || body.customer_longitude || body.lng || 0);
+      const reqAccuracy = Number(body.accuracy || body.location_accuracy || 0);
+      let reqSource = String(body.source || body.location_source || "MANUAL").toUpperCase();
+      if (!["GPS", "MANUAL", "MAP_PICKER"].includes(reqSource)) reqSource = "MANUAL";
+
+      if (!address) {
+        return jsonRes(c, false, null, "Booking address text is required", 400);
+      }
+
+      if (isNaN(reqLat) || isNaN(reqLng) || reqLat === 0 || reqLng === 0 || reqLat < -90 || reqLat > 90 || reqLng < -180 || reqLng > 180) {
+        return jsonRes(c, false, null, "Booking requires valid non-zero latitude (-90 to 90) and longitude (-180 to 180) coordinates.", 400);
+      }
 
       let totalAmount = Number(body.total_amount || body.totalAmount || body.finalAmount || body.price || body.amount || body.grandTotal || body.total_price || 0);
       if (!totalAmount && serviceId) {
@@ -3654,13 +3682,15 @@ const handleCustomerDynamic = async (c) => {
             booking_number, customer_id, artist_id, service_id, booking_date, booking_time,
             total_amount, base_service_amount, travel_charge, travel_charge_status,
             admin_commission, artist_service_amount, artist_travel_amount, artist_total_payable,
-            customer_total_amount, advance_paid, remaining_amount, address, notes, status, payment_status
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.0, 'NONE', ?, ?, 0.0, ?, ?, 0.0, ?, ?, ?, 'pending', 'pending')`,
+            customer_total_amount, advance_paid, remaining_amount, address, latitude, longitude,
+            customer_latitude, customer_longitude, location_accuracy, location_source, notes, status, payment_status
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.0, 'NONE', ?, ?, 0.0, ?, ?, 0.0, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'pending')`,
           [
             bookingNo, u.id, artistId, serviceId, bookingDate, bookingTime,
             calc.customer_total_amount, calc.base_service_amount,
             calc.admin_commission, calc.artist_service_amount, calc.artist_service_amount,
-            calc.customer_total_amount, calc.remaining_cash, address, notes
+            calc.customer_total_amount, calc.remaining_cash, address, reqLat, reqLng,
+            reqLat, reqLng, reqAccuracy, reqSource, notes
           ]
         );
       } catch (err) {
@@ -6247,19 +6277,14 @@ const handleCreateBookingExplicit = async (c) => {
   const notes = body.notes || "";
   const bookingNo = "MG-" + Date.now().toString().slice(-6);
 
-  const lat = Number(body.latitude || body.lat || body.custLat || body.customer_latitude || 0);
-  const lng = Number(body.longitude || body.lng || body.custLng || body.customer_longitude || 0);
+  const reqLat = Number(body.latitude || body.lat || body.custLat || body.customer_latitude || 0);
+  const reqLng = Number(body.longitude || body.lng || body.custLng || body.customer_longitude || 0);
+  const reqAccuracy = Number(body.accuracy || body.location_accuracy || 0);
+  let reqSource = String(body.source || body.location_source || "MANUAL").toUpperCase();
+  if (!["GPS", "MANUAL", "MAP_PICKER"].includes(reqSource)) reqSource = "MANUAL";
 
-  let finalLat = lat;
-  let finalLng = lng;
-  if (!finalLat || !finalLng) {
-    const userRec = await db.first("SELECT latitude, longitude FROM users WHERE id = ?", [u.id]).catch(() => null);
-    if (userRec && userRec.latitude && userRec.longitude) {
-      finalLat = Number(userRec.latitude);
-      finalLng = Number(userRec.longitude);
-    } else {
-      return jsonRes(c, false, null, "Customer booking location required. Please select your location or use current location.", 400);
-    }
+  if (isNaN(reqLat) || isNaN(reqLng) || reqLat === 0 || reqLng === 0 || reqLat < -90 || reqLat > 90 || reqLng < -180 || reqLng > 180) {
+    return jsonRes(c, false, null, "Customer booking location required. Please select a valid non-zero location on map or use current location.", 400);
   }
 
   let totalAmount = Number(body.total_amount || body.totalAmount || body.finalAmount || body.price || body.amount || body.grandTotal || body.total_price || 0);
@@ -6279,9 +6304,10 @@ const handleCreateBookingExplicit = async (c) => {
     const res = await db.run(`
       INSERT INTO bookings (
         booking_number, customer_id, artist_id, service_id, booking_date, booking_time,
-        total_amount, advance_paid, remaining_amount, address, latitude, longitude, notes, status, payment_status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 0.0, ?, ?, ?, ?, ?, 'confirmed', 'pending')
-    `, [bookingNo, u.id, artistId, serviceId, bookingDate, bookingTime, totalAmount, initialRemaining, address, finalLat, finalLng, notes]);
+        total_amount, advance_paid, remaining_amount, address, latitude, longitude,
+        customer_latitude, customer_longitude, location_accuracy, location_source, notes, status, payment_status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 0.0, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', 'pending')
+    `, [bookingNo, u.id, artistId, serviceId, bookingDate, bookingTime, totalAmount, initialRemaining, address, reqLat, reqLng, reqLat, reqLng, reqAccuracy, reqSource, notes]);
     newId = res.meta?.last_row_id || res.lastRowId || res.meta?.last_insert_rowid || Date.now();
   } catch (err) {
     console.log("Explicit booking insert catch:", err.message);
