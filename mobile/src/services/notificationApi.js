@@ -1,9 +1,24 @@
 import apiRequest from "./api";
 
 // Fetch paginated notification history logs
-export async function getNotificationHistory(page = 1, limit = 20) {
+export async function getNotificationHistory(page = 1, limit = 50) {
   const res = await apiRequest("GET", `/notification/history?page=${page}&limit=${limit}`, null, true);
-  return res?.data || res;
+  const payload = res?.data || res;
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.notifications)) return payload.notifications;
+  if (Array.isArray(payload?.data)) return payload.data;
+  return [];
+}
+
+// Fetch unread notification count
+export async function getUnreadNotificationCount() {
+  try {
+    const res = await apiRequest("GET", "/notifications/unread-count", null, true);
+    return res?.data?.count || res?.data?.unread_count || res?.count || 0;
+  } catch (err) {
+    console.log("Error fetching unread notification count:", err.message);
+    return 0;
+  }
 }
 
 // Mark single notification as read/seen

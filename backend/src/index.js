@@ -3700,6 +3700,25 @@ const handleCustomerDynamic = async (c) => {
       const createdBooking = await db.first("SELECT * FROM bookings WHERE booking_number = ? ORDER BY id DESC LIMIT 1", [bookingNo]).catch(() => null);
       const realId = createdBooking?.id || Date.now();
 
+      // Trigger Notifications for Artist & Customer
+      createAndSendNotification(db, {
+        userId: artistId,
+        title: "New Booking Request 📅",
+        message: `New booking request #${bookingNo} received for ${bookingDate} ${bookingTime}.`,
+        type: "BOOKING",
+        bookingId: realId,
+        data: { type: "BOOKING", event: "new_booking_request", bookingId: realId }
+      }).catch(() => {});
+
+      createAndSendNotification(db, {
+        userId: u.id,
+        title: "Booking Requested 📅",
+        message: `Your booking #${bookingNo} has been requested successfully.`,
+        type: "BOOKING",
+        bookingId: realId,
+        data: { type: "BOOKING", event: "booking_confirmed", bookingId: realId }
+      }).catch(() => {});
+
       const bookingPayload = {
         ...createdBooking,
         id: realId,
@@ -5466,6 +5485,234 @@ const handleApplyReferralCode = async (c) => {
   return jsonRes(c, true, null, "Referral code applied successfully");
 };
 
+/**
+ * Core Notification Trigger Engine & Expo Push Dispatcher
+ */
+async function createAndSendNotification(db, { userId, title, message, type = "GENERAL", bookingId = null, data = {} }) {
+  if (!userId) return null;
+  console.log(`[NOTIFICATION_TRIGGER] userId: ${userId}, type: ${type}, title: "${title}"`);
+
+  let notifId = Date.now();
+  try {
+    const payloadStr = typeof data === "object" ? JSON.stringify(data) : String(data || "");
+    const res = await db.run(
+      `INSERT INTO notifications (user_id, title, message, type, booking_id, data, is_read) VALUES (?, ?, ?, ?, ?, ?, 0)`,
+      [userId, title, message, type, bookingId ? Number(bookingId) : null, payloadStr]
+    );
+    notifId = res.meta?.last_row_id || res.lastRowId || notifId;
+    console.log(`[NOTIFICATION_DB_CREATE] notificationId: ${notifId}`);
+  } catch (err) {
+    console.log("[NOTIFICATION_DB_ERROR]", err.message);
+  }
+
+  // Push Notification Dispatch via Expo Push Service
+  try {
+    const tokensRes = await db.all(`SELECT token FROM push_tokens WHERE user_id = ?`, [userId]).catch(() => []);
+    const tokens = (tokensRes || []).map(r => r.token).filter(Boolean);
+    console.log(`[PUSH_TOKEN] userId: ${userId}, count: ${tokens.length}`);
+
+    if (tokens.length > 0) {
+      const messages = tokens.map(token => ({
+        to: token,
+        sound: "default",
+        title: title,
+        body: message,
+        data: {
+          notificationId: notifId,
+          type: type,
+          bookingId: bookingId,
+          ...data
+        },
+        channelId: type === "PAYMENT" ? "payments" : type === "BOOKING" ? "bookings" : "default",
+        priority: "high"
+      }));
+
+      console.log(`[PUSH_SEND] Sending ${messages.length} push notification(s) via Expo Push API...`);
+      const expoRes = await fetch("https://exp.host/--/api/v2/push/send", {
+        method: "POST",
+        headers: {
+          "Accept": "application/json",
+          "Accept-encoding": "gzip, deflate",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(messages),
+      }).catch(e => console.log("[PUSH_SEND_NETWORK_ERROR]", e.message));
+
+      if (expoRes && expoRes.ok) {
+        const expoData = await expoRes.json().catch(() => ({}));
+        console.log("[PUSH_RESPONSE] Expo response:", JSON.stringify(expoData));
+
+        if (Array.isArray(expoData?.data)) {
+          expoData.data.forEach((ticket, idx) => {
+            if (ticket.status === "error" && ticket.details?.error === "DeviceNotRegistered") {
+              const invalidToken = tokens[idx];
+              if (invalidToken) {
+                console.log(`[PUSH_TOKEN_CLEANUP] Removing unregistered token: ${invalidToken}`);
+                db.run(`DELETE FROM push_tokens WHERE token = ?`, [invalidToken]).catch(() => {});
+              }
+            }
+          });
+        }
+      }
+    }
+  } catch (pushErr) {
+    console.log("[PUSH_SEND_CATCH]", pushErr.message);
+  }
+
+  return notifId;
+}
+
+const handleRegisterPushToken = async (c) => {
+  const db = getDb(c.env);
+  const u = getUserFromHeader(c);
+  if (!u) return jsonRes(c, false, null, "Unauthorized", 401);
+
+  const body = await c.req.json().catch(() => ({}));
+  const token = body.token || body.pushToken || body.push_token;
+  const deviceType = String(body.device_type || body.deviceType || "ANDROID").toUpperCase();
+
+  if (!token) return jsonRes(c, false, null, "Push token is required", 400);
+
+  await db.run(
+    `INSERT INTO push_tokens (user_id, token, device_type) VALUES (?, ?, ?)
+     ON CONFLICT(user_id, token) DO UPDATE SET device_type = excluded.device_type, updated_at = CURRENT_TIMESTAMP`,
+    [u.id, token, deviceType]
+  ).catch(() => {});
+
+  console.log(`[PUSH_TOKEN_REGISTERED] userId: ${u.id}, token: ${token.substring(0, 15)}...`);
+  return jsonRes(c, true, { registered: true, userId: u.id }, "Push token registered successfully");
+};
+
+const handleRemovePushToken = async (c) => {
+  const db = getDb(c.env);
+  const u = getUserFromHeader(c);
+  if (!u) return jsonRes(c, false, null, "Unauthorized", 401);
+
+  const body = await c.req.json().catch(() => ({}));
+  const token = body.token;
+
+  if (token) {
+    await db.run(`DELETE FROM push_tokens WHERE user_id = ? AND token = ?`, [u.id, token]).catch(() => {});
+  } else {
+    await db.run(`DELETE FROM push_tokens WHERE user_id = ?`, [u.id]).catch(() => {});
+  }
+
+  return jsonRes(c, true, null, "Push token removed successfully");
+};
+
+const handleGetNotificationHistory = async (c) => {
+  const db = getDb(c.env);
+  const u = getUserFromHeader(c);
+  if (!u) return jsonRes(c, false, null, "Unauthorized", 401);
+
+  const page = Number(c.req.query("page") || 1);
+  const limit = Number(c.req.query("limit") || 50);
+  const offset = (page - 1) * limit;
+
+  const rows = await db.all(
+    `SELECT * FROM notifications WHERE user_id = ? ORDER BY id DESC LIMIT ? OFFSET ?`,
+    [u.id, limit, offset]
+  ).catch(() => []);
+
+  const countRow = await db.first(
+    `SELECT COUNT(*) as total, SUM(CASE WHEN is_read = 0 THEN 1 ELSE 0 END) as unread FROM notifications WHERE user_id = ?`,
+    [u.id]
+  ).catch(() => ({ total: 0, unread: 0 }));
+
+  const formatted = (rows || []).map(r => {
+    let parsedData = {};
+    if (r.data) {
+      try {
+        parsedData = typeof r.data === "string" ? JSON.parse(r.data) : r.data;
+      } catch (e) {
+        parsedData = { raw: r.data };
+      }
+    }
+    return {
+      id: r.id,
+      userId: r.user_id,
+      user_id: r.user_id,
+      title: r.title,
+      message: r.message,
+      body: r.message,
+      type: r.type || "GENERAL",
+      bookingId: r.booking_id,
+      booking_id: r.booking_id,
+      data: parsedData,
+      is_read: !!r.is_read,
+      isRead: !!r.is_read,
+      created_at: r.created_at,
+      createdAt: r.created_at,
+    };
+  });
+
+  return jsonRes(c, true, {
+    notifications: formatted,
+    data: formatted,
+    total: countRow?.total || 0,
+    unread_count: countRow?.unread || 0,
+    unreadCount: countRow?.unread || 0,
+    page,
+    limit
+  }, "Notifications retrieved successfully");
+};
+
+const handleGetUnreadNotificationCount = async (c) => {
+  const db = getDb(c.env);
+  const u = getUserFromHeader(c);
+  if (!u) return jsonRes(c, false, null, "Unauthorized", 401);
+
+  const row = await db.first(
+    `SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0`,
+    [u.id]
+  ).catch(() => ({ count: 0 }));
+
+  return jsonRes(c, true, { count: row?.count || 0, unread_count: row?.count || 0 }, "Unread notification count loaded");
+};
+
+const handleMarkNotificationAsRead = async (c) => {
+  const db = getDb(c.env);
+  const u = getUserFromHeader(c);
+  if (!u) return jsonRes(c, false, null, "Unauthorized", 401);
+
+  const body = await c.req.json().catch(() => ({}));
+  const id = body.id || body.notificationId || body.notification_id || c.req.param("id");
+
+  if (id) {
+    await db.run(`UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?`, [id, u.id]).catch(() => {});
+  }
+
+  return jsonRes(c, true, null, "Notification marked as read");
+};
+
+const handleMarkAllNotificationsAsRead = async (c) => {
+  const db = getDb(c.env);
+  const u = getUserFromHeader(c);
+  if (!u) return jsonRes(c, false, null, "Unauthorized", 401);
+
+  await db.run(`UPDATE notifications SET is_read = 1 WHERE user_id = ?`, [u.id]).catch(() => {});
+
+  return jsonRes(c, true, null, "All notifications marked as read");
+};
+
+const handleDeleteNotification = async (c) => {
+  const db = getDb(c.env);
+  const u = getUserFromHeader(c);
+  if (!u) return jsonRes(c, false, null, "Unauthorized", 401);
+
+  const id = c.req.param("id");
+  if (id === "clear-all" || c.req.path.includes("clear-all")) {
+    await db.run(`DELETE FROM notifications WHERE user_id = ?`, [u.id]).catch(() => {});
+    return jsonRes(c, true, null, "All notifications cleared");
+  }
+
+  if (id) {
+    await db.run(`DELETE FROM notifications WHERE id = ? AND user_id = ?`, [id, u.id]).catch(() => {});
+  }
+
+  return jsonRes(c, true, null, "Notification deleted");
+};
+
 const handleAdminMarketplaceSettings = async (c) => {
   const db = getDb(c.env);
   await ensureWalletTables(db);
@@ -5717,167 +5964,6 @@ const handleMarkAllNotificationsRead = async (c) => {
   ).catch(() => { });
   return jsonRes(c, true, null, "All notifications marked as read");
 };
-
-const handleDeleteNotification = async (c) => {
-  const db = getDb(c.env);
-  const u = getUserFromHeader(c);
-  if (!u || !u.id) return jsonRes(c, false, null, "Unauthorized", 401);
-  const notifId = c.req.param("id");
-  if (notifId) {
-    await db.run(
-      "DELETE FROM notifications WHERE (user_id = ? OR CAST(user_id AS TEXT) = ?) AND (id = ? OR CAST(id AS TEXT) = ?)",
-      [u.id, String(u.id), notifId, String(notifId)]
-    ).catch(() => { });
-  }
-  return jsonRes(c, true, null, "Notification deleted");
-};
-
-const handleClearAllNotifications = async (c) => {
-  const db = getDb(c.env);
-  const u = getUserFromHeader(c);
-  if (!u || !u.id) return jsonRes(c, false, null, "Unauthorized", 401);
-  await db.run(
-    "DELETE FROM notifications WHERE user_id = ? OR CAST(user_id AS TEXT) = ?",
-    [u.id, String(u.id)]
-  ).catch(() => { });
-  return jsonRes(c, true, null, "Notification history cleared");
-};
-
-const sendExpoPushNotification = async (tokens, title, body, data = {}) => {
-  const tokenArray = Array.isArray(tokens) ? tokens : [tokens];
-  const validTokens = tokenArray.filter(t => t && typeof t === "string" && (t.startsWith("ExponentPushToken") || t.startsWith("ExpoPushToken")));
-
-  if (validTokens.length === 0) {
-    console.log("[EXPO PUSH NOTICE] No valid Expo push tokens found.");
-    return { success: false, reason: "NO_VALID_TOKENS", message: "No valid ExponentPushToken found" };
-  }
-
-  const payload = validTokens.map(token => ({
-    to: token,
-    title: title || "MehndiGo Notification",
-    body: body || "You have a new update from MehndiGo",
-    sound: "default",
-    badge: 1,
-    channelId: data?.channelId || "default",
-    data: {
-      ...data,
-      title: title || "MehndiGo Notification",
-      message: body || "You have a new update from MehndiGo"
-    }
-  }));
-
-  try {
-    const res = await fetch("https://exp.host/--/api/v2/push/send", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "Accept-Encoding": "gzip, deflate"
-      },
-      body: JSON.stringify(payload)
-    });
-    const responseJson = await res.json();
-    console.log("[EXPO PUSH API RESPONSE]", JSON.stringify(responseJson));
-    return { success: true, response: responseJson };
-  } catch (err) {
-    console.error("[EXPO PUSH EXCEPTION]", err.message);
-    return { success: false, error: err.message };
-  }
-};
-
-const handleRegisterPushToken = async (c) => {
-  const u = getUserFromHeader(c);
-  if (!u || !u.id) return jsonRes(c, false, null, "Authentication required", 401);
-
-  const body = await c.req.json().catch(() => ({}));
-  const token = body.token || body.expo_push_token || body.push_token;
-  const deviceType = body.device_type || body.platform || "ANDROID";
-
-  if (!token || typeof token !== "string" || !token.trim()) {
-    return jsonRes(c, false, null, "Valid push token is required", 400);
-  }
-
-  const cleanToken = token.trim();
-  const db = getDb(c.env);
-
-  await db.run(
-    "UPDATE users SET push_token = ? WHERE id = ? OR CAST(id AS TEXT) = ?",
-    [cleanToken, u.id, String(u.id)]
-  ).catch(() => null);
-
-  await db.run(
-    "INSERT INTO push_tokens (user_id, token, device_type) VALUES (?, ?, ?) ON CONFLICT(user_id, token) DO UPDATE SET device_type = excluded.device_type",
-    [u.id, cleanToken, deviceType]
-  ).catch(() => null);
-
-  console.log(`[PUSH TOKEN REGISTERED] User ${u.id} registered push token successfully.`);
-
-  return jsonRes(c, true, { registered: true, token: cleanToken }, "Push token registered successfully");
-};
-
-const handleSendTestPushNotification = async (c) => {
-  const u = getUserFromHeader(c);
-  const db = getDb(c.env);
-  const body = await c.req.json().catch(() => ({}));
-
-  const userId = body.userId || body.user_id || (u ? u.id : null);
-  const title = body.title || "MehndiGo Test Notification";
-  const message = body.message || body.body || "Push notifications are working successfully! 🎉";
-  const data = body.data || { type: "TEST_NOTIFICATION" };
-
-  let pushToken = body.pushToken || body.token;
-  if (!pushToken && userId) {
-    const row = await db.first("SELECT push_token FROM users WHERE id = ? OR CAST(id AS TEXT) = ?", [userId, String(userId)]).catch(() => null);
-    pushToken = row?.push_token;
-  }
-
-  if (!pushToken) {
-    return jsonRes(c, false, null, "No registered push token found for target user", 400);
-  }
-
-  const pushResult = await sendExpoPushNotification(pushToken, title, message, data);
-
-  if (userId) {
-    await db.run(
-      "INSERT INTO notifications (user_id, title, message, is_read) VALUES (?, ?, ?, 0)",
-      [userId, title, message]
-    ).catch(() => null);
-  }
-
-  return jsonRes(c, pushResult.success, pushResult, pushResult.success ? "Push notification sent successfully" : "Push notification failed");
-};
-
-const handleRemovePushToken = async (c) => {
-  const u = getUserFromHeader(c);
-  if (!u || !u.id) return jsonRes(c, true, null, "Logged out");
-
-  const body = await c.req.json().catch(() => ({}));
-  const token = body.token || body.expo_push_token || body.push_token;
-  const db = getDb(c.env);
-
-  if (token) {
-    await db.run("DELETE FROM push_tokens WHERE push_token = ?", [token]).catch(() => null);
-  } else {
-    await db.run("DELETE FROM push_tokens WHERE user_id = ?", [u.id]).catch(() => null);
-  }
-
-  return jsonRes(c, true, null, "Push token removed");
-};
-
-addRoute("post", "/notification/register-token", handleRegisterPushToken);
-addRoute("post", "/notification/send-test-push", handleSendTestPushNotification);
-addRoute("delete", "/notification/remove-token", handleRemovePushToken);
-addRoute("post", "/notification/remove-token", handleRemovePushToken);
-addRoute("get", "/notification/history", handleGetNotifications);
-addRoute("get", "/notifications", handleGetNotifications);
-addRoute("get", "/artist/notifications", handleGetNotifications);
-addRoute("get", "/customer/notifications", handleGetNotifications);
-addRoute("put", "/notification/read", handleMarkNotificationRead);
-addRoute("post", "/notification/read", handleMarkNotificationRead);
-addRoute("put", "/notification/read-all", handleMarkAllNotificationsRead);
-addRoute("post", "/notification/read-all", handleMarkAllNotificationsRead);
-addRoute("delete", "/notification/clear-all", handleClearAllNotifications);
-addRoute("delete", "/notification/:id", handleDeleteNotification);
 
 const handleGetCategories = async (c) => {
   const db = getDb(c.env);
@@ -6670,6 +6756,19 @@ const handleAcceptBooking = async (c) => {
   ).catch(() => { });
 
   const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
+
+  // Trigger Notification to Customer
+  if (booking && booking.customer_id) {
+    createAndSendNotification(db, {
+      userId: booking.customer_id,
+      title: "Booking Accepted! 🎉",
+      message: `Your booking #${booking.booking_number || bookingId} has been accepted by the artist.`,
+      type: "BOOKING",
+      bookingId: bookingId,
+      data: { type: "BOOKING", event: "booking_accepted", bookingId: bookingId }
+    }).catch(() => {});
+  }
+
   return jsonRes(c, true, {
     ...updated,
     id: bookingId,
@@ -6703,6 +6802,18 @@ const handleRejectBooking = async (c) => {
   ).catch(() => { });
 
   const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
+
+  // Trigger Notification to Customer
+  if (booking && booking.customer_id) {
+    createAndSendNotification(db, {
+      userId: booking.customer_id,
+      title: "Booking Declined ❌",
+      message: `Your booking #${booking.booking_number || bookingId} was declined by the artist (${reason}).`,
+      type: "BOOKING",
+      bookingId: bookingId,
+      data: { type: "BOOKING", event: "booking_rejected", bookingId: bookingId }
+    }).catch(() => {});
+  }
   return jsonRes(c, true, {
     ...updated,
     id: bookingId,
@@ -7228,6 +7339,18 @@ const handleVerifyCheckInOtp = async (c) => {
 
   const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
 
+  // Trigger Notification to Customer: Service Started
+  if (booking && booking.customer_id) {
+    createAndSendNotification(db, {
+      userId: booking.customer_id,
+      title: "Service Started 💅",
+      message: `Your Mehndi appointment #${booking.booking_number || bookingId} service has started!`,
+      type: "BOOKING",
+      bookingId: bookingId,
+      data: { type: "BOOKING", event: "service_started", bookingId: bookingId }
+    }).catch(() => {});
+  }
+
   return jsonRes(c, true, {
     ...updated,
     status: "confirmed",
@@ -7306,6 +7429,18 @@ const handleVerifyCheckOutOtp = async (c) => {
 
   const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
 
+  // Trigger Notification to Customer: Service Completed
+  if (booking && booking.customer_id) {
+    createAndSendNotification(db, {
+      userId: booking.customer_id,
+      title: "Service Completed! ✨",
+      message: `Your Mehndi service for booking #${booking.booking_number || bookingId} is completed. Please rate and review your experience!`,
+      type: "BOOKING",
+      bookingId: bookingId,
+      data: { type: "BOOKING", event: "booking_completed", bookingId: bookingId }
+    }).catch(() => {});
+  }
+
   return jsonRes(c, true, {
     ...updated,
     status: "completed",
@@ -7344,10 +7479,29 @@ addRoute("get", "/artist/bookings", handleGetArtistBookings);
 addRoute("get", "/artist/booking/list", handleGetArtistBookings);
 addRoute("get", "/api/v1/artist/bookings", handleGetArtistBookings);
 
-addRoute("get", "/category", handleGetCategories);
-addRoute("get", "/categories", handleGetCategories);
-addRoute("get", "/customer/category", handleGetCategories);
-addRoute("get", "/customer/categories", handleGetCategories);
+// Notification System API Routes
+addRoute("post", "/notification/register-token", handleRegisterPushToken);
+addRoute("post", "/user/push-token", handleRegisterPushToken);
+addRoute("delete", "/notification/remove-token", handleRemovePushToken);
+
+addRoute("get", "/notification/history", handleGetNotificationHistory);
+addRoute("get", "/notifications", handleGetNotificationHistory);
+addRoute("get", "/notification/list", handleGetNotificationHistory);
+addRoute("get", "/api/v1/notification/history", handleGetNotificationHistory);
+
+addRoute("get", "/notifications/unread-count", handleGetUnreadNotificationCount);
+addRoute("get", "/notification/unread-count", handleGetUnreadNotificationCount);
+
+addRoute("put", "/notification/read", handleMarkNotificationAsRead);
+addRoute("post", "/notification/read", handleMarkNotificationAsRead);
+addRoute("put", "/notifications/read", handleMarkNotificationAsRead);
+addRoute("put", "/notification/read-all", handleMarkAllNotificationsAsRead);
+addRoute("post", "/notification/read-all", handleMarkAllNotificationsAsRead);
+addRoute("put", "/notifications/read-all", handleMarkAllNotificationsAsRead);
+
+addRoute("delete", "/notification/clear-all", handleDeleteNotification);
+addRoute("delete", "/notifications/clear-all", handleDeleteNotification);
+addRoute("delete", "/notification/:id", handleDeleteNotification);
 
 // Fallback 404 handler
 app.notFound((c) => {
