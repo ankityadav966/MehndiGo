@@ -23,9 +23,30 @@ export async function createNewReview(reviewData) {
     comment: reviewData.comment,
     design_quality: reviewData.design_quality,
     punctuality: reviewData.punctuality,
-    professionalism: reviewData.professionalism
+    professionalism: reviewData.professionalism,
+    video_url: reviewData.video_url || null,
+    video_thumbnail: reviewData.video_thumbnail || null,
+    photos: reviewData.photos || null
   };
   const res = await apiRequest("POST", "/customer/review", payload, true);
+  return res?.data || res;
+}
+
+export async function uploadReviewMedia(fileUri, isVideo = false) {
+  const formData = new FormData();
+  const filename = fileUri.split("/").pop() || (isVideo ? "review_video.mp4" : "review_photo.jpg");
+  const match = /\.(\w+)$/.exec(filename);
+  const type = match ? `${isVideo ? "video" : "image"}/${match[1]}` : (isVideo ? "video/mp4" : "image/jpeg");
+
+  formData.append("file", {
+    uri: fileUri,
+    name: filename,
+    type
+  });
+
+  const res = await apiRequest("POST", "/reviews/upload", formData, true, {
+    "Content-Type": "multipart/form-data"
+  });
   return res?.data || res;
 }
 

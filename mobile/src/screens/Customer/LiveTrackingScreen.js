@@ -1,12 +1,12 @@
-import React, { useEffect, useState, useRef } from "react";
-import { Image, StyleSheet, Text, TouchableOpacity, View, Linking } from "react-native";
-import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from "react-native-maps";
+import React, { useEffect, useState } from "react";
+import { StyleSheet, Text, TouchableOpacity, View, Linking } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import Colors from "../../constants/Colors";
 import { useSocket } from "../../context/SocketContext";
 import { getBookingDetails } from "../../services/booking";
 import OptimizedImage from "../../components/OptimizedImage";
+import LeafletMapView from "../../components/LeafletMapView";
 
 export default function LiveTrackingScreen({ route, navigation }) {
   const { bookingId } = route.params || {};
@@ -14,12 +14,10 @@ export default function LiveTrackingScreen({ route, navigation }) {
 
   const [booking, setBooking] = useState(null);
   const [artistCoords, setArtistCoords] = useState(null);
-  const [customerCoords, setCustomerCoords] = useState(null);
+  const [customerCoords, setCustomerCoords] = useState({ lat: 26.9124, lng: 75.7873 });
   const [etaText, setEtaText] = useState("Calculating ETA...");
   const [distanceText, setDistanceText] = useState("Waiting for location");
-  const [artistStatus, setArtistStatus] = useState("Waiting for artist live location");
-
-  const mapRef = useRef(null);
+  const [artistStatus, setArtistStatus] = useState("Artist is on the way");
 
   useEffect(() => {
     if (!bookingId) return;
@@ -31,8 +29,8 @@ export default function LiveTrackingScreen({ route, navigation }) {
           setBooking(details);
           if (details.latitude && details.longitude) {
             setCustomerCoords({
-              latitude: Number(details.latitude),
-              longitude: Number(details.longitude),
+              lat: Number(details.latitude),
+              lng: Number(details.longitude),
             });
           }
         }
@@ -42,8 +40,10 @@ export default function LiveTrackingScreen({ route, navigation }) {
         if (locData) {
           if (locData.latitude && locData.longitude) {
             setArtistCoords({
-              latitude: Number(locData.latitude),
-              longitude: Number(locData.longitude),
+              lat: Number(locData.latitude),
+              lng: Number(locData.longitude),
+              speed: Number(locData.speed || 0),
+              heading: Number(locData.heading || 0)
             });
           }
           if (locData.distance_text || locData.distanceText) {
@@ -71,10 +71,14 @@ export default function LiveTrackingScreen({ route, navigation }) {
     socket.emit("join-room", { bookingId });
 
     const handleLocationUpdate = (payload) => {
-      if (payload.latitude && payload.longitude) {
+      if (payload && (payload.latitude || payload.lat) && (payload.longitude || payload.lng)) {
+        const lat = Number(payload.latitude || payload.lat);
+        const lng = Number(payload.longitude || payload.lng);
         const newCoords = {
-          latitude: Number(payload.latitude),
-          longitude: Number(payload.longitude),
+          lat,
+          lng,
+          speed: Number(payload.speed || 0),
+          heading: Number(payload.heading || 0)
         };
         setArtistCoords(newCoords);
 
@@ -84,32 +88,29 @@ export default function LiveTrackingScreen({ route, navigation }) {
         if (payload.distanceKm) {
           setDistanceText(`${payload.distanceKm} km away`);
         }
-
-        // Animate Map Camera smoothly to include both markers
-        mapRef.current?.fitToCoordinates([customerCoords, newCoords], {
-          edgePadding: { top: 80, right: 80, bottom: 220, left: 80 },
-          animated: true,
-        });
       }
     };
 
     const handleStatusUpdate = (payload) => {
-      if (payload.status) {
-        setArtistStatus(payload.status);
+      if (payload && (payload.detailed_status || payload.status)) {
+        const st = payload.detailed_status || payload.status;
+        setArtistStatus(`Status: ${st}`);
       }
     };
 
     socket.on("artist_location_update", handleLocationUpdate);
+    socket.on("artistLocationUpdated", handleLocationUpdate);
     socket.on("booking_status_updated", handleStatusUpdate);
 
     return () => {
       socket.off("artist_location_update", handleLocationUpdate);
+      socket.off("artistLocationUpdated", handleLocationUpdate);
       socket.off("booking_status_updated", handleStatusUpdate);
     };
-  }, [socket, bookingId, customerCoords]);
+  }, [socket, bookingId]);
 
   const handleCallArtist = () => {
-    const phone = booking?.artist?.user?.phone;
+    const phone = booking?.artist_phone || booking?.artist?.phone || booking?.artist?.user?.phone;
     if (phone) {
       Linking.openURL(`tel:${phone}`);
     }
@@ -119,8 +120,8 @@ export default function LiveTrackingScreen({ route, navigation }) {
     navigation.navigate("ChatRoom", {
       bookingId,
       receiverId: booking?.artist?.user_id,
-      receiverName: booking?.artist?.user?.name,
-      receiverImage: booking?.artist?.user?.profile_image,
+      receiverName: booking?.artist_name || booking?.artist?.user?.name,
+      receiverImage: booking?.artist_image || booking?.artist?.user?.profile_image,
     });
   };
 
@@ -132,52 +133,23 @@ export default function LiveTrackingScreen({ route, navigation }) {
           <Ionicons name="chevron-back" size={24} color={Colors.text} />
         </TouchableOpacity>
         <Text style={styles.topHeaderTitle}>Live Artist Tracking</Text>
-        <View style={styles.liveTag}>
-          <View style={styles.liveDot} />
-          <Text style={styles.liveTagText}>LIVE</Text>
+        <View style={[styles.liveTag, !connected && { backgroundColor: "#FEF3C7", borderColor: "#FCD34D" }]}>
+          <View style={[styles.liveDot, !connected && { backgroundColor: "#D97706" }]} />
+          <Text style={[styles.liveTagText, !connected && { color: "#92400E" }]}>{connected ? "LIVE" : "SYNCING"}</Text>
         </View>
       </View>
 
       {/* Map Display */}
-      <MapView
-        ref={mapRef}
-        provider={PROVIDER_DEFAULT}
-        style={styles.map}
-        initialRegion={{
-          latitude: (customerCoords?.latitude || artistCoords?.latitude || 20.5937),
-          longitude: (customerCoords?.longitude || artistCoords?.longitude || 78.9629),
-          latitudeDelta: 0.04,
-          longitudeDelta: 0.04,
-        }}
-      >
-        {/* Customer Location Marker */}
-        {customerCoords?.latitude && customerCoords?.longitude && (
-          <Marker coordinate={customerCoords} title="Your Location" description="Service Address">
-            <View style={styles.customerMarkerPin}>
-              <Ionicons name="home" size={16} color="#FFFFFF" />
-            </View>
-          </Marker>
-        )}
-
-        {/* Artist Live GPS Marker */}
-        {artistCoords?.latitude && artistCoords?.longitude && (
-          <Marker coordinate={artistCoords} title={booking?.artist_name || booking?.artist?.user?.name || "Artist"} description={artistStatus}>
-            <View style={styles.artistMarkerPin}>
-              <Ionicons name="bicycle" size={18} color="#FFFFFF" />
-            </View>
-          </Marker>
-        )}
-
-        {/* Route Line Polyline */}
-        {customerCoords?.latitude && customerCoords?.longitude && artistCoords?.latitude && artistCoords?.longitude && (
-          <Polyline
-            coordinates={[customerCoords, artistCoords]}
-            strokeColor={Colors.primary || "#9C1344"}
-            strokeWidth={4}
-            lineDashPattern={[1]}
-          />
-        )}
-      </MapView>
+      <View style={{ flex: 1 }}>
+        <LeafletMapView
+          customerCoords={customerCoords}
+          artistCoords={artistCoords}
+          onRouteUpdate={(dist, dur) => {
+            if (dist) setDistanceText(`${dist.toFixed(1)} km away`);
+            if (dur) setEtaText(`Arriving in ${Math.round(dur)} mins`);
+          }}
+        />
+      </View>
 
       {/* Bottom Floating Info Card */}
       <View style={styles.bottomCard}>

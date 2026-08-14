@@ -45,8 +45,6 @@ const OCCASIONS = [
   "Roka",
   "Casual Sample",
   "Others"
-];
-
 export default function AddPortfolioScreen({ navigation }) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -55,6 +53,10 @@ export default function AddPortfolioScreen({ navigation }) {
   const [tags, setTags] = useState("");
   const [location, setLocation] = useState("Jaipur");
   const [visibility, setVisibility] = useState(true);
+  const [artTier, setArtTier] = useState("STANDARD"); // "STANDARD" | "PREMIUM"
+  const [customPrice, setCustomPrice] = useState("");
+  const [durationMinutes, setDurationMinutes] = useState("60");
+  const [complexityLevel, setComplexityLevel] = useState("MEDIUM");
   const [media, setMedia] = useState(null); // { uri, type, width, height }
   const [videoThumbnail, setVideoThumbnail] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -167,7 +169,11 @@ export default function AddPortfolioScreen({ navigation }) {
         location,
         visibility,
         image_url: isVid ? (remoteThumbnailUrl || null) : media.uri,
-        video_url: isVid ? media.uri : null
+        video_url: isVid ? media.uri : null,
+        art_tier: artTier,
+        price: artTier === "PREMIUM" && customPrice ? Number(customPrice) : null,
+        duration_minutes: durationMinutes ? Number(durationMinutes) : 60,
+        complexity_level: complexityLevel
       };
 
       const startVal = remoteThumbnailUrl ? 0.15 : 0.01;
@@ -301,6 +307,67 @@ export default function AddPortfolioScreen({ navigation }) {
               ))}
             </View>
           )}
+
+          {/* Art Tier Selector: Standard vs Premium */}
+          <Text style={styles.inputLabel}>Art Tier & Pricing</Text>
+          <View style={styles.tierToggleRow}>
+            <TouchableOpacity
+              style={[styles.tierBtn, artTier === "STANDARD" && styles.tierBtnActive]}
+              onPress={() => setArtTier("STANDARD")}
+            >
+              <Ionicons name="sparkles-outline" size={16} color={artTier === "STANDARD" ? Colors.white : Colors.text} />
+              <Text style={[styles.tierBtnText, artTier === "STANDARD" && styles.tierBtnTextActive]}>Standard Art</Text>
+              <Text style={[styles.tierSubText, artTier === "STANDARD" && styles.tierSubTextActive]}>(Package Included)</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.tierBtn, artTier === "PREMIUM" && styles.tierBtnActivePremium]}
+              onPress={() => setArtTier("PREMIUM")}
+            >
+              <Ionicons name="diamond-outline" size={16} color={artTier === "PREMIUM" ? "#92400E" : Colors.text} />
+              <Text style={[styles.tierBtnText, artTier === "PREMIUM" && styles.tierBtnTextActivePremium]}>Premium Art</Text>
+              <Text style={[styles.tierSubText, artTier === "PREMIUM" && styles.tierSubTextActivePremium]}>(Custom Price)</Text>
+            </TouchableOpacity>
+          </View>
+
+          {artTier === "PREMIUM" && (
+            <View>
+              <Text style={styles.inputLabel}>Premium Price (₹)</Text>
+              <TextInput
+                placeholder="e.g. 2500"
+                placeholderTextColor={Colors.textTertiary}
+                keyboardType="numeric"
+                style={styles.textInput}
+                value={customPrice}
+                onChangeText={setCustomPrice}
+              />
+            </View>
+          )}
+
+          {/* Duration & Complexity */}
+          <View style={{ flexDirection: "row", gap: 12 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.inputLabel}>Est. Duration (Mins)</Text>
+              <TextInput
+                placeholder="60"
+                placeholderTextColor={Colors.textTertiary}
+                keyboardType="numeric"
+                style={styles.textInput}
+                value={durationMinutes}
+                onChangeText={setDurationMinutes}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.inputLabel}>Complexity</Text>
+              <TextInput
+                placeholder="Medium"
+                placeholderTextColor={Colors.textTertiary}
+                style={styles.textInput}
+                value={complexityLevel}
+                onChangeText={setComplexityLevel}
+              />
+            </View>
+          </View>
 
           {/* Occasion Dropdown */}
           <Text style={styles.inputLabel}>Occasion</Text>
@@ -448,19 +515,70 @@ const styles = StyleSheet.create({
   dropdownItemText: { fontSize: 13, color: Colors.text },
   switchRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    backgroundColor: Colors.white,
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    marginTop: 20
+    justifyContent: "space-between",
+    marginVertical: 14,
   },
-  switchLabel: { fontSize: 13, fontWeight: "700", color: Colors.text },
-  switchSub: { fontSize: 11, color: Colors.textTertiary, marginTop: 2 },
-  progressContainer: { flexDirection: "row", alignItems: "center", marginTop: 16, justifyContent: "center" },
-  progressText: { fontSize: 12, color: Colors.textSecondary, marginLeft: 8 },
+  switchLabel: { fontSize: 14, fontWeight: "700", color: Colors.text },
+  switchSub: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
+  progressContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 12,
+    backgroundColor: "#F3E8FF",
+    borderRadius: 10,
+    marginTop: 14,
+    gap: 8,
+  },
+  progressText: { fontSize: 12, fontWeight: "700", color: Colors.primary },
+  tierToggleRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 8,
+  },
+  tierBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: "#E5E7EB",
+    backgroundColor: Colors.white,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tierBtnActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  tierBtnActivePremium: {
+    backgroundColor: "#FEF3C7",
+    borderColor: "#F59E0B",
+  },
+  tierBtnText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: Colors.text,
+    marginTop: 4,
+  },
+  tierBtnTextActive: {
+    color: Colors.white,
+  },
+  tierBtnTextActivePremium: {
+    color: "#92400E",
+  },
+  tierSubText: {
+    fontSize: 10,
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
+  tierSubTextActive: {
+    color: "rgba(255,255,255,0.85)",
+  },
+  tierSubTextActivePremium: {
+    color: "#B45309",
+  },
   thumbnailSection: {
     backgroundColor: Colors.white,
     padding: 16,

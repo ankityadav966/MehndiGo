@@ -1170,7 +1170,11 @@ async createReview(data) {
       tags: data.tags || null,
       location: data.location || null,
       visibility: data.visibility !== undefined ? data.visibility : true,
-      display_order: data.display_order !== undefined ? Number(data.display_order) : 0
+      display_order: data.display_order !== undefined ? Number(data.display_order) : 0,
+      art_tier: data.art_tier || "STANDARD",
+      price: data.price !== undefined && data.price !== null && data.price !== "" ? Number(data.price) : null,
+      duration_minutes: data.duration_minutes !== undefined && data.duration_minutes !== "" ? Number(data.duration_minutes) : 60,
+      complexity_level: data.complexity_level || "MEDIUM"
     };
 
     return await PortfolioRepositor.createPortfolio(portfolioData);
@@ -1215,6 +1219,10 @@ async createReview(data) {
     if (data.location !== undefined) updates.location = data.location;
     if (data.visibility !== undefined) updates.visibility = data.visibility;
     if (data.display_order !== undefined) updates.display_order = Number(data.display_order);
+    if (data.art_tier !== undefined) updates.art_tier = data.art_tier;
+    if (data.price !== undefined) updates.price = data.price !== null && data.price !== "" ? Number(data.price) : null;
+    if (data.duration_minutes !== undefined) updates.duration_minutes = Number(data.duration_minutes);
+    if (data.complexity_level !== undefined) updates.complexity_level = data.complexity_level;
 
     await PortfolioRepositor.update(id, updates);
     return await PortfolioRepositor.getById(id);
@@ -2171,6 +2179,16 @@ async createReview(data) {
 
     try {
       const io = getIO();
+      const statusPayload = {
+        bookingId: booking.id,
+        bookingCode: booking.booking_code,
+        status: "ARTIST_ACCEPTED",
+        detailed_status: "ARTIST_ACCEPTED",
+        booking_status: "CONFIRMED",
+        timestamp: new Date().toISOString()
+      };
+      io.to(booking.user_id.toString()).emit("booking_status_updated", statusPayload);
+      io.to(`booking_room_${booking.id}`).emit("booking_status_updated", statusPayload);
       io.to(booking.user_id.toString()).emit("new_notification", {
         title: "Booking Accepted",
         message: `Your booking request #${booking.booking_code} has been accepted by the artist!`,
@@ -2224,6 +2242,16 @@ async createReview(data) {
 
     try {
       const io = getIO();
+      const statusPayload = {
+        bookingId: booking.id,
+        bookingCode: booking.booking_code,
+        status: "REJECTED",
+        detailed_status: "REJECTED",
+        booking_status: "CANCELLED",
+        timestamp: new Date().toISOString()
+      };
+      io.to(booking.user_id.toString()).emit("booking_status_updated", statusPayload);
+      io.to(`booking_room_${booking.id}`).emit("booking_status_updated", statusPayload);
       io.to(booking.user_id.toString()).emit("new_notification", {
         title: "Booking Declined",
         message: `Your booking request #${booking.booking_code} was declined by the artist.`,

@@ -77,6 +77,25 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         defaultValue: 0,
       },
+      art_tier: {
+        type: DataTypes.STRING(50),
+        allowNull: false,
+        defaultValue: "STANDARD",
+      },
+      price: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+      },
+      duration_minutes: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 60,
+      },
+      complexity_level: {
+        type: DataTypes.STRING(50),
+        allowNull: false,
+        defaultValue: "MEDIUM",
+      },
     },
     {
       sequelize,

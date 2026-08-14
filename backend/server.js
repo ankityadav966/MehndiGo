@@ -195,14 +195,35 @@ const db = require("./models");
     await db.sequelize.query('ALTER TABLE "Transactions" ADD COLUMN IF NOT EXISTS razorpay_payment_id VARCHAR(255);');
     await db.sequelize.query('ALTER TABLE "Transactions" ADD COLUMN IF NOT EXISTS razorpay_signature VARCHAR(255);');
 
+    await db.sequelize.query('ALTER TABLE "Bookings" ADD COLUMN IF NOT EXISTS completion_pin VARCHAR(10);');
+    await db.sequelize.query('ALTER TABLE "Bookings" ADD COLUMN IF NOT EXISTS selected_art_id INTEGER;');
+    await db.sequelize.query('ALTER TABLE "Bookings" ADD COLUMN IF NOT EXISTS selected_art_title VARCHAR(255);');
+    await db.sequelize.query('ALTER TABLE "Bookings" ADD COLUMN IF NOT EXISTS selected_art_image TEXT;');
+    await db.sequelize.query('ALTER TABLE "Bookings" ADD COLUMN IF NOT EXISTS selected_art_tier VARCHAR(50) DEFAULT \'STANDARD\';');
+    await db.sequelize.query('ALTER TABLE "Bookings" ADD COLUMN IF NOT EXISTS selected_art_duration INTEGER;');
+    await db.sequelize.query('ALTER TABLE "Bookings" ADD COLUMN IF NOT EXISTS selected_art_price INTEGER;');
+
+    await db.sequelize.query('ALTER TABLE "Portfolios" ADD COLUMN IF NOT EXISTS art_tier VARCHAR(50) DEFAULT \'STANDARD\';');
+    await db.sequelize.query('ALTER TABLE "Portfolios" ADD COLUMN IF NOT EXISTS price INTEGER;');
+    await db.sequelize.query('ALTER TABLE "Portfolios" ADD COLUMN IF NOT EXISTS duration_minutes INTEGER DEFAULT 60;');
+    await db.sequelize.query('ALTER TABLE "Portfolios" ADD COLUMN IF NOT EXISTS complexity_level VARCHAR(50) DEFAULT \'MEDIUM\';');
+
+    await db.sequelize.query('ALTER TABLE "Reviews" ADD COLUMN IF NOT EXISTS video_url VARCHAR(255);');
+    await db.sequelize.query('ALTER TABLE "Reviews" ADD COLUMN IF NOT EXISTS video_thumbnail VARCHAR(255);');
+    await db.sequelize.query('ALTER TABLE "Reviews" ADD COLUMN IF NOT EXISTS photos JSONB;');
+    await db.sequelize.query('ALTER TABLE "Reviews" ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT TRUE;');
+
     await db.User.sync({ alter: true });
+    await db.Booking.sync({ alter: true });
+    await db.Portfolio.sync({ alter: true });
+    await db.Review.sync({ alter: true });
     await db.Payment.sync({ alter: true });
     await db.Transaction.sync({ alter: true });
     await db.Wallet.sync({ alter: true });
     await db.WalletTransaction.sync({ alter: true });
     await db.LedgerEntry.sync({ alter: true });
     await db.OutstandingCommission.sync({ alter: true });
-    console.log("[DB MIGRATION] Users, Payments, Transactions, Wallets, WalletTransactions, Ledger, and OutstandingCommissions schema updated successfully.");
+    console.log("[DB MIGRATION] Schema updated successfully with Bookings, Portfolios, Reviews, Wallets, and Ledgers.");
   } catch (err) {
     console.log("[DB MIGRATION] Self-healing migration note:", err.message);
   }

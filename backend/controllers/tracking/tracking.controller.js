@@ -79,9 +79,12 @@ async function updateLocation(req, res) {
         updatedAt: updateTime.toISOString()
       };
 
-      // Emit directly to customer's personal room
+      // Emit directly to customer's personal room and booking room
       io.to(booking.user_id.toString()).emit("artistLocationUpdated", socketPayload);
-      console.log(`[TrackingController] Emitted artistLocationUpdated socket event to customer room: ${booking.user_id}`);
+      io.to(booking.user_id.toString()).emit("artist_location_update", socketPayload);
+      io.to(`booking_room_${bookingId}`).emit("artistLocationUpdated", socketPayload);
+      io.to(`booking_room_${bookingId}`).emit("artist_location_update", socketPayload);
+      console.log(`[TrackingController] Emitted live tracking socket events to customer: ${booking.user_id} & room: booking_room_${bookingId}`);
     } catch (socketErr) {
       console.error("[TrackingController] Failed to emit Socket.IO event:", socketErr.message);
     }

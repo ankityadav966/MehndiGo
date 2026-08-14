@@ -73,6 +73,23 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.INTEGER,
         allowNull: false,
         defaultValue: 0
+      },
+      video_url: {
+        type: DataTypes.STRING,
+        allowNull: true
+      },
+      video_thumbnail: {
+        type: DataTypes.STRING,
+        allowNull: true
+      },
+      photos: {
+        type: DataTypes.JSON,
+        allowNull: true
+      },
+      is_verified: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true
       }
     },
     {

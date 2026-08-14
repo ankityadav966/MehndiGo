@@ -12,13 +12,13 @@ class BookingService {
     this.hasRestrictedBooking = this.hasRestrictedBooking.bind(this);
   }
 
-  async calculatePriceDetails(serviceId, couponCode = null, userId = null, slotCount = 1, distanceKm = 0) {
+  async calculatePriceDetails(serviceId, couponCode = null, userId = null, slotCount = 1, distanceKm = 0, customArtPrice = null) {
     const service = await db.Service.findByPk(serviceId);
     if (!service) {
       throw new AppError("Service not found", 404);
     }
 
-    const servicePrice = service.minimum_price || 500;
+    const servicePrice = customArtPrice && Number(customArtPrice) > 0 ? Number(customArtPrice) : (service.minimum_price || 500);
     const basePrice = servicePrice * slotCount;
 
     // Per-KM distance rules: 0-10 KM = FREE, >10 KM = ₹5/KM
@@ -70,8 +70,25 @@ class BookingService {
     if (hasRestricted) {
       throw new AppError("You have a previous booking with a pending payment or settlement. Please complete your current booking before creating a new booking.", 400);
     }
-
-    const { serviceId, artistId, slotId, address, landmark, notes, couponCode, latitude, longitude, selectedDate, timeLabel } = data;
+    const { 
+      serviceId, 
+      artistId, 
+      slotId, 
+      address, 
+      landmark, 
+      notes, 
+      couponCode, 
+      latitude, 
+      longitude, 
+      selectedDate, 
+      timeLabel,
+      selected_art_id,
+      selected_art_title,
+      selected_art_image,
+      selected_art_tier,
+      selected_art_duration,
+      selected_art_price
+    } = data;
 
     // 1. Strict Validation: Reject multi-date or multi-slot arrays (1 Booking = 1 Service + 1 Date + 1 Time Slot)
     if (Array.isArray(slotId) && slotId.length > 1) {
@@ -208,7 +225,6 @@ class BookingService {
           transaction: t
         });
 
-
         if (existingConfirmedSlot) {
           throw new AppError("This time slot is no longer available. Please select another time.", 400);
         }
@@ -223,10 +239,14 @@ class BookingService {
         finalSlotId = newSlot.id;
       }
 
+      // Generate secure 4-digit Rapido-style completion PIN
+      const fixedCompletionPin = Math.floor(1000 + Math.random() * 9000).toString();
 
-      // Calculate price for 1 slot always
-      const pricing = await this.calculatePriceDetails(serviceId, couponCode, userId, 1);
+      // Calculate price taking custom selected art price into account if present
+      const pricing = await this.calculatePriceDetails(serviceId, couponCode, userId, 1, 0, selected_art_price);
       const bookingCode = `BK-${Math.floor(100000 + Math.random() * 900000)}`;
+
+      const calculatedDuration = selected_art_duration ? Number(selected_art_duration) : (service.duration_minutes || 60);
 
       const booking = await db.Booking.create({
         booking_code: bookingCode,
@@ -246,6 +266,14 @@ class BookingService {
         platform_fee: 0,
         gst: 0,
         final_amount: pricing.finalAmount,
+        completion_pin: fixedCompletionPin,
+        selected_art_id: selected_art_id || null,
+        selected_art_title: selected_art_title || null,
+        selected_art_image: selected_art_image || null,
+        selected_art_tier: selected_art_tier || "STANDARD",
+        selected_art_duration: calculatedDuration,
+        selected_art_price: selected_art_price ? Number(selected_art_price) : null,
+        service_duration: calculatedDuration,
 
         coupon_code: couponCode || null,
         address,
@@ -668,6 +696,30 @@ class BookingService {
       notes: extraData.cancelReason || extraData.notes || `Booking status updated from ${prevStatus} to ${newStatus}`
     });
 
+    // Real-time socket broadcast to Customer and Artist
+    try {
+      const { getIO } = require("../sockets/socket");
+      const io = getIO();
+      const statusPayload = {
+        bookingId: booking.id,
+        bookingCode: booking.booking_code,
+        status: newStatus,
+        detailed_status: newStatus,
+        booking_status: updates.booking_status || booking.booking_status,
+        timestamp: new Date().toISOString()
+      };
+      io.to(booking.user_id.toString()).emit("booking_status_updated", statusPayload);
+      if (booking.artist_id) {
+        const artist = await db.ArtistProfile.findByPk(booking.artist_id);
+        if (artist?.user_id) {
+          io.to(artist.user_id.toString()).emit("booking_status_updated", statusPayload);
+        }
+      }
+      io.to(`booking_room_${booking.id}`).emit("booking_status_updated", statusPayload);
+    } catch (sockErr) {
+      console.warn("Socket broadcast warning in updateBookingStatus:", sockErr.message);
+    }
+
     // Seed test notifications log
     const userToNotify = role === "CUSTOMER" 
       ? (await db.ArtistProfile.findByPk(booking.artist_id))?.user_id 
@@ -1062,6 +1114,24 @@ class BookingService {
 
     await booking.update(updates);
 
+    // Emit real-time status update to Customer
+    try {
+      const { getIO } = require("../sockets/socket");
+      const io = getIO();
+      const statusPayload = {
+        bookingId: booking.id,
+        bookingCode: booking.booking_code,
+        status: "ARTIST_ARRIVED",
+        detailed_status: "ARTIST_ARRIVED",
+        booking_status: booking.booking_status,
+        timestamp: new Date().toISOString()
+      };
+      io.to(booking.user_id.toString()).emit("booking_status_updated", statusPayload);
+      io.to(`booking_room_${booking.id}`).emit("booking_status_updated", statusPayload);
+    } catch (sockErr) {
+      console.warn("Socket broadcast warning in validateArrival:", sockErr.message);
+    }
+
     console.log(`[CHECK_IN_OTP] OTP Generated successfully. Booking ID: ${booking.id}, Customer Email: ${booking.user?.email || "N/A"}`);
     console.log(`[TESTING_OTP_LOG] Generated Check-In OTP: ${otp} for Booking ID: ${booking.id} (Email: ${booking.user?.email || "N/A"})`);
 
@@ -1174,6 +1244,16 @@ class BookingService {
       // Emit realtime socket event to customer
       const { getIO } = require("../sockets/socket");
       const io = getIO();
+      const statusPayload = {
+        bookingId: booking.id,
+        bookingCode: booking.booking_code,
+        status: "SERVICE_STARTED",
+        detailed_status: "SERVICE_STARTED",
+        booking_status: "CONFIRMED",
+        timestamp: new Date().toISOString()
+      };
+      io.to(booking.user_id.toString()).emit("booking_status_updated", statusPayload);
+      io.to(`booking_room_${booking.id}`).emit("booking_status_updated", statusPayload);
       io.to(booking.user_id.toString()).emit("service_started", { bookingId: booking.id });
     } catch (err) {
       console.error("Error dispatching Check-In confirmations:", err.message);
@@ -1266,17 +1346,21 @@ class BookingService {
     const attempts = (checkOutFailedAttempts.get(booking.id) || 0) + 1;
     checkOutFailedAttempts.set(booking.id, attempts);
 
-    if (!booking.check_out_otp || booking.check_out_otp !== otp || new Date() > new Date(booking.check_out_otp_expires_at)) {
-      console.log(`[CHECK_OUT_OTP_VERIFY] Verification Status: FAILED. Booking ID: ${booking.id}, Attempt: ${attempts}/3, Reason: Invalid or expired OTP`);
+    const enteredCode = String(otp || "").trim();
+    const isFixedPinMatch = booking.completion_pin && String(booking.completion_pin).trim() === enteredCode;
+    const isEmailOtpMatch = booking.check_out_otp && String(booking.check_out_otp).trim() === enteredCode && (!booking.check_out_otp_expires_at || new Date() <= new Date(booking.check_out_otp_expires_at));
+
+    if (!isFixedPinMatch && !isEmailOtpMatch) {
+      console.log(`[CHECK_OUT_OTP_VERIFY] Verification Status: FAILED. Booking ID: ${booking.id}, Attempt: ${attempts}/3, Reason: Invalid or expired OTP/PIN`);
       if (attempts >= 3) {
         await booking.update({
           check_out_otp: null,
           check_out_otp_expires_at: null
         });
         checkOutFailedAttempts.delete(booking.id);
-        throw new AppError("Too many incorrect attempts. Please request a new OTP.", 400);
+        throw new AppError("Too many incorrect attempts. Please ask the client for the correct Completion PIN.", 400);
       }
-      throw new AppError("Invalid or expired Check-Out OTP", 400);
+      throw new AppError("Invalid Completion PIN/OTP. Please enter the 4-digit PIN shown on Customer App.", 400);
     }
 
     console.log(`[CHECK_OUT_OTP_VERIFY] Verification Status: SUCCESS. Booking ID: ${booking.id}`);
@@ -1325,7 +1409,7 @@ class BookingService {
       booking_id: booking.id,
       status: "COMPLETED",
       changed_by: userId,
-      notes: `Check-Out OTP verified successfully. Service completed. Duration: ${duration} mins.`
+      notes: `Completion verified successfully via PIN/OTP. Service completed. Duration: ${duration} mins.`
     });
 
     // Notify customer and artist
@@ -1341,7 +1425,17 @@ class BookingService {
       // Emit realtime socket event to customer
       const { getIO } = require("../sockets/socket");
       const io = getIO();
-      io.to(booking.user_id.toString()).emit("booking_completed", { bookingId: booking.id });
+      const statusPayload = {
+        bookingId: booking.id,
+        bookingCode: booking.booking_code,
+        status: "COMPLETED",
+        detailed_status: "COMPLETED",
+        booking_status: "COMPLETED",
+        timestamp: new Date().toISOString()
+      };
+      io.to(booking.user_id.toString()).emit("booking_status_updated", statusPayload);
+      io.to(booking.user_id.toString()).emit("booking_completed", statusPayload);
+      io.to(`booking_room_${booking.id}`).emit("booking_status_updated", statusPayload);
     } catch (err) {
       console.error("Error dispatching Check-Out confirmations:", err.message);
     }

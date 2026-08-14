@@ -31,7 +31,8 @@ export default function BookingSummaryScreen({ route, navigation }) {
     address,
     landmark,
     latitude,
-    longitude
+    longitude,
+    selectedArt
   } = params;
 
   // Data states
@@ -49,7 +50,7 @@ export default function BookingSummaryScreen({ route, navigation }) {
     try {
       const [artistData, pricing] = await Promise.all([
         getArtistById(artistId),
-        getPriceDetails(serviceId, couponCode, 1)
+        getPriceDetails(serviceId, couponCode, 1, selectedArt?.price || null)
       ]);
       setArtist(artistData);
       setPriceDetails(pricing);
@@ -106,7 +107,13 @@ export default function BookingSummaryScreen({ route, navigation }) {
         latitude,
         longitude,
         selectedDate,
-        timeLabel
+        timeLabel,
+        selected_art_id: selectedArt?.id || null,
+        selected_art_title: selectedArt?.title || null,
+        selected_art_image: selectedArt?.image_url || null,
+        selected_art_tier: selectedArt?.art_tier || "STANDARD",
+        selected_art_duration: selectedArt?.duration_minutes || 60,
+        selected_art_price: selectedArt?.price ? Number(selectedArt.price) : null
       };
 
       const newBooking = await createBooking(bookingData);
@@ -142,6 +149,38 @@ export default function BookingSummaryScreen({ route, navigation }) {
       ) : (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
           
+          {/* Selected Art Design Card (if chosen) */}
+          {selectedArt && (
+            <View style={styles.card}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <Text style={styles.cardTitle}>Selected Mehndi Art</Text>
+                <View style={[
+                  styles.tierTag,
+                  selectedArt.art_tier === "PREMIUM" ? styles.tierTagPremium : styles.tierTagStandard
+                ]}>
+                  <Text style={[
+                    styles.tierTagText,
+                    selectedArt.art_tier === "PREMIUM" ? styles.tierTagTextPremium : styles.tierTagTextStandard
+                  ]}>
+                    {selectedArt.art_tier || "STANDARD"}
+                  </Text>
+                </View>
+              </View>
+              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                {selectedArt.image_url ? (
+                  <Image source={{ uri: selectedArt.image_url }} style={{ width: 54, height: 54, borderRadius: 10, marginRight: 12 }} />
+                ) : null}
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontWeight: "700", color: Colors.text }}>{selectedArt.title}</Text>
+                  <Text style={{ fontSize: 12, color: Colors.textSecondary, marginTop: 2 }}>⏱️ Est. {selectedArt.duration_minutes || 60} mins</Text>
+                  {selectedArt.price ? (
+                    <Text style={{ fontSize: 12, fontWeight: "700", color: Colors.primary, marginTop: 2 }}>💎 Custom Art Price: ₹{selectedArt.price}</Text>
+                  ) : null}
+                </View>
+              </View>
+            </View>
+          )}
+
           {/* Artist details */}
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Professional Artist</Text>
@@ -343,9 +382,43 @@ const styles = StyleSheet.create({
   splitValue: { fontSize: 11, fontWeight: "700" },
   address: { fontSize: 13, color: Colors.textSecondary, lineHeight: 18 },
   couponForm: { flexDirection: "row" },
-  couponInput: { flex: 1, height: 40, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, paddingHorizontal: 10, fontSize: 12, color: Colors.text },
   applyBtn: { marginLeft: 8, paddingHorizontal: 16, height: 40, backgroundColor: Colors.primary, borderRadius: 8, justifyContent: "center", alignItems: "center" },
   applyBtnText: { color: Colors.white, fontSize: 12, fontWeight: "700" },
+  payBtn: {
+    backgroundColor: Colors.primary,
+    height: 50,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center"
+  },
+  payBtnText: {
+    color: Colors.white,
+    fontSize: 16,
+    fontWeight: "700"
+  },
+  tierTag: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  tierTagStandard: {
+    backgroundColor: "#E0E7FF",
+  },
+  tierTagPremium: {
+    backgroundColor: "#FEF3C7",
+    borderWidth: 1,
+    borderColor: "#F59E0B",
+  },
+  tierTagText: {
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  tierTagTextStandard: {
+    color: "#3730A3",
+  },
+  tierTagTextPremium: {
+    color: "#92400E",
+  },
   couponAppliedRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   couponAppliedText: { flex: 1, marginLeft: 8, fontSize: 12, fontWeight: "700", color: Colors.primary },
   removeCouponText: { fontSize: 12, color: Colors.error, fontWeight: "600" },

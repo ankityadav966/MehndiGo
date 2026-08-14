@@ -1,9 +1,12 @@
 import apiRequest from "./api";
 
-export async function getPriceDetails(serviceId, couponCode = null, slotCount = 1) {
+export async function getPriceDetails(serviceId, couponCode = null, slotCount = 1, customArtPrice = null) {
   let endpoint = `/booking/price-details?serviceId=${serviceId}&slotCount=${slotCount}`;
   if (couponCode) {
     endpoint += `&couponCode=${encodeURIComponent(couponCode)}`;
+  }
+  if (customArtPrice) {
+    endpoint += `&customArtPrice=${encodeURIComponent(customArtPrice)}`;
   }
   const res = await apiRequest("GET", endpoint, null, true);
   return res?.data || res;

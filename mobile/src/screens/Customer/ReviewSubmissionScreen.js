@@ -10,10 +10,11 @@ import {
   TouchableOpacity,
   View
 } from "react-native";
+import * as ImagePicker from "expo-image-picker";
 import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
-import { createNewReview, skipReview } from "../../services/review";
+import { createNewReview, skipReview, uploadReviewMedia } from "../../services/review";
 
 const PRESET_TAGS = ["Professional", "Friendly", "Creative", "Punctual", "Value for Money", "Expert Design", "Clean Work"];
 
@@ -27,7 +28,10 @@ export default function ReviewSubmissionScreen({ route, navigation }) {
 
   const [comment, setComment] = useState("");
   const [selectedTags, setSelectedTags] = useState([]);
+  const [videoUri, setVideoUri] = useState(null);
+  const [photoUris, setPhotoUris] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState("");
 
   useEffect(() => {
     if (!bookingId) {
@@ -44,9 +48,63 @@ export default function ReviewSubmissionScreen({ route, navigation }) {
     }
   };
 
+  const pickVideo = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("Permission Needed", "Please allow gallery access to attach a video review.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["videos"],
+      allowsEditing: true,
+      quality: 0.7
+    });
+    if (!result.canceled && result.assets?.[0]?.uri) {
+      setVideoUri(result.assets[0].uri);
+    }
+  };
+
+  const pickPhotos = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("Permission Needed", "Please allow gallery access to attach photos.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsMultipleSelection: true,
+      quality: 0.7
+    });
+    if (!result.canceled && result.assets?.length > 0) {
+      const uris = result.assets.map(a => a.uri);
+      setPhotoUris(prev => [...prev, ...uris].slice(0, 4));
+    }
+  };
+
   const handleSubmit = async () => {
     setLoading(true);
+    setUploadStatus("Processing review...");
     try {
+      let uploadedVideoUrl = null;
+      let uploadedPhotoUrls = [];
+
+      if (videoUri) {
+        setUploadStatus("Uploading video review...");
+        const vRes = await uploadReviewMedia(videoUri, true);
+        uploadedVideoUrl = vRes?.data?.url || vRes?.url || vRes?.file_url;
+      }
+
+      if (photoUris.length > 0) {
+        setUploadStatus("Uploading photo proofs...");
+        for (const pUri of photoUris) {
+          const pRes = await uploadReviewMedia(pUri, false);
+          const pUrl = pRes?.data?.url || pRes?.url || pRes?.file_url;
+          if (pUrl) uploadedPhotoUrls.push(pUrl);
+        }
+      }
+
+      setUploadStatus("Publishing verified review...");
+
       // Prepend tags to the comment text block
       let finalComment = comment.trim();
       if (selectedTags.length > 0) {
@@ -59,15 +117,19 @@ export default function ReviewSubmissionScreen({ route, navigation }) {
         comment: finalComment,
         design_quality: designRating,
         punctuality: punctualityRating,
-        professionalism: professionalismRating
+        professionalism: professionalismRating,
+        video_url: uploadedVideoUrl || null,
+        video_thumbnail: uploadedPhotoUrls[0] || null,
+        photos: uploadedPhotoUrls.length > 0 ? uploadedPhotoUrls : null
       });
 
-      Alert.alert("Review Submitted 🎉", "Thank you for sharing your valuable feedback!");
+      Alert.alert("Review Submitted 🎉", "Thank you for sharing your verified video & photo feedback!");
       navigation.navigate("CustomerTabs", { screen: "Home" });
     } catch (err) {
       Alert.alert("Submission Error", err.message || "Failed to save review.");
     } finally {
       setLoading(false);
+      setUploadStatus("");
     }
   };
 
@@ -180,6 +242,53 @@ export default function ReviewSubmissionScreen({ route, navigation }) {
             textAlignVertical="top"
           />
         </View>
+
+        {/* 4. Enterprise Video & Photo Attachments */}
+        <View style={styles.mediaUploadSection}>
+          <Text style={styles.sectionLabel}>Media Proofs & Video Review</Text>
+          
+          <View style={styles.mediaButtonsRow}>
+            <TouchableOpacity style={styles.mediaBtn} onPress={pickVideo}>
+              <Ionicons name="videocam" size={20} color={videoUri ? "#059669" : Colors.primary} />
+              <Text style={[styles.mediaBtnText, videoUri && { color: "#059669" }]}>
+                {videoUri ? "Video Attached ✓" : "Record / Upload Video"}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.mediaBtn} onPress={pickPhotos}>
+              <Ionicons name="images" size={20} color={photoUris.length > 0 ? "#059669" : Colors.primary} />
+              <Text style={[styles.mediaBtnText, photoUris.length > 0 && { color: "#059669" }]}>
+                {photoUris.length > 0 ? `${photoUris.length} Photos ✓` : "Add Photos"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {videoUri && (
+            <View style={styles.previewAttachmentRow}>
+              <Ionicons name="film-outline" size={16} color="#7C3AED" />
+              <Text style={styles.previewAttachmentText} numberOfLines={1}>Video clip ready to upload</Text>
+              <TouchableOpacity onPress={() => setVideoUri(null)}>
+                <Ionicons name="close-circle" size={18} color="#EF4444" />
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {photoUris.length > 0 && (
+            <ScrollView horizontal style={{ marginTop: 10 }}>
+              {photoUris.map((pUri, pIdx) => (
+                <View key={pIdx} style={styles.photoThumbWrapper}>
+                  <Image source={{ uri: pUri }} style={styles.photoThumb} />
+                  <TouchableOpacity
+                    style={styles.photoRemoveBtn}
+                    onPress={() => setPhotoUris(prev => prev.filter((_, i) => i !== pIdx))}
+                  >
+                    <Ionicons name="close" size={12} color="#FFFFFF" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </ScrollView>
+          )}
+        </View>
       </ScrollView>
 
       <View style={styles.footer}>
@@ -236,5 +345,68 @@ const styles = StyleSheet.create({
   skipBtn: { flex: 1, height: 48, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, justifyContent: "center", alignItems: "center" },
   skipBtnLabel: { color: Colors.textSecondary, fontWeight: "600", fontSize: 13 },
   submitBtn: { flex: 2, height: 48, borderRadius: 10, backgroundColor: Colors.primary, justifyContent: "center", alignItems: "center" },
-  submitBtnText: { color: Colors.white, fontWeight: "700", fontSize: 14 }
+  submitBtnText: { color: Colors.white, fontWeight: "700", fontSize: 14 },
+  mediaUploadSection: {
+    paddingHorizontal: 16,
+    marginTop: 18,
+  },
+  mediaButtonsRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  mediaBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    backgroundColor: "#FAF5FF",
+    borderWidth: 1.5,
+    borderColor: "#E9D5FF",
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  mediaBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: Colors.primary,
+  },
+  previewAttachmentRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F3E8FF",
+    borderRadius: 8,
+    padding: 8,
+    marginTop: 8,
+    gap: 6,
+  },
+  previewAttachmentText: {
+    flex: 1,
+    fontSize: 12,
+    color: "#6B21A8",
+    fontWeight: "600",
+  },
+  photoThumbWrapper: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+    overflow: "hidden",
+    marginRight: 8,
+    position: "relative",
+  },
+  photoThumb: {
+    width: "100%",
+    height: "100%",
+  },
+  photoRemoveBtn: {
+    position: "absolute",
+    top: 2,
+    right: 2,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    justifyContent: "center",
+    alignItems: "center",
+  },
 });

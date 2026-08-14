@@ -18,7 +18,7 @@ const CUSTOMER_SECTIONS = [
   {
     icon: "card-outline",
     title: "3. Safe Payment Processing",
-    content: "All financial transactions (including MehndiGo Wallet top-ups and service bookings) are securely routed through certified third-party payment gateways like Cashfree. We do not store or log your raw credit card digits, net banking credentials, or UPI PINs."
+    content: "All financial transactions (including MehndiGo Wallet top-ups and service bookings) are securely routed through certified third-party payment gateways like Razorpay. We do not store or log your raw credit card digits, net banking credentials, or UPI PINs."
   },
   {
     icon: "chatbubbles-outline",

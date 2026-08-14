@@ -9,7 +9,7 @@ import moment from "moment";
 import { fetchArtistAvailability } from "../../services/customer";
 
 export default function SelectTimeSlotScreen({ route, navigation }) {
-  const { artistId, serviceId, selectedDate: paramDate } = route.params || {};
+  const { artistId, serviceId, selectedDate: paramDate, selectedArt } = route.params || {};
 
   const targetDate = typeof paramDate === "string" ? paramDate : (Array.isArray(paramDate) ? paramDate[0] : moment().format("YYYY-MM-DD"));
 
@@ -107,7 +107,8 @@ export default function SelectTimeSlotScreen({ route, navigation }) {
       serviceId,
       selectedDate: targetDate,
       slotId: cleanSlotId,
-      timeLabel: timeLabel
+      timeLabel: timeLabel,
+      selectedArt
     });
   };
 

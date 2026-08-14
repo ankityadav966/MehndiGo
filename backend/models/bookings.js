@@ -243,6 +243,35 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.DATE,
         allowNull: true
       },
+      completion_pin: {
+        type: DataTypes.STRING(10),
+        allowNull: true
+      },
+      selected_art_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true
+      },
+      selected_art_title: {
+        type: DataTypes.STRING(255),
+        allowNull: true
+      },
+      selected_art_image: {
+        type: DataTypes.TEXT,
+        allowNull: true
+      },
+      selected_art_tier: {
+        type: DataTypes.STRING(50),
+        allowNull: true,
+        defaultValue: "STANDARD"
+      },
+      selected_art_duration: {
+        type: DataTypes.INTEGER,
+        allowNull: true
+      },
+      selected_art_price: {
+        type: DataTypes.INTEGER,
+        allowNull: true
+      },
     },
     {
       sequelize,

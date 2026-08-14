@@ -104,6 +104,23 @@ async function getArtistReviewsAnalytics(req, res) {
   }
 }
 
+async function uploadReviewMedia(req, res) {
+  try {
+    if (!req.file) {
+      return res.status(400).json(ErrorResponse("No media file uploaded"));
+    }
+    const fileUrl = req.file.path || req.file.secure_url || req.file.url;
+    return res.status(200).json(SuccessResponse("Media uploaded successfully", {
+      url: fileUrl,
+      file_url: fileUrl,
+      mimetype: req.file.mimetype,
+      filename: req.file.filename || req.file.originalname
+    }));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
 module.exports = {
   getReviews,
   getReviewById,
@@ -115,5 +132,6 @@ module.exports = {
   submitHelpfulVote,
   removeHelpfulVote,
   getArtistReviews,
-  getArtistReviewsAnalytics
+  getArtistReviewsAnalytics,
+  uploadReviewMedia
 };

@@ -67,7 +67,9 @@ router.put("/addresses/:id", authenticate, CustomerController.updateAddress);
 router.patch("/addresses/:id/default", authenticate, CustomerController.setDefaultAddress);
 router.delete("/addresses/:id", authenticate, CustomerController.deleteAddress);
 
+const ReviewController = require("../controllers/review/review.controller");
 router.get("/reviews", authenticate, CustomerController.getReviews);
+router.post("/review", authenticate, ReviewController.createReview);
 router.post("/support/ticket", authenticate, CustomerController.createSupportTicket);
 router.get("/support/tickets", authenticate, CustomerController.getSupportTickets);
 router.get("/support/tickets/:id", authenticate, CustomerController.getSupportTicketDetails);

@@ -582,26 +582,20 @@ export default function BookingDetailsScreen({ route, navigation }) {
   };
 
   const handleCompleteService = async () => {
-    setLoading(true);
-    try {
-      await sendCheckOutOtp(bookingId);
-      setOtpTimer(300);
-      setIsCheckOutModalVisible(true);
-    } catch (err) {
-      Alert.alert("Error", err.message || "Failed to send completion OTP.");
-    } finally {
-      setLoading(false);
-    }
+    setIsCheckOutModalVisible(true);
+    setOtpTimer(300);
+    // Trigger backup email/SMS in background
+    sendCheckOutOtp(bookingId).catch(() => {});
   };
 
   const handleVerifyCheckInOtp = async () => {
-    if (!checkInOtpText || checkInOtpText.length !== 6) {
-      Alert.alert("Error", "Please enter a valid 6-digit OTP code");
+    if (!checkInOtpText || checkInOtpText.length < 4 || checkInOtpText.length > 6) {
+      Alert.alert("Error", "Please enter a valid OTP code");
       return;
     }
     setLoading(true);
     try {
-      await verifyCheckInOtp(bookingId, checkInOtpText);
+      await verifyCheckInOtp(bookingId, checkInOtpText.trim());
       setIsCheckInModalVisible(false);
       setCheckInOtpText("");
       Alert.alert("Success", "Check-In verified successfully! Service has started.");
@@ -614,20 +608,20 @@ export default function BookingDetailsScreen({ route, navigation }) {
   };
 
   const handleVerifyCheckOutOtp = async () => {
-    if (!checkOutOtpText || checkOutOtpText.length !== 6) {
-      Alert.alert("Error", "Please enter a valid 6-digit OTP code");
+    if (!checkOutOtpText || checkOutOtpText.trim().length < 4 || checkOutOtpText.trim().length > 6) {
+      Alert.alert("Error", "Please enter the 4-digit PIN provided by customer");
       return;
     }
     setLoading(true);
     try {
-      await verifyCheckOutOtp(bookingId, checkOutOtpText);
+      await verifyCheckOutOtp(bookingId, checkOutOtpText.trim());
       setIsCheckOutModalVisible(false);
       setCheckOutOtpText("");
       setIsMapFullScreen(false);
       Alert.alert("Success", "Service completed and verified successfully!");
       loadDetails();
     } catch (err) {
-      Alert.alert("Verification Failed", err.message || "Invalid OTP code. Please retry.");
+      Alert.alert("Verification Failed", err.message || "Invalid PIN. Please ask customer for the correct 4-digit PIN.");
     } finally {
       setLoading(false);
     }
@@ -1405,7 +1399,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
         </View>
       </Modal>
 
-      {/* Check-Out OTP Modal */}
+      {/* Check-Out OTP / PIN Modal */}
       <Modal
         visible={isCheckOutModalVisible}
         transparent={true}
@@ -1415,31 +1409,23 @@ export default function BookingDetailsScreen({ route, navigation }) {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Ionicons name="shield-checkmark" size={48} color={Colors.success} style={styles.modalIcon} />
-            <Text style={styles.modalTitle}>Check-Out Verification</Text>
+            <Text style={styles.modalTitle}>Service Completion PIN</Text>
             <Text style={styles.modalDescription}>
-              Ask the client for the Completion OTP to securely verify checkout and finalize the service.
+              Ask {booking?.customer_name || booking?.user?.name || "the client"} for the 4-digit Completion PIN displayed on their MehndiGo app screen to verify and complete the job.
             </Text>
 
             <TextInput
-              style={{ borderBottomColor: Colors.success, borderBottomWidth: 2, textAlign: "center", fontSize: 24, letterSpacing: 8, marginVertical: 18, width: "80%", color: Colors.text }}
+              style={{ borderBottomColor: Colors.success, borderBottomWidth: 2, textAlign: "center", fontSize: 28, fontWeight: "800", letterSpacing: 8, marginVertical: 18, width: "80%", color: Colors.text }}
               keyboardType="number-pad"
               maxLength={6}
-              placeholder="000000"
+              placeholder="0000"
               placeholderTextColor="#999"
               value={checkOutOtpText}
               onChangeText={setCheckOutOtpText}
             />
 
-            {otpTimer > 0 ? (
-              <Text style={{ fontSize: 12, color: Colors.textSecondary }}>OTP expires in: {Math.floor(otpTimer / 60)}:{(otpTimer % 60).toString().padStart(2, "0")}</Text>
-            ) : (
-              <TouchableOpacity style={{ padding: 8 }} onPress={handleResendCheckOutOtp}>
-                <Text style={{ fontSize: 13, color: Colors.success, fontWeight: "700" }}>Resend OTP</Text>
-              </TouchableOpacity>
-            )}
-
-            <TouchableOpacity style={[styles.modalPrimaryBtn, { marginTop: 20, backgroundColor: Colors.success }]} onPress={handleVerifyCheckOutOtp}>
-              <Text style={styles.modalPrimaryBtnText}>Verify OTP & Complete Service</Text>
+            <TouchableOpacity style={[styles.modalPrimaryBtn, { marginTop: 14, backgroundColor: Colors.success }]} onPress={handleVerifyCheckOutOtp}>
+              <Text style={styles.modalPrimaryBtnText}>Verify PIN & Complete Job</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setIsCheckOutModalVisible(false)}>

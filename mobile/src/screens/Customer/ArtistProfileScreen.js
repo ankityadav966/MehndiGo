@@ -278,6 +278,22 @@ export default function ArtistProfileScreen({ route, navigation }) {
     });
   };
 
+  const handleBookArt = (artItem) => {
+    navigation.navigate("SelectService", {
+      artistId: profile.id,
+      selectedDate,
+      selectedTimeSlot,
+      selectedArt: {
+        id: artItem.id,
+        title: artItem.title || "Custom Mehndi Design",
+        image_url: artItem.image_url,
+        art_tier: artItem.art_tier || "STANDARD",
+        price: artItem.price ? Number(artItem.price) : null,
+        duration_minutes: artItem.duration_minutes || 60
+      }
+    });
+  };
+
   if (loading) {
     return (
       <View style={styles.centerContainer}>
@@ -489,37 +505,62 @@ export default function ArtistProfileScreen({ route, navigation }) {
           )}
         </View>
 
-        {/* Section: Portfolio Grid */}
+        {/* Section: Portfolio & Art Design Gallery */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Portfolio Gallery ({portfolio.length})</Text>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <Text style={styles.sectionTitle}>Portfolio & Arts ({portfolio.length})</Text>
+            <Text style={{ fontSize: 11, color: Colors.textSecondary }}>Standard & Premium</Text>
+          </View>
           {portfolio.length === 0 ? (
             <Text style={styles.emptyText}>No portfolio images available.</Text>
           ) : (
-            <View style={styles.portfolioGrid}>
-              {portfolio.map((item, index) => (
-                <TouchableOpacity
-                  key={`portfolio-${item.id || 'idx'}-${index}`}
-                  style={styles.portfolioGridItem}
-                  onPress={() => {
-                    if (item.video_url) {
-                      navigation.navigate("VideoPlayer", {
-                        videoUrl: item.video_url,
-                        title: item.title || "Portfolio Video"
-                      });
-                    } else {
-                      setZoomImageIndex(index);
-                      setZoomModalVisible(true);
-                    }
-                  }}
-                >
-                  <Image source={{ uri: resolveImage(item.image_url) }} style={styles.portfolioThumb} />
-                  {item.video_url && (
-                    <View style={styles.videoBadge}>
-                      <Ionicons name="play" size={12} color={Colors.white} />
+            <View style={styles.portfolioListContainer}>
+              {portfolio.map((item, index) => {
+                const isPremium = item.art_tier === "PREMIUM";
+                return (
+                  <View key={`portfolio-${item.id || 'idx'}-${index}`} style={styles.portfolioArtCard}>
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      style={styles.portfolioArtImageWrapper}
+                      onPress={() => {
+                        if (item.video_url) {
+                          navigation.navigate("VideoPlayer", {
+                            videoUrl: item.video_url,
+                            title: item.title || "Portfolio Video"
+                          });
+                        } else {
+                          setZoomImageIndex(index);
+                          setZoomModalVisible(true);
+                        }
+                      }}
+                    >
+                      <Image source={{ uri: resolveImage(item.image_url) }} style={styles.portfolioArtThumb} />
+                      <View style={[styles.artTierTag, isPremium ? styles.artTierTagPremium : styles.artTierTagStandard]}>
+                        <Text style={[styles.artTierTagText, isPremium ? styles.artTierTagTextPremium : styles.artTierTagTextStandard]}>
+                          {isPremium ? `💎 PREMIUM ₹${item.price || ''}` : "✨ STANDARD"}
+                        </Text>
+                      </View>
+                      {item.video_url && (
+                        <View style={styles.videoBadge}>
+                          <Ionicons name="play" size={14} color={Colors.white} />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+
+                    <View style={styles.portfolioArtInfo}>
+                      <Text style={styles.portfolioArtTitle} numberOfLines={1}>{item.title || "Mehndi Art"}</Text>
+                      <Text style={styles.portfolioArtMeta}>⏱️ {item.duration_minutes || 60} mins {item.category ? `• ${item.category}` : ""}</Text>
+                      <TouchableOpacity
+                        style={[styles.bookArtBtn, isPremium && styles.bookArtBtnPremium]}
+                        onPress={() => handleBookArt(item)}
+                      >
+                        <Ionicons name="sparkles" size={12} color={isPremium ? "#92400E" : Colors.white} />
+                        <Text style={[styles.bookArtBtnText, isPremium && styles.bookArtBtnTextPremium]}>Book Design</Text>
+                      </TouchableOpacity>
                     </View>
-                  )}
-                </TouchableOpacity>
-              ))}
+                  </View>
+                );
+              })}
             </View>
           )}
         </View>
@@ -590,6 +631,47 @@ export default function ArtistProfileScreen({ route, navigation }) {
             </View>
           )}
         </View>
+
+        {/* Section: Video Reviews Reel Carousel */}
+        {reviewsData.reviews && reviewsData.reviews.some((r) => r.video_url) && (
+          <View style={styles.section}>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+              <Text style={styles.sectionTitle}>🎬 Client Video Reviews</Text>
+              <View style={styles.verifiedReelTag}>
+                <Ionicons name="checkmark-seal" size={12} color="#059669" />
+                <Text style={styles.verifiedReelTagText}>Verified Bookings</Text>
+              </View>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 4 }}>
+              {reviewsData.reviews.filter((r) => r.video_url).map((vRev, idx) => (
+                <TouchableOpacity
+                  key={`vrev-${vRev.id || idx}`}
+                  style={styles.videoReviewCard}
+                  onPress={() => navigation.navigate("VideoPlayer", { videoUrl: vRev.video_url, title: `Review by ${vRev.reviewer?.name || vRev.user?.name || "Customer"}` })}
+                >
+                  <Image
+                    source={{ uri: resolveImage(vRev.video_thumbnail || vRev.photos?.[0] || profile.profile_image) }}
+                    style={styles.videoReviewThumb}
+                  />
+                  <View style={styles.videoReviewOverlay}>
+                    <View style={styles.videoReviewPlayBtn}>
+                      <Ionicons name="play" size={20} color="#FFFFFF" />
+                    </View>
+                    <View style={styles.videoReviewMeta}>
+                      <Text style={styles.videoReviewAuthor} numberOfLines={1}>
+                        {vRev.reviewer?.name || vRev.user?.name || "Customer"}
+                      </Text>
+                      <View style={{ flexDirection: "row", alignItems: "center" }}>
+                        <Ionicons name="star" size={10} color="#FFB800" />
+                        <Text style={styles.videoReviewRating}>{vRev.rating || 5}.0</Text>
+                      </View>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
 
         {/* Section: Reviews List & Star Distribution */}
         <View style={styles.section}>
@@ -918,6 +1000,160 @@ const styles = StyleSheet.create({
   portfolioGrid: { flexDirection: "row", flexWrap: "wrap", marginHorizontal: -4 },
   portfolioGridItem: { width: "31%", aspectRatio: 1, margin: "1.1%", position: "relative" },
   portfolioThumb: { width: "100%", height: "100%", borderRadius: 8 },
+  portfolioListContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  portfolioArtCard: {
+    width: (SCREEN_WIDTH - 44) / 2,
+    backgroundColor: Colors.white,
+    borderRadius: 14,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+    marginBottom: 10,
+  },
+  portfolioArtImageWrapper: {
+    width: "100%",
+    height: 130,
+    position: "relative",
+  },
+  portfolioArtThumb: {
+    width: "100%",
+    height: "100%",
+    resizeMode: "cover",
+  },
+  artTierTag: {
+    position: "absolute",
+    top: 8,
+    left: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  artTierTagStandard: {
+    backgroundColor: "rgba(124, 58, 237, 0.9)",
+  },
+  artTierTagPremium: {
+    backgroundColor: "#FEF3C7",
+    borderWidth: 1,
+    borderColor: "#F59E0B",
+  },
+  artTierTagText: {
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 0.4,
+  },
+  artTierTagTextStandard: {
+    color: "#FFFFFF",
+  },
+  artTierTagTextPremium: {
+    color: "#92400E",
+  },
+  portfolioArtInfo: {
+    padding: 10,
+  },
+  portfolioArtTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: Colors.text,
+  },
+  portfolioArtMeta: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
+  bookArtBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Colors.primary,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    marginTop: 8,
+    gap: 4,
+  },
+  bookArtBtnPremium: {
+    backgroundColor: "#FEF3C7",
+    borderWidth: 1,
+    borderColor: "#F59E0B",
+  },
+  bookArtBtnText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: Colors.white,
+  },
+  bookArtBtnTextPremium: {
+    color: "#92400E",
+  },
+  verifiedReelTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ECFDF5",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    gap: 4,
+  },
+  verifiedReelTagText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#065F46",
+  },
+  videoReviewCard: {
+    width: 120,
+    height: 180,
+    borderRadius: 14,
+    overflow: "hidden",
+    marginRight: 10,
+    position: "relative",
+    backgroundColor: "#000",
+  },
+  videoReviewThumb: {
+    width: "100%",
+    height: "100%",
+    resizeMode: "cover",
+  },
+  videoReviewOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    justifyContent: "space-between",
+    padding: 8,
+  },
+  videoReviewPlayBtn: {
+    alignSelf: "center",
+    marginTop: 45,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  videoReviewMeta: {
+    backgroundColor: "rgba(0,0,0,0.5)",
+    borderRadius: 6,
+    padding: 4,
+  },
+  videoReviewAuthor: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  videoReviewRating: {
+    color: "#FFFFFF",
+    fontSize: 9,
+    fontWeight: "700",
+    marginLeft: 3,
+  },
   videoBadge: {
     position: "absolute",
     right: 6,

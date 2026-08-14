@@ -56,7 +56,7 @@ export default function RefundStatusScreen({ route, navigation }) {
 
   const timeline = [
     { key: "initiated", label: "Cancellation Received", completed: true, desc: "Refund requested and initiated." },
-    { key: "processing", label: "Gateway Processing", completed: true, desc: "Cashfree processing funds transfer." },
+    { key: "processing", label: "Gateway Processing", completed: true, desc: "Razorpay processing funds transfer." },
     { key: "completed", label: "Completed", completed: isCompleted, desc: isCompleted ? "Refund successfully credited." : "Funds will credit in 2-3 business days." }
   ];
 

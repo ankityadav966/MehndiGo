@@ -143,20 +143,22 @@ export default function BookingDetailsScreen({ route, navigation }) {
     if (!socket) return;
     const handleLocationUpdate = (payload) => {
       if (payload.bookingId === Number(bookingId)) {
-        console.log("[Customer BookingDetails] Socket update received:", payload);
+        console.log("[Customer BookingDetails] Socket location update received:", payload);
         setArtistCoords({
           lat: Number(payload.latitude),
           lng: Number(payload.longitude),
-          speed: Number(payload.speed),
-          heading: Number(payload.heading)
+          speed: Number(payload.speed || 0),
+          heading: Number(payload.heading || 0)
         });
-        setLastUpdated(new Date(payload.updatedAt));
+        setLastUpdated(new Date(payload.updatedAt || Date.now()));
       }
     };
 
     socket.on("artistLocationUpdated", handleLocationUpdate);
+    socket.on("artist_location_update", handleLocationUpdate);
     return () => {
       socket.off("artistLocationUpdated", handleLocationUpdate);
+      socket.off("artist_location_update", handleLocationUpdate);
     };
   }, [socket, bookingId]);
 
@@ -207,12 +209,29 @@ export default function BookingDetailsScreen({ route, navigation }) {
       }
     };
 
+    const handleStatusUpdated = (payload) => {
+      console.log("[Customer screen] booking_status_updated:", payload);
+      if (Number(payload.bookingId) === Number(bookingId)) {
+        setBooking((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            detailed_status: payload.detailed_status || payload.status || prev.detailed_status,
+            booking_status: payload.booking_status || prev.booking_status
+          };
+        });
+        loadDetails();
+      }
+    };
+
+    socket.on("booking_status_updated", handleStatusUpdated);
     socket.on("checkin_otp_received", handleCheckInOtp);
     socket.on("checkout_otp_received", handleCheckOutOtp);
     socket.on("service_started", handleServiceStarted);
     socket.on("booking_completed", handleBookingCompleted);
 
     return () => {
+      socket.off("booking_status_updated", handleStatusUpdated);
       socket.off("checkin_otp_received", handleCheckInOtp);
       socket.off("checkout_otp_received", handleCheckOutOtp);
       socket.off("service_started", handleServiceStarted);
@@ -530,6 +549,57 @@ const getDistance = () => {
                   </View>
                 );
               })}
+            </View>
+          </View>
+        )}
+
+        {/* Rapido-Style Fixed Completion PIN Card */}
+        {booking && booking.completion_pin && ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "ON_THE_WAY", "ARTIST_ARRIVED", "ARRIVED", "SERVICE_STARTED", "IN_PROGRESS"].includes(currentDetailedStatus) && (
+          <View style={styles.pinCardContainer}>
+            <View style={styles.pinCardHeader}>
+              <View style={styles.pinIconCircle}>
+                <Ionicons name="shield-checkmark" size={18} color="#FFFFFF" />
+              </View>
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Text style={styles.pinCardTitle}>Service Completion PIN</Text>
+                <Text style={styles.pinCardSubtitle}>Share with Artist only when work is 100% completed</Text>
+              </View>
+            </View>
+            <View style={styles.pinBoxesRow}>
+              {String(booking.completion_pin).split("").map((digit, idx) => (
+                <View key={idx} style={styles.pinDigitBox}>
+                  <Text style={styles.pinDigitText}>{digit}</Text>
+                </View>
+              ))}
+            </View>
+            <View style={styles.pinSecurityRow}>
+              <Ionicons name="lock-closed" size={12} color="#059669" />
+              <Text style={styles.pinSecurityText}>Protects your payment until you verify service completion</Text>
+            </View>
+          </View>
+        )}
+
+        {/* Selected Mehndi Art / Design Card */}
+        {booking && (booking.selected_art_title || booking.selected_art_image) && (
+          <View style={styles.selectedArtCard}>
+            <View style={styles.selectedArtHeader}>
+              <Ionicons name="color-palette" size={16} color={Colors.primary} />
+              <Text style={styles.selectedArtHeaderTitle}>Selected Mehndi Art Design</Text>
+              <View style={[styles.artTierBadge, booking.selected_art_tier === "PREMIUM" ? styles.artTierPremium : styles.artTierStandard]}>
+                <Text style={styles.artTierBadgeText}>{booking.selected_art_tier || "STANDARD"}</Text>
+              </View>
+            </View>
+            <View style={styles.selectedArtBody}>
+              {booking.selected_art_image ? (
+                <Image source={{ uri: resolveImage(booking.selected_art_image) }} style={styles.selectedArtThumbnail} />
+              ) : null}
+              <View style={styles.selectedArtMeta}>
+                <Text style={styles.selectedArtTitleText}>{booking.selected_art_title || "Custom Art Design"}</Text>
+                <Text style={styles.selectedArtDurationText}>⏱️ Est. Duration: {booking.selected_art_duration || booking.service_duration || 60} mins</Text>
+                {booking.selected_art_price ? (
+                  <Text style={styles.selectedArtPriceText}>💎 Art Price: ₹{booking.selected_art_price}</Text>
+                ) : null}
+              </View>
             </View>
           </View>
         )}
@@ -1280,6 +1350,153 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#B58900",
     flex: 1,
+  },
+  pinCardContainer: {
+    backgroundColor: "#FDF4FF",
+    borderWidth: 1.5,
+    borderColor: "#F0ABFC",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: "#A855F7",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  pinCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  pinIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Colors.primary,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  pinCardTitle: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#701A75",
+  },
+  pinCardSubtitle: {
+    fontSize: 11,
+    color: "#86198F",
+    marginTop: 2,
+  },
+  pinBoxesRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 12,
+    marginVertical: 8,
+  },
+  pinDigitBox: {
+    width: 52,
+    height: 56,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: Colors.primary,
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  pinDigitText: {
+    fontSize: 26,
+    fontWeight: "900",
+    color: Colors.primary,
+    letterSpacing: 1,
+  },
+  pinSecurityRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 8,
+    gap: 4,
+  },
+  pinSecurityText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#059669",
+  },
+  selectedArtCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  selectedArtHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  selectedArtHeaderTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: Colors.text,
+    marginLeft: 6,
+    flex: 1,
+  },
+  artTierBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  artTierPremium: {
+    backgroundColor: "#FEF3C7",
+  },
+  artTierStandard: {
+    backgroundColor: "#E0E7FF",
+  },
+  artTierBadgeText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#92400E",
+    letterSpacing: 0.5,
+  },
+  selectedArtBody: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  selectedArtThumbnail: {
+    width: 60,
+    height: 60,
+    borderRadius: 10,
+  },
+  selectedArtMeta: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  selectedArtTitleText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: Colors.text,
+  },
+  selectedArtDurationText: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginTop: 3,
+  },
+  selectedArtPriceText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: Colors.primary,
+    marginTop: 2,
   },
 });
 

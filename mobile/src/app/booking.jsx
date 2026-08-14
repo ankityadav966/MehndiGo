@@ -93,8 +93,8 @@ export default function BookingScreen() {
 
       const res = await bookingService.createBooking(bookingData);
       
-      // If payment is ONLINE, we trigger Cashfree checkout.
-      // Since Cashfree requires native modules, we include simulation fallback when run on Expo Go.
+      // If payment is ONLINE, we trigger Razorpay checkout.
+      // We include native Razorpay SDK with web modal fallback for Expo Go.
       if (paymentMethod === "ONLINE") {
         const { createPaymentSession, verifyPaymentSignature } = require("../services/payment");
         const RazorpayCheckout = require("react-native-razorpay").default || require("react-native-razorpay");

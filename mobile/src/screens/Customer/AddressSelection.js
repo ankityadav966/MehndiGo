@@ -25,7 +25,7 @@ import {
 } from "../../utils/locationManager";
 
 export default function AddressSelection({ route, navigation }) {
-  const { artistId, serviceId, selectedDate, slotId, timeLabel } = route.params || {};
+  const { artistId, serviceId, selectedDate, slotId, timeLabel, selectedArt } = route.params || {};
 
   const [locationSource, setLocationSource] = useState(null); // 'GPS' | 'MANUAL' | 'MAP_PICKER'
 
@@ -231,6 +231,7 @@ export default function AddressSelection({ route, navigation }) {
       longitude: finalLng,
       accuracy,
       source: locationSource || "MANUAL",
+      selectedArt,
     });
   };
 
