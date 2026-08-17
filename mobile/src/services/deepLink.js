@@ -87,27 +87,64 @@ export function resolveNotificationRoute(notification, role) {
   if (type) type = type.toLowerCase();
 
   const normalizedRole = String(role || "").toLowerCase();
+  const fallbackScreen = normalizedRole === "artist" ? "Notifications" : "NotificationCenter";
 
   // If event is missing, map it using type
   if (type && !event) {
-    if (type === "booking") {
-      event = normalizedRole === "artist" ? "new_booking_request" : "booking_confirmed";
-    } else if (type === "payment") {
+    if (type === "booking" || type.startsWith("booking_")) {
+      if (type === "booking_created") event = "new_booking_request";
+      else if (type === "booking_accepted") event = "booking_accepted";
+      else if (type === "booking_rejected") event = "booking_rejected";
+      else if (type === "booking_completed") event = "booking_completed";
+      else if (type === "artist_on_the_way") event = "artist_on_the_way";
+      else if (type === "artist_arrived") event = "artist_arrived";
+      else event = normalizedRole === "artist" ? "new_booking_request" : "booking_confirmed";
+    } else if (type === "payment" || type.startsWith("payment_")) {
       event = normalizedRole === "artist" ? "payment_received" : "payment_success";
     } else if (type === "wallet") {
       event = "wallet_credit";
     } else if (type === "review") {
       event = normalizedRole === "artist" ? "new_review" : "review_reminder";
-    } else if (type === "chat") {
+    } else if (type === "chat" || type === "new_chat_message") {
       event = "new_message";
     }
   }
 
+  // Support ticket routing
+  const rawType = String(data?.type || notification?.type || "").toUpperCase();
+  if (
+    rawType.startsWith("SUPPORT_TICKET") ||
+    rawType === "SUPPORT" ||
+    String(notification?.title || "").toLowerCase().includes("support") ||
+    String(notification?.message || notification?.body || "").toLowerCase().includes("support")
+  ) {
+    const tMatch = (String(notification?.title || "") + " " + String(notification?.message || notification?.body || "")).match(/#(\d+)/);
+    const ticketId = data?.ticketId || data?.ticket_id || (tMatch ? parseInt(tMatch[1], 10) : null);
+    if (ticketId) {
+      return { screen: "SupportTicketDetails", params: { ticketId } };
+    }
+    return { screen: "Support" };
+  }
+
+  // Direct entity deep links
+  if (data?.bookingId || data?.booking_id || data?.id) {
+    const resolvedBid = data.bookingId || data.booking_id || data.id;
+    if (rawType.includes("ARRIVED") || rawType.includes("ON_THE_WAY") || event === "artist_on_the_way" || event === "artist_arrived") {
+      return { screen: "LiveTracking", params: { id: resolvedBid } };
+    }
+    if (rawType.includes("COMPLETED") || event === "booking_completed") {
+      return { screen: normalizedRole === "artist" ? "BookingDetails" : "ReviewSubmission", params: { id: resolvedBid } };
+    }
+    if (rawType.includes("CHAT") || event === "new_message") {
+      return { screen: "ChatRoom", params: { bookingId: resolvedBid } };
+    }
+    return { screen: "BookingDetails", params: { id: resolvedBid } };
+  }
 
   // Smart Dynamic Fallback Parser if type or event metadata is missing
   if (!type || !event) {
     const titleText = (notification?.title || "").toLowerCase();
-    const msgText = (notification?.message || "").toLowerCase();
+    const msgText = (notification?.message || notification?.body || "").toLowerCase();
     const notifType = (notification?.type || "").toUpperCase();
 
     // 1. Resolve Type
@@ -157,22 +194,6 @@ export function resolveNotificationRoute(notification, role) {
       else if (type === "payment" && event.includes("refund")) refundId = resolvedNumId;
       else leadId = resolvedNumId;
     }
-
-  }
-
-  const rawType = String(data?.type || notification?.type || "").toUpperCase();
-  if (
-    rawType.startsWith("SUPPORT_TICKET") ||
-    rawType === "SUPPORT" ||
-    String(notification.title || "").toLowerCase().includes("support") ||
-    String(notification.message || notification.body || "").toLowerCase().includes("support")
-  ) {
-    const tMatch = (String(notification.title || "") + " " + String(notification.message || "")).match(/#(\d+)/);
-    const ticketId = data?.ticketId || data?.ticket_id || (tMatch ? parseInt(tMatch[1], 10) : null);
-    if (ticketId) {
-      return { screen: "SupportTicketDetails", params: { ticketId } };
-    }
-    return { screen: "Support" };
   }
 
   if (!type || !event) {
@@ -187,7 +208,6 @@ export function resolveNotificationRoute(notification, role) {
 
   const route = roleRoutes[event];
   if (!route) return { screen: fallbackScreen };
-
 
   const resolvedParams = { ...route.params };
   
@@ -208,7 +228,6 @@ export function resolveNotificationRoute(notification, role) {
       return { screen: normalizedRole === "artist" ? "Bookings" : "MyBookings" };
     }
     resolvedParams.bookingId = resolvedParams.bookingId.replace(":bookingId", bid);
-
   }
 
   return { screen: route.screen, params: resolvedParams };

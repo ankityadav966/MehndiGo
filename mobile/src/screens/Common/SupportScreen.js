@@ -82,7 +82,7 @@ export default function SupportScreen({ navigation }) {
   };
 
   const supportOptions = [
-    { title: "Raise a Ticket", icon: "document-text-outline", color: Colors.primary || "#F7146B", action: () => navigation.navigate("SupportTicket") },
+    // { title: "Raise a Ticket", icon: "document-text-outline", color: Colors.primary || "#F7146B", action: () => navigation.navigate("SupportTicket") },
     { title: "Chat with Support", icon: "chatbubble-ellipses-outline", color: "#3B82F6", action: () => navigation.navigate("SupportTicket") },
     { title: "Call Us (+91 98765 43210)", icon: "call-outline", color: "#10B981", action: handleCall },
     { title: "FAQs & Knowledgebase", icon: "help-circle-outline", color: "#F59E0B", action: () => setFaqsVisible(true) },
@@ -129,7 +129,7 @@ export default function SupportScreen({ navigation }) {
             <Text style={{ fontSize: 13, fontWeight: "700", color: Colors.primary }}>+ New Ticket</Text>
           </TouchableOpacity>
         </View>
-        
+
         {loadingTickets ? (
           <ActivityIndicator color={Colors.primary} style={{ marginVertical: 20 }} />
         ) : tickets.length === 0 ? (
@@ -154,8 +154,8 @@ export default function SupportScreen({ navigation }) {
               const dateStr = new Date(item.updated_at || item.created_at || item.createdAt || Date.now()).toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
               return (
-                <TouchableOpacity 
-                  key={item.id} 
+                <TouchableOpacity
+                  key={item.id}
                   style={{
                     backgroundColor: Colors.white,
                     borderRadius: 14,

@@ -1,7 +1,7 @@
 "use strict";
 
 const db = require("../models");
-const AppError = require("../utils/appError");
+const AppError = require("../utils/errors/app.error");
 const ledgerService = require("./ledger.services");
 
 class SettlementService {
@@ -10,6 +10,17 @@ class SettlementService {
    */
   async processBookingSettlement(bookingId, transaction = null) {
     const options = transaction ? { transaction } : {};
+
+    // 1. Idempotency Check: Prevent duplicate settlement for already settled booking
+    const existingSettlement = await db.Settlement.findOne({
+      where: { booking_id: bookingId, status: "COMPLETED" },
+      ...options
+    }).catch(() => null);
+
+    if (existingSettlement) {
+      console.log(`[SettlementService] Booking #${bookingId} already settled. Skipping duplicate settlement.`);
+      return existingSettlement;
+    }
 
     const booking = await db.Booking.findByPk(bookingId, {
       include: [

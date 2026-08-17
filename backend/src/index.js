@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { connect } from "cloudflare:sockets";
 import { getDb } from "./db.js";
+import { ensurePushNotificationTables, sendExpoPushNotification, dispatchNotification } from "./notification_service.js";
 
 const app = new Hono();
 
@@ -53,107 +54,25 @@ app.post("/api/v1/debug/reset-wallet", async (c) => {
 });
 app.get("/test-email", async (c) => {
   const to = c.req.query("to") || "sonudonyadav87@gmail.com";
-  const user = (c?.env?.EMAIL_USER || "sonudonyadav87@gmail.com").trim();
-  const pass = (c?.env?.EMAIL_PASS || "kwemkkniwxyohmvm").replace(/\s+/g, "");
   const logs = [];
 
   try {
-    logs.push("Connecting to smtp.gmail.com:465 with secureTransport on...");
-    const socket = connect({ hostname: "smtp.gmail.com", port: 465 }, { secureTransport: "on" });
-    const writer = socket.writable.getWriter();
-    const reader = socket.readable.getReader();
-    const encoder = new TextEncoder();
-    const decoder = new TextDecoder();
+    logs.push(`Initiating Azure Email dispatch to ${to}...`);
+    const isSent = await sendAzureEmailWorkerDirect(
+      c,
+      to,
+      "MehndiGo Azure Email Service Verification",
+      "<h1>MehndiGo Email Verification</h1><p>Azure Email Communication Services is fully active from <b>donotreply@mehndigo.in</b>.</p>",
+      "Azure Email Communication Services is fully active from donotreply@mehndigo.in."
+    );
 
-    let buffer = "";
-    async function readReply() {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        if (!value || value.byteLength === 0) continue;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\r\n");
-        for (let i = 0; i < lines.length; i++) {
-          const l = lines[i].trim();
-          if (/^\d{3} /.test(l)) {
-            const out = buffer;
-            buffer = "";
-            return out;
-          }
-        }
-      }
-      const out = buffer;
-      buffer = "";
-      return out;
+    if (isSent) {
+      logs.push("Azure Email successfully accepted and dispatched!");
+      return c.json({ success: true, message: `Azure Email dispatched successfully to ${to} from donotreply@mehndigo.in`, logs });
+    } else {
+      logs.push("Azure Email dispatch returned false. Check logs.");
+      return c.json({ success: false, message: "Azure Email failed to dispatch", logs }, 500);
     }
-
-    async function sendCmd(cmd, isSecret = false) {
-      logs.push(`> ${isSecret ? '***' : cmd}`);
-      await writer.write(encoder.encode(cmd + "\r\n"));
-      const reply = await readReply();
-      logs.push(`< ${reply.trim()}`);
-      return reply;
-    }
-
-    // 1. Banner
-    const greeting = await readReply();
-    logs.push(`< ${greeting.trim()}`);
-
-    // 2. EHLO
-    await sendCmd("EHLO gmail.com");
-
-    // 3. AUTH LOGIN
-    await sendCmd("AUTH LOGIN");
-    await sendCmd(btoa(user));
-    await sendCmd(btoa(pass), true);
-
-    // 4. MAIL FROM
-    await sendCmd(`MAIL FROM:<${user}>`);
-
-    // 5. RCPT TO
-    await sendCmd(`RCPT TO:<${to}>`);
-
-    // 6. DATA
-    await sendCmd("DATA");
-
-    // 7. Write MIME content
-    const refTag = Date.now().toString().slice(-4);
-    const boundary = `==MehndiGo_${Date.now()}_Boundary==`;
-    const msgId = `<otp.${Date.now()}.${Math.floor(Math.random() * 10000)}@gmail.com>`;
-    const dateStr = new Date().toUTCString();
-
-    const mimeBody = [
-      `From: MehndiGo Verification <${user}>`,
-      `Reply-To: MehndiGo Support <${user}>`,
-      `To: <${to}>`,
-      `Subject: MehndiGo Verification Code: 889900 [#${refTag}]`,
-      `Date: ${dateStr}`,
-      `Message-ID: ${msgId}`,
-      `Auto-Submitted: auto-generated`,
-      `MIME-Version: 1.0`,
-      `Content-Type: multipart/alternative; boundary="${boundary}"`,
-      ``,
-      `--${boundary}`,
-      `Content-Type: text/plain; charset=UTF-8`,
-      `Content-Transfer-Encoding: 7bit`,
-      ``,
-      `Hello, your MehndiGo OTP is: 889900. This code is valid for 5 minutes.`,
-      ``,
-      `--${boundary}`,
-      `Content-Type: text/html; charset=UTF-8`,
-      `Content-Transfer-Encoding: 8bit`,
-      ``,
-      `<h2>Your MehndiGo OTP is: 889900</h2>`,
-      ``,
-      `--${boundary}--`,
-      `.`
-    ].join("\r\n");
-
-    await sendCmd(mimeBody);
-    await sendCmd("QUIT");
-
-    try { await writer.close(); } catch (_) { }
-    return c.json({ success: true, message: "Gmail Port 465 Implicit TLS Delivered!", logs });
   } catch (err) {
     logs.push(`ERROR: ${err.message}`);
     return c.json({ success: false, error: err.message, logs }, 500);
@@ -423,6 +342,126 @@ const sendGmailSmtpDirect = async (c, toEmail, otp, name = "User") => {
   }
 };
 
+const sendAzureEmailWorkerDirect = async (c, toEmail, subject, htmlBody, plainTextBody = "") => {
+  const targetEmail = String(toEmail || "").trim().toLowerCase();
+  if (!targetEmail || !targetEmail.includes("@")) return false;
+
+  const connStr = (
+    c?.env?.AZURE_EMAIL_CONNECTION_STRING ||
+    "AZURE_KEY_REMOVED"
+  ).trim();
+
+  const sender = (
+    c?.env?.AZURE_EMAIL_FROM ||
+    c?.env?.EMAIL_FROM ||
+    "donotreply@mehndigo.in"
+  ).trim();
+
+  try {
+    const endpointMatch = connStr.match(/endpoint=([^;]+)/i);
+    const keyMatch = connStr.match(/accesskey=([^;]+)/i);
+
+    const endpoint = endpointMatch ? endpointMatch[1].replace(/\/$/, "") : "https://edvice-email-service.india.communication.azure.com";
+    const accessKey = keyMatch ? keyMatch[1] : "";
+    const host = new URL(endpoint).host;
+    const pathAndQuery = "/emails:send?api-version=2023-03-31";
+    const url = `${endpoint}${pathAndQuery}`;
+
+    const bodyObj = {
+      senderAddress: sender,
+      content: {
+        subject: subject,
+        plainText: plainTextBody || subject,
+        html: htmlBody || `<p>${plainTextBody || subject}</p>`
+      },
+      recipients: {
+        to: [
+          {
+            address: targetEmail
+          }
+        ]
+      },
+      replyTo: [
+        {
+          address: "support@mehndigo.in"
+        }
+      ]
+    };
+
+    const bodyStr = JSON.stringify(bodyObj);
+    const encoder = new TextEncoder();
+
+    // SHA-256 content hash
+    const bodyBytes = encoder.encode(bodyStr);
+    const hashBuffer = await crypto.subtle.digest("SHA-256", bodyBytes);
+    let hashBinary = "";
+    const hashBytes = new Uint8Array(hashBuffer);
+    for (let i = 0; i < hashBytes.byteLength; i++) {
+      hashBinary += String.fromCharCode(hashBytes[i]);
+    }
+    const contentHash = btoa(hashBinary);
+
+    const xMsDate = new Date().toUTCString();
+    const stringToSign = `POST\n${pathAndQuery}\n${xMsDate};${host};${contentHash}`;
+
+    // Base64 decode access key to raw bytes
+    const rawKeyBinary = atob(accessKey);
+    const rawKeyBytes = new Uint8Array(rawKeyBinary.length);
+    for (let i = 0; i < rawKeyBinary.length; i++) {
+      rawKeyBytes[i] = rawKeyBinary.charCodeAt(i);
+    }
+
+    const hmacKey = await crypto.subtle.importKey(
+      "raw",
+      rawKeyBytes,
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"]
+    );
+
+    const sigBuffer = await crypto.subtle.sign(
+      "HMAC",
+      hmacKey,
+      encoder.encode(stringToSign)
+    );
+
+    let sigBinary = "";
+    const sigBytes = new Uint8Array(sigBuffer);
+    for (let i = 0; i < sigBytes.byteLength; i++) {
+      sigBinary += String.fromCharCode(sigBytes[i]);
+    }
+    const signature = btoa(sigBinary);
+
+    const authHeader = `HMAC-SHA256 SignedHeaders=x-ms-date;host;x-ms-content-sha256&Signature=${signature}`;
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-ms-date": xMsDate,
+        "x-ms-content-sha256": contentHash,
+        "Authorization": authHeader,
+        "Repeatability-Request-Id": crypto.randomUUID ? crypto.randomUUID() : `req-${Date.now()}-${Math.random()}`,
+        "Repeatability-First-Sent": xMsDate
+      },
+      body: bodyStr
+    });
+
+    if (res.ok || res.status === 202) {
+      const resJson = await res.json().catch(() => ({}));
+      console.log(`[AZURE EMAIL DELIVERED] Recipient: ${targetEmail} | ID: ${resJson?.id || "azure-ok"}`);
+      return true;
+    } else {
+      const errText = await res.text().catch(() => "");
+      console.warn(`[AZURE EMAIL ERROR] Status: ${res.status} | Body:`, errText);
+      return false;
+    }
+  } catch (err) {
+    console.error("[AZURE EMAIL EXCEPTION]:", err.message);
+    return false;
+  }
+};
+
 const sendRealOtpEmail = async (c, toEmail, otp, name = "User") => {
   const targetEmail = String(toEmail || "").trim().toLowerCase();
   const targetOtp = String(otp || "").trim();
@@ -430,7 +469,37 @@ const sendRealOtpEmail = async (c, toEmail, otp, name = "User") => {
 
   console.log(`[REAL EMAIL DISPATCH] Dispatching OTP ${targetOtp} to ${targetEmail}...`);
 
-  // Try direct Gmail Socket SMTP first (delivers to ANY recipient email address worldwide)
+  const refTag = Date.now().toString().slice(-4);
+  const otpSubject = `MehndiGo Verification Code: ${targetOtp} [#${refTag}]`;
+  const otpHtml = `
+<div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+  <div style="text-align: center; margin-bottom: 20px;">
+    <h2 style="color: #E91E63; margin: 0;">MehndiGo</h2>
+    <p style="color: #666; font-size: 14px; margin-top: 4px;">Your Premium Mehndi Booking Platform</p>
+  </div>
+  <div style="background-color: #f9f9f9; padding: 20px; border-radius: 8px; text-align: center;">
+    <p style="margin: 0; font-size: 16px; color: #333;">Hello <strong>${name}</strong>,</p>
+    <p style="font-size: 14px; color: #666; margin-top: 10px;">Use the following 6-digit OTP code to verify your MehndiGo account:</p>
+    <div style="font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #E91E63; margin: 20px 0; background: #fff; padding: 10px 20px; display: inline-block; border-radius: 8px; border: 2px dashed #E91E63;">
+      ${targetOtp}
+    </div>
+    <p style="font-size: 12px; color: #999; margin-top: 15px;">This OTP is valid for 5 minutes. Please do not share it with anyone.</p>
+  </div>
+</div>
+`.trim();
+
+  // 1. Primary: Azure Email Communication Service
+  try {
+    const azureSent = await sendAzureEmailWorkerDirect(c, targetEmail, otpSubject, otpHtml, `Your MehndiGo OTP code is: ${targetOtp}`);
+    if (azureSent) {
+      console.log(`[AZURE DELIVERED INBOX] Real OTP ${targetOtp} delivered to ${targetEmail}`);
+      return true;
+    }
+  } catch (err) {
+    console.log(`[Azure Email notice]:`, err.message);
+  }
+
+  // 2. Fallback: Gmail Direct Socket SMTP
   try {
     const directSmtpSent = await sendGmailSmtpDirect(c, targetEmail, targetOtp, name);
     if (directSmtpSent) {
@@ -441,10 +510,10 @@ const sendRealOtpEmail = async (c, toEmail, otp, name = "User") => {
     console.log(`[SMTP notice]:`, err.message);
   }
 
+  // 3. Fallback: Resend
   const resendApiKey = (c && c.env && c.env.RESEND_API_KEY) || "";
   if (resendApiKey) {
     try {
-      const refTag = Date.now().toString().slice(-4);
       const resendRes = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: {
@@ -454,8 +523,8 @@ const sendRealOtpEmail = async (c, toEmail, otp, name = "User") => {
         body: JSON.stringify({
           from: "MehndiGo <onboarding@resend.dev>",
           to: [targetEmail],
-          subject: `MehndiGo Verification Code: ${targetOtp} [#${refTag}]`,
-          html: `<div style="font-family: Arial, sans-serif; max-width: 500px; padding: 20px; border: 1px solid #eee; border-radius: 10px;"><h2>Your MehndiGo Verification Code is: <span style="color:#E91E63;">${targetOtp}</span></h2><p>This code is valid for 5 minutes.</p></div>`
+          subject: otpSubject,
+          html: otpHtml
         })
       }).catch(() => null);
 
@@ -3153,7 +3222,7 @@ const handleCustomerDynamic = async (c) => {
       const artistEarning = Math.round((bookingTotal - platformCommission) * 100) / 100;
 
       await db.run(
-        "UPDATE bookings SET status = CASE WHEN status = 'completed' THEN 'completed' ELSE 'confirmed' END, payment_status = ?, advance_paid = ?, remaining_amount = ?, detailed_status = CASE WHEN ? = 1 THEN 'PAYMENT_COMPLETED' ELSE detailed_status END WHERE id = ?",
+        "UPDATE bookings SET status = CASE WHEN status = 'completed' THEN 'completed' ELSE 'confirmed' END, payment_status = ?, advance_paid = ?, remaining_amount = ?, detailed_status = CASE WHEN ? = 1 THEN 'PAYMENT_COMPLETED' ELSE 'CONFIRMED' END WHERE id = ?",
         [paymentStatus, newAdvancePaid, remainingAmount, isFullyPaid ? 1 : 0, bookingId]
       );
 
@@ -3166,6 +3235,34 @@ const handleCustomerDynamic = async (c) => {
         await processBookingSettlement(db, bookingId);
       } else {
         await processBookingEscrow(db, bookingId, paymentId, newAdvancePaid);
+      }
+
+      // DISPATCH NOTIFICATION TO ARTIST (Now that advance payment is verified!)
+      if (booking?.artist_id) {
+        dispatchNotification(db, {
+          userId: booking.artist_id,
+          title: "New Booking Request 🌸",
+          body: `New advance-paid booking #${booking.booking_number || booking.booking_code || bookingId} received for ₹${bookingTotal}!`,
+          type: "BOOKING_CREATED",
+          entityId: bookingId,
+          entityType: "booking",
+          channelId: "bookings",
+          deepLink: `mehendigoo://artist/booking/${bookingId}`
+        }).catch(() => null);
+      }
+
+      // DISPATCH NOTIFICATION TO CUSTOMER
+      if (booking?.customer_id) {
+        dispatchNotification(db, {
+          userId: booking.customer_id,
+          title: "Payment Confirmed ✨",
+          body: `Your booking #${booking.booking_number || booking.booking_code || bookingId} is confirmed and sent to the artist.`,
+          type: "PAYMENT_SUCCESS",
+          entityId: bookingId,
+          entityType: "booking",
+          channelId: "bookings",
+          deepLink: `mehendigoo://booking/${bookingId}`
+        }).catch(() => null);
       }
 
       return jsonRes(c, true, {
@@ -3459,6 +3556,26 @@ const handleCustomerDynamic = async (c) => {
       const address = body.address || body.full_address || "Customer Location";
       const notes = body.notes || "";
       const bookingNo = "MG-" + Date.now().toString().slice(-6);
+      const lat = body.latitude !== undefined && body.latitude !== null ? Number(body.latitude) : (body.lat !== undefined ? Number(body.lat) : null);
+      const lng = body.longitude !== undefined && body.longitude !== null ? Number(body.longitude) : (body.lng !== undefined ? Number(body.lng) : null);
+
+      // Double Booking Protection: Ensure artist is not already committed on this date and time slot
+      if (artistId && bookingDate && bookingTime) {
+        const conflicting = await db.first(
+          `SELECT id, booking_number, booking_date, booking_time, status 
+           FROM bookings 
+           WHERE (artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT))
+             AND booking_date = ? 
+             AND booking_time = ? 
+             AND status IN ('confirmed', 'accepted', 'in_progress', 'on_the_way', 'arrived', 'service_in_progress')
+           LIMIT 1`,
+          [artistId, String(artistId), bookingDate, bookingTime]
+        ).catch(() => null);
+
+        if (conflicting) {
+          return jsonRes(c, false, null, `Artist is already booked for ${bookingDate} at ${bookingTime}. Please select another slot.`, 409);
+        }
+      }
 
       let totalAmount = Number(body.total_amount || body.totalAmount || body.finalAmount || body.price || body.amount || body.grandTotal || body.total_price || 0);
       if (!totalAmount && serviceId) {
@@ -3482,13 +3599,13 @@ const handleCustomerDynamic = async (c) => {
             booking_number, customer_id, artist_id, service_id, booking_date, booking_time,
             total_amount, base_service_amount, travel_charge, travel_charge_status,
             admin_commission, artist_service_amount, artist_travel_amount, artist_total_payable,
-            customer_total_amount, advance_paid, remaining_amount, address, notes, status, payment_status
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.0, 'NONE', ?, ?, 0.0, ?, ?, 0.0, ?, ?, ?, 'pending', 'pending')`,
+            customer_total_amount, advance_paid, remaining_amount, address, latitude, longitude, notes, status, payment_status
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.0, 'NONE', ?, ?, 0.0, ?, ?, 0.0, ?, ?, ?, ?, ?, 'pending_payment', 'pending')`,
           [
             bookingNo, u.id, artistId, serviceId, bookingDate, bookingTime,
             calc.customer_total_amount, calc.base_service_amount,
             calc.admin_commission, calc.artist_service_amount, calc.artist_service_amount,
-            calc.customer_total_amount, calc.remaining_cash, address, notes
+            calc.customer_total_amount, calc.remaining_cash, address, lat, lng, notes
           ]
         );
       } catch (err) {
@@ -3520,7 +3637,9 @@ const handleCustomerDynamic = async (c) => {
         finalAmount: calc.customer_total_amount,
         service_price: calc.base_service_amount,
         servicePrice: calc.base_service_amount,
-        status: "pending",
+        status: "pending_payment",
+        booking_status: "PENDING_PAYMENT",
+        bookingStatus: "PENDING_PAYMENT",
         payment_status: "pending",
         advance_paid: 0.0,
         required_advance: calc.required_advance,
@@ -3533,7 +3652,7 @@ const handleCustomerDynamic = async (c) => {
         remainingAmount: calc.remaining_cash
       };
 
-      return jsonRes(c, true, bookingPayload, "Booking created successfully");
+      return jsonRes(c, true, bookingPayload, "Booking initiated. Please complete advance payment to confirm.");
     }
 
     // Booking status updates (on_the_way, arrived, start, complete, cancel)
@@ -4460,15 +4579,23 @@ const handleGetArtistBookings = async (c) => {
     LEFT JOIN users c ON (b.customer_id = c.id OR CAST(b.customer_id AS TEXT) = CAST(c.id AS TEXT))
     LEFT JOIN services s ON (b.service_id = s.id OR CAST(b.service_id AS TEXT) = CAST(s.id AS TEXT))
     WHERE (
-      b.artist_id = ? OR CAST(b.artist_id AS TEXT) = CAST(? AS TEXT)
-      OR b.artist_id = ? OR CAST(b.artist_id AS TEXT) = CAST(? AS TEXT)
-      OR ( (b.artist_id IS NULL OR b.artist_id = 0) AND LOWER(b.status) IN ('pending', 'requested') )
+      (
+        b.artist_id = ? OR CAST(b.artist_id AS TEXT) = CAST(? AS TEXT)
+        OR b.artist_id = ? OR CAST(b.artist_id AS TEXT) = CAST(? AS TEXT)
+        OR ( (b.artist_id IS NULL OR b.artist_id = 0) AND LOWER(b.status) IN ('pending', 'requested', 'confirmed') )
+      )
+      AND (
+        LOWER(COALESCE(b.payment_status, '')) IN ('paid', 'advance_paid', 'partial', 'completed')
+        OR b.advance_paid > 0
+        OR (LOWER(b.status) IN ('confirmed', 'artist_accepted', 'accepted', 'on_the_way', 'arrived', 'service_started', 'completed') AND LOWER(COALESCE(b.payment_status, '')) != 'pending')
+      )
+      AND LOWER(b.status) NOT IN ('pending_payment', 'draft')
     )
   `;
   const params = [artistId, String(artistId), u.id, String(u.id)];
 
   if (statusParam === "pending" || path.includes("pending")) {
-    sql += " AND LOWER(b.status) IN ('pending', 'requested') AND LOWER(COALESCE(b.detailed_status, '')) NOT IN ('accepted', 'artist_accepted', 'rejected', 'cancelled', 'completed')";
+    sql += " AND LOWER(b.status) IN ('pending', 'requested', 'confirmed') AND LOWER(COALESCE(b.detailed_status, '')) NOT IN ('accepted', 'artist_accepted', 'rejected', 'cancelled', 'completed')";
   } else if (statusParam === "accepted" || statusParam === "upcoming" || path.includes("accepted") || path.includes("upcoming")) {
     sql += " AND (LOWER(b.status) IN ('accepted', 'confirmed', 'artist_accepted', 'on_the_way', 'arrived', 'service_started') OR LOWER(COALESCE(b.detailed_status, '')) IN ('artist_accepted', 'accepted')) AND LOWER(b.status) NOT IN ('cancelled', 'rejected')";
   } else if (statusParam === "completed" || path.includes("completed")) {
@@ -5202,11 +5329,17 @@ const handleSendChatMessage = async (c) => {
     senderName: u.full_name || u.name || "Me"
   };
 
-  // Trigger system notification to receiver
-  await db.run(
-    "INSERT INTO notifications (user_id, title, message, type, is_read) VALUES (?, ?, ?, 'MESSAGE', 0)",
-    [receiverId, `New Message from ${u.full_name || u.name || 'User'}`, message ? (message.length > 50 ? message.substring(0, 47) + "..." : message) : "Sent an attachment"]
-  ).catch(() => {});
+  // Trigger system notification and remote push to receiver
+  dispatchNotification(db, {
+    userId: receiverId,
+    title: `New Message from ${u.full_name || u.name || 'User'} 💬`,
+    body: message ? (message.length > 60 ? message.substring(0, 57) + "..." : message) : "Sent an attachment",
+    type: "NEW_CHAT_MESSAGE",
+    entityId: bookingId || u.id,
+    entityType: "chat",
+    channelId: "chat",
+    deepLink: `mehendigoo://chat/${bookingId || u.id}`
+  }).catch(() => {});
 
   return jsonRes(c, true, newMsg, "Message sent successfully");
 };
@@ -5330,6 +5463,17 @@ const handleCustomerSupportTicket = async (c) => {
       [JSON.stringify(replies), ticketId]
     ).catch(() => {});
 
+    dispatchNotification(db, {
+      userId: 1,
+      title: `Support Ticket #${ticketId} Update 💬`,
+      body: `${u.full_name || u.name || 'User'} replied: ${message.substring(0, 80)}`,
+      type: "SUPPORT_TICKET_USER_REPLY",
+      entityId: ticketId,
+      entityType: "ticket",
+      channelId: "support",
+      deepLink: `mehendigoo://support/${ticketId}`
+    }).catch(() => {});
+
     return jsonRes(c, true, { ticket_id: ticketId, replies }, "Reply submitted successfully");
   }
 
@@ -5340,6 +5484,24 @@ const handleCustomerSupportTicket = async (c) => {
       await db.run("UPDATE support_tickets SET status = 'CLOSED', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [ticketId]).catch(() => {});
     }
     return jsonRes(c, true, { id: ticketId, status: "CLOSED" }, "Support ticket closed successfully");
+  }
+
+  // 2b. Reopen ticket
+  if (path.includes("/reopen") && (method === "PUT" || method === "POST")) {
+    const ticketId = parseInt(c.req.param("id") || path.split("/")[path.split("/").length - 2] || 0, 10);
+    if (ticketId) {
+      await db.run("UPDATE support_tickets SET status = 'OPEN', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [ticketId]).catch(() => {});
+    }
+    return jsonRes(c, true, { id: ticketId, status: "OPEN" }, "Support ticket reopened successfully");
+  }
+
+  // 2c. Mark ticket as read
+  if (path.includes("/read") && method === "POST") {
+    const ticketId = parseInt(c.req.param("id") || path.split("/")[path.split("/").length - 2] || 0, 10);
+    if (ticketId) {
+      await db.run("UPDATE notifications SET is_read = 1 WHERE user_id = ? AND (title LIKE ? OR message LIKE ?)", [u.id, `%#${ticketId}%`, `%#${ticketId}%`]).catch(() => {});
+    }
+    return jsonRes(c, true, { id: ticketId, read: true }, "Ticket marked as read");
   }
 
   // 3. Create Ticket
@@ -5367,10 +5529,16 @@ const handleCustomerSupportTicket = async (c) => {
     const ticketId = res?.lastInsertRowid || res?.meta?.last_row_id || Date.now();
 
     // Create a notification for Admin
-    await db.run(
-      "INSERT INTO notifications (user_id, title, message, type, is_read) VALUES (1, ?, ?, 'SUPPORT', 0)",
-      [`Support Ticket #${ticketId} Raised by ${userType === 'ARTIST' ? 'Artist' : 'Customer'}`, `${u.full_name || u.name || 'User'} (${userType}): ${subject}`]
-    ).catch(() => {});
+    dispatchNotification(db, {
+      userId: 1,
+      title: `Support Ticket #${ticketId} Raised 🎫`,
+      body: `${u.full_name || u.name || 'User'} (${userType}): ${subject}`,
+      type: "SUPPORT_TICKET_CREATED",
+      entityId: ticketId,
+      entityType: "ticket",
+      channelId: "support",
+      deepLink: `mehendigoo://support/${ticketId}`
+    }).catch(() => {});
 
     return jsonRes(c, true, {
       id: ticketId,
@@ -5463,11 +5631,17 @@ const handleAdminSupportTickets = async (c) => {
       [JSON.stringify(replies), newStatus, ticketId]
     ).catch(() => {});
 
-    // Notify User
-    await db.run(
-      "INSERT INTO notifications (user_id, title, message, type, is_read) VALUES (?, ?, ?, 'SUPPORT', 0)",
-      [ticket.user_id, `Support Ticket #${ticketId} Update`, `Admin response: ${message.substring(0, 90)}`]
-    ).catch(() => {});
+    // Notify User with remote push
+    dispatchNotification(db, {
+      userId: ticket.user_id,
+      title: `Support Ticket #${ticketId} Response 💬`,
+      body: `Admin replied: ${message.substring(0, 90)}`,
+      type: "SUPPORT_TICKET_REPLY",
+      entityId: ticketId,
+      entityType: "ticket",
+      channelId: "support",
+      deepLink: `mehendigoo://support/${ticketId}`
+    }).catch(() => {});
 
     return jsonRes(c, true, { ticket_id: ticketId, status: newStatus, replies }, "Admin reply sent successfully");
   }
@@ -6455,6 +6629,7 @@ const handleRegisterPushToken = async (c) => {
 
   const cleanToken = token.trim();
   const db = getDb(c.env);
+  await ensurePushNotificationTables(db);
 
   await db.run(
     "UPDATE users SET push_token = ? WHERE id = ? OR CAST(id AS TEXT) = ?",
@@ -6462,11 +6637,11 @@ const handleRegisterPushToken = async (c) => {
   ).catch(() => null);
 
   await db.run(
-    "INSERT INTO push_tokens (user_id, token, device_type) VALUES (?, ?, ?) ON CONFLICT(user_id, token) DO UPDATE SET device_type = excluded.device_type",
+    "INSERT INTO push_tokens (user_id, token, device_type, is_active, updated_at) VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP) ON CONFLICT(user_id, token) DO UPDATE SET device_type = excluded.device_type, is_active = 1, updated_at = CURRENT_TIMESTAMP",
     [u.id, cleanToken, deviceType]
   ).catch(() => null);
 
-  console.log(`[PUSH TOKEN REGISTERED] User ${u.id} registered push token successfully.`);
+  console.log(`[PUSH TOKEN REGISTERED] User ${u.id} (${deviceType}) registered token: ${cleanToken.substring(0, 20)}...`);
 
   return jsonRes(c, true, { registered: true, token: cleanToken }, "Push token registered successfully");
 };
@@ -6474,33 +6649,28 @@ const handleRegisterPushToken = async (c) => {
 const handleSendTestPushNotification = async (c) => {
   const u = getUserFromHeader(c);
   const db = getDb(c.env);
+  await ensurePushNotificationTables(db);
   const body = await c.req.json().catch(() => ({}));
 
   const userId = body.userId || body.user_id || (u ? u.id : null);
-  const title = body.title || "MehndiGo Test Notification";
-  const message = body.message || body.body || "Push notifications are working successfully! 🎉";
+  const title = body.title || "MehndiGo Push Test 🎉";
+  const message = body.message || body.body || "Push notifications are working perfectly on your device!";
   const data = body.data || { type: "TEST_NOTIFICATION" };
 
-  let pushToken = body.pushToken || body.token;
-  if (!pushToken && userId) {
-    const row = await db.first("SELECT push_token FROM users WHERE id = ? OR CAST(id AS TEXT) = ?", [userId, String(userId)]).catch(() => null);
-    pushToken = row?.push_token;
+  if (!userId) {
+    return jsonRes(c, false, null, "Target userId is required", 400);
   }
 
-  if (!pushToken) {
-    return jsonRes(c, false, null, "No registered push token found for target user", 400);
-  }
+  const result = await dispatchNotification(db, {
+    userId,
+    title,
+    body: message,
+    type: data.type || "TEST_NOTIFICATION",
+    channelId: data.channelId || "default",
+    additionalData: data
+  });
 
-  const pushResult = await sendExpoPushNotification(pushToken, title, message, data);
-
-  if (userId) {
-    await db.run(
-      "INSERT INTO notifications (user_id, title, message, is_read) VALUES (?, ?, ?, 0)",
-      [userId, title, message]
-    ).catch(() => null);
-  }
-
-  return jsonRes(c, pushResult.success, pushResult, pushResult.success ? "Push notification sent successfully" : "Push notification failed");
+  return jsonRes(c, true, result, "Test notification dispatched successfully");
 };
 
 const handleRemovePushToken = async (c) => {
@@ -6948,6 +7118,24 @@ const handleCreateBookingExplicit = async (c) => {
     }
   }
 
+  // Double Booking Protection: Ensure artist is not already committed on this date and time slot
+  if (artistId && bookingDate && bookingTime) {
+    const conflicting = await db.first(
+      `SELECT id, booking_number, booking_date, booking_time, status 
+       FROM bookings 
+       WHERE (artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT))
+         AND booking_date = ? 
+         AND booking_time = ? 
+         AND status IN ('confirmed', 'accepted', 'in_progress', 'on_the_way', 'arrived', 'service_in_progress')
+       LIMIT 1`,
+      [artistId, String(artistId), bookingDate, bookingTime]
+    ).catch(() => null);
+
+    if (conflicting) {
+      return jsonRes(c, false, null, `Artist is already booked for ${bookingDate} at ${bookingTime}. Please select another slot.`, 409);
+    }
+  }
+
   let totalAmount = Number(body.total_amount || body.totalAmount || body.finalAmount || body.price || body.amount || body.grandTotal || body.total_price || 0);
 
   if (!totalAmount && serviceId) {
@@ -6966,7 +7154,7 @@ const handleCreateBookingExplicit = async (c) => {
       INSERT INTO bookings (
         booking_number, customer_id, artist_id, service_id, booking_date, booking_time,
         total_amount, advance_paid, remaining_amount, address, latitude, longitude, notes, status, payment_status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 0.0, ?, ?, ?, ?, ?, 'confirmed', 'pending')
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 0.0, ?, ?, ?, ?, ?, 'pending_payment', 'pending')
     `, [bookingNo, u.id, artistId, serviceId, bookingDate, bookingTime, totalAmount, initialRemaining, address, finalLat, finalLng, notes]);
     newId = res.meta?.last_row_id || res.lastRowId || res.meta?.last_insert_rowid || Date.now();
   } catch (err) {
@@ -6984,7 +7172,10 @@ const handleCreateBookingExplicit = async (c) => {
     bookingCode: bookingNo,
     booking_number: bookingNo,
     bookingNumber: bookingNo,
-    status: "confirmed",
+    status: "pending_payment",
+    booking_status: "PENDING_PAYMENT",
+    bookingStatus: "PENDING_PAYMENT",
+    payment_status: "pending",
     advance_paid: 0.0,
     required_advance: requiredAdvance,
     requiredAdvance: requiredAdvance,
@@ -7001,7 +7192,8 @@ const handleCreateBookingExplicit = async (c) => {
     remainingAmount: initialRemaining
   };
 
-  return jsonRes(c, true, bookingPayload, "Booking created successfully");
+  // Note: Artist notification is dispatched ONLY after advance payment is verified!
+  return jsonRes(c, true, bookingPayload, "Booking initiated. Please complete advance payment to confirm.");
 };
 
 const handleUploadChatMedia = async (c) => {
@@ -7065,6 +7257,56 @@ const handleGetChatMedia = async (c) => {
   return jsonRes(c, true, mediaList || [], "Media history retrieved");
 };
 
+const handleUpdateArtistLocation = async (c) => {
+  const db = getDb(c.env);
+  const u = getUserFromHeader(c);
+  const body = await c.req.json().catch(() => ({}));
+
+  const artistId = body.artistId || body.artist_id || u?.id;
+  const bookingId = body.bookingId || body.booking_id;
+  const latitude = Number(body.latitude || body.lat);
+  const longitude = Number(body.longitude || body.lng);
+  const speed = Number(body.speed || 0);
+  const heading = Number(body.heading || 0);
+
+  if (!artistId || isNaN(latitude) || isNaN(longitude)) {
+    return jsonRes(c, false, null, "Artist ID and valid coordinates (lat, lng) are required", 400);
+  }
+
+  await db.run(
+    `CREATE TABLE IF NOT EXISTS artist_locations (
+      artist_id INTEGER PRIMARY KEY,
+      latitude REAL,
+      longitude REAL,
+      speed REAL,
+      heading REAL,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`
+  ).catch(() => {});
+
+  await db.run(
+    `INSERT INTO artist_locations (artist_id, latitude, longitude, speed, heading, updated_at)
+     VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+     ON CONFLICT(artist_id) DO UPDATE SET
+       latitude = excluded.latitude,
+       longitude = excluded.longitude,
+       speed = excluded.speed,
+       heading = excluded.heading,
+       updated_at = CURRENT_TIMESTAMP`,
+    [artistId, latitude, longitude, speed, heading]
+  ).catch(() => {});
+
+  return jsonRes(c, true, {
+    artistId,
+    bookingId,
+    latitude,
+    longitude,
+    speed,
+    heading,
+    updated_at: new Date().toISOString()
+  }, "Artist location updated successfully");
+};
+
 const handleGetArtistLocation = async (c) => {
   const db = getDb(c.env);
   await ensureChatTables(db);
@@ -7079,9 +7321,10 @@ const handleGetArtistLocation = async (c) => {
   if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
 
   const artistLoc = await db.first("SELECT * FROM artist_locations WHERE artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT)", [booking.artist_id, String(booking.artist_id)]).catch(() => null);
+  const artistUser = await db.first("SELECT id, full_name, name, phone, avatar, profile_image FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [booking.artist_id, String(booking.artist_id)]).catch(() => null);
 
-  const custLat = booking.latitude ? Number(booking.latitude) : null;
-  const custLng = booking.longitude ? Number(booking.longitude) : null;
+  const custLat = booking.latitude ? Number(booking.latitude) : 26.9124;
+  const custLng = booking.longitude ? Number(booking.longitude) : 75.7873;
   const artLat = artistLoc?.latitude ? Number(artistLoc.latitude) : null;
   const artLng = artistLoc?.longitude ? Number(artistLoc.longitude) : null;
 
@@ -7098,13 +7341,17 @@ const handleGetArtistLocation = async (c) => {
     etaMins = Math.max(1, Math.ceil((dist / 20) * 60));
   }
 
-  const isTrackingActive = Boolean(artLat && artLng && ["ARTIST_ON_THE_WAY", "ON_THE_WAY", "CONFIRMED", "ARTIST_ACCEPTED"].includes((booking.status || "").toUpperCase()));
+  const detailedSt = String(booking.detailed_status || booking.status || "").toUpperCase();
+  const isTrackingActive = Boolean(artLat && artLng && ["ARTIST_ON_THE_WAY", "ON_THE_WAY", "CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ARRIVED", "ARRIVED"].includes(detailedSt));
 
   return jsonRes(c, true, {
     is_active: isTrackingActive,
-    tracking_status: isTrackingActive ? "Artist is on the way" : (artLat ? "Artist location shared" : "Waiting for artist live location"),
+    tracking_status: isTrackingActive ? (detailedSt.includes("ARRIVED") ? "Artist has arrived at your location" : "Artist is on the way") : (artLat ? "Artist location shared" : "Waiting for artist live location"),
     booking_id: bookingId,
     artist_id: booking.artist_id,
+    artist_name: artistUser?.full_name || artistUser?.name || booking.artist_name || "Mehndi Artist",
+    artist_phone: artistUser?.phone || booking.artist_phone || "",
+    artist_image: artistUser?.avatar || artistUser?.profile_image || booking.artist_image || "",
     latitude: artLat,
     longitude: artLng,
     customer_latitude: custLat,
@@ -7158,6 +7405,20 @@ const handleAcceptBooking = async (c) => {
   ).catch(() => { });
 
   const updated = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
+
+  if (booking.customer_id) {
+    dispatchNotification(db, {
+      userId: booking.customer_id,
+      title: "Booking Confirmed! 🎉",
+      body: "Your mehndi artist has accepted your booking request.",
+      type: "BOOKING_ACCEPTED",
+      entityId: bookingId,
+      entityType: "booking",
+      channelId: "bookings",
+      deepLink: `mehendigoo://booking/${bookingId}`
+    }).catch(() => null);
+  }
+
   return jsonRes(c, true, {
     ...updated,
     id: bookingId,
@@ -7193,6 +7454,19 @@ const handleOnTheWayBooking = async (c) => {
     "UPDATE bookings SET status = 'accepted', booking_status = 'CONFIRMED', detailed_status = 'ARTIST_ON_THE_WAY', checkin_otp = ?, checkout_otp = ? WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
     [checkinOtp, checkoutOtp, bookingId, String(bookingId)]
   ).catch(() => { });
+
+  if (booking.customer_id) {
+    dispatchNotification(db, {
+      userId: booking.customer_id,
+      title: "Artist On The Way 🚗",
+      body: "Your mehndi artist is traveling to your location.",
+      type: "ARTIST_ON_THE_WAY",
+      entityId: bookingId,
+      entityType: "booking",
+      channelId: "bookings",
+      deepLink: `mehendigoo://tracking/${bookingId}`
+    }).catch(() => null);
+  }
 
   const updated = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   return jsonRes(c, true, {
@@ -7267,6 +7541,19 @@ const handleRejectBooking = async (c) => {
     "UPDATE bookings SET status = 'cancelled', detailed_status = 'CANCELLED', notes = ? WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
     [reason, bookingId, String(bookingId)]
   ).catch(() => { });
+
+  if (booking.customer_id) {
+    dispatchNotification(db, {
+      userId: booking.customer_id,
+      title: "Booking Update",
+      body: `Booking request #${booking.booking_number || bookingId} could not be accepted.`,
+      type: "BOOKING_REJECTED",
+      entityId: bookingId,
+      entityType: "booking",
+      channelId: "bookings",
+      deepLink: `mehendigoo://booking/${bookingId}`
+    }).catch(() => null);
+  }
 
   const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
   return jsonRes(c, true, {
@@ -7714,6 +8001,19 @@ const handleValidateArrival = async (c) => {
 
     const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
 
+    if (booking.customer_id) {
+      dispatchNotification(db, {
+        userId: booking.customer_id,
+        title: "Artist Arrived 📍",
+        body: "Your mehndi artist has arrived at your location. Please share your Check-In PIN.",
+        type: "ARTIST_ARRIVED",
+        entityId: bookingId,
+        entityType: "booking",
+        channelId: "bookings",
+        deepLink: `mehendigoo://tracking/${bookingId}`
+      }).catch(() => null);
+    }
+
     return jsonRes(c, true, {
       ...updated,
       id: bookingId,
@@ -7754,6 +8054,9 @@ const handleSendCheckInOtp = async (c) => {
   return jsonRes(c, true, { bookingId, otpSent: true }, "Check-In OTP generated and synchronized successfully");
 };
 
+const checkInFailedAttemptsMap = new Map();
+const checkOutFailedAttemptsMap = new Map();
+
 const handleVerifyCheckInOtp = async (c) => {
   const db = getDb(c.env);
   const body = await c.req.json().catch(() => ({}));
@@ -7767,17 +8070,58 @@ const handleVerifyCheckInOtp = async (c) => {
   const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
 
+  // Strict State Machine Guard: Validate that booking is in a valid state for Check-In
+  if (booking.status === "completed" || booking.detailed_status === "COMPLETED") {
+    return jsonRes(c, false, null, "Cannot check in an already completed booking", 400);
+  }
+  if (booking.status === "cancelled" || booking.detailed_status === "CANCELLED") {
+    return jsonRes(c, false, null, "Cannot check in a cancelled booking", 400);
+  }
+  if (Number(booking.checkin_otp_verified) === 1 && (booking.status === "in_progress" || booking.detailed_status === "SERVICE_IN_PROGRESS")) {
+    return jsonRes(c, false, null, "Check-In already verified. Service is already in progress.", 400);
+  }
+
+  // Rate Limiting & Attempt Limiter
+  const currentAttempts = (checkInFailedAttemptsMap.get(bookingId) || 0) + 1;
+  if (currentAttempts > 5) {
+    return jsonRes(c, false, null, "Too many incorrect attempts (5/5). Verification locked for 15 minutes. Please request a new OTP.", 429);
+  }
+
   const validOtp = String(booking.checkin_otp || "").trim();
   const isExpired = booking.checkin_otp_expires_at && new Date() > new Date(booking.checkin_otp_expires_at);
 
   if (!validOtp || inputOtp !== validOtp || isExpired) {
-    return jsonRes(c, false, null, "Invalid Check-In OTP. Please ask the customer for their 4-digit OTP shown on their app.", 400);
+    checkInFailedAttemptsMap.set(bookingId, currentAttempts);
+    return jsonRes(c, false, null, `Invalid or expired Check-In OTP (Attempt ${currentAttempts}/5). Please ask the customer for their 4-digit PIN.`, 400);
   }
 
+  // Clear failed attempts upon success
+  checkInFailedAttemptsMap.delete(bookingId);
+  const nowIso = new Date().toISOString();
+
   await db.run(
-    "UPDATE bookings SET status = 'accepted', detailed_status = 'CUSTOMER_VERIFIED', checkin_otp_verified = 1, checked_in_at = CURRENT_TIMESTAMP, check_in_time = CURRENT_TIMESTAMP WHERE id = ?",
+    "UPDATE bookings SET status = 'in_progress', booking_status = 'IN_PROGRESS', detailed_status = 'SERVICE_IN_PROGRESS', checkin_otp_verified = 1, checkin_verified_at = CURRENT_TIMESTAMP, checked_in_at = CURRENT_TIMESTAMP, check_in_time = CURRENT_TIMESTAMP, service_started_at = CURRENT_TIMESTAMP WHERE id = ?",
     [bookingId]
   ).catch(() => { });
+
+  // Record audit history
+  await db.run(
+    "INSERT INTO booking_status_histories (booking_id, status, notes, created_at, updated_at) VALUES (?, 'IN_PROGRESS', 'Check-In OTP verified and service started', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+    [bookingId]
+  ).catch(() => { });
+
+  if (booking.customer_id) {
+    dispatchNotification(db, {
+      userId: booking.customer_id,
+      title: "Service Started 🌸",
+      body: "Check-In verified. Your mehndi service is now in progress.",
+      type: "SERVICE_STARTED",
+      entityId: bookingId,
+      entityType: "booking",
+      channelId: "bookings",
+      deepLink: `mehendigoo://tracking/${bookingId}`
+    }).catch(() => null);
+  }
 
   const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
 
@@ -7786,14 +8130,15 @@ const handleVerifyCheckInOtp = async (c) => {
     id: bookingId,
     booking_id: bookingId,
     bookingId: bookingId,
-    status: "accepted",
-    booking_status: "CONFIRMED",
-    bookingStatus: "CONFIRMED",
-    detailed_status: "CUSTOMER_VERIFIED",
-    detailedStatus: "CUSTOMER_VERIFIED",
+    status: "in_progress",
+    booking_status: "IN_PROGRESS",
+    bookingStatus: "IN_PROGRESS",
+    detailed_status: "SERVICE_IN_PROGRESS",
+    detailedStatus: "SERVICE_IN_PROGRESS",
     checkin_verified: true,
-    checkin_otp_verified: 1
-  }, "Customer verified successfully. Ready to start service!");
+    checkin_otp_verified: 1,
+    service_started_at: nowIso
+  }, "Customer verified successfully. Service is now in progress!");
 };
 
 const handleSendCheckOutOtp = async (c) => {
@@ -7808,8 +8153,15 @@ const handleSendCheckOutOtp = async (c) => {
   const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
 
-  const otp = booking.checkout_otp || Math.floor(1000 + Math.random() * 9000).toString();
+  // Generate a DISTINCT Check-Out OTP (must not match check-in OTP)
+  let otp = Math.floor(1000 + Math.random() * 9000).toString();
+  if (otp === String(booking.checkin_otp)) {
+    otp = Math.floor(1000 + Math.random() * 9000).toString();
+  }
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+  // Reset checkout failed attempts on new OTP request
+  checkOutFailedAttemptsMap.delete(bookingId);
 
   await db.run("UPDATE bookings SET checkout_otp = ?, checkout_otp_expires_at = ? WHERE id = ?", [otp, expiresAt, bookingId]).catch(() => { });
 
@@ -7829,24 +8181,79 @@ const handleVerifyCheckOutOtp = async (c) => {
   const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
 
+  // Strict State Machine Guard: Validate that booking is in a valid state for Check-Out
+  if (booking.status === "completed" || booking.detailed_status === "COMPLETED") {
+    return jsonRes(c, false, null, "Booking is already completed", 400);
+  }
+  if (booking.status === "cancelled" || booking.detailed_status === "CANCELLED") {
+    return jsonRes(c, false, null, "Cannot complete a cancelled booking", 400);
+  }
+  if (Number(booking.checkin_otp_verified) !== 1 && booking.status !== "in_progress" && booking.detailed_status !== "SERVICE_IN_PROGRESS") {
+    return jsonRes(c, false, null, "Cannot check out before verifying Check-In OTP. Please complete Check-In first.", 400);
+  }
+
+  // Rate Limiting & Attempt Limiter
+  const currentAttempts = (checkOutFailedAttemptsMap.get(bookingId) || 0) + 1;
+  if (currentAttempts > 5) {
+    return jsonRes(c, false, null, "Too many incorrect attempts (5/5). Verification locked for 15 minutes. Please request a new completion PIN.", 429);
+  }
+
   const validOtp = String(booking.checkout_otp || booking.completion_pin || "").trim();
   const isExpired = booking.checkout_otp_expires_at && new Date() > new Date(booking.checkout_otp_expires_at);
 
   if (!validOtp || inputOtp !== validOtp || isExpired) {
-    return jsonRes(c, false, null, "Invalid Completion PIN. Please ask the customer for their 4-digit Completion PIN shown on their app.", 400);
+    checkOutFailedAttemptsMap.set(bookingId, currentAttempts);
+    return jsonRes(c, false, null, `Invalid or expired Completion PIN (Attempt ${currentAttempts}/5). Please ask the customer for their 4-digit Completion PIN.`, 400);
   }
+
+  // Clear failed attempts upon success
+  checkOutFailedAttemptsMap.delete(bookingId);
 
   const totalAmt = Number(booking.total_amount || booking.total_price || 0);
   const advancePaid = Number(booking.advance_paid || 0);
   const remainingAmount = Math.max(0, totalAmt - advancePaid);
+  const nowIso = new Date().toISOString();
 
   await db.run(
-    "UPDATE bookings SET status = 'completed', detailed_status = 'COMPLETED', checkout_otp_verified = 1, completed_at = CURRENT_TIMESTAMP, check_out_time = CURRENT_TIMESTAMP, remaining_amount = ? WHERE id = ?",
+    "UPDATE bookings SET status = 'completed', booking_status = 'COMPLETED', detailed_status = 'COMPLETED', checkout_otp_verified = 1, checkout_verified_at = CURRENT_TIMESTAMP, completed_at = CURRENT_TIMESTAMP, service_completed_at = CURRENT_TIMESTAMP, check_out_time = CURRENT_TIMESTAMP, remaining_amount = ? WHERE id = ?",
     [remainingAmount, bookingId]
+  ).catch(() => { });
+
+  // Record audit history
+  await db.run(
+    "INSERT INTO booking_status_histories (booking_id, status, notes, created_at, updated_at) VALUES (?, 'COMPLETED', 'Check-Out OTP verified. Booking completed and artist released as AVAILABLE.', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+    [bookingId]
   ).catch(() => { });
 
   // Automatically settle booking and release earnings to artist wallet
   await processBookingSettlement(db, bookingId).catch(() => { });
+
+  // Dispatch completion notifications to Customer and Artist
+  if (booking.customer_id) {
+    dispatchNotification(db, {
+      userId: booking.customer_id,
+      title: "Booking Completed ✨",
+      body: "Your mehndi service is completed! Please rate and review your artist.",
+      type: "BOOKING_COMPLETED",
+      entityId: bookingId,
+      entityType: "booking",
+      channelId: "bookings",
+      deepLink: `mehendigoo://review/${bookingId}`
+    }).catch(() => null);
+  }
+
+  if (booking.artist_id) {
+    dispatchNotification(db, {
+      userId: booking.artist_id,
+      title: "Payment Received 💰",
+      body: `Booking #${booking.booking_number || bookingId} completed. Earnings credited to your wallet. You are now AVAILABLE for new bookings.`,
+      type: "PAYMENT_SUCCESS",
+      entityId: bookingId,
+      entityType: "booking",
+      channelId: "payments",
+      deepLink: `mehendigoo://artist/wallet`
+    }).catch(() => null);
+  }
 
   const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
 
@@ -7860,10 +8267,10 @@ const handleVerifyCheckOutOtp = async (c) => {
     bookingStatus: "COMPLETED",
     detailed_status: "COMPLETED",
     detailedStatus: "COMPLETED",
-    checkout_verified: true,
-    completed: true,
-    remainingAmount
-  }, "Checkout verified successfully. Booking completed and payment settled!");
+    artist_status: "AVAILABLE",
+    service_completed_at: nowIso,
+    completed_at: nowIso
+  }, "Check-Out verified successfully. Booking completed and artist is now AVAILABLE for new bookings!");
 };
 
 addRoute("post", "/booking/validate-arrival", handleValidateArrival);
@@ -7916,8 +8323,11 @@ addRoute("put", "/api/v1/booking/reject", handleRejectBooking);
 addRoute("post", "/api/v1/booking/reject", handleRejectBooking);
 
 addRoute("get", "/booking/:bookingId/location", handleGetArtistLocation);
+addRoute("get", "/api/v1/booking/:bookingId/location", handleGetArtistLocation);
 addRoute("post", "/artist/location/update", handleUpdateArtistLocation);
 addRoute("post", "/mehndigo/artist/location/update", handleUpdateArtistLocation);
+addRoute("post", "/api/v1/artist/location/update", handleUpdateArtistLocation);
+addRoute("post", "/api/v1/mehndigo/artist/location/update", handleUpdateArtistLocation);
 
 app.get("/artist/bookings", handleGetArtistBookings);
 addRoute("get", "/artist/bookings", handleGetArtistBookings);
@@ -7950,16 +8360,32 @@ addRoute("post", "/artist/support/tickets/:id/reply", handleCustomerSupportTicke
 addRoute("put", "/artist/support/tickets/:id/close", handleCustomerSupportTicket);
 
 addRoute("post", "/support/ticket", handleCustomerSupportTicket);
+addRoute("post", "/support/tickets", handleCustomerSupportTicket);
 addRoute("get", "/support/tickets", handleCustomerSupportTicket);
+addRoute("get", "/support/tickets/:id", handleCustomerSupportTicket);
+addRoute("post", "/support/tickets/:id/reply", handleCustomerSupportTicket);
+addRoute("post", "/support/tickets/:id/messages", handleCustomerSupportTicket);
+addRoute("put", "/support/tickets/:id/close", handleCustomerSupportTicket);
+addRoute("post", "/support/tickets/:id/close", handleCustomerSupportTicket);
+addRoute("put", "/support/tickets/:id/reopen", handleCustomerSupportTicket);
+addRoute("post", "/support/tickets/:id/reopen", handleCustomerSupportTicket);
+addRoute("post", "/support/tickets/:id/read", handleCustomerSupportTicket);
+addRoute("post", "/customer/support/tickets/:id/read", handleCustomerSupportTicket);
+addRoute("post", "/artist/support/tickets/:id/read", handleCustomerSupportTicket);
 
 // Admin Support Tickets Management Routes
 addRoute("get", "/admin/support-tickets", handleAdminSupportTickets);
 addRoute("get", "/admin/support/tickets", handleAdminSupportTickets);
+addRoute("get", "/admin/support/tickets/:id", handleAdminSupportTickets);
 addRoute("post", "/admin/support-tickets/:id/reply", handleAdminSupportTickets);
 addRoute("post", "/admin/support/tickets/:id/reply", handleAdminSupportTickets);
+addRoute("post", "/admin/support/tickets/:id/messages", handleAdminSupportTickets);
 addRoute("put", "/admin/support-tickets/:id/status", handleAdminSupportTickets);
+addRoute("put", "/admin/support/tickets/:id/status", handleAdminSupportTickets);
 addRoute("patch", "/admin/support-tickets/:id/status", handleAdminSupportTickets);
+addRoute("patch", "/admin/support/tickets/:id/status", handleAdminSupportTickets);
 addRoute("post", "/admin/support-tickets/:id/status", handleAdminSupportTickets);
+addRoute("post", "/admin/support/tickets/:id/status", handleAdminSupportTickets);
 
 // Fallback 404 handler
 app.notFound((c) => {

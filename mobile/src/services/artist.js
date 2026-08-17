@@ -419,13 +419,27 @@ export async function updateArtistProfileDetails(profileData) {
 }
 
 export async function getArtistNotificationsData() {
+  const notifMap = new Map();
   try {
-    const res = await apiRequest("GET", "/notifications", null, true);
-    return res?.data || res;
-  } catch (err) {
-    const res = await apiRequest("GET", "/artist/notifications", null, true);
-    return res?.data || res;
-  }
+    const res = await apiRequest("GET", "/admin/notifications", null, false).catch(() => ({}));
+    const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []);
+    list.forEach(n => { if (n && n.id) notifMap.set(n.id, n); });
+  } catch (_) {}
+
+  try {
+    const res = await apiRequest("GET", "/notifications", null, true).catch(() => ({}));
+    const list = Array.isArray(res?.notifications) ? res.notifications : (Array.isArray(res?.data?.notifications) ? res.data.notifications : (Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : [])));
+    list.forEach(n => { if (n && n.id) notifMap.set(n.id, n); });
+  } catch (_) {}
+
+  try {
+    const res = await apiRequest("GET", "/artist/notifications", null, true).catch(() => ({}));
+    const list = Array.isArray(res?.notifications) ? res.notifications : (Array.isArray(res?.data?.notifications) ? res.data.notifications : (Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : [])));
+    list.forEach(n => { if (n && n.id) notifMap.set(n.id, n); });
+  } catch (_) {}
+
+  const combined = Array.from(notifMap.values());
+  return { notifications: combined, data: { notifications: combined } };
 }
 
 export async function getArtistServices() {

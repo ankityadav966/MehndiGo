@@ -12,6 +12,7 @@ export default function SelectTimeSlotScreen({ route, navigation }) {
   const { artistId, serviceId, selectedDate: paramDate, selectedArt } = route.params || {};
 
   const targetDate = typeof paramDate === "string" ? paramDate : (Array.isArray(paramDate) ? paramDate[0] : moment().format("YYYY-MM-DD"));
+  const isToday = moment(targetDate).isSame(moment(), "day");
 
   const [availableSlots, setAvailableSlots] = useState([]);
   const [selectedSlotId, setSelectedSlotId] = useState(null);
@@ -35,20 +36,32 @@ export default function SelectTimeSlotScreen({ route, navigation }) {
           return sDate === targetDate;
         });
 
-        // Default 5-6 standard time slots if artist has no custom seeded slots for this date
+        const isToday = moment(targetDate).isSame(moment(), "day");
+        const now = moment();
+        // Buffer: 30 minutes to allow artist preparation and travel
+        const bufferMinutes = 30;
+
+        const parseSlotMoment = (timeStr, dateStr) => {
+          if (!timeStr) return null;
+          // Try parsing formatted string like "09:00 AM" or ISO timestamp
+          const m = moment(`${dateStr} ${timeStr}`, ["YYYY-MM-DD hh:mm A", "YYYY-MM-DD h:mm A", "YYYY-MM-DD HH:mm:ss", "YYYY-MM-DD HH:mm"]);
+          return m.isValid() ? m : null;
+        };
+
+        // Standard 6 dynamic slots throughout the day if none from backend or to supplement
+        const standardTimes = [
+          "08:00 AM",
+          "10:30 AM",
+          "01:00 PM",
+          "03:30 PM",
+          "06:00 PM",
+          "08:30 PM"
+        ];
+
         if (!daySlots || daySlots.length === 0) {
-          const standardTimes = ["09:00 AM", "11:30 AM", "02:00 PM", "04:30 PM", "07:00 PM"];
-          const isToday = targetDate === moment().format("YYYY-MM-DD");
-          const nowHour = moment().hour();
-          const nowMin = moment().minute();
-
           daySlots = standardTimes.map((t, idx) => {
-            let [timePart, modifier] = t.split(" ");
-            let [h, m] = timePart.split(":").map(Number);
-            if (modifier === "PM" && h < 12) h += 12;
-            if (modifier === "AM" && h === 12) h = 0;
-
-            const isPast = isToday && (h < nowHour || (h === nowHour && m <= nowMin));
+            const slotMoment = parseSlotMoment(t, targetDate);
+            const isPast = isToday && slotMoment && slotMoment.clone().subtract(bufferMinutes, "minutes").isBefore(now);
             return {
               id: `def_${targetDate}_${idx}`,
               artist_id: artistId,
@@ -59,14 +72,33 @@ export default function SelectTimeSlotScreen({ route, navigation }) {
               status: isPast ? "past" : "available"
             };
           });
+        } else {
+          // Process slots returned from artist schedule / backend
+          daySlots = daySlots.map((slot, idx) => {
+            const timeLabel = slot.time_slot || slot.slot_time || (slot.start_time ? moment(slot.start_time).format("hh:mm A") : "10:00 AM");
+            const slotMoment = parseSlotMoment(timeLabel, targetDate) || (slot.start_time ? moment(slot.start_time) : null);
+            const isPast = isToday && slotMoment && slotMoment.clone().subtract(bufferMinutes, "minutes").isBefore(now);
+            const isBooked = slot.is_booked || slot.status === "booked";
+
+            return {
+              ...slot,
+              id: slot.id || `slot_${targetDate}_${idx}`,
+              time_slot: timeLabel,
+              slot_time: timeLabel,
+              is_available: !isPast && !isBooked,
+              status: isBooked ? "booked" : (isPast ? "past" : "available")
+            };
+          });
         }
 
         setAvailableSlots(daySlots);
 
-        // Pre-select first available slot
-        const firstAvail = daySlots.find(s => s.is_available && s.status !== "booked" && s.status !== "past");
+        // Pre-select first available FUTURE slot
+        const firstAvail = daySlots.find(s => s.is_available && s.status === "available");
         if (firstAvail) {
           setSelectedSlotId(firstAvail.id);
+        } else {
+          setSelectedSlotId(null);
         }
       } catch (err) {
         console.log("Error loading availability slots:", err.message);
@@ -139,6 +171,28 @@ export default function SelectTimeSlotScreen({ route, navigation }) {
           <Text style={styles.instructionText}>
             Select exactly 1 time slot for your mehndi session:
           </Text>
+
+          {isToday && availableSlots.length > 0 && !availableSlots.some(s => s.is_available) ? (
+            <View style={styles.noSlotsCard}>
+              <Ionicons name="time-outline" size={28} color={Colors.primary} />
+              <Text style={styles.noSlotsTitle}>No slots remaining today</Text>
+              <Text style={styles.noSlotsSub}>All time slots for today have already passed. Please select tomorrow or an upcoming date.</Text>
+              <TouchableOpacity
+                style={styles.pickTomorrowBtn}
+                onPress={() => {
+                  navigation.replace("SelectTimeSlot", {
+                    artistId,
+                    serviceId,
+                    selectedDate: moment().add(1, "day").format("YYYY-MM-DD"),
+                    selectedArt
+                  });
+                }}
+              >
+                <Ionicons name="arrow-forward-circle" size={18} color={Colors.white} style={{ marginRight: 6 }} />
+                <Text style={styles.pickTomorrowBtnText}>View Tomorrow's Slots</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
 
           <View style={styles.slotContainer}>
             {availableSlots.map((item) => {
@@ -215,5 +269,42 @@ const styles = StyleSheet.create({
   bookedText: { color: Colors.textTertiary, textDecorationLine: "line-through" },
   selectedBadge: { fontSize: 11, fontWeight: "700", color: Colors.white },
   bookedBadge: { fontSize: 11, fontWeight: "700", color: Colors.error },
+  noSlotsCard: {
+    backgroundColor: "#FFF4F2",
+    borderRadius: 16,
+    padding: 18,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#FECDCA"
+  },
+  noSlotsTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#B42318",
+    marginTop: 8,
+    marginBottom: 4
+  },
+  noSlotsSub: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    textAlign: "center",
+    lineHeight: 18,
+    marginBottom: 14
+  },
+  pickTomorrowBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.primary,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 10
+  },
+  pickTomorrowBtnText: {
+    color: Colors.white,
+    fontSize: 13,
+    fontWeight: "700"
+  },
   footer: { padding: 16, backgroundColor: Colors.white, borderTopWidth: 1, borderTopColor: Colors.border }
 });

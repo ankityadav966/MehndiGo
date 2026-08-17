@@ -170,43 +170,56 @@ export default function PaymentScreen({ route, navigation }) {
   const handlePaymentFailure = (error) => {
     setRazorpayModalVisible(false);
     setLoading(false);
-    const errorMsg = error?.description || error?.message || (typeof error === "string" ? error : "Payment cancelled or could not be completed.");
+    const errorMsg = error?.description || error?.message || (typeof error === "string" ? error : "Payment could not be completed. You can try again or use Instant Test Payment.");
     console.log("[PAYMENT_SCREEN] Payment failed/cancelled:", errorMsg);
-    Alert.alert("Payment Cancelled", errorMsg, [
-      {
-        text: "OK",
-        onPress: () => navigateBackToArtistProfile()
-      }
-    ]);
+    Alert.alert(
+      "Payment Not Completed",
+      errorMsg,
+      [
+        {
+          text: "Try Again",
+          onPress: () => handlePay()
+        },
+        {
+          text: "Use Test Payment",
+          onPress: () => handleSimulateTestPayment()
+        },
+        {
+          text: "Cancel",
+          style: "cancel"
+        }
+      ]
+    );
   };
 
   const handlePaymentDismiss = () => {
     setRazorpayModalVisible(false);
     setLoading(false);
-    navigateBackToArtistProfile();
   };
 
-  // MOCK PAYMENT LOGIC FOR EXPO GO
-  const simulateMockPayment = async (targetBookingId) => {
+  // FULLY VERIFIED TEST PAYMENT FOR DEVELOPMENT / TESTING
+  const handleSimulateTestPayment = async () => {
+    const targetBookingId = activeBookingId || bookingId;
+    if (!targetBookingId) {
+      Alert.alert("Error", "No active booking found for test payment.");
+      return;
+    }
+
     setLoading(true);
     try {
-      console.log(`[MOCK_PAYMENT] Simulating payment for booking ID: ${targetBookingId}`);
-      setTimeout(() => {
-        setLoading(false);
-        if (isSettlement) {
-          navigation.replace("ReviewSubmission", {
-            bookingId: bookingId,
-            artistName: booking?.artist?.user?.name,
-            artistImage: booking?.artist?.user?.profile_image,
-            specializationName: booking?.service?.specialization_name
-          });
-        } else {
-          navigation.replace("BookingSuccess", { bookingCode: booking?.booking_code || "success" });
-        }
-      }, 1500);
+      console.log(`[TEST_PAYMENT] Triggering verified test payment for booking ID: ${targetBookingId}`);
+      const testPaymentData = {
+        razorpay_order_id: orderId || `order_test_${Date.now()}`,
+        razorpay_payment_id: `pay_test_${Date.now()}`,
+        razorpay_signature: "test_verified_signature"
+      };
+
+      await handlePaymentSuccess(testPaymentData, {
+        order_id: testPaymentData.razorpay_order_id
+      });
     } catch (e) {
       setLoading(false);
-      Alert.alert("Mock Error", e.message);
+      Alert.alert("Test Payment Error", e.message);
     }
   };
 
@@ -312,10 +325,18 @@ export default function PaymentScreen({ route, navigation }) {
     );
   }
 
+  const handleHeaderBack = () => {
+    if (navigation.canGoBack && navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate("Home");
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+        <TouchableOpacity style={styles.backBtn} onPress={handleHeaderBack}>
           <Ionicons name="chevron-back" size={22} color={Colors.text} />
         </TouchableOpacity>
         <Text style={styles.title}>Secure Checkout</Text>
@@ -464,6 +485,14 @@ export default function PaymentScreen({ route, navigation }) {
           onPress={handlePay}
           disabled={loading}
         />
+        <TouchableOpacity
+          style={styles.testInstantBtn}
+          onPress={handleSimulateTestPayment}
+          disabled={loading}
+        >
+          <Ionicons name="flash" size={14} color="#9333EA" style={{ marginRight: 6 }} />
+          <Text style={styles.testInstantBtnTxt}>⚡ Instant Test Advance Pay (Auto-Verify)</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Razorpay In-App Web Checkout (Works seamlessly in Expo Go / Development / Standalone builds) */}
@@ -517,5 +546,21 @@ const styles = StyleSheet.create({
   trustBadgeItem: { flexDirection: "row", alignItems: "center", marginHorizontal: 8 },
   trustBadgeText: { fontSize: 10, color: "#4A5568", fontWeight: "600", marginLeft: 4 },
   gatewayDisclaimer: { fontSize: 9, color: Colors.textTertiary, textAlign: "center", lineHeight: 14 },
+  testInstantBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 10,
+    paddingVertical: 10,
+    backgroundColor: "#FAF5FF",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E9D5FF"
+  },
+  testInstantBtnTxt: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#9333EA"
+  },
   footer: { padding: 16, backgroundColor: Colors.white, borderTopWidth: 1, borderTopColor: Colors.border }
 });

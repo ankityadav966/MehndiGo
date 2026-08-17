@@ -140,6 +140,56 @@ const AdminDashboard = ({ showToast }) => {
     }).catch(() => {});
   }, []);
 
+  // Real-time conversation polling for open ticket modal
+  useEffect(() => {
+    if (!selectedTicket?.id) return;
+    const pollInterval = setInterval(async () => {
+      try {
+        const notifsRes = await adminService.getNotifications().catch(() => ({ data: [] }));
+        const allNotifs = Array.isArray(notifsRes?.data) ? notifsRes.data : [];
+        const ticketNotifs = allNotifs.filter(n =>
+          (n.title && n.title.includes(`#${selectedTicket.id}`)) ||
+          (n.message && n.message.includes(`#${selectedTicket.id}`))
+        );
+
+        const newReplies = ticketNotifs
+          .filter(n => n.title && (n.title.includes("Response") || n.title.includes("Reply") || n.title.includes("User Reply")))
+          .map(n => {
+            const isUser = n.title.includes("User Reply");
+            return {
+              id: `notif-${n.id}`,
+              sender: isUser ? "USER" : "ADMIN",
+              sender_name: isUser ? (selectedTicket.user_name || "User") : "MehndiGo Admin Desk",
+              sender_role: isUser ? (selectedTicket.sender_role || "CUSTOMER") : "ADMIN",
+              message: n.message,
+              created_at: n.created_at || new Date().toISOString()
+            };
+          });
+
+        if (newReplies.length > 0) {
+          setSelectedTicket(prev => {
+            if (!prev || prev.id !== selectedTicket.id) return prev;
+            const currentReplies = Array.isArray(prev.replies) ? prev.replies : [];
+            const rMap = new Map();
+            currentReplies.forEach((r, idx) => {
+              const key = `${String(r.message || "").trim()}_${String(r.created_at || "").slice(0, 16)}`;
+              rMap.set(key, r);
+            });
+            newReplies.forEach(nr => {
+              const key = `${String(nr.message || "").trim()}_${String(nr.created_at || "").slice(0, 16)}`;
+              if (!rMap.has(key)) {
+                rMap.set(key, nr);
+              }
+            });
+            const merged = Array.from(rMap.values()).sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+            return { ...prev, replies: merged };
+          });
+        }
+      } catch (_) {}
+    }, 3000);
+    return () => clearInterval(pollInterval);
+  }, [selectedTicket?.id]);
+
   useEffect(() => {
     fetchAdminData();
   }, [activeTab, reviewFilter, analyticsFilters.startDate, analyticsFilters.endDate, analyticsFilters.city, analyticsFilters.artistId, walletPage, walletSearch, walletStatusFilter, walletStartDate, walletEndDate, ticketFilterRole, ticketFilterStatus]);
@@ -455,19 +505,10 @@ const AdminDashboard = ({ showToast }) => {
     if (!selectedTicket || !ticketReplyText.trim()) return;
     setIsSendingTicketReply(true);
     try {
-      const allUserIds = Array.from(new Set([
-        selectedTicket.user_id,
-        selectedTicket.real_user_id,
-        ...(artists.map(a => a.user_id || a.id)),
-        ...(users.map(u => u.id)),
-        1, 236, 237, 239, 240, 246, 247, 248, 249, 250
-      ])).filter(Boolean);
-
       await adminService.replySupportTicket(
         selectedTicket.id,
         ticketReplyText.trim(),
-        ticketReplyStatus,
-        allUserIds
+        ticketReplyStatus
       );
 
       showToast("Response dispatched & user notified successfully!", "success");

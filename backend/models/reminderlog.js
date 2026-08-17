@@ -14,6 +14,11 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.INTEGER,
         allowNull: false
       },
+      reminder_type: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        defaultValue: "GENERAL"
+      },
       last_sent_at: {
         type: DataTypes.DATE,
         allowNull: false,

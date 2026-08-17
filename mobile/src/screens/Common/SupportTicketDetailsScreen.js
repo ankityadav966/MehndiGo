@@ -30,6 +30,7 @@ export default function SupportTicketDetailsScreen({ route, navigation }) {
   const [replyImage, setReplyImage] = useState(null);
   const [sending, setSending] = useState(false);
 
+  const localRepliesRef = useRef([]);
   const listRef = useRef();
 
   const loadTicketData = async (isBackground = false) => {
@@ -51,31 +52,48 @@ export default function SupportTicketDetailsScreen({ route, navigation }) {
         r = [];
       }
 
-      // Collect all admin notifications and replies for this ticket
+      // Collect all admin notifications and user replies for this ticket
       const allNotifs = [
         ...(Array.isArray(custNotifs?.notifications) ? custNotifs.notifications : (Array.isArray(custNotifs?.data?.notifications) ? custNotifs.data.notifications : (Array.isArray(custNotifs?.data) ? custNotifs.data : (Array.isArray(custNotifs) ? custNotifs : [])))),
         ...(Array.isArray(artNotifs?.notifications) ? artNotifs.notifications : (Array.isArray(artNotifs?.data?.notifications) ? artNotifs.data.notifications : (Array.isArray(artNotifs?.data) ? artNotifs.data : (Array.isArray(artNotifs) ? artNotifs : []))))
       ];
 
+      const rawIdStr = String(ticketId || "");
+      const numMatch = rawIdStr.match(/\d+/);
+      const targetNum = numMatch ? numMatch[0] : rawIdStr;
+
       const notifReplies = allNotifs
         .filter(n => {
           const title = String(n.title || "");
           const msg = String(n.message || "");
-          const isResponse =
-            (title.includes("Response") || title.includes("Reply") || title.includes("Update")) &&
-            !title.includes("Opened");
-          const matchesId = title.includes(`#${ticketId}`) || msg.includes(`#${ticketId}`) || (n.data && (n.data.ticketId == ticketId || n.data.ticket_id == ticketId));
-          const matchesSubject = data.subject && (msg.toLowerCase().includes(data.subject.toLowerCase()) || title.toLowerCase().includes(data.subject.toLowerCase()));
-          return isResponse && (matchesId || matchesSubject);
+          const isSupport =
+            title.includes("Response") ||
+            title.includes("Reply") ||
+            title.includes("Update") ||
+            n.type === "SUPPORT" ||
+            n.type === "SUPPORT_TICKET_REPLY" ||
+            n.type === "SUPPORT_TICKET_USER_REPLY";
+          if (!isSupport || title.includes("Opened")) return false;
+
+          const hasIdMatch =
+            title.includes(`#${targetNum}`) ||
+            title.includes(`#${ticketId}`) ||
+            msg.includes(`#${targetNum}`) ||
+            (n.data && (n.data.ticketId == ticketId || n.data.ticket_id == ticketId));
+          const matchesSubject = data.subject && title.toLowerCase().includes(data.subject.toLowerCase());
+          return hasIdMatch || matchesSubject;
         })
-        .map(n => ({
-          id: `notif-${n.id}`,
-          sender: "ADMIN",
-          sender_name: "MehndiGo Support Desk",
-          sender_role: "ADMIN",
-          message: n.message,
-          created_at: n.created_at || n.createdAt || new Date().toISOString()
-        }));
+        .map(n => {
+          const isUserReply = (n.title && n.title.includes("User Reply")) || n.type === "SUPPORT_TICKET_USER_REPLY";
+          return {
+            id: `notif-${n.id}`,
+            sender: isUserReply ? "USER" : "ADMIN",
+            sender_name: isUserReply ? "You" : "MehndiGo Support Desk",
+            sender_role: isUserReply ? "CUSTOMER" : "ADMIN",
+            message: n.message,
+            created_at: n.created_at || n.createdAt || new Date().toISOString()
+          };
+        });
 
       // Fallback: If no direct match by ID, include latest admin response notifications
       let candidateReplies = notifReplies;
@@ -83,9 +101,9 @@ export default function SupportTicketDetailsScreen({ route, navigation }) {
         const latestResponses = allNotifs
           .filter(n => {
             const title = String(n.title || "");
-            return (title.includes("Response") || title.includes("Reply")) && !title.includes("Opened");
+            return (title.includes("Response") || title.includes("Reply") || title.includes("Update")) && !title.includes("Opened");
           })
-          .slice(0, 5)
+          .slice(0, 10)
           .map(n => ({
             id: `notif-${n.id}`,
             sender: "ADMIN",
@@ -99,17 +117,25 @@ export default function SupportTicketDetailsScreen({ route, navigation }) {
         }
       }
 
-      // Combine and deduplicate
+      // Combine replies cleanly without broadcast cloning or flickers
       const replyMap = new Map();
-      r.forEach((rep, idx) => {
-        replyMap.set(`rep-${rep.id || idx}`, rep);
+      r.forEach((rep) => {
+        const timeKey = (rep.created_at || "").slice(0, 16);
+        const broadcastKey = `msg-${String(rep.message).trim()}-${timeKey}`;
+        replyMap.set(broadcastKey, rep);
       });
       candidateReplies.forEach(nr => {
-        const alreadyExists = Array.from(replyMap.values()).some(
-          existing => String(existing.message).trim() === String(nr.message).trim()
-        );
-        if (!alreadyExists) {
-          replyMap.set(nr.id, nr);
+        const timeKey = (nr.created_at || "").slice(0, 16);
+        const broadcastKey = `msg-${String(nr.message).trim()}-${timeKey}`;
+        if (!replyMap.has(broadcastKey)) {
+          replyMap.set(broadcastKey, nr);
+        }
+      });
+      localRepliesRef.current.forEach(lr => {
+        const timeKey = (lr.created_at || "").slice(0, 16);
+        const broadcastKey = `msg-${String(lr.message).trim()}-${timeKey}`;
+        if (!replyMap.has(broadcastKey)) {
+          replyMap.set(broadcastKey, lr);
         }
       });
 
@@ -138,7 +164,7 @@ export default function SupportTicketDetailsScreen({ route, navigation }) {
     markTicketAsRead(ticketId).catch(() => {});
     const interval = setInterval(() => {
       loadTicketData(true);
-    }, 4000);
+    }, 3000);
     return () => clearInterval(interval);
   }, [ticketId]);
 
@@ -160,27 +186,39 @@ export default function SupportTicketDetailsScreen({ route, navigation }) {
 
   const handleSendReply = async () => {
     if (!replyMessage.trim() && !replyImage) return;
+    const msgToSend = replyMessage.trim();
+    const imageToSend = replyImage;
+    setReplyMessage("");
+    setReplyImage(null);
+
+    const optimisticMsg = {
+      id: `local-${Date.now()}`,
+      sender: "USER",
+      sender_name: "You",
+      sender_role: "CUSTOMER",
+      message: msgToSend,
+      attachments: imageToSend,
+      created_at: new Date().toISOString()
+    };
+
+    localRepliesRef.current = [...localRepliesRef.current, optimisticMsg];
+    setReplies(prev => [...prev, optimisticMsg]);
+    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+
     setSending(true);
     try {
       let uploadedUrl = null;
-      if (replyImage) {
-        const uploadRes = await uploadPortfolioMedia([{ uri: replyImage }]);
+      if (imageToSend) {
+        const uploadRes = await uploadPortfolioMedia([{ uri: imageToSend }]);
         if (uploadRes && uploadRes.length > 0) {
           uploadedUrl = uploadRes[0].url;
         }
       }
 
-      const updated = await replySupportTicket(ticketId, {
-        message: replyMessage.trim(),
+      await replySupportTicket(ticketId, {
+        message: msgToSend,
         attachments: uploadedUrl
       });
-      setTicket(prev => ({ ...(prev || {}), ...(updated || {}), status: "OPEN" }));
-      if (updated?.replies) {
-        setReplies(typeof updated.replies === "string" ? JSON.parse(updated.replies) : updated.replies);
-      }
-      setReplyMessage("");
-      setReplyImage(null);
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
     } catch (err) {
       Alert.alert("Error", err.message || "Failed to send support reply.");
     } finally {

@@ -109,6 +109,20 @@ export async function registerForPushNotificationsAsync() {
         lightColor: Colors.primary,
       });
 
+      await Notifications.setNotificationChannelAsync("support", {
+        name: "Support Desk",
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: Colors.primary,
+      });
+
+      await Notifications.setNotificationChannelAsync("chat", {
+        name: "Messages & Chat",
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: Colors.primary,
+      });
+
       await Notifications.setNotificationChannelAsync("promotions", {
         name: "Promotions",
         importance: Notifications.AndroidImportance.DEFAULT,

@@ -11,7 +11,7 @@ import OptimizedImage from "../../components/OptimizedImage";
 import LeafletMapView from "../../components/LeafletMapView";
 
 export default function LiveTrackingScreen({ route, navigation }) {
-  const { bookingId } = route.params || {};
+  const bookingId = route.params?.bookingId || route.params?.id;
   const { socket, connected } = useSocket();
 
   const [booking, setBooking] = useState(null);
@@ -20,54 +20,71 @@ export default function LiveTrackingScreen({ route, navigation }) {
   const [etaText, setEtaText] = useState("Calculating ETA...");
   const [distanceText, setDistanceText] = useState("Waiting for location");
   const [artistStatus, setArtistStatus] = useState("Waiting for artist live location");
+  const [artistInfo, setArtistInfo] = useState({ name: "Mehndi Artist", phone: "", image: "" });
 
   const mapRef = useRef(null);
 
-  useEffect(() => {
+  const loadData = async () => {
     if (!bookingId) return;
-
-    async function loadData() {
-      try {
-        const details = await getBookingDetails(bookingId);
-        if (details) {
-          setBooking(details);
-          if (details.latitude && details.longitude) {
-            setCustomerCoords({
-              latitude: Number(details.latitude),
-              longitude: Number(details.longitude),
-              lat: Number(details.latitude),
-              lng: Number(details.longitude),
-            });
-          }
+    try {
+      const details = await getBookingDetails(bookingId);
+      if (details) {
+        setBooking(details);
+        if (details.latitude && details.longitude) {
+          setCustomerCoords({
+            latitude: Number(details.latitude),
+            longitude: Number(details.longitude),
+            lat: Number(details.latitude),
+            lng: Number(details.longitude),
+          });
         }
-
-        const { getArtistLocation } = require("../../services/booking");
-        const locData = await getArtistLocation(bookingId);
-        if (locData) {
-          if (locData.latitude && locData.longitude) {
-            setArtistCoords({
-              latitude: Number(locData.latitude),
-              longitude: Number(locData.longitude),
-              lat: Number(locData.latitude),
-              lng: Number(locData.longitude),
-            });
-          }
-          if (locData.distance_text || locData.distanceText) {
-            setDistanceText(locData.distance_text || locData.distanceText);
-          }
-          if (locData.eta_text || locData.etaText) {
-            setEtaText(locData.eta_text || locData.etaText);
-          }
-          if (locData.tracking_status) {
-            setArtistStatus(locData.tracking_status);
-          }
+        if (details.artist_name || details.artist?.user?.name) {
+          setArtistInfo((prev) => ({
+            ...prev,
+            name: details.artist_name || details.artist?.user?.name || prev.name,
+            phone: details.artist_phone || details.artist?.user?.phone || prev.phone,
+            image: details.artist_image || details.artist?.user?.profile_image || prev.image,
+          }));
         }
-      } catch (e) {
-        console.log("Error loading tracking details:", e);
       }
-    }
 
+      const { getArtistLocation } = require("../../services/booking");
+      const locData = await getArtistLocation(bookingId);
+      if (locData) {
+        if (locData.latitude && locData.longitude) {
+          setArtistCoords({
+            latitude: Number(locData.latitude),
+            longitude: Number(locData.longitude),
+            lat: Number(locData.latitude),
+            lng: Number(locData.longitude),
+          });
+        }
+        if (locData.distance_text || locData.distanceText) {
+          setDistanceText(locData.distance_text || locData.distanceText);
+        }
+        if (locData.eta_text || locData.etaText) {
+          setEtaText(locData.eta_text || locData.etaText);
+        }
+        if (locData.tracking_status) {
+          setArtistStatus(locData.tracking_status);
+        }
+        if (locData.artist_name) {
+          setArtistInfo((prev) => ({
+            name: locData.artist_name || prev.name,
+            phone: locData.artist_phone || prev.phone,
+            image: locData.artist_image || prev.image,
+          }));
+        }
+      }
+    } catch (e) {
+      console.log("Error loading tracking details:", e);
+    }
+  };
+
+  useEffect(() => {
     loadData();
+    const interval = setInterval(loadData, 5000);
+    return () => clearInterval(interval);
   }, [bookingId]);
 
   // Real-time socket GPS position updates
@@ -86,11 +103,11 @@ export default function LiveTrackingScreen({ route, navigation }) {
         };
         setArtistCoords(newCoords);
 
-        if (payload.etaMins) {
-          setEtaText(`Arriving in ${payload.etaMins} mins`);
+        if (payload.etaMins || payload.eta_mins) {
+          setEtaText(`Arriving in ${payload.etaMins || payload.eta_mins} mins`);
         }
-        if (payload.distanceKm) {
-          setDistanceText(`${payload.distanceKm} km away`);
+        if (payload.distanceKm || payload.distance_km) {
+          setDistanceText(`${payload.distanceKm || payload.distance_km} km away`);
         }
       }
     };
@@ -98,6 +115,7 @@ export default function LiveTrackingScreen({ route, navigation }) {
     const handleStatusUpdate = (payload) => {
       if (payload && (payload.status || payload.detailed_status)) {
         setArtistStatus(payload.status || payload.detailed_status);
+        loadData();
       }
     };
 
@@ -113,7 +131,7 @@ export default function LiveTrackingScreen({ route, navigation }) {
   }, [socket, bookingId, customerCoords]);
 
   const handleCallArtist = () => {
-    const phone = booking?.artist?.user?.phone || booking?.artist_phone;
+    const phone = artistInfo.phone || booking?.artist?.user?.phone || booking?.artist_phone;
     if (phone) {
       Linking.openURL(`tel:${phone}`);
     }
@@ -122,11 +140,13 @@ export default function LiveTrackingScreen({ route, navigation }) {
   const handleChatArtist = () => {
     navigation.navigate("ChatRoom", {
       bookingId,
-      receiverId: booking?.artist?.user_id,
-      receiverName: booking?.artist?.user?.name || booking?.artist_name,
-      receiverImage: booking?.artist?.user?.profile_image || booking?.artist_image,
+      receiverId: booking?.artist?.user_id || booking?.artist_id,
+      receiverName: artistInfo.name || booking?.artist?.user?.name || booking?.artist_name,
+      receiverImage: artistInfo.image || booking?.artist?.user?.profile_image || booking?.artist_image,
     });
   };
+
+  const checkinOtp = booking?.checkin_otp;
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -169,14 +189,14 @@ export default function LiveTrackingScreen({ route, navigation }) {
         {/* Artist Profile Header */}
         <View style={styles.artistRow}>
           <OptimizedImage
-            source={{ uri: booking?.artist?.user?.profile_image || "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=500" }}
+            source={{ uri: artistInfo.image || booking?.artist?.user?.profile_image || "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=500" }}
             style={styles.artistImage}
             width={56}
             height={56}
           />
           <View style={{ flex: 1 }}>
-            <Text style={styles.artistName}>{booking?.artist?.user?.name || "Mehndi Artist"}</Text>
-            <Text style={styles.artistStatus}>{etaText}</Text>
+            <Text style={styles.artistName}>{artistInfo.name || "Mehndi Artist"}</Text>
+            <Text style={styles.artistStatus}>{artistStatus ? artistStatus.replace(/_/g, " ") : etaText}</Text>
           </View>
           <View style={styles.distanceBadge}>
             <Ionicons name="location" size={12} color="#059669" />
@@ -184,10 +204,20 @@ export default function LiveTrackingScreen({ route, navigation }) {
           </View>
         </View>
 
-        {/* Animated Progress Line */}
-        <View style={styles.progressContainer}>
-          <View style={styles.progressFill} />
-        </View>
+        {/* Check-In PIN Card if artist is near / arrived */}
+        {Boolean(checkinOtp) && (
+          <View style={styles.checkinCard}>
+            <Text style={styles.checkinLabel}>Doorstep Check-In PIN</Text>
+            <View style={styles.pinRow}>
+              {String(checkinOtp).split("").map((d, idx) => (
+                <View key={idx} style={styles.pinBox}>
+                  <Text style={styles.pinDigit}>{d}</Text>
+                </View>
+              ))}
+            </View>
+            <Text style={styles.pinHint}>Share this 4-digit PIN with the artist upon arrival.</Text>
+          </View>
+        )}
 
         {/* Quick Action Buttons */}
         <View style={styles.actionRow}>
@@ -308,6 +338,54 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFF1F5",
   },
   actionText: { marginLeft: 6, color: Colors.primary || "#9C1344", fontWeight: "700", fontSize: 13 },
+  checkinCard: {
+    backgroundColor: "#FDF2F8",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#FBCFE8",
+    padding: 12,
+    marginTop: 14,
+    alignItems: "center",
+  },
+  checkinLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#9D174D",
+    marginBottom: 6,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  pinRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginVertical: 4,
+  },
+  pinBox: {
+    width: 38,
+    height: 42,
+    borderRadius: 8,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1.5,
+    borderColor: "#DB2777",
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  pinDigit: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#9D174D",
+  },
+  pinHint: {
+    fontSize: 11,
+    color: "#6B7280",
+    marginTop: 4,
+    textAlign: "center",
+  },
   primaryBtn: { marginTop: 12, height: 48, backgroundColor: Colors.primary || "#9C1344", borderRadius: 12, justifyContent: "center", alignItems: "center" },
   primaryText: { color: Colors.white, fontWeight: "700", fontSize: 14 },
 });

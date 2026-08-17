@@ -463,7 +463,8 @@ class BookingService {
         landmark: landmark || null,
         notes: notes || null,
         coupon_code: couponCode || null,
-        latitude: latitude || null,
+        latitude: latitude !== undefined && latitude !== null ? Number(latitude) : null,
+        longitude: longitude !== undefined && longitude !== null ? Number(longitude) : null,
       }, { transaction: t });
 
       // Log initial history
@@ -477,42 +478,7 @@ class BookingService {
       return booking;
     });
 
-    // Notify artist and trigger real-time updates
-    try {
-      const artist = await db.ArtistProfile.findByPk(artistId);
-      if (artist) {
-        const slot = bookingResult.slot_id ? await db.AvailabilitySlot.findByPk(bookingResult.slot_id) : null;
-        const dateStr = slot?.start_time ? new Date(slot.start_time).toLocaleDateString() : (bookingResult.reschedule_date || "TBD");
-        
-        const customer = await db.User.findByPk(userId);
-        const customerName = customer?.name || "A customer";
-
-        await db.Notification.create({
-          user_id: artist.user_id,
-          title: "New Booking Request",
-          message: `You have received a new booking request from ${customerName}.`,
-          type: "BOOKING",
-          data: JSON.stringify({
-            bookingId: bookingResult.id,
-            booking_id: bookingResult.id,
-            customerName: customerName,
-            bookingDate: dateStr,
-            bookingTime: bookingResult.slot_id ? "Scheduled slot" : (bookingResult.reschedule_time || "TBD")
-          })
-        });
-
-        // Emit real-time booking event to the artist's socket room
-        const { getIO } = require("../sockets/socket");
-        const io = getIO();
-        io.to(artist.user_id.toString()).emit("booking_created", {
-          bookingId: bookingResult.id,
-          bookingCode: bookingResult.booking_code
-        });
-      }
-    } catch (err) {
-      console.error("Error in createBooking real-time notification dispatch:", err.message);
-    }
-
+    // Note: Artist notification and socket dispatch is deferred until advance payment is verified
     return await this.getBookingDetails(bookingResult.id, userId, "CUSTOMER");
   }
 
@@ -745,18 +711,30 @@ class BookingService {
       if (artistProfile) {
         await db.Notification.create({
           user_id: artistProfile.user_id,
-          title: "Payment Received Successfully",
-          message: `The customer has completed the online payment for Booking #${booking.booking_code}.`,
-          type: "PAYMENT",
-          data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
+          title: "New Booking Request 🌸",
+          message: `New advance-paid booking #${booking.booking_code} received! Tap to review and accept.`,
+          type: "BOOKING_CREATED",
+          data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id, bookingCode: booking.booking_code })
         });
+
+        // Emit real-time booking event to the artist's socket room now that advance is paid
+        try {
+          const { getIO } = require("../sockets/socket");
+          const io = getIO();
+          io.to(artistProfile.user_id.toString()).emit("booking_created", {
+            bookingId: booking.id,
+            bookingCode: booking.booking_code
+          });
+        } catch (sockErr) {
+          console.log("Socket emit soft error:", sockErr.message);
+        }
       }
 
       await db.Notification.create({
         user_id: booking.user_id,
-        title: "Payment Verified",
-        message: `Your payment of ₹${booking.final_amount} for Booking #${booking.booking_code} has been verified successfully.`,
-        type: "PAYMENT",
+        title: "Advance Payment Verified ✨",
+        message: `Your advance payment for Booking #${booking.booking_code} has been verified successfully. Your booking is confirmed!`,
+        type: "PAYMENT_SUCCESS",
         data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
       });
 

@@ -12,6 +12,7 @@
   "license": "ISC",
   "packageManager": "pnpm@10.26.1",
   "dependencies": {
+    "@azure/communication-email": "^1.1.0",
     "cloudinary": "^2.10.0",
     "cors": "^2.8.6",
     "crypto": "^1.0.1",

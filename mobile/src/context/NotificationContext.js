@@ -54,17 +54,47 @@ export function NotificationProvider({ children, navigationRef }) {
   const notificationListener = useRef(null);
   const responseListener = useRef(null);
   const appState = useRef(AppState.currentState);
+  const pendingNotification = useRef(null);
+
+  const executeNotificationNavigation = useCallback(
+    (notification) => {
+      if (!notification) return;
+      const nav = navigationRef?.current || navigationRef;
+      if (nav && (!navigationRef.isReady || navigationRef.isReady())) {
+        setTimeout(() => {
+          handleNotificationNavigation(notification, nav, role);
+          pendingNotification.current = null;
+        }, 300);
+      } else {
+        pendingNotification.current = notification;
+      }
+    },
+    [role, navigationRef]
+  );
 
   const handleNotificationResponse = useCallback(
     (response) => {
-      if (navigationRef?.current) {
-        setTimeout(() => {
-          handleNotificationNavigation(response.notification, navigationRef.current, role);
-        }, 500);
-      }
+      if (!response?.notification) return;
+      executeNotificationNavigation(response.notification);
     },
-    [role, navigationRef],
+    [executeNotificationNavigation]
   );
+
+  // Process pending notification when navigation or authentication settles
+  useEffect(() => {
+    if (isAuthenticated && pendingNotification.current) {
+      const timer = setTimeout(() => {
+        if (pendingNotification.current) {
+          const nav = navigationRef?.current || navigationRef;
+          if (nav && (!navigationRef.isReady || navigationRef.isReady())) {
+            handleNotificationNavigation(pendingNotification.current, nav, role);
+            pendingNotification.current = null;
+          }
+        }
+      }, 700);
+      return () => clearTimeout(timer);
+    }
+  }, [isAuthenticated, role, navigationRef]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -76,7 +106,7 @@ export function NotificationProvider({ children, navigationRef }) {
           await sendNotificationTokenToServer(token);
         }
       } catch (err) {
-        console.log("Notification setup error:", err.message);
+        console.log("[NotificationContext] Push registration notice:", err.message);
       }
     };
 

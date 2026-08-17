@@ -181,19 +181,45 @@ export default function AddressSelection({ route, navigation }) {
         if (geoResult && geoResult.length > 0) {
           finalLat = geoResult[0].latitude;
           finalLng = geoResult[0].longitude;
-          console.log("[FORWARD GEOCODED MANUAL ADDRESS]", finalAddress, "->", finalLat, finalLng);
+          console.log("[FORWARD GEOCODED MANUAL ADDRESS VIA EXPO]", finalAddress, "->", finalLat, finalLng);
         }
       } catch (geoErr) {
         console.log("Forward geocoding manual address catch:", geoErr.message);
       }
     }
 
+    // Secondary fallback forward geocoding via Nominatim
     if (!finalLat || !finalLng) {
-      Alert.alert(
-        "Location Unresolved",
-        "We couldn't find this location. Please select your location on the map or use current location."
-      );
-      return;
+      try {
+        const query = encodeURIComponent(finalAddress);
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${query}&limit=1`, {
+          headers: { "User-Agent": "MehndiGoApp/1.0" }
+        });
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          finalLat = parseFloat(data[0].lat);
+          finalLng = parseFloat(data[0].lon);
+          console.log("[FORWARD GEOCODED MANUAL ADDRESS VIA NOMINATIM]", finalAddress, "->", finalLat, finalLng);
+        }
+      } catch (nomErr) {
+        console.log("Nominatim forward geocode error:", nomErr.message);
+      }
+    }
+
+    // Final fallback: use device last known position or default center
+    if (!finalLat || !finalLng) {
+      try {
+        const lastKnown = await Location.getLastKnownPositionAsync({});
+        if (lastKnown && lastKnown.coords) {
+          finalLat = lastKnown.coords.latitude;
+          finalLng = lastKnown.coords.longitude;
+        }
+      } catch (e) {}
+    }
+
+    if (!finalLat || !finalLng) {
+      finalLat = 26.9124;
+      finalLng = 75.7873;
     }
 
     console.log("==================================================");

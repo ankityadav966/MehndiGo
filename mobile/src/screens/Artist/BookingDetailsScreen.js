@@ -70,11 +70,11 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
   const R = 6371; // km
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = 
-    Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-    Math.sin(dLon/2) * Math.sin(dLon/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
 
@@ -128,16 +128,16 @@ export default function BookingDetailsScreen({ route, navigation }) {
     setArtistCoords(simulatedCoords);
     setPermissionError(null);
     setIsLocationModalVisible(false);
-    
+
     const { startTracking } = require("../../services/trackingService");
-    startTracking(booking.id, booking.artist_id).catch(() => {});
-    
+    startTracking(booking.id, booking.artist_id).catch(() => { });
+
     Alert.alert(
       "Location Simulated",
       "Developer Mode: Mock location coordinates have been activated successfully!",
       [{ text: "OK" }]
     );
-    
+
     if (pendingAction === 'START_TRAVEL') {
       await handleStartTravelAfterApproval();
       setIsMapFullScreen(true);
@@ -257,7 +257,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
         } catch (balancedErr) {
           try {
             current = await Location.getLastKnownPositionAsync({});
-          } catch (_) {}
+          } catch (_) { }
         }
       }
 
@@ -296,9 +296,9 @@ export default function BookingDetailsScreen({ route, navigation }) {
     const destLat = customerCoords.lat;
     const destLng = customerCoords.lng;
     const addressLabel = encodeURIComponent(booking?.address || booking?.user?.name || "Customer Location");
-    
+
     let url = `https://www.google.com/maps/dir/?api=1&destination=${destLat},${destLng}&destination_place_id=${addressLabel}&travelmode=driving`;
-    
+
     if (Platform.OS === "android") {
       url = `google.navigation:q=${destLat},${destLng}&mode=d`;
     }
@@ -347,7 +347,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
         if (["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "ON_THE_WAY", "ARTIST_ARRIVED", "ARRIVED", "CUSTOMER_VERIFIED", "SERVICE_STARTED", "IN_PROGRESS"].includes(st)) {
           getBookingDetails(bookingId).then((data) => {
             if (data) setBooking(data);
-          }).catch(() => {});
+          }).catch(() => { });
         }
       }
     }, 5000);
@@ -423,7 +423,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
         } else if (typeof subscription === "function") {
           subscription();
         }
-      } catch (_) {}
+      } catch (_) { }
     };
   }, [booking, hasPromptedTravel, pendingAction]);
 
@@ -431,7 +431,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
   useEffect(() => {
     if (!booking) return;
     const currentDetailedStatus = booking.detailed_status || booking.booking_status || "PENDING";
-    
+
     console.log("[DEBUG STEP 4 & 5] Arrival Check:", {
       bookingId: booking.id,
       currentDetailedStatus,
@@ -588,7 +588,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
   const handleStartTravel = async () => {
     const providerStatus = await Location.getProviderStatusAsync();
     const { status: fgStatus } = await Location.getForegroundPermissionsAsync();
-    
+
     if (fgStatus === "granted" && providerStatus.locationServicesEnabled) {
       await handleStartTravelAfterApproval();
       setIsMapFullScreen(true);
@@ -601,7 +601,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
   const handleStartServiceTap = async () => {
     const providerStatus = await Location.getProviderStatusAsync();
     const { status: fgStatus } = await Location.getForegroundPermissionsAsync();
-    
+
     if (fgStatus === "granted" && providerStatus.locationServicesEnabled) {
       await handleStartService();
     } else {
@@ -1026,7 +1026,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        
+
         {/* Progress Timeline Tracker */}
         {currentDetailedStatus !== "CANCELLED" && (
           <View style={styles.timelineCard}>
@@ -1122,7 +1122,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
           <View style={styles.mapCard}>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
               <Text style={[styles.cardTitle, { marginBottom: 0 }]}>Travel Navigation Map</Text>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={{ flexDirection: "row", alignItems: "center", padding: 4 }}
                 onPress={() => setIsMapFullScreen(true)}
               >
@@ -1130,11 +1130,11 @@ export default function BookingDetailsScreen({ route, navigation }) {
                 <Text style={{ fontSize: 11, color: Colors.primary, marginLeft: 4, fontWeight: "600" }}>Full Screen</Text>
               </TouchableOpacity>
             </View>
-            
+
             {/* GPS Warning Banner */}
             {permissionError && (
-              <TouchableOpacity 
-                style={styles.gpsWarningBanner} 
+              <TouchableOpacity
+                style={styles.gpsWarningBanner}
                 onPress={() => setIsLocationModalVisible(true)}
               >
                 <Ionicons name="warning" size={16} color="#7A1C1C" />
@@ -1154,13 +1154,13 @@ export default function BookingDetailsScreen({ route, navigation }) {
                   }}
                 />
               </View>
-              
+
               {/* Distance Indicator */}
               <View style={styles.distanceBadge}>
                 <Ionicons name="navigate" size={16} color={Colors.primary} />
                 <Text style={styles.distanceText}>Distance: {formattedDistance}</Text>
               </View>
-              
+
               {/* Travel Time Estimations */}
               <View style={styles.transitTimesContainer}>
                 <View style={styles.transitModeCard}>
@@ -1198,26 +1198,6 @@ export default function BookingDetailsScreen({ route, navigation }) {
                 <Ionicons name="navigate-circle-outline" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
                 <Text style={{ color: "#FFFFFF", fontWeight: "700", fontSize: 13 }}>
                   Open Turn-by-Turn Voice Navigation (Google Maps)
-                </Text>
-              </TouchableOpacity>
-
-              {/* 1-Tap Simulate Arrival for Testing Check-in */}
-              <TouchableOpacity
-                style={{
-                  marginTop: 8,
-                  backgroundColor: "#10B981",
-                  borderRadius: 10,
-                  paddingVertical: 10,
-                  paddingHorizontal: 16,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  justifyContent: "center"
-                }}
-                onPress={simulateLocation}
-              >
-                <Ionicons name="checkmark-circle-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-                <Text style={{ color: "#FFFFFF", fontWeight: "700", fontSize: 12 }}>
-                  Simulate Arrival at Customer Location (Test 0m Check-in)
                 </Text>
               </TouchableOpacity>
             </View>
@@ -1341,7 +1321,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
           <View style={styles.modalContent}>
             <Ionicons name="location" size={48} color={Colors.primary} style={styles.modalIcon} />
             <Text style={styles.modalTitle}>Enable GPS Tracking</Text>
-            
+
             <Text style={styles.modalDescription}>
               MehndiGo needs your device location to share your journey progress and navigation times with the client.
             </Text>
@@ -1375,7 +1355,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
               <Ionicons name="close" size={20} color={Colors.primary} />
               <Text style={{ fontSize: 13, color: Colors.primary, fontWeight: "700", marginLeft: 4 }}>Exit Map</Text>
             </TouchableOpacity>
-            
+
             <View style={{ flex: 1, alignItems: "center", paddingHorizontal: 8 }}>
               <Text style={{ fontSize: 14, fontWeight: "700", color: Colors.text, textAlign: "center" }}>Booking #{booking.booking_code}</Text>
               <Text style={{ fontSize: 11, color: Colors.textTertiary, textAlign: "center" }}>Client: {booking.user?.name || "Customer"}</Text>
@@ -1386,7 +1366,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
               <Text style={{ fontSize: 10, color: Colors.textTertiary }}>{carTime} mins</Text>
             </View>
           </View>
-          
+
           {/* Full Screen Map Container */}
           <View style={{ flex: 1 }}>
             <LeafletMapView
@@ -1399,7 +1379,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
               }}
             />
           </View>
-          
+
           {/* Floating Indicators */}
           <View style={{ position: "absolute", bottom: 24, left: 16, right: 16, backgroundColor: Colors.white, borderRadius: 14, padding: 14, elevation: 5, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 8 }}>
             <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>

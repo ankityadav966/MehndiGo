@@ -1,28 +1,51 @@
 require("dotenv").config();
 const nodemailer = require("nodemailer");
 const crypto = require("crypto");
+const { EmailClient } = require("@azure/communication-email");
 
 let gmailTransporter = null;
+let azureEmailClient = null;
 
 // ============================================================
 // CONFIG
 // ============================================================
+
+const AZURE_EMAIL_CONNECTION_STRING = (
+  process.env.AZURE_EMAIL_CONNECTION_STRING ||
+  "AZURE_KEY_REMOVED"
+).trim();
+
+const AZURE_EMAIL_FROM = (
+  process.env.AZURE_EMAIL_FROM ||
+  process.env.EMAIL_FROM ||
+  "donotreply@mehndigo.in"
+).trim();
 
 const EMAIL_USER = (process.env.EMAIL_USER || "sonudonyadav87@gmail.com").trim();
 const EMAIL_PASS = (process.env.EMAIL_PASS || "kwemkkniwxyohmvm").replace(/\s+/g, "");
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
 
-// Production sender.
-// This domain MUST be verified in Resend and have SPF/DKIM configured.
 const EMAIL_FROM =
-  process.env.EMAIL_FROM || "MehndiGo <noreply@mehndigo.in>";
+  process.env.EMAIL_FROM || AZURE_EMAIL_FROM || "MehndiGo <donotreply@mehndigo.in>";
 
 const EMAIL_REPLY_TO =
   process.env.EMAIL_REPLY_TO || "support@mehndigo.in";
 
 const EMAIL_PROVIDER =
-  process.env.EMAIL_PROVIDER || "gmail";
+  process.env.EMAIL_PROVIDER || "azure";
+
+// Initialize Azure Email Client
+function getAzureEmailClient() {
+  if (!azureEmailClient && AZURE_EMAIL_CONNECTION_STRING) {
+    try {
+      azureEmailClient = new EmailClient(AZURE_EMAIL_CONNECTION_STRING);
+    } catch (e) {
+      console.error("[AZURE EMAIL CLIENT INIT ERROR]:", e.message);
+    }
+  }
+  return azureEmailClient;
+}
 
 // ============================================================
 // BASIC EMAIL VALIDATION
@@ -480,6 +503,128 @@ async function sendUsingResend(
 }
 
 // ============================================================
+// AZURE COMMUNICATION SERVICES EMAIL
+// ============================================================
+
+async function sendUsingAzure(to, subject, body, html = null) {
+  if (!AZURE_EMAIL_CONNECTION_STRING) {
+    throw new Error("Missing AZURE_EMAIL_CONNECTION_STRING in environment variables.");
+  }
+
+  const finalHtml = html || `<p>${escapeHtml(body).replace(/\n/g, "<br>")}</p>`;
+  const plainText = body || subject;
+
+  // Try Azure SDK first
+  try {
+    const client = getAzureEmailClient();
+    if (client) {
+      const message = {
+        senderAddress: AZURE_EMAIL_FROM,
+        content: {
+          subject: subject,
+          plainText: plainText,
+          html: finalHtml
+        },
+        recipients: {
+          to: [
+            {
+              address: to
+            }
+          ]
+        },
+        replyTo: [
+          {
+            address: EMAIL_REPLY_TO
+          }
+        ]
+      };
+
+      const poller = await client.beginSend(message);
+      const result = await poller.pollUntilDone();
+
+      console.log(`[AZURE EMAIL DELIVERED] Recipient: ${to} | ID: ${result?.id || "N/A"}`);
+      return {
+        success: true,
+        provider: "azure",
+        messageId: result?.id || "azure-ok",
+        accepted: [to],
+        rejected: []
+      };
+    }
+  } catch (sdkError) {
+    console.warn(`[AZURE SDK WARNING] Trying direct REST API fallback for ${to}:`, sdkError.message);
+  }
+
+  // Fallback to Azure Direct REST API
+  const endpointMatch = AZURE_EMAIL_CONNECTION_STRING.match(/endpoint=([^;]+)/i);
+  const keyMatch = AZURE_EMAIL_CONNECTION_STRING.match(/accesskey=([^;]+)/i);
+
+  const endpoint = endpointMatch ? endpointMatch[1].replace(/\/$/, "") : "https://edvice-email-service.india.communication.azure.com";
+  const accessKey = keyMatch ? keyMatch[1] : "";
+  const host = new URL(endpoint).host;
+  const pathAndQuery = "/emails:send?api-version=2023-03-31";
+  const url = `${endpoint}${pathAndQuery}`;
+
+  const bodyObj = {
+    senderAddress: AZURE_EMAIL_FROM,
+    content: {
+      subject: subject,
+      plainText: plainText,
+      html: finalHtml
+    },
+    recipients: {
+      to: [
+        {
+          address: to
+        }
+      ]
+    },
+    replyTo: [
+      {
+        address: EMAIL_REPLY_TO
+      }
+    ]
+  };
+
+  const bodyStr = JSON.stringify(bodyObj);
+  const contentHash = crypto.createHash("sha256").update(bodyStr, "utf8").digest("base64");
+  const xMsDate = new Date().toUTCString();
+  const stringToSign = `POST\n${pathAndQuery}\n${xMsDate};${host};${contentHash}`;
+
+  const keyBytes = Buffer.from(accessKey, "base64");
+  const signature = crypto.createHmac("sha256", keyBytes).update(stringToSign, "utf8").digest("base64");
+  const authHeader = `HMAC-SHA256 SignedHeaders=x-ms-date;host;x-ms-content-sha256&Signature=${signature}`;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-ms-date": xMsDate,
+      "x-ms-content-sha256": contentHash,
+      "Authorization": authHeader,
+      "Repeatability-Request-Id": crypto.randomUUID(),
+      "Repeatability-First-Sent": xMsDate
+    },
+    body: bodyStr
+  });
+
+  if (!res.ok && res.status !== 202) {
+    const errBody = await res.text().catch(() => "");
+    throw new Error(`Azure REST Email API failed with HTTP ${res.status}: ${errBody}`);
+  }
+
+  const resData = await res.json().catch(() => ({}));
+  console.log(`[AZURE REST EMAIL DELIVERED] Recipient: ${to} | ID: ${resData?.id || "N/A"}`);
+  return {
+    success: true,
+    provider: "azure_rest",
+    messageId: resData?.id || "azure-ok",
+    accepted: [to],
+    rejected: []
+  };
+}
+
+// ============================================================
 // GENERIC EMAIL SERVICE
 // ============================================================
 
@@ -514,125 +659,51 @@ async function sendEmail(
   const finalHtml =
     html || `<p>${escapeHtml(body).replace(/\n/g, "<br>")}</p>`;
 
-  // ----------------------------------------------------------
-  // Provider selection
-  // ----------------------------------------------------------
-
   const errors = [];
 
   // ==========================================================
-  // PRIMARY PROVIDER
+  // PRIMARY PROVIDER: AZURE COMMUNICATION SERVICES
   // ==========================================================
 
-  if (
-    EMAIL_PROVIDER === "resend"
-  ) {
+  if (AZURE_EMAIL_CONNECTION_STRING) {
     try {
-      return await sendUsingResend(
-        to,
-        subject,
-        body,
-        finalHtml
-      );
+      return await sendUsingAzure(to, subject, body, finalHtml);
     } catch (error) {
-      console.error(
-        `❌ Resend primary failed for ${to}:`,
-        error.message
-      );
-
-      errors.push(
-        `Resend: ${error.message}`
-      );
-    }
-
-    // Try Gmail fallback
-    if (EMAIL_USER && EMAIL_PASS) {
-      try {
-        console.log(
-          `🔄 Trying Gmail fallback for ${to}...`
-        );
-
-        return await sendUsingGmail(
-          to,
-          subject,
-          body,
-          finalHtml
-        );
-      } catch (error) {
-        console.error(
-          `❌ Gmail fallback failed for ${to}:`,
-          error.message
-        );
-
-        errors.push(
-          `Gmail: ${error.message}`
-        );
-      }
+      console.error(`❌ Azure Email failed for ${to}:`, error.message);
+      errors.push(`Azure: ${error.message}`);
     }
   }
 
   // ==========================================================
-  // GMAIL PRIMARY
+  // FALLBACK 1: GMAIL SMTP
   // ==========================================================
 
-  else {
-    if (EMAIL_USER && EMAIL_PASS) {
-      try {
-        return await sendUsingGmail(
-          to,
-          subject,
-          body,
-          finalHtml
-        );
-      } catch (error) {
-        console.error(
-          `❌ Gmail primary failed for ${to}:`,
-          error.message
-        );
-
-        errors.push(
-          `Gmail: ${error.message}`
-        );
-      }
-    }
-
-    // --------------------------------------------------------
-    // Resend fallback
-    // --------------------------------------------------------
-
-    if (RESEND_API_KEY) {
-      try {
-        console.log(
-          `🔄 Trying Resend fallback for ${to}...`
-        );
-
-        return await sendUsingResend(
-          to,
-          subject,
-          body,
-          finalHtml
-        );
-      } catch (error) {
-        console.error(
-          `❌ Resend fallback failed for ${to}:`,
-          error.message
-        );
-
-        errors.push(
-          `Resend: ${error.message}`
-        );
-      }
+  if (EMAIL_USER && EMAIL_PASS) {
+    try {
+      console.log(`🔄 Trying Gmail fallback for ${to}...`);
+      return await sendUsingGmail(to, subject, body, finalHtml);
+    } catch (error) {
+      console.error(`❌ Gmail fallback failed for ${to}:`, error.message);
+      errors.push(`Gmail: ${error.message}`);
     }
   }
 
   // ==========================================================
-  // NEVER RETURN MOCK SUCCESS
+  // FALLBACK 2: RESEND
   // ==========================================================
+
+  if (RESEND_API_KEY) {
+    try {
+      console.log(`🔄 Trying Resend fallback for ${to}...`);
+      return await sendUsingResend(to, subject, body, finalHtml);
+    } catch (error) {
+      console.error(`❌ Resend fallback failed for ${to}:`, error.message);
+      errors.push(`Resend: ${error.message}`);
+    }
+  }
 
   throw new Error(
-    `Unable to send email to ${to}. ${errors.join(
-      " | "
-    )}`
+    `Unable to send email to ${to}. ${errors.join(" | ")}`
   );
 }
 

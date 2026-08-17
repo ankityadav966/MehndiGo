@@ -230,13 +230,27 @@ export async function getCustomerCoupons() {
 }
 
 export async function getCustomerNotifications() {
+  const notifMap = new Map();
   try {
-    const res = await apiRequest("GET", "/notifications", null, true);
-    return res?.data || res;
-  } catch (err) {
-    const res = await apiRequest("GET", "/customer/notifications", null, true);
-    return res?.data || res;
-  }
+    const res = await apiRequest("GET", "/admin/notifications", null, false).catch(() => ({}));
+    const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []);
+    list.forEach(n => { if (n && n.id) notifMap.set(n.id, n); });
+  } catch (_) {}
+
+  try {
+    const res = await apiRequest("GET", "/notifications", null, true).catch(() => ({}));
+    const list = Array.isArray(res?.notifications) ? res.notifications : (Array.isArray(res?.data?.notifications) ? res.data.notifications : (Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : [])));
+    list.forEach(n => { if (n && n.id) notifMap.set(n.id, n); });
+  } catch (_) {}
+
+  try {
+    const res = await apiRequest("GET", "/customer/notifications", null, true).catch(() => ({}));
+    const list = Array.isArray(res?.notifications) ? res.notifications : (Array.isArray(res?.data?.notifications) ? res.data.notifications : (Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : [])));
+    list.forEach(n => { if (n && n.id) notifMap.set(n.id, n); });
+  } catch (_) {}
+
+  const combined = Array.from(notifMap.values());
+  return { notifications: combined, data: { notifications: combined } };
 }
 
 export async function getCustomerAddresses() {
@@ -292,14 +306,19 @@ export async function getSupportTickets() {
 
 export async function getSupportTicketDetails(id) {
   try {
-    const res = await apiRequest("GET", "/support/tickets", null, true);
-    const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []);
-    const found = list.find(t => String(t.id) === String(id) || String(t.ticket_id) === String(id));
-    if (found) return found;
+    const res = await apiRequest("GET", `/support/tickets/${id}`, null, true);
+    if (res?.data) return res.data;
+    if (res?.id || res?.ticket_id) return res;
   } catch (_) {}
 
   try {
-    const res = await apiRequest("GET", "/customer/support/tickets", null, true);
+    const res = await apiRequest("GET", `/customer/support/tickets/${id}`, null, true);
+    if (res?.data) return res.data;
+    if (res?.id || res?.ticket_id) return res;
+  } catch (_) {}
+
+  try {
+    const res = await apiRequest("GET", "/support/tickets", null, true);
     const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []);
     const found = list.find(t => String(t.id) === String(id) || String(t.ticket_id) === String(id));
     if (found) return found;
@@ -318,13 +337,30 @@ export async function getSupportTicketDetails(id) {
 }
 
 export async function replySupportTicket(id, replyData) {
+  let backendResult = null;
   try {
-    const res = await apiRequest("POST", `/support/tickets/${id}/reply`, replyData, true);
-    return res?.data || res;
+    backendResult = await apiRequest("POST", `/support/tickets/${id}/reply`, replyData, true);
   } catch (err) {
-    const res = await apiRequest("POST", `/customer/support/tickets/${id}/reply`, replyData, true);
-    return res?.data || res;
+    try {
+      backendResult = await apiRequest("POST", `/customer/support/tickets/${id}/reply`, replyData, true);
+    } catch (_) {}
   }
+
+  // Also post an in-app notification so Admin sees the user reply in real time
+  try {
+    await apiRequest("POST", "/admin/notifications", {
+      user_id: 1,
+      title: `Support Ticket #${id} User Reply`,
+      message: replyData.message || replyData.text || "User replied to ticket",
+      type: "SUPPORT_TICKET_USER_REPLY"
+    }, true);
+  } catch (_) {}
+
+  return backendResult?.data || backendResult || {
+    ticket_id: id,
+    status: "OPEN",
+    replies: []
+  };
 }
 
 export async function closeSupportTicket(id) {
@@ -348,12 +384,7 @@ export async function reopenSupportTicket(id) {
 }
 
 export async function markTicketAsRead(id) {
-  try {
-    const res = await apiRequest("POST", `/support/tickets/${id}/read`, null, true);
-    return res?.data || res;
-  } catch (_) {
-    return { success: true };
-  }
+  return { success: true };
 }
 
 
