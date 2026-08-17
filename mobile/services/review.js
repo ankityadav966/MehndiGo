@@ -14,18 +14,7 @@ export async function fetchReviewById(id) {
 }
 
 export async function createNewReview(reviewData) {
-  const payload = {
-    bookingId: reviewData.booking_id || reviewData.bookingId,
-    booking_id: reviewData.booking_id || reviewData.bookingId,
-    artistId: reviewData.artist_id || reviewData.artistId,
-    artist_id: reviewData.artist_id || reviewData.artistId,
-    rating: reviewData.rating,
-    comment: reviewData.comment,
-    design_quality: reviewData.design_quality,
-    punctuality: reviewData.punctuality,
-    professionalism: reviewData.professionalism
-  };
-  const res = await apiRequest("POST", "/customer/review", payload, true);
+  const res = await apiRequest("POST", "/reviews", reviewData, true);
   return res?.data || res;
 }
 

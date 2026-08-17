@@ -7,8 +7,6 @@ const { authenticate } = require("../middleware/auth.middleware");
 router.get("/", authenticate, WalletController.getWallet);
 router.get("/history", authenticate, WalletController.getWalletHistory);
 router.post("/add-money", authenticate, WalletController.addMoney);
-router.post("/pay-commission", authenticate, WalletController.payCommission);
-
 
 // Withdraw requests operations
 router.post("/withdraw", authenticate, WalletController.initiateWithdrawal);

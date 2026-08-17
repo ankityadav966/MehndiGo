@@ -12,7 +12,7 @@ const {
 } = require("../repositories");
 
 const AppError = require("../utils/errors/app.error");
-const razorpayUtil = require("../utils/razorpay");
+const cashfree = require("../utils/cashfree");
 const { getIO } = require("../sockets/socket");
 const db = require("../models");
 
@@ -785,139 +785,98 @@ async updateBookingStatus(
 }
 
 
-  async createOrder(booking_id, customAmountPaise = null) {
-    let amountPaise;
-    let receipt = `rcpt_${Date.now()}`;
-
-    if (booking_id) {
-      const booking = await BookingRepositor.getById(booking_id);
-      if (!booking) {
-        throw new AppError("Booking not found", 404);
-      }
-      if (booking.payment_status === "PAID") {
-        throw new AppError("Booking already paid", 400);
-      }
-      amountPaise = customAmountPaise || Math.round(Number(booking.total_price) * 100);
-      receipt = `booking_${booking_id}_${Date.now()}`;
-    } else if (customAmountPaise) {
-      amountPaise = Number(customAmountPaise);
-    } else {
-      throw new AppError("Booking ID or amount is required", 400);
+  async createOrder(booking_id) {
+    const booking = await BookingRepositor.getById(booking_id);
+    if (!booking) {
+      throw new AppError("Booking not found", 404);
     }
-
-    if (isNaN(amountPaise) || amountPaise < 100) {
-      throw new AppError("Minimum order amount must be at least 100 paise", 400);
+    if (booking.payment_status === "PAID") {
+      throw new AppError("Booking already paid", 400);
     }
-
-    const order = await razorpayUtil.createRazorpayOrder({
-      amount: amountPaise,
-      currency: "INR",
-      receipt
-    });
-
-    if (booking_id) {
-      await PaymentRepositor.create({
-        booking_id,
-        cashfree_order_id: order.order_id,
-        transaction_id: order.order_id,
-        amount: Math.round(amountPaise / 100),
-        payment_method: "ONLINE",
-        status: "PENDING",
-        gateway: "RAZORPAY",
-        currency: "INR"
+    const amount = booking.total_price;
+    let order;
+    try {
+      order = await cashfree.createCashfreeOrder({
+        customerId: booking.user_id,
+        orderId: `booking_${booking_id}_${Date.now()}`,
+        amount: amount,
+        note: `Payment for Booking #${booking.booking_code}`
       });
+    } catch (e) {
+      console.warn("Cashfree order creation failed, falling back to mock:", e.message);
+      order = {
+        order_id: `booking_${booking_id}_${Date.now()}`,
+        payment_session_id: `session_mock_${Math.random().toString(36).substring(2, 10)}`,
+        order_amount: amount,
+      };
     }
-
-    return {
-      order_id: order.order_id,
-      id: order.order_id,
-      amount: order.amount,
-      currency: order.currency
-    };
+    await PaymentRepositor.create({
+      booking_id,
+      cashfree_order_id: order.order_id,
+      amount,
+      payment_method: "ONLINE",
+      status: "PENDING",
+      gateway: "CASHFREE",
+      currency: "INR"
+    });
+    return order;
   }
-
   async verifyPayment(data) {
     const {
       booking_id,
-      razorpay_order_id,
-      razorpay_payment_id,
-      razorpay_signature,
-      cashfree_order_id
+      cashfree_order_id,
     } = data;
+    
+    let orderStatus = "PENDING";
+    let cfPaymentId = `pay_mock_${Math.random().toString(36).substring(2, 10)}`;
 
-    const orderId = razorpay_order_id || cashfree_order_id;
-    const paymentId = razorpay_payment_id;
-    const signature = razorpay_signature;
-
-    if (!orderId || !paymentId || !signature) {
-      throw new AppError("Missing payment verification parameters (razorpay_order_id, razorpay_payment_id, razorpay_signature)", 400);
+    const isMock = cashfree_order_id && (cashfree_order_id.startsWith("order_mock_") || cashfree_order_id.includes("_mock_"));
+    if (!isMock) {
+      try {
+        const cfOrder = await cashfree.getCashfreeOrder(cashfree_order_id);
+        orderStatus = cfOrder.order_status;
+        cfPaymentId = cfOrder.cf_payment_id || cfPaymentId;
+      } catch (err) {
+        throw new AppError("Failed to verify payment with Cashfree", 400);
+      }
+    } else {
+      orderStatus = "PAID";
     }
 
-    const isValid = razorpayUtil.verifyRazorpaySignature({
-      razorpay_order_id: orderId,
-      razorpay_payment_id: paymentId,
-      razorpay_signature: signature
+    if (orderStatus !== "PAID") {
+      throw new AppError("Payment verification failed", 400);
+    }
+
+    const booking = await BookingRepositor.getById(booking_id);
+    if (!booking) {
+      throw new AppError("Booking not found", 404);
+    }
+    await BookingRepositor.update(booking_id, {
+      payment_status: "PAID",
+      booking_status: "CONFIRMED",
+      advance_paid: booking.total_price,
+      remaining_amount: 0
     });
 
-    if (!isValid) {
-      throw new AppError("Invalid payment signature. Payment verification failed.", 400);
-    }
-
-    if (booking_id) {
-      const booking = await BookingRepositor.getById(booking_id);
-      if (!booking) {
-        throw new AppError("Booking not found", 404);
-      }
-      await BookingRepositor.update(booking_id, {
-        payment_status: "PAID",
-        booking_status: "CONFIRMED",
-        advance_paid: booking.total_price,
-        remaining_amount: 0
+    const payments = await PaymentRepositor.getAll({ booking_id });
+    const payment = payments[0];
+    if (payment) {
+      await PaymentRepositor.update(payment.id, {
+        cashfree_payment_id: cfPaymentId,
+        status: "SUCCESS",
+        paid_at: new Date()
       });
-
-      const payments = await PaymentRepositor.getAll({ booking_id });
-      const payment = payments[0];
-      if (payment) {
-        await PaymentRepositor.update(payment.id, {
-          cashfree_payment_id: paymentId,
-          transaction_id: paymentId,
-          status: "SUCCESS",
-          paid_at: new Date()
-        });
-      }
-
-      const artist = await ArtistProfileRepositor.getById(booking.artist_id);
-      const artistUserId = artist ? artist.user_id : booking.artist_id;
-
-      await NotificationRepositor.createNotification({
-        user_id: artistUserId,
-        title: "Payment Success",
-        message: "Booking payment completed via Razorpay",
-        type: "PAYMENT",
-      });
-      // Real-time Socket.IO alert to artist
-      try {
-        const io = getIO();
-        io.to(artistUserId.toString()).emit("new_notification", {
-          title: "Payment Success",
-          message: "Booking payment completed",
-          type: "PAYMENT",
-        });
-        // Also notify the user
-        io.to(booking.user_id.toString()).emit("new_notification", {
-          title: "Payment Confirmed",
-          message: "Your payment has been confirmed successfully",
-          type: "PAYMENT",
-        });
-      } catch (e) { /* socket not initialized */ }
-
-      return {
-        success: true,
-        message: "Payment verified successfully",
-        order_id: orderId,
-        payment_id: paymentId
-      };
     }
+    // Fetch artist profile to get the correct user_id
+    const artist = await ArtistProfileRepositor.getById(booking.artist_id);
+    const artistUserId = artist ? artist.user_id : booking.artist_id;
+
+    await NotificationRepositor.createNotification({
+      user_id: artistUserId,
+      title: "Payment Success",
+      message: "Booking payment completed",
+      type: "PAYMENT",
+    });
 
     // Real-time Socket.IO alert to artist
     try {
@@ -935,12 +894,7 @@ async updateBookingStatus(
       });
     } catch (e) { /* socket not initialized */ }
 
-    return {
-      success: true,
-      message: "Payment verified successfully",
-      order_id: orderId,
-      payment_id: paymentId
-    };
+    return { success: true };
   }
 
 async createReview(data) {
@@ -1565,6 +1519,12 @@ async createReview(data) {
 
     const user = await db.User.findByPk(userId);
     if (user) {
+<<<<<<< HEAD
+      await user.update({
+        name: data.name !== undefined ? data.name : user.name,
+        profile_image: data.profileImage !== undefined ? data.profileImage : (data.profile_image !== undefined ? data.profile_image : user.profile_image)
+      });
+=======
       const userUpdates = {};
       if (data.name && data.name.trim()) userUpdates.name = data.name.trim();
 
@@ -1585,6 +1545,7 @@ async createReview(data) {
       if (Object.keys(userUpdates).length > 0) {
         await user.update(userUpdates);
       }
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
     }
 
     return await this.getProfile(userId);

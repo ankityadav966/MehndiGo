@@ -9,11 +9,6 @@ export async function getHomeDashboard(latitude = null, longitude = null) {
   return res?.data || res;
 }
 
-export async function getCustomerDashboard() {
-  const res = await apiRequest("GET", "/customer/dashboard", null, true);
-  return res?.data || res;
-}
-
 export async function getCategories() {
   const res = await apiRequest("GET", "/customer/categories", null, true);
   return res?.data || res;
@@ -198,6 +193,11 @@ export async function fetchSavedPortfolios() {
   return res?.data || res;
 }
 
+export async function getCustomerDashboard() {
+  const res = await apiRequest("GET", "/customer/dashboard", null, true);
+  return res?.data || res;
+}
+
 export async function getCustomerBookings() {
   const res = await apiRequest("GET", "/customer/bookings", null, true);
   return res?.data || res;
@@ -253,21 +253,10 @@ export async function saveCustomerAddress(addressData) {
   return res?.data || res;
 }
 
-export async function updateCustomerAddress(addressId, addressData) {
-  const res = await apiRequest("PUT", `/customer/addresses/${addressId}`, addressData, true);
-  return res?.data || res;
-}
-
-export async function setDefaultCustomerAddress(addressId) {
-  const res = await apiRequest("PATCH", `/customer/addresses/${addressId}/default`, null, true);
-  return res?.data || res;
-}
-
 export async function deleteCustomerAddress(addressId) {
   const res = await apiRequest("DELETE", `/customer/addresses/${addressId}`, null, true);
   return res?.data || res;
 }
-
 
 export async function submitSupportTicket(ticketData) {
   const res = await apiRequest("POST", "/customer/support/ticket", ticketData, true);

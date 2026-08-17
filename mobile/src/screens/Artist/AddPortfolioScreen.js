@@ -97,21 +97,10 @@ export default function AddPortfolioScreen({ navigation }) {
 
     if (!result.canceled && result.assets && result.assets.length > 0) {
       const selected = result.assets[0];
-      const isVid = type === "videos" || type === "video" || selected.type === "video" || (selected.mimeType && selected.mimeType.startsWith("video/")) || /\.(mp4|mov|3gp|mkv)$/i.test(selected.uri);
-      
-      console.log("[PICKED MEDIA ASSET]", {
-        uri: selected.uri,
-        fileName: selected.fileName || selected.name,
-        type: selected.type,
-        mimeType: selected.mimeType,
-        fileSize: selected.fileSize || selected.size,
-        isVid
-      });
-
       setMedia({
         uri: selected.uri,
-        type: isVid ? "video" : "image",
-        mimeType: selected.mimeType || (isVid ? "video/mp4" : "image/jpeg")
+        type: selected.type || (type === "images" ? "image" : "video"),
+        mimeType: selected.mimeType || (type === "images" ? "image/jpeg" : "video/mp4")
       });
     }
   };
@@ -122,12 +111,11 @@ export default function AddPortfolioScreen({ navigation }) {
   };
 
   const handleSave = async () => {
-    const isVid = media && (media.type === "video" || (media.mimeType && media.mimeType.startsWith("video/")) || /\.(mp4|mov|3gp|mkv)$/i.test(media.uri));
     if (!media) {
       Alert.alert("Missing Media", "Please select a photograph or video sample of your work.");
       return;
     }
-    if (isVid && !videoThumbnail) {
+    if (media.type === "video" && !videoThumbnail) {
       Alert.alert("Cover Image Required", "Please select a cover image/thumbnail for your video portfolio sample.");
       return;
     }
@@ -145,7 +133,7 @@ export default function AddPortfolioScreen({ navigation }) {
 
     try {
       let remoteThumbnailUrl = null;
-      if (isVid && videoThumbnail) {
+      if (media.type === "video" && videoThumbnail) {
         const { uploadPortfolioMedia } = require("../../services/artist");
         const uploadResult = await uploadPortfolioMedia(
           [{ uri: videoThumbnail }],
@@ -166,8 +154,8 @@ export default function AddPortfolioScreen({ navigation }) {
         tags: tags.trim(),
         location,
         visibility,
-        image_url: isVid ? (remoteThumbnailUrl || null) : media.uri,
-        video_url: isVid ? media.uri : null
+        image_url: remoteThumbnailUrl || media.uri,
+        video_url: media.type === "video" ? media.uri : null
       };
 
       const startVal = remoteThumbnailUrl ? 0.15 : 0.01;

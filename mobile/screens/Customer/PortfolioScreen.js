@@ -309,7 +309,7 @@ export default function PortfolioScreen({ navigation }) {
         <FlatList
           data={portfolioItems}
           numColumns={2}
-          keyExtractor={(item, index) => String(item.id || item.portfolio_id || index)}
+          keyExtractor={(item) => String(item.id)}
           renderItem={renderGalleryCard}
           columnWrapperStyle={styles.gridRowWrapper}
           refreshControl={

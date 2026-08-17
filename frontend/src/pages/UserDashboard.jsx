@@ -46,7 +46,7 @@ const UserDashboard = ({ showToast }) => {
     try {
       const bookingsRes = await artistService.getBookings();
       setBookings(bookingsRes.data || []);
-
+      
       const artistsRes = await artistService.getArtists();
       setArtists(artistsRes.data?.rows || artistsRes.data || []);
 
@@ -72,74 +72,18 @@ const UserDashboard = ({ showToast }) => {
     }
   };
 
-  // Razorpay Standard Checkout Handler
+  // Redirect checkout handler for Cashfree
   const handlePayment = async (booking) => {
     try {
-      showToast("Initializing Razorpay checkout...", "info");
+      showToast("Redirecting to secure Cashfree gateway...", "info");
       const orderRes = await artistService.createOrder(booking.id);
-      const orderData = orderRes.data || orderRes;
-      const { order_id, amount, currency } = orderData;
-
-      if (!order_id) {
-        throw new Error("Order ID not returned from server");
-      }
-
-      const keyId = import.meta.env.VITE_RAZORPAY_KEY_ID || "rzp_live_TJIF5fG3LByErG";
-
-      const options = {
-        key: keyId,
-        amount: amount,
-        currency: currency || "INR",
-        name: "MehndiGo",
-        description: `Payment for Booking #${booking.booking_code || booking.id}`,
-        order_id: order_id,
-        handler: async function (response) {
-          try {
-            showToast("Verifying payment signature...", "info");
-            const verifyRes = await artistService.verifyPayment({
-              booking_id: booking.id,
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature
-            });
-            showToast("Payment completed and verified successfully!", "success");
-            fetchDashboardData();
-          } catch (err) {
-            showToast("Payment verification error: " + err.message, "danger");
-          }
-        },
-        prefill: {
-          name: profile?.name || "",
-          email: profile?.email || "",
-          contact: profile?.phone || ""
-        },
-        theme: {
-          color: "#E11D48"
-        },
-        modal: {
-          ondismiss: function () {
-            showToast("Payment process cancelled.", "warning");
-          }
-        }
-      };
-
-      if (!window.Razorpay) {
-        throw new Error("Razorpay SDK not loaded. Please refresh the page.");
-      }
-
-      const razorpayModal = new window.Razorpay(options);
-
-      razorpayModal.on("payment.failed", function (response) {
-        console.error("Razorpay Payment Failed:", response.error);
-        showToast(`Payment failed: ${response.error.description || response.error.reason}`, "danger");
-      });
-
-      razorpayModal.open();
+      const { payment_session_id } = orderRes.data;
+      const env = "sandbox";
+      window.location.href = `https://${env}.cashfree.com/pg/view/checkout?session_id=${payment_session_id}`;
     } catch (e) {
       showToast("Payment initialization failed: " + e.message, "danger");
     }
   };
-
 
   return (
     <div className="dashboard-layout">

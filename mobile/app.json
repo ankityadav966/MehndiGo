@@ -2,7 +2,7 @@
   "expo": {
     "name": "MehdiGo",
     "slug": "sonu-yadav",
-    "version": "1.0.2",
+    "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "mehendigoo",
@@ -11,7 +11,6 @@
       "icon": "./assets/images/icon.png"
     },
     "android": {
-      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/images/icon.png"
@@ -67,8 +66,7 @@
           }
         }
       ],
-      "expo-asset",
-      "expo-web-browser"
+      "expo-asset"
     ],
     "experiments": {
       "reactCompiler": false

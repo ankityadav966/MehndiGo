@@ -705,8 +705,12 @@ async function sendMessage(req, res) {
       title: "New Message",
       message: `${req.user.name || "MehndiGo User"} sent you a message`,
       type: "CHAT",
+<<<<<<< HEAD
       booking_id: bookingId,
       data: JSON.stringify({ bookingId: bookingId, booking_id: bookingId, senderId: req.user.id })
+=======
+      data: { bookingId: bookingId.toString() } // Deep linking param saved in data JSON
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
     });
 
     return res.status(201).json(SuccessResponse("Message sent", completeMsg));

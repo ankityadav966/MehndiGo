@@ -75,37 +75,11 @@ async function exportCSV(req, res) {
   }
 }
 
-// 8. GET /analytics/export-report
-async function exportBusinessReport(req, res) {
-  try {
-    const { period = "monthly", format = "csv" } = req.query;
-    const stats = await analyticsService.getDashboardStats(req.query);
-
-    if (format === "csv") {
-      res.setHeader("Content-Type", "text/csv");
-      res.setHeader("Content-Disposition", `attachment; filename="MehndiGo_${period}_report.csv"`);
-      
-      const csvData = `Metric,Value\nPeriod,${period.toUpperCase()}\nTotal Customers,${stats.kpis.totalCustomers}\nTotal Artists,${stats.kpis.totalArtists}\nGross Revenue,₹${stats.kpis.totalRevenue}\nPlatform Commission,₹${stats.kpis.commissionEarned}\nActive Coupons,${stats.kpis.activeCoupons}\n`;
-      return res.status(200).send(csvData);
-    }
-
-    return res.status(200).json(
-      SuccessResponse(`Business report (${period.toUpperCase()}) exported successfully in ${format.toUpperCase()} format`, {
-        downloadUrl: `http://192.168.1.17:8000/api/v1/analytics/reports/download?period=${period}&format=${format}`,
-        stats
-      })
-    );
-  } catch (error) {
-    return res.status(500).json(ErrorResponse(error.message, error));
-  }
-}
-
 module.exports = {
   getDashboard,
   getRevenue,
   getBookings,
   getCustomers,
   getArtists,
-  exportCSV,
-  exportBusinessReport
+  exportCSV
 };

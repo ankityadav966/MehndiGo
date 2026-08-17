@@ -2,26 +2,17 @@ const db = require("./models");
 
 async function main() {
   try {
-    const queryInterface = db.sequelize.getQueryInterface();
-    const safeAdd = async (table, col, spec) => {
-      try {
-        const desc = await queryInterface.describeTable(table);
-        if (!desc[col]) {
-          await queryInterface.addColumn(table, col, spec);
-        }
-      } catch (err) {}
-    };
-
-    await safeAdd("Wallets", "pending_balance", { type: db.Sequelize.INTEGER, defaultValue: 0, allowNull: false });
-    await safeAdd("Wallets", "lifetime_earnings", { type: db.Sequelize.INTEGER, defaultValue: 0, allowNull: false });
-    await safeAdd("Wallets", "total_commission_earned", { type: db.Sequelize.INTEGER, defaultValue: 0, allowNull: false });
-    await safeAdd("Wallets", "total_withdrawals", { type: db.Sequelize.INTEGER, defaultValue: 0, allowNull: false });
+    console.log("Altering Wallets table to add new ledger columns...");
+    await db.sequelize.query(`ALTER TABLE "Wallets" ADD COLUMN IF NOT EXISTS "pending_balance" INTEGER NOT NULL DEFAULT 0;`);
+    await db.sequelize.query(`ALTER TABLE "Wallets" ADD COLUMN IF NOT EXISTS "lifetime_earnings" INTEGER NOT NULL DEFAULT 0;`);
+    await db.sequelize.query(`ALTER TABLE "Wallets" ADD COLUMN IF NOT EXISTS "total_commission_earned" INTEGER NOT NULL DEFAULT 0;`);
+    await db.sequelize.query(`ALTER TABLE "Wallets" ADD COLUMN IF NOT EXISTS "total_withdrawals" INTEGER NOT NULL DEFAULT 0;`);
     console.log("Wallets table columns altered successfully!");
 
     console.log("Syncing new escrow, settlement and reminder models...");
-    if (db.EscrowRecord) await db.EscrowRecord.sync();
-    if (db.SettlementHistory) await db.SettlementHistory.sync();
-    if (db.ReminderLog) await db.ReminderLog.sync();
+    await db.EscrowRecord.sync({ alter: true });
+    await db.SettlementHistory.sync({ alter: true });
+    await db.ReminderLog.sync({ alter: true });
     console.log("New models synchronized successfully!");
 
     console.log("Seeding growth/escrow settings configurations...");

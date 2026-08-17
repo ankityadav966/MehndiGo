@@ -134,8 +134,6 @@ class ArtistProfileRepository extends CrudRepository {
   }
   async getArtists({ latitude, longitude, radius, search, sort, page = 1, limit = 10 }) {
     const offset = (page - 1) * limit;
-    const isPostgres = db.sequelize.getDialect() === "postgres";
-    const likeOp = isPostgres ? Op.iLike : Op.like;
 
     let attributes = {
       include: []
@@ -151,10 +149,10 @@ class ArtistProfileRepository extends CrudRepository {
     if (search) {
       const searchPattern = `%${search}%`;
       where[Op.or] = [
-        { bio: { [likeOp]: searchPattern } },
-        { city: { [likeOp]: searchPattern } },
-        { state: { [likeOp]: searchPattern } },
-        { pincode: { [likeOp]: searchPattern } }
+        { bio: { [Op.iLike]: searchPattern } },
+        { city: { [Op.iLike]: searchPattern } },
+        { state: { [Op.iLike]: searchPattern } },
+        { pincode: { [Op.iLike]: searchPattern } }
       ];
     }
 
@@ -165,9 +163,7 @@ class ArtistProfileRepository extends CrudRepository {
       where.latitude = { [Op.ne]: null };
       where.longitude = { [Op.ne]: null };
 
-      const distanceSql = isPostgres
-        ? `(6371 * acos(cos(radians(${lat})) * cos(radians(latitude::double precision)) * cos(radians(longitude::double precision) - radians(${lng})) + sin(radians(${lat})) * sin(radians(latitude::double precision))))`
-        : `(((latitude - (${lat})) * (latitude - (${lat}))) + ((longitude - (${lng})) * (longitude - (${lng})))) * 111`;
+      const distanceSql = `(6371 * acos(cos(radians(${lat})) * cos(radians(latitude::double precision)) * cos(radians(longitude::double precision) - radians(${lng})) + sin(radians(${lat})) * sin(radians(latitude::double precision))))`;
       
       attributes.include.push([db.sequelize.literal(distanceSql), "distance"]);
       

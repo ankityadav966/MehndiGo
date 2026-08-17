@@ -48,13 +48,8 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: "booking_id",
         as: "payments"
       });
-      Booking.hasOne(models.Review, {
-        foreignKey: "booking_id",
-        as: "review"
-      });
     }
   }
-
 
   Booking.init(
     {
@@ -183,6 +178,12 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.TEXT,
         allowNull: true,
       },
+<<<<<<< HEAD
+      review_skipped: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+=======
       artist_completion_status: {
         type: DataTypes.STRING,
         allowNull: false,
@@ -238,7 +239,8 @@ module.exports = (sequelize, DataTypes) => {
       service_duration: {
         type: DataTypes.INTEGER,
         allowNull: true
-      }
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
+      },
     },
     {
       sequelize,

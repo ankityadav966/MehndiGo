@@ -146,7 +146,6 @@ export default function AddPortfolioScreen({ navigation }) {
         }
       }
 
-      const isVid = media && (media.type === "video" || (media.mimeType && media.mimeType.startsWith("video/")) || /\.(mp4|mov|3gp|mkv)$/i.test(media.uri));
       const itemData = {
         title: title.trim(),
         description: description.trim(),
@@ -155,8 +154,8 @@ export default function AddPortfolioScreen({ navigation }) {
         tags: tags.trim(),
         location,
         visibility,
-        image_url: isVid ? (remoteThumbnailUrl || null) : media.uri,
-        video_url: isVid ? media.uri : null
+        image_url: remoteThumbnailUrl || media.uri,
+        video_url: media.type === "video" ? media.uri : null
       };
 
       const startVal = remoteThumbnailUrl ? 0.15 : 0.01;

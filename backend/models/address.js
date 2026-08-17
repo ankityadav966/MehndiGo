@@ -40,35 +40,13 @@ module.exports = (sequelize, DataTypes) => {
       },
       pincode: {
         type: DataTypes.STRING,
-        allowNull: true
-      },
-      latitude: {
-        type: DataTypes.DOUBLE,
-        allowNull: true
-      },
-      longitude: {
-        type: DataTypes.DOUBLE,
-        allowNull: true
-      },
-      landmark: {
-        type: DataTypes.STRING,
-        allowNull: true
-      },
-      house_flat: {
-        type: DataTypes.STRING,
-        allowNull: true
-      },
-      label: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        defaultValue: "Home"
+        allowNull: false
       },
       is_default: {
         type: DataTypes.BOOLEAN,
         allowNull: false,
         defaultValue: false
       }
-
     },
     {
       sequelize,

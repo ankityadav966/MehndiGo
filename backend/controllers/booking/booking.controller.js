@@ -193,16 +193,7 @@ async function getInvoice(req, res) {
   }
 }
 
-async function getPendingPayment(req, res) {
-  try {
-    const response = await BookingService.getPendingPayment(req.user.id);
-    return res.status(200).json(SuccessResponse("Pending payment retrieved successfully", response));
-  } catch (error) {
-    return res
-      .status(error.statusCode || 500)
-      .json(ErrorResponse(error.message, error));
-  }
-}
+<<<<<<< HEAD
 async function skipReview(req, res) {
   try {
     const { bookingId } = req.body;
@@ -226,6 +217,7 @@ async function skipReview(req, res) {
       detailed_status: "COMPLETED_CLOSED"
     });
 
+    // Notify users about Chat Room Closure
     try {
       await db.Notification.create({
         user_id: userId,
@@ -310,25 +302,32 @@ async function onTheWayBooking(req, res) {
     const { bookingId } = req.body;
     const response = await BookingService.updateBookingStatus(bookingId, req.user.id, req.user.role, "ARTIST_ON_THE_WAY");
     return res.status(200).json(SuccessResponse("Artist is on the way", response));
+=======
+async function getPendingPayment(req, res) {
+  try {
+    const response = await BookingService.getPendingPayment(req.user.id);
+    return res.status(200).json(SuccessResponse("Pending payment retrieved successfully", response));
   } catch (error) {
-    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+    return res
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
   }
 }
-
-async function updateOnTheWay(req, res) {
-  return onTheWayBooking(req, res);
-}
-
-async function updateArrived(req, res) {
+async function skipReview(req, res) {
   try {
     const { bookingId } = req.body;
-    const response = await BookingService.updateBookingStatus(bookingId, req.user.id, req.user.role, "ARTIST_ARRIVED");
-    return res.status(200).json(SuccessResponse("Artist arrived at location", response));
+    const response = await BookingService.skipReview(bookingId, req.user.id);
+    return res.status(200).json(SuccessResponse("Review skipped successfully", response));
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
   } catch (error) {
-    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+    return res
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
   }
 }
 
+<<<<<<< HEAD
+=======
 async function sendCheckInOtp(req, res) {
   try {
     const { bookingId } = req.body;
@@ -365,26 +364,12 @@ async function verifyCheckOutOtp(req, res) {
     const response = await BookingService.verifyCheckOutOtp(bookingId, otp, req.user.id);
     return res.status(200).json(SuccessResponse("Check-Out OTP verified successfully", response));
   } catch (error) {
-
     return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
   }
 }
 
-async function getInvoice(req, res) {
-  try {
-    const bookingId = req.query.bookingId || req.params.bookingId || req.params.id;
-    if (!bookingId) {
-      return res.status(400).json(ErrorResponse("Missing required parameter: bookingId"));
-    }
-    const response = await BookingService.getInvoice(bookingId);
-    return res.status(200).json(SuccessResponse("Invoice retrieved successfully", response));
-  } catch (error) {
-    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
-  }
-}
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
 module.exports = {
-
-
   calculatePriceDetails,
   createBooking,
   getBookingDetails,
@@ -400,16 +385,21 @@ module.exports = {
   updateArrived,
   startService,
   completeService,
+<<<<<<< HEAD
   onTheWayBooking,
   getInvoice,
-  getPendingPayment,
   skipReview,
   selectCashPayment,
   confirmCashPayment,
   rejectCashPayment,
-  checkRestrictedBooking,
+  checkRestrictedBooking
+=======
+  getInvoice,
+  getPendingPayment,
+  skipReview,
   sendCheckInOtp,
   verifyCheckInOtp,
   sendCheckOutOtp,
   verifyCheckOutOtp
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
 };

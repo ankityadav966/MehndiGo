@@ -62,9 +62,6 @@ import RootNavigator from "./src/navigation/RootNavigator";
 import GlobalToast from "./src/components/GlobalToast";
 import GlobalModal from "./src/components/GlobalModal";
 import AlertMock from "./src/utils/Alert";
-import ErrorBoundary from "./src/components/ErrorBoundary";
-import OfflineBanner from "./src/components/OfflineBanner";
-
 
 // Global Alert Override
 try {
@@ -146,27 +143,23 @@ export default function App() {
   }
 
   return (
-    <ErrorBoundary>
-      <SafeAreaProvider onLayout={onLayoutRootView} style={{ flex: 1 }}>
-        <OfflineBanner />
-        <GlobalToast />
-        <GlobalModal />
-        <AuthProvider>
-          <SocketProvider>
-            <NotificationProvider navigationRef={navigationRef}>
-              <ArtistOnboardingProvider>
-                <PortfolioProvider>
-                  <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-                  <NavigationContainer ref={navigationRef} linking={linkingConfig}>
-                    <RootNavigator />
-                  </NavigationContainer>
-                </PortfolioProvider>
-              </ArtistOnboardingProvider>
-            </NotificationProvider>
-          </SocketProvider>
-        </AuthProvider>
-      </SafeAreaProvider>
-    </ErrorBoundary>
+    <SafeAreaProvider onLayout={onLayoutRootView}>
+      <GlobalToast />
+      <GlobalModal />
+      <AuthProvider>
+        <SocketProvider>
+          <NotificationProvider navigationRef={navigationRef}>
+            <ArtistOnboardingProvider>
+              <PortfolioProvider>
+                <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+                <NavigationContainer ref={navigationRef} linking={linkingConfig}>
+                  <RootNavigator />
+                </NavigationContainer>
+              </PortfolioProvider>
+            </ArtistOnboardingProvider>
+          </NotificationProvider>
+        </SocketProvider>
+      </AuthProvider>
+    </SafeAreaProvider>
   );
 }
-

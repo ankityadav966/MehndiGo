@@ -2,13 +2,8 @@ const db = require("./models");
 
 async function main() {
   try {
-    const queryInterface = db.sequelize.getQueryInterface();
-    try {
-      const desc = await queryInterface.describeTable("Users");
-      if (!desc["ambassador_score"]) {
-        await queryInterface.addColumn("Users", "ambassador_score", { type: db.Sequelize.INTEGER, defaultValue: 0, allowNull: false });
-      }
-    } catch(err){}
+    console.log("Synchronizing User model to add ambassador_score column...");
+    await db.sequelize.query(`ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "ambassador_score" INTEGER NOT NULL DEFAULT 0;`);
     console.log("ambassador_score column synchronized successfully!");
 
     console.log("Seeding growth parameters into SystemSettings...");

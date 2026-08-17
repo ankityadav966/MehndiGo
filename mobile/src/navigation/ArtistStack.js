@@ -44,7 +44,7 @@ const Stack = createNativeStackNavigator();
 
 export default function ArtistStack() {
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false, freezeOnBlur: true, animation: "slide_from_right" }}>
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="ArtistTabs" component={BottomTab} initialParams={{ role: "artist" }} />
       <Stack.Screen name="ChatList" component={ChatListScreen} />
       <Stack.Screen name="ChatRoom" component={ChatRoomScreen} />

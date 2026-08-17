@@ -24,22 +24,22 @@
 }
 
 .dark {
-  /* Color Palette - Dark Theme (Soft Slate & Glassy) */
-  --bg-primary: #1e1e24;
-  --bg-secondary: #25252d;
-  --bg-tertiary: #2e2e38;
+  /* Color Palette - Dark Theme (Premium & Glassy) */
+  --bg-primary: #120e0d;
+  --bg-secondary: #1a1413;
+  --bg-tertiary: #271f1d;
   --accent-color: #e08e79;
   --accent-gradient: linear-gradient(135deg, #e08e79 0%, #f1a996 100%);
   --accent-hover: #f1a996;
   --text-primary: #fcf8f6;
-  --text-secondary: #c5b9b5;
-  --border-color: #3b3b48;
+  --text-secondary: #bbaea9;
+  --border-color: #382c29;
   --shadow-color: rgba(0, 0, 0, 0.4);
   --success-color: #4caf50;
   --danger-color: #f44336;
   --warning-color: #ff9800;
-  --glass-bg: rgba(37, 37, 45, 0.85);
-  --glass-border: rgba(59, 59, 72, 0.6);
+  --glass-bg: rgba(26, 20, 19, 0.75);
+  --glass-border: rgba(56, 44, 41, 0.6);
 }
 
 * {

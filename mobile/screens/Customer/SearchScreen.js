@@ -122,18 +122,6 @@ export default function SearchScreen({ navigation }) {
   };
 
   // Render suggestion list item
-  const handleSuggestionPress = (item) => {
-    Keyboard.dismiss();
-    if (item.type === "artist" && item.artistId) {
-      navigation.navigate("ArtistProfile", { artistId: item.artistId });
-    } else if (item.type === "category") {
-      navigation.navigate("ArtistListing", { category: item.text });
-    } else {
-      handleSearchSubmit(item.text);
-    }
-  };
-
-  // Render suggestion list item
   const renderSuggestionItem = ({ item }) => {
     let iconName = "search-outline";
     if (item.type === "artist") iconName = "person-outline";
@@ -144,7 +132,7 @@ export default function SearchScreen({ navigation }) {
     return (
       <TouchableOpacity
         style={styles.suggestionItem}
-        onPress={() => handleSuggestionPress(item)}
+        onPress={() => handleSearchSubmit(item.text)}
       >
         <Ionicons name={iconName} size={18} color={Colors.primary} style={{ marginRight: 12 }} />
         <View style={styles.suggestionTextContainer}>
@@ -155,28 +143,6 @@ export default function SearchScreen({ navigation }) {
       </TouchableOpacity>
     );
   };
-
-
-      {/* Voice Search Simulation State */}
-      const [isListening, setIsListening] = useState(false);
-
-      const handleVoiceSearch = () => {
-        setIsListening(true);
-        // Simulate speech recognition timer
-        setTimeout(() => {
-          setIsListening(false);
-          setQuery("Bridal Mehendi Jaipur");
-        }, 2200);
-      };
-
-      const QUICK_FILTERS = [
-        { label: "Bridal", query: "Bridal Mehendi", icon: "sparkles-outline" },
-        { label: "Arabic", query: "Arabic Mehendi", icon: "color-wand-outline" },
-        { label: "Under ₹1000", query: "Under 1000", icon: "wallet-outline" },
-        { label: "4.5★+ Rating", query: "Top Rated", icon: "star-outline" },
-        { label: "Nearest", query: "Nearest", icon: "navigate-outline" },
-        { label: "5+ Yrs Exp", query: "Experienced", icon: "ribbon-outline" },
-      ];
 
   return (
     <View style={styles.container}>
@@ -192,11 +158,11 @@ export default function SearchScreen({ navigation }) {
         {loading && <ActivityIndicator size="small" color={Colors.primary} style={{ marginLeft: 10 }} />}
       </View>
 
-      {/* Search Input Bar with Voice Mic */}
+      {/* Search Input Bar */}
       <View style={styles.searchBarContainer}>
-        <Ionicons name="search-outline" size={20} color={Colors.primary} style={{ marginRight: 8 }} />
+        <Ionicons name="search-outline" size={20} color={Colors.textTertiary} style={{ marginRight: 8 }} />
         <TextInput
-          placeholder="Search by artist, category, price, city..."
+          placeholder="Search by artist name, category, city..."
           placeholderTextColor={Colors.textTertiary}
           style={styles.searchInput}
           value={query}
@@ -205,39 +171,11 @@ export default function SearchScreen({ navigation }) {
           returnKeyType="search"
           autoFocus
         />
-        {query.length > 0 ? (
-          <TouchableOpacity onPress={clearQueryInput} style={{ marginRight: 8 }}>
+        {query.length > 0 && (
+          <TouchableOpacity onPress={clearQueryInput}>
             <Ionicons name="close-circle" size={20} color={Colors.textTertiary} />
           </TouchableOpacity>
-        ) : null}
-        <TouchableOpacity onPress={handleVoiceSearch} style={styles.micBtn}>
-          <Ionicons name="mic-outline" size={20} color={Colors.primary} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Voice Listening Modal / Banner */}
-      {isListening && (
-        <View style={styles.voiceBanner}>
-          <Ionicons name="mic" size={24} color="#FFFFFF" style={{ marginRight: 10 }} />
-          <Text style={styles.voiceText}>Listening... Speak artist or category name</Text>
-          <ActivityIndicator size="small" color="#FFFFFF" style={{ marginLeft: 10 }} />
-        </View>
-      )}
-
-      {/* Quick Filter Chips Bar */}
-      <View style={styles.chipsWrapper}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsContainer}>
-          {QUICK_FILTERS.map((chip, idx) => (
-            <TouchableOpacity
-              key={idx}
-              style={styles.filterChip}
-              onPress={() => handleSearchSubmit(chip.query)}
-            >
-              <Ionicons name={chip.icon} size={14} color={Colors.primary} style={{ marginRight: 4 }} />
-              <Text style={styles.chipText}>{chip.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+        )}
       </View>
 
       {/* Autocomplete suggestions or initial search panels */}
@@ -276,26 +214,23 @@ export default function SearchScreen({ navigation }) {
                   <Text style={styles.clearAllBtn}>Clear All</Text>
                 </TouchableOpacity>
               </View>
-              {recentSearches.map((item, index) => {
-                const textVal = typeof item === "string" ? item : (item?.search_query || item?.query || item?.name || item?.full_name || "");
-                return (
-                  <View key={item?.id || index} style={styles.historyRow}>
-                    <TouchableOpacity
-                      style={styles.historyBtn}
-                      onPress={() => handleSearchSubmit(textVal)}
-                    >
-                      <Ionicons name="time-outline" size={18} color={Colors.textTertiary} style={{ marginRight: 10 }} />
-                      <Text style={styles.historyText} numberOfLines={1}>{textVal}</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.historyDelete}
-                      onPress={() => handleDeleteHistoryItem(item?.id || index)}
-                    >
-                      <Ionicons name="close" size={18} color={Colors.textTertiary} />
-                    </TouchableOpacity>
-                  </View>
-                );
-              })}
+              {recentSearches.map((item) => (
+                <View key={item.id} style={styles.historyRow}>
+                  <TouchableOpacity
+                    style={styles.historyBtn}
+                    onPress={() => handleSearchSubmit(item.search_query)}
+                  >
+                    <Ionicons name="time-outline" size={18} color={Colors.textTertiary} style={{ marginRight: 10 }} />
+                    <Text style={styles.historyText} numberOfLines={1}>{item.search_query}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.historyDelete}
+                    onPress={() => handleDeleteHistoryItem(item.id)}
+                  >
+                    <Ionicons name="close" size={18} color={Colors.textTertiary} />
+                  </TouchableOpacity>
+                </View>
+              ))}
             </View>
           )}
 
@@ -304,19 +239,16 @@ export default function SearchScreen({ navigation }) {
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Trending Searches 🔥</Text>
               <View style={styles.trendingContainer}>
-                {trendingSearches.map((item, index) => {
-                  const labelStr = typeof item === "string" ? item : (item?.name || item?.full_name || item?.query || item?.search_query || "");
-                  return (
-                    <TouchableOpacity
-                      key={index}
-                      style={styles.trendingChip}
-                      onPress={() => handleSearchSubmit(labelStr)}
-                    >
-                      <Ionicons name="flame" size={14} color={Colors.primary} style={{ marginRight: 4 }} />
-                      <Text style={styles.trendingText}>{labelStr}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
+                {trendingSearches.map((item, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={styles.trendingChip}
+                    onPress={() => handleSearchSubmit(item)}
+                  >
+                    <Ionicons name="flame" size={14} color={Colors.primary} style={{ marginRight: 4 }} />
+                    <Text style={styles.trendingText}>{item}</Text>
+                  </TouchableOpacity>
+                ))}
               </View>
             </View>
           )}
@@ -330,7 +262,7 @@ export default function SearchScreen({ navigation }) {
                 style={styles.popularCategoryCard}
                 onPress={() => handleSearchSubmit(item.name)}
               >
-                <Ionicons name={item.icon || "color-palette-outline"} size={22} color={Colors.primary} style={{ marginBottom: 6 }} />
+                <Ionicons name={item.icon} size={22} color={Colors.primary} style={{ marginBottom: 6 }} />
                 <Text style={styles.popularCategoryText}>{item.name}</Text>
               </TouchableOpacity>
             ))}
@@ -339,7 +271,6 @@ export default function SearchScreen({ navigation }) {
       )}
     </View>
   );
-
 }
 
 const styles = StyleSheet.create({
@@ -414,47 +345,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 10
   },
-  popularCategoryText: { fontSize: 12, fontWeight: "600", color: Colors.text },
-  micBtn: {
-    padding: 6,
-    borderRadius: 8,
-    backgroundColor: Colors.white,
-  },
-  voiceBanner: {
-    backgroundColor: Colors.primary || "#9C1344",
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  voiceText: {
-    color: "#FFFFFF",
-    fontSize: 13,
-    fontWeight: "600",
-    flex: 1,
-  },
-  chipsWrapper: {
-    marginBottom: 14,
-  },
-  chipsContainer: {
-    gap: 8,
-  },
-  filterChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.inputBackground,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: Colors.border || "#E5E7EB",
-  },
-  chipText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: Colors.text || "#1D1D1D",
-  },
+  popularCategoryText: { fontSize: 12, fontWeight: "600", color: Colors.text }
 });
-

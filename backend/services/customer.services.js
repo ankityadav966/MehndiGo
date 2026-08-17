@@ -46,17 +46,12 @@ const trendingSearchesList = [
 class CustomerService {
   async getCategories() {
     try {
-      const { getCache, setCache } = require("../utils/cache.utils");
-      const cached = await getCache("mehndigo:categories");
-      if (cached) return cached;
-
       const db = require("../models");
       const list = await db.Category.findAll({
         where: { status: "ACTIVE" },
         order: [["sort_order", "ASC"]]
       });
       if (list && list.length > 0) {
-        await setCache("mehndigo:categories", list, 600);
         return list;
       }
     } catch (err) {
@@ -66,13 +61,6 @@ class CustomerService {
   }
 
   async getOffers() {
-    try {
-      const { getCache, setCache } = require("../utils/cache.utils");
-      const cached = await getCache("mehndigo:offers");
-      if (cached) return cached;
-
-      await setCache("mehndigo:offers", offersList, 600);
-    } catch (err) {}
     return offersList;
   }
 
@@ -114,30 +102,14 @@ class CustomerService {
       verification_status: "APPROVED"
     };
 
-    const isPostgres = db.sequelize.getDialect() === "postgres";
-    const ilikeStr = isPostgres ? "ILIKE" : "LIKE";
-    const likeOp = isPostgres ? Op.iLike : Op.like;
-
     if (filters.category) {
-      const rawCategory = filters.category.trim();
-      const cleanCategory = rawCategory
-        .toLowerCase()
-        .replace(/\s+mehendi/gi, "")
-        .replace(/\s+mehndi/gi, "")
-        .replace(/\s+design/gi, "")
-        .trim();
-
+      const normalizedCategory = filters.category.toLowerCase().replace(/\s+mehndi/g, "").replace(/\s+design/g, "").trim();
       where[Op.and] = where[Op.and] || [];
       where[Op.and].push(
         db.sequelize.literal(`EXISTS (
           SELECT 1 FROM "Services" AS s 
           WHERE s.artist_id = "ArtistProfile".id 
-          AND (
-            s.category ${ilikeStr} '%${cleanCategory}%' OR 
-            s.specialization_name ${ilikeStr} '%${cleanCategory}%' OR
-            s.category ${ilikeStr} '%${rawCategory}%' OR 
-            s.specialization_name ${ilikeStr} '%${rawCategory}%'
-          )
+          AND (s.category Ilike '%${normalizedCategory}%' OR s.specialization_name Ilike '%${normalizedCategory}%')
         )`)
       );
     }
@@ -189,19 +161,19 @@ class CustomerService {
     if (query) {
       const searchPattern = `%${query}%`;
       where[Op.or] = [
-        { bio: { [likeOp]: searchPattern } },
-        { city: { [likeOp]: searchPattern } },
-        { state: { [likeOp]: searchPattern } },
-        { pincode: { [likeOp]: searchPattern } },
+        { bio: { [Op.iLike || Op.like]: searchPattern } },
+        { city: { [Op.iLike || Op.like]: searchPattern } },
+        { state: { [Op.iLike || Op.like]: searchPattern } },
+        { pincode: { [Op.iLike || Op.like]: searchPattern } },
         db.sequelize.literal(`EXISTS (
           SELECT 1 FROM "Users" AS u 
           WHERE u.id = "ArtistProfile".user_id 
-          AND u.name ${ilikeStr} '${searchPattern}'
+          AND u.name Ilike '${searchPattern}'
         )`),
         db.sequelize.literal(`EXISTS (
           SELECT 1 FROM "Services" AS s 
           WHERE s.artist_id = "ArtistProfile".id 
-          AND (s.specialization_name ${ilikeStr} '${searchPattern}' OR s.category ${ilikeStr} '${searchPattern}')
+          AND (s.specialization_name Ilike '${searchPattern}' OR s.category Ilike '${searchPattern}')
         )`)
       ];
     }
@@ -213,9 +185,7 @@ class CustomerService {
 
     let distanceSql = null;
     if (lat && lng) {
-      distanceSql = isPostgres
-        ? `(6371 * acos(cos(radians(${Number(lat)})) * cos(radians(latitude::double precision)) * cos(radians(longitude::double precision) - radians(${Number(lng)})) + sin(radians(${Number(lat)})) * sin(radians(latitude::double precision))))`
-        : `(((latitude - (${Number(lat)})) * (latitude - (${Number(lat)}))) + ((longitude - (${Number(lng)})) * (longitude - (${Number(lng)})))) * 111`;
+      distanceSql = `(6371 * acos(cos(radians(${Number(lat)})) * cos(radians(latitude::double precision)) * cos(radians(longitude::double precision) - radians(${Number(lng)})) + sin(radians(${Number(lat)})) * sin(radians(latitude::double precision))))`;
       attributes.include.push([db.sequelize.literal(distanceSql), "distance"]);
       
       if (filters.radius) {
@@ -414,27 +384,19 @@ class CustomerService {
   async getSuggestions(query) {
     if (!query) return [];
     const searchPattern = `%${query}%`;
-    const likeOp = db.sequelize.getDialect() === "postgres" ? Op.iLike : Op.like;
 
     const matchingArtists = await db.User.findAll({
       where: {
         role: "ARTIST",
-        name: { [likeOp]: searchPattern }
+        name: { [Op.iLike]: searchPattern }
       },
-      attributes: ["id", "name"],
-      include: [
-        {
-          model: db.ArtistProfile,
-          as: "artistProfile",
-          attributes: ["id"]
-        }
-      ],
+      attributes: ["name"],
       limit: 3
     });
 
     const matchingServices = await db.Service.findAll({
       where: {
-        specialization_name: { [likeOp]: searchPattern }
+        specialization_name: { [Op.iLike]: searchPattern }
       },
       attributes: [
         [db.sequelize.fn("DISTINCT", db.sequelize.col("specialization_name")), "specialization_name"]
@@ -444,7 +406,7 @@ class CustomerService {
 
     const matchingCities = await db.ArtistProfile.findAll({
       where: {
-        city: { [likeOp]: searchPattern }
+        city: { [Op.iLike]: searchPattern }
       },
       attributes: [
         [db.sequelize.fn("DISTINCT", db.sequelize.col("city")), "city"]
@@ -453,13 +415,7 @@ class CustomerService {
     });
 
     const suggestions = [];
-    matchingArtists.forEach((a) => {
-      suggestions.push({
-        type: "artist",
-        text: a.name,
-        artistId: a.artistProfile?.id || a.id
-      });
-    });
+    matchingArtists.forEach((a) => suggestions.push({ type: "artist", text: a.name }));
     matchingServices.forEach((s) => suggestions.push({ type: "service", text: s.specialization_name }));
     matchingCities.forEach((c) => suggestions.push({ type: "city", text: c.city }));
 
@@ -598,15 +554,12 @@ class CustomerService {
   }
 
   async getHomeDashboard(lat, lng, userId) {
-    const [categories, offers, featured, popular, recommendations] = await Promise.all([
+    const [categories, offers, featured, popular] = await Promise.all([
       this.getCategories(),
       this.getOffers(),
       this.getFeaturedArtists(lat, lng),
       this.getPopularArtists(lat, lng),
-      this.getPersonalizedRecommendations(lat, lng, userId),
     ]);
-
-    const activeFestival = this.getActiveFestivalCampaign();
 
     let recentlyBooked = [];
     if (userId) {
@@ -622,82 +575,9 @@ class CustomerService {
       offers,
       featuredArtists: featured,
       popularArtists: popular,
-      recommendations,
-      activeFestival,
       recentlyBooked
     };
   }
-
-  getActiveFestivalCampaign() {
-    const month = new Date().getMonth() + 1; // 1-12
-    const day = new Date().getDate();
-
-    if (month === 10 || month === 11) {
-      return {
-        id: "karwa_chauth",
-        name: "Karwa Chauth Special 🌸",
-        bannerText: "Book Your Karwa Chauth Mehndi Slots Now! High Demand ⚡",
-        promoCode: "KARWA500",
-        discount: "Flat ₹500 OFF",
-        bgGradient: ["#9C1344", "#E11D48"],
-      };
-    } else if (month === 7 || month === 8) {
-      return {
-        id: "teej_rakhi",
-        name: "Teej & Rakhi Festive Dhamaka ✨",
-        bannerText: "Celebrate Teej & Raksha Bandhan with Premium Mehndi Designs!",
-        promoCode: "FESTIVE200",
-        discount: "Flat 20% OFF",
-        bgGradient: ["#059669", "#10B981"],
-      };
-    } else if (month === 4 || month === 5) {
-      return {
-        id: "eid_mubarak",
-        name: "Eid Mubarak Specials 🌙",
-        bannerText: "Exclusive Indo-Arabic & Chand Mehndi Designs for Eid!",
-        promoCode: "EIDSPECIAL",
-        discount: "Flat ₹300 OFF",
-        bgGradient: ["#1E3A8A", "#2563EB"],
-      };
-    }
-    return {
-      id: "wedding_season",
-      name: "Grand Wedding Season 💍",
-      bannerText: "Book Top Royal Bridal Mehndi Artists with Escrow Protection!",
-      promoCode: "BRIDALROYAL",
-      discount: "Up to ₹1,000 OFF",
-      bgGradient: ["#9C1344", "#BE123C"],
-    };
-  }
-
-
-  async getPersonalizedRecommendations(lat, lng, userId) {
-    try {
-      const allArtists = await db.ArtistProfile.findAll({
-        where: { verification_status: "APPROVED" },
-        limit: 20,
-        include: [
-          { model: db.User, as: "user", attributes: ["name", "profile_image", "city"] },
-          { model: db.Service, as: "services" }
-        ]
-      });
-
-      // AI Recommendation scoring heuristic
-      const scored = allArtists.map((artist) => {
-        let score = (artist.avg_rating || 4.5) * 2.0;
-        if (artist.experience_years >= 5) score += 1.5;
-        if (artist.total_bookings >= 20) score += 2.0;
-        return { artist, score };
-      });
-
-      scored.sort((a, b) => b.score - a.score);
-      return scored.slice(0, 8).map((s) => s.artist);
-    } catch (e) {
-      console.log("Error generating AI recommendations:", e.message);
-      return [];
-    }
-  }
-
 
   async getRecentlyBookedArtists(userId) {
     const bookings = await db.Booking.findAll({
@@ -961,10 +841,42 @@ class CustomerService {
     if (user.profile_image) filledFields++;
     const profileCompletion = Math.round((filledFields / totalFields) * 100);
 
+<<<<<<< HEAD
+    let finalPendingReviewBooking = null;
     if (pendingReviewBooking) {
-      const review = await db.Review.findOne({ where: { booking_id: pendingReviewBooking.id } });
-      if (review) {
-        pendingReviewBooking = null;
+      const isReviewed = await db.Review.findOne({ where: { booking_id: pendingReviewBooking.id } });
+      if (!isReviewed) {
+        finalPendingReviewBooking = pendingReviewBooking;
+=======
+    // Find completed & paid bookings for this user that are not skipped
+    const completedBookings = await db.Booking.findAll({
+      where: {
+        user_id: userId,
+        booking_status: "COMPLETED",
+        payment_status: "PAID",
+        review_skipped: { [Op.ne]: true }
+      },
+      include: [
+        {
+          model: db.ArtistProfile,
+          as: "artist",
+          include: [{ model: db.User, as: "user", attributes: ["name", "profile_image"] }]
+        },
+        {
+          model: db.Service,
+          as: "service",
+          attributes: ["specialization_name"]
+        }
+      ]
+    });
+
+    let pendingReviewBooking = null;
+    for (const b of completedBookings) {
+      const review = await db.Review.findOne({ where: { booking_id: b.id } });
+      if (!review) {
+        pendingReviewBooking = b;
+        break;
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
       }
     }
 
@@ -982,8 +894,12 @@ class CustomerService {
       walletBalance: wallet ? wallet.balance : 0,
       totalBookings,
       recentBookings,
-      pendingReviewBooking,
-      pendingSettlementBooking: typeof pendingSettlementBooking !== 'undefined' ? pendingSettlementBooking : null
+<<<<<<< HEAD
+      pendingReviewBooking: finalPendingReviewBooking,
+      pendingSettlementBooking: pendingSettlementBooking
+=======
+      pendingReviewBooking
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
     };
   }
 
@@ -1070,23 +986,11 @@ class CustomerService {
   }
 
   async getAddresses(userId) {
-    try {
-      return await db.Address.findAll({
-        where: { user_id: userId },
-        order: [["is_default", "DESC"], ["createdAt", "DESC"]]
-      });
-    } catch (e) {
-      if (e.message && e.message.includes("does not exist")) {
-        return await db.Address.findAll({
-          attributes: ["id", "user_id", "name", "address_line_1", "address_line_2", "city", "state", "pincode", "is_default", "createdAt", "updatedAt"],
-          where: { user_id: userId },
-          order: [["is_default", "DESC"], ["createdAt", "DESC"]]
-        });
-      }
-      throw e;
-    }
+    return await db.Address.findAll({
+      where: { user_id: userId },
+      order: [["is_default", "DESC"], ["createdAt", "DESC"]]
+    });
   }
-
 
   async getReviews(userId) {
     return await db.Review.findAll({
@@ -1108,128 +1012,25 @@ class CustomerService {
   }
 
   async addAddress(userId, data) {
-    const {
+    const { name, addressLine1, addressLine2, city, state, pincode, isDefault } = data;
+    if (isDefault) {
+      await db.Address.update({ is_default: false }, { where: { user_id: userId } });
+    }
+    return await db.Address.create({
+      user_id: userId,
       name,
-      label,
-      addressLine1,
-      address_line_1,
-      fullAddress,
-      addressLine2,
-      address_line_2,
-      landmark,
-      houseFlat,
-      house_flat,
+      address_line_1: addressLine1,
+      address_line_2: addressLine2 || null,
       city,
       state,
       pincode,
-      latitude,
-      longitude,
-      isDefault,
-      is_default,
-    } = data;
-
-    const existingCount = await db.Address.count({ where: { user_id: userId } });
-    const markDefault = isDefault || is_default || existingCount === 0;
-
-    if (markDefault) {
-      await db.Address.update({ is_default: false }, { where: { user_id: userId } });
-    }
-
-    const addrName = label || name || "Home";
-    const line1 = fullAddress || addressLine1 || address_line_1 || "Address";
-    const line2 = landmark || houseFlat || house_flat || addressLine2 || address_line_2 || "";
-    const addrCity = city || "Jaipur";
-    const addrState = state || "Rajasthan";
-    const addrPincode = pincode || "302001";
-
-    return await db.Address.create({
-      user_id: userId,
-      name: addrName,
-      label: addrName,
-      address_line_1: line1,
-      address_line_2: line2 || null,
-      house_flat: houseFlat || house_flat || line2 || null,
-      landmark: landmark || null,
-      city: addrCity,
-      state: addrState,
-      pincode: addrPincode,
-      latitude: latitude ? parseFloat(latitude) : null,
-      longitude: longitude ? parseFloat(longitude) : null,
-      is_default: markDefault,
+      is_default: !!isDefault
     });
   }
 
-  async updateAddress(userId, addressId, data) {
-    const address = await db.Address.findOne({ where: { id: addressId, user_id: userId } });
-    if (!address) throw new Error("Address not found");
-
-    const {
-      name,
-      label,
-      addressLine1,
-      address_line_1,
-      fullAddress,
-      addressLine2,
-      address_line_2,
-      landmark,
-      houseFlat,
-      house_flat,
-      city,
-      state,
-      pincode,
-      latitude,
-      longitude,
-      isDefault,
-      is_default,
-    } = data;
-
-    const markDefault = isDefault !== undefined ? isDefault : is_default;
-
-    if (markDefault) {
-      await db.Address.update({ is_default: false }, { where: { user_id: userId } });
-    }
-
-    const updates = {};
-    if (label || name) {
-      updates.name = label || name;
-      updates.label = label || name;
-    }
-    if (fullAddress || addressLine1 || address_line_1) updates.address_line_1 = fullAddress || addressLine1 || address_line_1;
-    if (landmark || houseFlat || house_flat || addressLine2 || address_line_2) {
-      updates.address_line_2 = landmark || houseFlat || house_flat || addressLine2 || address_line_2;
-      updates.house_flat = houseFlat || house_flat || null;
-      updates.landmark = landmark || null;
-    }
-    if (city) updates.city = city;
-    if (state) updates.state = state;
-    if (pincode) updates.pincode = pincode;
-    if (latitude) updates.latitude = parseFloat(latitude);
-    if (longitude) updates.longitude = parseFloat(longitude);
-    if (markDefault !== undefined) updates.is_default = !!markDefault;
-
-    await address.update(updates);
-    return address;
-  }
-
-  async setDefaultAddress(userId, addressId) {
-    await db.Address.update({ is_default: false }, { where: { user_id: userId } });
-    const address = await db.Address.findOne({ where: { id: addressId, user_id: userId } });
-    if (address) {
-      await address.update({ is_default: true });
-    }
-    return address;
-  }
-
   async deleteAddress(userId, addressId) {
-    const deleted = await db.Address.destroy({ where: { id: addressId, user_id: userId } });
-    // If deleted address was default, promote next available address to default
-    const remaining = await db.Address.findAll({ where: { user_id: userId }, order: [["createdAt", "DESC"]] });
-    if (remaining.length > 0 && !remaining.some((a) => a.is_default)) {
-      await remaining[0].update({ is_default: true });
-    }
-    return deleted;
+    return await db.Address.destroy({ where: { id: addressId, user_id: userId } });
   }
 }
-
 
 module.exports = new CustomerService();

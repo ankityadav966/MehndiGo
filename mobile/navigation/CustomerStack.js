@@ -38,7 +38,6 @@ import ReferralDashboardScreen from "../screens/Customer/ReferralDashboardScreen
 import SupportTicketScreen from "../screens/Customer/SupportTicketScreen";
 import SupportTicketDetailsScreen from "../screens/Common/SupportTicketDetailsScreen";
 
-import AddNewAddressScreen from "../screens/Customer/AddNewAddressScreen";
 import BottomTab from "./BottomTab";
 import ChatListScreen from "../screens/Common/ChatListScreen";
 import ChatRoomScreen from "../screens/Common/ChatRoomScreen";
@@ -49,9 +48,6 @@ export default function CustomerStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="CustomerTabs" component={BottomTab} initialParams={{ role: "customer" }} />
-      <Stack.Screen name="AddNewAddress" component={AddNewAddressScreen} />
-      <Stack.Screen name="AddAddress" component={AddNewAddressScreen} />
-      <Stack.Screen name="AddressForm" component={AddNewAddressScreen} />
       <Stack.Screen name="ChatList" component={ChatListScreen} />
       <Stack.Screen name="ChatRoom" component={ChatRoomScreen} />
       <Stack.Screen name="ArtistProfile" component={ArtistProfileScreen} />

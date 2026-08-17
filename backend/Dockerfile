@@ -1,21 +1,38 @@
+<<<<<<< HEAD
 FROM node:20
+=======
+FROM node:18-alpine AS builder
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
 
 WORKDIR /app
 
 <<<<<<< HEAD
-COPY package*.json ./
-
-RUN npm install --legacy-peer-deps
-=======
-RUN npm install -g pnpm
-
 COPY package.json pnpm-lock.yaml ./
 
-RUN pnpm install --no-frozen-lockfile
->>>>>>> 1bb0d8e3107c9be0f3a4e35ca97a5ef60e896263
+RUN npm install -g pnpm
+
+RUN pnpm install
 
 COPY . .
 
+=======
+COPY package*.json ./
+RUN npm ci --legacy-peer-deps
+
+COPY . .
+
+FROM node:18-alpine
+
+WORKDIR /usr/src/app
+
+COPY package*.json ./
+RUN npm ci --omit=dev --legacy-peer-deps
+
+COPY --from=builder /usr/src/app .
+
+ENV NODE_ENV=production
+
+>>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
 EXPOSE 3000
 
 CMD ["pnpm", "start"]

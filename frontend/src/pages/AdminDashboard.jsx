@@ -127,24 +127,31 @@ const AdminDashboard = ({ showToast }) => {
 
       // Fetch tab-specific data
       if (activeTab === "pending") {
+        if (pendingArtists.length > 0) return;
         const pendingRes = await adminService.getPendingArtists();
         setPendingArtists(pendingRes.data || []);
       } else if (activeTab === "users") {
+        if (users.length > 0) return;
         const usersRes = await adminService.getUsers();
         setUsers(usersRes.data?.rows || usersRes.data || []);
       } else if (activeTab === "artists") {
+        if (artists.length > 0) return;
         const artistsRes = await adminService.getArtists();
         setArtists(artistsRes.data || []);
       } else if (activeTab === "bookings") {
+        if (bookings.length > 0) return;
         const bookingsRes = await adminService.getBookings();
         setBookings(bookingsRes.data || []);
       } else if (activeTab === "ledger") {
+        if (payments.length > 0) return;
         const paymentsRes = await adminService.getPayments();
         setPayments(paymentsRes.data || []);
       } else if (activeTab === "chats") {
+        if (chats.length > 0) return;
         const chatsRes = await adminService.getChats();
         setChats(chatsRes.data || []);
       } else if (activeTab === "notifications") {
+        if (notifications.length > 0) return;
         const notifsRes = await adminService.getNotifications();
         setNotifications(notifsRes.data || []);
 
@@ -691,8 +698,8 @@ const AdminDashboard = ({ showToast }) => {
                               <td style={{ padding: "0.75rem 0.5rem" }}>{b.user?.name}</td>
                               <td style={{ padding: "0.75rem 0.5rem", fontWeight: 600 }}>₹{b.total_price}</td>
                               <td style={{ padding: "0.75rem 0.5rem" }}>
-                                <span className={`badge badge-${(b.booking_status || b.status || "completed").toLowerCase()}`}>
-                                  {b.booking_status || b.status || "Completed"}
+                                <span className={`badge badge-${b.booking_status.toLowerCase()}`}>
+                                  {b.booking_status}
                                 </span>
                               </td>
                             </tr>
@@ -759,9 +766,9 @@ const AdminDashboard = ({ showToast }) => {
                       <div key={artist.id} className="glass-panel" style={{ padding: "2rem" }}>
                         <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "1rem", marginBottom: "1rem" }}>
                           <div>
-                            <h3 style={{ fontWeight: 700 }}>{artist.user?.name || artist.full_name || artist.name || `Artist #${artist.id}`}</h3>
+                            <h3 style={{ fontWeight: 700 }}>{artist.user?.name}</h3>
                             <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>
-                              Email: {artist.user?.email || artist.email || "N/A"}
+                              Email: {artist.user?.email || "N/A"}
                             </p>
                             <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>
                               Experience: {artist.experience_years} Years
@@ -837,10 +844,10 @@ const AdminDashboard = ({ showToast }) => {
                       </tr>
                     </thead>
                     <tbody>
-                      {(Array.isArray(users) ? users : (users?.rows || [])).map((u) => (
+                      {users.map((u) => (
                         <tr key={u.id} style={{ borderBottom: "1px solid var(--border-color)" }}>
                           <td style={{ padding: "1rem" }}>#{u.id}</td>
-                          <td style={{ padding: "1rem", fontWeight: 600 }}>{u.name || u.full_name || "N/A"}</td>
+                          <td style={{ padding: "1rem", fontWeight: 600 }}>{u.name}</td>
 
                           <td style={{ padding: "1rem" }}>{u.email || "N/A"}</td>
                           <td style={{ padding: "1rem" }}>
@@ -873,16 +880,16 @@ const AdminDashboard = ({ showToast }) => {
                       </tr>
                     </thead>
                     <tbody>
-                      {(Array.isArray(artists) ? artists : []).map((a) => (
+                      {artists.map((a) => (
                         <tr key={a.id} style={{ borderBottom: "1px solid var(--border-color)" }}>
                           <td style={{ padding: "1rem" }}>#{a.id}</td>
-                          <td style={{ padding: "1rem", fontWeight: 600 }}>{a.user?.name || a.full_name || a.name || `Artist #${a.id}`}</td>
-                          <td style={{ padding: "1rem" }}>{a.experience_years || 0} Years</td>
-                          <td style={{ padding: "1rem" }}>{a.city || "Jaipur"}, {a.state || "Rajasthan"}</td>
-                          <td style={{ padding: "1rem", fontWeight: 700, color: "var(--accent-color)" }}>★ {a.avg_rating || a.rating || "New"}</td>
+                          <td style={{ padding: "1rem", fontWeight: 600 }}>{a.user?.name || "N/A"}</td>
+                          <td style={{ padding: "1rem" }}>{a.experience_years} Years</td>
+                          <td style={{ padding: "1rem" }}>{a.city}, {a.state}</td>
+                          <td style={{ padding: "1rem", fontWeight: 700, color: "var(--accent-color)" }}>★ {a.avg_rating || "New"}</td>
                           <td style={{ padding: "1rem" }}>
-                            <span className={`badge badge-${(a.verification_status || a.status || "approved").toLowerCase()}`}>
-                              {a.verification_status || a.status || "Approved"}
+                            <span className={`badge badge-${a.verification_status.toLowerCase()}`}>
+                              {a.verification_status}
                             </span>
                           </td>
                         </tr>
@@ -910,20 +917,20 @@ const AdminDashboard = ({ showToast }) => {
                       </tr>
                     </thead>
                     <tbody>
-                      {(Array.isArray(bookings) ? bookings : []).map((b) => (
+                      {bookings.map((b) => (
                         <tr key={b.id} style={{ borderBottom: "1px solid var(--border-color)" }}>
-                          <td style={{ padding: "1rem", fontWeight: 600 }}>{b.booking_code || b.booking_number || `#${b.id}`}</td>
-                          <td style={{ padding: "1rem" }}>{b.user?.name || b.customer_name || `Customer #${b.customer_id}`}</td>
-                          <td style={{ padding: "1rem" }}>{b.artist?.user?.name || b.artist_name || `Artist #${b.artist_id}`}</td>
-                          <td style={{ padding: "1rem", color: "var(--accent-color)", fontWeight: 700 }}>₹{b.total_price || b.total_amount || 0}</td>
+                          <td style={{ padding: "1rem", fontWeight: 600 }}>{b.booking_code}</td>
+                          <td style={{ padding: "1rem" }}>{b.user?.name}</td>
+                          <td style={{ padding: "1rem" }}>{b.artist?.user?.name || `Artist #${b.artist_id}`}</td>
+                          <td style={{ padding: "1rem", color: "var(--accent-color)", fontWeight: 700 }}>₹{b.total_price}</td>
                           <td style={{ padding: "1rem" }}>
-                            <span className={`badge badge-${(b.booking_status || b.status || "pending").toLowerCase()}`}>
-                              {b.booking_status || b.status || "Pending"}
+                            <span className={`badge badge-${b.booking_status.toLowerCase()}`}>
+                              {b.booking_status}
                             </span>
                           </td>
                           <td style={{ padding: "1rem" }}>
-                            <span className={`badge badge-${(b.payment_status || "pending").toLowerCase()}`}>
-                              {b.payment_status || "Pending"}
+                            <span className={`badge badge-${b.payment_status.toLowerCase()}`}>
+                              {b.payment_status}
                             </span>
                           </td>
                         </tr>
@@ -971,7 +978,7 @@ const AdminDashboard = ({ showToast }) => {
                     <tbody>
                       {payments.map((p) => (
                         <tr key={p.id} style={{ borderBottom: "1px solid var(--border-color)" }}>
-                          <td style={{ padding: "1rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>{p.razorpay_payment_id || p.transaction_id || `TXN-${p.id}`}</td>
+                          <td style={{ padding: "1rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>{p.cashfree_payment_id || p.transaction_id || `TXN-${p.id}`}</td>
                           <td style={{ padding: "1rem", fontWeight: 600 }}>{p.booking?.booking_code}</td>
                           <td style={{ padding: "1rem" }}>{p.booking?.user?.name || "Client"}</td>
                           <td style={{ padding: "1rem" }}>{p.booking?.artist?.user?.name || "Artist"}</td>
@@ -1406,7 +1413,7 @@ const AdminDashboard = ({ showToast }) => {
                             </td>
                           </tr>
                         ) : (
-                          (Array.isArray(campaigns) ? campaigns : (campaigns?.campaigns || [])).map((camp) => (
+                          campaigns.map((camp) => (
                             <tr key={camp.id}>
                               <td style={{ fontWeight: 600 }}>{camp.title}</td>
                               <td>₹{camp.referrer_reward}</td>

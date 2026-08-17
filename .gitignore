@@ -32,7 +32,12 @@ yarn-error.*
 
 # local env files
 .env*.local
-.env
-backend/uploads/
-backend/temp_uploads/
-*.mp4
+
+# typescript
+*.tsbuildinfo
+
+example
+
+# generated native folders
+/ios
+/android

@@ -24,31 +24,24 @@ const initialState = {
 
 function authReducer(state, action) {
   switch (action.type) {
-    case "RESTORE_SESSION": {
-      const restoredRole = (String(action.payload.user?.role || action.payload.role || "").toUpperCase() === "ARTIST") ? "ARTIST" : "USER";
-      const userObj = action.payload.user ? { ...action.payload.user, role: restoredRole } : null;
+    case "RESTORE_SESSION":
       return {
         ...state,
-        user: userObj,
+        user: action.payload.user,
         token: action.payload.token,
-        role: restoredRole,
-        isAuthenticated: !!userObj,
+        role: action.payload.role,
+        isAuthenticated: !!action.payload.user,
         isLoading: false,
       };
-    }
-    case "LOGIN": {
-      const loginRole = (String(action.payload.user?.role || action.payload.role || "").toUpperCase() === "ARTIST") ? "ARTIST" : "USER";
-      const userObj = action.payload.user ? { ...action.payload.user, role: loginRole } : { role: loginRole };
-      console.log("[ROLE TRACE 8] AuthContext final state user.role:", userObj?.role, "| state.role:", loginRole);
+    case "LOGIN":
       return {
         ...state,
-        user: userObj,
+        user: action.payload.user,
         token: action.payload.token,
-        role: loginRole,
+        role: action.payload.user?.role || action.payload.role,
         isAuthenticated: true,
         isLoading: false,
       };
-    }
     case "SET_ROLE":
       return { ...state, role: action.payload };
     case "UPDATE_USER":

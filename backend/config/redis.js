@@ -1,11 +1,6 @@
 const { createClient } = require("redis");
 
-let rawUrl = (process.env.REDIS_URL || "").trim();
-if (!rawUrl || (!rawUrl.startsWith("redis://") && !rawUrl.startsWith("rediss://"))) {
-  rawUrl = "redis://127.0.0.1:6379";
-}
-
-const redisUrl = rawUrl;
+const redisUrl = process.env.REDIS_URL || "redis://127.0.0.1:6379";
 console.log(`[Redis] Initializing connection to: ${redisUrl}`);
 
 const client = createClient({

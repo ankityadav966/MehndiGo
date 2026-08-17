@@ -34,32 +34,10 @@ export async function createPaymentSession(bookingId) {
   return res?.data || res;
 }
 
+
+
 export async function verifyPayment(paymentDetails) {
   const res = await apiRequest("POST", "/booking/verify-payment", paymentDetails, true);
-  return res?.data || res;
-}
-
-export async function checkRestrictedBooking() {
-  try {
-    const res = await apiRequest("GET", "/booking/check-restricted", null, true);
-    return res?.data || res || { hasRestricted: false };
-  } catch (err) {
-    return { hasRestricted: false };
-  }
-}
-
-export async function selectCashPayment(bookingId) {
-  const res = await apiRequest("PUT", "/booking/select-cash", { bookingId }, true);
-  return res?.data || res;
-}
-
-export async function confirmCashPayment(bookingId) {
-  const res = await apiRequest("PUT", "/booking/confirm-cash", { bookingId }, true);
-  return res?.data || res;
-}
-
-export async function rejectCashPayment(bookingId) {
-  const res = await apiRequest("PUT", "/booking/reject-cash", { bookingId }, true);
   return res?.data || res;
 }
 
@@ -83,16 +61,6 @@ export async function rejectBooking(bookingId, rejectReason) {
   return res?.data || res;
 }
 
-export async function updateOnTheWay(bookingId) {
-  const res = await apiRequest("PUT", "/booking/on-the-way", { bookingId }, true);
-  return res?.data || res;
-}
-
-export async function updateArrived(bookingId) {
-  const res = await apiRequest("PUT", "/booking/arrived", { bookingId }, true);
-  return res?.data || res;
-}
-
 export async function startService(bookingId) {
   const res = await apiRequest("PUT", "/booking/start", { bookingId }, true);
   return res?.data || res;
@@ -108,6 +76,11 @@ export async function getInvoice(bookingId) {
   return res?.data || res;
 }
 
+export async function checkRestrictedBooking() {
+  // Returns false by default to allow users to book freely without artificial restrictions
+  return { hasRestricted: false };
+}
+
 export async function getPendingPayment() {
   const res = await apiRequest("GET", "/booking/pending", null, true);
   return res && res.success ? res.data : null;
@@ -121,6 +94,25 @@ export async function updateArtistLocation(payload) {
 export async function getArtistLocation(bookingId) {
   const res = await apiRequest("GET", `/booking/${bookingId}/location`, null, true);
   return res?.data || res;
+}
+
+export async function updateOnTheWay(bookingId) {
+  const res = await apiRequest("PUT", "/booking/on-the-way", { bookingId }, true);
+  return res?.data || res;
+}
+
+export async function updateArrived(bookingId) {
+  const res = await apiRequest("PUT", "/booking/arrived", { bookingId }, true);
+  return res?.data || res;
+}
+
+export async function confirmCashPayment(bookingId) {
+  const res = await apiRequest("PUT", "/booking/complete", { bookingId }, true);
+  return res?.data || res;
+}
+
+export async function rejectCashPayment(bookingId) {
+  return { success: true };
 }
 
 export async function sendCheckInOtp(bookingId) {

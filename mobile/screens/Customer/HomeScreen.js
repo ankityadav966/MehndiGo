@@ -19,81 +19,11 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import Colors from "../../constants/Colors";
 import LoadingSkeleton from "../../components/LoadingSkeleton";
-import OptimizedImage from "../../components/OptimizedImage";
 import { useAuth } from "../../context/AuthContext";
-
-import {
-  getHomeDashboard,
-  getNearbyArtists,
-  getCustomerProfile,
-  getFavorites,
-  addFavorite,
-  removeFavorite,
-  getCustomerDashboard,
-  getCustomerAddresses,
-  saveCustomerAddress,
-} from "../../services/customer";
+import { getHomeDashboard, getNearbyArtists, getCustomerProfile, getFavorites, addFavorite, removeFavorite, getCustomerDashboard } from "../../services/customer";
 import { getPendingPayment } from "../../services/booking";
-import {
-  getActiveAddress,
-  setActiveAddress,
-  subscribeActiveAddress,
-  checkSmartLocationChange,
-  reverseGeocodeCoords,
-} from "../../utils/locationManager";
-import * as Location from "expo-location";
-import Alert from "../../utils/Alert";
-
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-
-const DEFAULT_BANNERS = [
-  {
-    id: 1,
-    title: "Bridal Season Special",
-    subtitle: "25% OFF on Premium Packages",
-    description: "Full Arm & Leg Royal Dulhan Patterns with FREE Touchup Kit",
-    discount: "25% OFF",
-    image: "https://images.unsplash.com/photo-1610189012906-799d10787a71?auto=format&fit=crop&w=800&q=80",
-    image_url: "https://images.unsplash.com/photo-1610189012906-799d10787a71?auto=format&fit=crop&w=800&q=80"
-  },
-  {
-    id: 2,
-    title: "Festive Collection 2026",
-    subtitle: "Book Top Rated Artists from ₹499",
-    description: "Trendsetting Engagement & Sangeet party henna designs at home",
-    discount: "FLAT ₹499",
-    image: "https://images.unsplash.com/photo-1596704017254-9b121068fb31?auto=format&fit=crop&w=800&q=80",
-    image_url: "https://images.unsplash.com/photo-1596704017254-9b121068fb31?auto=format&fit=crop&w=800&q=80"
-  },
-  {
-    id: 3,
-    title: "Arabic & Floral Henna",
-    subtitle: "Exclusive Modern Arabic Styles",
-    description: "Bold flowing vines & shaded mandala motifs by certified experts",
-    discount: "SPECIAL 20%",
-    image: "https://images.unsplash.com/photo-1600003014755-ba31aa59c4b6?auto=format&fit=crop&w=800&q=80",
-    image_url: "https://images.unsplash.com/photo-1600003014755-ba31aa59c4b6?auto=format&fit=crop&w=800&q=80"
-  },
-  {
-    id: 4,
-    title: "Express At-Home Service",
-    subtitle: "Verified Artists in 60 Mins",
-    description: "Instant doorstep booking with zero extra travel charges",
-    discount: "FREE TRAVEL",
-    image: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=800&q=80",
-    image_url: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=800&q=80"
-  },
-  {
-    id: 5,
-    title: "Group Booking Combo",
-    subtitle: "Save up to ₹1,500 on Sangeet Henna",
-    description: "Special group packages for family & guests at unbeatable prices",
-    discount: "SAVE ₹1500",
-    image: "https://images.unsplash.com/photo-1567401893414-76b7b1e5a7a5?auto=format&fit=crop&w=800&q=80",
-    image_url: "https://images.unsplash.com/photo-1567401893414-76b7b1e5a7a5?auto=format&fit=crop&w=800&q=80"
-  }
-];
 
 export default function HomeScreen({ navigation }) {
   const { user, dispatch, isDarkMode } = useAuth();
@@ -107,21 +37,11 @@ export default function HomeScreen({ navigation }) {
   const [pendingPaymentBooking, setPendingPaymentBooking] = useState(null);
   const [paymentModalVisible, setPaymentModalVisible] = useState(false);
 
-  // Smart Location Management States
-  const [activeAddressState, setActiveAddressState] = useState(null);
-  const [savedAddressesList, setSavedAddressesList] = useState([]);
-  const [locationModalVisible, setLocationModalVisible] = useState(false);
-  const [smartAlertVisible, setSmartAlertVisible] = useState(false);
-  const [smartDetectedData, setSmartDetectedData] = useState(null);
-  const [locationActionLoading, setLocationActionLoading] = useState(false);
-
   // Dashboard Aggregated States
   const [categories, setCategories] = useState([]);
-
-  const [offers, setOffers] = useState(DEFAULT_BANNERS);
+  const [offers, setOffers] = useState([]);
   const [featuredArtists, setFeaturedArtists] = useState([]);
   const [popularArtists, setPopularArtists] = useState([]);
-  const [recommendations, setRecommendations] = useState([]);
   const [recentlyBookedArtists, setRecentlyBookedArtists] = useState([]);
 
   // Nearby Artists Paginated States
@@ -149,101 +69,9 @@ export default function HomeScreen({ navigation }) {
   const bannerFlatListRef = useRef(null);
   const bannerTimerRef = useRef(null);
 
-  // Smart Location Initialization & Background Distance Check
-  useEffect(() => {
-    const unsubscribe = subscribeActiveAddress((newAddr) => {
-      setActiveAddressState(newAddr);
-    });
-
-    async function initLocation() {
-      const cached = await getActiveAddress();
-      if (cached) {
-        setActiveAddressState(cached);
-      }
-
-      try {
-        const addresses = await getCustomerAddresses();
-        const list = addresses || [];
-        setSavedAddressesList(list);
-
-        const primary = list.find((a) => a.is_default) || list[0];
-
-        // First Login Flow: If customer has NO saved primary address, navigate to InitialLocationSetup
-        if (list.length === 0) {
-          navigation.navigate("InitialLocationSetup");
-          return;
-        }
-
-        if (!cached && primary) {
-          const norm = await setActiveAddress(primary);
-          setActiveAddressState(norm);
-        }
-
-        // Smart Background Location Check (>35km)
-        if (primary && primary.latitude && primary.longitude) {
-          const checkResult = await checkSmartLocationChange(primary, 35);
-          if (checkResult.isFar && checkResult.geocodedAddress) {
-            setSmartDetectedData(checkResult);
-            setSmartAlertVisible(true);
-          }
-        }
-      } catch (e) {
-        console.log("Error initializing location in Home:", e.message);
-      }
-    }
-
-    initLocation();
-    return () => unsubscribe();
-  }, [navigation]);
-
-  const handleUseCurrentGPSLocation = async () => {
-    try {
-      setLocationActionLoading(true);
-      const enabled = await Location.hasServicesEnabledAsync();
-      if (!enabled) {
-        Alert.alert("GPS Disabled", "Please enable location services in device settings.");
-        return;
-      }
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert("Permission Denied", "GPS access permission was denied.");
-        return;
-      }
-      let pos = await Location.getLastKnownPositionAsync({});
-      if (!pos) {
-        pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      }
-      if (pos && pos.coords) {
-        const geo = await reverseGeocodeCoords(pos.coords.latitude, pos.coords.longitude);
-        const norm = await setActiveAddress({
-          label: "Current Location",
-          fullAddress: geo.fullAddress,
-          city: geo.city,
-          state: geo.state,
-          pincode: geo.pincode,
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-        });
-        setActiveAddressState(norm);
-        setLocationModalVisible(false);
-      }
-    } catch (e) {
-      Alert.alert("Location Error", e.message || "Failed to detect current location.");
-    } finally {
-      setLocationActionLoading(false);
-    }
-  };
-
-  const handleSelectSavedAddress = async (item) => {
-    const norm = await setActiveAddress(item);
-    setActiveAddressState(norm);
-    setLocationModalVisible(false);
-  };
-
   // Default coordinate location (Jaipur)
   const MOCK_LAT = 26.9124;
   const MOCK_LNG = 75.7873;
-
 
   // Load consolidated dashboard data
   const loadDashboard = async (isRefresh = false) => {
@@ -251,11 +79,10 @@ export default function HomeScreen({ navigation }) {
     try {
       const data = await getHomeDashboard(MOCK_LAT, MOCK_LNG);
       setCategories(data?.categories || []);
-      setOffers(data?.offers || data?.banners || []);
-      setFeaturedArtists(data?.featured_artists || data?.featuredArtists || []);
-      setPopularArtists(data?.popular_artists || data?.popularArtists || []);
-      setRecentlyBookedArtists(data?.recently_booked || data?.recentlyBooked || []);
-
+      setOffers(data?.offers || []);
+      setFeaturedArtists(data?.featuredArtists || []);
+      setPopularArtists(data?.popularArtists || []);
+      setRecentlyBookedArtists(data?.recentlyBooked || []);
 
       // Load favorites from database
       try {
@@ -371,13 +198,31 @@ export default function HomeScreen({ navigation }) {
             if (hasChanges) {
               dispatch({ type: "UPDATE_USER", payload: profileData });
             }
+
+            // Check if phone number is missing
+            if (!profileData.phone) {
+              const { Alert } = require("react-native");
+              Alert.alert(
+                "Phone Number Required",
+                "Please update your phone number to continue using MehndiGo.",
+                [
+                  {
+                    text: "Update Now",
+                    onPress: () => navigation.navigate("EditProfile")
+                  }
+                ],
+                { cancelable: false }
+              );
+            }
           }
         } catch (e) {
           console.log("Failed to sync customer profile on Home:", e.message);
         }
       }
 
-      if (user && (!user?.profile_image || !user?.city)) {
+      if (user && !user.phone) {
+        syncUserProfile();
+      } else if (!user?.profile_image || !user?.city) {
         syncUserProfile();
       }
 
@@ -412,7 +257,6 @@ export default function HomeScreen({ navigation }) {
 
   // Toggle favorite
   const toggleFavorite = async (artistId) => {
-    if (!artistId) return;
     const isFav = !!favorites[artistId];
     // Optimistic UI update
     setFavorites((prev) => ({
@@ -455,27 +299,18 @@ export default function HomeScreen({ navigation }) {
     "karwa-chauth": require("../../assets/images/categories/karwa_chauth.png"),
     "eid": require("../../assets/images/categories/eid.png"),
     "festival": require("../../assets/images/categories/festival.png"),
-    "indo-arabic": require("../../assets/images/categories/indo_arabic.png"),
     "custom": require("../../assets/images/categories/custom.png")
   };
 
   const getCategoryImage = (item) => {
-    if (item && item.image && typeof item.image === "string") {
-      if (item.image.startsWith("http://") || item.image.startsWith("https://")) {
-        return { uri: item.image };
-      }
-      if (item.image.startsWith("/")) {
-        const { BASE_URL } = require("../../services/api");
-        const cleanBase = (BASE_URL || "").replace(/\/api\/v1\/?$/, "");
-        return { uri: `${cleanBase}${item.image}` };
-      }
+    if (item && item.image && (item.image.startsWith("http://") || item.image.startsWith("https://"))) {
+      return { uri: item.image };
     }
-    const name = (item?.name || "").toLowerCase();
-    const slug = (item?.slug || "").toLowerCase();
+    const name = (item.name || "").toLowerCase();
+    const slug = (item.slug || "").toLowerCase();
 
     let key = "custom";
-    if (slug.includes("indo-arabic") || slug.includes("indo_arabic") || name.includes("indo-arabic") || name.includes("indo arabic") || name.includes("fusion")) key = "indo-arabic";
-    else if (slug.includes("royal") || name.includes("royal")) key = "royal";
+    if (slug.includes("royal") || name.includes("royal")) key = "royal";
     else if (slug.includes("bridal") || name.includes("bridal")) key = "bridal";
     else if (slug.includes("arabic") || name.includes("arabic")) key = "arabic";
     else if (slug.includes("traditional") || name.includes("traditional")) key = "traditional";
@@ -483,10 +318,10 @@ export default function HomeScreen({ navigation }) {
     else if (slug.includes("minimal") || name.includes("minimal")) key = "minimal";
     else if (slug.includes("modern") || name.includes("modern")) key = "modern";
     else if (slug.includes("finger") || name.includes("finger")) key = "finger";
-    else if (slug.includes("full-hand") || name.includes("full hand") || name.includes("full-hand") || name.includes("hand mehendi") || name.includes("hand mehndi")) key = "full-hand";
+    else if (slug.includes("full-hand") || name.includes("full hand") || name.includes("full-hand")) key = "full-hand";
     else if (slug.includes("back-hand") || name.includes("back hand") || name.includes("back-hand")) key = "back-hand";
     else if (slug.includes("front-hand") || name.includes("front hand") || name.includes("front-hand")) key = "front-hand";
-    else if (slug.includes("leg") || name.includes("leg") || slug.includes("feet") || name.includes("feet")) key = "leg";
+    else if (slug.includes("leg") || name.includes("leg")) key = "leg";
     else if (slug.includes("kids") || name.includes("kid") || slug.includes("kid")) key = "kids";
     else if (slug.includes("groom") || name.includes("groom")) key = "groom";
     else if (slug.includes("engagement") || name.includes("engagement")) key = "engagement";
@@ -508,7 +343,7 @@ export default function HomeScreen({ navigation }) {
       >
         <View style={[styles.categoryIcon, { overflow: "hidden" }]}>
           <Image
-            source={hasError ? LOCAL_CATEGORY_IMAGES.custom : getCategoryImage(item)}
+            source={hasError ? require("../../assets/images/logo.png") : getCategoryImage(item)}
             onError={() => {
               setImageErrors((prev) => ({ ...prev, [item.id]: true }));
             }}
@@ -581,7 +416,7 @@ export default function HomeScreen({ navigation }) {
         </View>
         <View style={styles.recentArtistDetails}>
           <Text style={[styles.recentArtistName, { color: currentTextColor }]} numberOfLines={1}>
-            {item.name || item.full_name || item.user?.name || "Specialist"}
+            {item.name || "Specialist"}
           </Text>
           <Text style={[styles.recentArtistCat, { color: currentSecTextColor }]} numberOfLines={1}>
             {item.specialization_name || "Bridal Mehndi"}
@@ -602,32 +437,24 @@ export default function HomeScreen({ navigation }) {
 
   // Render an artist horizontal card (Featured & Popular)
   const renderHorizontalArtistItem = ({ item }) => {
-    const artistId = item.id || item.user_id || item.artist_id;
-    const isFav = !!favorites[artistId];
-    const artistName = item.name || item.full_name || item.user?.name || "Artist";
-    const artistImage = item.profile_image || item.user?.profile_image || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400";
-    const startingPrice = item.starting_price || item.services?.[0]?.minimum_price || 1500;
-    const ratingVal = Number(item.rating || item.avg_rating || 4.8).toFixed(1);
-
+    const isFav = !!favorites[item.id];
     return (
       <TouchableOpacity
         style={[styles.horizontalArtistCard, { backgroundColor: currentCardBg, borderColor: currentBorderColor }]}
-        onPress={() => navigation.navigate("ArtistProfile", { artistId })}
+        onPress={() => navigation.navigate("ArtistProfile", { artistId: item.id })}
       >
         <Image
-          source={{ uri: artistImage }}
+          source={{ uri: item.user?.profile_image || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400" }}
           style={styles.horizontalArtistImage}
-          width={280}
-          height={160}
         />
-        {(item.status === "approved" || item.status === "APPROVED" || item.verification_status === "APPROVED") && (
+        {item.verification_status === "APPROVED" && (
           <View style={styles.verifiedBadge}>
             <Ionicons name="checkmark-circle" size={14} color={Colors.white} />
           </View>
         )}
         <TouchableOpacity
           style={styles.favoriteBadge}
-          onPress={() => toggleFavorite(artistId)}
+          onPress={() => toggleFavorite(item.id)}
         >
           <Ionicons
             name={isFav ? "heart" : "heart-outline"}
@@ -636,13 +463,13 @@ export default function HomeScreen({ navigation }) {
           />
         </TouchableOpacity>
         <View style={styles.horizontalArtistInfo}>
-          <Text style={[styles.horizontalArtistName, { color: currentTextColor }]} numberOfLines={1}>{artistName}</Text>
+          <Text style={[styles.horizontalArtistName, { color: currentTextColor }]} numberOfLines={1}>{item.user?.name || "Artist"}</Text>
           <View style={styles.ratingRow}>
             <Ionicons name="star" size={14} color="#FFB800" />
-            <Text style={[styles.ratingText, { color: currentTextColor }]}>{ratingVal}</Text>
+            <Text style={[styles.ratingText, { color: currentTextColor }]}>{Number(item.avg_rating || 0).toFixed(1)}</Text>
             <Text style={[styles.experienceText, { color: currentSecTextColor }]}>• {item.experience_years || 2} yrs exp</Text>
           </View>
-          <Text style={[styles.startingPriceText, { color: currentTextColor }]}>From ₹{startingPrice}</Text>
+          <Text style={[styles.startingPriceText, { color: currentTextColor }]}>From ₹{item.services?.[0]?.minimum_price || 1500}</Text>
         </View>
       </TouchableOpacity>
     );
@@ -650,36 +477,28 @@ export default function HomeScreen({ navigation }) {
 
   // Render Nearby Artist Vertical Item
   const renderNearbyArtistItem = ({ item }) => {
-    const artistId = item.id || item.user_id || item.artist_id;
-    const isFav = !!favorites[artistId];
-    const artistName = item.name || item.full_name || item.user?.name || "Artist";
-    const artistImage = item.profile_image || item.user?.profile_image || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400";
-    const startingPrice = item.starting_price || item.services?.[0]?.minimum_price || 1500;
-    const ratingVal = Number(item.rating || item.avg_rating || 4.8).toFixed(1);
+    const isFav = !!favorites[item.id];
     const distanceVal = item.distance ? `${Number(item.distance).toFixed(1)} km` : "Nearby";
 
     return (
       <TouchableOpacity
         style={[styles.nearbyArtistCard, { backgroundColor: currentCardBg, borderColor: currentBorderColor }]}
-        onPress={() => navigation.navigate("ArtistProfile", { artistId })}
+        onPress={() => navigation.navigate("ArtistProfile", { artistId: item.id })}
       >
         <Image
-          source={{ uri: artistImage }}
+          source={{ uri: item.user?.profile_image || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400" }}
           style={styles.nearbyArtistImage}
-          width={120}
-          height={120}
         />
-
 
         <View style={styles.nearbyArtistInfo}>
           <View style={styles.nearbyNameHeader}>
             <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-              <Text style={[styles.nearbyArtistName, { color: currentTextColor }]} numberOfLines={1}>{artistName}</Text>
-              {(item.status === "approved" || item.status === "APPROVED" || item.verification_status === "APPROVED") && (
+              <Text style={[styles.nearbyArtistName, { color: currentTextColor }]} numberOfLines={1}>{item.user?.name || "Artist"}</Text>
+              {item.verification_status === "APPROVED" && (
                 <Ionicons name="checkmark-circle" size={16} color={Colors.primary} style={{ marginLeft: 4 }} />
               )}
             </View>
-            <TouchableOpacity onPress={() => toggleFavorite(artistId)} style={styles.nearbyFavBtn}>
+            <TouchableOpacity onPress={() => toggleFavorite(item.id)} style={styles.nearbyFavBtn}>
               <Ionicons
                 name={isFav ? "heart" : "heart-outline"}
                 size={20}
@@ -691,7 +510,7 @@ export default function HomeScreen({ navigation }) {
           <View style={styles.nearbyStatsRow}>
             <View style={styles.ratingBadge}>
               <Ionicons name="star" size={12} color="#FFB800" />
-              <Text style={styles.ratingBadgeText}>{ratingVal}</Text>
+              <Text style={styles.ratingBadgeText}>{Number(item.avg_rating || 0).toFixed(1)}</Text>
             </View>
             <Text style={[styles.nearbyBulletText, { color: currentSecTextColor }]}>•</Text>
             <Text style={[styles.nearbyStatsText, { color: currentSecTextColor }]}>{item.experience_years || 2} Years Exp</Text>
@@ -700,7 +519,7 @@ export default function HomeScreen({ navigation }) {
           </View>
 
           <View style={styles.nearbyFooter}>
-            <Text style={[styles.nearbyPriceText, { color: currentTextColor }]}>Starting from ₹{startingPrice}</Text>
+            <Text style={[styles.nearbyPriceText, { color: currentTextColor }]}>Starting from ₹{item.services?.[0]?.minimum_price || 1500}</Text>
             <View style={styles.availableTodayBadge}>
               <View style={styles.activeDot} />
               <Text style={styles.availableTodayText}>Available Today</Text>
@@ -724,16 +543,10 @@ export default function HomeScreen({ navigation }) {
           <View style={styles.userMeta}>
             <Text style={[styles.helloText, { color: currentSecTextColor }]}>Welcome back 👋</Text>
             <Text style={[styles.userNameText, { color: currentTextColor }]}>{user?.name || "Customer"}</Text>
-            <TouchableOpacity style={styles.locationWrapper} onPress={() => setLocationModalVisible(true)} activeOpacity={0.8}>
-              <Ionicons name="location-sharp" size={14} color={Colors.primary} />
-              <Text style={[styles.locationText, { color: currentSecTextColor, maxWidth: 180 }]} numberOfLines={1}>
-                {activeAddressState?.label
-                  ? `${activeAddressState.label}: ${activeAddressState.fullAddress}`
-                  : activeAddressState?.fullAddress || user?.city || "Jaipur, Rajasthan"}
-              </Text>
-              <Ionicons name="chevron-down" size={12} color={currentSecTextColor} style={{ marginLeft: 4 }} />
-            </TouchableOpacity>
-
+            <View style={styles.locationWrapper}>
+              <Ionicons name="location" size={14} color={Colors.primary} />
+              <Text style={[styles.locationText, { color: currentSecTextColor }]} numberOfLines={1}>{user?.city || "Jaipur, Rajasthan"}</Text>
+            </View>
           </View>
         </View>
         <TouchableOpacity
@@ -798,7 +611,7 @@ export default function HomeScreen({ navigation }) {
           <FlatList
             ref={bannerFlatListRef}
             data={offers}
-            keyExtractor={(item, index) => String(item.id || item.user_id || item.artist_id || index)}
+            keyExtractor={(item) => String(item.id)}
             horizontal
             pagingEnabled
             nestedScrollEnabled={true}
@@ -840,7 +653,7 @@ export default function HomeScreen({ navigation }) {
         </View>
       )}
 
-      {/* 4. Categories Section (Exactly 8 categories on HomeScreen) */}
+      {/* 4. Categories Section */}
       <View style={styles.sectionHeader}>
         <Text style={[styles.sectionTitle, { color: currentTextColor }]}>Mehndi Categories</Text>
         <TouchableOpacity onPress={() => navigation.navigate("Categories")}>
@@ -849,14 +662,14 @@ export default function HomeScreen({ navigation }) {
       </View>
       <FlatList
         data={categories}
-        keyExtractor={(item, index) => String(item.id || item.user_id || item.artist_id || index)}
+        keyExtractor={(item) => String(item.id)}
         horizontal
         nestedScrollEnabled={true}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ paddingLeft: 16, paddingBottom: 8 }}
         renderItem={renderCategoryItem}
         initialNumToRender={8}
-        maxToRenderPerBatch={8}
+        maxToRenderPerBatch={4}
         windowSize={5}
       />
 
@@ -871,7 +684,7 @@ export default function HomeScreen({ navigation }) {
           </View>
           <FlatList
             data={featuredArtists}
-            keyExtractor={(item, index) => String(item.id || item.user_id || item.artist_id || index)}
+            keyExtractor={(item) => String(item.id)}
             horizontal
             nestedScrollEnabled={true}
             showsHorizontalScrollIndicator={false}
@@ -895,7 +708,7 @@ export default function HomeScreen({ navigation }) {
           </View>
           <FlatList
             data={popularArtists}
-            keyExtractor={(item, index) => String(item.id || item.user_id || item.artist_id || index)}
+            keyExtractor={(item) => String(item.id)}
             horizontal
             nestedScrollEnabled={true}
             showsHorizontalScrollIndicator={false}
@@ -915,7 +728,7 @@ export default function HomeScreen({ navigation }) {
           </View>
           <FlatList
             data={recentlyBookedArtists}
-            keyExtractor={(item, index) => String(item.id || item.user_id || item.artist_id || index)}
+            keyExtractor={(item) => String(item.id)}
             horizontal
             nestedScrollEnabled={true}
             showsHorizontalScrollIndicator={false}
@@ -988,18 +801,18 @@ export default function HomeScreen({ navigation }) {
     let result = [...nearbyArtists];
 
     if (selectedFilter === "Nearest") {
-      result.sort((a, b) => (Number(a.distance) || Number(a.id) || 0) - (Number(b.distance) || Number(b.id) || 0));
+      result.sort((a, b) => (Number(a.distance) || 0) - (Number(b.distance) || 0));
     } else if (selectedFilter === "Top Rated") {
-      result.sort((a, b) => (Number(b.rating || b.avg_rating) || 0) - (Number(a.rating || a.avg_rating) || 0));
+      result.sort((a, b) => (Number(b.avg_rating) || 0) - (Number(a.avg_rating) || 0));
     } else if (selectedFilter === "Price Low-High") {
       result.sort((a, b) => {
-        const priceA = Number(a.starting_price || a.minimum_price || a.price || a.services?.[0]?.minimum_price || 1500);
-        const priceB = Number(b.starting_price || b.minimum_price || b.price || b.services?.[0]?.minimum_price || 1500);
+        const priceA = a.services?.[0]?.minimum_price || 1500;
+        const priceB = b.services?.[0]?.minimum_price || 1500;
         return priceA - priceB;
       });
     } else if (selectedFilter === "5+ Exp Years") {
-      result = result.filter(item => Number(item.experience_years || item.experience || 5) >= 5);
-      result.sort((a, b) => (Number(b.experience_years || b.experience) || 0) - (Number(a.experience_years || a.experience) || 0));
+      result = result.filter(item => (item.experience_years || 0) >= 5);
+      result.sort((a, b) => (b.experience_years || 0) - (a.experience_years || 0));
     }
 
     return result;
@@ -1022,7 +835,7 @@ export default function HomeScreen({ navigation }) {
     <SafeAreaView style={styles.container} edges={["top"]}>
       <FlatList
         data={processedNearbyArtists}
-        keyExtractor={(item, index) => String(item.id || item.user_id || item.artist_id || index)}
+        keyExtractor={(item) => String(item.id)}
         renderItem={renderNearbyArtistItem}
         ListHeaderComponent={renderListHeader}
         ListFooterComponent={renderListFooter}
@@ -1041,7 +854,7 @@ export default function HomeScreen({ navigation }) {
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.5}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 180 }}
+        contentContainerStyle={{ paddingBottom: 100 }}
       />
 
       <Modal
@@ -1185,157 +998,9 @@ export default function HomeScreen({ navigation }) {
           </View>
         </View>
       </Modal>
-
-      {/* Location Switcher Bottom Sheet Modal */}
-      <Modal visible={locationModalVisible} animationType="slide" transparent>
-        <View style={styles.sheetOverlay}>
-          <View style={[styles.sheetContainer, { backgroundColor: currentCardBg }]}>
-            <View style={styles.sheetHeader}>
-              <Text style={[styles.sheetTitle, { color: currentTextColor }]}>Select Service Location</Text>
-              <TouchableOpacity onPress={() => setLocationModalVisible(false)}>
-                <Ionicons name="close" size={24} color={currentSecTextColor} />
-              </TouchableOpacity>
-            </View>
-
-            {/* Active Selected Location Banner */}
-            {activeAddressState && (
-              <View style={styles.activeLocationCard}>
-                <Ionicons name="checkmark-circle-sharp" size={20} color="#059669" style={{ marginRight: 10 }} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.activeLocLabel}>{activeAddressState.label || "Active Location"}</Text>
-                  <Text style={styles.activeLocSub} numberOfLines={2}>{activeAddressState.fullAddress}</Text>
-                </View>
-              </View>
-            )}
-
-            {/* Use GPS Location Button */}
-            <TouchableOpacity style={styles.gpsActionBtn} onPress={handleUseCurrentGPSLocation} disabled={locationActionLoading}>
-              {locationActionLoading ? (
-                <ActivityIndicator size="small" color={Colors.primary} style={{ marginRight: 10 }} />
-              ) : (
-                <Ionicons name="navigate-circle-outline" size={22} color={Colors.primary} style={{ marginRight: 10 }} />
-              )}
-              <View style={{ flex: 1 }}>
-                <Text style={styles.gpsActionTitle}>Use Current GPS Location</Text>
-                <Text style={styles.gpsActionSub}>Detect your precise location automatically</Text>
-              </View>
-            </TouchableOpacity>
-
-            <Text style={[styles.sheetSectionHeader, { color: currentSecTextColor }]}>SAVED ADDRESSES</Text>
-
-            <FlatList
-              data={savedAddressesList}
-              keyExtractor={(item, index) => String(item.id || index)}
-              renderItem={({ item }) => {
-                const isSelected = activeAddressState?.id === item.id;
-                const tag = item.label || item.name || "Home";
-
-                return (
-                  <TouchableOpacity
-                    style={[styles.savedAddressItem, isSelected && styles.savedAddressItemActive]}
-                    onPress={() => handleSelectSavedAddress(item)}
-                  >
-                    <Ionicons
-                      name={tag === "Home" ? "home-outline" : tag === "Work" ? "briefcase-outline" : "location-outline"}
-                      size={20}
-                      color={isSelected ? Colors.primary : currentSecTextColor}
-                      style={{ marginRight: 12 }}
-                    />
-                    <View style={{ flex: 1 }}>
-                      <View style={{ flexDirection: "row", alignItems: "center" }}>
-                        <Text style={[styles.savedAddrTag, { color: currentTextColor }]}>{tag}</Text>
-                        {item.is_default && (
-                          <View style={styles.miniPrimaryBadge}>
-                            <Text style={styles.miniPrimaryBadgeText}>Primary</Text>
-                          </View>
-                        )}
-                      </View>
-                      <Text style={[styles.savedAddrLine, { color: currentSecTextColor }]} numberOfLines={1}>
-                        {[item.house_flat || item.houseFlat, item.landmark, item.address_line_1 || item.fullAddress]
-                          .filter(Boolean)
-                          .join(", ")}
-                      </Text>
-                    </View>
-                    {isSelected && <Ionicons name="checkmark" size={20} color={Colors.primary} />}
-                  </TouchableOpacity>
-                );
-              }}
-              style={{ maxHeight: 200 }}
-            />
-
-            <TouchableOpacity
-              style={styles.manageAddrBtn}
-              onPress={() => {
-                setLocationModalVisible(false);
-                navigation.navigate("SavedAddresses");
-              }}
-            >
-              <Ionicons name="settings-outline" size={18} color={Colors.primary} style={{ marginRight: 8 }} />
-              <Text style={styles.manageAddrText}>Add or Manage Addresses</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Smart Location Alert Bottom Sheet Modal */}
-      <Modal visible={smartAlertVisible} animationType="slide" transparent>
-        <View style={styles.sheetOverlay}>
-          <View style={[styles.sheetContainer, { backgroundColor: currentCardBg }]}>
-            <View style={styles.smartHeader}>
-              <View style={styles.smartIconWrap}>
-                <Ionicons name="location-sharp" size={28} color={Colors.primary} />
-              </View>
-              <Text style={[styles.smartTitle, { color: currentTextColor }]}>You're in a new location</Text>
-              <Text style={[styles.smartSub, { color: currentSecTextColor }]}>
-                We detected you are ~{smartDetectedData?.distanceKm || 40} km away from your saved home address. Would you like to view Mehendi artists near your current location?
-              </Text>
-            </View>
-
-            {smartDetectedData?.geocodedAddress && (
-              <View style={styles.detectedCard}>
-                <Ionicons name="navigate-outline" size={18} color="#1E40AF" style={{ marginRight: 8 }} />
-                <Text style={styles.detectedText} numberOfLines={2}>
-                  {smartDetectedData.geocodedAddress.fullAddress}
-                </Text>
-              </View>
-            )}
-
-            <View style={styles.smartBtnRow}>
-              <TouchableOpacity
-                style={styles.smartBtnPrimary}
-                onPress={async () => {
-                  if (smartDetectedData?.geocodedAddress) {
-                    const norm = await setActiveAddress({
-                      label: "Current Location",
-                      fullAddress: smartDetectedData.geocodedAddress.fullAddress,
-                      city: smartDetectedData.geocodedAddress.city,
-                      state: smartDetectedData.geocodedAddress.state,
-                      pincode: smartDetectedData.geocodedAddress.pincode,
-                      latitude: smartDetectedData.currentCoords?.latitude,
-                      longitude: smartDetectedData.currentCoords?.longitude,
-                    });
-                    setActiveAddressState(norm);
-                  }
-                  setSmartAlertVisible(false);
-                }}
-              >
-                <Text style={styles.smartBtnPrimaryText}>Use Current Location</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.smartBtnSecondary}
-                onPress={() => setSmartAlertVisible(false)}
-              >
-                <Text style={styles.smartBtnSecondaryText}>Keep Home Address</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
-
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
@@ -1974,189 +1639,7 @@ const styles = StyleSheet.create({
   },
   modalPayText: {
     color: Colors.white,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "700"
-  },
-  sheetOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "flex-end",
-  },
-  sheetContainer: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    maxHeight: "80%",
-  },
-  sheetHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  sheetTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-  },
-  activeLocationCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#ECFDF5",
-    borderWidth: 1,
-    borderColor: "#A7F3D0",
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 14,
-  },
-  activeLocLabel: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#047857",
-  },
-  activeLocSub: {
-    fontSize: 12,
-    color: "#065F46",
-    marginTop: 2,
-  },
-  gpsActionBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#EFF6FF",
-    borderWidth: 1,
-    borderColor: "#BFDBFE",
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 16,
-  },
-  gpsActionTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#1E40AF",
-  },
-  gpsActionSub: {
-    fontSize: 12,
-    color: "#3B82F6",
-    marginTop: 2,
-  },
-  sheetSectionHeader: {
-    fontSize: 11,
-    fontWeight: "700",
-    letterSpacing: 0.5,
-    marginBottom: 10,
-    marginTop: 6,
-  },
-  savedAddressItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    marginBottom: 8,
-    backgroundColor: "#F9FAFB",
-  },
-  savedAddressItemActive: {
-    backgroundColor: "#FFF1F2",
-    borderWidth: 1,
-    borderColor: Colors.primary,
-  },
-  savedAddrTag: {
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  miniPrimaryBadge: {
-    backgroundColor: "#D1FAE5",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
-    marginLeft: 8,
-  },
-  miniPrimaryBadgeText: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: "#047857",
-  },
-  savedAddrLine: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  manageAddrBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 14,
-    marginTop: 10,
-    borderTopWidth: 1,
-    borderColor: "#F3F4F6",
-  },
-  manageAddrText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: Colors.primary,
-  },
-
-  // Smart Alert Bottom Sheet Styles
-  smartHeader: {
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  smartIconWrap: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#FFF1F2",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  smartTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    textAlign: "center",
-  },
-  smartSub: {
-    fontSize: 13,
-    textAlign: "center",
-    marginTop: 6,
-    lineHeight: 18,
-  },
-  detectedCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#EFF6FF",
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 20,
-  },
-  detectedText: {
-    fontSize: 13,
-    fontWeight: "500",
-    color: "#1E3A8A",
-    flex: 1,
-  },
-  smartBtnRow: {
-    width: "100%",
-  },
-  smartBtnPrimary: {
-    backgroundColor: Colors.primary,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  smartBtnPrimaryText: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  smartBtnSecondary: {
-    backgroundColor: "#F3F4F6",
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  smartBtnSecondaryText: {
-    color: "#374151",
-    fontSize: 15,
-    fontWeight: "600",
-  },
+  }
 });

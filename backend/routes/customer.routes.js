@@ -63,10 +63,7 @@ router.get("/coupons", authenticate, CustomerController.getCoupons);
 router.get("/notifications", authenticate, CustomerController.getNotifications);
 router.get("/addresses", authenticate, CustomerController.getAddresses);
 router.post("/addresses", authenticate, CustomerController.addAddress);
-router.put("/addresses/:id", authenticate, CustomerController.updateAddress);
-router.patch("/addresses/:id/default", authenticate, CustomerController.setDefaultAddress);
 router.delete("/addresses/:id", authenticate, CustomerController.deleteAddress);
-
 router.get("/reviews", authenticate, CustomerController.getReviews);
 router.post("/support/ticket", authenticate, CustomerController.createSupportTicket);
 router.get("/support/tickets", authenticate, CustomerController.getSupportTickets);

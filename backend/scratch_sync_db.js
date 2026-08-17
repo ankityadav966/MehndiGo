@@ -2,10 +2,7 @@ const db = require("./models");
 
 async function main() {
   try {
-    console.log("Synchronizing growth engine, User, and Wallet models...");
-    await db.User.sync({ alter: true });
-    await db.Wallet.sync({ alter: true });
-    await db.WalletTransaction.sync({ alter: true });
+    console.log("Synchronizing ONLY the new growth engine models...");
     await db.XpLog.sync({ alter: true });
     await db.Badge.sync({ alter: true });
     await db.UserBadge.sync({ alter: true });

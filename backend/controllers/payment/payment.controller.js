@@ -3,15 +3,13 @@ const { SuccessResponse, ErrorResponse } = require("../../utils/common");
 
 async function createSession(req, res) {
   try {
-    const { bookingId, amount, paymentMethod, payment_method } = req.body;
-    const pMethod = paymentMethod || payment_method || "ADVANCE_CASH";
-    const response = await PaymentService.createSession(bookingId, req.user.id, amount, pMethod);
-    return res.status(200).json(SuccessResponse("Razorpay payment session created successfully", response));
+    const { bookingId, amount } = req.body;
+    const response = await PaymentService.createSession(bookingId, req.user.id, amount);
+    return res.status(200).json(SuccessResponse("Cashfree payment session created successfully", response));
   } catch (error) {
     return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
   }
 }
-
 
 async function verifyPayment(req, res) {
   try {
@@ -259,10 +257,13 @@ async function payWithWallet(req, res) {
 
 async function renderCheckoutPage(req, res) {
   try {
-    const { orderId } = req.query;
-    return res.status(200).send(`<html><body><p>Razorpay Order ID: ${orderId}</p><p>Please use the mobile app to complete checkout.</p></body></html>`);
+    const { orderId, amount, bookingId, redirect, paymentSessionId } = req.query;
+    const env = process.env.CASHFREE_ENV === "PRODUCTION" ? "api" : "sandbox";
+    const sessionId = paymentSessionId || orderId;
+    const cfUrl = `https://${env}.cashfree.com/pg/view/checkout?session_id=${sessionId}`;
+    return res.redirect(cfUrl);
   } catch (error) {
-    return res.status(500).send("Error rendering Razorpay checkout fallback");
+    return res.status(500).send("Error redirecting to Cashfree checkout");
   }
 }
 
