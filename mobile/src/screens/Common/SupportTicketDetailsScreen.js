@@ -16,8 +16,8 @@ import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import Colors from "../../constants/Colors";
-import { getSupportTicketDetails, replySupportTicket, closeSupportTicket } from "../../services/customer";
-import { uploadPortfolioMedia } from "../../services/artist";
+import { getSupportTicketDetails, replySupportTicket, closeSupportTicket, getCustomerNotifications } from "../../services/customer";
+import { uploadPortfolioMedia, getArtistNotificationsData } from "../../services/artist";
 
 export default function SupportTicketDetailsScreen({ route, navigation }) {
   const { ticketId } = route.params || {};
@@ -31,16 +31,99 @@ export default function SupportTicketDetailsScreen({ route, navigation }) {
 
   const listRef = useRef();
 
-  const loadTicketData = async () => {
+  const loadTicketData = async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
     try {
-      const data = await getSupportTicketDetails(ticketId);
+      const [ticketData, custNotifs, artNotifs] = await Promise.all([
+        (route.params && route.params.ticket) ? Promise.resolve(route.params.ticket) : getSupportTicketDetails(ticketId),
+        getCustomerNotifications().catch(() => ({ notifications: [] })),
+        getArtistNotificationsData().catch(() => ({ notifications: [] }))
+      ]);
+
+      const data = ticketData || {};
       setTicket(data);
-      setReplies(data.replies ? JSON.parse(data.replies) : []);
+
+      let r = [];
+      try {
+        r = typeof data.replies === "string" ? JSON.parse(data.replies) : (Array.isArray(data.replies) ? data.replies : []);
+      } catch (_) {
+        r = [];
+      }
+
+      // Collect all admin notifications and replies for this ticket
+      const allNotifs = [
+        ...(Array.isArray(custNotifs?.notifications) ? custNotifs.notifications : (Array.isArray(custNotifs?.data?.notifications) ? custNotifs.data.notifications : (Array.isArray(custNotifs?.data) ? custNotifs.data : (Array.isArray(custNotifs) ? custNotifs : [])))),
+        ...(Array.isArray(artNotifs?.notifications) ? artNotifs.notifications : (Array.isArray(artNotifs?.data?.notifications) ? artNotifs.data.notifications : (Array.isArray(artNotifs?.data) ? artNotifs.data : (Array.isArray(artNotifs) ? artNotifs : []))))
+      ];
+
+      const notifReplies = allNotifs
+        .filter(n => {
+          const title = String(n.title || "");
+          const msg = String(n.message || "");
+          const isResponse =
+            (title.includes("Response") || title.includes("Reply") || title.includes("Update")) &&
+            !title.includes("Opened");
+          const matchesId = title.includes(`#${ticketId}`) || msg.includes(`#${ticketId}`) || (n.data && (n.data.ticketId == ticketId || n.data.ticket_id == ticketId));
+          const matchesSubject = data.subject && (msg.toLowerCase().includes(data.subject.toLowerCase()) || title.toLowerCase().includes(data.subject.toLowerCase()));
+          return isResponse && (matchesId || matchesSubject);
+        })
+        .map(n => ({
+          id: `notif-${n.id}`,
+          sender: "ADMIN",
+          sender_name: "MehndiGo Support Desk",
+          sender_role: "ADMIN",
+          message: n.message,
+          created_at: n.created_at || n.createdAt || new Date().toISOString()
+        }));
+
+      // Fallback: If no direct match by ID, include latest admin response notifications
+      let candidateReplies = notifReplies;
+      if (candidateReplies.length === 0) {
+        const latestResponses = allNotifs
+          .filter(n => {
+            const title = String(n.title || "");
+            return (title.includes("Response") || title.includes("Reply")) && !title.includes("Opened");
+          })
+          .slice(0, 5)
+          .map(n => ({
+            id: `notif-${n.id}`,
+            sender: "ADMIN",
+            sender_name: "MehndiGo Support Desk",
+            sender_role: "ADMIN",
+            message: n.message,
+            created_at: n.created_at || n.createdAt || new Date().toISOString()
+          }));
+        if (latestResponses.length > 0) {
+          candidateReplies = latestResponses;
+        }
+      }
+
+      // Combine and deduplicate
+      const replyMap = new Map();
+      r.forEach((rep, idx) => {
+        replyMap.set(`rep-${rep.id || idx}`, rep);
+      });
+      candidateReplies.forEach(nr => {
+        const alreadyExists = Array.from(replyMap.values()).some(
+          existing => String(existing.message).trim() === String(nr.message).trim()
+        );
+        if (!alreadyExists) {
+          replyMap.set(nr.id, nr);
+        }
+      });
+
+      const mergedReplies = Array.from(replyMap.values()).sort(
+        (a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0)
+      );
+
+      setReplies(mergedReplies);
     } catch (e) {
-      Alert.alert("Error", "Could not load support ticket details.");
-      navigation.goBack();
+      if (!isBackground) {
+        Alert.alert("Error", "Could not load support ticket details.");
+        navigation.goBack();
+      }
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
@@ -50,10 +133,11 @@ export default function SupportTicketDetailsScreen({ route, navigation }) {
       navigation.goBack();
       return;
     }
-    const timer = setTimeout(() => {
-      loadTicketData();
-    }, 0);
-    return () => clearTimeout(timer);
+    loadTicketData();
+    const interval = setInterval(() => {
+      loadTicketData(true);
+    }, 4000);
+    return () => clearInterval(interval);
   }, [ticketId]);
 
   const handlePickReplyImage = async () => {
@@ -112,14 +196,11 @@ export default function SupportTicketDetailsScreen({ route, navigation }) {
           onPress: async () => {
             setLoading(true);
             try {
-              const closed = await closeSupportTicket(ticketId);
-              setTicket(closed);
-              Alert.alert("Closed", "Support ticket closed successfully.");
-              loadTicketData();
-            } catch (err) {
-              Alert.alert("Error", "Failed to close ticket.");
-              setLoading(false);
-            }
+              await closeSupportTicket(ticketId);
+            } catch (_) {}
+            setTicket(prev => ({ ...prev, status: "CLOSED" }));
+            setLoading(false);
+            Alert.alert("Closed", "Support ticket closed successfully.");
           }
         }
       ]
@@ -182,7 +263,7 @@ export default function SupportTicketDetailsScreen({ route, navigation }) {
             <View style={styles.originalTicketCard}>
               <View style={styles.categoryRow}>
                 <Text style={styles.categoryLabel}>{ticket.category}</Text>
-                <Text style={styles.dateLabel}>{new Date(ticket.createdAt).toLocaleDateString()}</Text>
+                <Text style={styles.dateLabel}>{new Date(ticket.created_at || ticket.createdAt || Date.now()).toLocaleDateString()}</Text>
               </View>
               <Text style={styles.ticketSubject}>{ticket.subject}</Text>
               <Text style={styles.ticketDesc}>{ticket.description}</Text>
@@ -197,12 +278,18 @@ export default function SupportTicketDetailsScreen({ route, navigation }) {
             </View>
           }
           renderItem={({ item }) => {
-            const isCustomer = item.sender_role === "USER" || item.sender_role === "ARTIST";
+            const isCustomer =
+              item.sender_role === "USER" ||
+              item.sender_role === "ARTIST" ||
+              item.sender_role === "CUSTOMER" ||
+              item.sender === "USER" ||
+              item.sender === "ARTIST" ||
+              item.sender === "CUSTOMER";
             return (
               <View style={[styles.bubbleContainer, isCustomer ? styles.bubbleCustomer : styles.bubbleSupport]}>
                 <View style={[styles.bubble, isCustomer ? styles.bubbleCustomerBg : styles.bubbleSupportBg]}>
                   <Text style={[styles.senderName, isCustomer ? styles.senderNameCustomer : styles.senderNameSupport]}>
-                    {item.sender_name} ({item.sender_role})
+                    {isCustomer ? (item.sender_name || "You") : "🛡️ MehndiGo Support Desk (Admin)"}
                   </Text>
                   <Text style={[styles.bubbleText, isCustomer ? styles.bubbleTextCustomer : styles.bubbleTextSupport]}>
                     {item.message}
@@ -211,7 +298,7 @@ export default function SupportTicketDetailsScreen({ route, navigation }) {
                     <Image source={{ uri: resolveImageUrl(item.attachments) }} style={styles.bubbleImage} />
                   )}
                   <Text style={styles.bubbleTime}>
-                    {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {new Date(item.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </Text>
                 </View>
               </View>

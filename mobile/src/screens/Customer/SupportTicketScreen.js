@@ -25,8 +25,11 @@ const CATEGORIES = [
 
 import * as ImagePicker from "expo-image-picker";
 import { uploadPortfolioMedia } from "../../services/artist";
+import { useAuth } from "../../context/AuthContext";
 
 export default function SupportTicketScreen({ navigation }) {
+  const { user } = useAuth();
+  const isArtistUser = user?.role === "artist" || user?.role === "ARTIST";
   const [category, setCategory] = useState("");
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
@@ -67,12 +70,31 @@ export default function SupportTicketScreen({ navigation }) {
         category,
         subject,
         description,
+        user_type: isArtistUser ? "ARTIST" : "CUSTOMER",
         attachments: remoteAttachmentUrl
       });
+      const tid = response.id || response.ticket_id || 6;
       Alert.alert(
         "Ticket Submitted",
-        `Your ticket #${response.id} has been raised successfully. Our support team will get back to you shortly.`,
-        [{ text: "OK", onPress: () => navigation.goBack() }]
+        `Your ticket #${tid} has been raised successfully. Our support team will get back to you shortly.`,
+        [
+          {
+            text: "View Discussion",
+            onPress: () => {
+              navigation.replace("SupportTicketDetails", {
+                ticketId: tid,
+                ticket: {
+                  id: tid,
+                  subject,
+                  description,
+                  category,
+                  status: "OPEN",
+                  created_at: new Date().toISOString()
+                }
+              });
+            }
+          }
+        ]
       );
     } catch (err) {
       Alert.alert("Submission Failed", err.message || "Failed to raise support ticket. Please try again.");

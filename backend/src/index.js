@@ -5286,7 +5286,7 @@ const handleAdminChats = async (c) => {
   return jsonRes(c, true, formatted, "Admin chats stream retrieved");
 };
 
-// 7. Customer Support Tickets Engine
+// 7. Support Tickets Engine (Artist & Customer)
 const handleCustomerSupportTicket = async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
@@ -5294,7 +5294,55 @@ const handleCustomerSupportTicket = async (c) => {
   await ensureChatTables(db);
 
   const method = c.req.method.toUpperCase();
+  const path = c.req.path.toLowerCase();
 
+  // 1. Reply to ticket
+  if (path.includes("/reply") && method === "POST") {
+    const body = await c.req.json().catch(() => ({}));
+    const message = body.message || body.reply || "";
+    const ticketId = parseInt(c.req.param("id") || path.split("/")[path.split("/").length - 2] || 0, 10);
+    if (!ticketId || !message) {
+      return jsonRes(c, false, null, "Ticket ID and message are required", 400);
+    }
+    const ticket = await db.first("SELECT * FROM support_tickets WHERE id = ?", [ticketId]).catch(() => null);
+    if (!ticket) return jsonRes(c, false, null, "Ticket not found", 404);
+
+    let replies = [];
+    try {
+      replies = typeof ticket.replies === "string" ? JSON.parse(ticket.replies || "[]") : (ticket.replies || []);
+    } catch (_) {
+      replies = [];
+    }
+
+    const newReply = {
+      id: Date.now(),
+      sender_id: u.id,
+      sender_name: u.full_name || u.name || "User",
+      sender_role: (u.role || (path.includes("artist") ? "ARTIST" : "CUSTOMER")).toUpperCase(),
+      message,
+      attachments: body.attachments || null,
+      created_at: new Date().toISOString()
+    };
+    replies.push(newReply);
+
+    await db.run(
+      "UPDATE support_tickets SET replies = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      [JSON.stringify(replies), ticketId]
+    ).catch(() => {});
+
+    return jsonRes(c, true, { ticket_id: ticketId, replies }, "Reply submitted successfully");
+  }
+
+  // 2. Close ticket
+  if (path.includes("/close") && (method === "PUT" || method === "POST")) {
+    const ticketId = parseInt(c.req.param("id") || path.split("/")[path.split("/").length - 2] || 0, 10);
+    if (ticketId) {
+      await db.run("UPDATE support_tickets SET status = 'CLOSED', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [ticketId]).catch(() => {});
+    }
+    return jsonRes(c, true, { id: ticketId, status: "CLOSED" }, "Support ticket closed successfully");
+  }
+
+  // 3. Create Ticket
   if (method === "POST") {
     const body = await c.req.json().catch(() => ({}));
     const category = body.category || "Booking Issue";
@@ -5302,34 +5350,33 @@ const handleCustomerSupportTicket = async (c) => {
     const description = body.description || body.message || "";
     const bookingId = Number(body.booking_id || body.bookingId || 0) || null;
     const attachments = body.attachments || body.attachmentUri || null;
+    
+    // Auto-detect user type (Artist vs Customer)
+    const artist = await db.first("SELECT id FROM artist_profiles WHERE user_id = ? OR CAST(user_id AS TEXT) = ?", [u.id, String(u.id)]).catch(() => null);
+    const userType = (body.user_type || body.userType || (artist || String(u.role).toUpperCase().includes("ARTIST") || path.includes("artist") ? "ARTIST" : "CUSTOMER")).toUpperCase();
 
     if (!description && !subject) {
       return jsonRes(c, false, null, "Subject and description are required", 400);
     }
 
     const res = await db.run(`
-      INSERT INTO support_tickets (user_id, booking_id, category, subject, description, priority, status, attachments, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, 'MEDIUM', 'OPEN', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-    `, [u.id, bookingId, category, subject, description, attachments]);
+      INSERT INTO support_tickets (user_id, booking_id, category, subject, description, priority, status, attachments, replies, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 'MEDIUM', 'OPEN', ?, '[]', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `, [u.id, bookingId, category, subject, description, typeof attachments === "string" ? attachments : JSON.stringify(attachments || [])]);
 
     const ticketId = res?.lastInsertRowid || res?.meta?.last_row_id || Date.now();
 
-    // Create a first message in chat table so support admin sees it immediately
-    await db.run(`
-      INSERT INTO messages (sender_id, receiver_id, booking_id, message, message_type, is_read, created_at)
-      VALUES (?, 1, ?, ?, 'SUPPORT_TICKET', 0, CURRENT_TIMESTAMP)
-    `, [u.id, bookingId, `[TICKET #${ticketId}] ${subject}: ${description}`]).catch(() => {});
-
-    // Notify Admins
+    // Create a notification for Admin
     await db.run(
       "INSERT INTO notifications (user_id, title, message, type, is_read) VALUES (1, ?, ?, 'SUPPORT', 0)",
-      [`Support Ticket #${ticketId} Opened`, `${u.full_name || 'Customer'} opened ticket: ${subject}`]
+      [`Support Ticket #${ticketId} Raised by ${userType === 'ARTIST' ? 'Artist' : 'Customer'}`, `${u.full_name || u.name || 'User'} (${userType}): ${subject}`]
     ).catch(() => {});
 
     return jsonRes(c, true, {
       id: ticketId,
       ticket_id: ticketId,
       user_id: u.id,
+      user_type: userType,
       category,
       subject,
       description,
@@ -5338,13 +5385,202 @@ const handleCustomerSupportTicket = async (c) => {
     }, "Support ticket submitted successfully");
   }
 
-  // GET user tickets
+  // 4. GET Single Ticket Details
+  const singleId = parseInt(c.req.param("id") || 0, 10);
+  if (singleId) {
+    const ticket = await db.first("SELECT * FROM support_tickets WHERE id = ?", [singleId]).catch(() => null);
+    if (!ticket) return jsonRes(c, false, null, "Ticket not found", 404);
+    let replies = [];
+    try {
+      replies = typeof ticket.replies === "string" ? JSON.parse(ticket.replies || "[]") : (ticket.replies || []);
+    } catch (_) {
+      replies = [];
+    }
+    return jsonRes(c, true, { ...ticket, replies }, "Ticket details retrieved");
+  }
+
+  // 5. GET user tickets
   const tickets = await db.all(
     "SELECT * FROM support_tickets WHERE user_id = ? OR CAST(user_id AS TEXT) = ? ORDER BY id DESC",
     [u.id, String(u.id)]
   ).catch(() => []);
 
-  return jsonRes(c, true, tickets || [], "Customer support tickets retrieved");
+  const formatted = (tickets || []).map(t => {
+    let replies = [];
+    try {
+      replies = typeof t.replies === "string" ? JSON.parse(t.replies || "[]") : (t.replies || []);
+    } catch (_) {
+      replies = [];
+    }
+    return { ...t, replies };
+  });
+
+  return jsonRes(c, true, formatted, "Support tickets retrieved");
+};
+
+// 7b. Admin Support Tickets Master Engine
+const handleAdminSupportTickets = async (c) => {
+  const db = getDb(c.env);
+  await ensureChatTables(db);
+  const method = c.req.method.toUpperCase();
+  const path = c.req.path.toLowerCase();
+
+  // Admin Reply to Ticket
+  if (path.includes("/reply") && method === "POST") {
+    const body = await c.req.json().catch(() => ({}));
+    const message = body.message || body.reply || "";
+    const ticketId = parseInt(c.req.param("id") || path.split("/")[path.split("/").length - 2] || body.ticketId || body.ticket_id || 0, 10);
+
+    if (!ticketId || !message) {
+      return jsonRes(c, false, null, "Ticket ID and reply message are required", 400);
+    }
+
+    const ticket = await db.first("SELECT * FROM support_tickets WHERE id = ?", [ticketId]).catch(() => null);
+    if (!ticket) return jsonRes(c, false, null, "Ticket not found", 404);
+
+    let replies = [];
+    try {
+      replies = typeof ticket.replies === "string" ? JSON.parse(ticket.replies || "[]") : (ticket.replies || []);
+    } catch (_) {
+      replies = [];
+    }
+
+    const newReply = {
+      id: Date.now(),
+      sender_id: 1,
+      sender_name: "MehndiGo Admin Desk",
+      sender_role: "ADMIN",
+      message,
+      attachments: body.attachments || null,
+      created_at: new Date().toISOString()
+    };
+    replies.push(newReply);
+
+    const newStatus = body.status || (ticket.status === "OPEN" ? "IN_PROGRESS" : ticket.status);
+
+    await db.run(
+      "UPDATE support_tickets SET replies = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      [JSON.stringify(replies), newStatus, ticketId]
+    ).catch(() => {});
+
+    // Notify User
+    await db.run(
+      "INSERT INTO notifications (user_id, title, message, type, is_read) VALUES (?, ?, ?, 'SUPPORT', 0)",
+      [ticket.user_id, `Support Ticket #${ticketId} Update`, `Admin response: ${message.substring(0, 90)}`]
+    ).catch(() => {});
+
+    return jsonRes(c, true, { ticket_id: ticketId, status: newStatus, replies }, "Admin reply sent successfully");
+  }
+
+  // Admin Status Update (OPEN / IN_PROGRESS / RESOLVED / CLOSED)
+  if ((path.includes("/status") || path.includes("/update-status")) && (method === "PUT" || method === "PATCH" || method === "POST")) {
+    const body = await c.req.json().catch(() => ({}));
+    const ticketId = parseInt(c.req.param("id") || body.id || body.ticketId || body.ticket_id || 0, 10);
+    const status = String(body.status || "OPEN").toUpperCase();
+
+    if (!ticketId) return jsonRes(c, false, null, "Ticket ID is required", 400);
+
+    await db.run(
+      "UPDATE support_tickets SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      [status, ticketId]
+    ).catch(() => {});
+
+    const ticket = await db.first("SELECT user_id FROM support_tickets WHERE id = ?", [ticketId]).catch(() => null);
+    if (ticket) {
+      await db.run(
+        "INSERT INTO notifications (user_id, title, message, type, is_read) VALUES (?, ?, ?, 'SUPPORT', 0)",
+        [ticket.user_id, `Ticket #${ticketId} Status Changed`, `Your support ticket status has been marked as ${status}.`]
+      ).catch(() => {});
+    }
+
+    return jsonRes(c, true, { id: ticketId, status }, `Ticket status updated to ${status}`);
+  }
+
+  // GET All Support Tickets for Admin
+  const statusFilter = (c.req.query("status") || "ALL").toUpperCase();
+  const userTypeFilter = (c.req.query("user_type") || c.req.query("role") || "ALL").toUpperCase();
+  const search = (c.req.query("search") || "").trim().toLowerCase();
+
+  const rawTickets = await db.all(`
+    SELECT t.*,
+           u.full_name, u.phone, u.email, u.avatar, u.role as user_role,
+           a.id as artist_id, a.name as artist_name, a.avatar as artist_avatar, a.phone as artist_phone,
+           b.booking_number, b.status as booking_status, b.total_amount as booking_amount, b.booking_date
+    FROM support_tickets t
+    LEFT JOIN users u ON (t.user_id = u.id OR CAST(t.user_id AS TEXT) = CAST(u.id AS TEXT))
+    LEFT JOIN artist_profiles a ON (t.user_id = a.user_id OR CAST(t.user_id AS TEXT) = CAST(a.user_id AS TEXT))
+    LEFT JOIN bookings b ON (t.booking_id = b.id OR CAST(t.booking_id AS TEXT) = CAST(b.id AS TEXT))
+    ORDER BY t.id DESC
+  `).catch(() => []);
+
+  const formatted = (rawTickets || []).map(t => {
+    let replies = [];
+    try {
+      replies = typeof t.replies === "string" ? JSON.parse(t.replies || "[]") : (t.replies || []);
+    } catch (_) {
+      replies = [];
+    }
+
+    const isArtist = Boolean(t.artist_id || t.artist_name || String(t.user_role).toUpperCase().includes("ARTIST") || String(t.category).toLowerCase().includes("artist") || String(t.subject).toLowerCase().includes("artist") || String(t.description).toLowerCase().includes("artist"));
+    const senderRole = isArtist ? "ARTIST" : "CUSTOMER";
+
+    return {
+      id: t.id,
+      ticket_id: t.id,
+      user_id: t.user_id,
+      user_type: senderRole,
+      sender_role: senderRole,
+      user_name: t.artist_name || t.full_name || `User #${t.user_id}`,
+      user_phone: t.artist_phone || t.phone || "N/A",
+      user_email: t.email || "N/A",
+      user_avatar: t.artist_avatar || t.avatar || null,
+      booking_id: t.booking_id,
+      booking_code: t.booking_number || (t.booking_id ? `MG-${String(t.booking_id).padStart(6, "0")}` : null),
+      booking_status: t.booking_status,
+      booking_amount: t.booking_amount,
+      booking_date: t.booking_date,
+      category: t.category || "General",
+      subject: t.subject || "Support Inquiry",
+      description: t.description || "",
+      priority: t.priority || "MEDIUM",
+      status: (t.status || "OPEN").toUpperCase(),
+      attachments: t.attachments ? (typeof t.attachments === "string" && t.attachments.startsWith("[") ? JSON.parse(t.attachments) : t.attachments) : null,
+      replies,
+      created_at: t.created_at || new Date().toISOString(),
+      updated_at: t.updated_at || t.created_at || new Date().toISOString()
+    };
+  });
+
+  // Apply filters
+  let filtered = formatted;
+  if (statusFilter !== "ALL") {
+    filtered = filtered.filter(t => t.status === statusFilter);
+  }
+  if (userTypeFilter !== "ALL") {
+    filtered = filtered.filter(t => t.sender_role === userTypeFilter);
+  }
+  if (search) {
+    filtered = filtered.filter(t =>
+      String(t.id).includes(search) ||
+      t.user_name.toLowerCase().includes(search) ||
+      t.user_phone.toLowerCase().includes(search) ||
+      t.subject.toLowerCase().includes(search) ||
+      t.description.toLowerCase().includes(search) ||
+      (t.booking_code && t.booking_code.toLowerCase().includes(search))
+    );
+  }
+
+  // Summary counts
+  const stats = {
+    total: formatted.length,
+    open: formatted.filter(t => t.status === "OPEN").length,
+    in_progress: formatted.filter(t => t.status === "IN_PROGRESS").length,
+    resolved: formatted.filter(t => t.status === "RESOLVED" || t.status === "CLOSED").length,
+    from_artists: formatted.filter(t => t.sender_role === "ARTIST").length,
+    from_customers: formatted.filter(t => t.sender_role === "CUSTOMER").length
+  };
+
+  return jsonRes(c, true, { tickets: filtered, stats }, "Admin support tickets retrieved");
 };
 
 const handleAdminNotifications = async (c) => {
@@ -6898,7 +7134,8 @@ const handleAcceptBooking = async (c) => {
   const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
 
-  const assignedArtistId = u?.id || booking.artist_id || 231;
+  const artist = u ? await db.first("SELECT id, user_id FROM artist_profiles WHERE user_id = ? OR CAST(user_id AS TEXT) = CAST(? AS TEXT)", [u.id, String(u.id)]).catch(() => null) : null;
+  const assignedArtistId = booking.artist_id || (artist && artist.id) || u?.id || 231;
 
   // Generate 4-digit Check-In OTP and Completion PIN if not already set
   const checkinOtp = booking.checkin_otp || Math.floor(1000 + Math.random() * 9000).toString();
@@ -6906,13 +7143,21 @@ const handleAcceptBooking = async (c) => {
   const checkinExpires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
   const checkoutExpires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
-  // Atomically update booking status to accepted / ARTIST_ACCEPTED
+  // Atomically update booking status to accepted / ARTIST_ACCEPTED and booking_status = 'CONFIRMED'
   await db.run(
-    "UPDATE bookings SET status = 'accepted', detailed_status = 'ARTIST_ACCEPTED', artist_id = ?, checkin_otp = ?, checkin_otp_expires_at = ?, checkout_otp = ?, checkout_otp_expires_at = ? WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
-    [assignedArtistId, checkinOtp, checkinExpires, checkoutOtp, checkoutExpires, bookingId, String(bookingId)]
+    "UPDATE bookings SET status = 'accepted', booking_status = 'CONFIRMED', detailed_status = 'ARTIST_ACCEPTED', artist_id = ?, checkin_otp = ?, checkout_otp = ? WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+    [assignedArtistId, checkinOtp, checkoutOtp, bookingId, String(bookingId)]
+  ).catch(err => {
+    console.error("Error updating bookings table:", err);
+  });
+
+  // Attempt to update optional expiration timestamps if columns exist
+  await db.run(
+    "UPDATE bookings SET checkin_otp_expires_at = ?, checkout_otp_expires_at = ? WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+    [checkinExpires, checkoutExpires, bookingId, String(bookingId)]
   ).catch(() => { });
 
-  const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
+  const updated = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   return jsonRes(c, true, {
     ...updated,
     id: bookingId,
@@ -6945,11 +7190,11 @@ const handleOnTheWayBooking = async (c) => {
   const checkoutOtp = booking.checkout_otp || Math.floor(1000 + Math.random() * 9000).toString();
 
   await db.run(
-    "UPDATE bookings SET status = 'accepted', detailed_status = 'ARTIST_ON_THE_WAY', checkin_otp = ?, checkout_otp = ? WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+    "UPDATE bookings SET status = 'accepted', booking_status = 'CONFIRMED', detailed_status = 'ARTIST_ON_THE_WAY', checkin_otp = ?, checkout_otp = ? WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
     [checkinOtp, checkoutOtp, bookingId, String(bookingId)]
   ).catch(() => { });
 
-  const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
+  const updated = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   return jsonRes(c, true, {
     ...updated,
     id: bookingId,
@@ -7661,12 +7906,14 @@ addRoute("post", "/booking/accept", handleAcceptBooking);
 addRoute("put", "/artist/booking/accept", handleAcceptBooking);
 addRoute("post", "/artist/booking/accept", handleAcceptBooking);
 addRoute("put", "/api/v1/booking/accept", handleAcceptBooking);
+addRoute("post", "/api/v1/booking/accept", handleAcceptBooking);
 
 addRoute("put", "/booking/reject", handleRejectBooking);
 addRoute("post", "/booking/reject", handleRejectBooking);
 addRoute("put", "/artist/booking/reject", handleRejectBooking);
 addRoute("post", "/artist/booking/reject", handleRejectBooking);
 addRoute("put", "/api/v1/booking/reject", handleRejectBooking);
+addRoute("post", "/api/v1/booking/reject", handleRejectBooking);
 
 addRoute("get", "/booking/:bookingId/location", handleGetArtistLocation);
 addRoute("post", "/artist/location/update", handleUpdateArtistLocation);
@@ -7689,6 +7936,30 @@ addRoute("post", "/customer/review/upload", handleUploadChatMedia);
 addRoute("post", "/chat/upload", handleUploadChatMedia);
 addRoute("post", "/chat/media", handleUploadChatMedia);
 
+// Support Tickets Routes (Artist & Customer)
+addRoute("post", "/customer/support/ticket", handleCustomerSupportTicket);
+addRoute("get", "/customer/support/tickets", handleCustomerSupportTicket);
+addRoute("get", "/customer/support/tickets/:id", handleCustomerSupportTicket);
+addRoute("post", "/customer/support/tickets/:id/reply", handleCustomerSupportTicket);
+addRoute("put", "/customer/support/tickets/:id/close", handleCustomerSupportTicket);
+
+addRoute("post", "/artist/support/ticket", handleCustomerSupportTicket);
+addRoute("get", "/artist/support/tickets", handleCustomerSupportTicket);
+addRoute("get", "/artist/support/tickets/:id", handleCustomerSupportTicket);
+addRoute("post", "/artist/support/tickets/:id/reply", handleCustomerSupportTicket);
+addRoute("put", "/artist/support/tickets/:id/close", handleCustomerSupportTicket);
+
+addRoute("post", "/support/ticket", handleCustomerSupportTicket);
+addRoute("get", "/support/tickets", handleCustomerSupportTicket);
+
+// Admin Support Tickets Management Routes
+addRoute("get", "/admin/support-tickets", handleAdminSupportTickets);
+addRoute("get", "/admin/support/tickets", handleAdminSupportTickets);
+addRoute("post", "/admin/support-tickets/:id/reply", handleAdminSupportTickets);
+addRoute("post", "/admin/support/tickets/:id/reply", handleAdminSupportTickets);
+addRoute("put", "/admin/support-tickets/:id/status", handleAdminSupportTickets);
+addRoute("patch", "/admin/support-tickets/:id/status", handleAdminSupportTickets);
+addRoute("post", "/admin/support-tickets/:id/status", handleAdminSupportTickets);
 
 // Fallback 404 handler
 app.notFound((c) => {

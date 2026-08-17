@@ -436,9 +436,12 @@ export default function ArtistDashboardScreen({ navigation }) {
               </Pressable>
             </View>
             {dashboard.recentBookings.filter(b => {
-              const st = String(b.booking_status || b.status || "").toUpperCase();
+              const st = String(b.status || b.booking_status || "").toUpperCase();
               const det = String(b.detailed_status || b.detailedStatus || "").toUpperCase();
-              return (st === "PENDING" || det === "PENDING") && det !== "ARTIST_ACCEPTED" && det !== "ACCEPTED" && det !== "CONFIRMED" && det !== "CANCELLED" && det !== "REJECTED" && det !== "COMPLETED";
+              const isAccepted = st === "ACCEPTED" || det === "ARTIST_ACCEPTED" || det === "ACCEPTED" || det === "ARTIST_ON_THE_WAY" || det === "ARTIST_ARRIVED" || det === "SERVICE_STARTED";
+              const isCancelled = st === "CANCELLED" || st === "REJECTED" || det === "CANCELLED" || det === "REJECTED";
+              const isCompleted = st === "COMPLETED" || det === "COMPLETED";
+              return !isAccepted && !isCancelled && !isCompleted && (st === "PENDING" || st === "CONFIRMED" || det === "PENDING");
             }).slice(0, 3).map((item) => {
               const slotDate = item.slot?.start_time ? new Date(item.slot.start_time).toLocaleDateString() : (item.reschedule_date || "TBD");
               const slotTime = item.slot ? `${new Date(item.slot.start_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - ${new Date(item.slot.end_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` : (item.reschedule_time || "TBD");

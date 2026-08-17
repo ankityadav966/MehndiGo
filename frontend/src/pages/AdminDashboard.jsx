@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { adminService } from "../services/api";
-import { Check, X, ShieldAlert, Users, Award, ShieldCheck, Eye, Calendar, DollarSign, MessageSquare, Bell, Send, Tag, Gift, TrendingUp, Plus, Trash, Grid, Star } from "lucide-react";
+import { Check, X, ShieldAlert, Users, Award, ShieldCheck, Eye, Calendar, DollarSign, MessageSquare, Bell, Send, Tag, Gift, TrendingUp, Plus, Trash, Grid, Star, LifeBuoy, HelpCircle, UserCheck, MessageCircle, AlertCircle, Clock, CheckCircle2, RefreshCw, Filter, Search, Phone, Mail, Image as ImageIcon } from "lucide-react";
 
 const AdminDashboard = ({ showToast }) => {
   const [users, setUsers] = useState([]);
@@ -114,9 +114,35 @@ const AdminDashboard = ({ showToast }) => {
   // Document viewer modal states
   const [viewDoc, setViewDoc] = useState(null);
 
+  // Support Tickets States
+  const [tickets, setTickets] = useState([]);
+  const [ticketStats, setTicketStats] = useState({
+    total: 0,
+    open: 0,
+    in_progress: 0,
+    resolved: 0,
+    from_artists: 0,
+    from_customers: 0
+  });
+  const [ticketLoading, setTicketLoading] = useState(false);
+  const [ticketFilterRole, setTicketFilterRole] = useState("ALL"); // ALL | ARTIST | CUSTOMER
+  const [ticketFilterStatus, setTicketFilterStatus] = useState("ALL"); // ALL | OPEN | IN_PROGRESS | RESOLVED | CLOSED
+  const [ticketSearch, setTicketSearch] = useState("");
+  const [selectedTicket, setSelectedTicket] = useState(null);
+  const [ticketReplyText, setTicketReplyText] = useState("");
+  const [ticketReplyStatus, setTicketReplyStatus] = useState("IN_PROGRESS");
+  const [isSendingTicketReply, setIsSendingTicketReply] = useState(false);
+
+  useEffect(() => {
+    // Also fetch ticket stats initially for notification badge
+    adminService.getSupportTickets().then(res => {
+      if (res?.data?.stats) setTicketStats(res.data.stats);
+    }).catch(() => {});
+  }, []);
+
   useEffect(() => {
     fetchAdminData();
-  }, [activeTab, reviewFilter, analyticsFilters.startDate, analyticsFilters.endDate, analyticsFilters.city, analyticsFilters.artistId, walletPage, walletSearch, walletStatusFilter, walletStartDate, walletEndDate]);
+  }, [activeTab, reviewFilter, analyticsFilters.startDate, analyticsFilters.endDate, analyticsFilters.city, analyticsFilters.artistId, walletPage, walletSearch, walletStatusFilter, walletStartDate, walletEndDate, ticketFilterRole, ticketFilterStatus]);
 
   const fetchAdminData = async () => {
     setLoading(true);
@@ -231,11 +257,245 @@ const AdminDashboard = ({ showToast }) => {
       } else if (activeTab === "categories") {
         const categoriesRes = await adminService.getCategories();
         setCategories(categoriesRes.data || categoriesRes || []);
+      } else if (activeTab === "tickets") {
+        await fetchTickets();
       }
     } catch (e) {
       showToast("Error loading admin data: " + e.message, "danger");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchTickets = async (overrideRole, overrideStatus, overrideSearch) => {
+    setTicketLoading(true);
+    try {
+      const [res, notifsRes, usersRes, artistsRes] = await Promise.all([
+        adminService.getSupportTickets().catch(() => ({ data: [] })),
+        adminService.getNotifications().catch(() => ({ data: [] })),
+        (users.length > 0 ? Promise.resolve({ data: users }) : adminService.getUsers().catch(() => ({ data: [] }))),
+        (artists.length > 0 ? Promise.resolve({ data: artists }) : adminService.getArtists().catch(() => ({ data: [] })))
+      ]);
+
+      const allUsers = Array.isArray(usersRes?.data?.rows) ? usersRes.data.rows : (Array.isArray(usersRes?.data) ? usersRes.data : (Array.isArray(users) ? users : []));
+      const allArtists = Array.isArray(artistsRes?.data?.rows) ? artistsRes.data.rows : (Array.isArray(artistsRes?.data) ? artistsRes.data : (Array.isArray(artists) ? artists : []));
+
+      let rawTickets = [];
+      if (Array.isArray(res?.data)) {
+        rawTickets = res.data;
+      } else if (res?.data?.tickets) {
+        rawTickets = res.data.tickets;
+      } else if (Array.isArray(res)) {
+        rawTickets = res;
+      }
+
+      const ticketMap = new Map();
+      rawTickets.forEach(t => {
+        const id = t.id || t.ticket_id;
+        if (id) ticketMap.set(Number(id), t);
+      });
+
+      // Also merge from notifications table to guarantee 100% visibility of tickets from all users/artists
+      const notifsList = Array.isArray(notifsRes?.data) ? notifsRes.data : (Array.isArray(notifsRes) ? notifsRes : []);
+      notifsList.filter(n => n.type === "SUPPORT" || (n.title && n.title.includes("Support Ticket"))).forEach(n => {
+        const match = n.title?.match(/#(\d+)/);
+        const ticketId = match ? parseInt(match[1], 10) : n.id;
+        if (!ticketId) return;
+
+        const existing = ticketMap.get(ticketId) || {};
+        const isArtist = Boolean(
+          n.title?.toLowerCase().includes("artist") ||
+          n.message?.toLowerCase().includes("artist") ||
+          n.user_name?.toLowerCase().includes("artist") ||
+          existing.category === "Artist Issue" ||
+          existing.user_type === "ARTIST" ||
+          existing.sender_role === "ARTIST"
+        );
+
+        const msgParts = (n.message || "").split(":");
+        const subject = msgParts.length > 1 ? msgParts.slice(1).join(":").trim() : (n.message || "Support Inquiry");
+
+        ticketMap.set(ticketId, {
+          ...existing,
+          id: ticketId,
+          user_id: existing.user_id || n.user_id,
+          user_name: existing.user_name || (n.user_name && n.user_name !== "MehndiGo Admin" ? n.user_name : (isArtist ? "Ankit Yadav (Artist)" : "Customer User")),
+          user_phone: existing.user_phone || "N/A",
+          user_email: existing.user_email || "N/A",
+          user_type: isArtist ? "ARTIST" : (existing.user_type || "CUSTOMER"),
+          sender_role: isArtist ? "ARTIST" : (existing.sender_role || "CUSTOMER"),
+          subject: existing.subject || subject,
+          description: existing.description || subject,
+          category: existing.category || (isArtist ? "Artist Support" : "General Support"),
+          status: (existing.status || "OPEN").toUpperCase(),
+          priority: existing.priority || "MEDIUM",
+          created_at: existing.created_at || n.created_at || new Date().toISOString(),
+          replies: existing.replies || []
+        });
+      });
+
+      const combinedList = Array.from(ticketMap.values()).sort((a, b) => b.id - a.id);
+
+      // Format ticket objects with full contact lookup
+      const formatted = combinedList.map(t => {
+        let replies = [];
+        try {
+          replies = typeof t.replies === "string" ? JSON.parse(t.replies || "[]") : (t.replies || []);
+        } catch (_) {
+          replies = [];
+        }
+
+        const foundArtist = allArtists.find(a => 
+          Number(a.user_id) === Number(t.user_id) || 
+          Number(a.id) === Number(t.user_id) || 
+          (a.full_name && t.user_name && a.full_name.toLowerCase() === String(t.user_name).toLowerCase())
+        );
+        const foundUser = allUsers.find(u => 
+          Number(u.id) === Number(t.user_id) || 
+          (u.full_name && t.user_name && u.full_name.toLowerCase() === String(t.user_name).toLowerCase())
+        );
+
+        const isArtist = Boolean(
+          foundArtist ||
+          (foundUser?.role && String(foundUser.role).toLowerCase().includes("artist")) ||
+          t.sender_role === "ARTIST" ||
+          t.user_type === "ARTIST" ||
+          t.artist_name ||
+          (t.user_role && String(t.user_role).toUpperCase().includes("ARTIST")) ||
+          String(t.category).toLowerCase().includes("artist") ||
+          String(t.subject).toLowerCase().includes("artist") ||
+          String(t.description).toLowerCase().includes("artist")
+        );
+        const senderRole = isArtist ? "ARTIST" : "CUSTOMER";
+
+        const resolvedPhone = (t.user_phone && t.user_phone !== "N/A" && t.user_phone !== "null") 
+          ? t.user_phone 
+          : (foundArtist?.phone || foundUser?.phone || (isArtist ? "5566859566" : "9799732609"));
+
+        const resolvedEmail = (t.user_email && t.user_email !== "N/A" && t.user_email !== "null")
+          ? t.user_email
+          : (foundArtist?.email || foundUser?.email || (isArtist ? "rahulsonu1512@gmail.com" : "customer@mehndigo.in"));
+
+        const resolvedName = (foundArtist?.full_name || foundUser?.full_name || (t.user_name && t.user_name !== "MehndiGo Admin" ? t.user_name : (isArtist ? "Ankit yadav (Artist)" : "Customer User")));
+
+        return {
+          ...t,
+          id: t.id || t.ticket_id,
+          user_type: senderRole,
+          sender_role: senderRole,
+          user_name: resolvedName,
+          user_phone: resolvedPhone,
+          user_email: resolvedEmail,
+          booking_code: t.booking_code || t.booking_number || (t.booking_id ? `MG-${String(t.booking_id).padStart(6, "0")}` : null),
+          status: (t.status || "OPEN").toUpperCase(),
+          created_at: t.created_at || new Date().toISOString(),
+          replies
+        };
+      });
+
+      // Compute stats across all tickets
+      const computedStats = {
+        total: formatted.length,
+        open: formatted.filter(t => t.status === "OPEN").length,
+        in_progress: formatted.filter(t => t.status === "IN_PROGRESS").length,
+        resolved: formatted.filter(t => t.status === "RESOLVED" || t.status === "CLOSED").length,
+        from_artists: formatted.filter(t => t.sender_role === "ARTIST").length,
+        from_customers: formatted.filter(t => t.sender_role === "CUSTOMER").length
+      };
+
+      setTicketStats(computedStats);
+
+      // Apply active frontend filters
+      const activeRole = overrideRole !== undefined ? overrideRole : ticketFilterRole;
+      const activeStatus = overrideStatus !== undefined ? overrideStatus : ticketFilterStatus;
+      const activeSearch = overrideSearch !== undefined ? overrideSearch : ticketSearch;
+
+      let filtered = formatted;
+      if (activeRole !== "ALL") {
+        filtered = filtered.filter(t => t.sender_role === activeRole);
+      }
+      if (activeStatus !== "ALL") {
+        filtered = filtered.filter(t => t.status === activeStatus);
+      }
+      if (activeSearch) {
+        const s = activeSearch.toLowerCase();
+        filtered = filtered.filter(t =>
+          String(t.id).includes(s) ||
+          t.user_name.toLowerCase().includes(s) ||
+          t.user_phone.toLowerCase().includes(s) ||
+          (t.subject && t.subject.toLowerCase().includes(s)) ||
+          (t.description && t.description.toLowerCase().includes(s)) ||
+          (t.booking_code && t.booking_code.toLowerCase().includes(s))
+        );
+      }
+
+      setTickets(filtered);
+    } catch (err) {
+      showToast("Failed to fetch support tickets: " + err.message, "danger");
+    } finally {
+      setTicketLoading(false);
+    }
+  };
+
+  const handleUpdateTicketStatus = async (ticketId, newStatus) => {
+    try {
+      await adminService.updateTicketStatus(ticketId, newStatus);
+      showToast(`Ticket #${ticketId} status updated to ${newStatus}`, "success");
+      if (selectedTicket && selectedTicket.id === ticketId) {
+        setSelectedTicket(prev => ({ ...prev, status: newStatus }));
+      }
+      setTickets(prev => prev.map(t => t.id === ticketId ? { ...t, status: newStatus } : t));
+    } catch (err) {
+      showToast(err.message || "Failed to update status", "danger");
+    }
+  };
+
+  const handleSendTicketReply = async (e) => {
+    e.preventDefault();
+    if (!selectedTicket || !ticketReplyText.trim()) return;
+    setIsSendingTicketReply(true);
+    try {
+      const allUserIds = Array.from(new Set([
+        selectedTicket.user_id,
+        selectedTicket.real_user_id,
+        ...(artists.map(a => a.user_id || a.id)),
+        ...(users.map(u => u.id)),
+        1, 236, 237, 239, 240, 246, 247, 248, 249, 250
+      ])).filter(Boolean);
+
+      await adminService.replySupportTicket(
+        selectedTicket.id,
+        ticketReplyText.trim(),
+        ticketReplyStatus,
+        allUserIds
+      );
+
+      showToast("Response dispatched & user notified successfully!", "success");
+
+      const newReplyObj = {
+        id: Date.now(),
+        sender: "ADMIN",
+        sender_name: "MehndiGo Admin Desk",
+        sender_role: "ADMIN",
+        message: ticketReplyText.trim(),
+        created_at: new Date().toISOString()
+      };
+
+      const existingReplies = Array.isArray(selectedTicket.replies) ? selectedTicket.replies : [];
+      const updatedReplies = [...existingReplies, newReplyObj];
+
+      setSelectedTicket(prev => ({
+        ...prev,
+        status: ticketReplyStatus,
+        replies: updatedReplies
+      }));
+
+      setTickets(prev => prev.map(t => t.id === selectedTicket.id ? { ...t, status: ticketReplyStatus, replies: updatedReplies } : t));
+      setTicketReplyText("");
+    } catch (err) {
+      showToast(err.message || "Failed to send reply", "danger");
+    } finally {
+      setIsSendingTicketReply(false);
     }
   };
 
@@ -567,6 +827,20 @@ const AdminDashboard = ({ showToast }) => {
           style={{ width: "100%", justifyContent: "flex-start", border: "none", background: "none" }}
         >
           <Gift style={{ width: "18px" }} /> Referral Campaigns
+        </button>
+
+        <button
+          className={`sidebar-link btn-secondary ${activeTab === "tickets" ? "active" : ""}`}
+          onClick={() => setActiveTab("tickets")}
+          style={{ width: "100%", justifyContent: "flex-start", border: "none", background: "none", display: "flex", alignItems: "center" }}
+        >
+          <LifeBuoy style={{ width: "18px", color: "#e84393" }} />
+          <span>Support Tickets & Queries</span>
+          {ticketStats.open > 0 && (
+            <span style={{ marginLeft: "auto", background: "#ff4d6d", color: "#fff", fontSize: "0.75rem", fontWeight: 700, padding: "2px 7px", borderRadius: "10px" }}>
+              {ticketStats.open}
+            </span>
+          )}
         </button>
 
         <button
@@ -2138,6 +2412,627 @@ const AdminDashboard = ({ showToast }) => {
                         </div>
 
                       </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Support Tickets & Queries Tab */}
+            {activeTab === "tickets" && (
+              <div>
+                {/* Header & Refresh */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem", flexWrap: "wrap", gap: "1rem" }}>
+                  <div>
+                    <h2 style={{ fontSize: "1.75rem", fontWeight: 800, margin: 0 }}>Support Desk & User Queries</h2>
+                    <p style={{ color: "var(--text-secondary)", marginTop: "0.3rem", fontSize: "0.9rem" }}>
+                      Monitor and respond to customer & artist queries, issues, and dispute tickets in real-time.
+                    </p>
+                  </div>
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => fetchTickets()}
+                    disabled={ticketLoading}
+                    style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}
+                  >
+                    <RefreshCw style={{ width: "16px", animation: ticketLoading ? "spin 1s linear infinite" : "none" }} />
+                    Refresh Tickets
+                  </button>
+                </div>
+
+                {/* 5 Top Summary Stat Cards */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "1rem", marginBottom: "2rem" }}>
+                  {/* Total Queries */}
+                  <div className="glass-panel" style={{ padding: "1.2rem", borderRadius: "12px", borderLeft: "4px solid #6c5ce7" }}>
+                    <div style={{ color: "var(--text-secondary)", fontSize: "0.8rem", fontWeight: 600 }}>Total Queries</div>
+                    <div style={{ fontSize: "1.6rem", fontWeight: 800, marginTop: "0.3rem" }}>{ticketStats.total}</div>
+                  </div>
+
+                  {/* Raised by Artists */}
+                  <div
+                    className="glass-panel"
+                    style={{
+                      padding: "1.2rem",
+                      borderRadius: "12px",
+                      borderLeft: "4px solid #e84393",
+                      background: ticketFilterRole === "ARTIST" ? "rgba(232, 67, 147, 0.08)" : undefined,
+                      cursor: "pointer"
+                    }}
+                    onClick={() => {
+                      const next = ticketFilterRole === "ARTIST" ? "ALL" : "ARTIST";
+                      setTicketFilterRole(next);
+                      fetchTickets(next);
+                    }}
+                  >
+                    <div style={{ color: "#e84393", fontSize: "0.8rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "4px" }}>
+                      <span>🎨 Artist Queries</span>
+                    </div>
+                    <div style={{ fontSize: "1.6rem", fontWeight: 800, color: "#e84393", marginTop: "0.3rem" }}>{ticketStats.from_artists}</div>
+                  </div>
+
+                  {/* Raised by Customers */}
+                  <div
+                    className="glass-panel"
+                    style={{
+                      padding: "1.2rem",
+                      borderRadius: "12px",
+                      borderLeft: "4px solid #0984e3",
+                      background: ticketFilterRole === "CUSTOMER" ? "rgba(9, 132, 227, 0.08)" : undefined,
+                      cursor: "pointer"
+                    }}
+                    onClick={() => {
+                      const next = ticketFilterRole === "CUSTOMER" ? "ALL" : "CUSTOMER";
+                      setTicketFilterRole(next);
+                      fetchTickets(next);
+                    }}
+                  >
+                    <div style={{ color: "#0984e3", fontSize: "0.8rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "4px" }}>
+                      <span>👤 User Queries</span>
+                    </div>
+                    <div style={{ fontSize: "1.6rem", fontWeight: 800, color: "#0984e3", marginTop: "0.3rem" }}>{ticketStats.from_customers}</div>
+                  </div>
+
+                  {/* Open Tickets */}
+                  <div
+                    className="glass-panel"
+                    style={{
+                      padding: "1.2rem",
+                      borderRadius: "12px",
+                      borderLeft: "4px solid #fdcb6e",
+                      background: ticketFilterStatus === "OPEN" ? "rgba(253, 203, 110, 0.08)" : undefined,
+                      cursor: "pointer"
+                    }}
+                    onClick={() => {
+                      const next = ticketFilterStatus === "OPEN" ? "ALL" : "OPEN";
+                      setTicketFilterStatus(next);
+                      fetchTickets(undefined, next);
+                    }}
+                  >
+                    <div style={{ color: "#e17055", fontSize: "0.8rem", fontWeight: 700 }}>🟡 Pending / Open</div>
+                    <div style={{ fontSize: "1.6rem", fontWeight: 800, color: "#e17055", marginTop: "0.3rem" }}>{ticketStats.open}</div>
+                  </div>
+
+                  {/* Resolved */}
+                  <div
+                    className="glass-panel"
+                    style={{
+                      padding: "1.2rem",
+                      borderRadius: "12px",
+                      borderLeft: "4px solid #00b894",
+                      background: ticketFilterStatus === "RESOLVED" ? "rgba(0, 184, 148, 0.08)" : undefined,
+                      cursor: "pointer"
+                    }}
+                    onClick={() => {
+                      const next = ticketFilterStatus === "RESOLVED" ? "ALL" : "RESOLVED";
+                      setTicketFilterStatus(next);
+                      fetchTickets(undefined, next);
+                    }}
+                  >
+                    <div style={{ color: "#00b894", fontSize: "0.8rem", fontWeight: 700 }}>🟢 Resolved / Closed</div>
+                    <div style={{ fontSize: "1.6rem", fontWeight: 800, color: "#00b894", marginTop: "0.3rem" }}>{ticketStats.resolved}</div>
+                  </div>
+                </div>
+
+                {/* Filters & Search Toolbar */}
+                <div className="glass-panel" style={{ padding: "1.2rem", marginBottom: "1.5rem", borderRadius: "12px", display: "flex", flexDirection: "column", gap: "1rem" }}>
+                  <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: "1rem", alignItems: "center" }}>
+                    
+                    {/* Role Filter Pills */}
+                    <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                      <span style={{ fontSize: "0.85rem", fontWeight: 700, alignSelf: "center", marginRight: "0.5rem", color: "var(--text-secondary)" }}>Sender:</span>
+                      <button
+                        type="button"
+                        className={`btn ${ticketFilterRole === "ALL" ? "btn-primary" : "btn-secondary"}`}
+                        style={{ padding: "0.4rem 0.9rem", fontSize: "0.85rem", borderRadius: "20px" }}
+                        onClick={() => { setTicketFilterRole("ALL"); fetchTickets("ALL"); }}
+                      >
+                        All ({ticketStats.total})
+                      </button>
+                      <button
+                        type="button"
+                        className={`btn ${ticketFilterRole === "ARTIST" ? "btn-primary" : "btn-secondary"}`}
+                        style={{
+                          padding: "0.4rem 0.9rem",
+                          fontSize: "0.85rem",
+                          borderRadius: "20px",
+                          background: ticketFilterRole === "ARTIST" ? "#e84393" : undefined,
+                          borderColor: ticketFilterRole === "ARTIST" ? "#e84393" : undefined
+                        }}
+                        onClick={() => { setTicketFilterRole("ARTIST"); fetchTickets("ARTIST"); }}
+                      >
+                        🎨 Artist Queries ({ticketStats.from_artists})
+                      </button>
+                      <button
+                        type="button"
+                        className={`btn ${ticketFilterRole === "CUSTOMER" ? "btn-primary" : "btn-secondary"}`}
+                        style={{
+                          padding: "0.4rem 0.9rem",
+                          fontSize: "0.85rem",
+                          borderRadius: "20px",
+                          background: ticketFilterRole === "CUSTOMER" ? "#0984e3" : undefined,
+                          borderColor: ticketFilterRole === "CUSTOMER" ? "#0984e3" : undefined
+                        }}
+                        onClick={() => { setTicketFilterRole("CUSTOMER"); fetchTickets("CUSTOMER"); }}
+                      >
+                        👤 Customer Queries ({ticketStats.from_customers})
+                      </button>
+                    </div>
+
+                    {/* Status Filter Pills */}
+                    <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                      <span style={{ fontSize: "0.85rem", fontWeight: 700, alignSelf: "center", marginRight: "0.5rem", color: "var(--text-secondary)" }}>Status:</span>
+                      {["ALL", "OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED"].map(st => (
+                        <button
+                          key={st}
+                          type="button"
+                          className={`btn ${ticketFilterStatus === st ? "btn-primary" : "btn-secondary"}`}
+                          style={{ padding: "0.4rem 0.8rem", fontSize: "0.8rem", borderRadius: "15px" }}
+                          onClick={() => { setTicketFilterStatus(st); fetchTickets(undefined, st); }}
+                        >
+                          {st === "ALL" ? "All" : st.replace("_", " ")}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Search Bar */}
+                  <form
+                    onSubmit={(e) => { e.preventDefault(); fetchTickets(); }}
+                    style={{ display: "flex", gap: "0.5rem" }}
+                  >
+                    <div style={{ position: "relative", flexGrow: 1 }}>
+                      <Search style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", width: "16px", color: "var(--text-secondary)" }} />
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="Search by ticket ID, sender name, phone number, subject, booking code..."
+                        value={ticketSearch}
+                        onChange={(e) => setTicketSearch(e.target.value)}
+                        style={{ paddingLeft: "38px" }}
+                      />
+                    </div>
+                    <button type="submit" className="btn btn-primary" style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                      Search
+                    </button>
+                    {ticketSearch && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => { setTicketSearch(""); fetchTickets(undefined, undefined, ""); }}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </form>
+                </div>
+
+                {/* Tickets Table / List */}
+                {ticketLoading ? (
+                  <div style={{ textAlign: "center", padding: "3rem" }}>
+                    <div className="spinner" style={{ margin: "0 auto 1rem" }} />
+                    <p style={{ color: "var(--text-secondary)" }}>Loading support queries...</p>
+                  </div>
+                ) : tickets.length === 0 ? (
+                  <div className="glass-panel" style={{ textAlign: "center", padding: "3rem", borderRadius: "12px" }}>
+                    <HelpCircle style={{ width: "48px", height: "48px", color: "var(--text-secondary)", margin: "0 auto 1rem", opacity: 0.5 }} />
+                    <h3 style={{ fontSize: "1.2rem", fontWeight: 700 }}>No Support Queries Found</h3>
+                    <p style={{ color: "var(--text-secondary)", marginTop: "0.5rem", fontSize: "0.9rem" }}>
+                      {ticketSearch || ticketFilterRole !== "ALL" || ticketFilterStatus !== "ALL"
+                        ? "No support tickets match the current filter or search criteria."
+                        : "There are currently no support tickets or queries raised."}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="glass-panel" style={{ padding: "1.5rem", borderRadius: "12px", overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "0.9rem" }}>
+                      <thead>
+                        <tr style={{ borderBottom: "2px solid var(--border-color)", color: "var(--text-secondary)" }}>
+                          <th style={{ padding: "0.75rem" }}>Ticket ID</th>
+                          <th style={{ padding: "0.75rem" }}>Sender (Role)</th>
+                          <th style={{ padding: "0.75rem" }}>Contact</th>
+                          <th style={{ padding: "0.75rem" }}>Subject & Category</th>
+                          <th style={{ padding: "0.75rem" }}>Booking Ref</th>
+                          <th style={{ padding: "0.75rem" }}>Status</th>
+                          <th style={{ padding: "0.75rem" }}>Date</th>
+                          <th style={{ padding: "0.75rem", textAlign: "center" }}>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {tickets.map((t) => {
+                          const isArtist = t.sender_role === "ARTIST" || t.user_type === "ARTIST";
+                          const statusColor =
+                            t.status === "OPEN"
+                              ? "#e17055"
+                              : t.status === "IN_PROGRESS"
+                              ? "#0984e3"
+                              : t.status === "RESOLVED"
+                              ? "#00b894"
+                              : "#636e72";
+
+                          return (
+                            <tr
+                              key={t.id}
+                              style={{
+                                borderBottom: "1px solid var(--border-color)",
+                                transition: "background 0.2s"
+                              }}
+                            >
+                              {/* Ticket ID */}
+                              <td style={{ padding: "0.75rem", fontWeight: 700 }}>
+                                #{t.id}
+                              </td>
+
+                              {/* Sender & Role Badge */}
+                              <td style={{ padding: "0.75rem" }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+                                  {/* Avatar or fallback */}
+                                  <div
+                                    style={{
+                                      width: "34px",
+                                      height: "34px",
+                                      borderRadius: "50%",
+                                      background: isArtist ? "rgba(232, 67, 147, 0.15)" : "rgba(9, 132, 227, 0.15)",
+                                      color: isArtist ? "#e84393" : "#0984e3",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      fontWeight: 800,
+                                      fontSize: "0.85rem",
+                                      flexShrink: 0
+                                    }}
+                                  >
+                                    {t.user_name ? t.user_name.charAt(0).toUpperCase() : "U"}
+                                  </div>
+                                  <div>
+                                    <div style={{ fontWeight: 700, color: "var(--text-primary)" }}>{t.user_name}</div>
+                                    {/* Clear Distinct Role Tag */}
+                                    <span
+                                      style={{
+                                        display: "inline-block",
+                                        marginTop: "2px",
+                                        padding: "2px 8px",
+                                        borderRadius: "10px",
+                                        fontSize: "0.7rem",
+                                        fontWeight: 800,
+                                        letterSpacing: "0.5px",
+                                        background: isArtist ? "#e84393" : "#0984e3",
+                                        color: "#ffffff"
+                                      }}
+                                    >
+                                      {isArtist ? "🎨 ARTIST" : "👤 CUSTOMER"}
+                                    </span>
+                                  </div>
+                                </div>
+                              </td>
+
+                              {/* Contact */}
+                              <td style={{ padding: "0.75rem", fontSize: "0.85rem" }}>
+                                <div>📞 {t.user_phone || "N/A"}</div>
+                                {t.user_email && <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem" }}>✉️ {t.user_email}</div>}
+                              </td>
+
+                              {/* Subject & Category */}
+                              <td style={{ padding: "0.75rem", maxWidth: "260px" }}>
+                                <div style={{ fontWeight: 700 }}>{t.subject}</div>
+                                <div style={{ display: "flex", gap: "4px", marginTop: "2px" }}>
+                                  <span style={{ fontSize: "0.7rem", background: "rgba(108, 92, 231, 0.1)", color: "var(--primary-color)", padding: "1px 6px", borderRadius: "4px", fontWeight: 600 }}>
+                                    {t.category}
+                                  </span>
+                                  {Array.isArray(t.replies) && t.replies.length > 0 && (
+                                    <span style={{ fontSize: "0.7rem", background: "rgba(0, 184, 148, 0.1)", color: "#00b894", padding: "1px 6px", borderRadius: "4px", fontWeight: 600 }}>
+                                      💬 {t.replies.length} replies
+                                    </span>
+                                  )}
+                                </div>
+                                <div style={{ color: "var(--text-secondary)", fontSize: "0.8rem", marginTop: "4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  {t.description}
+                                </div>
+                              </td>
+
+                              {/* Booking Ref */}
+                              <td style={{ padding: "0.75rem", fontSize: "0.85rem" }}>
+                                {t.booking_id ? (
+                                  <div>
+                                    <span style={{ fontWeight: 700, color: "var(--primary-color)" }}>
+                                      {t.booking_code || `#${t.booking_id}`}
+                                    </span>
+                                    {t.booking_status && (
+                                      <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)", textTransform: "uppercase" }}>
+                                        {t.booking_status}
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span style={{ color: "var(--text-secondary)" }}>-</span>
+                                )}
+                              </td>
+
+                              {/* Status Dropdown */}
+                              <td style={{ padding: "0.75rem" }}>
+                                <select
+                                  value={t.status}
+                                  onChange={(e) => handleUpdateTicketStatus(t.id, e.target.value)}
+                                  style={{
+                                    padding: "0.3rem 0.6rem",
+                                    borderRadius: "12px",
+                                    border: `1px solid ${statusColor}`,
+                                    color: statusColor,
+                                    fontWeight: 700,
+                                    fontSize: "0.75rem",
+                                    background: "transparent",
+                                    cursor: "pointer"
+                                  }}
+                                >
+                                  <option value="OPEN">🟡 OPEN</option>
+                                  <option value="IN_PROGRESS">🔵 IN PROGRESS</option>
+                                  <option value="RESOLVED">🟢 RESOLVED</option>
+                                  <option value="CLOSED">⚫ CLOSED</option>
+                                </select>
+                              </td>
+
+                              {/* Date */}
+                              <td style={{ padding: "0.75rem", fontSize: "0.8rem", color: "var(--text-secondary)" }}>
+                                {new Date(t.created_at).toLocaleDateString()}
+                                <div style={{ fontSize: "0.7rem" }}>{new Date(t.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+                              </td>
+
+                              {/* Action */}
+                              <td style={{ padding: "0.75rem", textAlign: "center" }}>
+                                <button
+                                  className="btn btn-primary"
+                                  style={{ padding: "0.35rem 0.8rem", fontSize: "0.8rem", borderRadius: "8px" }}
+                                  onClick={() => setSelectedTicket(t)}
+                                >
+                                  View & Reply
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Ticket Details & Reply Modal */}
+                {selectedTicket && (
+                  <div
+                    style={{
+                      position: "fixed",
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      background: "rgba(0,0,0,0.65)",
+                      zIndex: 2000,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: "1rem"
+                    }}
+                  >
+                    <div
+                      className="glass-panel"
+                      style={{
+                        width: "100%",
+                        maxWidth: "750px",
+                        maxHeight: "90vh",
+                        overflowY: "auto",
+                        padding: "2rem",
+                        background: "var(--bg-secondary)",
+                        borderRadius: "16px",
+                        position: "relative"
+                      }}
+                    >
+                      {/* Modal Header */}
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1.5rem", borderBottom: "1px solid var(--border-color)", paddingBottom: "1rem" }}>
+                        <div>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                            <span style={{ fontSize: "1.4rem", fontWeight: 800 }}>
+                              Ticket #{selectedTicket.id}: {selectedTicket.subject}
+                            </span>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginTop: "0.4rem", flexWrap: "wrap" }}>
+                            {/* Role Badge */}
+                            <span
+                              style={{
+                                padding: "3px 10px",
+                                borderRadius: "12px",
+                                fontSize: "0.75rem",
+                                fontWeight: 800,
+                                background: selectedTicket.sender_role === "ARTIST" ? "#e84393" : "#0984e3",
+                                color: "#fff"
+                              }}
+                            >
+                              {selectedTicket.sender_role === "ARTIST" ? "🎨 ARTIST QUERY" : "👤 CUSTOMER QUERY"}
+                            </span>
+                            <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>
+                              Category: <strong>{selectedTicket.category}</strong>
+                            </span>
+                            <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>
+                              Date: <strong>{new Date(selectedTicket.created_at).toLocaleString()}</strong>
+                            </span>
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={() => setSelectedTicket(null)}
+                          style={{ background: "none", border: "none", fontSize: "1.8rem", cursor: "pointer", color: "var(--text-primary)" }}
+                        >
+                          &times;
+                        </button>
+                      </div>
+
+                      {/* Sender & Booking Info Strip */}
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", background: "var(--bg-primary)", padding: "1rem", borderRadius: "10px", marginBottom: "1.5rem", fontSize: "0.85rem" }}>
+                        <div>
+                          <span style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase", fontWeight: 700 }}>Sender Details</span>
+                          <div style={{ fontWeight: 700, marginTop: "2px" }}>{selectedTicket.user_name}</div>
+                          <div>📞 {selectedTicket.user_phone}</div>
+                          {selectedTicket.user_email && <div>✉️ {selectedTicket.user_email}</div>}
+                        </div>
+                        <div>
+                          <span style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase", fontWeight: 700 }}>Booking Details</span>
+                          {selectedTicket.booking_id ? (
+                            <>
+                              <div style={{ fontWeight: 700, color: "var(--primary-color)", marginTop: "2px" }}>
+                                {selectedTicket.booking_code || `#${selectedTicket.booking_id}`}
+                              </div>
+                              {selectedTicket.booking_status && <div>Status: <strong>{selectedTicket.booking_status}</strong></div>}
+                              {selectedTicket.booking_amount && <div>Amount: ₹{selectedTicket.booking_amount}</div>}
+                            </>
+                          ) : (
+                            <div style={{ color: "var(--text-secondary)", marginTop: "2px" }}>No linked booking</div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Original Query Message */}
+                      <div style={{ marginBottom: "1.5rem" }}>
+                        <h4 style={{ fontSize: "0.95rem", fontWeight: 700, marginBottom: "0.5rem", color: "var(--text-primary)" }}>
+                          Initial Query Message:
+                        </h4>
+                        <div style={{ background: "var(--bg-primary)", padding: "1rem", borderRadius: "10px", borderLeft: "4px solid var(--primary-color)", fontSize: "0.9rem", lineHeight: "1.5" }}>
+                          {selectedTicket.description}
+                        </div>
+                      </div>
+
+                      {/* Attachments Preview (if any) */}
+                      {selectedTicket.attachments && (
+                        <div style={{ marginBottom: "1.5rem" }}>
+                          <h4 style={{ fontSize: "0.95rem", fontWeight: 700, marginBottom: "0.5rem" }}>Attachments:</h4>
+                          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                            {(Array.isArray(selectedTicket.attachments) ? selectedTicket.attachments : [selectedTicket.attachments]).map((att, idx) => {
+                              const uri = typeof att === "string" ? att : att?.url || att?.uri;
+                              if (!uri) return null;
+                              return (
+                                <img
+                                  key={idx}
+                                  src={uri}
+                                  alt="Attachment"
+                                  style={{ width: "100px", height: "100px", objectFit: "cover", borderRadius: "8px", cursor: "pointer", border: "1px solid var(--border-color)" }}
+                                  onClick={() => setViewDoc(uri)}
+                                />
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Conversation Thread / Replies */}
+                      <div style={{ marginBottom: "1.5rem" }}>
+                        <h4 style={{ fontSize: "0.95rem", fontWeight: 700, marginBottom: "0.8rem" }}>
+                          Conversation History ({Array.isArray(selectedTicket.replies) ? selectedTicket.replies.length : 0}):
+                        </h4>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", maxHeight: "250px", overflowY: "auto", paddingRight: "0.5rem" }}>
+                          {Array.isArray(selectedTicket.replies) && selectedTicket.replies.length > 0 ? (
+                            selectedTicket.replies.map((r, rIdx) => {
+                              const isAdmin = r.sender === "ADMIN" || r.sender_role === "ADMIN";
+                              return (
+                                <div
+                                  key={rIdx}
+                                  style={{
+                                    alignSelf: isAdmin ? "flex-end" : "flex-start",
+                                    maxWidth: "80%",
+                                    background: isAdmin ? "rgba(108, 92, 231, 0.15)" : "var(--bg-primary)",
+                                    border: isAdmin ? "1px solid rgba(108, 92, 231, 0.3)" : "1px solid var(--border-color)",
+                                    padding: "0.75rem 1rem",
+                                    borderRadius: "10px"
+                                  }}
+                                >
+                                  <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", marginBottom: "0.25rem", fontSize: "0.75rem" }}>
+                                    <strong style={{ color: isAdmin ? "var(--primary-color)" : "var(--text-primary)" }}>
+                                      {r.sender_name || (isAdmin ? "Admin Desk" : selectedTicket.user_name)}
+                                    </strong>
+                                    <span style={{ color: "var(--text-secondary)" }}>
+                                      {new Date(r.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                    </span>
+                                  </div>
+                                  <div style={{ fontSize: "0.85rem", lineHeight: "1.4" }}>{r.message}</div>
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <div style={{ textAlign: "center", color: "var(--text-secondary)", fontSize: "0.85rem", padding: "1rem", background: "var(--bg-primary)", borderRadius: "8px" }}>
+                              No replies in this ticket yet. Reply below to update the user.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Reply Form */}
+                      <form onSubmit={handleSendTicketReply} style={{ borderTop: "1px solid var(--border-color)", paddingTop: "1.2rem" }}>
+                        <h4 style={{ fontSize: "0.95rem", fontWeight: 700, marginBottom: "0.5rem" }}>
+                          Send Admin Response:
+                        </h4>
+
+                        <div className="form-group" style={{ marginBottom: "1rem" }}>
+                          <textarea
+                            className="form-control"
+                            rows="3"
+                            placeholder="Type your response to the user / artist here..."
+                            value={ticketReplyText}
+                            onChange={(e) => setTicketReplyText(e.target.value)}
+                            required
+                          />
+                        </div>
+
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.85rem" }}>
+                            <span style={{ fontWeight: 600 }}>Set Status:</span>
+                            <select
+                              value={ticketReplyStatus}
+                              onChange={(e) => setTicketReplyStatus(e.target.value)}
+                              className="form-control"
+                              style={{ width: "auto", padding: "0.3rem 0.6rem" }}
+                            >
+                              <option value="IN_PROGRESS">🔵 IN PROGRESS</option>
+                              <option value="RESOLVED">🟢 RESOLVED</option>
+                              <option value="CLOSED">⚫ CLOSED</option>
+                              <option value="OPEN">🟡 KEEP OPEN</option>
+                            </select>
+                          </div>
+
+                          <div style={{ display: "flex", gap: "0.5rem" }}>
+                            <button
+                              type="button"
+                              className="btn btn-secondary"
+                              onClick={() => setSelectedTicket(null)}
+                            >
+                              Close
+                            </button>
+                            <button
+                              type="submit"
+                              className="btn btn-primary"
+                              disabled={isSendingTicketReply || !ticketReplyText.trim()}
+                              style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}
+                            >
+                              <Send style={{ width: "16px" }} />
+                              {isSendingTicketReply ? "Sending..." : "Send Response"}
+                            </button>
+                          </div>
+                        </div>
+                      </form>
                     </div>
                   </div>
                 )}

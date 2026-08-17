@@ -162,6 +162,17 @@ export function resolveNotificationRoute(notification, role) {
 
   const fallbackScreen = normalizedRole === "artist" ? "Notifications" : "NotificationCenter";
 
+  // Check for Support Ticket Notification
+  const titleText = String(notification.title || "").toLowerCase();
+  const bodyText = String(notification.message || notification.body || "").toLowerCase();
+  if (titleText.includes("support") || bodyText.includes("support") || type === "support") {
+    const tMatch = (String(notification.title || "") + " " + String(notification.message || "")).match(/#(\d+)/);
+    const ticketId = tMatch ? parseInt(tMatch[1], 10) : (data?.ticketId || data?.ticket_id || data?.id);
+    if (ticketId) {
+      return { screen: "SupportTicketDetails", params: { ticketId } };
+    }
+  }
+
   if (!type || !event) {
     return { screen: fallbackScreen };
   }

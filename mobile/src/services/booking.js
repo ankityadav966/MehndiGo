@@ -83,13 +83,23 @@ export async function rescheduleBooking(bookingId, date, time) {
 }
 
 export async function acceptBooking(bookingId) {
-  const res = await apiRequest("POST", "/booking/accept", { bookingId }, true);
-  return res?.data || res;
+  try {
+    const res = await apiRequest("PUT", "/booking/accept", { bookingId, booking_id: bookingId, id: bookingId, status: "accepted", detailed_status: "ARTIST_ACCEPTED" }, true);
+    return res?.data || res;
+  } catch (e) {
+    const res2 = await apiRequest("POST", "/booking/accept", { bookingId, booking_id: bookingId, id: bookingId, status: "accepted", detailed_status: "ARTIST_ACCEPTED" }, true);
+    return res2?.data || res2;
+  }
 }
 
 export async function rejectBooking(bookingId, rejectReason) {
-  const res = await apiRequest("POST", "/booking/reject", { bookingId, rejectReason }, true);
-  return res?.data || res;
+  try {
+    const res = await apiRequest("PUT", "/booking/reject", { bookingId, booking_id: bookingId, id: bookingId, rejectReason, status: "cancelled", detailed_status: "CANCELLED" }, true);
+    return res?.data || res;
+  } catch (e) {
+    const res2 = await apiRequest("POST", "/booking/reject", { bookingId, booking_id: bookingId, id: bookingId, rejectReason, status: "cancelled", detailed_status: "CANCELLED" }, true);
+    return res2?.data || res2;
+  }
 }
 
 export async function updateOnTheWay(bookingId) {

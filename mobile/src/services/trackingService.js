@@ -158,7 +158,23 @@ export async function startTracking(bookingId, artistId) {
       }
     }
 
-    // 3. Start real-time foreground watcher (updates every 3 seconds / 3 meters)
+    lastUpdateTimestamp = Date.now();
+
+    // Fetch immediate initial location fix
+    try {
+      const initialLoc = await Promise.race([
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 2500))
+      ]).catch(async () => {
+        return await Location.getLastKnownPositionAsync({});
+      });
+
+      if (initialLoc) {
+        await handleLocationUpdate(initialLoc);
+      }
+    } catch (_) {}
+
+    // 3. Start real-time foreground watcher (updates every 3 seconds)
     if (foregroundSubscription) {
       try {
         if (typeof foregroundSubscription.remove === "function") {
@@ -174,19 +190,29 @@ export async function startTracking(bookingId, artistId) {
       {
         accuracy: Location.Accuracy.High,
         timeInterval: 3000,
-        distanceInterval: 3
+        distanceInterval: 0
       },
       async (location) => {
         await handleLocationUpdate(location);
       }
     );
 
-    // Start Stale Location Watcher
+    // Start Stale Location Watcher with proactive auto-recovery
     if (staleCheckInterval) clearInterval(staleCheckInterval);
-    staleCheckInterval = setInterval(() => {
+    staleCheckInterval = setInterval(async () => {
       const elapsed = (Date.now() - lastUpdateTimestamp) / 1000;
-      if (elapsed > 20 && activeTrackingConfig) {
-        console.warn(`[ARTIST GPS STALE] Warning: No new real GPS update received for ${Math.round(elapsed)}s.`);
+      if (elapsed > 15 && activeTrackingConfig) {
+        try {
+          const freshLoc = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced
+          }).catch(async () => await Location.getLastKnownPositionAsync({}));
+
+          if (freshLoc) {
+            await handleLocationUpdate(freshLoc);
+          } else if (elapsed > 60) {
+            console.log(`[ARTIST GPS INFO] Device stationary for ${Math.round(elapsed)}s.`);
+          }
+        } catch (_) {}
       }
     }, 10000);
 
@@ -202,7 +228,7 @@ export async function startTracking(bookingId, artistId) {
         await Location.startLocationUpdatesAsync(TRACKING_TASK_NAME, {
           accuracy: Location.Accuracy.High,
           timeInterval: 3000,
-          distanceInterval: 3,
+          distanceInterval: 0,
           foregroundService: {
             notificationTitle: "MehndiGo Location Sharing",
             notificationBody: "Sharing your live GPS location with customer.",

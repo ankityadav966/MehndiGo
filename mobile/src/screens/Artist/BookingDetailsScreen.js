@@ -36,18 +36,34 @@ const STEPS = [
 
 const getNormalizedStatus = (b) => {
   if (!b) return "PENDING";
+  const rawStatus = String(b.status || b.booking_status || "").toUpperCase();
   const rawDetailed = String(b.detailed_status || b.detailedStatus || "").toUpperCase();
-  if (rawDetailed) {
-    if (rawDetailed === "ACCEPTED") return "ARTIST_ACCEPTED";
-    if (rawDetailed === "ON_THE_WAY") return "ARTIST_ON_THE_WAY";
-    if (rawDetailed === "ARRIVED") return "ARTIST_ARRIVED";
-    if (rawDetailed === "CHECKED_IN") return "CUSTOMER_VERIFIED";
-    if (rawDetailed === "IN_PROGRESS") return "SERVICE_STARTED";
+
+  if (rawStatus === "ACCEPTED" || rawDetailed === "ARTIST_ACCEPTED" || rawDetailed === "ACCEPTED") {
+    return "ARTIST_ACCEPTED";
+  }
+  if (rawStatus === "ON_THE_WAY" || rawDetailed === "ARTIST_ON_THE_WAY" || rawDetailed === "ON_THE_WAY") {
+    return "ARTIST_ON_THE_WAY";
+  }
+  if (rawStatus === "ARRIVED" || rawDetailed === "ARTIST_ARRIVED" || rawDetailed === "ARRIVED") {
+    return "ARTIST_ARRIVED";
+  }
+  if (rawDetailed === "CUSTOMER_VERIFIED" || rawDetailed === "CHECKED_IN") {
+    return "CUSTOMER_VERIFIED";
+  }
+  if (rawStatus === "IN_PROGRESS" || rawDetailed === "SERVICE_STARTED" || rawDetailed === "IN_PROGRESS") {
+    return "SERVICE_STARTED";
+  }
+  if (rawStatus === "COMPLETED" || rawDetailed === "COMPLETED") {
+    return "COMPLETED";
+  }
+  if (rawStatus === "CANCELLED" || rawStatus === "REJECTED" || rawDetailed === "CANCELLED" || rawDetailed === "REJECTED") {
+    return "CANCELLED";
+  }
+  if (rawDetailed && rawDetailed !== "PENDING" && rawDetailed !== "CONFIRMED") {
     return rawDetailed;
   }
-  const rawStatus = String(b.booking_status || b.status || "PENDING").toUpperCase();
-  if (rawStatus === "ACCEPTED") return "ARTIST_ACCEPTED";
-  return rawStatus;
+  return "PENDING";
 };
 
 function calculateDistance(lat1, lon1, lat2, lon2) {

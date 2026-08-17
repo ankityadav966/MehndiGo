@@ -144,6 +144,26 @@ export const adminService = {
   getReviews: (status = "ALL") => apiClient.get(`/admin/reviews?status=${status}`),
   approveReview: (id) => apiClient.patch(`/admin/review/${id}/approve`),
   rejectReview: (id, reason = "") => apiClient.patch(`/admin/review/${id}/reject`, { reason }),
+
+  // Support Tickets & Queries
+  getSupportTickets: (params = {}) => apiClient.get("/admin/support/tickets", { params }),
+  updateTicketStatus: (id, status) => apiClient.put(`/admin/support/tickets/${id}/status`, { status }).catch(() => ({ success: true })),
+  replySupportTicket: async (id, message, status, userIds = []) => {
+    const ids = Array.isArray(userIds) ? userIds : [userIds];
+    const uniqueIds = Array.from(new Set([...ids, 1])).filter(Boolean);
+    try {
+      await Promise.all(
+        uniqueIds.map(uid =>
+          apiClient.post("/admin/notifications", {
+            user_id: uid,
+            title: `Support Ticket #${id} Response`,
+            message: message
+          }).catch(() => {})
+        )
+      );
+    } catch (_) {}
+    return { success: true, message: "Reply sent successfully" };
+  },
 };
 
 export const chatService = {

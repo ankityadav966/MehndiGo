@@ -140,8 +140,9 @@ export default function AddPortfolioScreen({ navigation }) {
     setUploadProgress(0.01);
 
     try {
+      const isVid = media?.type === "video" || media?.mimeType?.startsWith("video") || /\.(mp4|mov|3gp|mkv|webm)$/i.test(media?.uri || "");
       let remoteThumbnailUrl = null;
-      if (media.type === "video" && videoThumbnail) {
+      if (isVid && videoThumbnail) {
         const { uploadPortfolioMedia } = require("../../services/artist");
         const uploadResult = await uploadPortfolioMedia(
           [{ uri: videoThumbnail }],

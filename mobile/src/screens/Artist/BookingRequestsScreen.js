@@ -57,11 +57,14 @@ export default function BookingRequestsScreen({ route, navigation }) {
 
   const handleAccept = async (bookingId) => {
     try {
+      setLoading(true);
       await acceptBooking(bookingId);
       Alert.alert("Success", "Booking request accepted successfully!");
-      fetchHistory();
+      await fetchHistory();
+      setActiveTab("Accepted");
     } catch (err) {
       Alert.alert("Error", err.message || "Failed to accept booking.");
+      setLoading(false);
     }
   };
 
@@ -76,11 +79,13 @@ export default function BookingRequestsScreen({ route, navigation }) {
           style: "destructive",
           onPress: async () => {
             try {
+              setLoading(true);
               await rejectBooking(bookingId, "Declined by artist");
               Alert.alert("Declined", "Booking request declined.");
-              fetchHistory();
+              await fetchHistory();
             } catch (err) {
               Alert.alert("Error", err.message || "Failed to decline booking.");
+              setLoading(false);
             }
           }
         }
@@ -90,9 +95,9 @@ export default function BookingRequestsScreen({ route, navigation }) {
 
   const handleAcceptAll = async () => {
     const pendingBookings = filteredData.filter(b => {
-      const bookingStatus = String(b.booking_status || "").toUpperCase();
-      const detailedStatus = String(b.detailed_status || "").toUpperCase();
-      return bookingStatus === "PENDING" || ["PENDING", "VIEWED", "CONFIRMED"].includes(detailedStatus);
+      const st = String(b.status || b.booking_status || "").toUpperCase();
+      const det = String(b.detailed_status || b.detailedStatus || "").toUpperCase();
+      return st !== "ACCEPTED" && det !== "ARTIST_ACCEPTED" && det !== "ACCEPTED" && det !== "CANCELLED" && det !== "REJECTED";
     });
 
     if (pendingBookings.length === 0) {
@@ -120,13 +125,13 @@ export default function BookingRequestsScreen({ route, navigation }) {
                 errorCount++;
               }
             }
-            setLoading(false);
+            await fetchHistory();
+            setActiveTab("Accepted");
             if (errorCount > 0) {
               Alert.alert("Batch Complete", `Accepted ${successCount} bookings. Failed to accept ${errorCount} bookings.`);
             } else {
               Alert.alert("Success", `All ${successCount} booking requests accepted successfully!`);
             }
-            fetchHistory();
           }
         }
       ]
@@ -135,9 +140,9 @@ export default function BookingRequestsScreen({ route, navigation }) {
 
   const handleDeclineAll = async () => {
     const pendingBookings = filteredData.filter(b => {
-      const bookingStatus = String(b.booking_status || "").toUpperCase();
-      const detailedStatus = String(b.detailed_status || "").toUpperCase();
-      return bookingStatus === "PENDING" || ["PENDING", "VIEWED", "CONFIRMED"].includes(detailedStatus);
+      const st = String(b.status || b.booking_status || "").toUpperCase();
+      const det = String(b.detailed_status || b.detailedStatus || "").toUpperCase();
+      return st !== "ACCEPTED" && det !== "ARTIST_ACCEPTED" && det !== "ACCEPTED" && det !== "CANCELLED" && det !== "REJECTED";
     });
 
     if (pendingBookings.length === 0) {
@@ -166,13 +171,12 @@ export default function BookingRequestsScreen({ route, navigation }) {
                 errorCount++;
               }
             }
-            setLoading(false);
+            await fetchHistory();
             if (errorCount > 0) {
               Alert.alert("Batch Complete", `Declined ${successCount} bookings. Failed to decline ${errorCount} bookings.`);
             } else {
               Alert.alert("Success", `All ${successCount} booking requests declined.`);
             }
-            fetchHistory();
           }
         }
       ]
@@ -190,13 +194,30 @@ export default function BookingRequestsScreen({ route, navigation }) {
         }
       }
 
-      const bookingStatus = String(item.booking_status || item.status || "").toUpperCase();
-      const detailedStatus = String(item.detailed_status || item.detailedStatus || item.status || "").toUpperCase();
-      let status = detailedStatus || bookingStatus;
-      if (status === "ACCEPTED") status = "ARTIST_ACCEPTED";
+      const rawStatus = String(item.status || item.booking_status || "").toUpperCase();
+      const rawDetailed = String(item.detailed_status || item.detailedStatus || "").toUpperCase();
+
+      let status = "PENDING";
+      if (rawStatus === "ACCEPTED" || rawDetailed === "ARTIST_ACCEPTED" || rawDetailed === "ACCEPTED") {
+        status = "ARTIST_ACCEPTED";
+      } else if (rawStatus === "ON_THE_WAY" || rawDetailed === "ARTIST_ON_THE_WAY") {
+        status = "ARTIST_ON_THE_WAY";
+      } else if (rawStatus === "ARRIVED" || rawDetailed === "ARTIST_ARRIVED") {
+        status = "ARTIST_ARRIVED";
+      } else if (rawStatus === "IN_PROGRESS" || rawDetailed === "SERVICE_STARTED") {
+        status = "SERVICE_STARTED";
+      } else if (rawStatus === "CANCELLED" || rawStatus === "REJECTED" || rawStatus === "DECLINED" || rawDetailed === "CANCELLED" || rawDetailed === "REJECTED" || rawDetailed === "DECLINED" || rawDetailed === "REFUNDED") {
+        status = "CANCELLED";
+      } else if (rawStatus === "COMPLETED" || rawDetailed === "COMPLETED" || rawDetailed === "AWAITING_CASH_CONFIRMATION" || rawDetailed === "COMPLETED_CLOSED") {
+        status = "COMPLETED";
+      } else if (rawDetailed && rawDetailed !== "PENDING" && rawDetailed !== "CONFIRMED" && rawDetailed !== "VIEWED") {
+        status = rawDetailed;
+      } else {
+        status = "PENDING";
+      }
 
       if (activeTab === "Pending") {
-        return status === "PENDING" || (bookingStatus === "PENDING" && status !== "ARTIST_ACCEPTED" && status !== "ACCEPTED" && status !== "CANCELLED" && status !== "REJECTED" && status !== "DECLINED");
+        return status === "PENDING";
       }
       
       if (activeTab === "Accepted") {

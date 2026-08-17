@@ -112,8 +112,15 @@ export default function ContactSupportScreen({ navigation }) {
             onPress={() => navigation.navigate("SupportTicket")}
           >
             <Ionicons name="document-text-outline" size={18} color="#FFF" />
-
             <Text style={styles.ticketBtnText}>Raise a Ticket</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.ticketBtn, { backgroundColor: "#1E293B", marginTop: 10 }]}
+            onPress={() => navigation.navigate("Support")}
+          >
+            <Ionicons name="chatbubbles-outline" size={18} color="#FFF" />
+            <Text style={styles.ticketBtnText}>View My Tickets & Replies</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>

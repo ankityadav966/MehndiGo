@@ -419,8 +419,13 @@ export async function updateArtistProfileDetails(profileData) {
 }
 
 export async function getArtistNotificationsData() {
-  const res = await apiRequest("GET", "/artist/notifications", null, true);
-  return res?.data || res;
+  try {
+    const res = await apiRequest("GET", "/notifications", null, true);
+    return res?.data || res;
+  } catch (err) {
+    const res = await apiRequest("GET", "/artist/notifications", null, true);
+    return res?.data || res;
+  }
 }
 
 export async function getArtistServices() {

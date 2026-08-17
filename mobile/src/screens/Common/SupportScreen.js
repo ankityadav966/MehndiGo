@@ -3,7 +3,7 @@ import React, { useState, useEffect } from "react";
 import { StyleSheet, Text, TouchableOpacity, View, Linking, Modal, ScrollView, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
-import { getSupportTickets } from "../../services/customer";
+import { getSupportTickets, getCustomerNotifications } from "../../services/customer";
 
 export default function SupportScreen({ navigation }) {
   const [faqsVisible, setFaqsVisible] = useState(false);
@@ -19,8 +19,45 @@ export default function SupportScreen({ navigation }) {
 
   const fetchTickets = async () => {
     try {
-      const data = await getSupportTickets();
-      setTickets(data || []);
+      const [ticketsRes, notifsRes] = await Promise.all([
+        getSupportTickets().catch(() => []),
+        getCustomerNotifications().catch(() => ({}))
+      ]);
+
+      const rawList = Array.isArray(ticketsRes?.data) ? ticketsRes.data : (Array.isArray(ticketsRes) ? ticketsRes : []);
+      const ticketMap = new Map();
+
+      rawList.forEach(t => {
+        const id = t.id || t.ticket_id;
+        if (id) ticketMap.set(Number(id), t);
+      });
+
+      const notifsList = Array.isArray(notifsRes?.notifications)
+        ? notifsRes.notifications
+        : (Array.isArray(notifsRes?.data?.notifications) ? notifsRes.data.notifications : (Array.isArray(notifsRes?.data) ? notifsRes.data : (Array.isArray(notifsRes) ? notifsRes : [])));
+
+      notifsList.filter(n => (n.title && n.title.includes("Support Ticket")) || n.type === "SUPPORT").forEach(n => {
+        const match = n.title?.match(/#(\d+)/);
+        const ticketId = match ? parseInt(match[1], 10) : n.id;
+        if (!ticketId) return;
+
+        const existing = ticketMap.get(ticketId) || {};
+        const msgParts = (n.message || "").split(":");
+        const subject = msgParts.length > 1 ? msgParts.slice(1).join(":").trim() : (n.message || `Support Ticket #${ticketId}`);
+
+        ticketMap.set(ticketId, {
+          ...existing,
+          id: ticketId,
+          ticket_id: ticketId,
+          subject: existing.subject || subject,
+          category: existing.category || "General Support",
+          status: existing.status || "OPEN",
+          createdAt: existing.created_at || existing.createdAt || n.created_at || n.createdAt || new Date().toISOString()
+        });
+      });
+
+      const combined = Array.from(ticketMap.values()).sort((a, b) => b.id - a.id);
+      setTickets(combined);
     } catch (err) {
       console.log("Failed to fetch tickets:", err.message);
     } finally {
