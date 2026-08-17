@@ -421,7 +421,11 @@ async function uploadPortfolioImage(req, res) {
       tags: req.body.tags || null,
       location: req.body.location || null,
       visibility: req.body.visibility === undefined ? true : (req.body.visibility === "true" || req.body.visibility === true),
-      display_order: req.body.display_order ? Number(req.body.display_order) : 0
+      display_order: req.body.display_order ? Number(req.body.display_order) : 0,
+      art_tier: req.body.art_tier || "STANDARD",
+      price: req.body.price ? Number(req.body.price) : null,
+      duration_minutes: req.body.duration_minutes ? Number(req.body.duration_minutes) : 60,
+      complexity_level: req.body.complexity_level || "MEDIUM"
     };
     if (!data.image_url && !data.video_url) {
       return res.status(400).json(ErrorResponse("Portfolio media file is required"));

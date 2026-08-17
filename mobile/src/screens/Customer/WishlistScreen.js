@@ -9,14 +9,35 @@ import {
   View,
   ActivityIndicator,
   RefreshControl,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import Colors from "../../constants/Colors";
 import Alert from "../../utils/Alert";
 import { getCustomerWishlist, removeArtistFavorite } from "../../services/customer";
-import OptimizedImage from "../../components/OptimizedImage";
 import CustomButton from "../../components/CustomButton";
+
+function WishlistArtistImage({ uri, fallbackUri, style }) {
+  const [imgSrc, setImgSrc] = useState(uri);
+
+  useEffect(() => {
+    setImgSrc(uri);
+  }, [uri]);
+
+  return (
+    <Image
+      source={{ uri: imgSrc || fallbackUri }}
+      style={style}
+      resizeMode="cover"
+      onError={() => {
+        if (imgSrc !== fallbackUri) {
+          setImgSrc(fallbackUri);
+        }
+      }}
+    />
+  );
+}
 
 export default function WishlistScreen({ navigation }) {
   const [wishlist, setWishlist] = useState([]);
@@ -25,10 +46,20 @@ export default function WishlistScreen({ navigation }) {
 
   const fetchWishlist = useCallback(async () => {
     try {
-      const data = await getCustomerWishlist();
-      setWishlist(data || []);
+      const res = await getCustomerWishlist();
+      const list = Array.isArray(res)
+        ? res
+        : Array.isArray(res?.data)
+        ? res.data
+        : Array.isArray(res?.rows)
+        ? res.rows
+        : Array.isArray(res?.favorites)
+        ? res.favorites
+        : [];
+      setWishlist(list);
     } catch (err) {
       console.log("Failed to fetch customer wishlist:", err.message);
+      setWishlist([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -70,96 +101,188 @@ export default function WishlistScreen({ navigation }) {
     }
   };
 
-  const renderItem = ({ item }) => {
-    const artist = item || {};
-    const userObj = artist.user || {};
-    const artistName = userObj.name || artist.name || "Mehndi Specialist";
-    const artistImage =
-      userObj.profile_image ||
-      artist.profile_image ||
-      "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400";
+  const resolveImage = (uri) => {
+    if (!uri || typeof uri !== "string") return null;
+    if (uri.startsWith("http://") || uri.startsWith("https://") || uri.startsWith("data:")) {
+      return uri;
+    }
+    if (uri.startsWith("/")) {
+      return `https://api.mehndigo.in${uri}`;
+    }
+    return uri;
+  };
 
-    const ratingVal = Number(artist.avg_rating || 4.8).toFixed(1);
-    const reviewsCount = artist.total_reviews ? `(${artist.total_reviews})` : "(45+)";
-    const expText = artist.experience_years ? `${artist.experience_years} Yrs Exp` : "3+ Yrs Exp";
-    const cityText = artist.city || "Jaipur, Rajasthan";
-    const minPrice = artist.services?.[0]?.minimum_price
+  const renderItem = ({ item }) => {
+    const artist = item?.artist || item || {};
+    const userObj = artist.user || item?.user || {};
+    const artistName = artist.name || artist.full_name || userObj.name || userObj.full_name || "Mehndi Specialist";
+
+    const rawImage =
+      artist.profile_image ||
+      artist.user_profile_image ||
+      userObj.profile_image ||
+      artist.avatar ||
+      userObj.avatar ||
+      artist.photo ||
+      artist.image ||
+      (Array.isArray(artist.portfolio_images) && artist.portfolio_images[0]?.url) ||
+      (Array.isArray(artist.portfolio) && artist.portfolio[0]?.url) ||
+      (Array.isArray(artist.images) && artist.images[0]);
+
+    const resolvedImage = resolveImage(rawImage);
+    const avatarFallback = `https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=FFF0F4&color=9C1344&bold=true`;
+    const artistImage = resolvedImage || avatarFallback;
+
+    const ratingVal = artist.rating || artist.avg_rating ? Number(artist.rating || artist.avg_rating).toFixed(1) : null;
+    const reviewsCount = artist.total_reviews ? `(${artist.total_reviews})` : "";
+    const expText = artist.experience_years ? `${artist.experience_years} Yrs Exp` : "";
+    const cityText = artist.locality || artist.city ? [artist.locality, artist.city].filter(Boolean).join(", ") : (artist.city || "");
+    const minPrice = artist.starting_price
+      ? `Starting ₹${artist.starting_price}`
+      : artist.services?.[0]?.minimum_price
       ? `Starting ₹${artist.services[0].minimum_price}`
-      : "Starting ₹1,500";
-    const isApproved = artist.verification_status === "APPROVED";
+      : "";
+    const isApproved = artist.verification_status === "APPROVED" || artist.status === "APPROVED";
+
+    const portfolioImages = Array.isArray(artist.portfolio_images) && artist.portfolio_images.length > 0
+      ? artist.portfolio_images
+      : Array.isArray(artist.portfolio) && artist.portfolio.length > 0
+      ? artist.portfolio
+      : [];
+
+    const servicesList = Array.isArray(artist.services) ? artist.services : [];
 
     return (
-      <TouchableOpacity
-        activeOpacity={0.9}
-        style={styles.card}
-        onPress={() => navigation.navigate("ArtistProfile", { artistId: artist.id })}
-      >
-        {/* Left Avatar */}
-        <View style={styles.imageWrap}>
-          <OptimizedImage
-            source={{ uri: artistImage }}
-            style={styles.artistImage}
-            width={84}
-            height={84}
-          />
-          {isApproved && (
-            <View style={styles.verifiedBadge}>
-              <Ionicons name="checkmark" size={10} color="#FFFFFF" />
-            </View>
-          )}
-        </View>
-
-        {/* Center Details */}
-        <View style={styles.infoContainer}>
-          <View style={styles.nameRow}>
-            <Text numberOfLines={1} style={styles.artistName}>
-              {artistName}
-            </Text>
-            <TouchableOpacity
-              style={styles.heartButton}
-              onPress={() => handleRemoveFavorite(artist.id)}
-            >
-              <Ionicons name="heart" size={20} color={Colors.primary || "#9C1344"} />
-            </TouchableOpacity>
+      <View style={styles.card}>
+        {/* Top Header Row */}
+        <TouchableOpacity
+          activeOpacity={0.9}
+          style={styles.cardHeaderRow}
+          onPress={() => navigation.navigate("ArtistProfile", { artistId: artist.id })}
+        >
+          <View style={styles.imageWrap}>
+            <WishlistArtistImage
+              uri={artistImage}
+              fallbackUri={avatarFallback}
+              style={styles.artistImage}
+            />
+            {isApproved && (
+              <View style={styles.verifiedBadge}>
+                <Ionicons name="checkmark" size={10} color="#FFFFFF" />
+              </View>
+            )}
           </View>
 
-          {/* Specialization Badge */}
-          <View style={styles.specBadge}>
-            <Text style={styles.specBadgeText}>Bridal & Festival Specialist</Text>
-          </View>
-
-          {/* Rating & Exp Row */}
-          <View style={styles.metaRow}>
-            <View style={styles.ratingBadge}>
-              <Ionicons name="star" size={12} color="#FFB800" />
-              <Text style={styles.ratingText}>{ratingVal}</Text>
-            </View>
-            <Text style={styles.reviewsText}>{reviewsCount}</Text>
-            <Text style={styles.dotSeparator}>•</Text>
-            <Text style={styles.metaText}>{expText}</Text>
-          </View>
-
-          {/* Location & Price Row */}
-          <View style={styles.bottomRow}>
-            <View style={styles.locRow}>
-              <Ionicons name="location-outline" size={12} color={Colors.textSecondary || "#666666"} />
-              <Text style={styles.locationText} numberOfLines={1}>
-                {cityText}
+          <View style={styles.infoContainer}>
+            <View style={styles.nameRow}>
+              <Text numberOfLines={1} style={styles.artistName}>
+                {artistName}
               </Text>
+              <TouchableOpacity
+                style={styles.heartButton}
+                onPress={() => handleRemoveFavorite(artist.id)}
+              >
+                <Ionicons name="heart" size={22} color={Colors.primary || "#9C1344"} />
+              </TouchableOpacity>
             </View>
-            <Text style={styles.priceText}>{minPrice}</Text>
-          </View>
 
-          {/* Book Now Action */}
+            {/* Specialization Badge */}
+            <View style={styles.specBadge}>
+              <Text style={styles.specBadgeText}>Bridal & Event Mehndi Specialist</Text>
+            </View>
+
+            {/* Rating & Exp Row */}
+            <View style={styles.metaRow}>
+              <View style={styles.ratingBadge}>
+                <Ionicons name="star" size={12} color="#FFB800" />
+                <Text style={styles.ratingText}>{ratingVal || "4.8"}</Text>
+              </View>
+              <Text style={styles.reviewsText}>{reviewsCount || "(12+ reviews)"}</Text>
+              {!!expText && (
+                <>
+                  <Text style={styles.dotSeparator}>•</Text>
+                  <Text style={styles.metaText}>{expText}</Text>
+                </>
+              )}
+            </View>
+
+            {/* Location & Starting Price */}
+            <View style={styles.bottomRow}>
+              {!!cityText && (
+                <View style={styles.locRow}>
+                  <Ionicons name="location-outline" size={12} color={Colors.textSecondary || "#666666"} />
+                  <Text style={styles.locationText} numberOfLines={1}>
+                    {cityText}
+                  </Text>
+                </View>
+              )}
+              {!!minPrice && <Text style={styles.priceText}>{minPrice}</Text>}
+            </View>
+          </View>
+        </TouchableOpacity>
+
+        {/* Artist Bio Snippet if available */}
+        {!!artist.bio && (
+          <Text style={styles.bioText} numberOfLines={2}>
+            "{artist.bio}"
+          </Text>
+        )}
+
+        {/* Portfolio Photos Gallery Strip */}
+        {portfolioImages.length > 0 && (
+          <View style={styles.portfolioSection}>
+            <Text style={styles.sectionLabel}>Portfolio Work Samples</Text>
+            <View style={styles.portfolioGrid}>
+              {portfolioImages.slice(0, 4).map((img, pIdx) => {
+                const imgUri = resolveImage(img?.url || img?.image_url || img);
+                return (
+                  <Image
+                    key={pIdx}
+                    source={{ uri: imgUri || avatarFallback }}
+                    style={styles.portfolioThumb}
+                    resizeMode="cover"
+                  />
+                );
+              })}
+            </View>
+          </View>
+        )}
+
+        {/* Services Offered List Pills */}
+        {servicesList.length > 0 && (
+          <View style={styles.servicesSection}>
+            <Text style={styles.sectionLabel}>Popular Services</Text>
+            <View style={styles.servicesWrap}>
+              {servicesList.slice(0, 3).map((srv, sIdx) => (
+                <View key={sIdx} style={styles.servicePill}>
+                  <Text style={styles.servicePillTitle} numberOfLines={1}>
+                    {srv.title || srv.name || "Mehndi Service"}
+                  </Text>
+                  <Text style={styles.servicePillPrice}>₹{srv.price || srv.minimum_price || "500"}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {/* Action Buttons Row */}
+        <View style={styles.cardActionsRow}>
           <TouchableOpacity
-            style={styles.bookNowBtn}
+            style={styles.outlineBtn}
             onPress={() => navigation.navigate("ArtistProfile", { artistId: artist.id })}
           >
-            <Text style={styles.bookNowText}>Book Artist</Text>
+            <Text style={styles.outlineBtnText}>View Full Profile</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.primaryBookBtn}
+            onPress={() => navigation.navigate("ArtistProfile", { artistId: artist.id })}
+          >
+            <Text style={styles.primaryBookBtnText}>Book Artist Now</Text>
             <Ionicons name="arrow-forward" size={14} color="#FFFFFF" style={{ marginLeft: 4 }} />
           </TouchableOpacity>
         </View>
-      </TouchableOpacity>
+      </View>
     );
   };
 
@@ -288,10 +411,9 @@ const styles = StyleSheet.create({
   },
 
   card: {
-    flexDirection: "row",
     backgroundColor: "#FFFFFF",
     marginHorizontal: 16,
-    marginBottom: 14,
+    marginBottom: 16,
     borderRadius: 16,
     padding: 14,
     borderWidth: 1,
@@ -302,6 +424,9 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
+  cardHeaderRow: {
+    flexDirection: "row",
+  },
   imageWrap: {
     position: "relative",
   },
@@ -309,6 +434,96 @@ const styles = StyleSheet.create({
     width: 84,
     height: 84,
     borderRadius: 14,
+  },
+  bioText: {
+    fontSize: 12.5,
+    fontStyle: "italic",
+    color: "#4B5563",
+    marginTop: 10,
+    lineHeight: 18,
+  },
+  sectionLabel: {
+    fontSize: 11.5,
+    fontWeight: "700",
+    color: "#6B7280",
+    textTransform: "uppercase",
+    marginBottom: 6,
+    letterSpacing: 0.5,
+  },
+  portfolioSection: {
+    marginTop: 12,
+  },
+  portfolioGrid: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  portfolioThumb: {
+    width: 68,
+    height: 68,
+    borderRadius: 10,
+    backgroundColor: "#F3F4F6",
+  },
+  servicesSection: {
+    marginTop: 12,
+  },
+  servicesWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  servicePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFF0F4",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 0.5,
+    borderColor: "#FCE7F3",
+  },
+  servicePillTitle: {
+    fontSize: 11.5,
+    fontWeight: "600",
+    color: Colors.primary || "#9C1344",
+    marginRight: 6,
+  },
+  servicePillPrice: {
+    fontSize: 11.5,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  cardActionsRow: {
+    flexDirection: "row",
+    marginTop: 14,
+    gap: 10,
+  },
+  outlineBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: Colors.primary || "#9C1344",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  outlineBtnText: {
+    color: Colors.primary || "#9C1344",
+    fontSize: 12.5,
+    fontWeight: "700",
+  },
+  primaryBookBtn: {
+    flex: 1.2,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Colors.primary || "#9C1344",
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  primaryBookBtnText: {
+    color: "#FFFFFF",
+    fontSize: 12.5,
+    fontWeight: "700",
   },
   verifiedBadge: {
     position: "absolute",

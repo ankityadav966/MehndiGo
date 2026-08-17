@@ -276,23 +276,26 @@ export default function SearchScreen({ navigation }) {
                   <Text style={styles.clearAllBtn}>Clear All</Text>
                 </TouchableOpacity>
               </View>
-              {recentSearches.map((item) => (
-                <View key={item.id} style={styles.historyRow}>
-                  <TouchableOpacity
-                    style={styles.historyBtn}
-                    onPress={() => handleSearchSubmit(item.search_query)}
-                  >
-                    <Ionicons name="time-outline" size={18} color={Colors.textTertiary} style={{ marginRight: 10 }} />
-                    <Text style={styles.historyText} numberOfLines={1}>{item.search_query}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.historyDelete}
-                    onPress={() => handleDeleteHistoryItem(item.id)}
-                  >
-                    <Ionicons name="close" size={18} color={Colors.textTertiary} />
-                  </TouchableOpacity>
-                </View>
-              ))}
+              {recentSearches.map((item, index) => {
+                const textVal = typeof item === "string" ? item : (item?.search_query || item?.query || item?.name || item?.full_name || "");
+                return (
+                  <View key={item?.id || index} style={styles.historyRow}>
+                    <TouchableOpacity
+                      style={styles.historyBtn}
+                      onPress={() => handleSearchSubmit(textVal)}
+                    >
+                      <Ionicons name="time-outline" size={18} color={Colors.textTertiary} style={{ marginRight: 10 }} />
+                      <Text style={styles.historyText} numberOfLines={1}>{textVal}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.historyDelete}
+                      onPress={() => handleDeleteHistoryItem(item?.id || index)}
+                    >
+                      <Ionicons name="close" size={18} color={Colors.textTertiary} />
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
             </View>
           )}
 
@@ -301,16 +304,19 @@ export default function SearchScreen({ navigation }) {
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Trending Searches 🔥</Text>
               <View style={styles.trendingContainer}>
-                {trendingSearches.map((item, index) => (
-                  <TouchableOpacity
-                    key={index}
-                    style={styles.trendingChip}
-                    onPress={() => handleSearchSubmit(item)}
-                  >
-                    <Ionicons name="flame" size={14} color={Colors.primary} style={{ marginRight: 4 }} />
-                    <Text style={styles.trendingText}>{item}</Text>
-                  </TouchableOpacity>
-                ))}
+                {trendingSearches.map((item, index) => {
+                  const labelStr = typeof item === "string" ? item : (item?.name || item?.full_name || item?.query || item?.search_query || "");
+                  return (
+                    <TouchableOpacity
+                      key={index}
+                      style={styles.trendingChip}
+                      onPress={() => handleSearchSubmit(labelStr)}
+                    >
+                      <Ionicons name="flame" size={14} color={Colors.primary} style={{ marginRight: 4 }} />
+                      <Text style={styles.trendingText}>{labelStr}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             </View>
           )}

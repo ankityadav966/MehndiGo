@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useReducer, useCallback, useState } from "react";
 import { secureStorage } from "../utils/storage";
-import apiRequest from "../services/api";
 import {
   signInWithGoogle,
   signInWithEmail,
@@ -9,7 +8,7 @@ import {
   sendOtp as sendOtpService,
   verifyUserOtp as verifyUserOtpService,
   signOut as authSignOut,
-  checkEmail as checkEmailService,
+  refreshAccessToken,
 } from "../services/auth";
 
 const AuthContext = createContext(null);
@@ -17,7 +16,7 @@ const AuthContext = createContext(null);
 const initialState = {
   user: null,
   token: null,
-  role: null, // "USER" (Customer) | "ARTIST" | "ADMIN"
+  role: null,
   isLoading: true,
   isAuthenticated: false,
   isOnboardingComplete: false,
@@ -26,23 +25,26 @@ const initialState = {
 function authReducer(state, action) {
   switch (action.type) {
     case "RESTORE_SESSION": {
-      const userRole = action.payload.user?.role || action.payload.role;
+      const restoredRole = (String(action.payload.user?.role || action.payload.role || "").toUpperCase() === "ARTIST") ? "ARTIST" : "USER";
+      const userObj = action.payload.user ? { ...action.payload.user, role: restoredRole } : null;
       return {
         ...state,
-        user: action.payload.user,
+        user: userObj,
         token: action.payload.token,
-        role: userRole,
-        isAuthenticated: !!action.payload.user,
+        role: restoredRole,
+        isAuthenticated: !!userObj,
         isLoading: false,
       };
     }
     case "LOGIN": {
-      const userRole = action.payload.user?.role || action.payload.role;
+      const loginRole = (String(action.payload.user?.role || action.payload.role || "").toUpperCase() === "ARTIST") ? "ARTIST" : "USER";
+      const userObj = action.payload.user ? { ...action.payload.user, role: loginRole } : { role: loginRole };
+      console.log("[ROLE TRACE 8] AuthContext final state user.role:", userObj?.role, "| state.role:", loginRole);
       return {
         ...state,
-        user: action.payload.user,
+        user: userObj,
         token: action.payload.token,
-        role: userRole,
+        role: loginRole,
         isAuthenticated: true,
         isLoading: false,
       };
@@ -76,67 +78,34 @@ export function AuthProvider({ children }) {
     try {
       const { applyTheme } = require("../theme/ThemeManager");
       applyTheme(isDarkMode);
-    } catch (err) {}
+      console.log("[ThemeManager] Applied theme state:", isDarkMode ? "dark" : "light");
+    } catch (err) {
+      console.warn("[ThemeManager] Theme switch error:", err.message);
+    }
   }, [isDarkMode]);
 
   useEffect(() => {
     global.logoutHandler = () => {
       dispatch({ type: "LOGOUT" });
     };
-
     async function restoreSession() {
       try {
         const token = await secureStorage.getAccessToken();
-        const storedUser = await secureStorage.getUserData();
-        const storedRole = await secureStorage.getUserRole();
-
-        if (token && storedUser) {
-          // Instantly restore logged-in session so user goes DIRECTLY to Home!
-          dispatch({
-            type: "RESTORE_SESSION",
-            payload: {
-              user: storedUser,
-              token,
-              role: storedRole || storedUser.role || "USER",
-            },
-          });
-
-          // Background sync latest profile & artist completion status from backend
-          try {
-            const profileRes = await apiRequest("GET", "/api/v1/mehndigo/user/profile", null, true);
-            const freshUser = profileRes?.data || profileRes?.user || profileRes;
-            if (freshUser && typeof freshUser === "object") {
-              const freshRole = freshUser.role || storedRole || "USER";
-              await secureStorage.setUserData(freshUser);
-              await secureStorage.setUserRole(freshRole);
-              if (freshUser.artistProfileCompleted !== undefined) {
-                await secureStorage.setArtistProfileCompleted(freshUser.artistProfileCompleted);
-              }
-              dispatch({
-                type: "UPDATE_USER",
-                payload: freshUser,
-              });
-            }
-          } catch (bgErr) {
-            console.log("[AuthContext] Background profile sync note:", bgErr.message);
-          }
-          return;
+        const user = await secureStorage.getUserData();
+        const role = await secureStorage.getUserRole();
+        if (token && user) {
+          dispatch({ type: "RESTORE_SESSION", payload: { user, token, role } });
+        } else {
+          dispatch({ type: "RESTORE_SESSION", payload: { user: null, token: null, role: null } });
         }
-
-        dispatch({ type: "RESTORE_SESSION", payload: { user: null, token: null, role: null } });
       } catch (e) {
         dispatch({ type: "RESTORE_SESSION", payload: { user: null, token: null, role: null } });
       }
     }
-
     restoreSession();
     return () => {
       global.logoutHandler = null;
     };
-  }, []);
-
-  const checkEmail = useCallback(async (email) => {
-    return await checkEmailService(email);
   }, []);
 
   const loginWithGoogle = useCallback(async (idToken) => {
@@ -185,21 +154,19 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  const sendOtp = useCallback(async (options) => {
-    return await sendOtpService(options);
+  const sendOtp = useCallback(async (email, role) => {
+    return await sendOtpService(email, undefined, role);
   }, []);
 
   const verifyOtpAndAuthenticate = useCallback(async (email, otp) => {
     try {
       const data = await verifyUserOtpService(email, otp);
-      const user = data.user;
-      const role = user?.role || "USER";
       dispatch({
         type: "LOGIN",
         payload: {
-          user,
-          token: data.token || data.accessToken,
-          role,
+          user: data.user,
+          token: data.token,
+          role: data.user.role,
         },
       });
       return data;
@@ -228,7 +195,6 @@ export function AuthProvider({ children }) {
       ...state,
       isDarkMode,
       toggleTheme,
-      checkEmail,
       loginWithGoogle,
       loginWithEmail,
       register,
@@ -240,21 +206,7 @@ export function AuthProvider({ children }) {
       setOnboardingComplete,
       dispatch,
     }),
-    [
-      state,
-      isDarkMode,
-      toggleTheme,
-      checkEmail,
-      loginWithGoogle,
-      loginWithEmail,
-      register,
-      verifyOtpAndLogin,
-      sendOtp,
-      verifyOtpAndAuthenticate,
-      logout,
-      setUserRole,
-      setOnboardingComplete,
-    ]
+    [state, isDarkMode, toggleTheme, loginWithGoogle, loginWithEmail, register, verifyOtpAndLogin, sendOtp, verifyOtpAndAuthenticate, logout, setUserRole, setOnboardingComplete],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

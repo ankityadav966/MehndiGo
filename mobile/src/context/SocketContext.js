@@ -234,25 +234,70 @@ export function SocketProvider({ children }) {
     }
   }, [socket, connected]);
 
-  // Sending message wrapper with Offline Queue Support
+  // Sending message wrapper with Offline Queue & REST fallback Support
   const sendChatMessage = useCallback(async (bookingId, messageText, messageType = "TEXT", parentMessageId = null, media = null) => {
     const localId = `offline_${Date.now()}`;
     const pendingMsg = {
       id: localId,
       sender_id: user?.id,
-      receiver_id: null, // derived on server
+      receiver_id: null,
       booking_id: bookingId,
       message: messageText,
+      content: messageText,
       message_type: messageType,
+      messageType: messageType,
       is_read: false,
       isOfflinePending: true,
       parent_message_id: parentMessageId,
       media,
+      media_url: typeof media === "string" ? media : (media?.file_url || media?.url || null),
       createdAt: new Date().toISOString()
     };
 
+    // Update local UI immediately
+    setMessages((prev) => [...prev, pendingMsg]);
+
+    // Send via REST API to persist in D1
+    try {
+      const apiRequest = require("../services/api").default;
+      const sentMsg = await apiRequest("POST", "/chat/send", {
+        bookingId,
+        message: messageText,
+        content: messageText,
+        messageType,
+        message_type: messageType,
+        parentMessageId,
+        media,
+        mediaUrl: typeof media === "string" ? media : (media?.file_url || media?.url || null),
+        latitude: media?.waveform?.latitude || null,
+        longitude: media?.waveform?.longitude || null
+      }, true);
+
+      if (sentMsg) {
+        const payload = sentMsg?.data || sentMsg;
+        const msgContent = sentMsg?.data?.content || sentMsg?.data?.message || messageText;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === localId
+              ? {
+                  ...m,
+                  ...payload,
+                  message: msgContent,
+                  content: msgContent,
+                  message_type: messageType,
+                  messageType: messageType,
+                  media: media || payload.media,
+                  isOfflinePending: false
+                }
+              : m
+          )
+        );
+      }
+    } catch (err) {
+      console.log("[CHAT] REST send fallback failed:", err.message);
+    }
+
     if (connected && socket) {
-      // Send directly
       socket.emit("send-message", {
         bookingId,
         message: messageText,
@@ -262,23 +307,6 @@ export function SocketProvider({ children }) {
         parent_message_id: parentMessageId,
         media
       });
-      // Temporarily append locally (replaced when message_saved is received)
-      setMessages((prev) => [...prev, pendingMsg]);
-    } else {
-      // Append locally with offline indicator
-      setMessages((prev) => [...prev, pendingMsg]);
-
-      // Add to offline queue
-      const updatedQueue = [...offlineQueueRef.current, {
-        localId,
-        bookingId,
-        message: messageText,
-        messageType,
-        parentMessageId,
-        media
-      }];
-      setOfflineQueue(updatedQueue);
-      await saveOfflineQueue(updatedQueue);
     }
   }, [connected, socket, user]);
 

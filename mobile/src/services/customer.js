@@ -9,6 +9,11 @@ export async function getHomeDashboard(latitude = null, longitude = null) {
   return res?.data || res;
 }
 
+export async function getCustomerDashboard() {
+  const res = await apiRequest("GET", "/customer/dashboard", null, true);
+  return res?.data || res;
+}
+
 export async function getCategories() {
   const res = await apiRequest("GET", "/customer/categories", null, true);
   return res?.data || res;
@@ -19,8 +24,11 @@ export async function getOffers() {
   return res?.data || res;
 }
 
-export async function getNearbyArtists(latitude = null, longitude = null, radius = 50, page = 1, limit = 10) {
-  let endpoint = `/customer/nearby-artists?page=${page}&limit=${limit}&radius=${radius}`;
+export async function getNearbyArtists(latitude = null, longitude = null, radius = null, page = 1, limit = 15) {
+  let endpoint = `/customer/nearby-artists?page=${page}&limit=${limit}`;
+  if (radius) {
+    endpoint += `&radius=${radius}`;
+  }
   if (latitude && longitude) {
     endpoint += `&latitude=${latitude}&longitude=${longitude}`;
   }
@@ -28,7 +36,7 @@ export async function getNearbyArtists(latitude = null, longitude = null, radius
   return res?.data || res;
 }
 
-export async function searchArtists(query = "", filters = {}, sort = "nearest", latitude = null, longitude = null, page = 1, limit = 10) {
+export async function searchArtists(query = "", filters = {}, sort = "nearest", latitude = null, longitude = null, page = 1, limit = 15) {
   let endpoint = `/customer/search?query=${encodeURIComponent(query)}&page=${page}&limit=${limit}&sort=${sort}`;
   
   if (latitude && longitude) {
@@ -113,6 +121,9 @@ export async function removeFavorite(artistId) {
   return res?.data || res;
 }
 
+export const removeArtistFavorite = removeFavorite;
+export const addArtistFavorite = addFavorite;
+
 // Singular artist profile queries
 export async function fetchArtistProfile(id) {
   const res = await apiRequest("GET", `/customer/artist/${id}`, null, true);
@@ -141,16 +152,6 @@ export async function fetchArtistAvailability(id) {
 
 export async function fetchSimilarArtists(id) {
   const res = await apiRequest("GET", `/customer/artist/${id}/similar`, null, true);
-  return res?.data || res;
-}
-
-export async function addArtistFavorite(artistId) {
-  const res = await apiRequest("POST", "/customer/artist/favorite", { artistId }, true);
-  return res?.data || res;
-}
-
-export async function removeArtistFavorite(artistId) {
-  const res = await apiRequest("DELETE", `/customer/artist/favorite?artistId=${artistId}`, null, true);
   return res?.data || res;
 }
 
@@ -190,11 +191,6 @@ export async function unsavePortfolioItem(portfolioId) {
 
 export async function fetchSavedPortfolios() {
   const res = await apiRequest("GET", "/customer/portfolio/saved", null, true);
-  return res?.data || res;
-}
-
-export async function getCustomerDashboard() {
-  const res = await apiRequest("GET", "/customer/dashboard", null, true);
   return res?.data || res;
 }
 

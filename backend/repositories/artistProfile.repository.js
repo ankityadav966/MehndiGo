@@ -143,7 +143,7 @@ class ArtistProfileRepository extends CrudRepository {
       ["total_bookings", "DESC"]
     ];
     let where = {
-      verification_status: "APPROVED",
+      verification_status: { [Op.ne]: "REJECTED" },
     };
 
     if (search) {
@@ -152,18 +152,25 @@ class ArtistProfileRepository extends CrudRepository {
         { bio: { [Op.iLike]: searchPattern } },
         { city: { [Op.iLike]: searchPattern } },
         { state: { [Op.iLike]: searchPattern } },
-        { pincode: { [Op.iLike]: searchPattern } }
+        { pincode: { [Op.iLike]: searchPattern } },
+        db.sequelize.literal(`EXISTS (
+          SELECT 1 FROM "Users" AS u 
+          WHERE u.id = "ArtistProfile".user_id 
+          AND u.name ILIKE '${searchPattern}'
+        )`),
+        db.sequelize.literal(`EXISTS (
+          SELECT 1 FROM "Services" AS s 
+          WHERE s.artist_id = "ArtistProfile".id 
+          AND (s.specialization_name ILIKE '${searchPattern}' OR s.category ILIKE '${searchPattern}')
+        )`)
       ];
     }
 
     if (latitude && longitude) {
       const lat = Number(latitude);
       const lng = Number(longitude);
-      
-      where.latitude = { [Op.ne]: null };
-      where.longitude = { [Op.ne]: null };
 
-      const distanceSql = `(6371 * acos(cos(radians(${lat})) * cos(radians(latitude::double precision)) * cos(radians(longitude::double precision) - radians(${lng})) + sin(radians(${lat})) * sin(radians(latitude::double precision))))`;
+      const distanceSql = `(6371 * acos(LEAST(1.0, GREATEST(-1.0, cos(radians(${lat})) * cos(radians(COALESCE(latitude::double precision, ${lat}))) * cos(radians(COALESCE(longitude::double precision, ${lng})) - radians(${lng})) + sin(radians(${lat})) * sin(radians(COALESCE(latitude::double precision, ${lat})))))))`;
       
       attributes.include.push([db.sequelize.literal(distanceSql), "distance"]);
       
@@ -173,11 +180,18 @@ class ArtistProfileRepository extends CrudRepository {
         ];
       }
 
-      if (sort === "distance") {
+      if (sort === "distance" || sort === "nearest") {
         order = [
           [db.sequelize.literal(distanceSql), "ASC"],
           ["avg_rating", "DESC"]
         ];
+      } else if (sort === "rating" || sort === "highest_rated") {
+        order = [
+          ["avg_rating", "DESC"],
+          ["total_reviews", "DESC"]
+        ];
+      } else if (sort === "latest") {
+        order = [["createdAt", "DESC"]];
       } else {
         order = [
           ["avg_rating", "DESC"],
@@ -186,10 +200,12 @@ class ArtistProfileRepository extends CrudRepository {
         ];
       }
     } else {
-      if (sort === "rating") {
-        order = [["avg_rating", "DESC"]];
+      if (sort === "rating" || sort === "highest_rated") {
+        order = [["avg_rating", "DESC"], ["total_reviews", "DESC"]];
       } else if (sort === "latest") {
         order = [["createdAt", "DESC"]];
+      } else if (sort === "trending") {
+        order = [["total_bookings", "DESC"], ["avg_rating", "DESC"]];
       }
     }
 

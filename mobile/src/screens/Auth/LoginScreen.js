@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -15,34 +15,29 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import { sendOtp } from "../../services/auth";
 
-export default function LoginScreen({ navigation }) {
-  const [email, setEmail] = useState("");
+export default function LoginScreen({ navigation, route }) {
+  const [email, setEmail] = useState(route?.params?.email || "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const handleEmailChange = (text) => {
-    setEmail(text);
-    if (error) setError("");
-  };
+  useEffect(() => {
+    if (route?.params?.email) {
+      setEmail(route.params.email);
+    }
+  }, [route?.params?.email]);
 
   const handleContinue = async () => {
-    if (loading) return;
-
     setError("");
     const trimmedEmail = email.trim().toLowerCase();
 
     if (!trimmedEmail) {
-      const msg = "Please enter your email address";
-      setError(msg);
-      Alert.alert("Invalid Email", msg);
+      setError("Please enter your email address");
       return;
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(trimmedEmail)) {
-      const msg = "Please enter a valid email address (e.g. user@example.com)";
-      setError(msg);
-      Alert.alert("Invalid Email", msg);
+      setError("Please enter a valid email address");
       return;
     }
 
@@ -51,32 +46,29 @@ export default function LoginScreen({ navigation }) {
       const res = await sendOtp(trimmedEmail);
       const data = res?.data || res;
 
-      if (data && data.exists !== false) {
-        console.log("[AUTH DEBUG] Login OTP send success - existing user found");
-        const otp = data.otp ? String(data.otp) : "";
-        Alert.alert("Verification OTP", `OTP has been sent to your email. (Dev code: ${otp})`);
+      if (data) {
+        console.log(`[OTP DISPATCH SUCCESS] Real OTP sent to email: ${trimmedEmail}`);
+        Alert.alert("Verification Code Sent 📩", `A 6-digit verification code has been sent to ${trimmedEmail}. Please check your email inbox to continue.`);
         navigation.navigate("Otp", {
           email: trimmedEmail,
-          role: existingRole,
+          role: data.role || "USER",
           isRegistering: false,
           flow: "LOGIN",
-          otp,
         });
-      } else {
-        // Email does NOT exist -> Automatically navigate to RegisterScreen with prefilled email
-        console.log("[AUTH DEBUG] Email does not exist. Auto-navigating to Sign Up screen");
-        navigation.navigate("Register", { email: trimmedEmail });
       }
     } catch (e) {
       console.log("Send OTP Error:", e);
-      const msg = e?.response?.data?.message || e.message || "";
+      const status = e?.response?.status;
+      const msg = e?.response?.data?.message || e?.message || "";
+      
       if (
+        status === 404 ||
         msg.toLowerCase().includes("not found") ||
-        msg.toLowerCase().includes("sign up") ||
-        msg.toLowerCase().includes("register")
+        msg.toLowerCase().includes("please register") ||
+        msg.toLowerCase().includes("register first")
       ) {
-        // Email does NOT exist -> Automatically navigate to RegisterScreen with prefilled email
-        console.log("[AUTH DEBUG] User not found (404). Auto-navigating to Sign Up screen");
+        // Email does NOT exist in DB -> Confirmed by API 404 response -> Navigate to Register Screen
+        console.log("[AUTH DEBUG] Backend confirmed 404 (User Not Found). Navigating to Register screen with email:", trimmedEmail);
         navigation.navigate("Register", { email: trimmedEmail });
       } else {
         setError(msg || "Failed to proceed. Please try again.");
@@ -159,8 +151,8 @@ const styles = StyleSheet.create({
   },
   logoContainer: {
     alignItems: "center",
-    marginBottom: 16,
-    marginTop: -20,
+    marginBottom: 24,
+    marginTop: -40,
   },
   logo: {
     width: 120,

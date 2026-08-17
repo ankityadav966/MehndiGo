@@ -10,10 +10,11 @@ import {
   TouchableOpacity,
   View
 } from "react-native";
+import * as ImagePicker from "expo-image-picker";
 import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
-import { createNewReview, skipReview } from "../../services/review";
+import { createNewReview, skipReview, uploadReviewMedia } from "../../services/review";
 
 const PRESET_TAGS = ["Professional", "Friendly", "Creative", "Punctual", "Value for Money", "Expert Design", "Clean Work"];
 
@@ -27,7 +28,10 @@ export default function ReviewSubmissionScreen({ route, navigation }) {
 
   const [comment, setComment] = useState("");
   const [selectedTags, setSelectedTags] = useState([]);
+  const [videoMedia, setVideoMedia] = useState(null); // { uri }
+  const [photos, setPhotos] = useState([]); // [ { uri } ]
   const [loading, setLoading] = useState(false);
+  const [uploadStatusText, setUploadStatusText] = useState("");
 
   useEffect(() => {
     if (!bookingId) {
@@ -44,9 +48,66 @@ export default function ReviewSubmissionScreen({ route, navigation }) {
     }
   };
 
+  const handlePickVideo = async () => {
+    try {
+      const res = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['videos'],
+        allowsEditing: true,
+        quality: 0.8,
+        videoMaxDuration: 60
+      });
+      if (!res.canceled && res.assets && res.assets.length > 0) {
+        setVideoMedia(res.assets[0]);
+      }
+    } catch (e) {
+      Alert.alert("Error", "Failed to select video: " + e.message);
+    }
+  };
+
+  const handlePickPhotos = async () => {
+    try {
+      const res = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsMultipleSelection: true,
+        selectionLimit: 4,
+        quality: 0.8
+      });
+      if (!res.canceled && res.assets) {
+        setPhotos((prev) => [...prev, ...res.assets].slice(0, 4));
+      }
+    } catch (e) {
+      Alert.alert("Error", "Failed to select photos: " + e.message);
+    }
+  };
+
   const handleSubmit = async () => {
     setLoading(true);
     try {
+      let uploadedVideoUrl = null;
+      let uploadedVideoThumbnail = null;
+      const uploadedPhotosList = [];
+
+      // 1. Upload Video if selected
+      if (videoMedia?.uri) {
+        setUploadStatusText("Uploading video review...");
+        const vRes = await uploadReviewMedia(videoMedia.uri, true);
+        uploadedVideoUrl = vRes?.url;
+        uploadedVideoThumbnail = vRes?.thumbnail;
+      }
+
+      // 2. Upload Photos if selected
+      if (photos.length > 0) {
+        setUploadStatusText("Uploading mehndi photos...");
+        for (const p of photos) {
+          if (p.uri) {
+            const pRes = await uploadReviewMedia(p.uri, false);
+            if (pRes?.url) uploadedPhotosList.push(pRes.url);
+          }
+        }
+      }
+
+      setUploadStatusText("Submitting verified review...");
+
       // Prepend tags to the comment text block
       let finalComment = comment.trim();
       if (selectedTags.length > 0) {
@@ -59,15 +120,19 @@ export default function ReviewSubmissionScreen({ route, navigation }) {
         comment: finalComment,
         design_quality: designRating,
         punctuality: punctualityRating,
-        professionalism: professionalismRating
+        professionalism: professionalismRating,
+        video_url: uploadedVideoUrl,
+        video_thumbnail: uploadedVideoThumbnail,
+        photos: uploadedPhotosList
       });
 
-      Alert.alert("Review Submitted 🎉", "Thank you for sharing your valuable feedback!");
+      Alert.alert("Review Submitted 🎉", "Thank you! Your review has been submitted for moderation and will appear on the artist profile once approved by admin.");
       navigation.navigate("CustomerTabs", { screen: "Home" });
     } catch (err) {
       Alert.alert("Submission Error", err.message || "Failed to save review.");
     } finally {
       setLoading(false);
+      setUploadStatusText("");
     }
   };
 
@@ -167,6 +232,54 @@ export default function ReviewSubmissionScreen({ route, navigation }) {
           </View>
         </View>
 
+        {/* 4. Video Review & Proof Media */}
+        <View style={styles.mediaUploadSection}>
+          <Text style={styles.sectionLabel}>Add Visual Proof (Video & Photos)</Text>
+          <Text style={styles.mediaHint}>Upload a 15–60s video of your Mehndi design or clear photos to earn a Verified Review badge.</Text>
+
+          {/* Video Review Attachment */}
+          <View style={styles.videoPickerRow}>
+            {videoMedia ? (
+              <View style={styles.selectedVideoCard}>
+                <Ionicons name="videocam" size={24} color={Colors.primary} />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={styles.selectedVideoTitle} numberOfLines={1}>Video Review Selected</Text>
+                  <Text style={styles.selectedVideoSub}>Duration: {videoMedia.duration ? `${Math.round(videoMedia.duration)}s` : "< 60s"}</Text>
+                </View>
+                <TouchableOpacity onPress={() => setVideoMedia(null)} style={styles.removeMediaBtn}>
+                  <Ionicons name="close-circle" size={22} color="#EF4444" />
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity style={styles.addVideoBtn} onPress={handlePickVideo}>
+                <Ionicons name="videocam-outline" size={22} color={Colors.primary} />
+                <Text style={styles.addVideoBtnText}>Record / Select Video Review (15-60s)</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Photos Attachment */}
+          <View style={styles.photosGridRow}>
+            {photos.map((p, pIdx) => (
+              <View key={pIdx} style={styles.photoThumbWrapper}>
+                <Image source={{ uri: p.uri }} style={styles.photoThumb} />
+                <TouchableOpacity
+                  style={styles.removePhotoBtn}
+                  onPress={() => setPhotos((prev) => prev.filter((_, idx) => idx !== pIdx))}
+                >
+                  <Ionicons name="close-circle" size={18} color="#EF4444" />
+                </TouchableOpacity>
+              </View>
+            ))}
+            {photos.length < 4 && (
+              <TouchableOpacity style={styles.addPhotoSlot} onPress={handlePickPhotos}>
+                <Ionicons name="camera-outline" size={22} color="#64748B" />
+                <Text style={styles.addPhotoSlotText}>Add Photo</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+
         <View style={styles.reviewSection}>
           <Text style={styles.reviewLabel}>Detailed Comment</Text>
           <TextInput
@@ -184,7 +297,10 @@ export default function ReviewSubmissionScreen({ route, navigation }) {
 
       <View style={styles.footer}>
         {loading ? (
-          <ActivityIndicator size="large" color={Colors.primary} />
+          <View style={{ alignItems: "center" }}>
+            <ActivityIndicator size="large" color={Colors.primary} />
+            <Text style={{ marginTop: 6, fontSize: 12, color: Colors.textSecondary }}>{uploadStatusText || "Submitting..."}</Text>
+          </View>
         ) : (
           <View style={styles.actionButtons}>
             <TouchableOpacity style={styles.skipBtn} onPress={handleSkip}>
@@ -236,5 +352,87 @@ const styles = StyleSheet.create({
   skipBtn: { flex: 1, height: 48, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, justifyContent: "center", alignItems: "center" },
   skipBtnLabel: { color: Colors.textSecondary, fontWeight: "600", fontSize: 13 },
   submitBtn: { flex: 2, height: 48, borderRadius: 10, backgroundColor: Colors.primary, justifyContent: "center", alignItems: "center" },
-  submitBtnText: { color: Colors.white, fontWeight: "700", fontSize: 14 }
+  submitBtnText: { color: Colors.white, fontWeight: "700", fontSize: 14 },
+  mediaUploadSection: { paddingHorizontal: 16, marginTop: 16 },
+  mediaHint: { fontSize: 11, color: Colors.textTertiary, marginBottom: 10, lineHeight: 15 },
+  videoPickerRow: { marginBottom: 12 },
+  addVideoBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+    borderStyle: "dashed",
+    backgroundColor: Colors.primaryLight + "10",
+  },
+  addVideoBtnText: {
+    color: Colors.primary,
+    fontWeight: "700",
+    fontSize: 13,
+    marginLeft: 8,
+  },
+  selectedVideoCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.white,
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+  },
+  selectedVideoTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: Colors.text,
+  },
+  selectedVideoSub: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
+  removeMediaBtn: {
+    padding: 4,
+  },
+  photosGridRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  photoThumbWrapper: {
+    width: 72,
+    height: 72,
+    borderRadius: 10,
+    position: "relative",
+  },
+  photoThumb: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 10,
+  },
+  removePhotoBtn: {
+    position: "absolute",
+    top: -6,
+    right: -6,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 10,
+  },
+  addPhotoSlot: {
+    width: 72,
+    height: 72,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: "#CBD5E1",
+    borderStyle: "dashed",
+    backgroundColor: Colors.white,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  addPhotoSlotText: {
+    fontSize: 10,
+    color: "#64748B",
+    fontWeight: "600",
+    marginTop: 2,
+  },
 });

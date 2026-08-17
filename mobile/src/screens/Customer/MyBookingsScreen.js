@@ -60,7 +60,7 @@ export default function MyBookingsScreen({ navigation }) {
     if (imageErrors[item.id]) {
       return getCategoryFallback(item);
     }
-    const rawUri = item?.artist?.user?.profile_image || item?.service?.image;
+    const rawUri = item?.artist_image || item?.artist?.profile_image || item?.artist?.user?.profile_image || item?.service?.image;
     if (!rawUri || typeof rawUri !== "string") {
       return getCategoryFallback(item);
     }
@@ -103,12 +103,12 @@ export default function MyBookingsScreen({ navigation }) {
 
   const getFilteredBookings = () => {
     return bookings.filter((item) => {
-      const status = (item.detailed_status || item.booking_status || item.status || "PENDING").toUpperCase();
+      const status = String(item.detailed_status || item.booking_status || item.status || "").toUpperCase();
       if (selectedTab === "All") return true;
       if (selectedTab === "Pending") {
         return ["PENDING", "VIEWED", "CONFIRMED", "WAITING_FOR_USER_PAYMENT"].includes(status);
       } else if (selectedTab === "Accepted") {
-        return ["ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "ARTIST_ARRIVED", "SERVICE_STARTED", "RESCHEDULED", "CASH_PAYMENT_PENDING"].includes(status);
+        return ["ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "ARTIST_ARRIVED", "SERVICE_STARTED", "RESCHEDULED", "CASH_PAYMENT_PENDING", "ON_THE_WAY", "IN_PROGRESS"].includes(status);
       } else if (selectedTab === "Completed") {
         return ["COMPLETED", "AWAITING_CASH_CONFIRMATION", "COMPLETED_CLOSED"].includes(status);
       } else {
@@ -121,10 +121,10 @@ export default function MyBookingsScreen({ navigation }) {
 
   const getStatusBadgeConfig = (statusStr) => {
     const st = String(statusStr || "").toUpperCase();
-    if (["COMPLETED", "COMPLETED_CLOSED"].includes(st)) {
+    if (["COMPLETED", "COMPLETED_CLOSED", "AWAITING_CASH_CONFIRMATION"].includes(st)) {
       return { bg: "#EFF6FF", text: "#1D4ED8", label: "Completed" };
     }
-    if (["ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "ARTIST_ARRIVED", "SERVICE_STARTED"].includes(st)) {
+    if (["ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "ARTIST_ARRIVED", "SERVICE_STARTED", "ON_THE_WAY", "IN_PROGRESS"].includes(st)) {
       return { bg: "#ECFDF5", text: "#047857", label: "Accepted" };
     }
     if (["PENDING", "VIEWED", "CONFIRMED", "WAITING_FOR_USER_PAYMENT"].includes(st)) {
@@ -144,24 +144,14 @@ export default function MyBookingsScreen({ navigation }) {
     const statusConfig = getStatusBadgeConfig(status);
     const localMoment = getMoment();
     
-    let dateStr = "Today";
-    if (item.slot?.date) {
-      dateStr = localMoment(item.slot.date).format("DD MMM YYYY");
-    } else if (item.slot?.start_time) {
-      dateStr = localMoment(item.slot.start_time).format("DD MMM YYYY");
-    } else if (item.reschedule_date) {
-      dateStr = localMoment(item.reschedule_date).format("DD MMM YYYY");
-    }
+    const rawDate = item.booking_date || item.date || item.event_date || item.reschedule_date || item.slot?.date || item.slot?.start_time || item.created_at;
+    let dateStr = rawDate ? localMoment(rawDate).format("DD MMM YYYY") : "Today";
 
-    let timeStr = "TBD";
-    if (item.slot?.start_time && item.slot?.end_time) {
-      timeStr = `${formatTime(item.slot.start_time)} - ${formatTime(item.slot.end_time)}`;
-    } else if (item.reschedule_time) {
-      timeStr = formatTime(item.reschedule_time);
-    }
+    const rawTime = item.booking_time || item.time || item.time_slot || item.reschedule_time || (item.slot ? `${formatTime(item.slot.start_time)} - ${formatTime(item.slot.end_time)}` : null) || item.slot?.time_label;
+    let timeStr = rawTime ? (rawTime.includes("AM") || rawTime.includes("PM") || rawTime.includes("-") ? rawTime : formatTime(rawTime)) : "TBD";
 
     const isLiveBooking = ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "ARTIST_ARRIVED", "SERVICE_STARTED"].includes(status);
-    const artistName = item.artist?.user?.name || item.service?.specialization_name || "Mehndi Booking";
+    const artistName = item.artist_name || item.artist?.user?.name || item.service_title || item.service?.specialization_name || "Mehndi Booking";
 
     return (
       <TouchableOpacity

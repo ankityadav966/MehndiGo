@@ -9,6 +9,16 @@ async function runEndToEndRazorpayTest() {
   console.log("==========================================\n");
 
   try {
+    // 0. Ensure PostgreSQL DB columns exist
+    await db.sequelize.query('ALTER TABLE "Payments" ADD COLUMN IF NOT EXISTS razorpay_order_id VARCHAR(255);');
+    await db.sequelize.query('ALTER TABLE "Payments" ADD COLUMN IF NOT EXISTS razorpay_payment_id VARCHAR(255);');
+    await db.sequelize.query('ALTER TABLE "Payments" ADD COLUMN IF NOT EXISTS razorpay_signature VARCHAR(255);');
+    await db.sequelize.query('ALTER TABLE "Transactions" ADD COLUMN IF NOT EXISTS razorpay_order_id VARCHAR(255);');
+    await db.sequelize.query('ALTER TABLE "Transactions" ADD COLUMN IF NOT EXISTS razorpay_payment_id VARCHAR(255);');
+    await db.sequelize.query('ALTER TABLE "Transactions" ADD COLUMN IF NOT EXISTS razorpay_signature VARCHAR(255);');
+    await db.Payment.sync({ alter: true });
+    await db.Transaction.sync({ alter: true });
+
     // 1. Setup Test User and Booking in DB
     const [user] = await db.User.findOrCreate({
       where: { phone: "9998887776" },
@@ -78,11 +88,11 @@ async function runEndToEndRazorpayTest() {
     console.log(`✅ Order Created Successfully: ${razorpayOrderId}`);
     console.log(`Amount in Paise: ${orderRes.amount} (Rupees: ₹${orderRes.amount_in_rupees})`);
 
-    // Verify 10% advance calculation (10% of ₹2010 = ₹201 -> 20100 paise)
-    if (orderRes.amount !== 20100) {
-      throw new Error(`Expected 20100 paise (₹201 advance), but got ${orderRes.amount}`);
+    // Verify fixed ₹500 advance calculation (₹500 -> 50000 paise)
+    if (orderRes.amount !== 50000) {
+      throw new Error(`Expected 50000 paise (₹500 fixed advance), but got ${orderRes.amount}`);
     }
-    console.log("✅ 10% Advance Amount in Paise verified exactly: 20100 paise");
+    console.log("✅ Fixed ₹500 Advance Amount in Paise verified exactly: 50000 paise");
 
     // 3. Test Signature Verification & Payment Completion
     console.log("\n[TEST] 3. Testing Payment Completion & Signature Verification...");
@@ -118,11 +128,11 @@ async function runEndToEndRazorpayTest() {
     console.log("\n[TEST] 4. DB State Verification post Advance Payment:");
     console.log(`- payment_status: ${updatedBooking.payment_status} (Expected: PARTIAL)`);
     console.log(`- booking_status: ${updatedBooking.booking_status} (Expected: CONFIRMED)`);
-    console.log(`- advance_paid: ₹${updatedBooking.advance_paid} (Expected: 201)`);
-    console.log(`- remaining_amount: ₹${updatedBooking.remaining_amount} (Expected: 1809)`);
+    console.log(`- advance_paid: ₹${updatedBooking.advance_paid} (Expected: 500)`);
+    console.log(`- remaining_amount: ₹${updatedBooking.remaining_amount} (Expected: 1510)`);
 
-    if (updatedBooking.payment_status !== "PARTIAL" || updatedBooking.booking_status !== "CONFIRMED") {
-      throw new Error("Booking state did not transition correctly to PARTIAL / CONFIRMED!");
+    if (updatedBooking.payment_status !== "PARTIAL" || updatedBooking.booking_status !== "CONFIRMED" || updatedBooking.advance_paid !== 500 || updatedBooking.remaining_amount !== 1510) {
+      throw new Error("Booking state did not transition correctly to PARTIAL / CONFIRMED with ₹500 advance & ₹1510 remaining!");
     }
     console.log("✅ Booking State Transition Verified!");
 

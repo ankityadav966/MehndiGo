@@ -13,13 +13,19 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import Colors from "../../constants/Colors";
 import Alert from "../../utils/Alert";
 import { getWalletDetails } from "../../services/customer";
-import RazorpayCheckout from "react-native-razorpay";
+import RazorpayCheckoutModal from "../../components/RazorpayCheckoutModal";
+import { openRazorpayCheckout } from "../../services/razorpayHelper";
 
 export default function ArtistWalletScreen({ navigation }) {
   const [wallet, setWallet] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [payingCommission, setPayingCommission] = useState(false);
+
+  // In-App Web Razorpay Checkout state (fallback for Expo Go / simulators)
+  const [razorpayModalVisible, setRazorpayModalVisible] = useState(false);
+  const [razorpayOptions, setRazorpayOptions] = useState(null);
+  const [currentDueAmount, setCurrentDueAmount] = useState(0);
 
   const fetchWalletData = useCallback(async () => {
     try {
@@ -42,48 +48,88 @@ export default function ArtistWalletScreen({ navigation }) {
     fetchWalletData();
   };
 
+  const handleCommissionSuccess = async (data) => {
+    setRazorpayModalVisible(false);
+    setPayingCommission(true);
+    try {
+      const { apiPost } = require("../../services/api");
+      await apiPost("/wallet/pay-commission", {
+        razorpay_payment_id: data.razorpay_payment_id,
+        razorpay_order_id: data.razorpay_order_id,
+        razorpay_signature: data.razorpay_signature
+      });
+      Alert.alert("Success", `Outstanding commission settled successfully!`);
+      fetchWalletData();
+    } catch (err) {
+      Alert.alert("Settlement Error", err.message || "Failed to confirm commission settlement.");
+    } finally {
+      setPayingCommission(false);
+    }
+  };
+
+  const handleCommissionFailure = (err) => {
+    setRazorpayModalVisible(false);
+    setPayingCommission(false);
+    const msg = err?.description || err?.message || (typeof err === "string" ? err : "Payment failed.");
+    Alert.alert("Payment Failed", msg);
+  };
+
+  const handleCommissionDismiss = () => {
+    setRazorpayModalVisible(false);
+    setPayingCommission(false);
+    Alert.alert("Payment Cancelled", "Commission payment was cancelled.");
+  };
+
   const handlePayOutstandingCommission = async () => {
     const dueAmount = Number(wallet?.outstanding_commission || 0);
     if (dueAmount <= 0) return;
 
+    setCurrentDueAmount(dueAmount);
     setPayingCommission(true);
     try {
+      const { createPaymentSession } = require("../../services/payment");
+      const sessionData = await createPaymentSession(null, dueAmount, "recharge");
+      const keyId = sessionData?.key_id || sessionData?.key || sessionData?.keyId;
+      const orderIdVal = sessionData?.order_id || sessionData?.orderId;
+      const amountPaise = Number(sessionData?.amount);
+
+      const isValidRazorpayKey =
+        typeof keyId === "string" &&
+        (keyId.startsWith("rzp_test_") || keyId.startsWith("rzp_live_"));
+
+      if (!sessionData || !isValidRazorpayKey || !orderIdVal) {
+        setPayingCommission(false);
+        Alert.alert("Checkout Error", "Failed to obtain Razorpay payment session for commission payment.");
+        return;
+      }
+
       const options = {
         description: "Pay Outstanding Platform Commission",
         image: "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=200",
         currency: "INR",
-        key: "rzp_test_mockkey", // Production API Key populated dynamically
-        amount: dueAmount * 100,
+        key: keyId,
+        order_id: orderIdVal,
+        amount: amountPaise,
         name: "MehndiGo Merchant Services",
         prefill: {
           email: "artist@mehendigo.com",
-          contact: "9999999999",
+          contact: "9829011001",
           name: "Artist Specialist"
         },
-        theme: { color: Colors.primary }
+        theme: { color: Colors.primary || "#9333EA" }
       };
 
-      RazorpayCheckout.open(options)
-        .then(async (data) => {
-          const { apiPost } = require("../../services/api");
-          await apiPost("/wallet/pay-commission", {
-            razorpay_payment_id: data.razorpay_payment_id
-          });
-          Alert.alert("Success", `Outstanding commission of ₹${dueAmount} settled successfully!`);
-          fetchWalletData();
-        })
-        .catch(async () => {
-          // Fallback test mode
-          const { apiPost } = require("../../services/api");
-          await apiPost("/wallet/pay-commission", {
-            razorpay_payment_id: `pay_comm_sim_${Date.now()}`
-          });
-          Alert.alert("Success", `Outstanding commission of ₹${dueAmount} settled successfully!`);
-          fetchWalletData();
-        })
-        .finally(() => {
+      setRazorpayOptions(options);
+
+      await openRazorpayCheckout(options, {
+        onSuccess: (data) => handleCommissionSuccess(data),
+        onFailure: (err) => handleCommissionFailure(err),
+        onDismiss: () => handleCommissionDismiss(),
+        onWebFallback: () => {
           setPayingCommission(false);
-        });
+          setRazorpayModalVisible(true);
+        }
+      });
     } catch (err) {
       setPayingCommission(false);
       Alert.alert("Error", err.message || "Failed to initiate commission payment.");
@@ -98,101 +144,85 @@ export default function ArtistWalletScreen({ navigation }) {
     );
   }
 
-  const availableBalance = Number(wallet?.available_balance || wallet?.balance || 0);
-  const pendingSettlement = Number(wallet?.pending_settlement || 0);
-  const outstandingCommission = Number(wallet?.outstanding_commission || 0);
-  const todayEarnings = Number(wallet?.today_earnings || 0);
-  const weeklyEarnings = Number(wallet?.weekly_earnings || 0);
-  const monthlyEarnings = Number(wallet?.monthly_earnings || 0);
-  const lifetimeEarnings = Number(wallet?.lifetime_earnings || 0);
+  const outstanding = Number(wallet?.outstanding_commission || 0);
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Ionicons name="chevron-back" size={22} color={Colors.text} />
+          <Ionicons name="arrow-back" size={22} color={Colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Artist Financial Dashboard</Text>
+        <Text style={styles.headerTitle}>Artist Financial Portal</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <FlatList
         data={wallet?.transactions || []}
-        keyExtractor={(item, index) => String(item.id || index)}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[Colors.primary]} />}
-        showsVerticalScrollIndicator={false}
+        keyExtractor={(item, index) => item.id ? String(item.id) : String(index)}
         contentContainerStyle={styles.listContent}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[Colors.primary]} />}
         ListHeaderComponent={
           <>
-            {/* Outstanding Commission Warning Banner */}
-            {outstandingCommission > 0 && (
+            {outstanding > 0 && (
               <View style={styles.warningBanner}>
                 <View style={styles.warningHeader}>
-                  <Ionicons name="warning" size={20} color="#D97706" />
+                  <Ionicons name="warning-outline" size={20} color="#D97706" />
                   <Text style={styles.warningTitle}>Outstanding Commission Due</Text>
                 </View>
                 <Text style={styles.warningMsg}>
-                  You have ₹{outstandingCommission} unpaid platform commission for cash bookings. Please settle online.
+                  You have ₹{outstanding} in unpaid platform commission. Please clear dues to maintain top placement.
                 </Text>
                 <TouchableOpacity
                   style={styles.payDuesBtn}
                   onPress={handlePayOutstandingCommission}
                   disabled={payingCommission}
                 >
-                  <Ionicons name="card-outline" size={16} color="#FFFFFF" />
-                  <Text style={styles.payDuesText}>
-                    {payingCommission ? "Processing..." : `Pay ₹${outstandingCommission} Dues Online`}
-                  </Text>
+                  {payingCommission ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <Ionicons name="card-outline" size={16} color="#FFFFFF" />
+                      <Text style={styles.payDuesText}>Pay ₹{outstanding} Dues Now</Text>
+                    </>
+                  )}
                 </TouchableOpacity>
               </View>
             )}
 
-            {/* Balance Overview Card */}
             <View style={styles.balanceCard}>
-              <Text style={styles.balanceLabel}>Available Withdrawable Balance</Text>
-              <Text style={styles.balanceVal}>₹{availableBalance.toFixed(2)}</Text>
+              <Text style={styles.balanceLabel}>Available for Payout</Text>
+              <Text style={styles.balanceVal}>₹{wallet?.balance || "0"}</Text>
 
               <View style={styles.subStatsRow}>
                 <View style={styles.subStatCol}>
                   <Text style={styles.subStatLabel}>Pending Settlement</Text>
-                  <Text style={styles.subStatVal}>₹{pendingSettlement.toFixed(2)}</Text>
+                  <Text style={styles.subStatVal}>₹{wallet?.pending_settlement || "0"}</Text>
                 </View>
                 <View style={styles.subStatDivider} />
                 <View style={styles.subStatCol}>
-                  <Text style={styles.subStatLabel}>Outstanding Dues</Text>
-                  <Text style={[styles.subStatVal, { color: outstandingCommission > 0 ? "#DC2626" : "#059669" }]}>
-                    ₹{outstandingCommission.toFixed(2)}
-                  </Text>
+                  <Text style={styles.subStatLabel}>Total Earnings</Text>
+                  <Text style={styles.subStatVal}>₹{wallet?.total_earnings || "0"}</Text>
                 </View>
               </View>
 
               <TouchableOpacity
                 style={styles.withdrawBtn}
-                onPress={() => navigation.navigate("Withdrawal")}
+                onPress={() => navigation.navigate("Payout")}
               >
-                <Ionicons name="arrow-up-circle-outline" size={18} color="#FFFFFF" />
-                <Text style={styles.withdrawBtnText}>Withdraw Earnings to Bank</Text>
+                <Ionicons name="cash-outline" size={18} color="#FFFFFF" />
+                <Text style={styles.withdrawBtnText}>Request Bank Payout</Text>
               </TouchableOpacity>
             </View>
 
-            {/* Earnings Analytics Grid */}
-            <Text style={styles.sectionTitle}>Earnings Summary</Text>
+            <Text style={styles.sectionTitle}>Performance Analytics</Text>
             <View style={styles.grid}>
               <View style={styles.gridCard}>
-                <Text style={styles.gridLabel}>Today</Text>
-                <Text style={styles.gridVal}>₹{todayEarnings.toFixed(0)}</Text>
+                <Text style={styles.gridLabel}>Platform Fees Rate</Text>
+                <Text style={styles.gridVal}>10%</Text>
               </View>
               <View style={styles.gridCard}>
-                <Text style={styles.gridLabel}>This Week</Text>
-                <Text style={styles.gridVal}>₹{weeklyEarnings.toFixed(0)}</Text>
-              </View>
-              <View style={styles.gridCard}>
-                <Text style={styles.gridLabel}>This Month</Text>
-                <Text style={styles.gridVal}>₹{monthlyEarnings.toFixed(0)}</Text>
-              </View>
-              <View style={styles.gridCard}>
-                <Text style={styles.gridLabel}>Lifetime</Text>
-                <Text style={styles.gridVal}>₹{lifetimeEarnings.toFixed(0)}</Text>
+                <Text style={styles.gridLabel}>Payout Status</Text>
+                <Text style={[styles.gridVal, { color: "#059669" }]}>Active</Text>
               </View>
             </View>
 
@@ -210,13 +240,22 @@ export default function ArtistWalletScreen({ navigation }) {
             </View>
             <View style={styles.txInfo}>
               <Text style={styles.txTitle}>{item.description || item.transaction_type}</Text>
-              <Text style={styles.txDate}>{new Date(item.createdAt).toLocaleDateString()}</Text>
+              <Text style={styles.txDate}>{new Date(item.createdAt || item.created_at || new Date()).toLocaleDateString()}</Text>
             </View>
             <Text style={[styles.txAmount, { color: item.transaction_type === "CREDIT" || item.transaction_type === "SETTLEMENT" ? "#059669" : Colors.text }]}>
               {item.transaction_type === "CREDIT" || item.transaction_type === "SETTLEMENT" ? "+" : "-"}₹{item.amount}
             </Text>
           </View>
         )}
+      />
+
+      {/* Razorpay In-App Web Checkout (Works seamlessly in Expo Go / Development / Standalone builds) */}
+      <RazorpayCheckoutModal
+        visible={razorpayModalVisible}
+        options={razorpayOptions}
+        onSuccess={(data) => handleCommissionSuccess(data)}
+        onFailure={(err) => handleCommissionFailure(err)}
+        onDismiss={() => handleCommissionDismiss()}
       />
     </SafeAreaView>
   );

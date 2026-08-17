@@ -8,10 +8,10 @@ export function getOptimizedImageUrl(url, options = {}) {
   if (!url || typeof url !== "string") return url;
   if (!url.includes("cloudinary.com")) return url;
 
-  const { width = 400, height = 400, crop = "fill", quality = "auto", format = "auto" } = options;
+  const { width = 400, height = 400, crop = "fill", quality = "auto", format = "jpg" } = options;
 
   // Insert transformation parameters before /upload/
-  const transformSegment = `upload/w_${width},h_${height},c_${crop},q_${quality},f_${format}/`;
+  const transformSegment = `/upload/w_${width},h_${height},c_${crop},q_${quality},f_${format}/`;
   
   if (url.includes("/upload/")) {
     // Avoid double transformations
@@ -24,10 +24,10 @@ export function getOptimizedImageUrl(url, options = {}) {
   return url;
 }
 
-export function getThumbnailUrl(url) {
-  return getOptimizedImageUrl(url, { width: 300, height: 300, crop: "fill", quality: "auto" });
+export function getThumbnailUrl(url, width = 300, height = 300) {
+  return getOptimizedImageUrl(url, { width, height, crop: "fill", quality: "auto", format: "jpg" });
 }
 
-export function getFullResUrl(url) {
-  return getOptimizedImageUrl(url, { width: 1000, height: 1000, crop: "limit", quality: "auto" });
+export function getFullResUrl(url, width = 1000, height = 1000) {
+  return getOptimizedImageUrl(url, { width, height, crop: "limit", quality: "auto", format: "jpg" });
 }

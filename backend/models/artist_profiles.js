@@ -196,6 +196,94 @@ module.exports = (
         type: DataTypes.STRING,
         allowNull: true,
       },
+
+      is_featured: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
+
+      featured_priority: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+      },
+      working_days: {
+        type: DataTypes.JSONB,
+        allowNull: false,
+        defaultValue: ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"],
+      },
+      working_start_time: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        defaultValue: "09:00",
+      },
+      working_end_time: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        defaultValue: "20:00",
+      },
+      break_start_time: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        defaultValue: "14:00",
+      },
+      break_end_time: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        defaultValue: "15:00",
+      },
+      leave_dates: {
+        type: DataTypes.JSONB,
+        allowNull: false,
+        defaultValue: [],
+      },
+      same_day_booking: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true,
+      },
+      min_advance_hours: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 2,
+      },
+      max_advance_days: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 60,
+      },
+      max_bookings_per_day: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 4,
+      },
+      pan_number: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
+      bank_account_number: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
+      bank_ifsc: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
+      bank_account_holder: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
+      cancellation_count_30d: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+      },
+      on_time_arrival_rate: {
+        type: DataTypes.FLOAT,
+        allowNull: false,
+        defaultValue: 100.0,
+      },
     },
     {
       sequelize,

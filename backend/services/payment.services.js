@@ -27,18 +27,10 @@ class PaymentService {
       if (!booking) {
         throw new AppError("Booking not found", 404);
       }
-      
-      const pMethod = paymentMethod || "ADVANCE_CASH";
-      if (pMethod === "FULL_ONLINE" || pMethod === "ONLINE") {
-        orderAmount = Math.round(booking.final_amount);
-        note = `Full Online Payment for Booking #${booking.booking_code}`;
-      } else {
-        // ADVANCE_CASH default: Pay booking advance online
-        const advanceAmt = Number(booking.advance_amount) > 0 ? Number(booking.advance_amount) : Math.min(500, Number(booking.final_amount));
-        orderAmount = Math.round(advanceAmt);
-        note = `Booking Advance Payment for Booking #${booking.booking_code}`;
-      }
-
+      const totalAmt = Number(booking.final_amount || booking.total_price || 1800);
+      const advanceAmt = Math.round(totalAmt * 0.10);
+      orderAmount = Math.round(advanceAmt);
+      note = `Booking Advance Payment for Booking #${booking.booking_code}`;
     }
 
     if (orderAmount < 1) {
@@ -162,33 +154,46 @@ class PaymentService {
       };
     }
 
-    // Verify HMAC SHA256 Signature
-    if (rPaymentId && rSignature && rSignature !== "simulated_test_signature") {
-      const isValidSignature = razorpayUtil.verifyRazorpaySignature({
-        razorpay_order_id: rOrderId,
-        razorpay_payment_id: rPaymentId,
-        razorpay_signature: rSignature
-      });
-
-
-      if (!isValidSignature) {
-        console.error(`[VERIFY_PAYMENT] Razorpay HMAC Signature Mismatch for order ${rOrderId}`);
-        await tx.update({ status: "FAILED" });
-        if (tx.booking_id) {
-          await db.Payment.update({ status: "FAILED" }, {
-            where: {
-              [db.Sequelize.Op.or]: [
-                { razorpay_order_id: rOrderId },
-                { cashfree_order_id: rOrderId }
-              ]
-            }
-          });
-        }
-        throw new AppError("Invalid Razorpay payment signature. Verification failed.", 400);
+    // Reject simulated or fake payment payloads
+    if (!rPaymentId || !rSignature || String(rPaymentId).includes("sim") || String(rSignature).includes("simulated") || String(rSignature).includes("test")) {
+      await tx.update({ status: "FAILED" });
+      if (tx.booking_id) {
+        await db.Payment.update({ status: "FAILED" }, {
+          where: {
+            [db.Sequelize.Op.or]: [
+              { razorpay_order_id: rOrderId },
+              { cashfree_order_id: rOrderId }
+            ]
+          }
+        });
       }
+      throw new AppError("Verification rejected: Fake or simulated payment signatures are strictly forbidden.", 400);
     }
 
-    const verifiedPaymentId = rPaymentId || `pay_sim_${Date.now()}`;
+    // Verify HMAC SHA256 Signature
+    const isValidSignature = razorpayUtil.verifyRazorpaySignature({
+      razorpay_order_id: rOrderId,
+      razorpay_payment_id: rPaymentId,
+      razorpay_signature: rSignature
+    });
+
+    if (!isValidSignature) {
+      console.error(`[VERIFY_PAYMENT] Razorpay HMAC Signature Mismatch for order ${rOrderId}`);
+      await tx.update({ status: "FAILED" });
+      if (tx.booking_id) {
+        await db.Payment.update({ status: "FAILED" }, {
+          where: {
+            [db.Sequelize.Op.or]: [
+              { razorpay_order_id: rOrderId },
+              { cashfree_order_id: rOrderId }
+            ]
+          }
+        });
+      }
+      throw new AppError("Invalid Razorpay payment signature. Verification failed.", 400);
+    }
+
+    const verifiedPaymentId = rPaymentId;
 
     // Mark Transaction SUCCESS
     await tx.update({
@@ -207,9 +212,11 @@ class PaymentService {
         console.log(`[VERIFY_PAYMENT] Booking #${booking.booking_code} status BEFORE update: booking_status=${booking.booking_status}, payment_status=${booking.payment_status}, detailed_status=${booking.detailed_status}`);
 
         if (isAdvance) {
-          const advancePaid = Math.round(booking.final_amount * 0.10);
-          const remaining = Math.max(0, booking.final_amount - advancePaid);
-          console.log(`[VERIFY_PAYMENT] Processing 10% ADVANCE payment of ₹${advancePaid} for Booking #${booking.booking_code}`);
+          const totalAmt = Number(booking.final_amount || booking.total_price || 1800);
+          const advancePaid = Math.round(totalAmt * 0.10);
+          const remaining = Math.max(0, totalAmt - advancePaid);
+          const platformCommission = Math.round(totalAmt * 0.10);
+          console.log(`[VERIFY_PAYMENT] Processing FIXED ₹500 ADVANCE payment of ₹${advancePaid} (Remaining: ₹${remaining}, Platform Commission: ₹${platformCommission}) for Booking #${booking.booking_code}`);
           
           await booking.update({
             payment_status: "PARTIAL",
@@ -234,7 +241,7 @@ class PaymentService {
             invoice_url: `/payment/receipt/${booking.id}`
           });
 
-          // Credit 10% to Admin Wallet
+          // Credit 10% Platform Commission to Admin Wallet
           try {
             const adminUser = await db.User.findOne({ where: { role: "ADMIN" } });
             if (adminUser) {
@@ -242,14 +249,14 @@ class PaymentService {
                 where: { user_id: adminUser.id },
                 defaults: { balance: 0 }
               });
-              await adminWallet.increment("balance", { by: advancePaid });
+              await adminWallet.increment("balance", { by: platformCommission });
               await db.WalletTransaction.create({
                 wallet_id: adminWallet.id,
                 booking_id: booking.id,
                 transaction_type: "COMMISSION",
-                amount: advancePaid,
+                amount: platformCommission,
                 status: "SUCCESS",
-                description: `Admin Commission from booking #${booking.booking_code}`
+                description: `Admin Platform Commission (10%) from booking #${booking.booking_code}`
               });
             }
           } catch (adminErr) {
@@ -498,12 +505,74 @@ class PaymentService {
     return await db.Refund.findAll({ order: [["createdAt", "DESC"]] });
   }
 
-  async getInvoiceByBooking(bookingId) {
-    const invoice = await db.Invoice.findOne({ where: { booking_id: bookingId } });
-    if (!invoice) {
-      throw new AppError("Invoice not found for this booking", 404);
+  async handleWebhook(rawBody, signature, timestamp) {
+    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || process.env.RAZORPAY_KEY_SECRET;
+    
+    // Verify signature if secret is present
+    if (webhookSecret && signature) {
+      const expectedSignature = crypto
+        .createHmac("sha256", webhookSecret)
+        .update(typeof rawBody === "string" ? rawBody : JSON.stringify(rawBody))
+        .digest("hex");
+
+      if (expectedSignature !== signature) {
+        console.error("[WEBHOOK] Invalid Razorpay webhook signature");
+        throw new AppError("Invalid webhook signature", 400);
+      }
     }
-    return invoice;
+
+    const payload = typeof rawBody === "string" ? JSON.parse(rawBody) : rawBody;
+    const event = payload.event;
+    console.log(`[WEBHOOK] Received Razorpay event: ${event}`);
+
+    if (event === "payment.captured" || event === "order.paid") {
+      const paymentEntity = payload.payload?.payment?.entity || {};
+      const orderId = paymentEntity.order_id || payload.payload?.order?.entity?.id;
+      const paymentId = paymentEntity.id;
+
+      if (orderId) {
+        const tx = await db.Transaction.findOne({
+          where: { razorpay_order_id: orderId }
+        });
+
+        if (tx && tx.status !== "SUCCESS") {
+          await tx.update({
+            razorpay_payment_id: paymentId,
+            status: "SUCCESS"
+          });
+
+          if (tx.booking_id) {
+            const booking = await db.Booking.findByPk(tx.booking_id);
+            if (booking && booking.payment_status !== "PAID") {
+              const isAdvance = booking.payment_status === "PENDING";
+              if (isAdvance) {
+                const totalAmt = Number(booking.final_amount || booking.total_price || 1800);
+                const advancePaid = Math.round(totalAmt * 0.10);
+                const remaining = Math.max(0, totalAmt - advancePaid);
+                await booking.update({
+                  payment_status: "PARTIAL",
+                  booking_status: "CONFIRMED",
+                  detailed_status: "CONFIRMED",
+                  advance_paid: advancePaid,
+                  remaining_amount: remaining
+                });
+              }
+            }
+          }
+        }
+      }
+    } else if (event === "payment.failed") {
+      const paymentEntity = payload.payload?.payment?.entity || {};
+      const orderId = paymentEntity.order_id;
+      if (orderId) {
+        await db.Transaction.update(
+          { status: "FAILED" },
+          { where: { razorpay_order_id: orderId } }
+        );
+      }
+    }
+
+    return { success: true, event };
   }
 }
 

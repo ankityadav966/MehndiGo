@@ -42,7 +42,7 @@ const LoginPage = ({ showToast }) => {
       const data = res.data || res;
       loginSuccess(data.token, data.user);
       showToast("Welcome back!", "success");
-      navigate(data.user.role === "ADMIN" ? "/admin" : "/dashboard");
+      navigate(String(data.user?.role).toUpperCase() === "ADMIN" ? "/admin" : "/dashboard");
     } catch (err) {
       if (err.message && err.message.includes("Email Not Verified")) {
         showToast(err.message, "warning");
@@ -66,7 +66,7 @@ const LoginPage = ({ showToast }) => {
       const data = res.data || res;
       loginSuccess(data.token, data.user);
       showToast("Email verified successfully! Welcome!", "success");
-      navigate(data.user.role === "ADMIN" ? "/admin" : "/dashboard");
+      navigate(String(data.user?.role).toUpperCase() === "ADMIN" ? "/admin" : "/dashboard");
     } catch (err) {
       showToast(err.message || "Invalid OTP", "danger");
     } finally {
@@ -168,29 +168,6 @@ const LoginPage = ({ showToast }) => {
             </div>
 
             <div className="form-group">
-<<<<<<< HEAD
-              <label className="form-label">Select Account Role</label>
-              <div style={{ position: "relative" }}>
-                <UserCheck
-                  style={{
-                    position: "absolute",
-                    left: "12px",
-                    top: "10px",
-                    color: "var(--text-secondary)",
-                    width: "16px",
-                  }}
-                />
-                <select
-                  className="form-control"
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
-                  style={{ paddingLeft: "2.5rem" }}
-                >
-                  <option value="USER">Customer / Client</option>
-                  <option value="ARTIST">Talent / Artist</option>
-                  <option value="ADMIN">ADMIN</option>
-                </select>
-=======
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <label className="form-label" style={{ marginBottom: 0 }}>Password</label>
                 <button type="button" onClick={() => setStep("FORGOT_PASSWORD")} style={{ background: "none", border: "none", color: "var(--accent-color)", fontSize: "0.85rem", cursor: "pointer", padding: 0 }}>
@@ -200,7 +177,6 @@ const LoginPage = ({ showToast }) => {
               <div style={{ position: "relative", marginTop: "0.5rem" }}>
                 <Lock style={{ position: "absolute", left: "12px", top: "10px", color: "var(--text-secondary)", width: "16px" }} />
                 <input type="password" className="form-control" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} style={{ paddingLeft: "2.5rem" }} required />
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
               </div>
             </div>
 

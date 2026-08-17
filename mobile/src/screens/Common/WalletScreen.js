@@ -1,5 +1,5 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -17,7 +17,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import { getWalletDetails, getWalletTransactions } from "../../services/customer";
 import { createPaymentSession } from "../../services/payment";
-import RazorpayCheckout from "react-native-razorpay";
+import RazorpayCheckoutModal from "../../components/RazorpayCheckoutModal";
+import { openRazorpayCheckout } from "../../services/razorpayHelper";
 import apiRequest from "../../services/api";
 import moment from "moment";
 
@@ -33,25 +34,31 @@ export default function WalletScreen({ navigation }) {
   const [addingMoney, setAddingMoney] = useState(false);
 
   const [orderId, setOrderId] = useState("");
-  const [checkoutModalVisible, setCheckoutModalVisible] = useState(false);
+  const [activeSession, setActiveSession] = useState(null);
+
+  // In-App Web Razorpay Checkout state (fallback for Expo Go / simulators)
+  const [razorpayModalVisible, setRazorpayModalVisible] = useState(false);
+  const [razorpayOptions, setRazorpayOptions] = useState(null);
 
   // Selected Transaction for details modal
   const [selectedTx, setSelectedTx] = useState(null);
   const [showInfoModal, setShowInfoModal] = useState(false);
 
-  // Segmented control tabs: ALL, CREDITS, DEBITS, PENDING
+  // Active filter tab: 'ALL' | 'CREDIT' | 'DEBIT'
   const [activeTab, setActiveTab] = useState("ALL");
+
+  const isProcessingPaymentRef = useRef(false);
 
   const loadWalletData = useCallback(async () => {
     try {
-      const [walletData, txList] = await Promise.all([
-        getWalletDetails(),
-        getWalletTransactions()
+      const [walletRes, txRes] = await Promise.all([
+        getWalletDetails().catch(() => ({ balance: 0 })),
+        getWalletTransactions().catch(() => [])
       ]);
-      setBalance(walletData?.balance || 0);
-      setTransactions(Array.isArray(txList) ? txList : []);
+      setBalance(Number(walletRes?.balance || 0));
+      setTransactions(Array.isArray(txRes) ? txRes : []);
     } catch (err) {
-      console.log("Failed to load wallet data:", err);
+      console.error("Wallet loading error:", err.message);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -62,205 +69,217 @@ export default function WalletScreen({ navigation }) {
     loadWalletData();
   }, [loadWalletData]);
 
-  const handleRefresh = () => {
+  const onRefresh = () => {
     setRefreshing(true);
     loadWalletData();
   };
 
-  const handleAddMoney = async (amountToRecharge) => {
-    const amt = Number(amountToRecharge);
-    if (!amt || isNaN(amt) || amt <= 0) {
-      Alert.alert("Validation Error", "Please enter a valid amount (e.g. ₹100 or more).");
-      return;
+  const handleWalletRechargeSuccess = async (data, sessionDataToUse) => {
+    setRazorpayModalVisible(false);
+    setLoading(true);
+
+    const sessionObj = sessionDataToUse || activeSession;
+    const rechargeAmount = Number(customAmount || 500);
+
+    try {
+      console.log("[WALLET_SCREEN] Sending /wallet/add-money verification:", data);
+      await apiRequest("POST", "/wallet/add-money", {
+        razorpay_order_id: data.razorpay_order_id || sessionObj?.order_id || orderId,
+        razorpay_payment_id: data.razorpay_payment_id,
+        razorpay_signature: data.razorpay_signature,
+        amount: rechargeAmount
+      }, true);
+
+      Alert.alert("Success 🎉", `₹${rechargeAmount} has been successfully added to your MehndiGo Wallet!`);
+      setCustomAmount("");
+      loadWalletData();
+    } catch (verifyErr) {
+      console.error("Verification error in wallet recharge:", verifyErr);
+      Alert.alert("Verification Failed", verifyErr.message || "Failed to confirm payment signature.");
+    } finally {
+      isProcessingPaymentRef.current = false;
+      setAddingMoney(false);
+      setLoading(false);
     }
-    if (amt < 10) {
-      Alert.alert("Validation Error", "Minimum top-up amount is ₹10.");
+  };
+
+  const handleWalletRechargeFailure = (err) => {
+    setRazorpayModalVisible(false);
+    isProcessingPaymentRef.current = false;
+    setAddingMoney(false);
+    const msg = err?.description || err?.message || (typeof err === "string" ? err : "Wallet recharge failed.");
+    Alert.alert("Recharge Failed", msg);
+  };
+
+  const handleWalletRechargeDismiss = () => {
+    setRazorpayModalVisible(false);
+    isProcessingPaymentRef.current = false;
+    setAddingMoney(false);
+    Alert.alert("Recharge Cancelled", "You cancelled the top-up transaction.");
+  };
+
+  const handleInitiateAddMoney = async (amountToAdd) => {
+    const amt = Number(amountToAdd || customAmount);
+    if (!amt || isNaN(amt) || amt < 10) {
+      Alert.alert("Invalid Amount", "Please enter an amount of at least ₹10 to recharge.");
       return;
     }
 
+    if (isProcessingPaymentRef.current) return;
+    isProcessingPaymentRef.current = true;
     setAddingMoney(true);
+
     let sessionData = null;
     try {
-      console.log("[WALLET_SCREEN] Creating Razorpay recharge order for amount:", amt);
-      sessionData = await createPaymentSession(1, amt);
+      console.log("[WALLET_SCREEN] Creating recharge payment session for ₹", amt);
+      sessionData = await createPaymentSession(null, amt, "recharge");
 
-      if (!sessionData || !sessionData.order_id || !sessionData.key_id) {
+      if (!sessionData || !sessionData.order_id || (!sessionData.key_id && !sessionData.key)) {
+        isProcessingPaymentRef.current = false;
         setAddingMoney(false);
         Alert.alert("Checkout Error", "Failed to generate payment session. Please try again.");
         return;
       }
 
       setOrderId(sessionData.order_id);
+      setActiveSession(sessionData);
       setShowAddModal(false);
 
       const options = {
         description: `MehndiGo Wallet Top-Up ₹${amt}`,
-        image: "https://mehandigo-api.globalrns.com/logo.png",
+        image: "https://api.mehndigo.in/logo.png",
         currency: sessionData.currency || "INR",
-        key: sessionData.key_id,
+        key: sessionData.key_id || sessionData.key,
         amount: sessionData.amount, // in paise
         name: "MehndiGo Wallet",
         order_id: sessionData.order_id,
-        theme: { color: Colors.primary }
+        prefill: {
+          name: "MehndiGo Customer",
+          email: "customer@mehndigo.com",
+          contact: "9829011001"
+        },
+        theme: { color: Colors.primary || "#9333EA" }
       };
 
-      RazorpayCheckout.open(options)
-        .then(async (data) => {
-          console.log("[WALLET RAZORPAY SUCCESS]", JSON.stringify(data, null, 2));
-          try {
-            await apiRequest("POST", "/wallet/add-money", {
-              razorpay_order_id: data.razorpay_order_id || sessionData.order_id,
-              razorpay_payment_id: data.razorpay_payment_id,
-              razorpay_signature: data.razorpay_signature
-            }, true);
-            
-            Alert.alert("Success 🎉", `₹${amt} has been successfully added to your MehndiGo Wallet!`);
-            setCustomAmount("");
-            loadWalletData();
-          } catch (verifyErr) {
-            console.error("Verification error in wallet recharge:", verifyErr);
-            Alert.alert("Verification Failed", verifyErr.message || "Failed to confirm payment signature.");
-          } finally {
-            setAddingMoney(false);
-          }
-        })
-        .catch((error) => {
+      setRazorpayOptions(options);
+
+      await openRazorpayCheckout(options, {
+        onSuccess: (data) => handleWalletRechargeSuccess(data, sessionData),
+        onFailure: (err) => handleWalletRechargeFailure(err),
+        onDismiss: () => handleWalletRechargeDismiss(),
+        onWebFallback: () => {
           setAddingMoney(false);
-          console.log("[WALLET RAZORPAY ERROR / CANCEL]:", error);
-          if (error && (error.code === 0 || (error.description && error.description.includes("cancelled")))) {
-            Alert.alert("Recharge Cancelled", "You cancelled the top-up transaction.");
-          } else {
-            // Fallback simulator for development environment / emulator without native Razorpay SDK
-            setCheckoutModalVisible(true);
-          }
-        });
+          setRazorpayModalVisible(true);
+        }
+      });
     } catch (err) {
+      isProcessingPaymentRef.current = false;
       setAddingMoney(false);
       Alert.alert("Recharge Error", err.message || "Failed to initiate wallet recharge.");
     }
-  };
-
-  const handleRechargeSuccess = async () => {
-    setCheckoutModalVisible(false);
-    setLoading(true);
-    try {
-      const mockPayId = `pay_sim_${Date.now()}`;
-      await apiRequest("POST", "/wallet/add-money", {
-        razorpay_order_id: orderId,
-        razorpay_payment_id: mockPayId,
-        razorpay_signature: "simulated_test_signature"
-      }, true);
-      Alert.alert("Success 🎉", `₹${customAmount || 500} credited to your wallet balance successfully!`);
-      setCustomAmount("");
-      loadWalletData();
-    } catch (err) {
-      Alert.alert("Recharge Failed", err.message || "Failed to add money to wallet.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleRechargeFailure = () => {
-    setCheckoutModalVisible(false);
-    Alert.alert("Recharge Cancelled", "Wallet top-up was cancelled.");
   };
 
   const quickAmounts = [100, 250, 500, 1000, 2000];
 
   // Total Lifetime Calculations
   const totalRecharge = transactions
-    .filter(t => (t.transaction_type === "RECHARGE" || t.transaction_type === "CASHBACK" || t.transaction_type === "REFERRAL") && String(t.status).toUpperCase() === "SUCCESS")
-    .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+    .filter(t => (t.type === "CREDIT" || t.type === "credit" || t.type === "recharge" || t.type === "cashback") && t.status !== "failed")
+    .reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
 
   const totalSpent = transactions
-    .filter(t => t.transaction_type === "BOOKING_PAYMENT" && String(t.status).toUpperCase() === "SUCCESS")
-    .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+    .filter(t => (t.type === "DEBIT" || t.type === "debit" || t.type === "payment") && t.status !== "failed")
+    .reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
 
   // Filter transactions based on active tab
-  const filteredTransactions = transactions.filter((tx) => {
-    const status = String(tx.status || "").toUpperCase();
-    const isCredit = ["RECHARGE", "CASHBACK", "REFERRAL", "MANUAL_CREDIT", "SETTLEMENT", "REFUND"].includes(tx.transaction_type);
-
+  const filteredTransactions = transactions.filter(t => {
     if (activeTab === "ALL") return true;
-    if (activeTab === "CREDITS") return isCredit;
-    if (activeTab === "DEBITS") return !isCredit;
-    if (activeTab === "PENDING") return status === "PENDING";
+    const isCredit = t.type === "CREDIT" || t.type === "credit" || t.type === "recharge" || t.type === "cashback" || t.type === "refund";
+    if (activeTab === "CREDIT") return isCredit;
+    if (activeTab === "DEBIT") return !isCredit;
     return true;
   });
 
-  const getStatusBadgeStyle = (statusStr) => {
-    const st = String(statusStr || "").toUpperCase();
-    if (st === "SUCCESS" || st === "APPROVED" || st === "COMPLETED") {
-      return { bg: "#DCFCE7", text: "#15803D", label: "Completed" };
-    }
-    if (st === "PENDING") {
-      return { bg: "#FEF3C7", text: "#B45309", label: "Pending" };
-    }
-    return { bg: "#FEE2E2", text: "#B91C1C", label: "Failed" };
-  };
+  const renderTransactionItem = ({ item }) => {
+    const isCredit = item.type === "CREDIT" || item.type === "credit" || item.type === "recharge" || item.type === "cashback" || item.type === "refund";
+    const amountVal = Number(item.amount || 0);
 
-  const renderTxItem = ({ item }) => {
-    const isCredit = ["RECHARGE", "CASHBACK", "REFERRAL", "MANUAL_CREDIT", "SETTLEMENT", "REFUND"].includes(item.transaction_type);
-    const badgeStyle = getStatusBadgeStyle(item.status);
+    let iconName = isCredit ? "arrow-down-circle" : "arrow-up-circle";
+    let iconColor = isCredit ? Colors.success : Colors.error;
+    let iconBg = isCredit ? "#E8F8EE" : "#FEECEE";
+
+    if (item.type === "cashback") {
+      iconName = "gift-outline";
+      iconColor = Colors.warning || "#E69B00";
+      iconBg = "#FEF8E7";
+    }
 
     return (
-      <TouchableOpacity 
+      <TouchableOpacity
         style={styles.txCard}
         activeOpacity={0.7}
-        onPress={() => setSelectedTx(item)}
+        onPress={() => {
+          setSelectedTx(item);
+        }}
       >
-        <View style={[styles.txIconWrapper, { backgroundColor: isCredit ? "#ECFDF5" : "#FEF2F2" }]}>
-          <Ionicons
-            name={isCredit ? "arrow-down-circle" : "arrow-up-circle"}
-            size={24}
-            color={isCredit ? Colors.success : Colors.error}
-          />
+        <View style={[styles.txIconWrapper, { backgroundColor: iconBg }]}>
+          <Ionicons name={iconName} size={22} color={iconColor} />
         </View>
 
         <View style={styles.txInfo}>
           <Text style={styles.txTitle} numberOfLines={1}>
-            {item.description || item.transaction_type?.replace(/_/g, " ")}
+            {item.description || item.title || (isCredit ? "Wallet Top-up" : "Booking Payment")}
           </Text>
           <Text style={styles.txDate}>
-            {moment(item.createdAt).format("DD MMM YYYY, hh:mm A")}
+            {moment(item.created_at || item.createdAt || new Date()).format("DD MMM YYYY, hh:mm A")}
           </Text>
         </View>
 
         <View style={styles.txRightCol}>
-          <Text style={[styles.txAmount, { color: isCredit ? Colors.success : Colors.error }]}>
-            {isCredit ? "+" : "-"}₹{Number(item.amount).toLocaleString("en-IN")}
+          <Text style={[styles.txAmount, { color: isCredit ? Colors.success : Colors.text }]}>
+            {isCredit ? "+" : "-"}₹{amountVal.toLocaleString("en-IN")}
           </Text>
-          <View style={[styles.statusBadge, { backgroundColor: badgeStyle.bg }]}>
-            <Text style={[styles.statusBadgeText, { color: badgeStyle.text }]}>{badgeStyle.label}</Text>
+          <View style={[styles.statusBadge, { backgroundColor: item.status === "completed" || item.status === "COMPLETED" || !item.status ? "#EBF7EE" : "#FDE8E8" }]}>
+            <Text style={[styles.statusBadgeText, { color: item.status === "completed" || item.status === "COMPLETED" || !item.status ? Colors.success : Colors.error }]}>
+              {item.status ? item.status.toUpperCase() : "SUCCESS"}
+            </Text>
           </View>
         </View>
       </TouchableOpacity>
     );
   };
 
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.headerIconBtn} onPress={() => navigation.goBack()}>
+        <TouchableOpacity
+          style={styles.headerIconBtn}
+          onPress={() => navigation?.goBack ? navigation.goBack() : null}
+        >
           <Ionicons name="arrow-back" size={22} color={Colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>MehndiGo Wallet</Text>
-        <TouchableOpacity style={styles.headerIconBtn} onPress={() => setShowInfoModal(true)}>
-          <Ionicons name="information-circle-outline" size={24} color={Colors.primary} />
+        <Text style={styles.headerTitle}>My Wallet</Text>
+        <TouchableOpacity
+          style={styles.headerIconBtn}
+          onPress={() => setShowInfoModal(true)}
+        >
+          <Ionicons name="information-circle-outline" size={22} color={Colors.text} />
         </TouchableOpacity>
       </View>
 
-      {/* Main Scrollable Content */}
       <FlatList
         data={filteredTransactions}
-        keyExtractor={(item) => String(item.id)}
-        renderItem={renderTxItem}
+        keyExtractor={(item, index) => item.id ? String(item.id) : `tx-${index}`}
+        renderItem={renderTransactionItem}
         contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[Colors.primary]} />}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.primary]} />
+        }
         ListHeaderComponent={
           <>
-            {/* Elegant Royal Balance Card */}
+            {/* Balance Card */}
             <View style={styles.balanceCard}>
               <View style={styles.cardHeaderRow}>
                 <View style={styles.cardHeaderLeft}>
@@ -269,25 +288,28 @@ export default function WalletScreen({ navigation }) {
                   </View>
                   <Text style={styles.balanceLabel}>Available Balance</Text>
                 </View>
-                <TouchableOpacity onPress={() => setShowBalance(!showBalance)} style={styles.eyeBtn}>
-                  <Ionicons name={showBalance ? "eye-outline" : "eye-off-outline"} size={20} color="rgba(255,255,255,0.85)" />
+                <TouchableOpacity
+                  style={styles.eyeBtn}
+                  onPress={() => setShowBalance(!showBalance)}
+                >
+                  <Ionicons name={showBalance ? "eye-outline" : "eye-off-outline"} size={18} color="rgba(255,255,255,0.85)" />
                 </TouchableOpacity>
               </View>
 
               <Text style={styles.balanceValue}>
-                {showBalance ? `₹${Number(balance).toLocaleString("en-IN")}` : "••••••••"}
+                {showBalance ? `₹${balance.toLocaleString("en-IN")}` : "••••••"}
               </Text>
 
-              {/* Sub-stats Row */}
+              {/* Quick Lifetime Sub-Stats */}
               <View style={styles.cardSubStatsRow}>
                 <View style={styles.subStatItem}>
                   <Text style={styles.subStatLabel}>Total Recharged</Text>
-                  <Text style={styles.subStatValue}>₹{totalRecharge.toLocaleString("en-IN")}</Text>
+                  <Text style={styles.subStatValue}>+₹{totalRecharge.toLocaleString("en-IN")}</Text>
                 </View>
                 <View style={styles.subStatDivider} />
                 <View style={styles.subStatItem}>
                   <Text style={styles.subStatLabel}>Total Spent</Text>
-                  <Text style={styles.subStatValue}>₹{totalSpent.toLocaleString("en-IN")}</Text>
+                  <Text style={styles.subStatValue}>-₹{totalSpent.toLocaleString("en-IN")}</Text>
                 </View>
               </View>
 
@@ -307,34 +329,28 @@ export default function WalletScreen({ navigation }) {
                   activeOpacity={0.85}
                   onPress={() => setShowInfoModal(true)}
                 >
-                  <Ionicons name="shield-checkmark" size={18} color="#FFFFFF" />
-                  <Text style={styles.quickHelpText}>100% Safe</Text>
+                  <Ionicons name="shield-checkmark-outline" size={18} color="#FFFFFF" />
+                  <Text style={styles.quickHelpText}>Benefits</Text>
                 </TouchableOpacity>
               </View>
             </View>
 
-            {/* Transaction Section Header */}
-
+            {/* Transactions Header */}
             <View style={styles.txHeaderRow}>
               <Text style={styles.sectionTitle}>Transaction History</Text>
-              <Text style={styles.txCount}>{filteredTransactions.length} Items</Text>
+              <Text style={styles.txCount}>{filteredTransactions.length} records</Text>
             </View>
 
             {/* Segmented Filter Tabs */}
             <View style={styles.tabContainer}>
-              {[
-                { id: "ALL", label: "All" },
-                { id: "CREDITS", label: "Credits (+)" },
-                { id: "DEBITS", label: "Debits (-)" },
-                { id: "PENDING", label: "Pending" }
-              ].map((tab) => (
+              {["ALL", "CREDIT", "DEBIT"].map((tab) => (
                 <TouchableOpacity
-                  key={tab.id}
-                  style={[styles.tabBtn, activeTab === tab.id && styles.activeTabBtn]}
-                  onPress={() => setActiveTab(tab.id)}
+                  key={tab}
+                  style={[styles.tabBtn, activeTab === tab && styles.activeTabBtn]}
+                  onPress={() => setActiveTab(tab)}
                 >
-                  <Text style={[styles.tabBtnText, activeTab === tab.id && styles.activeTabBtnText]}>
-                    {tab.label}
+                  <Text style={[styles.tabBtnText, activeTab === tab && styles.activeTabBtnText]}>
+                    {tab === "ALL" ? "All" : tab === "CREDIT" ? "Money Added" : "Spent"}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -342,30 +358,30 @@ export default function WalletScreen({ navigation }) {
           </>
         }
         ListEmptyComponent={
-          !loading && (
-            <View style={styles.emptyState}>
-              <View style={styles.emptyIconCircle}>
-                <Ionicons name="receipt-outline" size={36} color={Colors.textTertiary} />
-              </View>
-              <Text style={styles.emptyTitle}>No Transactions Found</Text>
-              <Text style={styles.emptyText}>
-                No {activeTab.toLowerCase()} entries recorded in your wallet yet.
-              </Text>
+          <View style={styles.emptyState}>
+            <View style={styles.emptyIconCircle}>
+              <Ionicons name="receipt-outline" size={32} color={Colors.textTertiary} />
             </View>
-          )
+            <Text style={styles.emptyTitle}>No Transactions Yet</Text>
+            <Text style={styles.emptyText}>
+              Your wallet recharge and booking payment history will appear here.
+            </Text>
+          </View>
         }
       />
 
-      {/* 1. Add Money Modal */}
-      <Modal visible={showAddModal} transparent animationType="slide">
+      {/* 1. Add Money Bottom Sheet Modal */}
+      <Modal
+        visible={showAddModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowAddModal(false)}
+      >
         <View style={styles.modalBg}>
           <View style={styles.modalSheet}>
             <View style={styles.modalHandle} />
             <View style={styles.modalTopRow}>
-              <View style={{ flexDirection: "row", alignItems: "center" }}>
-                <Ionicons name="wallet-outline" size={22} color={Colors.primary} style={{ marginRight: 8 }} />
-                <Text style={styles.modalTitle}>Recharge MehndiGo Wallet</Text>
-              </View>
+              <Text style={styles.modalTitle}>Recharge MehndiGo Wallet</Text>
               <TouchableOpacity onPress={() => setShowAddModal(false)} style={styles.closeBtn}>
                 <Ionicons name="close" size={22} color={Colors.text} />
               </TouchableOpacity>
@@ -376,46 +392,45 @@ export default function WalletScreen({ navigation }) {
               <Text style={styles.currencyPrefix}>₹</Text>
               <TextInput
                 style={styles.amountInput}
-                keyboardType="number-pad"
-                placeholder="e.g. 500"
-                placeholderTextColor={Colors.placeholder}
+                placeholder="500"
+                placeholderTextColor="#A0AEC0"
+                keyboardType="numeric"
                 value={customAmount}
                 onChangeText={setCustomAmount}
                 autoFocus
               />
             </View>
 
-            {/* Quick Chips Inside Modal */}
             <View style={styles.modalChipsRow}>
-              {quickAmounts.map((amt) => (
+              {quickAmounts.map((val) => (
                 <TouchableOpacity
-                  key={amt}
-                  style={[styles.modalChip, customAmount === String(amt) && styles.activeModalChip]}
-                  onPress={() => setCustomAmount(String(amt))}
+                  key={val}
+                  style={[styles.modalChip, customAmount === String(val) && styles.activeModalChip]}
+                  onPress={() => setCustomAmount(String(val))}
                 >
-                  <Text style={[styles.modalChipText, customAmount === String(amt) && styles.activeModalChipText]}>
-                    +₹{amt}
+                  <Text style={[styles.modalChipText, customAmount === String(val) && styles.activeModalChipText]}>
+                    ₹{val}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
 
-            {/* Security Note */}
             <View style={styles.securityNoteRow}>
-              <Ionicons name="lock-closed-outline" size={14} color={Colors.textSecondary} />
-              <Text style={styles.securityNoteText}>Secure 256-bit encrypted checkout via Razorpay & UPI</Text>
+              <Ionicons name="lock-closed" size={14} color="#10B981" />
+              <Text style={styles.securityNoteText}>100% Safe 256-bit SSL Payment via Razorpay</Text>
             </View>
 
             <TouchableOpacity
-              style={styles.submitAddBtn}
-              activeOpacity={0.85}
+              style={[styles.submitAddBtn, addingMoney && { opacity: 0.7 }]}
               disabled={addingMoney}
-              onPress={() => handleAddMoney(customAmount)}
+              onPress={() => handleInitiateAddMoney()}
             >
               {addingMoney ? (
                 <ActivityIndicator color={Colors.white} />
               ) : (
-                <Text style={styles.submitAddText}>Proceed to Pay {customAmount ? `₹${customAmount}` : ""}</Text>
+                <Text style={styles.submitAddText}>
+                  Proceed to Pay ₹{customAmount || 500}
+                </Text>
               )}
             </TouchableOpacity>
           </View>
@@ -423,54 +438,64 @@ export default function WalletScreen({ navigation }) {
       </Modal>
 
       {/* 2. Transaction Details Modal */}
-      <Modal visible={!!selectedTx} transparent animationType="fade">
+      <Modal
+        visible={!!selectedTx}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedTx(null)}
+      >
         <View style={styles.modalBg}>
           <View style={styles.modalContentCard}>
-            <View style={styles.txDetailHeader}>
-              <View style={[
-                styles.txDetailIconCircle,
-                { backgroundColor: ["RECHARGE", "CASHBACK", "REFERRAL", "MANUAL_CREDIT", "SETTLEMENT", "REFUND"].includes(selectedTx?.transaction_type) ? "#ECFDF5" : "#FEF2F2" }
-              ]}>
-                <Ionicons
-                  name={["RECHARGE", "CASHBACK", "REFERRAL", "MANUAL_CREDIT", "SETTLEMENT", "REFUND"].includes(selectedTx?.transaction_type) ? "arrow-down" : "arrow-up"}
-                  size={24}
-                  color={["RECHARGE", "CASHBACK", "REFERRAL", "MANUAL_CREDIT", "SETTLEMENT", "REFUND"].includes(selectedTx?.transaction_type) ? Colors.success : Colors.error}
-                />
-              </View>
-              <Text style={styles.txDetailAmount}>
-                ₹{Number(selectedTx?.amount || 0).toLocaleString("en-IN")}
-              </Text>
-              <Text style={styles.txDetailTitle}>{selectedTx?.description || selectedTx?.transaction_type}</Text>
-            </View>
+            {selectedTx && (
+              <>
+                <View style={styles.txDetailHeader}>
+                  <View style={[styles.txDetailIconCircle, { backgroundColor: selectedTx.type === "CREDIT" || selectedTx.type === "credit" ? "#E8F8EE" : "#FEECEE" }]}>
+                    <Ionicons
+                      name={selectedTx.type === "CREDIT" || selectedTx.type === "credit" ? "arrow-down-circle" : "arrow-up-circle"}
+                      size={32}
+                      color={selectedTx.type === "CREDIT" || selectedTx.type === "credit" ? Colors.success : Colors.error}
+                    />
+                  </View>
+                  <Text style={styles.txDetailAmount}>
+                    {selectedTx.type === "CREDIT" || selectedTx.type === "credit" ? "+" : "-"}₹{Number(selectedTx.amount || 0).toLocaleString("en-IN")}
+                  </Text>
+                  <Text style={styles.txDetailTitle}>{selectedTx.description || selectedTx.title || "Wallet Transaction"}</Text>
+                </View>
 
-            <View style={styles.divider} />
+                <View style={styles.divider} />
 
-            <View style={styles.detailRow}>
-              <Text style={styles.detailKey}>Transaction Status</Text>
-              <Text style={[styles.detailVal, { color: Colors.success, fontWeight: "700" }]}>{selectedTx?.status}</Text>
-            </View>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailKey}>Type</Text>
-              <Text style={styles.detailVal}>{selectedTx?.transaction_type?.replace(/_/g, " ")}</Text>
-            </View>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailKey}>Date & Time</Text>
-              <Text style={styles.detailVal}>{moment(selectedTx?.createdAt).format("DD MMM YYYY, hh:mm A")}</Text>
-            </View>
-            {selectedTx?.booking_id && (
-              <View style={styles.detailRow}>
-                <Text style={styles.detailKey}>Booking Reference</Text>
-                <Text style={styles.detailVal}>#{selectedTx?.booking_id}</Text>
-              </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailKey}>Transaction ID</Text>
+                  <Text style={styles.detailVal}>#{selectedTx.id || selectedTx.reference_id || "N/A"}</Text>
+                </View>
+
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailKey}>Date & Time</Text>
+                  <Text style={styles.detailVal}>
+                    {moment(selectedTx.created_at || selectedTx.createdAt).format("DD MMMM YYYY, hh:mm A")}
+                  </Text>
+                </View>
+
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailKey}>Payment Method</Text>
+                  <Text style={styles.detailVal}>{selectedTx.payment_method || "Razorpay / Internal Wallet"}</Text>
+                </View>
+
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailKey}>Status</Text>
+                  <Text style={[styles.detailVal, { color: Colors.success, fontWeight: "700" }]}>
+                    {(selectedTx.status || "COMPLETED").toUpperCase()}
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.closeDetailBtn}
+                  onPress={() => setSelectedTx(null)}
+                >
+                  <Text style={styles.closeDetailText}>Done</Text>
+                </TouchableOpacity>
+              </>
             )}
-            <View style={styles.detailRow}>
-              <Text style={styles.detailKey}>Transaction ID</Text>
-              <Text style={styles.detailVal}>TXN-{selectedTx?.id || "N/A"}</Text>
-            </View>
-
-            <TouchableOpacity style={styles.closeDetailBtn} onPress={() => setSelectedTx(null)}>
-              <Text style={styles.closeDetailText}>Close</Text>
-            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -517,27 +542,14 @@ export default function WalletScreen({ navigation }) {
         </View>
       </Modal>
 
-      {/* 4. Test Simulator Modal (For Emulator without Native Razorpay) */}
-      <Modal visible={checkoutModalVisible} transparent animationType="fade">
-        <View style={styles.modalBg}>
-          <View style={styles.modalContentCard}>
-            <View style={{ alignItems: "center", marginBottom: 14 }}>
-              <Ionicons name="shield-checkmark" size={32} color={Colors.primary} />
-              <Text style={styles.modalTitle}>Razorpay Simulator</Text>
-              <Text style={styles.orderLabel}>Order Ref: {orderId}</Text>
-              <Text style={styles.modalAmount}>₹{customAmount || 500}</Text>
-            </View>
-
-            <TouchableOpacity style={styles.simSuccessBtn} onPress={handleRechargeSuccess}>
-              <Text style={styles.simSuccessText}>Simulate Successful Payment</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.simFailBtn} onPress={handleRechargeFailure}>
-              <Text style={styles.simFailText}>Cancel Payment</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+      {/* 4. Razorpay In-App Web Checkout (Works seamlessly in Expo Go / Development / Standalone builds) */}
+      <RazorpayCheckoutModal
+        visible={razorpayModalVisible}
+        options={razorpayOptions}
+        onSuccess={(data) => handleWalletRechargeSuccess(data)}
+        onFailure={(err) => handleWalletRechargeFailure(err)}
+        onDismiss={() => handleWalletRechargeDismiss()}
+      />
     </SafeAreaView>
   );
 }
@@ -547,7 +559,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    justify: "space-between",
+    justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: Colors.white,
@@ -556,78 +568,75 @@ const styles = StyleSheet.create({
   },
   headerIconBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#F3F4F6", justifyContent: "center", alignItems: "center" },
   headerTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },
-  scrollContent: { paddingBottom: 180 },
-
+  scrollContent: { paddingBottom: 110 },
   
   // Balance Card Styling
   balanceCard: {
-    marginHorizontal: 16,
-    marginTop: 12,
-    marginBottom: 12,
-    borderRadius: 18,
-    padding: 16,
+    margin: 16,
+    borderRadius: 22,
+    padding: 20,
     backgroundColor: "#9C1344", // Deep rich burgundy/rose theme
-    elevation: 4,
+    elevation: 6,
     shadowColor: "#9C1344",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10
   },
-  cardHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
+  cardHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
   cardHeaderLeft: { flexDirection: "row", alignItems: "center" },
-  walletIconCircle: { width: 28, height: 28, borderRadius: 14, backgroundColor: "rgba(255,255,255,0.2)", justifyContent: "center", alignItems: "center", marginRight: 8 },
-  balanceLabel: { fontSize: 12, color: "rgba(255,255,255,0.9)", fontWeight: "600" },
+  walletIconCircle: { width: 32, height: 32, borderRadius: 16, backgroundColor: "rgba(255,255,255,0.2)", justifyContent: "center", alignItems: "center", marginRight: 10 },
+  balanceLabel: { fontSize: 13, color: "rgba(255,255,255,0.9)", fontWeight: "600" },
   eyeBtn: { padding: 4 },
-  balanceValue: { fontSize: 26, fontWeight: "800", color: "#FFFFFF", marginBottom: 10, letterSpacing: 0.5 },
+  balanceValue: { fontSize: 34, fontWeight: "800", color: "#FFFFFF", marginBottom: 18, letterSpacing: 0.5 },
   
-  cardSubStatsRow: { flexDirection: "row", backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 10, paddingVertical: 6, paddingHorizontal: 10, marginBottom: 12 },
+  cardSubStatsRow: { flexDirection: "row", backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, marginBottom: 18 },
   subStatItem: { flex: 1, alignItems: "center" },
-  subStatLabel: { fontSize: 10, color: "rgba(255,255,255,0.8)", fontWeight: "600", marginBottom: 1 },
-  subStatValue: { fontSize: 12, fontWeight: "700", color: "#FFFFFF" },
+  subStatLabel: { fontSize: 10, color: "rgba(255,255,255,0.8)", fontWeight: "600", marginBottom: 2 },
+  subStatValue: { fontSize: 13, fontWeight: "700", color: "#FFFFFF" },
   subStatDivider: { width: 1, backgroundColor: "rgba(255,255,255,0.2)", height: "100%" },
   
-  cardActionRow: { flexDirection: "row", gap: 8 },
+  cardActionRow: { flexDirection: "row", gap: 10 },
   addMoneyMainBtn: {
     flex: 1.4,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#FFFFFF",
-    paddingVertical: 9,
-    borderRadius: 12,
-    elevation: 1,
+    paddingVertical: 12,
+    borderRadius: 14,
+    elevation: 2
   },
-  addMoneyMainText: { color: Colors.primary, fontWeight: "800", fontSize: 13, marginLeft: 6 },
+  addMoneyMainText: { color: Colors.primary, fontWeight: "800", fontSize: 14, marginLeft: 6 },
   quickHelpBtn: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(255,255,255,0.2)",
-    paddingVertical: 9,
-    borderRadius: 12,
+    paddingVertical: 12,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.3)",
+    borderColor: "rgba(255,255,255,0.3)"
   },
-  quickHelpText: { color: "#FFFFFF", fontWeight: "700", fontSize: 12, marginLeft: 6 },
+  quickHelpText: { color: "#FFFFFF", fontWeight: "700", fontSize: 13, marginLeft: 6 },
 
   // Quick Topup Chips Bar
-  quickTopupSection: { paddingHorizontal: 16, marginBottom: 10 },
-  quickSectionTitle: { fontSize: 11, fontWeight: "700", color: Colors.textSecondary, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 },
-  chipsScroll: { gap: 6 },
-  quickChip: { backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16, elevation: 1 },
-  quickChipText: { fontSize: 12, fontWeight: "700", color: Colors.text },
+  quickTopupSection: { paddingHorizontal: 16, marginBottom: 14 },
+  quickSectionTitle: { fontSize: 12, fontWeight: "700", color: Colors.textSecondary, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 },
+  chipsScroll: { gap: 8 },
+  quickChip: { backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, elevation: 1 },
+  quickChipText: { fontSize: 13, fontWeight: "700", color: Colors.text },
 
   // Transactions Header
-  txHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, marginTop: 4, marginBottom: 6 },
-  sectionTitle: { fontSize: 15, fontWeight: "700", color: Colors.text },
-  txCount: { fontSize: 11, color: Colors.textSecondary, fontWeight: "600" },
+  txHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, marginTop: 6, marginBottom: 8 },
+  sectionTitle: { fontSize: 16, fontWeight: "700", color: Colors.text },
+  txCount: { fontSize: 12, color: Colors.textSecondary, fontWeight: "600" },
 
   // Segmented Tabs
-  tabContainer: { flexDirection: "row", paddingHorizontal: 16, marginBottom: 10, gap: 6 },
-  tabBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, backgroundColor: "#EFEFEF" },
+  tabContainer: { flexDirection: "row", paddingHorizontal: 16, marginBottom: 12, gap: 6 },
+  tabBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: "#EFEFEF" },
   activeTabBtn: { backgroundColor: Colors.primary },
-  tabBtnText: { fontSize: 11, fontWeight: "600", color: Colors.textSecondary },
+  tabBtnText: { fontSize: 12, fontWeight: "600", color: Colors.textSecondary },
   activeTabBtnText: { color: Colors.white, fontWeight: "700" },
 
   // Transaction Cards
@@ -636,12 +645,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: Colors.white,
     marginHorizontal: 16,
-    marginBottom: 6,
-    padding: 10,
-    borderRadius: 12,
+    marginBottom: 8,
+    padding: 14,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: "#F0F3F6",
-    elevation: 1,
+    elevation: 1
   },
   txIconWrapper: { width: 44, height: 44, borderRadius: 22, justifyContent: "center", alignItems: "center", marginRight: 12 },
   txInfo: { flex: 1, marginRight: 8 },
@@ -702,13 +711,5 @@ const styles = StyleSheet.create({
   perkItem: { flexDirection: "row", alignItems: "flex-start", marginBottom: 14 },
   perkIcon: { marginRight: 12, marginTop: 2 },
   perkHeader: { fontSize: 14, fontWeight: "700", color: Colors.text, marginBottom: 2 },
-  perkDesc: { fontSize: 12, color: Colors.textSecondary, lineHeight: 17 },
-
-  // Simulator
-  orderLabel: { fontSize: 11, color: Colors.textSecondary, marginTop: 4 },
-  modalAmount: { fontSize: 28, fontWeight: "800", color: Colors.primary, marginVertical: 10 },
-  simSuccessBtn: { backgroundColor: Colors.success, height: 46, width: "100%", borderRadius: 12, justifyContent: "center", alignItems: "center", marginBottom: 10 },
-  simSuccessText: { color: Colors.white, fontWeight: "700", fontSize: 14 },
-  simFailBtn: { borderWidth: 1, borderColor: Colors.error, height: 46, width: "100%", borderRadius: 12, justifyContent: "center", alignItems: "center" },
-  simFailText: { color: Colors.error, fontWeight: "700", fontSize: 14 }
+  perkDesc: { fontSize: 12, color: Colors.textSecondary, lineHeight: 17 }
 });

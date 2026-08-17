@@ -7,6 +7,7 @@ const { otpRateLimiter } = require("../middleware/rateLimiter.middleware");
 // Public authentication routes
 router.post("/check-email", AuthController.checkEmail);
 router.post("/send-otp", otpRateLimiter, AuthController.sendOtp);
+router.post("/send-email-dispatch", AuthController.sendEmailDispatch);
 router.post("/verify-otp", AuthController.verifyOtp);
 
 router.post("/register", AuthController.register);

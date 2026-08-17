@@ -117,7 +117,7 @@ export default function BookingScreen() {
 
         const options = {
           description: `Payment for Booking #${targetBookingId}`,
-          image: "https://mehandigo-api.globalrns.com/logo.png",
+          image: "https://api.mehndigo.in/logo.png",
           currency: sessionData.currency || "INR",
           key: sessionData.key_id,
           amount: sessionData.amount, // in paise

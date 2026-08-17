@@ -79,13 +79,13 @@ export async function registerForPushNotificationsAsync() {
       finalStatus = status;
     }
 
-    console.log(`[PushNotification] Push permission: ${finalStatus}`);
+    console.log(`[PushNotification] Permission status: ${finalStatus}`);
     if (finalStatus !== "granted") {
       console.log("[PushNotification] Notification permission denied by user.");
       return null;
     }
 
-    // 4. Android Notification Channels (Omit sound: "default" to use native system default sound without loading R.raw.default)
+    // 4. Android Notification Channels
     if (Platform.OS === "android") {
       console.log("[PushNotification] Configuring Android notification channels...");
       await Notifications.setNotificationChannelAsync("default", {
@@ -117,15 +117,29 @@ export async function registerForPushNotificationsAsync() {
 
     // 5. Fetch Expo Push Token
     console.log("[PushNotification] Fetching Expo Push Token...");
-    const tokenData = await Notifications.getExpoPushTokenAsync({
-      projectId,
-    });
+    let token = null;
+    try {
+      const tokenData = await Notifications.getExpoPushTokenAsync({
+        projectId,
+      });
+      token = tokenData?.data;
+    } catch (tokenErr) {
+      console.log("[PushNotification] Expo token fetch notice:", tokenErr.message);
+      try {
+        const deviceTokenData = await Notifications.getDevicePushTokenAsync();
+        token = deviceTokenData?.data;
+      } catch (devErr) {
+        console.log("[PushNotification] Device token fetch notice:", devErr.message);
+      }
+    }
 
-    const token = tokenData?.data;
     if (token) {
-      console.log(`[PushNotification] Expo Push Token generated successfully: ${token.substring(0, 25)}...`);
+      const maskedToken = String(token).length > 20 ? `${String(token).substring(0, 18)}...${String(token).slice(-6)}` : String(token);
+      console.log(`[PushNotification] Token generated: ${maskedToken}`);
+      // Register with backend automatically
+      await sendNotificationTokenToServer(token);
     } else {
-      console.log("[PushNotification] Could not generate Expo Push Token.");
+      console.log("[PushNotification] Push token generation failed or unavailable on device.");
     }
 
     return token;
@@ -140,20 +154,17 @@ import apiRequest from "./api";
 export async function sendNotificationTokenToServer(token) {
   if (!token) return;
   try {
-    const existingToken = await secureStorage.getNotificationToken();
-    if (existingToken === token) {
-      console.log("[PushNotification] Push token saved to backend successfully (cached).");
-      return;
-    }
-
-    console.log("[PushNotification] Registering token on backend...");
-    await apiRequest("POST", "/notification/register-token", {
+    const maskedToken = String(token).length > 20 ? `${String(token).substring(0, 18)}...${String(token).slice(-6)}` : String(token);
+    console.log(`[PushNotification] Registering token for user: ${maskedToken}`);
+    
+    const response = await apiRequest("POST", "/notification/register-token", {
       token,
       device_type: Platform.OS === "ios" ? "IOS" : "ANDROID"
     }, true);
 
+    console.log("[PushNotification] Register token API response:", response?.message || "200 OK");
     await secureStorage.setNotificationToken(token);
-    console.log("[PushNotification] Push token saved to backend successfully");
+    console.log("[PushNotification] Token registration successful: true");
   } catch (err) {
     console.log("[PushNotification] Error registering push token on server:", err.message);
   }

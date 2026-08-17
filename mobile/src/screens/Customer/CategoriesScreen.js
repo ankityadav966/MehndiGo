@@ -122,6 +122,7 @@ export default function CategoriesScreen({ navigation }) {
         activeOpacity={0.8}
         onPress={() =>
           navigation.navigate("ArtistListing", {
+            categoryId: item.id,
             category: item.name,
           })
         }

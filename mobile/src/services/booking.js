@@ -1,9 +1,18 @@
 import apiRequest from "./api";
 
-export async function getPriceDetails(serviceId, couponCode = null, slotCount = 1) {
+export async function getPriceDetails(serviceId, couponCode = null, slotCount = 1, customArtPrice = null, groupSize = 1, serviceCoverage = "BOTH_HANDS") {
   let endpoint = `/booking/price-details?serviceId=${serviceId}&slotCount=${slotCount}`;
   if (couponCode) {
     endpoint += `&couponCode=${encodeURIComponent(couponCode)}`;
+  }
+  if (customArtPrice) {
+    endpoint += `&customArtPrice=${encodeURIComponent(customArtPrice)}`;
+  }
+  if (groupSize) {
+    endpoint += `&groupSize=${encodeURIComponent(groupSize)}`;
+  }
+  if (serviceCoverage) {
+    endpoint += `&serviceCoverage=${encodeURIComponent(serviceCoverage)}`;
   }
   const res = await apiRequest("GET", endpoint, null, true);
   return res?.data || res;
@@ -74,32 +83,32 @@ export async function rescheduleBooking(bookingId, date, time) {
 }
 
 export async function acceptBooking(bookingId) {
-  const res = await apiRequest("PUT", "/booking/accept", { bookingId }, true);
+  const res = await apiRequest("POST", "/booking/accept", { bookingId }, true);
   return res?.data || res;
 }
 
 export async function rejectBooking(bookingId, rejectReason) {
-  const res = await apiRequest("PUT", "/booking/reject", { bookingId, rejectReason }, true);
+  const res = await apiRequest("POST", "/booking/reject", { bookingId, rejectReason }, true);
   return res?.data || res;
 }
 
 export async function updateOnTheWay(bookingId) {
-  const res = await apiRequest("PUT", "/booking/on-the-way", { bookingId }, true);
+  const res = await apiRequest("POST", "/booking/on-the-way", { bookingId }, true);
   return res?.data || res;
 }
 
 export async function updateArrived(bookingId) {
-  const res = await apiRequest("PUT", "/booking/arrived", { bookingId }, true);
+  const res = await apiRequest("POST", "/booking/validate-arrival", { bookingId, force: true }, true);
   return res?.data || res;
 }
 
 export async function startService(bookingId) {
-  const res = await apiRequest("PUT", "/booking/start", { bookingId }, true);
+  const res = await apiRequest("POST", "/booking/start-service", { bookingId }, true);
   return res?.data || res;
 }
 
 export async function completeService(bookingId) {
-  const res = await apiRequest("PUT", "/booking/complete", { bookingId }, true);
+  const res = await apiRequest("POST", "/booking/complete", { bookingId }, true);
   return res?.data || res;
 }
 
@@ -123,6 +132,11 @@ export async function getArtistLocation(bookingId) {
   return res?.data || res;
 }
 
+export async function validateArrival(bookingId, force = false) {
+  const res = await apiRequest("POST", "/booking/validate-arrival", { bookingId, force }, true);
+  return res?.data || res;
+}
+
 export async function sendCheckInOtp(bookingId) {
   const res = await apiRequest("POST", "/booking/send-checkin-otp", { bookingId }, true);
   return res?.data || res;
@@ -140,5 +154,28 @@ export async function sendCheckOutOtp(bookingId) {
 
 export async function verifyCheckOutOtp(bookingId, otp) {
   const res = await apiRequest("POST", "/booking/verify-checkout-otp", { bookingId, otp }, true);
+  return res?.data || res;
+}
+
+export async function requestTravelCharge(bookingId, travelCharge, travelDistanceKm) {
+  const res = await apiRequest("POST", "/artist/booking/travel-charge/request", { bookingId, travelCharge, travelDistanceKm }, true);
+  return res?.data || res;
+}
+
+export async function respondTravelCharge(bookingId, action) {
+  const res = await apiRequest("POST", "/customer/booking/travel-charge/respond", { bookingId, action }, true);
+  return res?.data || res;
+}
+
+export async function reportBookingDispute(bookingId, disputeReason, description, attachments = null) {
+  const res = await apiRequest("POST", "/customer/support/ticket", {
+    bookingId,
+    booking_id: bookingId,
+    disputeReason,
+    dispute_reason: disputeReason,
+    description: description || disputeReason,
+    category: "Booking Dispute",
+    attachments
+  }, true);
   return res?.data || res;
 }

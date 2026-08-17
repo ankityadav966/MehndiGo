@@ -36,27 +36,6 @@ class UserService {
     return cleaned.replace(/[^0-9]/g, "");
   }
 
-  normalizeEmail(email) {
-    if (!email) return null;
-    const trimmed = String(email).trim().toLowerCase();
-    return trimmed.length > 0 ? trimmed : null;
-  }
-
-  async checkEmail(data) {
-    const email = this.normalizeEmail(data?.email);
-    if (!email) {
-      throw new AppError("Valid email address is required", 400);
-    }
-
-    const user = await UserRepositor.getOne({ email });
-    return {
-      exists: !!user,
-      email,
-      role: user ? user.role : null,
-      is_verified: user ? user.is_verified : false,
-    };
-  }
-
   // 1. Unified Registration - Send OTP
   async registerSendOtp(data) {
     console.log("Registration Data received:", data);
@@ -100,6 +79,8 @@ class UserService {
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    // const hashPassword = password ? crypto.createHash("sha256").update(password).digest("hex") : null;
+
     const normalizedRole = (String(role).toUpperCase() === "ARTIST") ? "ARTIST" : "USER";
 
     const trimmedName = String(name).trim();
@@ -162,35 +143,25 @@ class UserService {
     const cleanOtp = String(otp).trim();
 
     let otpData = null;
-    if (cleanOtp === "123456") {
+    if (trimmedEmail) {
       otpData = await OtpRepositor.getLatestOtp({
-        [Op.or]: [
-          ...(trimmedEmail ? [{ email: trimmedEmail }] : []),
-          ...(sanitizedPhone ? [{ phone: sanitizedPhone }] : [])
-        ],
+        email: trimmedEmail,
+        otp: cleanOtp,
         verified: false,
       });
-    } else {
-      if (trimmedEmail) {
-        otpData = await OtpRepositor.getLatestOtp({
-          email: trimmedEmail,
-          otp: cleanOtp,
-          verified: false,
-        });
-      }
-      if (!otpData && sanitizedPhone) {
-        otpData = await OtpRepositor.getLatestOtp({
-          phone: sanitizedPhone,
-          otp: cleanOtp,
-          verified: false,
-        });
-      }
-      if (!otpData) {
-        otpData = await OtpRepositor.getLatestOtp({
-          otp: cleanOtp,
-          verified: false,
-        });
-      }
+    }
+    if (!otpData && sanitizedPhone) {
+      otpData = await OtpRepositor.getLatestOtp({
+        phone: sanitizedPhone,
+        otp: cleanOtp,
+        verified: false,
+      });
+    }
+    if (!otpData) {
+      otpData = await OtpRepositor.getLatestOtp({
+        otp: cleanOtp,
+        verified: false,
+      });
     }
 
     if (!otpData) {
@@ -348,34 +319,30 @@ class UserService {
 
     let otpData = null;
 
-    if (cleanOtp === "123456") {
-      otpData = await OtpRepositor.getLatestOtp({ verified: false });
-    } else {
-      if (user) {
-        otpData = await OtpRepositor.getLatestOtp({
-          user_id: user.id,
-          otp: cleanOtp,
-          verified: false,
-        });
-      }
+    if (user) {
+      otpData = await OtpRepositor.getLatestOtp({
+        user_id: user.id,
+        otp: cleanOtp,
+        verified: false,
+      });
+    }
 
-      if (!otpData && cleaned) {
-        otpData = await OtpRepositor.getLatestOtp({
-          [Op.or]: [
-            ...(isEmail ? [{ email: cleaned.toLowerCase() }] : []),
-            { phone: this.sanitizePhone(cleaned) }
-          ],
-          otp: cleanOtp,
-          verified: false,
-        });
-      }
+    if (!otpData && cleaned) {
+      otpData = await OtpRepositor.getLatestOtp({
+        [Op.or]: [
+          ...(isEmail ? [{ email: cleaned.toLowerCase() }] : []),
+          { phone: this.sanitizePhone(cleaned) }
+        ],
+        otp: cleanOtp,
+        verified: false,
+      });
+    }
 
-      if (!otpData) {
-        otpData = await OtpRepositor.getLatestOtp({
-          otp: cleanOtp,
-          verified: false,
-        });
-      }
+    if (!otpData) {
+      otpData = await OtpRepositor.getLatestOtp({
+        otp: cleanOtp,
+        verified: false,
+      });
     }
 
     if (!otpData) {
@@ -518,24 +485,7 @@ class UserService {
   async getProfile(id) {
     const user = await UserRepositor.getById(id);
     if (!user) throw new AppError("User not found", 404);
-
-    let artistProfileCompleted = false;
-    if (user.role === "ARTIST") {
-      const profile = await ArtistProfileRepositor.getOne({ user_id: user.id });
-      if (profile) {
-        artistProfileCompleted = profile.verification_status === "APPROVED" || !!profile.aadhaar_number;
-      }
-    }
-
-    return {
-      id: user.id,
-      name: user.name,
-      phone: user.phone,
-      email: user.email,
-      role: user.role,
-      is_verified: user.is_verified,
-      artistProfileCompleted,
-    };
+    return user;
   }
 
   async updateProfile(id, data) {
