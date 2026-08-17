@@ -33,14 +33,6 @@ yarn-error.*
 # local env files
 .env*.local
 .env
-
-# typescript
-*.tsbuildinfo
-
-example
-
-# Uploads and media files
 backend/uploads/
+backend/temp_uploads/
 *.mp4
-*.MOV
-

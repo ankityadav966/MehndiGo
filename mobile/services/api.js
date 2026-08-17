@@ -1,7 +1,7 @@
 import { secureStorage } from "../utils/storage";
 
 const getBaseUrl = () => {
-  let envUrl = process.env.EXPO_PUBLIC_API_URL || "http://192.168.1.17:8000/api/v1";
+  let envUrl = process.env.EXPO_PUBLIC_API_URL || "https://api.mehndigo.in/api/v1";
   return envUrl.endsWith("/") ? envUrl.slice(0, -1) : envUrl;
 };
 
@@ -24,31 +24,24 @@ const getSocketUrl = () => {
 export const SOCKET_URL = getSocketUrl();
 
 export function getNormalizedUrl(endpoint) {
-  let baseUrl = BASE_URL;
-  let cleanEndpoint = endpoint;
+  let base = BASE_URL.replace(/\/+$/, "");
+  let path = (endpoint || "").trim();
 
-  if (!cleanEndpoint.startsWith("/")) {
-    cleanEndpoint = "/" + cleanEndpoint;
+  if (!path.startsWith("/")) {
+    path = "/" + path;
   }
 
-  if (baseUrl.endsWith("/api/v1/mehndigo")) {
-    baseUrl = baseUrl.substring(0, baseUrl.length - 9);
+  // Ensure base contains /api/v1 if not present
+  if (!base.endsWith("/api/v1") && !path.startsWith("/api/v1/")) {
+    base = `${base}/api/v1`;
   }
 
-  if (cleanEndpoint.startsWith("/api/v1/")) {
-    if (baseUrl.endsWith("/api/v1")) {
-      cleanEndpoint = cleanEndpoint.substring(7);
-    }
-  } else {
-    if (baseUrl.endsWith("/api/v1")) {
-      baseUrl = baseUrl.substring(0, baseUrl.length - 7);
-    }
+  // If base ends with /api/v1 and path starts with /api/v1/, strip duplicate from path
+  if (base.endsWith("/api/v1") && path.startsWith("/api/v1/")) {
+    path = path.substring(7);
   }
 
-  if (baseUrl.endsWith("/")) {
-    baseUrl = baseUrl.slice(0, -1);
-  }
-  return `${baseUrl}${cleanEndpoint}`;
+  return `${base}${path}`;
 }
 
 export function resolvePortfolioImage(imageUrl, videoUrl) {

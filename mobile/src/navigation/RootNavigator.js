@@ -45,16 +45,18 @@ export default function RootNavigator() {
           <Stack.Screen name="RoleSelection" component={RoleSelectionScreen} />
           <Stack.Screen name="Otp" component={OtpScreen} />
         </>
-      ) : destination === DESTINATIONS.ARTIST_DASHBOARD ? (
-        <>
-          <Stack.Screen name="ArtistStack" component={ArtistStack} />
-          <Stack.Screen name="ArtistFlowStack" component={ArtistFlowStack} />
-        </>
-      ) : destination === DESTINATIONS.ARTIST_ONBOARDING ? (
-        <>
-          <Stack.Screen name="ArtistFlowStack" component={ArtistFlowStack} />
-          <Stack.Screen name="ArtistStack" component={ArtistStack} />
-        </>
+      ) : (user?.role || "").toUpperCase() === "ARTIST" ? (
+        artistProfileCompleted ? (
+          <>
+            <Stack.Screen name="ArtistStack" component={ArtistStack} />
+            <Stack.Screen name="ArtistFlowStack" component={ArtistFlowStack} />
+          </>
+        ) : (
+          <>
+            <Stack.Screen name="ArtistFlowStack" component={ArtistFlowStack} />
+            <Stack.Screen name="ArtistStack" component={ArtistStack} />
+          </>
+        )
       ) : (
         <Stack.Screen name="CustomerStack" component={CustomerStack} />
       )}

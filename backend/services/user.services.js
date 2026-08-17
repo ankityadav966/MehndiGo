@@ -72,7 +72,7 @@ class UserService {
     if (sanitized) {
       user = await UserRepositor.getOne({ phone: sanitized });
     }
-    
+
     if (!user && email) {
       user = await UserRepositor.getOne({ email });
     }
@@ -100,20 +100,31 @@ class UserService {
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const normalizedRole = (String(role).toUpperCase() === "ARTIST") ? "ARTIST" : "USER";
+
+    const trimmedName = String(name).trim();
+    const cleanPhone = phone ? String(phone).trim().replace(/[\s-()]/g, "") : null;
+
+    // Store registration data temporarily in OTP table
+    const payload = JSON.stringify({
+      name: trimmedName,
+      email: trimmedEmail,
+      phone: cleanPhone,
+      password: hashPassword,
+      role: normalizedRole
+    });
 
     await OtpRepositor.create({
-      user_id: user.id,
-      phone: sanitized || user.phone || null,
-      email: email || user.email || null,
-      otp: String(otp),
+      phone: cleanPhone,
+      email: trimmedEmail,
+      otp,
+      registration_payload: payload,
       expires_at: new Date(Date.now() + 5 * 60 * 1000),
       verified: false,
     });
 
-    const targetEmail = user.email || email;
-    if (targetEmail) {
-      try { await sendOtpEmail(targetEmail, otp, user.name); } catch (e) {}
-    }
+    await sendOtpEmail(trimmedEmail, otp, trimmedName);
+    console.log(`\n==================================\nEMAIL OTP (Register)\nEmail: ${trimmedEmail}\nOTP: ${otp}\n==================================\n`);
 
     console.log(`\n==================================\nREGISTRATION / LOGIN OTP (GMAIL)\nEmail: ${targetEmail}\nOTP: ${otp}\n==================================\n`);
 
@@ -124,6 +135,15 @@ class UserService {
       role: user.role,
       otp,
     };
+  }
+
+  // Aliases for UserController
+  async sendOtp(data) {
+    return this.loginSendOtp(data);
+  }
+
+  async verifyOtp(data) {
+    return this.loginVerifyOtp(data);
   }
 
   // 2. Registration - Verify OTP & Create Account
@@ -181,40 +201,33 @@ class UserService {
       throw new AppError("OTP Expired", 400);
     }
 
+    if (!otpData.registration_payload) {
+      throw new AppError("Registration payload missing", 400);
+    }
+
+    const payload = JSON.parse(otpData.registration_payload);
+    const dbRole = (String(payload.role).toUpperCase() === "ARTIST") ? "ARTIST" : "USER";
+
+    // Verify OTP
     await OtpRepositor.update(otpData.id, { verified: true });
 
-    let user = null;
-    if (otpData.user_id) {
-      user = await UserRepositor.getById(otpData.user_id);
-      if (user) {
-        await UserRepositor.update(user.id, { is_verified: true, last_login_at: new Date() });
-      }
-    }
+    // Create User (preserves exact name, phone, email, and dbRole)
+    const user = await UserRepositor.create({
+      name: payload.name,
+      phone: payload.phone,
+      email: payload.email,
+      password: payload.password,
+      role: dbRole,
+      is_verified: true,
+      last_login_at: new Date(),
+    });
 
-    if (!user) {
-      user = await UserRepositor.getOne({
-        [Op.or]: [
-          ...(trimmedEmail ? [{ email: trimmedEmail }] : []),
-          ...(sanitizedPhone ? [{ phone: sanitizedPhone }] : [])
-        ]
-      });
-      if (user) {
-        await UserRepositor.update(user.id, { is_verified: true, last_login_at: new Date() });
-      }
-    }
-
-    if (!user) {
-      throw new AppError("User account creation failed", 400);
-    }
-
+    // Create artist profile if role is ARTIST
     if (user.role === "ARTIST") {
-      const existingArtist = await ArtistProfileRepositor.getOne({ user_id: user.id });
-      if (!existingArtist) {
-        await ArtistProfileRepositor.create({
-          user_id: user.id,
-          bio: "",
-        });
-      }
+      await ArtistProfileRepositor.create({
+        user_id: user.id,
+        bio: "",
+      });
     }
 
     const token = generateToken(user);
@@ -296,7 +309,7 @@ class UserService {
 
     const targetEmail = user.email || (isEmail ? trimmedEmail : null);
     if (targetEmail) {
-      try { await sendOtpEmail(targetEmail, otp, user.name); } catch(e) {}
+      try { await sendOtpEmail(targetEmail, otp, user.name); } catch (e) { }
     }
 
     console.log(`\n==================================\nLOGIN OTP (GMAIL)\nEmail: ${targetEmail || loginValue}\nOTP: ${otp}\n==================================\n`);
@@ -421,18 +434,18 @@ class UserService {
 
   async adminSendOtp(data) {
     const { email, password } = data;
-    
+
     if (!email || !password) {
       throw new AppError("Email and Password are required", 400);
     }
 
     const trimmedEmail = String(email).trim().toLowerCase();
-    
+
     const user = await UserRepositor.getOne({ email: trimmedEmail, role: "ADMIN" });
     if (!user) {
       throw new AppError("Access denied: Invalid Admin credentials", 403);
     }
-    
+
     const inputHash = crypto.createHash("sha256").update(password).digest("hex");
     if (user.password !== inputHash) {
       throw new AppError("Access denied: Invalid Admin credentials", 403);
