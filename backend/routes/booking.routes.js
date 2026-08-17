@@ -14,18 +14,35 @@ router.get("/check-restricted", authenticate, BookingController.checkRestrictedB
 
 // Status update actions
 router.put("/cancel", authenticate, BookingController.cancelBooking);
+router.post("/cancel", authenticate, BookingController.cancelBooking);
+
 router.put("/reschedule", authenticate, BookingController.rescheduleBooking);
+router.post("/reschedule", authenticate, BookingController.rescheduleBooking);
+
 router.put("/accept", authenticate, BookingController.acceptBooking);
+router.post("/accept", authenticate, BookingController.acceptBooking);
+
 router.put("/reject", authenticate, BookingController.rejectBooking);
+router.post("/reject", authenticate, BookingController.rejectBooking);
+
 router.put("/on-the-way", authenticate, BookingController.updateOnTheWay);
+router.post("/on-the-way", authenticate, BookingController.updateOnTheWay);
+
 router.put("/arrived", authenticate, BookingController.updateArrived);
+router.post("/arrived", authenticate, BookingController.updateArrived);
+
 router.put("/start", authenticate, BookingController.startService);
+router.post("/start", authenticate, BookingController.startService);
+
 router.put("/complete", authenticate, BookingController.completeService);
+router.post("/complete", authenticate, BookingController.completeService);
+
 router.post("/send-checkin-otp", authenticate, BookingController.sendCheckInOtp);
 router.post("/verify-checkin-otp", authenticate, BookingController.verifyCheckInOtp);
 router.post("/send-checkout-otp", authenticate, BookingController.sendCheckOutOtp);
 router.post("/verify-checkout-otp", authenticate, BookingController.verifyCheckOutOtp);
 router.put("/skip-review", authenticate, BookingController.skipReview);
+router.post("/skip-review", authenticate, BookingController.skipReview);
 
 // Coupon validations
 router.post("/apply-coupon", authenticate, BookingController.applyCoupon);

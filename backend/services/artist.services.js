@@ -2132,8 +2132,9 @@ async createReview(data) {
       include: [{ model: db.AvailabilitySlot, as: "slot", required: false }]
     });
 
-    if (!booking) throw new AppError("Lead booking not found", 404);
-    if (booking.artist_id !== artist.id) throw new AppError("Unauthorized access to lead", 403);
+    if (booking.artist_id && Number(booking.artist_id) !== Number(artist.id)) {
+      throw new AppError("Unauthorized access to lead", 403);
+    }
 
     const leadStatus = getLeadStatus(booking);
     if (leadStatus === "Accepted" || leadStatus === "Completed") {
@@ -2147,8 +2148,9 @@ async createReview(data) {
     }
 
     await booking.update({
+      artist_id: artist.id,
       booking_status: "CONFIRMED",
-      detailed_status: "ACCEPTED"
+      detailed_status: "ARTIST_ACCEPTED"
     });
 
     await db.LeadActivity.create({

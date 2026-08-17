@@ -782,6 +782,13 @@ class BookingService {
       detailed_status: newStatus
     };
 
+    if (role === "ARTIST" || newStatus === "ARTIST_ACCEPTED" || newStatus === "ACCEPTED") {
+      const artistProfile = await db.ArtistProfile.findOne({ where: { user_id: userId } });
+      if (artistProfile) {
+        updates.artist_id = artistProfile.id;
+      }
+    }
+
     if (newStatus === "CANCELLED") {
       updates.booking_status = "CANCELLED";
       updates.cancel_reason = extraData.cancelReason || "Cancelled by user";
@@ -796,7 +803,7 @@ class BookingService {
       try {
         const escrow = await db.EscrowRecord.findOne({ where: { booking_id: bookingId, status: "HELD" } });
         if (escrow) {
-          const artistProfile = await db.ArtistProfile.findByPk(booking.artist_id);
+          const artistProfile = await db.ArtistProfile.findByPk(updates.artist_id || booking.artist_id);
           if (artistProfile) {
             const [artistWallet] = await db.Wallet.findOrCreate({
               where: { user_id: artistProfile.user_id },
@@ -861,8 +868,15 @@ class BookingService {
       } catch (notifErr) {
         console.error("Error sending booking complete notification:", notifErr.message);
       }
-    } else if (newStatus === "ARTIST_ACCEPTED" || newStatus === "CONFIRMED") {
+    } else if (newStatus === "ARTIST_ACCEPTED" || newStatus === "ACCEPTED" || newStatus === "CONFIRMED") {
       updates.booking_status = "CONFIRMED";
+      updates.detailed_status = "ARTIST_ACCEPTED";
+      if (booking.slot_id) {
+        await db.AvailabilitySlot.update(
+          { is_booked: true },
+          { where: { id: booking.slot_id } }
+        );
+      }
     }
 
     if (newStatus === "RESCHEDULED") {
@@ -874,14 +888,14 @@ class BookingService {
 
     await db.BookingStatusHistory.create({
       booking_id: bookingId,
-      status: newStatus,
+      status: updates.detailed_status || newStatus,
       changed_by: userId,
       notes: extraData.cancelReason || extraData.notes || `Booking status updated from ${prevStatus} to ${newStatus}`
     });
 
     // Seed test notifications log
     const userToNotify = role === "CUSTOMER" 
-      ? (await db.ArtistProfile.findByPk(booking.artist_id))?.user_id 
+      ? (await db.ArtistProfile.findByPk(updates.artist_id || booking.artist_id))?.user_id 
       : booking.user_id;
 
     if (userToNotify) {
@@ -890,9 +904,25 @@ class BookingService {
       let notificationType = "SYSTEM";
       let notificationData = { bookingId: booking.id, booking_id: booking.id };
 
-      if (newStatus === "CANCELLED" && role !== "CUSTOMER") {
+      if (newStatus === "ARTIST_ACCEPTED" || newStatus === "ACCEPTED") {
+        const targetArtistId = updates.artist_id || booking.artist_id;
+        const artist = targetArtistId ? await db.ArtistProfile.findOne({
+          where: { id: targetArtistId },
+          include: [{ model: db.User, as: "user", attributes: ["name"] }]
+        }) : null;
+        const artistName = artist?.user?.name || "The artist";
+        notificationTitle = "Booking Accepted 🎉";
+        notificationMessage = `${artistName} has accepted your booking #${booking.booking_code}!`;
+        notificationType = "BOOKING";
+        notificationData = {
+          type: "booking",
+          event: "booking_accepted",
+          bookingId: booking.id,
+          booking_id: booking.id
+        };
+      } else if (newStatus === "CANCELLED" && role !== "CUSTOMER") {
         const artist = await db.ArtistProfile.findOne({
-          where: { id: booking.artist_id },
+          where: { id: updates.artist_id || booking.artist_id },
           include: [{ model: db.User, as: "user", attributes: ["name"] }]
         });
         const artistName = artist?.user?.name || "The artist";
@@ -904,7 +934,7 @@ class BookingService {
         notificationData = {
           bookingId: booking.id,
           booking_id: booking.id,
-          artistId: booking.artist_id,
+          artistId: updates.artist_id || booking.artist_id,
           artistName: artistName,
           bookingDate: booking.slot_id ? (await db.AvailabilitySlot.findByPk(booking.slot_id))?.start_time : null,
           paymentStatus: booking.payment_status,
@@ -919,6 +949,32 @@ class BookingService {
         type: notificationType,
         data: JSON.stringify(notificationData)
       });
+
+      // Socket.io real-time update
+      try {
+        const { getIO } = require("../sockets/socket");
+        const io = getIO();
+        if (io) {
+          io.to(userToNotify.toString()).emit("booking_status_updated", {
+            bookingId: booking.id,
+            bookingCode: booking.booking_code,
+            booking_status: updates.booking_status || booking.booking_status,
+            detailed_status: updates.detailed_status || newStatus,
+            status: updates.detailed_status || newStatus,
+            timestamp: new Date()
+          });
+          io.to(`booking_room_${booking.id}`).emit("booking_status_updated", {
+            bookingId: booking.id,
+            bookingCode: booking.booking_code,
+            booking_status: updates.booking_status || booking.booking_status,
+            detailed_status: updates.detailed_status || newStatus,
+            status: updates.detailed_status || newStatus,
+            timestamp: new Date()
+          });
+        }
+      } catch (sockErr) {
+        console.log("Socket emit skipped in updateBookingStatus:", sockErr.message);
+      }
     }
 
     return await this.getBookingDetails(bookingId, userId, role);
