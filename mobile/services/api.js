@@ -5,13 +5,13 @@ import { secureStorage } from "../utils/storage";
  * - Local Development: Expo CLI automatically loads the `.env.local` file when you start the project
  *   using `npx expo start`. It resolves requests to: http://98.70.11.123:3000/api/v1
  * - Production Build: Expo's builder (or eas-cli) automatically loads `.env.production` during the
- *   bundling phase. It resolves requests to: https://mehandigo-api.globalrns.com/api/v1
+ *   bundling phase. It resolves requests to: https://api.mehndigo.in/api/v1
  * 
  * You do NOT need to modify the source code to change environments. Simply start development or bundle
  * for release and the correct URL will be resolved automatically.
  */
 const getBaseUrl = () => {
-  let envUrl = process.env.EXPO_PUBLIC_API_URL || "https://mehandigo-api.globalrns.com/api/v1";
+  let envUrl = process.env.EXPO_PUBLIC_API_URL || "https://api.mehndigo.in/api/v1";
   return envUrl.endsWith("/") ? envUrl.slice(0, -1) : envUrl;
 };
 
