@@ -14,13 +14,23 @@ router.get("/check-restricted", authenticate, BookingController.checkRestrictedB
 
 // Status update actions
 router.put("/cancel", authenticate, BookingController.cancelBooking);
+router.post("/cancel", authenticate, BookingController.cancelBooking);
 router.put("/reschedule", authenticate, BookingController.rescheduleBooking);
+router.post("/reschedule", authenticate, BookingController.rescheduleBooking);
 router.put("/accept", authenticate, BookingController.acceptBooking);
+router.post("/accept", authenticate, BookingController.acceptBooking);
 router.put("/reject", authenticate, BookingController.rejectBooking);
+router.post("/reject", authenticate, BookingController.rejectBooking);
 router.put("/on-the-way", authenticate, BookingController.updateOnTheWay || BookingController.onTheWayBooking);
+router.post("/on-the-way", authenticate, BookingController.updateOnTheWay || BookingController.onTheWayBooking);
 router.put("/arrived", authenticate, BookingController.updateArrived);
+router.post("/arrived", authenticate, BookingController.updateArrived);
+router.post("/validate-arrival", authenticate, BookingController.updateArrived);
 router.put("/start", authenticate, BookingController.startService);
+router.post("/start", authenticate, BookingController.startService);
+router.post("/start-service", authenticate, BookingController.startService);
 router.put("/complete", authenticate, BookingController.completeService);
+router.post("/complete", authenticate, BookingController.completeService);
 router.put("/skip-review", authenticate, BookingController.skipReview);
 router.put("/select-cash", authenticate, BookingController.selectCashPayment);
 router.put("/confirm-cash", authenticate, BookingController.confirmCashPayment);

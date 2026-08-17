@@ -863,14 +863,19 @@ const handleGetArtistDashboard = async (c) => {
     const cEmail = b.customer_email || "";
     const cAvatar = b.customer_avatar || null;
 
+    const detailedStatus = (b.detailed_status || statusUpper).toUpperCase();
+    const normBookingStatus = (detailedStatus === "ARTIST_ACCEPTED" || detailedStatus === "ACCEPTED" || statusUpper === "ACCEPTED" || statusUpper === "ARTIST_ACCEPTED") ? "CONFIRMED" : statusUpper;
+
     return {
       ...b,
       id: b.id,
       booking_id: b.id,
       booking_code: code,
       booking_number: code,
-      booking_status: statusUpper,
-      detailed_status: statusUpper,
+      booking_status: normBookingStatus,
+      bookingStatus: normBookingStatus,
+      detailed_status: detailedStatus,
+      detailedStatus: detailedStatus,
       status: statusUpper,
       final_amount: Number(b.total_amount || 0),
       customer_name: cName,
@@ -1283,7 +1288,20 @@ const ensureWalletTables = async (db) => {
   await db.run("ALTER TABLE wallet_transactions ADD COLUMN reference_id TEXT").catch(() => { });
 
   // Add missing columns to existing bookings table
+  await db.run("ALTER TABLE bookings ADD COLUMN status TEXT DEFAULT 'pending'").catch(() => { });
+  await db.run("ALTER TABLE bookings ADD COLUMN booking_status TEXT DEFAULT 'PENDING'").catch(() => { });
+  await db.run("ALTER TABLE bookings ADD COLUMN detailed_status TEXT DEFAULT 'PENDING'").catch(() => { });
   await db.run("ALTER TABLE bookings ADD COLUMN booking_number TEXT").catch(() => { });
+  await db.run("ALTER TABLE bookings ADD COLUMN checkin_otp TEXT").catch(() => { });
+  await db.run("ALTER TABLE bookings ADD COLUMN checkin_otp_expires_at DATETIME").catch(() => { });
+  await db.run("ALTER TABLE bookings ADD COLUMN checkin_otp_verified INTEGER DEFAULT 0").catch(() => { });
+  await db.run("ALTER TABLE bookings ADD COLUMN checkout_otp TEXT").catch(() => { });
+  await db.run("ALTER TABLE bookings ADD COLUMN checkout_otp_expires_at DATETIME").catch(() => { });
+  await db.run("ALTER TABLE bookings ADD COLUMN checkout_otp_verified INTEGER DEFAULT 0").catch(() => { });
+  await db.run("ALTER TABLE bookings ADD COLUMN check_in_time DATETIME").catch(() => { });
+  await db.run("ALTER TABLE bookings ADD COLUMN arrival_verified_at DATETIME").catch(() => { });
+  await db.run("ALTER TABLE bookings ADD COLUMN cancel_reason TEXT").catch(() => { });
+  await db.run("ALTER TABLE bookings ADD COLUMN notes TEXT").catch(() => { });
   await db.run("ALTER TABLE bookings ADD COLUMN total_amount REAL DEFAULT 0.0").catch(() => { });
   await db.run("ALTER TABLE bookings ADD COLUMN advance_paid REAL DEFAULT 0.0").catch(() => { });
   await db.run("ALTER TABLE bookings ADD COLUMN remaining_amount REAL DEFAULT 0.0").catch(() => { });
@@ -6887,6 +6905,7 @@ const handleGetArtistLocation = async (c) => {
 
 const handleAcceptBooking = async (c) => {
   const db = getDb(c.env);
+  await ensureWalletTables(db);
   const u = getUserFromHeader(c);
   const body = await c.req.json().catch(() => ({}));
   const bookingId = parseInt(body.bookingId || body.booking_id || body.id || c.req.query("bookingId") || 0, 10);
@@ -6908,11 +6927,16 @@ const handleAcceptBooking = async (c) => {
 
   // Atomically update booking status to accepted / ARTIST_ACCEPTED
   await db.run(
-    "UPDATE bookings SET status = 'accepted', detailed_status = 'ARTIST_ACCEPTED', artist_id = ?, checkin_otp = ?, checkin_otp_expires_at = ?, checkout_otp = ?, checkout_otp_expires_at = ? WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+    "UPDATE bookings SET status = 'accepted', booking_status = 'CONFIRMED', detailed_status = 'ARTIST_ACCEPTED', artist_id = COALESCE(artist_id, ?), checkin_otp = ?, checkin_otp_expires_at = ?, checkout_otp = ?, checkout_otp_expires_at = ? WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
     [assignedArtistId, checkinOtp, checkinExpires, checkoutOtp, checkoutExpires, bookingId, String(bookingId)]
-  ).catch(() => { });
+  ).catch(async () => {
+    await db.run(
+      "UPDATE bookings SET status = 'accepted', booking_status = 'CONFIRMED', detailed_status = 'ARTIST_ACCEPTED' WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+      [bookingId, String(bookingId)]
+    ).catch(() => { });
+  });
 
-  const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
+  const updated = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   return jsonRes(c, true, {
     ...updated,
     id: bookingId,
@@ -6929,6 +6953,7 @@ const handleAcceptBooking = async (c) => {
 
 const handleOnTheWayBooking = async (c) => {
   const db = getDb(c.env);
+  await ensureWalletTables(db);
   const u = getUserFromHeader(c);
   const body = await c.req.json().catch(() => ({}));
   const bookingId = parseInt(body.bookingId || body.booking_id || body.id || c.req.query("bookingId") || 0, 10);
@@ -6945,11 +6970,16 @@ const handleOnTheWayBooking = async (c) => {
   const checkoutOtp = booking.checkout_otp || Math.floor(1000 + Math.random() * 9000).toString();
 
   await db.run(
-    "UPDATE bookings SET status = 'accepted', detailed_status = 'ARTIST_ON_THE_WAY', checkin_otp = ?, checkout_otp = ? WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+    "UPDATE bookings SET status = 'accepted', booking_status = 'CONFIRMED', detailed_status = 'ARTIST_ON_THE_WAY', checkin_otp = ?, checkout_otp = ? WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
     [checkinOtp, checkoutOtp, bookingId, String(bookingId)]
-  ).catch(() => { });
+  ).catch(async () => {
+    await db.run(
+      "UPDATE bookings SET status = 'accepted', booking_status = 'CONFIRMED', detailed_status = 'ARTIST_ON_THE_WAY' WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+      [bookingId, String(bookingId)]
+    ).catch(() => { });
+  });
 
-  const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
+  const updated = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   return jsonRes(c, true, {
     ...updated,
     id: bookingId,
@@ -6965,6 +6995,7 @@ const handleOnTheWayBooking = async (c) => {
 
 const handleStartService = async (c) => {
   const db = getDb(c.env);
+  await ensureWalletTables(db);
   const body = await c.req.json().catch(() => ({}));
   const bookingId = parseInt(body.bookingId || body.booking_id || body.id || c.req.query("bookingId") || 0, 10);
 
@@ -6987,11 +7018,16 @@ const handleStartService = async (c) => {
   }
 
   await db.run(
-    "UPDATE bookings SET status = 'in_progress', detailed_status = 'SERVICE_STARTED', check_in_time = COALESCE(check_in_time, CURRENT_TIMESTAMP) WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+    "UPDATE bookings SET status = 'in_progress', booking_status = 'IN_PROGRESS', detailed_status = 'SERVICE_STARTED', check_in_time = COALESCE(check_in_time, CURRENT_TIMESTAMP) WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
     [bookingId, String(bookingId)]
-  ).catch(() => { });
+  ).catch(async () => {
+    await db.run(
+      "UPDATE bookings SET status = 'in_progress', booking_status = 'IN_PROGRESS', detailed_status = 'SERVICE_STARTED' WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+      [bookingId, String(bookingId)]
+    ).catch(() => { });
+  });
 
-  const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
+  const updated = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   return jsonRes(c, true, {
     ...updated,
     id: bookingId,
@@ -7007,9 +7043,10 @@ const handleStartService = async (c) => {
 
 const handleRejectBooking = async (c) => {
   const db = getDb(c.env);
+  await ensureWalletTables(db);
   const body = await c.req.json().catch(() => ({}));
   const bookingId = parseInt(body.bookingId || body.booking_id || body.id || c.req.query("bookingId") || 0, 10);
-  const reason = body.rejectReason || body.reason || "Declined by artist";
+  const reason = body.rejectReason || body.reason || body.cancelReason || "Declined by artist";
 
   if (!bookingId) {
     return jsonRes(c, false, null, "Booking ID is required", 400);
@@ -7019,11 +7056,16 @@ const handleRejectBooking = async (c) => {
   if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
 
   await db.run(
-    "UPDATE bookings SET status = 'cancelled', detailed_status = 'CANCELLED', notes = ? WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
-    [reason, bookingId, String(bookingId)]
-  ).catch(() => { });
+    "UPDATE bookings SET status = 'cancelled', booking_status = 'CANCELLED', detailed_status = 'CANCELLED', notes = ?, cancel_reason = ? WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+    [reason, reason, bookingId, String(bookingId)]
+  ).catch(async () => {
+    await db.run(
+      "UPDATE bookings SET status = 'cancelled', booking_status = 'CANCELLED', detailed_status = 'CANCELLED' WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+      [bookingId, String(bookingId)]
+    ).catch(() => { });
+  });
 
-  const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
+  const updated = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   return jsonRes(c, true, {
     ...updated,
     id: bookingId,
