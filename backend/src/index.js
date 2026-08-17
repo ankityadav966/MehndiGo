@@ -6573,47 +6573,6 @@ const handleClearAllNotifications = async (c) => {
   return jsonRes(c, true, null, "Notification history cleared");
 };
 
-const sendExpoPushNotification = async (tokens, title, body, data = {}) => {
-  const tokenArray = Array.isArray(tokens) ? tokens : [tokens];
-  const validTokens = tokenArray.filter(t => t && typeof t === "string" && (t.startsWith("ExponentPushToken") || t.startsWith("ExpoPushToken")));
-
-  if (validTokens.length === 0) {
-    console.log("[EXPO PUSH NOTICE] No valid Expo push tokens found.");
-    return { success: false, reason: "NO_VALID_TOKENS", message: "No valid ExponentPushToken found" };
-  }
-
-  const payload = validTokens.map(token => ({
-    to: token,
-    title: title || "MehndiGo Notification",
-    body: body || "You have a new update from MehndiGo",
-    sound: "default",
-    badge: 1,
-    channelId: data?.channelId || "default",
-    data: {
-      ...data,
-      title: title || "MehndiGo Notification",
-      message: body || "You have a new update from MehndiGo"
-    }
-  }));
-
-  try {
-    const res = await fetch("https://exp.host/--/api/v2/push/send", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "Accept-Encoding": "gzip, deflate"
-      },
-      body: JSON.stringify(payload)
-    });
-    const responseJson = await res.json();
-    console.log("[EXPO PUSH API RESPONSE]", JSON.stringify(responseJson));
-    return { success: true, response: responseJson };
-  } catch (err) {
-    console.error("[EXPO PUSH EXCEPTION]", err.message);
-    return { success: false, error: err.message };
-  }
-};
 
 const handleRegisterPushToken = async (c) => {
   const u = getUserFromHeader(c);
@@ -7257,55 +7216,6 @@ const handleGetChatMedia = async (c) => {
   return jsonRes(c, true, mediaList || [], "Media history retrieved");
 };
 
-const handleUpdateArtistLocation = async (c) => {
-  const db = getDb(c.env);
-  const u = getUserFromHeader(c);
-  const body = await c.req.json().catch(() => ({}));
-
-  const artistId = body.artistId || body.artist_id || u?.id;
-  const bookingId = body.bookingId || body.booking_id;
-  const latitude = Number(body.latitude || body.lat);
-  const longitude = Number(body.longitude || body.lng);
-  const speed = Number(body.speed || 0);
-  const heading = Number(body.heading || 0);
-
-  if (!artistId || isNaN(latitude) || isNaN(longitude)) {
-    return jsonRes(c, false, null, "Artist ID and valid coordinates (lat, lng) are required", 400);
-  }
-
-  await db.run(
-    `CREATE TABLE IF NOT EXISTS artist_locations (
-      artist_id INTEGER PRIMARY KEY,
-      latitude REAL,
-      longitude REAL,
-      speed REAL,
-      heading REAL,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`
-  ).catch(() => {});
-
-  await db.run(
-    `INSERT INTO artist_locations (artist_id, latitude, longitude, speed, heading, updated_at)
-     VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-     ON CONFLICT(artist_id) DO UPDATE SET
-       latitude = excluded.latitude,
-       longitude = excluded.longitude,
-       speed = excluded.speed,
-       heading = excluded.heading,
-       updated_at = CURRENT_TIMESTAMP`,
-    [artistId, latitude, longitude, speed, heading]
-  ).catch(() => {});
-
-  return jsonRes(c, true, {
-    artistId,
-    bookingId,
-    latitude,
-    longitude,
-    speed,
-    heading,
-    updated_at: new Date().toISOString()
-  }, "Artist location updated successfully");
-};
 
 const handleGetArtistLocation = async (c) => {
   const db = getDb(c.env);
