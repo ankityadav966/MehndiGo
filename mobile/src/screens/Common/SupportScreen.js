@@ -4,6 +4,7 @@ import { StyleSheet, Text, TouchableOpacity, View, Linking, Modal, ScrollView, A
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import { getSupportTickets, getCustomerNotifications } from "../../services/customer";
+import { TICKET_STATUSES } from "../../constants/SupportCategories";
 
 export default function SupportScreen({ navigation }) {
   const [faqsVisible, setFaqsVisible] = useState(false);
@@ -49,10 +50,12 @@ export default function SupportScreen({ navigation }) {
           ...existing,
           id: ticketId,
           ticket_id: ticketId,
+          ticket_number: existing.ticket_number || `MG-${1000 + ticketId}`,
           subject: existing.subject || subject,
           category: existing.category || "General Support",
           status: existing.status || "OPEN",
-          createdAt: existing.created_at || existing.createdAt || n.created_at || n.createdAt || new Date().toISOString()
+          created_at: existing.created_at || existing.createdAt || n.created_at || n.createdAt || new Date().toISOString(),
+          updated_at: existing.updated_at || existing.updatedAt || n.created_at || n.createdAt || new Date().toISOString()
         });
       });
 
@@ -79,19 +82,15 @@ export default function SupportScreen({ navigation }) {
   };
 
   const supportOptions = [
-    { title: "Chat with Us", icon: "chatbubble-ellipses-outline", color: Colors.primary, action: () => navigation.navigate("SupportTicket") },
-    { title: "Call Us", icon: "call-outline", color: Colors.success, action: handleCall },
-    { title: "FAQs", icon: "help-circle-outline", color: Colors.warning, action: () => setFaqsVisible(true) },
-    { title: "Raise a Ticket", icon: "document-text-outline", color: Colors.info, action: () => navigation.navigate("SupportTicket") },
+    { title: "Raise a Ticket", icon: "document-text-outline", color: Colors.primary || "#F7146B", action: () => navigation.navigate("SupportTicket") },
+    { title: "Chat with Support", icon: "chatbubble-ellipses-outline", color: "#3B82F6", action: () => navigation.navigate("SupportTicket") },
+    { title: "Call Us (+91 98765 43210)", icon: "call-outline", color: "#10B981", action: handleCall },
+    { title: "FAQs & Knowledgebase", icon: "help-circle-outline", color: "#F59E0B", action: () => setFaqsVisible(true) },
   ];
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case "OPEN": return Colors.success || "#27AE60";
-      case "CLOSED": return Colors.textTertiary || "#999";
-      case "ASSIGNED": return Colors.primary || "#F7146B";
-      default: return Colors.warning || "#FFAA00";
-    }
+  const getStatusInfo = (status) => {
+    const norm = String(status || "OPEN").toUpperCase();
+    return TICKET_STATUSES[norm] || { label: norm, color: "#6B7280", bg: "#F3F4F6" };
   };
 
   return (
@@ -107,13 +106,13 @@ export default function SupportScreen({ navigation }) {
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>Help & Support</Text>
-        <Text style={styles.subtitle}>How can we help you?</Text>
+        <Text style={styles.subtitle}>Need assistance? Create a ticket and our team will resolve it.</Text>
 
         <View style={styles.optionsContainer}>
           {supportOptions.map((item, index) => (
             <TouchableOpacity key={index} style={styles.optionItem} onPress={item.action}>
               <View style={styles.leftSection}>
-                <View style={[styles.iconCircle, { backgroundColor: item.color + "20" }]}>
+                <View style={[styles.iconCircle, { backgroundColor: item.color + "18" }]}>
                   <Ionicons name={item.icon} size={20} color={item.color} />
                 </View>
                 <Text style={styles.optionText}>{item.title}</Text>
@@ -124,38 +123,77 @@ export default function SupportScreen({ navigation }) {
         </View>
 
         {/* Support Tickets History List */}
-        <Text style={[styles.title, { fontSize: 18, marginTop: 32, marginBottom: 12 }]}>My Support Tickets</Text>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 32, marginBottom: 14 }}>
+          <Text style={[styles.title, { fontSize: 18 }]}>My Support Tickets</Text>
+          <TouchableOpacity onPress={() => navigation.navigate("SupportTicket")}>
+            <Text style={{ fontSize: 13, fontWeight: "700", color: Colors.primary }}>+ New Ticket</Text>
+          </TouchableOpacity>
+        </View>
         
         {loadingTickets ? (
           <ActivityIndicator color={Colors.primary} style={{ marginVertical: 20 }} />
         ) : tickets.length === 0 ? (
-          <View style={{ padding: 20, alignItems: "center", backgroundColor: Colors.white, borderRadius: 12, borderWidth: 1, borderColor: Colors.border }}>
-            <Ionicons name="document-text-outline" size={32} color={Colors.textTertiary} />
-            <Text style={{ color: Colors.textSecondary, fontSize: 13, marginTop: 8 }}>No support tickets raised yet.</Text>
+          <View style={{ padding: 28, alignItems: "center", backgroundColor: Colors.white, borderRadius: 16, borderWidth: 1, borderColor: Colors.border }}>
+            <Ionicons name="document-text-outline" size={40} color="#94A3B8" />
+            <Text style={{ color: Colors.text, fontWeight: "700", fontSize: 15, marginTop: 12 }}>No Support Tickets Yet</Text>
+            <Text style={{ color: Colors.textSecondary, fontSize: 13, marginTop: 4, textAlign: "center" }}>
+              Have an issue with booking, payment, or app? Raise a ticket and get prompt support.
+            </Text>
+            <TouchableOpacity
+              style={{ marginTop: 16, backgroundColor: Colors.primary, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 10 }}
+              onPress={() => navigation.navigate("SupportTicket")}
+            >
+              <Text style={{ color: "#FFF", fontWeight: "700", fontSize: 13 }}>Raise a Ticket</Text>
+            </TouchableOpacity>
           </View>
         ) : (
-          <View style={{ gap: 10, paddingBottom: 40 }}>
-            {tickets.map((item) => (
-              <TouchableOpacity 
-                key={item.id} 
-                style={{ backgroundColor: Colors.white, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: Colors.border, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
-                onPress={() => navigation.navigate("SupportTicketDetails", { ticketId: item.id })}
-              >
-                <View style={{ flex: 1, marginRight: 10 }}>
-                  <Text style={{ fontSize: 14, fontWeight: "700", color: Colors.text }} numberOfLines={1}>
+          <View style={{ gap: 12, paddingBottom: 40 }}>
+            {tickets.map((item) => {
+              const statusMeta = getStatusInfo(item.status);
+              const ticketNum = item.ticket_number || `#MG-${1000 + (item.id || 1)}`;
+              const dateStr = new Date(item.updated_at || item.created_at || item.createdAt || Date.now()).toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+
+              return (
+                <TouchableOpacity 
+                  key={item.id} 
+                  style={{
+                    backgroundColor: Colors.white,
+                    borderRadius: 14,
+                    padding: 16,
+                    borderWidth: 1,
+                    borderColor: Colors.border,
+                    shadowColor: "#000",
+                    shadowOffset: { width: 0, height: 1 },
+                    shadowOpacity: 0.05,
+                    shadowRadius: 2,
+                    elevation: 1
+                  }}
+                  onPress={() => navigation.navigate("SupportTicketDetails", { ticketId: item.id, ticket: item })}
+                >
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <Text style={{ fontSize: 12, fontWeight: "700", color: Colors.primary }}>{ticketNum}</Text>
+                    <View style={{ backgroundColor: statusMeta.bg, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: statusMeta.color + "30" }}>
+                      <Text style={{ fontSize: 11, fontWeight: "700", color: statusMeta.color }}>
+                        {statusMeta.label}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <Text style={{ fontSize: 15, fontWeight: "700", color: Colors.text, marginBottom: 4 }} numberOfLines={1}>
                     {item.subject}
                   </Text>
-                  <Text style={{ fontSize: 11, color: Colors.textSecondary, marginTop: 4 }}>
-                    Category: {item.category} • Raised on: {new Date(item.createdAt).toLocaleDateString()}
-                  </Text>
-                </View>
-                <View style={{ backgroundColor: getStatusColor(item.status) + "15", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 }}>
-                  <Text style={{ fontSize: 10, fontWeight: "700", color: getStatusColor(item.status) }}>
-                    {item.status}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            ))}
+
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
+                    <Text style={{ fontSize: 12, color: Colors.textSecondary }}>
+                      Category: {item.category || "General"}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: Colors.textTertiary }}>
+                      {dateStr}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         )}
       </ScrollView>

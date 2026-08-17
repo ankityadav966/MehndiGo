@@ -9,20 +9,14 @@ import {
   View,
   ActivityIndicator,
   KeyboardAvoidingView,
-  Platform
+  Platform,
+  Image
 } from "react-native";
 import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import { submitSupportTicket } from "../../services/customer";
-
-const CATEGORIES = [
-  "Booking Issue",
-  "Payment Issue",
-  "Artist Issue",
-  "Other",
-];
-
+import { getCategoryListForRole, TICKET_PRIORITIES } from "../../constants/SupportCategories";
 import * as ImagePicker from "expo-image-picker";
 import { uploadPortfolioMedia } from "../../services/artist";
 import { useAuth } from "../../context/AuthContext";
@@ -30,7 +24,10 @@ import { useAuth } from "../../context/AuthContext";
 export default function SupportTicketScreen({ navigation }) {
   const { user } = useAuth();
   const isArtistUser = user?.role === "artist" || user?.role === "ARTIST";
-  const [category, setCategory] = useState("");
+  const categoryList = getCategoryListForRole(user?.role);
+
+  const [category, setCategory] = useState(categoryList[0]?.label || "Booking Issue");
+  const [priority, setPriority] = useState("MEDIUM");
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
   const [attachmentUri, setAttachmentUri] = useState(null);
@@ -55,7 +52,10 @@ export default function SupportTicketScreen({ navigation }) {
   };
 
   const handleSubmit = async () => {
-    if (!category || !subject || !description) return;
+    if (!category || !subject.trim() || !description.trim()) {
+      Alert.alert("Required Fields", "Please enter both subject and description.");
+      return;
+    }
     setSubmitting(true);
     try {
       let remoteAttachmentUrl = null;
@@ -68,12 +68,13 @@ export default function SupportTicketScreen({ navigation }) {
 
       const response = await submitSupportTicket({
         category,
-        subject,
-        description,
+        priority,
+        subject: subject.trim(),
+        description: description.trim(),
         user_type: isArtistUser ? "ARTIST" : "CUSTOMER",
         attachments: remoteAttachmentUrl
       });
-      const tid = response.id || response.ticket_id || 6;
+      const tid = response.id || response.ticket_id || Date.now();
       Alert.alert(
         "Ticket Submitted",
         `Your ticket #${tid} has been raised successfully. Our support team will get back to you shortly.`,
@@ -85,9 +86,10 @@ export default function SupportTicketScreen({ navigation }) {
                 ticketId: tid,
                 ticket: {
                   id: tid,
-                  subject,
-                  description,
+                  subject: subject.trim(),
+                  description: description.trim(),
                   category,
+                  priority,
                   status: "OPEN",
                   created_at: new Date().toISOString()
                 }
@@ -118,97 +120,135 @@ export default function SupportTicketScreen({ navigation }) {
               <Ionicons name="arrow-back" size={24} color="#1D1D1D" />
             </TouchableOpacity>
 
-            <Text style={styles.headerTitle}>Raise a Ticket</Text>
+            <Text style={styles.headerTitle}>Raise a Support Ticket</Text>
           </View>
 
           <View style={styles.content}>
+            {/* Issue Category */}
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Issue Category</Text>
-
+              <Text style={styles.inputLabel}>Select Category</Text>
               <View style={styles.categoryRow}>
-                {CATEGORIES.map((cat) => (
-                  <TouchableOpacity
-                    key={cat}
-                    style={[
-                      styles.categoryChip,
-                      category === cat && styles.categoryChipActive,
-                    ]}
-                    onPress={() => setCategory(cat)}
-                  >
-                    <Text
+                {categoryList.map((cat) => {
+                  const isActive = category === cat.label;
+                  return (
+                    <TouchableOpacity
+                      key={cat.id || cat.label}
                       style={[
-                        styles.categoryChipText,
-                        category === cat && styles.categoryChipTextActive,
+                        styles.categoryChip,
+                        isActive && styles.categoryChipActive,
                       ]}
+                      onPress={() => setCategory(cat.label)}
                     >
-                      {cat}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                      <Ionicons
+                        name={cat.icon || "help-circle-outline"}
+                        size={15}
+                        color={isActive ? "#FFF" : (cat.color || "#888")}
+                        style={{ marginRight: 6 }}
+                      />
+                      <Text
+                        style={[
+                          styles.categoryChipText,
+                          isActive && styles.categoryChipTextActive,
+                        ]}
+                      >
+                        {cat.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             </View>
 
+            {/* Priority Selector */}
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Subject</Text>
+              <Text style={styles.inputLabel}>Priority Level</Text>
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                {TICKET_PRIORITIES.map((p) => {
+                  const isPActive = priority === p.value;
+                  return (
+                    <TouchableOpacity
+                      key={p.value}
+                      style={[
+                        styles.priorityChip,
+                        isPActive && { backgroundColor: p.color, borderColor: p.color }
+                      ]}
+                      onPress={() => setPriority(p.value)}
+                    >
+                      <Text style={[styles.priorityChipText, isPActive && { color: "#FFF", fontWeight: "700" }]}>
+                        {p.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
 
+            {/* Subject Input */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Subject *</Text>
               <TextInput
                 style={styles.input}
-                placeholder="Brief subject of your issue"
-                placeholderTextColor="#CCC"
+                placeholder="Brief summary of your issue..."
+                placeholderTextColor="#999"
                 value={subject}
                 onChangeText={setSubject}
               />
             </View>
 
+            {/* Description Multiline */}
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Description</Text>
-
+              <Text style={styles.inputLabel}>Detailed Description *</Text>
               <TextInput
                 style={styles.textarea}
-                placeholder="Describe your issue in detail..."
-                placeholderTextColor="#CCC"
+                placeholder="Explain what happened so our team can resolve it quickly..."
+                placeholderTextColor="#999"
                 value={description}
                 onChangeText={setDescription}
                 multiline
-                numberOfLines={6}
+                numberOfLines={5}
                 textAlignVertical="top"
               />
             </View>
 
+            {/* Attachment Button */}
             <TouchableOpacity style={styles.attachBtn} onPress={pickAttachment}>
-              <Ionicons name="image-outline" size={20} color="#F7146B" />
+              <Ionicons name="camera-outline" size={20} color={Colors.primary || "#F7146B"} />
               <Text style={styles.attachBtnText}>
-                {attachmentUri ? "Change Attached Image" : "Attach Image (Optional)"}
+                {attachmentUri ? "Change Attached Screenshot" : "Attach Screenshot / Photo (Optional)"}
               </Text>
             </TouchableOpacity>
 
             {attachmentUri && (
-              <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 20, backgroundColor: "#F2F4F7", padding: 10, borderRadius: 12 }}>
-                <Ionicons name="document-attach-outline" size={20} color={Colors.primary || "#F7146B"} />
-                <Text style={{ flex: 1, marginLeft: 8, fontSize: 13, color: "#555" }} numberOfLines={1}>
-                  {attachmentUri.split("/").pop()}
-                </Text>
-                <TouchableOpacity onPress={() => setAttachmentUri(null)}>
-                  <Ionicons name="close-circle" size={20} color="#EF4444" />
+              <View style={styles.previewContainer}>
+                <Image source={{ uri: attachmentUri }} style={styles.previewImage} />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={{ fontSize: 13, fontWeight: "600", color: "#333" }} numberOfLines={1}>
+                    Screenshot Attached
+                  </Text>
+                  <Text style={{ fontSize: 11, color: "#888", marginTop: 2 }}>Ready to upload</Text>
+                </View>
+                <TouchableOpacity onPress={() => setAttachmentUri(null)} style={{ padding: 6 }}>
+                  <Ionicons name="trash-outline" size={20} color="#EF4444" />
                 </TouchableOpacity>
               </View>
             )}
 
+            {/* Submit Button */}
             <TouchableOpacity
               style={[
                 styles.submitBtn,
-                (!category || !subject || !description || submitting) &&
+                (!category || !subject.trim() || !description.trim() || submitting) &&
                   styles.submitBtnDisabled,
               ]}
-              disabled={!category || !subject || !description || submitting}
+              disabled={!category || !subject.trim() || !description.trim() || submitting}
               onPress={handleSubmit}
             >
               {submitting ? (
                 <ActivityIndicator size="small" color="#FFF" />
               ) : (
                 <>
-                  <Ionicons name="send-outline" size={18} color="#FFF" />
-                  <Text style={styles.submitBtnText}>Submit Ticket</Text>
+                  <Ionicons name="paper-plane" size={18} color="#FFF" />
+                  <Text style={styles.submitBtnText}>Submit Support Ticket</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -309,7 +349,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     flexDirection: "row",
-    marginBottom: 24,
+    marginBottom: 16,
     backgroundColor: "#FFF8FA",
   },
   attachBtnText: {
@@ -317,6 +357,37 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontSize: 14,
     marginLeft: 8,
+  },
+  priorityChip: {
+    flex: 1,
+    height: 40,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#E2E6ED",
+    backgroundColor: "#F8FAFC",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  priorityChipText: {
+    fontSize: 13,
+    color: "#64748B",
+    fontWeight: "600",
+  },
+  previewContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 20,
+    backgroundColor: "#F8FAFC",
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  previewImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+    backgroundColor: "#E2E8F0",
   },
   submitBtn: {
     height: 52,

@@ -160,17 +160,19 @@ export function resolveNotificationRoute(notification, role) {
 
   }
 
-  const fallbackScreen = normalizedRole === "artist" ? "Notifications" : "NotificationCenter";
-
-  // Check for Support Ticket Notification
-  const titleText = String(notification.title || "").toLowerCase();
-  const bodyText = String(notification.message || notification.body || "").toLowerCase();
-  if (titleText.includes("support") || bodyText.includes("support") || type === "support") {
+  const rawType = String(data?.type || notification?.type || "").toUpperCase();
+  if (
+    rawType.startsWith("SUPPORT_TICKET") ||
+    rawType === "SUPPORT" ||
+    String(notification.title || "").toLowerCase().includes("support") ||
+    String(notification.message || notification.body || "").toLowerCase().includes("support")
+  ) {
     const tMatch = (String(notification.title || "") + " " + String(notification.message || "")).match(/#(\d+)/);
-    const ticketId = tMatch ? parseInt(tMatch[1], 10) : (data?.ticketId || data?.ticket_id || data?.id);
+    const ticketId = data?.ticketId || data?.ticket_id || (tMatch ? parseInt(tMatch[1], 10) : null);
     if (ticketId) {
       return { screen: "SupportTicketDetails", params: { ticketId } };
     }
+    return { screen: "Support" };
   }
 
   if (!type || !event) {

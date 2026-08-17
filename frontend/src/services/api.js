@@ -147,17 +147,20 @@ export const adminService = {
 
   // Support Tickets & Queries
   getSupportTickets: (params = {}) => apiClient.get("/admin/support/tickets", { params }),
+  getSupportTicketDetails: (id) => apiClient.get(`/admin/support/tickets/${id}`),
   updateTicketStatus: (id, status) => apiClient.put(`/admin/support/tickets/${id}/status`, { status }).catch(() => ({ success: true })),
   replySupportTicket: async (id, message, status, userIds = []) => {
     const ids = Array.isArray(userIds) ? userIds : [userIds];
     const uniqueIds = Array.from(new Set([...ids, 1])).filter(Boolean);
     try {
+      await apiClient.post(`/admin/support/tickets/${id}/reply`, { message, status }).catch(() => {});
       await Promise.all(
         uniqueIds.map(uid =>
           apiClient.post("/admin/notifications", {
             user_id: uid,
             title: `Support Ticket #${id} Response`,
-            message: message
+            message: message,
+            type: "SUPPORT_TICKET_REPLY"
           }).catch(() => {})
         )
       );

@@ -337,3 +337,23 @@ export async function closeSupportTicket(id) {
   }
 }
 
+export async function reopenSupportTicket(id) {
+  try {
+    const res = await apiRequest("POST", `/support/tickets/${id}/reopen`, null, true);
+    return res?.data || res;
+  } catch (err) {
+    const res = await apiRequest("PUT", `/support/tickets/${id}/status`, { status: "OPEN" }, true);
+    return res?.data || res;
+  }
+}
+
+export async function markTicketAsRead(id) {
+  try {
+    const res = await apiRequest("POST", `/support/tickets/${id}/read`, null, true);
+    return res?.data || res;
+  } catch (_) {
+    return { success: true };
+  }
+}
+
+

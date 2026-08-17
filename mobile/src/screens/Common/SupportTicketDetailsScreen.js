@@ -16,8 +16,9 @@ import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import Colors from "../../constants/Colors";
-import { getSupportTicketDetails, replySupportTicket, closeSupportTicket, getCustomerNotifications } from "../../services/customer";
+import { getSupportTicketDetails, replySupportTicket, closeSupportTicket, reopenSupportTicket, markTicketAsRead, getCustomerNotifications } from "../../services/customer";
 import { uploadPortfolioMedia, getArtistNotificationsData } from "../../services/artist";
+import { TICKET_STATUSES } from "../../constants/SupportCategories";
 
 export default function SupportTicketDetailsScreen({ route, navigation }) {
   const { ticketId } = route.params || {};
@@ -134,6 +135,7 @@ export default function SupportTicketDetailsScreen({ route, navigation }) {
       return;
     }
     loadTicketData();
+    markTicketAsRead(ticketId).catch(() => {});
     const interval = setInterval(() => {
       loadTicketData(true);
     }, 4000);
@@ -172,8 +174,10 @@ export default function SupportTicketDetailsScreen({ route, navigation }) {
         message: replyMessage.trim(),
         attachments: uploadedUrl
       });
-      setTicket(updated);
-      setReplies(updated.replies ? JSON.parse(updated.replies) : []);
+      setTicket(prev => ({ ...(prev || {}), ...(updated || {}), status: "OPEN" }));
+      if (updated?.replies) {
+        setReplies(typeof updated.replies === "string" ? JSON.parse(updated.replies) : updated.replies);
+      }
       setReplyMessage("");
       setReplyImage(null);
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
@@ -207,6 +211,29 @@ export default function SupportTicketDetailsScreen({ route, navigation }) {
     );
   };
 
+  const handleReopenTicket = () => {
+    Alert.alert(
+      "Reopen Support Ticket",
+      "Would you like to reopen this ticket so support agents can assist further?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Reopen Ticket",
+          onPress: async () => {
+            setLoading(true);
+            try {
+              await reopenSupportTicket(ticketId);
+            } catch (_) {}
+            setTicket(prev => ({ ...prev, status: "OPEN" }));
+            setLoading(false);
+            Alert.alert("Reopened", "Support ticket is now open again.");
+            loadTicketData();
+          }
+        }
+      ]
+    );
+  };
+
   const resolveImageUrl = (url) => {
     const placeholder = "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=300";
     if (!url) return placeholder;
@@ -229,6 +256,9 @@ export default function SupportTicketDetailsScreen({ route, navigation }) {
   }
 
   const isClosed = ticket.status === "CLOSED";
+  const isResolved = ticket.status === "RESOLVED";
+  const statusMeta = TICKET_STATUSES[String(ticket.status || "OPEN").toUpperCase()] || { label: ticket.status, color: "#6B7280", bg: "#F3F4F6" };
+  const ticketNumberDisplay = ticket.ticket_number || `#MG-${1000 + (ticket.id || 1)}`;
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
@@ -240,12 +270,16 @@ export default function SupportTicketDetailsScreen({ route, navigation }) {
           </TouchableOpacity>
           <View style={{ flex: 1, marginRight: 8 }}>
             <Text style={styles.headerTitle} numberOfLines={1}>{ticket.subject}</Text>
-            <Text style={styles.ticketCode}>Status: {ticket.status}</Text>
+            <Text style={styles.ticketCode}>{ticketNumberDisplay} • Status: {statusMeta.label}</Text>
           </View>
         </View>
-        {!isClosed && (
+        {!isClosed && !isResolved ? (
           <TouchableOpacity style={styles.closeTicketBtn} onPress={handleCloseTicket}>
             <Text style={styles.closeTicketBtnText}>Close Ticket</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={[styles.closeTicketBtn, { backgroundColor: Colors.primary || "#F7146B", borderColor: Colors.primary }]} onPress={handleReopenTicket}>
+            <Text style={[styles.closeTicketBtnText, { color: "#FFF" }]}>Reopen Ticket</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -262,8 +296,17 @@ export default function SupportTicketDetailsScreen({ route, navigation }) {
           ListHeaderComponent={
             <View style={styles.originalTicketCard}>
               <View style={styles.categoryRow}>
-                <Text style={styles.categoryLabel}>{ticket.category}</Text>
-                <Text style={styles.dateLabel}>{new Date(ticket.created_at || ticket.createdAt || Date.now()).toLocaleDateString()}</Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Text style={styles.categoryLabel}>{ticket.category || "General"}</Text>
+                  {ticket.priority && (
+                    <View style={{ backgroundColor: ticket.priority === "HIGH" ? "#FEE2E2" : (ticket.priority === "MEDIUM" ? "#FEF3C7" : "#D1FAE5"), paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 }}>
+                      <Text style={{ fontSize: 10, fontWeight: "700", color: ticket.priority === "HIGH" ? "#DC2626" : (ticket.priority === "MEDIUM" ? "#D97706" : "#059669") }}>
+                        {ticket.priority}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={styles.dateLabel}>{new Date(ticket.created_at || ticket.createdAt || Date.now()).toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</Text>
               </View>
               <Text style={styles.ticketSubject}>{ticket.subject}</Text>
               <Text style={styles.ticketDesc}>{ticket.description}</Text>

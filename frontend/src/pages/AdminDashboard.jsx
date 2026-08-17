@@ -2652,6 +2652,7 @@ const AdminDashboard = ({ showToast }) => {
                           <th style={{ padding: "0.75rem" }}>Contact</th>
                           <th style={{ padding: "0.75rem" }}>Subject & Category</th>
                           <th style={{ padding: "0.75rem" }}>Booking Ref</th>
+                          <th style={{ padding: "0.75rem", textAlign: "center" }}>Priority</th>
                           <th style={{ padding: "0.75rem" }}>Status</th>
                           <th style={{ padding: "0.75rem" }}>Date</th>
                           <th style={{ padding: "0.75rem", textAlign: "center" }}>Action</th>
@@ -2767,6 +2768,23 @@ const AdminDashboard = ({ showToast }) => {
                                 )}
                               </td>
 
+                              {/* Priority */}
+                              <td style={{ padding: "0.75rem", textAlign: "center" }}>
+                                <span
+                                  style={{
+                                    padding: "3px 8px",
+                                    borderRadius: "8px",
+                                    fontSize: "0.75rem",
+                                    fontWeight: 700,
+                                    background: (t.priority === "HIGH" ? "rgba(239, 68, 68, 0.15)" : (t.priority === "MEDIUM" ? "rgba(245, 158, 11, 0.15)" : "rgba(16, 185, 129, 0.15)")),
+                                    color: (t.priority === "HIGH" ? "#EF4444" : (t.priority === "MEDIUM" ? "#F59E0B" : "#10B981")),
+                                    border: `1px solid ${t.priority === "HIGH" ? "rgba(239, 68, 68, 0.3)" : (t.priority === "MEDIUM" ? "rgba(245, 158, 11, 0.3)" : "rgba(16, 185, 129, 0.3)")}`
+                                  }}
+                                >
+                                  {t.priority || "MEDIUM"}
+                                </span>
+                              </td>
+
                               {/* Status Dropdown */}
                               <td style={{ padding: "0.75rem" }}>
                                 <select
@@ -2785,6 +2803,7 @@ const AdminDashboard = ({ showToast }) => {
                                 >
                                   <option value="OPEN">🟡 OPEN</option>
                                   <option value="IN_PROGRESS">🔵 IN PROGRESS</option>
+                                  <option value="WAITING_FOR_USER">🟣 WAITING FOR USER</option>
                                   <option value="RESOLVED">🟢 RESOLVED</option>
                                   <option value="CLOSED">⚫ CLOSED</option>
                                 </select>
