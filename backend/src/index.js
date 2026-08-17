@@ -799,19 +799,26 @@ const addRoute = (method, path, handler) => {
     "",
     "/api",
     "/api/v1",
+    "/api/v1/customer",
+    "/api/v1/artist",
     "/api/v1/mehndigo",
+    "/api/v1/mehndigo/customer",
+    "/api/v1/mehndigo/artist",
+    "/customer",
+    "/artist",
     "/mehndigo",
     "/mehndigo/user",
     "/user",
     "/auth"
   ];
-  prefixes.forEach(prefix => {
-    const fullPath = prefix ? `${prefix}${path.startsWith("/") ? path : "/" + path}` : path;
-    if (m === "post") app.post(fullPath, handler);
-    else if (m === "get") app.get(fullPath, handler);
-    else if (m === "put") app.put(fullPath, handler);
-    else if (m === "delete") app.delete(fullPath, handler);
-    else app.all(fullPath, handler);
+  const cleanPath = path.startsWith("/") ? path : `/${path}`;
+  const seen = new Set();
+  prefixes.forEach((prefix) => {
+    const fullPath = `${prefix}${cleanPath}`.replace(/\/+/g, "/");
+    if (!seen.has(fullPath) && app[m]) {
+      seen.add(fullPath);
+      app[m](fullPath, handler);
+    }
   });
 };
 
@@ -1038,7 +1045,21 @@ const handleUpdateProfile = async (c) => {
 const handlePendingPayment = async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c) || { id: 1 };
-  const pending = await db.first("SELECT * FROM bookings WHERE customer_id = ? AND (payment_status = 'PARTIALLY_PAID' OR status = 'pending' OR (status = 'CONFIRMED' AND remaining_amount > 0)) ORDER BY id DESC", [u.id]).catch(() => null);
+  const pending = await db.first(`
+    SELECT * FROM bookings 
+    WHERE (customer_id = ? OR CAST(customer_id AS TEXT) = ?)
+      AND (
+        detailed_status = 'AWAITING_CASH_CONFIRMATION' 
+        OR detailed_status = 'SETTLEMENT_PENDING'
+        OR (status = 'completed' AND remaining_amount > 0)
+      )
+      AND remaining_amount > 0 
+      AND payment_status != 'PAID' 
+      AND payment_status != 'COMPLETED'
+      AND status != 'cancelled'
+    ORDER BY id DESC LIMIT 1
+  `, [u.id, String(u.id)]).catch(() => null);
+
   if (!pending) {
     return jsonRes(c, true, null, "No pending payment");
   }
@@ -1051,7 +1072,11 @@ const handlePendingPayment = async (c) => {
   const calc = calculateBookingAmounts(baseServiceAmount, distanceKm, travelCharge, isTravelConfirmed, pending, settings);
 
   const advancePaidVal = Number(pending.advance_paid || calc.required_advance);
-  const remainingVal = Math.max(0, calc.customer_total_amount - advancePaidVal);
+  const remainingVal = Math.max(0, Number(pending.remaining_amount || (calc.customer_total_amount - advancePaidVal)));
+
+  if (remainingVal <= 0) {
+    return jsonRes(c, true, null, "No pending payment");
+  }
 
   return jsonRes(c, true, {
     ...pending,
@@ -2297,13 +2322,19 @@ const enrichArtistRecords = async (db, artistsList) => {
       [artistUserId, String(artistUserId), profileId, String(profileId)]
     ).catch(() => []);
     art.portfolio_images = portfolios.map(p => ({ url: p.image_url }));
-    art.portfolio = art.portfolio_images;
+    // 5. Accurate Real Reviews & Rating Calculation from DB (Only Admin Approved Reviews)
+    const reviewStats = await db.first(
+      "SELECT AVG(rating) as avg_val, COUNT(*) as rev_count FROM reviews WHERE (artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT) OR artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT)) AND (status = 'APPROVED' OR is_approved = 1)",
+      [artistUserId, String(artistUserId), profileId, String(profileId)]
+    ).catch(() => null);
 
-    // 5. Rating & Location Defaults
-    art.rating = art.rating ? Number(art.rating) : 4.8;
-    art.avg_rating = art.rating;
-    art.total_reviews = art.total_reviews ? Number(art.total_reviews) : 12;
-    art.experience_years = art.experience_years ? Number(art.experience_years) : 3;
+    const dbReviewsCount = Number(reviewStats?.rev_count || 0);
+    const dbAvgRating = dbReviewsCount > 0 ? Number(Number(reviewStats.avg_val).toFixed(1)) : (art.rating ? Number(art.rating) : (art.avg_rating ? Number(art.avg_rating) : 0));
+
+    art.rating = dbAvgRating;
+    art.avg_rating = dbAvgRating;
+    art.total_reviews = dbReviewsCount || (art.total_reviews ? Number(art.total_reviews) : 0);
+    art.experience_years = art.experience_years ? Number(art.experience_years) : 2;
     art.city = art.city || "Jaipur";
     art.locality = art.locality || "Malviya Nagar";
     art.verification_status = art.status || "APPROVED";
@@ -2906,97 +2937,23 @@ const handleCustomerDynamic = async (c) => {
     }
   }
   // -------------------------------------------------------------
-  // 3. REVIEWS & RATINGS
+  // 3. REVIEWS & RATINGS (WITH ADMIN MODERATION)
   // -------------------------------------------------------------
+  if (path.includes("admin/review")) {
+    if (path.includes("approve")) return handleAdminApproveReview(c);
+    if (path.includes("reject")) return handleAdminRejectReview(c);
+    return handleAdminGetReviews(c);
+  }
+
   if (path.includes("review")) {
-    const db = getDb(c.env);
-    await db.run("CREATE TABLE IF NOT EXISTS reviews (id INTEGER PRIMARY KEY AUTOINCREMENT, booking_id INTEGER, customer_id INTEGER, artist_id INTEGER, rating REAL, comment TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)").catch(() => { });
-    await db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_booking_customer ON reviews(booking_id, customer_id)").catch(() => { });
-
-    if (method === "GET") {
-      const qArtist = c.req.query("artistId") || c.req.query("artist_id");
-      let sql = `
-        SELECT r.id, r.booking_id, r.customer_id, r.artist_id, r.rating, r.comment, r.created_at,
-               COALESCE(NULLIF(u.full_name, ''), 'Customer') as customer_name,
-               u.profile_image as customer_avatar
-        FROM reviews r
-        LEFT JOIN users u ON (r.customer_id = u.id OR CAST(r.customer_id AS TEXT) = CAST(u.id AS TEXT))
-      `;
-      const params = [];
-      if (qArtist) {
-        sql += " WHERE r.artist_id = ? OR CAST(r.artist_id AS TEXT) = CAST(? AS TEXT)";
-        params.push(qArtist, String(qArtist));
-      }
-      sql += " ORDER BY r.id DESC LIMIT 50";
-      const reviews = await db.all(sql, params).catch(() => []);
-      return jsonRes(c, true, reviews || [], "Reviews retrieved");
+    if (path.includes("upload") || path.includes("media")) {
+      return handleUploadChatMedia(c);
     }
-
+    if (method === "GET") {
+      return handleGetArtistReviews(c);
+    }
     if (method === "POST") {
-      if (!u || !u.id) return jsonRes(c, false, null, "Unauthorized access", 401);
-      const body = await c.req.json().catch(() => ({}));
-      const bookingId = Number(body.bookingId || body.booking_id || 0);
-      const rating = Number(body.rating || body.stars || 0);
-      const comment = body.comment || body.review || body.review_text || "";
-
-      if (!rating || rating < 1 || rating > 5) {
-        return jsonRes(c, false, null, "Rating must be a number between 1 and 5", 400);
-      }
-
-      if (!bookingId) {
-        return jsonRes(c, false, null, "Booking ID is required for review", 400);
-      }
-
-      const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, bookingId]).catch(() => null);
-      if (!booking) {
-        return jsonRes(c, false, null, "Booking not found", 404);
-      }
-
-      const isCustomer = String(booking.customer_id) === String(u.id);
-      if (!isCustomer) {
-        return jsonRes(c, false, null, "Unauthorized: You do not own this booking", 403);
-      }
-
-      const bookingSt = String(booking.status || "").toUpperCase();
-      if (!["COMPLETED", "COMPLETED_CLOSED", "AWAITING_CASH_CONFIRMATION"].includes(bookingSt)) {
-        return jsonRes(c, false, null, "Reviews are allowed only for completed bookings", 400);
-      }
-
-      const existing = await db.first("SELECT id FROM reviews WHERE booking_id = ? AND customer_id = ?", [bookingId, u.id]).catch(() => null);
-      if (existing) {
-        return jsonRes(c, false, null, "Review already submitted for this booking", 400);
-      }
-
-      const targetArtistId = booking.artist_id;
-
-      await db.run(
-        "INSERT INTO reviews (booking_id, customer_id, artist_id, rating, comment) VALUES (?, ?, ?, ?, ?)",
-        [bookingId, u.id, targetArtistId, rating, comment]
-      );
-
-      const stats = await db.first(
-        "SELECT AVG(rating) as avg_rating, COUNT(*) as count FROM reviews WHERE artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT)",
-        [targetArtistId, String(targetArtistId)]
-      ).catch(() => null);
-
-      let newRating = rating;
-      let count = 1;
-      if (stats) {
-        newRating = Number(Number(stats.avg_rating || rating).toFixed(1));
-        count = Number(stats.count || 1);
-        await db.run(
-          "UPDATE artist_profiles SET rating = ?, total_reviews = ? WHERE user_id = ? OR id = ?",
-          [newRating, count, targetArtistId, targetArtistId]
-        ).catch(() => { });
-      }
-
-      return jsonRes(c, true, {
-        booking_id: bookingId,
-        artist_id: targetArtistId,
-        rating: newRating,
-        total_reviews: count,
-        comment
-      }, "Review submitted successfully");
+      return handleCreateReview(c);
     }
   }
 
@@ -3177,72 +3134,53 @@ const handleCustomerDynamic = async (c) => {
       }
       const bookingTotal = Number(booking?.total_amount || booking?.final_amount || 378.00);
 
-      const advancePaid = Math.round(bookingTotal * 0.10);
-      const remainingAmount = Math.max(0, Math.round((bookingTotal - advancePaid) * 100) / 100);
+      // Check payment order record for actual transaction amount
+      const payRecord = await db.first("SELECT amount FROM payments WHERE razorpay_order_id = ? ORDER BY id DESC LIMIT 1", [orderId]).catch(() => null);
+      const paidOrderAmount = Number(payRecord?.amount || 0);
+
+      const existingAdvance = Number(booking?.advance_paid || 0);
+      const isSettlement = (body.isSettlement === true || body.is_settlement === true || String(body.purpose).includes("remaining") || String(body.payment_mode).includes("REMAINING") || String(body.payment_mode).includes("FULL"));
+      
+      let newAdvancePaid = existingAdvance > 0 ? (existingAdvance + (paidOrderAmount || 0)) : (paidOrderAmount || Math.round(bookingTotal * 0.10));
+      if (newAdvancePaid >= bookingTotal || isSettlement || paidOrderAmount >= bookingTotal * 0.8) {
+        newAdvancePaid = bookingTotal;
+      }
+      
+      const remainingAmount = Math.max(0, Math.round((bookingTotal - newAdvancePaid) * 100) / 100);
       const isFullyPaid = remainingAmount <= 0;
       const paymentStatus = isFullyPaid ? "PAID" : "PARTIAL";
       const platformCommission = Math.round(bookingTotal * PLATFORM_COMMISSION_RATE * 100) / 100;
       const artistEarning = Math.round((bookingTotal - platformCommission) * 100) / 100;
 
-      if (booking && (booking.status === 'confirmed' || booking.payment_status === 'PAID' || booking.payment_status === 'PARTIAL' || booking.payment_status === 'partial' || booking.payment_status === 'completed')) {
-        return jsonRes(c, true, {
-          booking_id: booking.id || bookingId,
-          status: booking.status || "confirmed",
-          payment_status: isFullyPaid ? "PAID" : (booking.payment_status || "PARTIAL"),
-          advance_paid: advancePaid,
-          remaining_amount: remainingAmount,
-          total_amount: bookingTotal,
-          platform_commission: platformCommission,
-          artist_earning: artistEarning,
-          escrow_status: "HELD_IN_ESCROW",
-          available_balance_added: 0,
-          payment_id: paymentId
-        }, "Payment already processed");
-      }
-
-      const existingPayment = await db.first("SELECT * FROM payments WHERE razorpay_payment_id = ? OR (booking_id = ? AND status = 'completed')", [paymentId, bookingId]).catch(() => null);
-      if (existingPayment) {
-        return jsonRes(c, true, {
-          booking_id: bookingId,
-          status: "confirmed",
-          payment_status: isFullyPaid ? "PAID" : "PARTIAL",
-          advance_paid: advancePaid,
-          remaining_amount: remainingAmount,
-          total_amount: bookingTotal,
-          platform_commission: platformCommission,
-          artist_earning: artistEarning,
-          escrow_status: "HELD_IN_ESCROW",
-          available_balance_added: 0,
-          payment_id: paymentId
-        }, "Payment already processed");
-      }
-
       await db.run(
-        "UPDATE bookings SET status = 'confirmed', payment_status = ?, advance_paid = ?, remaining_amount = ? WHERE id = ?",
-        [paymentStatus, advancePaid, remainingAmount, bookingId]
+        "UPDATE bookings SET status = CASE WHEN status = 'completed' THEN 'completed' ELSE 'confirmed' END, payment_status = ?, advance_paid = ?, remaining_amount = ?, detailed_status = CASE WHEN ? = 1 THEN 'PAYMENT_COMPLETED' ELSE detailed_status END WHERE id = ?",
+        [paymentStatus, newAdvancePaid, remainingAmount, isFullyPaid ? 1 : 0, bookingId]
       );
 
       await db.run(
         "INSERT INTO payments (booking_id, razorpay_order_id, razorpay_payment_id, amount, currency, status, payment_method) VALUES (?, ?, ?, ?, 'INR', 'completed', 'upi')",
-        [bookingId, orderId, paymentId, advancePaid]
+        [bookingId, orderId, paymentId, paidOrderAmount || newAdvancePaid]
       ).catch(() => { });
 
-      // Automatically create artist Escrow transaction (Held in Escrow, Available = ₹0)
-      const escrowResult = await processBookingEscrow(db, bookingId, paymentId, advancePaid);
+      if (isFullyPaid) {
+        await processBookingSettlement(db, bookingId);
+      } else {
+        await processBookingEscrow(db, bookingId, paymentId, newAdvancePaid);
+      }
 
       return jsonRes(c, true, {
         booking_id: bookingId,
         payment_status: paymentStatus,
-        status: "confirmed",
-        advance_paid: advancePaid,
+        status: booking?.status === 'completed' ? 'completed' : 'confirmed',
+        advance_paid: newAdvancePaid,
         remaining_amount: remainingAmount,
         total_amount: bookingTotal,
         platform_commission: platformCommission,
         artist_earning: artistEarning,
-        escrow_status: "HELD_IN_ESCROW",
+        escrow_status: isFullyPaid ? "SETTLED" : "HELD_IN_ESCROW",
         available_balance_added: 0,
         payment_id: paymentId
-      }, "Payment verified successfully and earnings placed in escrow");
+      }, "Payment verified successfully");
     }
   }
 
@@ -3343,6 +3281,34 @@ const handleCustomerDynamic = async (c) => {
       const artistUser = await db.first("SELECT full_name, phone FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [booking.artist_id, booking.artist_id]).catch(() => null);
       const artistProfile = await db.first("SELECT profile_image, city FROM artist_profiles WHERE user_id = ? OR CAST(user_id AS TEXT) = CAST(? AS TEXT)", [booking.artist_id, booking.artist_id]).catch(() => null);
       const customerUser = await db.first("SELECT full_name, phone, email, avatar FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [booking.customer_id, booking.customer_id]).catch(() => null);
+      const artistLoc = await db.first("SELECT * FROM artist_locations WHERE artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT)", [booking.artist_id, String(booking.artist_id)]).catch(() => null);
+
+      // Lazy generate 4-digit Check-In OTP and Completion PIN if not yet generated
+      let checkinOtp = booking.checkin_otp;
+      let checkoutOtp = booking.checkout_otp;
+      if (!checkinOtp || !checkoutOtp) {
+        checkinOtp = checkinOtp || Math.floor(1000 + Math.random() * 9000).toString();
+        checkoutOtp = checkoutOtp || Math.floor(1000 + Math.random() * 9000).toString();
+        await db.run("UPDATE bookings SET checkin_otp = ?, checkout_otp = ? WHERE id = ?", [checkinOtp, checkoutOtp, booking.id]).catch(() => { });
+        booking.checkin_otp = checkinOtp;
+        booking.checkout_otp = checkoutOtp;
+      }
+
+      const custLat = Number(booking.latitude || 26.9124);
+      const custLng = Number(booking.longitude || 75.7873);
+      const artLat = artistLoc ? Number(artistLoc.latitude) : null;
+      const artLng = artistLoc ? Number(artistLoc.longitude) : null;
+
+      let distanceMeters = null;
+      let etaMins = null;
+      if (artLat && artLng && custLat && custLng) {
+        const R = 6371000;
+        const dLat = (custLat - artLat) * Math.PI / 180;
+        const dLng = (custLng - artLng) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(artLat * Math.PI / 180) * Math.cos(custLat * Math.PI / 180) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        distanceMeters = Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+        etaMins = Math.max(1, Math.round(distanceMeters / 400));
+      }
 
       const service = await db.first("SELECT title, duration, price FROM services WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [booking.service_id, booking.service_id]).catch(() => null);
       const servicePriceVal = Number(service?.price || booking.total_amount || 0);
@@ -3368,6 +3334,8 @@ const handleCustomerDynamic = async (c) => {
 
       const normalizedBookingStatus = (normalizedDetailedStatus === "ARTIST_ACCEPTED" || rawStatusStr === "ACCEPTED" || rawStatusStr === "ARTIST_ACCEPTED") ? "CONFIRMED" : rawStatusStr;
 
+      const isArtistRequester = u && (u.id === booking.artist_id || u.role === "artist" || path.includes("/artist/"));
+
       return jsonRes(c, true, {
         ...booking,
         booking_id: booking.id,
@@ -3379,10 +3347,48 @@ const handleCustomerDynamic = async (c) => {
         bookingStatus: normalizedBookingStatus,
         detailed_status: normalizedDetailedStatus,
         detailedStatus: normalizedDetailedStatus,
+        checkin_otp: isArtistRequester ? null : checkinOtp,
+        checkin_code: isArtistRequester ? null : checkinOtp,
+        checkout_otp: isArtistRequester ? null : checkoutOtp,
+        completion_pin: isArtistRequester ? null : checkoutOtp,
+        completionPin: isArtistRequester ? null : checkoutOtp,
+        latitude: custLat,
+        longitude: custLng,
+        customer_coords: {
+          lat: custLat,
+          lng: custLng,
+          latitude: custLat,
+          longitude: custLng
+        },
+        artist_coords: artistLoc ? {
+          lat: artLat,
+          lng: artLng,
+          latitude: artLat,
+          longitude: artLng,
+          speed: Number(artistLoc.speed || 0),
+          heading: Number(artistLoc.heading || 0),
+          updatedAt: artistLoc.updated_at
+        } : null,
+        distance_meters: distanceMeters,
+        distance_km: distanceMeters !== null ? (distanceMeters / 1000).toFixed(1) : null,
+        eta_mins: etaMins,
         artist_name: artistUser?.full_name || "Mehndi Specialist",
         artist_phone: artistUser?.phone || null,
         artist_image: artistProfile?.profile_image || null,
         artist_city: artistProfile?.city || "",
+        artist: {
+          id: booking.artist_id,
+          user_id: booking.artist_id,
+          name: artistUser?.full_name || "Mehndi Specialist",
+          phone: artistUser?.phone || null,
+          profile_image: artistProfile?.profile_image || null,
+          city: artistProfile?.city || "",
+          user: {
+            name: artistUser?.full_name || "Mehndi Specialist",
+            phone: artistUser?.phone || null,
+            profile_image: artistProfile?.profile_image || null
+          }
+        },
         customer_name: custName,
         customer_phone: custPhone,
         customer_email: custEmail,
@@ -3396,7 +3402,14 @@ const handleCustomerDynamic = async (c) => {
           phone: custPhone,
           email: custEmail,
           avatar: custAvatar,
-          profile_image: custAvatar
+          profile_image: custAvatar,
+          user: {
+            name: custName,
+            phone: custPhone,
+            email: custEmail,
+            avatar: custAvatar,
+            profile_image: custAvatar
+          }
         },
         user: {
           id: booking.customer_id,
@@ -3736,16 +3749,8 @@ const handleCustomerDynamic = async (c) => {
       return jsonRes(c, true, portfolio || []);
     }
 
-    if (path.includes("/reviews")) {
-      const artistId = parseInt(parts[parts.length - 2], 10) || targetId;
-      const reviews = await db.all(`
-        SELECT r.*, u.full_name as customer_name, u.avatar as customer_avatar
-        FROM reviews r
-        LEFT JOIN users u ON r.customer_id = u.id
-        WHERE r.artist_id = ? OR CAST(r.artist_id AS TEXT) = CAST(? AS TEXT)
-        ORDER BY r.id DESC
-      `, [artistId, artistId]).catch(() => []);
-      return jsonRes(c, true, reviews || []);
+    if (path.includes("/reviews") || path.includes("review")) {
+      return handleGetArtistReviews(c);
     }
 
     if (path.includes("/availability")) {
@@ -4164,20 +4169,6 @@ const handleCreateArtistPortfolio = async (c) => {
   };
 
   return jsonRes(c, true, newItem, "Portfolio item created successfully");
-};
-
-const handleGetArtistReviews = async (c) => {
-  const db = getDb(c.env);
-  const u = getUserFromHeader(c);
-  if (!u || !u.id) {
-    return jsonRes(c, false, null, "Unauthorized access", 401);
-  }
-  try {
-    const list = await db.all("SELECT * FROM reviews WHERE artist_id = ? ORDER BY id DESC", [u.id]);
-    return jsonRes(c, true, list || []);
-  } catch (e) {
-    return jsonRes(c, true, []);
-  }
 };
 
 const handleCreateArtistService = async (c) => {
@@ -4717,7 +4708,19 @@ app.get("/api/v1/debug/location/:artistId", async (c) => {
   app.all(p, handleCustomerDynamic);
 });
 
-["/api/v1/mehndigo/category/list", "/api/v1/mehndigo/category/admin/list", "/api/category/list"].forEach(p => app.get(p, getCategories));
+[
+  "/category",
+  "/category/list",
+  "/api/category",
+  "/api/category/list",
+  "/api/v1/category",
+  "/api/v1/category/list",
+  "/api/v1/mehndigo/category",
+  "/api/v1/mehndigo/category/list",
+  "/api/v1/mehndigo/category/admin/list",
+  "/customer/categories",
+  "/api/v1/customer/categories"
+].forEach(p => app.get(p, getCategories));
 
 app.post("/api/v1/mehndigo/category/admin", async (c) => {
   const db = getDb(c.env);
@@ -4969,16 +4972,379 @@ const handleAdminAnalyticsDashboard = async (c) => {
   });
 };
 
+// ==========================================
+// CHAT & CUSTOMER SUPPORT SYSTEM (REAL-TIME)
+// ==========================================
+
+const ensureChatTables = async (db) => {
+  await db.run(`
+    CREATE TABLE IF NOT EXISTS messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sender_id INTEGER NOT NULL,
+      receiver_id INTEGER NOT NULL,
+      booking_id INTEGER,
+      message TEXT NOT NULL,
+      message_type TEXT DEFAULT 'TEXT',
+      media_url TEXT,
+      is_read INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).catch(() => {});
+
+  await db.run(`
+    CREATE TABLE IF NOT EXISTS support_tickets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      booking_id INTEGER,
+      category TEXT DEFAULT 'Other',
+      subject TEXT NOT NULL,
+      description TEXT NOT NULL,
+      priority TEXT DEFAULT 'LOW',
+      status TEXT DEFAULT 'OPEN',
+      attachments TEXT,
+      replies TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).catch(() => {});
+};
+
+// 1. Get List of Active Conversations for Current User
+const handleGetChatList = async (c) => {
+  const db = getDb(c.env);
+  const u = getUserFromHeader(c);
+  if (!u || !u.id) return jsonRes(c, false, null, "Authentication required", 401);
+  await ensureChatTables(db);
+
+  // Find all distinct participants the user has chatted with
+  const convos = await db.all(`
+    SELECT DISTINCT 
+      CASE WHEN sender_id = ? THEN receiver_id ELSE sender_id END as peer_id,
+      MAX(id) as last_msg_id
+    FROM messages
+    WHERE sender_id = ? OR receiver_id = ?
+    GROUP BY peer_id
+    ORDER BY last_msg_id DESC
+  `, [u.id, u.id, u.id]).catch(() => []);
+
+  const chatList = [];
+  for (const cRow of (convos || [])) {
+    const peerId = cRow.peer_id;
+    const peerUser = await db.first(
+      "SELECT id, full_name, name, email, phone, role, profile_image FROM users WHERE id = ? OR CAST(id AS TEXT) = ?",
+      [peerId, String(peerId)]
+    ).catch(() => null);
+
+    const lastMsg = await db.first(
+      "SELECT * FROM messages WHERE id = ?",
+      [cRow.last_msg_id]
+    ).catch(() => null);
+
+    const unreadCountRow = await db.first(
+      "SELECT COUNT(*) as count FROM messages WHERE sender_id = ? AND receiver_id = ? AND is_read = 0",
+      [peerId, u.id]
+    ).catch(() => ({ count: 0 }));
+
+    chatList.push({
+      id: peerId,
+      bookingId: lastMsg?.booking_id || null,
+      bookingCode: peerUser?.role === 'admin' || peerUser?.role === 'ADMIN' ? 'ADMIN' : (lastMsg?.booking_id ? `BK-${lastMsg.booking_id}` : 'DIRECT'),
+      name: peerUser?.full_name || peerUser?.name || (peerId === 1 ? "Support Admin" : `User #${peerId}`),
+      recipient: {
+        id: peerId,
+        name: peerUser?.full_name || peerUser?.name || (peerId === 1 ? "Support Admin" : `User #${peerId}`),
+        role: (peerUser?.role || (peerId === 1 ? "ADMIN" : "CUSTOMER")).toUpperCase(),
+        profile_image: peerUser?.profile_image || null,
+        phone: peerUser?.phone || null
+      },
+      lastMessage: lastMsg?.message || "",
+      lastMessageTime: lastMsg?.created_at || new Date().toISOString(),
+      unreadCount: Number(unreadCountRow?.count || 0)
+    });
+  }
+
+  // If chat list is empty, provide Support Chat channel as a default option
+  if (chatList.length === 0) {
+    chatList.push({
+      id: 1,
+      bookingId: null,
+      bookingCode: 'SUPPORT',
+      name: 'MehndiGo Support Admin',
+      recipient: {
+        id: 1,
+        name: 'MehndiGo Support Admin',
+        role: 'ADMIN',
+        profile_image: null,
+        phone: '+91 98765 43210'
+      },
+      lastMessage: 'Hello! How can we assist you with your Mehndi bookings today?',
+      lastMessageTime: new Date().toISOString(),
+      unreadCount: 0
+    });
+  }
+
+  return jsonRes(c, true, chatList, "Chat conversations fetched");
+};
+
+// 2. Get Chronological Chat History with a Specific User or Booking
+const handleGetChatHistory = async (c) => {
+  const db = getDb(c.env);
+  const u = getUserFromHeader(c);
+  if (!u || !u.id) return jsonRes(c, false, null, "Authentication required", 401);
+  await ensureChatTables(db);
+
+  const rawTarget = c.req.param("id") || c.req.param("receiverId") || c.req.query("receiverId") || c.req.query("bookingId") || "1";
+  const targetId = Number(rawTarget) || 1;
+  const bookingIdParam = Number(c.req.query("bookingId") || 0);
+
+  let messages = [];
+  if (bookingIdParam > 0) {
+    messages = await db.all(`
+      SELECT m.*, 
+        u_sender.full_name as sender_name, u_sender.role as sender_role, u_sender.profile_image as sender_avatar,
+        u_recv.full_name as receiver_name, u_recv.role as receiver_role
+      FROM messages m
+      LEFT JOIN users u_sender ON m.sender_id = u_sender.id
+      LEFT JOIN users u_recv ON m.receiver_id = u_recv.id
+      WHERE m.booking_id = ?
+      ORDER BY m.id ASC
+    `, [bookingIdParam]).catch(() => []);
+  } else {
+    messages = await db.all(`
+      SELECT m.*, 
+        u_sender.full_name as sender_name, u_sender.role as sender_role, u_sender.profile_image as sender_avatar,
+        u_recv.full_name as receiver_name, u_recv.role as receiver_role
+      FROM messages m
+      LEFT JOIN users u_sender ON m.sender_id = u_sender.id
+      LEFT JOIN users u_recv ON m.receiver_id = u_recv.id
+      WHERE (m.sender_id = ? AND m.receiver_id = ?) OR (m.sender_id = ? AND m.receiver_id = ?)
+      ORDER BY m.id ASC
+    `, [u.id, targetId, targetId, u.id]).catch(() => []);
+  }
+
+  // Mark all incoming messages from this target as read
+  await db.run(
+    "UPDATE messages SET is_read = 1 WHERE sender_id = ? AND receiver_id = ? AND is_read = 0",
+    [targetId, u.id]
+  ).catch(() => {});
+
+  const formattedMessages = (messages || []).map((m) => ({
+    id: m.id,
+    senderId: m.sender_id,
+    sender_id: m.sender_id,
+    receiverId: m.receiver_id,
+    receiver_id: m.receiver_id,
+    bookingId: m.booking_id,
+    booking_id: m.booking_id,
+    message: m.message,
+    text: m.message,
+    messageType: m.message_type || 'TEXT',
+    message_type: m.message_type || 'TEXT',
+    mediaUrl: m.media_url,
+    media_url: m.media_url,
+    isRead: Boolean(m.is_read),
+    is_read: Boolean(m.is_read),
+    isMe: m.sender_id === u.id,
+    timestamp: m.created_at || new Date().toISOString(),
+    created_at: m.created_at || new Date().toISOString(),
+    senderName: m.sender_name || (m.sender_id === 1 ? "Admin" : `User #${m.sender_id}`)
+  }));
+
+  return jsonRes(c, true, formattedMessages, "Chat history retrieved");
+};
+
+// 3. Send New Chat Message
+const handleSendChatMessage = async (c) => {
+  const db = getDb(c.env);
+  const u = getUserFromHeader(c);
+  if (!u || !u.id) return jsonRes(c, false, null, "Authentication required", 401);
+  await ensureChatTables(db);
+
+  const body = await c.req.json().catch(() => ({}));
+  const rawReceiver = body.receiver_id || body.receiverId || body.toUserId || body.targetId || (body.bookingCode === 'ADMIN' ? 1 : 1);
+  const receiverId = Number(rawReceiver) || 1;
+  const bookingId = Number(body.booking_id || body.bookingId || 0) || null;
+  const message = String(body.message || body.text || body.content || "").trim();
+  const messageType = String(body.message_type || body.messageType || (body.media_url || body.mediaUrl ? "IMAGE" : "TEXT")).toUpperCase();
+  const mediaUrl = body.media_url || body.mediaUrl || body.file_url || body.url || null;
+
+  if (!message && !mediaUrl) {
+    return jsonRes(c, false, null, "Message text or media is required", 400);
+  }
+
+  const result = await db.run(`
+    INSERT INTO messages (sender_id, receiver_id, booking_id, message, message_type, media_url, is_read, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+  `, [u.id, receiverId, bookingId, message || (messageType === 'IMAGE' ? '[Photo Attachment]' : '[Attachment]'), messageType, mediaUrl]);
+
+  const insertedId = result?.lastInsertRowid || result?.meta?.last_row_id || Date.now();
+
+  const newMsg = {
+    id: insertedId,
+    senderId: u.id,
+    sender_id: u.id,
+    receiverId,
+    receiver_id: receiverId,
+    bookingId,
+    booking_id: bookingId,
+    message: message || (messageType === 'IMAGE' ? '[Photo Attachment]' : '[Attachment]'),
+    text: message || (messageType === 'IMAGE' ? '[Photo Attachment]' : '[Attachment]'),
+    messageType,
+    message_type: messageType,
+    mediaUrl,
+    media_url: mediaUrl,
+    isRead: false,
+    is_read: false,
+    isMe: true,
+    timestamp: new Date().toISOString(),
+    created_at: new Date().toISOString(),
+    senderName: u.full_name || u.name || "Me"
+  };
+
+  // Trigger system notification to receiver
+  await db.run(
+    "INSERT INTO notifications (user_id, title, message, type, is_read) VALUES (?, ?, ?, 'MESSAGE', 0)",
+    [receiverId, `New Message from ${u.full_name || u.name || 'User'}`, message ? (message.length > 50 ? message.substring(0, 47) + "..." : message) : "Sent an attachment"]
+  ).catch(() => {});
+
+  return jsonRes(c, true, newMsg, "Message sent successfully");
+};
+
+// 4. Get Total Unread Message Count
+const handleGetUnreadCounts = async (c) => {
+  const db = getDb(c.env);
+  const u = getUserFromHeader(c);
+  if (!u || !u.id) return jsonRes(c, true, { count: 0, unreadCount: 0 });
+  await ensureChatTables(db);
+
+  const row = await db.first(
+    "SELECT COUNT(*) as unread_count FROM messages WHERE receiver_id = ? AND is_read = 0",
+    [u.id]
+  ).catch(() => ({ unread_count: 0 }));
+
+  const count = Number(row?.unread_count || 0);
+  return jsonRes(c, true, { count, unreadCount: count, totalUnread: count });
+};
+
+// 5. Mark Chat As Seen
+const handleMarkChatSeen = async (c) => {
+  const db = getDb(c.env);
+  const u = getUserFromHeader(c);
+  if (!u || !u.id) return jsonRes(c, true, { success: true });
+  await ensureChatTables(db);
+
+  const senderId = Number(c.req.param("senderId") || c.req.param("id") || 0);
+  if (senderId > 0) {
+    await db.run(
+      "UPDATE messages SET is_read = 1 WHERE sender_id = ? AND receiver_id = ?",
+      [senderId, u.id]
+    ).catch(() => {});
+  }
+
+  return jsonRes(c, true, { success: true }, "Chat marked as seen");
+};
+
+// 6. Admin Chat Activity Monitor
 const handleAdminChats = async (c) => {
   const db = getDb(c.env);
-  const list = await db.all(`
-    SELECT c.*, sender.full_name as sender_name, receiver.full_name as receiver_name
-    FROM chat_messages c
-    LEFT JOIN users sender ON c.sender_id = sender.id
-    LEFT JOIN users receiver ON c.receiver_id = receiver.id
-    ORDER BY c.id DESC LIMIT 50
+  await ensureChatTables(db);
+
+  const rows = await db.all(`
+    SELECT m.*, 
+      u_sender.full_name as sender_name, u_sender.role as sender_role, u_sender.profile_image as sender_avatar,
+      u_recv.full_name as receiver_name, u_recv.role as receiver_role, u_recv.profile_image as receiver_avatar
+    FROM messages m
+    LEFT JOIN users u_sender ON m.sender_id = u_sender.id
+    LEFT JOIN users u_recv ON m.receiver_id = u_recv.id
+    ORDER BY m.id DESC
+    LIMIT 100
   `).catch(() => []);
-  return jsonRes(c, true, list || []);
+
+  const formatted = (rows || []).map((m) => ({
+    id: m.id,
+    booking_id: m.booking_id,
+    message: m.message,
+    message_type: m.message_type || 'TEXT',
+    media_url: m.media_url,
+    is_read: Boolean(m.is_read),
+    created_at: m.created_at,
+    sender: {
+      id: m.sender_id,
+      name: m.sender_name || `User #${m.sender_id}`,
+      role: (m.sender_role || "CUSTOMER").toUpperCase(),
+      avatar: m.sender_avatar
+    },
+    receiver: {
+      id: m.receiver_id,
+      name: m.receiver_name || `User #${m.receiver_id}`,
+      role: (m.receiver_role || "ARTIST").toUpperCase(),
+      avatar: m.receiver_avatar
+    }
+  }));
+
+  return jsonRes(c, true, formatted, "Admin chats stream retrieved");
+};
+
+// 7. Customer Support Tickets Engine
+const handleCustomerSupportTicket = async (c) => {
+  const db = getDb(c.env);
+  const u = getUserFromHeader(c);
+  if (!u || !u.id) return jsonRes(c, false, null, "Authentication required", 401);
+  await ensureChatTables(db);
+
+  const method = c.req.method.toUpperCase();
+
+  if (method === "POST") {
+    const body = await c.req.json().catch(() => ({}));
+    const category = body.category || "Booking Issue";
+    const subject = body.subject || "Support Inquiry";
+    const description = body.description || body.message || "";
+    const bookingId = Number(body.booking_id || body.bookingId || 0) || null;
+    const attachments = body.attachments || body.attachmentUri || null;
+
+    if (!description && !subject) {
+      return jsonRes(c, false, null, "Subject and description are required", 400);
+    }
+
+    const res = await db.run(`
+      INSERT INTO support_tickets (user_id, booking_id, category, subject, description, priority, status, attachments, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 'MEDIUM', 'OPEN', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `, [u.id, bookingId, category, subject, description, attachments]);
+
+    const ticketId = res?.lastInsertRowid || res?.meta?.last_row_id || Date.now();
+
+    // Create a first message in chat table so support admin sees it immediately
+    await db.run(`
+      INSERT INTO messages (sender_id, receiver_id, booking_id, message, message_type, is_read, created_at)
+      VALUES (?, 1, ?, ?, 'SUPPORT_TICKET', 0, CURRENT_TIMESTAMP)
+    `, [u.id, bookingId, `[TICKET #${ticketId}] ${subject}: ${description}`]).catch(() => {});
+
+    // Notify Admins
+    await db.run(
+      "INSERT INTO notifications (user_id, title, message, type, is_read) VALUES (1, ?, ?, 'SUPPORT', 0)",
+      [`Support Ticket #${ticketId} Opened`, `${u.full_name || 'Customer'} opened ticket: ${subject}`]
+    ).catch(() => {});
+
+    return jsonRes(c, true, {
+      id: ticketId,
+      ticket_id: ticketId,
+      user_id: u.id,
+      category,
+      subject,
+      description,
+      status: "OPEN",
+      created_at: new Date().toISOString()
+    }, "Support ticket submitted successfully");
+  }
+
+  // GET user tickets
+  const tickets = await db.all(
+    "SELECT * FROM support_tickets WHERE user_id = ? OR CAST(user_id AS TEXT) = ? ORDER BY id DESC",
+    [u.id, String(u.id)]
+  ).catch(() => []);
+
+  return jsonRes(c, true, tickets || [], "Customer support tickets retrieved");
 };
 
 const handleAdminNotifications = async (c) => {
@@ -5358,7 +5724,28 @@ addRoute("get", "/artist/dashboard", handleGetArtistDashboard);
 addRoute("get", "/artist/details", handleGetArtistDetails);
 addRoute("get", "/artist/profile", handleGetArtistDetails);
 addRoute("get", "/artist/wallet", handleGetWallet);
-addRoute("get", "/wallet", handleGetWallet);
+// Chat & Messaging System Routes
+addRoute("get", "/chat/list", handleGetChatList);
+addRoute("get", "/chat/conversations", handleGetChatList);
+addRoute("get", "/chat/unread/counts", handleGetUnreadCounts);
+addRoute("get", "/chat/unread", handleGetUnreadCounts);
+addRoute("get", "/chat/:id", handleGetChatHistory);
+addRoute("get", "/chat/history/:id", handleGetChatHistory);
+addRoute("post", "/chat/send", handleSendChatMessage);
+addRoute("post", "/chat/message", handleSendChatMessage);
+addRoute("put", "/chat/seen/:senderId", handleMarkChatSeen);
+addRoute("post", "/chat/seen/:senderId", handleMarkChatSeen);
+
+// Support System Routes
+addRoute("get", "/customer/support/ticket", handleCustomerSupportTicket);
+addRoute("post", "/customer/support/ticket", handleCustomerSupportTicket);
+addRoute("get", "/customer/support/tickets", handleCustomerSupportTicket);
+addRoute("post", "/customer/support/tickets", handleCustomerSupportTicket);
+addRoute("get", "/support/ticket", handleCustomerSupportTicket);
+addRoute("post", "/support/ticket", handleCustomerSupportTicket);
+addRoute("get", "/support/tickets", handleCustomerSupportTicket);
+addRoute("post", "/support/tickets", handleCustomerSupportTicket);
+addRoute("get", "/admin/support/tickets", handleCustomerSupportTicket);
 
 // Referral & Reward System Routes
 addRoute("get", "/referral", handleGetReferralDashboard);
@@ -5395,49 +5782,305 @@ addRoute("post", "/bank-account", handleSaveBankAccount);
 addRoute("get", "/artist/bank-account", handleGetBankAccount);
 addRoute("post", "/artist/bank-account", handleSaveBankAccount);
 addRoute("get", "/wallet/bank-account", handleGetBankAccount);
+// ==========================================
+// REVIEW MODERATION & APPROVAL ENGINE
+// ==========================================
+
+const ensureReviewTables = async (db) => {
+  await db.run(`
+    CREATE TABLE IF NOT EXISTS reviews (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_id INTEGER,
+      artist_id INTEGER,
+      booking_id INTEGER,
+      rating REAL,
+      comment TEXT,
+      status TEXT DEFAULT 'PENDING',
+      is_approved INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).catch(() => {});
+
+  await db.run("ALTER TABLE reviews ADD COLUMN status TEXT DEFAULT 'PENDING'").catch(() => {});
+  await db.run("ALTER TABLE reviews ADD COLUMN is_approved INTEGER DEFAULT 0").catch(() => {});
+  await db.run("ALTER TABLE reviews ADD COLUMN customer_id INTEGER").catch(() => {});
+};
+
+// 1. Customer Submits Review (Defaults to PENDING until Admin Approval)
 const handleCreateReview = async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) return jsonRes(c, false, null, "Unauthorized access", 401);
-  const body = await c.req.json().catch(() => ({}));
-  const artistId = Number(body.artist_id || body.artistId || 0);
-  const bookingId = Number(body.booking_id || body.bookingId || 0);
-  const rating = Number(body.rating || 5);
-  const comment = String(body.comment || body.review || "Great experience!");
+  await ensureReviewTables(db);
 
-  await db.run("CREATE TABLE IF NOT EXISTS reviews (id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER, artist_id INTEGER, booking_id INTEGER, rating REAL, comment TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)").catch(() => { });
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const artistId = Number(body.artist_id || body.artistId || 0);
+    const bookingId = Number(body.booking_id || body.bookingId || 0);
+    const rating = Number(body.rating || 5);
+    const comment = String(body.comment || body.review || "Great experience!");
 
-  await db.run(
-    "INSERT INTO reviews (customer_id, artist_id, booking_id, rating, comment) VALUES (?, ?, ?, ?, ?)",
-    [u.id, artistId, bookingId, rating, comment]
-  );
+    let result = await db.run(`
+      INSERT INTO reviews (customer_id, artist_id, booking_id, rating, comment, status, is_approved, created_at)
+      VALUES (?, ?, ?, ?, ?, 'PENDING', 0, CURRENT_TIMESTAMP)
+    `, [u.id, artistId, bookingId, rating, comment]).catch(async (e) => {
+      // Fallback if schema has user_id instead of customer_id
+      return await db.run(`
+        INSERT INTO reviews (user_id, artist_id, booking_id, rating, comment, status, is_approved, created_at)
+        VALUES (?, ?, ?, ?, ?, 'PENDING', 0, CURRENT_TIMESTAMP)
+      `, [u.id, artistId, bookingId, rating, comment]).catch(() => null);
+    });
 
-  // Update artist profile rating and total_reviews
-  const stats = await db.first("SELECT AVG(rating) as avg_rating, COUNT(*) as total_count FROM reviews WHERE artist_id = ?", [artistId]).catch(() => ({ avg_rating: 5, total_count: 1 }));
-  const avgRating = Math.round(Number(stats?.avg_rating || 5) * 10) / 10;
-  const totalCount = Number(stats?.total_count || 1);
+    const reviewId = result?.lastInsertRowid || result?.meta?.last_row_id || Date.now();
 
-  await db.run(
-    "UPDATE artist_profiles SET rating = ?, total_reviews = ? WHERE user_id = ?",
-    [avgRating, totalCount, artistId]
-  ).catch(() => { });
+    // Notify Administrator about pending review
+    await db.run(
+      "INSERT INTO notifications (user_id, title, message, type, is_read) VALUES (1, ?, ?, 'REVIEW_MODERATION', 0)",
+      [
+        `Review #${reviewId} Awaiting Approval ⭐${rating}`,
+        `${u.full_name || 'Customer'} submitted a review for Artist #${artistId}. Please review and approve.`
+      ]
+    ).catch(() => {});
 
-  return jsonRes(c, true, {
-    customer_id: u.id,
-    artist_id: artistId,
-    booking_id: bookingId,
-    rating,
-    comment,
-    average_rating: avgRating,
-    total_reviews: totalCount
-  }, "Review submitted successfully");
+    return jsonRes(c, true, {
+      id: reviewId,
+      customer_id: u.id,
+      artist_id: artistId,
+      booking_id: bookingId,
+      rating,
+      comment,
+      status: "PENDING",
+      is_approved: false
+    }, "Review submitted successfully! It will be visible on the artist profile once approved by admin.");
+  } catch (err) {
+    return jsonRes(c, false, null, "Failed to submit review: " + err.message, 500);
+  }
 };
 
+// 2. Get Public Approved Reviews for an Artist
+const handleGetArtistReviews = async (c) => {
+  const db = getDb(c.env);
+  await ensureReviewTables(db);
+
+  let artistIdStr = "";
+  try {
+    const url = new URL(c.req.url);
+    artistIdStr = c.req.query("artist_id") ||
+      c.req.query("artistId") ||
+      url.searchParams.get("artist_id") ||
+      url.searchParams.get("artistId") ||
+      (c.req.param ? c.req.param("id") : "") ||
+      "";
+  } catch (_) {
+    artistIdStr = c.req.query("artist_id") || c.req.query("artistId") || "";
+  }
+
+  const artistId = Number(artistIdStr) || 0;
+
+  let reviews = [];
+  if (artistId > 0) {
+    reviews = await db.all(`
+      SELECT r.*, 
+        COALESCE(u.full_name, u.name, 'Verified Customer') as customer_name, 
+        u.profile_image as customer_avatar
+      FROM reviews r
+      LEFT JOIN users u ON (r.customer_id = u.id OR r.user_id = u.id)
+      WHERE (r.artist_id = ? OR CAST(r.artist_id AS TEXT) = ?)
+        AND (r.status = 'APPROVED' OR r.is_approved = 1)
+      ORDER BY r.id DESC
+    `, [artistId, String(artistId)]).catch(() => []);
+  } else {
+    reviews = await db.all(`
+      SELECT r.*, 
+        COALESCE(u.full_name, u.name, 'Verified Customer') as customer_name, 
+        u.profile_image as customer_avatar
+      FROM reviews r
+      LEFT JOIN users u ON (r.customer_id = u.id OR r.user_id = u.id)
+      WHERE (r.status = 'APPROVED' OR r.is_approved = 1)
+      ORDER BY r.id DESC LIMIT 50
+    `).catch(() => []);
+  }
+
+  const distribution = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+  let sumRating = 0;
+
+  const formattedReviews = (reviews || []).map((r) => {
+    const starVal = Math.min(5, Math.max(1, Math.round(Number(r.rating || 5))));
+    distribution[starVal] = (distribution[starVal] || 0) + 1;
+    sumRating += Number(r.rating || 5);
+
+    return {
+      id: r.id,
+      user_id: r.customer_id || r.user_id,
+      artist_id: r.artist_id,
+      booking_id: r.booking_id,
+      rating: Number(r.rating || 5),
+      comment: r.comment || "",
+      created_at: r.created_at,
+      user: {
+        id: r.customer_id || r.user_id,
+        name: r.customer_name || "Verified Client",
+        profile_image: r.customer_avatar || null
+      }
+    };
+  });
+
+  const totalReviews = formattedReviews.length;
+  const avgRating = totalReviews > 0 ? Number((sumRating / totalReviews).toFixed(1)) : 0;
+
+  return jsonRes(c, true, {
+    reviews: formattedReviews,
+    avg_rating: avgRating,
+    total_reviews: totalReviews,
+    distribution
+  }, "Artist reviews fetched");
+};
+
+// 3. Admin: Get All Reviews (With Status & Moderation Details)
+const handleAdminGetReviews = async (c) => {
+  const db = getDb(c.env);
+  await ensureReviewTables(db);
+
+  const statusFilter = c.req.query("status") || "ALL";
+
+  let query = `
+    SELECT r.*, 
+      u_c.full_name as customer_name, u_c.email as customer_email, u_c.phone as customer_phone,
+      u_a.full_name as artist_name, u_a.email as artist_email, u_a.phone as artist_phone
+    FROM reviews r
+    LEFT JOIN users u_c ON r.customer_id = u_c.id
+    LEFT JOIN users u_a ON (r.artist_id = u_a.id)
+  `;
+
+  let params = [];
+  if (statusFilter === "PENDING") {
+    query += " WHERE r.status = 'PENDING' OR r.is_approved = 0";
+  } else if (statusFilter === "APPROVED") {
+    query += " WHERE r.status = 'APPROVED' OR r.is_approved = 1";
+  } else if (statusFilter === "REJECTED") {
+    query += " WHERE r.status = 'REJECTED'";
+  }
+
+  query += " ORDER BY r.id DESC LIMIT 100";
+
+  const rows = await db.all(query, params).catch(() => []);
+
+  const formatted = (rows || []).map((r) => ({
+    id: r.id,
+    customer_id: r.customer_id,
+    customer_name: r.customer_name || `Customer #${r.customer_id}`,
+    customer_email: r.customer_email || "",
+    customer_phone: r.customer_phone || "",
+    artist_id: r.artist_id,
+    artist_name: r.artist_name || `Artist #${r.artist_id}`,
+    artist_email: r.artist_email || "",
+    booking_id: r.booking_id,
+    rating: Number(r.rating || 5),
+    comment: r.comment || "",
+    status: r.status || (r.is_approved ? "APPROVED" : "PENDING"),
+    is_approved: Boolean(r.is_approved),
+    created_at: r.created_at
+  }));
+
+  return jsonRes(c, true, formatted, "Admin reviews retrieved");
+};
+
+// 4. Admin: Approve Review
+const handleAdminApproveReview = async (c) => {
+  const db = getDb(c.env);
+  await ensureReviewTables(db);
+
+  const reviewId = Number(c.req.param("id") || c.req.query("id") || 0);
+  if (!reviewId) return jsonRes(c, false, null, "Review ID required", 400);
+
+  const review = await db.first("SELECT * FROM reviews WHERE id = ?", [reviewId]).catch(() => null);
+  if (!review) return jsonRes(c, false, null, "Review not found", 404);
+
+  // Update status to APPROVED
+  await db.run(
+    "UPDATE reviews SET status = 'APPROVED', is_approved = 1 WHERE id = ?",
+    [reviewId]
+  );
+
+  // Recalculate artist's rating and total_reviews from ALL approved reviews
+  const stats = await db.first(
+    "SELECT AVG(rating) as avg_val, COUNT(*) as count_val FROM reviews WHERE (artist_id = ? OR CAST(artist_id AS TEXT) = ?) AND (status = 'APPROVED' OR is_approved = 1)",
+    [review.artist_id, String(review.artist_id)]
+  ).catch(() => null);
+
+  const avgRating = stats?.avg_val ? Math.round(Number(stats.avg_val) * 10) / 10 : Number(review.rating);
+  const totalCount = Number(stats?.count_val || 1);
+
+  await db.run(
+    "UPDATE artist_profiles SET rating = ?, avg_rating = ?, total_reviews = ? WHERE user_id = ? OR id = ?",
+    [avgRating, avgRating, totalCount, review.artist_id, review.artist_id]
+  ).catch(() => {});
+
+  // Notify Artist
+  await db.run(
+    "INSERT INTO notifications (user_id, title, message, type, is_read) VALUES (?, ?, ?, 'REVIEW_APPROVED', 0)",
+    [review.artist_id, "New Review Published! ⭐", `A new ⭐${review.rating} star review has been approved and published to your profile.`]
+  ).catch(() => {});
+
+  return jsonRes(c, true, {
+    id: reviewId,
+    status: "APPROVED",
+    artist_id: review.artist_id,
+    avg_rating: avgRating,
+    total_reviews: totalCount
+  }, "Review approved and published successfully!");
+};
+
+// 5. Admin: Reject Review
+const handleAdminRejectReview = async (c) => {
+  const db = getDb(c.env);
+  await ensureReviewTables(db);
+
+  const reviewId = Number(c.req.param("id") || c.req.query("id") || 0);
+  if (!reviewId) return jsonRes(c, false, null, "Review ID required", 400);
+
+  const review = await db.first("SELECT * FROM reviews WHERE id = ?", [reviewId]).catch(() => null);
+  if (!review) return jsonRes(c, false, null, "Review not found", 404);
+
+  await db.run(
+    "UPDATE reviews SET status = 'REJECTED', is_approved = 0 WHERE id = ?",
+    [reviewId]
+  );
+
+  // Recalculate artist's rating without this review
+  const stats = await db.first(
+    "SELECT AVG(rating) as avg_val, COUNT(*) as count_val FROM reviews WHERE (artist_id = ? OR CAST(artist_id AS TEXT) = ?) AND (status = 'APPROVED' OR is_approved = 1)",
+    [review.artist_id, String(review.artist_id)]
+  ).catch(() => null);
+
+  const avgRating = stats?.count_val > 0 ? Math.round(Number(stats.avg_val) * 10) / 10 : 0;
+  const totalCount = Number(stats?.count_val || 0);
+
+  await db.run(
+    "UPDATE artist_profiles SET rating = ?, avg_rating = ?, total_reviews = ? WHERE user_id = ? OR id = ?",
+    [avgRating, avgRating, totalCount, review.artist_id, review.artist_id]
+  ).catch(() => {});
+
+  return jsonRes(c, true, {
+    id: reviewId,
+    status: "REJECTED"
+  }, "Review rejected successfully");
+};
+
+// Route Registrations for Reviews & Moderation
 addRoute("post", "/review/create", handleCreateReview);
 addRoute("post", "/reviews", handleCreateReview);
 addRoute("post", "/customer/review", handleCreateReview);
+addRoute("post", "/artist/review", handleCreateReview);
 addRoute("get", "/artist/reviews", handleGetArtistReviews);
+addRoute("get", "/artist/reviews/:id", handleGetArtistReviews);
 addRoute("get", "/reviews", handleGetArtistReviews);
+addRoute("get", "/admin/reviews", handleAdminGetReviews);
+addRoute("get", "/admin/reviews/pending", handleAdminGetReviews);
+addRoute("patch", "/admin/review/:id/approve", handleAdminApproveReview);
+addRoute("post", "/admin/review/:id/approve", handleAdminApproveReview);
+addRoute("patch", "/admin/review/:id/reject", handleAdminRejectReview);
+addRoute("post", "/admin/review/:id/reject", handleAdminRejectReview);
 addRoute("get", "/artist/services", handleGetArtistServices);
 const handleGetNotifications = async (c) => {
   const db = getDb(c.env);
@@ -6125,195 +6768,6 @@ const handleCreateBookingExplicit = async (c) => {
   return jsonRes(c, true, bookingPayload, "Booking created successfully");
 };
 
-const ensureChatTables = async (db) => {
-  await db.run(`
-    CREATE TABLE IF NOT EXISTS chat_messages (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      booking_id INTEGER NOT NULL,
-      sender_id INTEGER NOT NULL,
-      receiver_id INTEGER NOT NULL,
-      message_type TEXT DEFAULT 'text',
-      content TEXT,
-      media_url TEXT,
-      latitude REAL,
-      longitude REAL,
-      is_read INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-  `).catch(() => { });
-
-  await db.run(`
-    CREATE TABLE IF NOT EXISTS artist_locations (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      artist_id INTEGER UNIQUE,
-      latitude REAL NOT NULL,
-      longitude REAL NOT NULL,
-      speed REAL DEFAULT 0,
-      heading REAL DEFAULT 0,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-  `).catch(() => { });
-
-  await db.run("ALTER TABLE bookings ADD COLUMN checkin_otp TEXT").catch(() => { });
-  await db.run("ALTER TABLE bookings ADD COLUMN checkin_otp_expires_at DATETIME").catch(() => { });
-  await db.run("ALTER TABLE bookings ADD COLUMN checkin_otp_verified INTEGER DEFAULT 0").catch(() => { });
-  await db.run("ALTER TABLE bookings ADD COLUMN check_in_time DATETIME").catch(() => { });
-  await db.run("ALTER TABLE bookings ADD COLUMN checkout_otp TEXT").catch(() => { });
-  await db.run("ALTER TABLE bookings ADD COLUMN checkout_otp_expires_at DATETIME").catch(() => { });
-  await db.run("ALTER TABLE bookings ADD COLUMN checkout_otp_verified INTEGER DEFAULT 0").catch(() => { });
-  await db.run("ALTER TABLE bookings ADD COLUMN check_out_time DATETIME").catch(() => { });
-  await db.run("ALTER TABLE bookings ADD COLUMN service_duration INTEGER").catch(() => { });
-  await db.run("ALTER TABLE bookings ADD COLUMN arrival_verified_at DATETIME").catch(() => { });
-};
-
-const handleGetChatList = async (c) => {
-  const db = getDb(c.env);
-  await ensureChatTables(db);
-  const u = getUserFromHeader(c) || { id: 1 };
-
-  const rooms = await db.all(`
-    SELECT b.id as booking_id, b.booking_number, b.status as booking_status,
-           b.customer_id, b.artist_id,
-           u_cust.full_name as customer_name, u_cust.avatar as customer_avatar,
-           u_art.full_name as artist_name, ap.profile_image as artist_avatar,
-           m.content as last_message, m.message_type as last_message_type, m.created_at as last_message_time
-    FROM bookings b
-    LEFT JOIN users u_cust ON b.customer_id = u_cust.id
-    LEFT JOIN users u_art ON b.artist_id = u_art.id
-    LEFT JOIN artist_profiles ap ON (b.artist_id = ap.user_id OR CAST(b.artist_id AS TEXT) = CAST(ap.user_id AS TEXT))
-    LEFT JOIN chat_messages m ON m.id = (
-      SELECT id FROM chat_messages WHERE booking_id = b.id ORDER BY created_at DESC LIMIT 1
-    )
-    WHERE b.customer_id = ? OR b.artist_id = ? OR CAST(b.customer_id AS TEXT) = CAST(? AS TEXT) OR CAST(b.artist_id AS TEXT) = CAST(? AS TEXT)
-    ORDER BY COALESCE(m.created_at, b.created_at) DESC
-  `, [u.id, u.id, String(u.id), String(u.id)]).catch(() => []);
-
-  const formatted = (rooms || []).map(r => {
-    const isCustomer = String(r.customer_id) === String(u.id);
-    const recipientName = isCustomer ? (r.artist_name || "Mehndi Specialist") : (r.customer_name || "Customer");
-    const recipientAvatar = isCustomer ? (r.artist_avatar || r.customer_avatar || null) : (r.customer_avatar || null);
-    const recipientId = isCustomer ? r.artist_id : r.customer_id;
-
-    return {
-      id: r.booking_id,
-      booking_id: r.booking_id,
-      bookingId: r.booking_id,
-      booking_number: r.booking_number,
-      recipient_id: recipientId,
-      recipient: {
-        id: recipientId,
-        name: recipientName,
-        profileImage: recipientAvatar
-      },
-      last_message: r.last_message || "Start conversation",
-      last_message_type: r.last_message_type || "TEXT",
-      last_message_time: r.last_message_time || null,
-      unread_count: 0
-    };
-  });
-
-  return jsonRes(c, true, formatted, "Chat list retrieved");
-};
-
-const handleGetChatHistory = async (c) => {
-  const db = getDb(c.env);
-  await ensureChatTables(db);
-
-  const matches = c.req.path.match(/\/chat\/(\d+)/i) || c.req.path.match(/\/messages\/(\d+)/i);
-  const paramBookingId = c.req.query("bookingId") || c.req.query("booking_id") || (matches ? matches[1] : null);
-  const bookingId = parseInt(paramBookingId, 10);
-
-  if (isNaN(bookingId) || !bookingId) {
-    return jsonRes(c, true, [], "Empty history");
-  }
-
-  const rawMessages = await db.all(
-    "SELECT * FROM chat_messages WHERE booking_id = ? OR CAST(booking_id AS TEXT) = CAST(? AS TEXT) ORDER BY created_at ASC",
-    [bookingId, String(bookingId)]
-  ).catch(() => []);
-
-  const messagesList = (rawMessages || []).map(m => ({
-    id: m.id,
-    booking_id: m.booking_id,
-    bookingId: m.booking_id,
-    sender_id: m.sender_id,
-    senderId: m.sender_id,
-    receiver_id: m.receiver_id,
-    receiverId: m.receiver_id,
-    message_type: (m.message_type || "TEXT").toUpperCase(),
-    messageType: (m.message_type || "TEXT").toUpperCase(),
-    content: m.content || "",
-    message: m.content || "",
-    media_url: m.media_url || null,
-    mediaUrl: m.media_url || null,
-    media: m.media_url ? { file_url: m.media_url, url: m.media_url } : null,
-    latitude: m.latitude || null,
-    longitude: m.longitude || null,
-    is_read: Boolean(m.is_read),
-    created_at: m.created_at,
-    createdAt: m.created_at
-  }));
-
-  console.log(`[CHAT] bookingId: ${bookingId}, history count: ${messagesList.length}`);
-  return jsonRes(c, true, messagesList, "Chat history retrieved");
-};
-
-const handleSendChatMessage = async (c) => {
-  const db = getDb(c.env);
-  await ensureChatTables(db);
-  const u = getUserFromHeader(c) || { id: 1 };
-  const body = await c.req.json().catch(() => ({}));
-
-  const bookingId = parseInt(body.bookingId || body.booking_id || 0, 10);
-  if (!bookingId) {
-    return jsonRes(c, false, null, "Booking ID is required", 400);
-  }
-
-  const booking = await db.first("SELECT customer_id, artist_id FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
-
-  let receiverId = body.receiverId || body.receiver_id;
-  if (!receiverId && booking) {
-    receiverId = String(u.id) === String(booking.customer_id) ? booking.artist_id : booking.customer_id;
-  }
-
-  const msgType = (body.messageType || body.message_type || "text").toLowerCase();
-  const content = body.content || body.message || (msgType === "location" ? "📍 Shared Location" : "");
-  const mediaUrl = body.mediaUrl || body.media_url || (typeof body.media === "string" ? body.media : (body.media?.file_url || body.media?.url || null));
-  const lat = body.latitude || body.media?.waveform?.latitude || null;
-  const lng = body.longitude || body.media?.waveform?.longitude || null;
-
-  const res = await db.run(
-    "INSERT INTO chat_messages (booking_id, sender_id, receiver_id, message_type, content, media_url, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-    [bookingId, u.id, receiverId || 0, msgType, content, mediaUrl, lat, lng]
-  ).catch(() => null);
-
-  const insertedId = res?.meta?.last_row_id || Date.now();
-  const newMsg = {
-    id: insertedId,
-    booking_id: bookingId,
-    bookingId: bookingId,
-    sender_id: u.id,
-    senderId: u.id,
-    receiver_id: receiverId || 0,
-    receiverId: receiverId || 0,
-    message_type: msgType.toUpperCase(),
-    messageType: msgType.toUpperCase(),
-    content: content,
-    message: content,
-    media_url: mediaUrl,
-    mediaUrl: mediaUrl,
-    media: mediaUrl ? { file_url: mediaUrl, url: mediaUrl } : null,
-    latitude: lat,
-    longitude: lng,
-    is_read: false,
-    created_at: new Date().toISOString(),
-    createdAt: new Date().toISOString()
-  };
-
-  console.log(`[CHAT] Sent message localId: ${insertedId}, bookingId: ${bookingId}, senderId: ${u.id}, receiverId: ${receiverId}`);
-  return jsonRes(c, true, newMsg, "Message sent successfully");
-};
-
 const handleUploadChatMedia = async (c) => {
   let fileUrl = null;
   let fileType = "image";
@@ -6355,6 +6809,8 @@ const handleUploadChatMedia = async (c) => {
   return jsonRes(c, true, {
     file_url: fileUrl,
     url: fileUrl,
+    secure_url: fileUrl,
+    thumbnail: fileUrl,
     file_type: fileType
   }, "Media uploaded successfully");
 };
@@ -6444,10 +6900,16 @@ const handleAcceptBooking = async (c) => {
 
   const assignedArtistId = u?.id || booking.artist_id || 231;
 
-  // Idempotent Accept: Set status = 'accepted', detailed_status = 'ARTIST_ACCEPTED', and assign artist_id
+  // Generate 4-digit Check-In OTP and Completion PIN if not already set
+  const checkinOtp = booking.checkin_otp || Math.floor(1000 + Math.random() * 9000).toString();
+  const checkoutOtp = booking.checkout_otp || Math.floor(1000 + Math.random() * 9000).toString();
+  const checkinExpires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  const checkoutExpires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+  // Atomically update booking status to accepted / ARTIST_ACCEPTED
   await db.run(
-    "UPDATE bookings SET status = 'accepted', detailed_status = 'ARTIST_ACCEPTED', artist_id = ? WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
-    [assignedArtistId, bookingId, String(bookingId)]
+    "UPDATE bookings SET status = 'accepted', detailed_status = 'ARTIST_ACCEPTED', artist_id = ?, checkin_otp = ?, checkin_otp_expires_at = ?, checkout_otp = ?, checkout_otp_expires_at = ? WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+    [assignedArtistId, checkinOtp, checkinExpires, checkoutOtp, checkoutExpires, bookingId, String(bookingId)]
   ).catch(() => { });
 
   const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
@@ -6463,6 +6925,84 @@ const handleAcceptBooking = async (c) => {
     detailed_status: "ARTIST_ACCEPTED",
     detailedStatus: "ARTIST_ACCEPTED"
   }, "Booking request accepted successfully");
+};
+
+const handleOnTheWayBooking = async (c) => {
+  const db = getDb(c.env);
+  const u = getUserFromHeader(c);
+  const body = await c.req.json().catch(() => ({}));
+  const bookingId = parseInt(body.bookingId || body.booking_id || body.id || c.req.query("bookingId") || 0, 10);
+
+  if (!bookingId) {
+    return jsonRes(c, false, null, "Booking ID is required", 400);
+  }
+
+  const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
+  if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
+
+  // Ensure 4-digit checkin_otp and checkout_otp exist
+  const checkinOtp = booking.checkin_otp || Math.floor(1000 + Math.random() * 9000).toString();
+  const checkoutOtp = booking.checkout_otp || Math.floor(1000 + Math.random() * 9000).toString();
+
+  await db.run(
+    "UPDATE bookings SET status = 'accepted', detailed_status = 'ARTIST_ON_THE_WAY', checkin_otp = ?, checkout_otp = ? WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+    [checkinOtp, checkoutOtp, bookingId, String(bookingId)]
+  ).catch(() => { });
+
+  const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
+  return jsonRes(c, true, {
+    ...updated,
+    id: bookingId,
+    booking_id: bookingId,
+    bookingId: bookingId,
+    status: "accepted",
+    booking_status: "CONFIRMED",
+    bookingStatus: "CONFIRMED",
+    detailed_status: "ARTIST_ON_THE_WAY",
+    detailedStatus: "ARTIST_ON_THE_WAY"
+  }, "Artist is on the way to customer location");
+};
+
+const handleStartService = async (c) => {
+  const db = getDb(c.env);
+  const body = await c.req.json().catch(() => ({}));
+  const bookingId = parseInt(body.bookingId || body.booking_id || body.id || c.req.query("bookingId") || 0, 10);
+
+  if (!bookingId) {
+    return jsonRes(c, false, null, "Booking ID is required", 400);
+  }
+
+  const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
+  if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
+
+  // Verify that Check-In was completed before starting service
+  const isCheckedIn = Number(booking.checkin_otp_verified) === 1 || 
+                      booking.detailed_status === "CUSTOMER_VERIFIED" || 
+                      booking.detailed_status === "CHECKED_IN" ||
+                      booking.detailed_status === "ARTIST_ARRIVED" ||
+                      body.force === true;
+
+  if (!isCheckedIn) {
+    return jsonRes(c, false, null, "Please verify customer Check-In OTP before starting the service.", 400);
+  }
+
+  await db.run(
+    "UPDATE bookings SET status = 'in_progress', detailed_status = 'SERVICE_STARTED', check_in_time = COALESCE(check_in_time, CURRENT_TIMESTAMP) WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+    [bookingId, String(bookingId)]
+  ).catch(() => { });
+
+  const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
+  return jsonRes(c, true, {
+    ...updated,
+    id: bookingId,
+    booking_id: bookingId,
+    bookingId: bookingId,
+    status: "in_progress",
+    booking_status: "IN_PROGRESS",
+    bookingStatus: "IN_PROGRESS",
+    detailed_status: "SERVICE_STARTED",
+    detailedStatus: "SERVICE_STARTED"
+  }, "Mehndi service started successfully");
 };
 
 const handleRejectBooking = async (c) => {
@@ -6919,27 +7459,33 @@ const handleValidateArrival = async (c) => {
 
   const ARRIVAL_RADIUS_METERS = 50;
   if (distanceMeters <= ARRIVAL_RADIUS_METERS || body.force === true) {
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    const checkinOtp = booking.checkin_otp || Math.floor(1000 + Math.random() * 9000).toString();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
     await db.run(
       "UPDATE bookings SET status = 'accepted', detailed_status = 'ARTIST_ARRIVED', arrival_verified_at = CURRENT_TIMESTAMP, checkin_otp = ?, checkin_otp_expires_at = ? WHERE id = ?",
-      [otp, expiresAt, bookingId]
+      [checkinOtp, expiresAt, bookingId]
     ).catch(() => { });
 
-    const customerUser = await db.first("SELECT email, full_name FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [booking.customer_id, String(booking.customer_id)]).catch(() => null);
+    const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
 
-    if (customerUser && customerUser.email) {
-      await sendWorkerEmail(
-        customerUser.email,
-        "MehndiGo - Artist Arrival Verification Code",
-        `Hello ${customerUser.full_name || 'Customer'},\n\nYour MehndiGo artist has arrived at your location.\n\nYour verification code is: ${otp}\n\nPlease share this code with your assigned MehndiGo artist to start your service.\n\nThis code is valid for 5 minutes.\n\nThanks,\nMehndiGo Team`
-      );
-    }
-
-    return jsonRes(c, true, { bookingId, arrived: true, distanceMeters: Math.round(distanceMeters) }, "Artist arrival validated. Check-In OTP sent to customer email.");
+    return jsonRes(c, true, {
+      ...updated,
+      id: bookingId,
+      bookingId,
+      arrived: true,
+      status: "accepted",
+      booking_status: "CONFIRMED",
+      detailed_status: "ARTIST_ARRIVED",
+      detailedStatus: "ARTIST_ARRIVED",
+      distanceMeters: Math.round(distanceMeters)
+    }, "Artist arrival validated. Check-In button activated.");
   } else {
-    return jsonRes(c, false, { bookingId, arrived: false, distanceMeters: Math.round(distanceMeters) }, `Artist is ${Math.round(distanceMeters)}m away. Arrival radius is ${ARRIVAL_RADIUS_METERS}m.`, 400);
+    return jsonRes(c, false, {
+      bookingId,
+      arrived: false,
+      distanceMeters: Math.round(distanceMeters)
+    }, `Artist is ${Math.round(distanceMeters)}m away. Arrival radius is ${ARRIVAL_RADIUS_METERS}m.`, 400);
   }
 };
 
@@ -6955,31 +7501,12 @@ const handleSendCheckInOtp = async (c) => {
   const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
 
-  // 60s cooldown check
-  if (booking.checkin_otp_expires_at) {
-    const sentAt = new Date(new Date(booking.checkin_otp_expires_at).getTime() - 5 * 60 * 1000);
-    const secondsElapsed = Math.floor((Date.now() - sentAt.getTime()) / 1000);
-    if (secondsElapsed < 60) {
-      return jsonRes(c, false, null, `Please wait ${60 - secondsElapsed} seconds before requesting a new OTP.`, 429);
-    }
-  }
-
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  const otp = booking.checkin_otp || Math.floor(1000 + Math.random() * 9000).toString();
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
   await db.run("UPDATE bookings SET checkin_otp = ?, checkin_otp_expires_at = ? WHERE id = ?", [otp, expiresAt, bookingId]).catch(() => { });
 
-  const customerUser = await db.first("SELECT email, full_name FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [booking.customer_id, String(booking.customer_id)]).catch(() => null);
-
-  if (customerUser && customerUser.email) {
-    await sendWorkerEmail(
-      customerUser.email,
-      "MehndiGo - Artist Arrival Verification Code",
-      `Hello ${customerUser.full_name || 'Customer'},\n\nYour MehndiGo artist has arrived at your location.\n\nYour verification code is: ${otp}\n\nPlease share this code with your assigned MehndiGo artist to start your service.\n\nThis code is valid for 5 minutes.\n\nThanks,\nMehndiGo Team`
-    );
-  }
-
-  return jsonRes(c, true, { bookingId, otpSent: true, email: customerUser?.email || null }, "Check-In OTP sent to customer email successfully");
+  return jsonRes(c, true, { bookingId, otpSent: true }, "Check-In OTP generated and synchronized successfully");
 };
 
 const handleVerifyCheckInOtp = async (c) => {
@@ -6989,7 +7516,7 @@ const handleVerifyCheckInOtp = async (c) => {
   const inputOtp = String(body.otp || body.code || "").trim();
 
   if (!bookingId || !inputOtp) {
-    return jsonRes(c, false, null, "Booking ID and OTP code are required", 400);
+    return jsonRes(c, false, null, "Booking ID and 4-digit Check-In OTP are required", 400);
   }
 
   const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
@@ -6999,11 +7526,11 @@ const handleVerifyCheckInOtp = async (c) => {
   const isExpired = booking.checkin_otp_expires_at && new Date() > new Date(booking.checkin_otp_expires_at);
 
   if (!validOtp || inputOtp !== validOtp || isExpired) {
-    return jsonRes(c, false, null, "Invalid or expired verification code.", 400);
+    return jsonRes(c, false, null, "Invalid Check-In OTP. Please ask the customer for their 4-digit OTP shown on their app.", 400);
   }
 
   await db.run(
-    "UPDATE bookings SET status = 'confirmed', detailed_status = 'SERVICE_STARTED', checkin_otp_verified = 1, check_in_time = CURRENT_TIMESTAMP, checkin_otp = NULL WHERE id = ?",
+    "UPDATE bookings SET status = 'accepted', detailed_status = 'CUSTOMER_VERIFIED', checkin_otp_verified = 1, checked_in_at = CURRENT_TIMESTAMP, check_in_time = CURRENT_TIMESTAMP WHERE id = ?",
     [bookingId]
   ).catch(() => { });
 
@@ -7011,10 +7538,17 @@ const handleVerifyCheckInOtp = async (c) => {
 
   return jsonRes(c, true, {
     ...updated,
-    status: "confirmed",
+    id: bookingId,
+    booking_id: bookingId,
+    bookingId: bookingId,
+    status: "accepted",
     booking_status: "CONFIRMED",
-    detailed_status: "SERVICE_STARTED"
-  }, "Arrival verified successfully. Service started!");
+    bookingStatus: "CONFIRMED",
+    detailed_status: "CUSTOMER_VERIFIED",
+    detailedStatus: "CUSTOMER_VERIFIED",
+    checkin_verified: true,
+    checkin_otp_verified: 1
+  }, "Customer verified successfully. Ready to start service!");
 };
 
 const handleSendCheckOutOtp = async (c) => {
@@ -7029,51 +7563,32 @@ const handleSendCheckOutOtp = async (c) => {
   const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
 
-  // 60s cooldown check
-  if (booking.checkout_otp_expires_at) {
-    const sentAt = new Date(new Date(booking.checkout_otp_expires_at).getTime() - 5 * 60 * 1000);
-    const secondsElapsed = Math.floor((Date.now() - sentAt.getTime()) / 1000);
-    if (secondsElapsed < 60) {
-      return jsonRes(c, false, null, `Please wait ${60 - secondsElapsed} seconds before requesting a new OTP.`, 429);
-    }
-  }
-
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  const otp = booking.checkout_otp || Math.floor(1000 + Math.random() * 9000).toString();
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
   await db.run("UPDATE bookings SET checkout_otp = ?, checkout_otp_expires_at = ? WHERE id = ?", [otp, expiresAt, bookingId]).catch(() => { });
 
-  const customerUser = await db.first("SELECT email, full_name FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [booking.customer_id, String(booking.customer_id)]).catch(() => null);
-
-  if (customerUser && customerUser.email) {
-    await sendWorkerEmail(
-      customerUser.email,
-      "MehndiGo - Checkout Verification Code",
-      `Hello ${customerUser.full_name || 'Customer'},\n\nYour MehndiGo artist has completed your service.\n\nYour checkout verification code is: ${otp}\n\nPlease share this code with your artist to complete checkout.\n\nThis code is valid for 5 minutes.\n\nThanks,\nMehndiGo Team`
-    );
-  }
-
-  return jsonRes(c, true, { bookingId, otpSent: true, email: customerUser?.email || null }, "Checkout OTP sent to customer email successfully");
+  return jsonRes(c, true, { bookingId, otpSent: true }, "Completion PIN generated and synchronized successfully");
 };
 
 const handleVerifyCheckOutOtp = async (c) => {
   const db = getDb(c.env);
   const body = await c.req.json().catch(() => ({}));
   const bookingId = parseInt(body.bookingId || body.booking_id || 0, 10);
-  const inputOtp = String(body.otp || body.code || "").trim();
+  const inputOtp = String(body.otp || body.code || body.pin || body.completion_pin || "").trim();
 
   if (!bookingId || !inputOtp) {
-    return jsonRes(c, false, null, "Booking ID and OTP code are required", 400);
+    return jsonRes(c, false, null, "Booking ID and 4-digit Completion PIN are required", 400);
   }
 
   const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
 
-  const validOtp = String(booking.checkout_otp || "").trim();
+  const validOtp = String(booking.checkout_otp || booking.completion_pin || "").trim();
   const isExpired = booking.checkout_otp_expires_at && new Date() > new Date(booking.checkout_otp_expires_at);
 
   if (!validOtp || inputOtp !== validOtp || isExpired) {
-    return jsonRes(c, false, null, "Invalid or expired checkout code.", 400);
+    return jsonRes(c, false, null, "Invalid Completion PIN. Please ask the customer for their 4-digit Completion PIN shown on their app.", 400);
   }
 
   const totalAmt = Number(booking.total_amount || booking.total_price || 0);
@@ -7081,26 +7596,63 @@ const handleVerifyCheckOutOtp = async (c) => {
   const remainingAmount = Math.max(0, totalAmt - advancePaid);
 
   await db.run(
-    "UPDATE bookings SET status = 'completed', detailed_status = 'AWAITING_CASH_CONFIRMATION', checkout_otp_verified = 1, check_out_time = CURRENT_TIMESTAMP, checkout_otp = NULL, remaining_amount = ? WHERE id = ?",
+    "UPDATE bookings SET status = 'completed', detailed_status = 'COMPLETED', checkout_otp_verified = 1, completed_at = CURRENT_TIMESTAMP, check_out_time = CURRENT_TIMESTAMP, remaining_amount = ? WHERE id = ?",
     [remainingAmount, bookingId]
   ).catch(() => { });
+
+  // Automatically settle booking and release earnings to artist wallet
+  await processBookingSettlement(db, bookingId).catch(() => { });
 
   const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
 
   return jsonRes(c, true, {
     ...updated,
+    id: bookingId,
+    booking_id: bookingId,
+    bookingId: bookingId,
     status: "completed",
     booking_status: "COMPLETED",
-    detailed_status: "AWAITING_CASH_CONFIRMATION",
+    bookingStatus: "COMPLETED",
+    detailed_status: "COMPLETED",
+    detailedStatus: "COMPLETED",
+    checkout_verified: true,
+    completed: true,
     remainingAmount
-  }, "Checkout verified successfully. Booking completed!");
+  }, "Checkout verified successfully. Booking completed and payment settled!");
 };
 
 addRoute("post", "/booking/validate-arrival", handleValidateArrival);
-addRoute("post", "/booking/send-checkin-otp", handleSendCheckInOtp);
+addRoute("post", "/booking/arrived", handleValidateArrival);
+addRoute("put", "/booking/arrived", handleValidateArrival);
+addRoute("post", "/artist/booking/arrived", handleValidateArrival);
+addRoute("post", "/api/v1/booking/validate-arrival", handleValidateArrival);
+
+addRoute("post", "/booking/on-the-way", handleOnTheWayBooking);
+addRoute("put", "/booking/on-the-way", handleOnTheWayBooking);
+addRoute("post", "/artist/booking/on-the-way", handleOnTheWayBooking);
+addRoute("put", "/artist/booking/on-the-way", handleOnTheWayBooking);
+addRoute("post", "/api/v1/booking/on-the-way", handleOnTheWayBooking);
+
+addRoute("post", "/booking/check-in", handleVerifyCheckInOtp);
 addRoute("post", "/booking/verify-checkin-otp", handleVerifyCheckInOtp);
+addRoute("post", "/artist/booking/check-in", handleVerifyCheckInOtp);
+addRoute("post", "/api/v1/booking/check-in", handleVerifyCheckInOtp);
+
+addRoute("post", "/booking/start-service", handleStartService);
+addRoute("post", "/booking/start", handleStartService);
+addRoute("put", "/booking/start", handleStartService);
+addRoute("post", "/artist/booking/start-service", handleStartService);
+addRoute("post", "/artist/booking/start", handleStartService);
+addRoute("put", "/artist/booking/start", handleStartService);
+addRoute("post", "/api/v1/booking/start-service", handleStartService);
+
+addRoute("post", "/booking/send-checkin-otp", handleSendCheckInOtp);
 addRoute("post", "/booking/send-checkout-otp", handleSendCheckOutOtp);
+addRoute("post", "/booking/complete", handleVerifyCheckOutOtp);
+addRoute("put", "/booking/complete", handleVerifyCheckOutOtp);
 addRoute("post", "/booking/verify-checkout-otp", handleVerifyCheckOutOtp);
+addRoute("post", "/artist/booking/complete", handleVerifyCheckOutOtp);
+addRoute("post", "/api/v1/booking/complete", handleVerifyCheckOutOtp);
 
 addRoute("get", "/booking/invoice", handleGetInvoice);
 addRoute("put", "/booking/reschedule", handleRescheduleBooking);
@@ -7129,6 +7681,14 @@ addRoute("get", "/category", handleGetCategories);
 addRoute("get", "/categories", handleGetCategories);
 addRoute("get", "/customer/category", handleGetCategories);
 addRoute("get", "/customer/categories", handleGetCategories);
+
+addRoute("post", "/reviews/upload", handleUploadChatMedia);
+addRoute("post", "/review/upload", handleUploadChatMedia);
+addRoute("post", "/customer/reviews/upload", handleUploadChatMedia);
+addRoute("post", "/customer/review/upload", handleUploadChatMedia);
+addRoute("post", "/chat/upload", handleUploadChatMedia);
+addRoute("post", "/chat/media", handleUploadChatMedia);
+
 
 // Fallback 404 handler
 app.notFound((c) => {

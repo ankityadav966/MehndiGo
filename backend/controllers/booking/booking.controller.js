@@ -88,8 +88,9 @@ async function verifyPayment(req, res) {
 
 async function cancelBooking(req, res) {
   try {
-    const { bookingId, cancelReason } = req.body;
-    const response = await BookingService.updateBookingStatus(bookingId, req.user.id, req.user.role, "CANCELLED", { cancelReason });
+    const bookingId = req.body.bookingId || req.body.booking_id || req.body.id;
+    const cancelReason = req.body.cancelReason || req.body.reason || "Cancelled by user";
+    const response = await BookingService.cancelBookingWithPolicy(bookingId, req.user.id, req.user.role, cancelReason);
     return res.status(200).json(SuccessResponse("Booking cancelled successfully", response));
   } catch (error) {
     return res
@@ -100,8 +101,9 @@ async function cancelBooking(req, res) {
 
 async function rescheduleBooking(req, res) {
   try {
-    const { bookingId, date, time } = req.body;
-    const response = await BookingService.updateBookingStatus(bookingId, req.user.id, req.user.role, "RESCHEDULED", { date, time });
+    const bookingId = req.body.bookingId || req.body.booking_id || req.body.id;
+    const { date, time, latitude, longitude } = req.body;
+    const response = await BookingService.rescheduleBooking(bookingId, req.user.id, date, time, latitude, longitude);
     return res.status(200).json(SuccessResponse("Booking rescheduled successfully", response));
   } catch (error) {
     return res

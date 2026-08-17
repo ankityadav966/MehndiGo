@@ -99,9 +99,19 @@ export default function ArtistProfileScreen({ route, navigation }) {
       const favs = await getFavorites().catch(() => []);
 
       setServices(servs || []);
-      setPortfolio(port || []);
+      setPortfolio(Array.isArray(port) ? port : (port?.portfolios || port?.data || []));
       const reviewsList = Array.isArray(revs) ? revs : (revs?.reviews || []);
-      const reviewsDist = (!Array.isArray(revs) && revs?.distribution) ? revs.distribution : { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+      const reviewsDist = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+      let sumRating = 0;
+      reviewsList.forEach((r) => {
+        const rVal = Math.min(5, Math.max(1, Math.round(Number(r.rating || 5))));
+        reviewsDist[rVal] = (reviewsDist[rVal] || 0) + 1;
+        sumRating += Number(r.rating || 5);
+      });
+      if (reviewsList.length > 0) {
+        prof.avg_rating = Number((sumRating / reviewsList.length).toFixed(1));
+        prof.total_reviews = reviewsList.length;
+      }
       setReviewsData({
         reviews: reviewsList,
         distribution: reviewsDist
@@ -398,8 +408,10 @@ export default function ArtistProfileScreen({ route, navigation }) {
         {/* Dynamic Stats Row */}
         <View style={styles.statsRow}>
           <View style={styles.statBox}>
-            <Text style={styles.statVal}>⭐ {Number(profile.avg_rating || 0).toFixed(1)}</Text>
-            <Text style={styles.statLabel}>{profile.total_reviews || 0} Reviews</Text>
+            <Text style={styles.statVal}>
+              ⭐ {Number(profile.avg_rating || 0) > 0 ? Number(profile.avg_rating).toFixed(1) : "New"}
+            </Text>
+            <Text style={styles.statLabel}>{profile.total_reviews ? `${profile.total_reviews} Reviews` : "0 Reviews"}</Text>
           </View>
           <View style={styles.divider} />
           <View style={styles.statBox}>
@@ -501,23 +513,22 @@ export default function ArtistProfileScreen({ route, navigation }) {
                   key={`portfolio-${item.id || 'idx'}-${index}`}
                   style={styles.portfolioGridItem}
                   onPress={() => {
-                    if (item.video_url) {
-                      navigation.navigate("VideoPlayer", {
-                        videoUrl: item.video_url,
-                        title: item.title || "Portfolio Video"
-                      });
-                    } else {
-                      setZoomImageIndex(index);
-                      setZoomModalVisible(true);
-                    }
+                    setZoomImageIndex(index);
+                    setZoomModalVisible(true);
                   }}
                 >
-                  <Image source={{ uri: resolveImage(item.image_url) }} style={styles.portfolioThumb} />
+                  <Image source={{ uri: resolveImage(item.image_url || item.url || item.image || item.media_url || item) }} style={styles.portfolioThumb} />
                   {item.video_url && (
                     <View style={styles.videoBadge}>
                       <Ionicons name="play" size={12} color={Colors.white} />
                     </View>
                   )}
+                  {/* Tier Badge */}
+                  <View style={[styles.gridTierBadge, item.art_tier === "PREMIUM" ? styles.gridPremiumBadge : styles.gridStandardBadge]}>
+                    <Text style={[styles.gridTierText, item.art_tier === "PREMIUM" ? styles.gridPremiumText : styles.gridStandardText]}>
+                      {item.art_tier === "PREMIUM" ? `💎 ₹${item.price || "Prem"}` : "✨ Standard"}
+                    </Text>
+                  </View>
                 </TouchableOpacity>
               ))}
             </View>
@@ -594,17 +605,55 @@ export default function ArtistProfileScreen({ route, navigation }) {
         {/* Section: Reviews List & Star Distribution */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Customer Reviews ({reviewsData.reviews.length})</Text>
+
+          {/* Client Video Reviews Reel Carousel */}
+          {reviewsData.reviews.filter(r => Boolean(r.video_url)).length > 0 && (
+            <View style={{ marginBottom: 18 }}>
+              <Text style={styles.subHeading}>🎬 Client Video Reviews</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 8 }}>
+                {reviewsData.reviews.filter(r => Boolean(r.video_url)).map((vRev, vIdx) => (
+                  <TouchableOpacity
+                    key={`v-rev-${vRev.id || vIdx}`}
+                    style={styles.videoReviewCard}
+                    onPress={() => {
+                      navigation.navigate("VideoPlayer", {
+                        videoUrl: vRev.video_url,
+                        title: `Review by ${vRev.user?.name || vRev.reviewer?.name || "Verified Customer"}`
+                      });
+                    }}
+                  >
+                    <Image
+                      source={{ uri: vRev.video_thumbnail || resolveImage(vRev.reviewer?.profile_image) || "https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=300" }}
+                      style={styles.videoReviewThumb}
+                    />
+                    <View style={styles.videoReviewOverlay}>
+                      <Ionicons name="play-circle" size={36} color="#FFFFFF" />
+                      <View style={styles.videoReviewMeta}>
+                        <Text style={styles.videoReviewName} numberOfLines={1}>
+                          {vRev.user?.name || vRev.reviewer?.name || "Client"}
+                        </Text>
+                        <Text style={styles.videoReviewStars}>{"⭐".repeat(vRev.rating || 5)}</Text>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          )}
+
           <View style={styles.reviewDistributionCard}>
             <View style={styles.avgRatingCol}>
-              <Text style={styles.ratingBigVal}>{Number(profile.avg_rating || 0).toFixed(1)}</Text>
+              <Text style={styles.ratingBigVal}>
+                {Number(profile.avg_rating || 0) > 0 ? Number(profile.avg_rating).toFixed(1) : "New"}
+              </Text>
               <View style={{ flexDirection: "row", marginVertical: 4 }}>
                 <Ionicons name="star" size={14} color="#FFB800" />
                 <Ionicons name="star" size={14} color="#FFB800" />
                 <Ionicons name="star" size={14} color="#FFB800" />
                 <Ionicons name="star" size={14} color="#FFB800" />
-                <Ionicons name="star-half" size={14} color="#FFB800" />
+                <Ionicons name="star" size={14} color="#FFB800" />
               </View>
-              <Text style={styles.ratingSubLabel}>{profile.total_reviews || 0} reviews</Text>
+              <Text style={styles.ratingSubLabel}>{profile.total_reviews ? `${profile.total_reviews} reviews` : "No reviews yet"}</Text>
             </View>
             <View style={styles.distCol}>
               <View style={styles.distRow}>
@@ -653,11 +702,19 @@ export default function ArtistProfileScreen({ route, navigation }) {
               <View key={`review-${rev.id || 'idx'}-${index}`} style={styles.reviewCard}>
                 <View style={styles.reviewerHeader}>
                   <Image
-                    source={{ uri: rev.reviewer?.profile_image || "https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=150" }}
+                    source={{ uri: rev.reviewer?.profile_image || rev.user?.profile_image || "https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=150" }}
                     style={styles.reviewerAvatar}
                   />
                   <View style={{ marginLeft: 10, flex: 1 }}>
-                    <Text style={styles.reviewerName}>{rev.reviewer?.name || "Customer"}</Text>
+                    <View style={{ flexDirection: "row", alignItems: "center" }}>
+                      <Text style={styles.reviewerName}>{rev.reviewer?.name || rev.user?.name || "Customer"}</Text>
+                      {rev.is_verified && (
+                        <View style={styles.verifiedClientBadge}>
+                          <Ionicons name="checkmark-circle" size={12} color="#059669" />
+                          <Text style={styles.verifiedClientText}>Verified</Text>
+                        </View>
+                      )}
+                    </View>
                     <View style={{ flexDirection: "row", marginTop: 2 }}>
                       {Array.from({ length: rev.rating || 5 }).map((_, i) => (
                         <Ionicons key={`star-${rev.id || index}-${i}`} name="star" size={10} color="#FFB800" />
@@ -668,7 +725,16 @@ export default function ArtistProfileScreen({ route, navigation }) {
                     {rev.createdAt ? new Date(rev.createdAt).toLocaleDateString() : ""}
                   </Text>
                 </View>
-                <Text style={styles.reviewContent}>{rev.review_text}</Text>
+                <Text style={styles.reviewContent}>{rev.comment || rev.review_text}</Text>
+                
+                {/* Review Photos if any */}
+                {Array.isArray(rev.photos) && rev.photos.length > 0 && (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
+                    {rev.photos.map((pUrl, pIdx) => (
+                      <Image key={pIdx} source={{ uri: pUrl }} style={styles.reviewPhotoAttachment} />
+                    ))}
+                  </ScrollView>
+                )}
                 
                 {/* Artist Reply */}
                 {rev.reply_text && (
@@ -684,26 +750,20 @@ export default function ArtistProfileScreen({ route, navigation }) {
 
         {/* Section: Related Artists */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>You May Also Like</Text>
+          <Text style={styles.sectionTitle}>Similar Artists</Text>
           {similar.length === 0 ? (
-            <Text style={styles.emptyText}>No similar artists found nearby.</Text>
+            <Text style={styles.emptyText}>No similar artists nearby.</Text>
           ) : (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 8 }}>
-              {similar.map((item, index) => (
+              {similar.map((art, index) => (
                 <TouchableOpacity
-                  key={`similar-${item.id || 'idx'}-${index}`}
-                  style={styles.relatedCard}
-                  onPress={() => navigation.navigate("ArtistProfile", { artistId: item.id })}
+                  key={`sim-${art.id || 'idx'}-${index}`}
+                  style={styles.similarCard}
+                  onPress={() => navigation.push("ArtistProfile", { artistId: art.id })}
                 >
-                  <Image
-                    source={{ uri: item.user?.profile_image || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=300" }}
-                    style={styles.relatedImage}
-                  />
-                  <Text style={styles.relatedName} numberOfLines={1}>{item.user?.name || "Artist"}</Text>
-                  <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
-                    <Ionicons name="star" size={12} color="#FFB800" />
-                    <Text style={styles.relatedRating}>{Number(item.avg_rating || 0).toFixed(1)}</Text>
-                  </View>
+                  <Image source={{ uri: resolveImage(art.cover_photo || art.avatar) }} style={styles.similarImage} />
+                  <Text style={styles.similarName} numberOfLines={1}>{art.name}</Text>
+                  <Text style={styles.similarRating}>⭐ {Number(art.rating || 4.8).toFixed(1)}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -711,11 +771,22 @@ export default function ArtistProfileScreen({ route, navigation }) {
         </View>
       </ScrollView>
 
-      {/* Sticky Bottom Booking Section */}
-      <View style={styles.stickyFooter}>
-        <TouchableOpacity style={styles.bookFooterBtn} onPress={handleBookNow}>
-          <Text style={styles.bookFooterBtnText}>Book Appointment</Text>
-          <Ionicons name="arrow-forward" size={16} color={Colors.white} style={{ marginLeft: 6 }} />
+      {/* Bottom Sticky Action Button */}
+      <View style={styles.bottomBar}>
+        <View style={styles.bottomPriceCol}>
+          <Text style={styles.bottomPriceLabel}>Starting from</Text>
+          <Text style={styles.bottomPriceVal}>₹{profile.starting_price || 999}</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.bookNowBtn}
+          onPress={() => {
+            navigation.navigate("SelectService", {
+              artistId: profile.id,
+              artist: profile
+            });
+          }}
+        >
+          <Text style={styles.bookNowBtnText}>Book Appointment</Text>
         </TouchableOpacity>
       </View>
 
@@ -730,9 +801,9 @@ export default function ArtistProfileScreen({ route, navigation }) {
             <Ionicons name="close" size={28} color={Colors.white} />
           </TouchableOpacity>
           {portfolio.length > 0 && (
-            <View style={{ width: "100%", height: 350, justifyContent: "center", alignItems: "center", position: "relative" }}>
+            <View style={{ width: "100%", height: 320, justifyContent: "center", alignItems: "center", position: "relative" }}>
               <Image
-                source={{ uri: portfolio[zoomImageIndex]?.image_url }}
+                source={{ uri: resolveImage(portfolio[zoomImageIndex]?.image_url || portfolio[zoomImageIndex]?.url || portfolio[zoomImageIndex]?.image || portfolio[zoomImageIndex]?.media_url) }}
                 style={styles.zoomImage}
                 resizeMode="contain"
               />
@@ -778,6 +849,40 @@ export default function ArtistProfileScreen({ route, navigation }) {
               <Ionicons name="chevron-forward" size={24} color={Colors.white} />
             </TouchableOpacity>
           </View>
+
+          {/* Design Info & Book Design Button inside Zoom Modal */}
+          {portfolio[zoomImageIndex] && (
+            <View style={styles.zoomDesignDetails}>
+              <Text style={styles.zoomDesignTitle}>{portfolio[zoomImageIndex].title || "Mehndi Design Sample"}</Text>
+              <View style={styles.zoomBadgeRow}>
+                <View style={[styles.gridTierBadge, portfolio[zoomImageIndex].art_tier === "PREMIUM" ? styles.gridPremiumBadge : styles.gridStandardBadge]}>
+                  <Text style={[styles.gridTierText, portfolio[zoomImageIndex].art_tier === "PREMIUM" ? styles.gridPremiumText : styles.gridStandardText]}>
+                    {portfolio[zoomImageIndex].art_tier === "PREMIUM" ? `💎 PREMIUM ART` : "✨ STANDARD ART"}
+                  </Text>
+                </View>
+                <Text style={styles.zoomMetaText}>⏱️ {portfolio[zoomImageIndex].duration_minutes || 60} mins</Text>
+              </View>
+              {Boolean(portfolio[zoomImageIndex].description) && (
+                <Text style={styles.zoomDescText} numberOfLines={2}>{portfolio[zoomImageIndex].description}</Text>
+              )}
+              <TouchableOpacity
+                style={styles.bookDesignModalBtn}
+                onPress={() => {
+                  setZoomModalVisible(false);
+                  navigation.navigate("SelectService", {
+                    artistId: profile.id,
+                    artist: profile,
+                    selectedArt: portfolio[zoomImageIndex]
+                  });
+                }}
+              >
+                <Ionicons name="sparkles" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+                <Text style={styles.bookDesignModalBtnText}>
+                  Book This Design {portfolio[zoomImageIndex].price ? `• ₹${portfolio[zoomImageIndex].price}` : ""}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       </Modal>
     </View>
@@ -1028,5 +1133,179 @@ const styles = StyleSheet.create({
     width: "70%"
   },
   zoomCtrlBtn: { padding: 10 },
-  zoomIndexText: { color: Colors.white, fontSize: 15, fontWeight: "700" }
+  zoomIndexText: { color: Colors.white, fontSize: 15, fontWeight: "700" },
+  gridTierBadge: {
+    position: "absolute",
+    left: 4,
+    bottom: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  gridPremiumBadge: {
+    backgroundColor: "rgba(124, 58, 237, 0.9)",
+  },
+  gridStandardBadge: {
+    backgroundColor: "rgba(15, 23, 42, 0.75)",
+  },
+  gridTierText: {
+    fontSize: 9,
+    fontWeight: "800",
+  },
+  gridPremiumText: {
+    color: "#FFFFFF",
+  },
+  gridStandardText: {
+    color: "#FFFFFF",
+  },
+  videoReviewCard: {
+    width: 130,
+    height: 190,
+    borderRadius: 14,
+    overflow: "hidden",
+    marginRight: 12,
+    backgroundColor: "#000",
+    position: "relative",
+  },
+  videoReviewThumb: {
+    width: "100%",
+    height: "100%",
+    resizeMode: "cover",
+  },
+  videoReviewOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 10,
+  },
+  videoReviewMeta: {
+    width: "100%",
+    backgroundColor: "rgba(0,0,0,0.6)",
+    padding: 6,
+    borderRadius: 8,
+  },
+  videoReviewName: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  videoReviewStars: {
+    fontSize: 9,
+    marginTop: 2,
+  },
+  verifiedClientBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ECFDF5",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginLeft: 6,
+  },
+  verifiedClientText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#059669",
+    marginLeft: 3,
+  },
+  reviewPhotoAttachment: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+    marginRight: 8,
+  },
+  zoomDesignDetails: {
+    position: "absolute",
+    bottom: 30,
+    left: 20,
+    right: 20,
+    backgroundColor: "rgba(15, 23, 42, 0.9)",
+    borderRadius: 16,
+    padding: 16,
+  },
+  zoomDesignTitle: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "800",
+    marginBottom: 6,
+  },
+  zoomBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 8,
+  },
+  zoomMetaText: {
+    color: "#CBD5E1",
+    fontSize: 12,
+  },
+  zoomDescText: {
+    color: "#94A3B8",
+    fontSize: 12,
+    lineHeight: 16,
+    marginBottom: 12,
+  },
+  bookDesignModalBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Colors.primary,
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  bookDesignModalBtnText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  bottomBar: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 75,
+    backgroundColor: Colors.white,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    justifyContent: "space-between"
+  },
+  bottomPriceCol: {
+    justifyContent: "center"
+  },
+  bottomPriceLabel: {
+    fontSize: 10,
+    color: Colors.textSecondary,
+    fontWeight: "600"
+  },
+  bottomPriceVal: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: Colors.primary
+  },
+  bookNowBtn: {
+    flex: 1,
+    marginLeft: 16,
+    height: 48,
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  bookNowBtnText: {
+    color: Colors.white,
+    fontWeight: "800",
+    fontSize: 14
+  },
+  similarCard: { width: 100, marginRight: 12 },
+  similarImage: { width: "100%", height: 100, borderRadius: 10 },
+  similarName: { fontSize: 12, fontWeight: "700", color: Colors.text, marginTop: 6 },
+  similarRating: { fontSize: 11, fontWeight: "600", color: Colors.text, marginLeft: 2 },
 });

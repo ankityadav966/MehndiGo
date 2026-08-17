@@ -18,7 +18,7 @@ import { getCustomerAddresses } from "../../services/customer";
 import * as Location from "expo-location";
 
 export default function AddressSelection({ route, navigation }) {
-  const { artistId, serviceId, selectedDate, slotId, timeLabel } = route.params || {};
+  const { artistId, serviceId, selectedDate, slotId, timeLabel, selectedArt } = route.params || {};
 
   const [houseFlat, setHouseFlat] = useState("");
   const [localityArea, setLocalityArea] = useState("");
@@ -217,7 +217,8 @@ export default function AddressSelection({ route, navigation }) {
       pincode: pincode.trim(),
       landmark: landmark.trim() || null,
       latitude: finalLat,
-      longitude: finalLng
+      longitude: finalLng,
+      selectedArt
     });
   };
 

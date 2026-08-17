@@ -22,6 +22,14 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.INTEGER,
         allowNull: false
       },
+      booking_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true
+      },
+      dispute_reason: {
+        type: DataTypes.STRING,
+        allowNull: true
+      },
       subject: {
         type: DataTypes.STRING,
         allowNull: false

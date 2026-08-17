@@ -17,6 +17,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
+import * as Location from "expo-location";
+import Alert from "../../utils/Alert";
 import Colors from "../../constants/Colors";
 import LoadingSkeleton from "../../components/LoadingSkeleton";
 import OptimizedImage from "../../components/OptimizedImage";
@@ -74,6 +76,56 @@ export default function HomeScreen({ navigation }) {
 
   const [pendingPaymentBooking, setPendingPaymentBooking] = useState(null);
   const [paymentModalVisible, setPaymentModalVisible] = useState(false);
+  const hasShownPendingPaymentModalRef = useRef(false);
+  const dismissedPendingBookingIdsRef = useRef(new Set());
+
+  const getModalBookingDate = (b) => {
+    if (!b) return "";
+    const raw = b.booking_date || b.date || b.event_date || b.selected_date || b.reschedule_date || b.slot?.date || b.slot?.start_time || b.created_at || b.createdAt;
+    if (!raw) return "";
+    try {
+      const d = new Date(raw);
+      if (!isNaN(d.getTime())) {
+        return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+      }
+      return String(raw);
+    } catch (e) {
+      return String(raw);
+    }
+  };
+
+  const getModalBookingTime = (b) => {
+    if (!b) return "";
+    if (b.slot?.time_label) return b.slot.time_label;
+    if (b.booking_time) return b.booking_time;
+    if (b.time_slot) return b.time_slot;
+    if (b.timeLabel) return b.timeLabel;
+    if (b.reschedule_time) return b.reschedule_time;
+    if (b.slot?.start_time && b.slot?.end_time) {
+      try {
+        const st = new Date(b.slot.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const et = new Date(b.slot.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        return `${st} - ${et}`;
+      } catch (e) {
+        return String(b.slot.start_time);
+      }
+    }
+    return "";
+  };
+
+  const getModalPackageText = (b) => {
+    if (!b) return "Mehndi Package";
+    if (b.selected_art_title) {
+      const tierBadge = b.selected_art_tier === "PREMIUM" ? "Premium Art" : "Standard Art";
+      return `${b.selected_art_title} (${tierBadge})`;
+    }
+    if (b.service_coverage) {
+      const covLabel = b.service_coverage.replace(/_/g, " ").toLowerCase();
+      const capitalized = covLabel.charAt(0).toUpperCase() + covLabel.slice(1);
+      return `${b.service?.specialization_name || "Mehndi Service"} • ${capitalized}`;
+    }
+    return b.service?.specialization_name || "Custom Mehndi Package";
+  };
 
   // Smart Location Management States
   const [activeAddressState, setActiveAddressState] = useState(null);
@@ -239,12 +291,15 @@ export default function HomeScreen({ navigation }) {
         console.log("Failed to load favorites on dashboard:", favErr.message);
       }
 
-      // Check for split payment pending remaining amount
+      // Check for split payment pending remaining amount (ONLY open modal once on first arrival if not dismissed)
       try {
         const pendingBooking = await getPendingPayment();
-        if (pendingBooking) {
+        if (pendingBooking && pendingBooking.id && Number(pendingBooking.remaining_amount || 0) > 0) {
           setPendingPaymentBooking(pendingBooking);
-          setPaymentModalVisible(true);
+          if (!hasShownPendingPaymentModalRef.current && !dismissedPendingBookingIdsRef.current.has(pendingBooking.id)) {
+            hasShownPendingPaymentModalRef.current = true;
+            setPaymentModalVisible(true);
+          }
         } else {
           setPendingPaymentBooking(null);
           setPaymentModalVisible(false);
@@ -621,7 +676,9 @@ export default function HomeScreen({ navigation }) {
         />
         <View style={styles.recentArtistBadge}>
           <Ionicons name="star" size={10} color="#FFB800" />
-          <Text style={styles.recentArtistRatingText}>{item.avg_rating || "4.8"}</Text>
+          <Text style={styles.recentArtistRatingText}>
+            {Number(item.avg_rating || item.rating || 0) > 0 ? Number(item.avg_rating || item.rating).toFixed(1) : "New"}
+          </Text>
         </View>
         <View style={styles.recentArtistDetails}>
           <Text style={[styles.recentArtistName, { color: currentTextColor }]} numberOfLines={1}>
@@ -826,21 +883,36 @@ export default function HomeScreen({ navigation }) {
       </TouchableOpacity>
 
       {/* Pending Payment Sticky Card */}
-      {pendingPaymentBooking && (
+      {pendingPaymentBooking && Number(pendingPaymentBooking.remaining_amount || 0) > 0 && (
         <View style={styles.premiumPendingCard}>
-          <View style={styles.premiumPendingHeader}>
-            <Ionicons name="warning" size={16} color="#D97706" />
-            <Text style={styles.premiumPendingTitle}>Action Required: Pending Payment</Text>
+          <View style={[styles.premiumPendingHeader, { justifyContent: "space-between", flexDirection: "row", alignItems: "center" }]}>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <Ionicons name="warning" size={16} color="#D97706" />
+              <Text style={[styles.premiumPendingTitle, { marginLeft: 6 }]}>Action Required: Pending Payment</Text>
+            </View>
+            <TouchableOpacity
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              onPress={() => {
+                if (pendingPaymentBooking?.id) {
+                  dismissedPendingBookingIdsRef.current.add(pendingPaymentBooking.id);
+                }
+                setPendingPaymentBooking(null);
+              }}
+            >
+              <Ionicons name="close-circle" size={20} color="#D97706" />
+            </TouchableOpacity>
           </View>
           <View style={styles.premiumPendingBody}>
             <Image
-              source={{ uri: pendingPaymentBooking.artist?.user?.profile_image || "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=150" }}
+              source={{ uri: resolveImage(pendingPaymentBooking.artist?.user?.profile_image) || "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=150" }}
               style={styles.premiumPendingAvatar}
             />
             <View style={styles.premiumPendingInfo}>
-              <Text style={styles.premiumPendingArtist}>{pendingPaymentBooking.artist?.user?.name || "Professional Specialist"}</Text>
+              <Text style={styles.premiumPendingArtist}>
+                {pendingPaymentBooking.artist?.user?.name || pendingPaymentBooking.artist?.business_name || "Mehndi Specialist"}
+              </Text>
               <Text style={styles.premiumPendingDate}>
-                Date: {pendingPaymentBooking.slot?.start_time ? new Date(pendingPaymentBooking.slot.start_time).toLocaleDateString() : (pendingPaymentBooking.reschedule_date ? new Date(pendingPaymentBooking.reschedule_date).toLocaleDateString() : "Today")}
+                Date: {getModalBookingDate(pendingPaymentBooking) || "Confirmed Booking"}
               </Text>
               <Text style={styles.premiumPendingAmount}>
                 Remaining Due: <Text style={{ color: Colors.primary, fontWeight: "800" }}>₹{pendingPaymentBooking.remaining_amount}</Text>
@@ -1150,7 +1222,13 @@ export default function HomeScreen({ navigation }) {
         visible={paymentModalVisible}
         transparent={true}
         animationType="fade"
-        onRequestClose={() => setPaymentModalVisible(false)}
+        onRequestClose={() => {
+          if (pendingPaymentBooking?.id) {
+            dismissedPendingBookingIdsRef.current.add(pendingPaymentBooking.id);
+          }
+          hasShownPendingPaymentModalRef.current = true;
+          setPaymentModalVisible(false);
+        }}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -1167,31 +1245,31 @@ export default function HomeScreen({ navigation }) {
                 {/* Artist Info Card */}
                 <View style={styles.modalArtistCard}>
                   <Image
-                    source={{ uri: pendingPaymentBooking.artist?.user?.profile_image || "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=300" }}
+                    source={{ uri: resolveImage(pendingPaymentBooking.artist?.user?.profile_image) || "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=300" }}
                     style={styles.modalArtistPhoto}
                   />
                   <View style={styles.modalArtistMeta}>
                     <Text style={styles.modalArtistName}>
-                      {pendingPaymentBooking.artist?.user?.name || "Professional Specialist"}
+                      {pendingPaymentBooking.artist?.user?.name || pendingPaymentBooking.artist?.business_name || "Mehndi Specialist"}
                     </Text>
                     <Text style={styles.modalArtistCategory}>
-                      {pendingPaymentBooking.service?.category || "Mehndi Specialist"}
+                      {pendingPaymentBooking.service?.specialization_name || pendingPaymentBooking.service?.category || "Mehndi Specialist"}
                     </Text>
 
                     <View style={styles.modalArtistStats}>
                       <View style={styles.modalStatItem}>
                         <Ionicons name="star" size={13} color="#FFB800" />
                         <Text style={styles.modalStatItemText}>
-                          {Number(pendingPaymentBooking.artist?.avg_rating || 4.8).toFixed(1)}
+                          {Number(pendingPaymentBooking.artist?.avg_rating || 5.0).toFixed(1)}
                         </Text>
                       </View>
                       <Text style={styles.modalDivider}>•</Text>
                       <Text style={styles.modalStatItemText}>
-                        {pendingPaymentBooking.artist?.experience_years || 3} Yrs Exp
+                        {pendingPaymentBooking.artist?.experience_years || 4} Yrs Exp
                       </Text>
                       <Text style={styles.modalDivider}>•</Text>
                       <Text style={styles.modalStatItemText} numberOfLines={1}>
-                        {pendingPaymentBooking.artist?.city || "Jaipur"}
+                        {pendingPaymentBooking.artist?.city || pendingPaymentBooking.artist?.locality || "Jaipur"}
                       </Text>
                     </View>
                   </View>
@@ -1203,7 +1281,7 @@ export default function HomeScreen({ navigation }) {
                     <Ionicons name="receipt-outline" size={14} color={Colors.textSecondary} />
                     <Text style={styles.modalDetailLabel}>Booking ID:</Text>
                     <Text style={styles.modalDetailValue} numberOfLines={1}>
-                      #{pendingPaymentBooking.booking_code || "BK-000000"}
+                      #{pendingPaymentBooking.booking_code || (`MG-${String(pendingPaymentBooking.id).padStart(6, "0")}`)}
                     </Text>
                   </View>
 
@@ -1211,9 +1289,14 @@ export default function HomeScreen({ navigation }) {
                     <Ionicons name="calendar-outline" size={14} color={Colors.textSecondary} />
                     <Text style={styles.modalDetailLabel}>Date & Time:</Text>
                     <Text style={styles.modalDetailValue}>
-                      {pendingPaymentBooking.slot?.start_time || pendingPaymentBooking.slot?.date
-                        ? new Date(pendingPaymentBooking.slot.start_time || pendingPaymentBooking.slot.date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
-                        : (pendingPaymentBooking.reschedule_date ? new Date(pendingPaymentBooking.reschedule_date).toLocaleDateString() : "TBD")} at {pendingPaymentBooking.slot?.time_label || pendingPaymentBooking.reschedule_time || "TBD"}
+                      {(() => {
+                        const dateStr = getModalBookingDate(pendingPaymentBooking);
+                        const timeStr = getModalBookingTime(pendingPaymentBooking);
+                        if (dateStr && timeStr) return `${dateStr} at ${timeStr}`;
+                        if (dateStr) return dateStr;
+                        if (timeStr) return timeStr;
+                        return "Confirmed Schedule";
+                      })()}
                     </Text>
                   </View>
 
@@ -1221,21 +1304,23 @@ export default function HomeScreen({ navigation }) {
                     <Ionicons name="flower-outline" size={14} color={Colors.textSecondary} />
                     <Text style={styles.modalDetailLabel}>Service:</Text>
                     <Text style={styles.modalDetailValue} numberOfLines={1}>
-                      {pendingPaymentBooking.service?.specialization_name || "Mehndi Service"}
+                      {pendingPaymentBooking.service?.specialization_name || pendingPaymentBooking.selected_art_title || "Mehndi Service"}
                     </Text>
                   </View>
 
                   <View style={styles.modalDetailRow}>
                     <Ionicons name="ribbon-outline" size={14} color={Colors.textSecondary} />
                     <Text style={styles.modalDetailLabel}>Package:</Text>
-                    <Text style={styles.modalDetailValue}>Standard Premium Package</Text>
+                    <Text style={styles.modalDetailValue} numberOfLines={1}>
+                      {getModalPackageText(pendingPaymentBooking)}
+                    </Text>
                   </View>
 
                   <View style={[styles.modalDetailRow, { alignItems: "flex-start" }]}>
                     <Ionicons name="pin-outline" size={14} color={Colors.textSecondary} style={{ marginTop: 2 }} />
                     <Text style={styles.modalDetailLabel}>Address:</Text>
                     <Text style={[styles.modalDetailValue, { flex: 1 }]} numberOfLines={2}>
-                      {pendingPaymentBooking.address || "Client Address Details"}
+                      {pendingPaymentBooking.address || pendingPaymentBooking.landmark || "Customer Location Details"}
                     </Text>
                   </View>
                 </View>
@@ -1247,15 +1332,16 @@ export default function HomeScreen({ navigation }) {
                     pendingPaymentBooking.customer_total_amount ||
                     pendingPaymentBooking.total_amount ||
                     pendingPaymentBooking.totalAmount ||
+                    pendingPaymentBooking.total_price ||
                     pendingPaymentBooking.final_amount ||
                     pendingPaymentBooking.finalAmount ||
-                    (remBal > 0 ? Math.round(remBal / 0.90) : 2500)
+                    (remBal > 0 ? remBal + Number(pendingPaymentBooking.advance_paid || 0) : 0)
                   );
                   const advPaid = Number(
                     pendingPaymentBooking.advance_paid ||
                     pendingPaymentBooking.advance_amount ||
                     pendingPaymentBooking.required_advance ||
-                    (totalAmt > remBal ? totalAmt - remBal : Math.round(totalAmt * 0.10))
+                    Math.max(0, totalAmt - remBal)
                   );
 
                   return (
@@ -1265,7 +1351,7 @@ export default function HomeScreen({ navigation }) {
                         <Text style={styles.modalBillValue}>₹{totalAmt}</Text>
                       </View>
                       <View style={styles.modalBillRow}>
-                        <Text style={styles.modalBillLabel}>Advance Paid (10%)</Text>
+                        <Text style={styles.modalBillLabel}>Advance Paid</Text>
                         <Text style={[styles.modalBillValue, { color: "#2E7D32" }]}>-₹{advPaid}</Text>
                       </View>
                       <View style={styles.modalDividerLine} />
@@ -1285,7 +1371,13 @@ export default function HomeScreen({ navigation }) {
             <View style={styles.modalActionRow}>
               <TouchableOpacity
                 style={styles.modalLaterBtn}
-                onPress={() => setPaymentModalVisible(false)}
+                onPress={() => {
+                  if (pendingPaymentBooking?.id) {
+                    dismissedPendingBookingIdsRef.current.add(pendingPaymentBooking.id);
+                  }
+                  hasShownPendingPaymentModalRef.current = true;
+                  setPaymentModalVisible(false);
+                }}
                 activeOpacity={0.7}
               >
                 <Text style={styles.modalLaterText}>Later</Text>
@@ -1295,6 +1387,10 @@ export default function HomeScreen({ navigation }) {
                 style={styles.modalPayBtn}
                 activeOpacity={0.8}
                 onPress={() => {
+                  if (pendingPaymentBooking?.id) {
+                    dismissedPendingBookingIdsRef.current.add(pendingPaymentBooking.id);
+                  }
+                  hasShownPendingPaymentModalRef.current = true;
                   setPaymentModalVisible(false);
                   navigation.navigate("BookingSettlement", {
                     bookingId: pendingPaymentBooking.id

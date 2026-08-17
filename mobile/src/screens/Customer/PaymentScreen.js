@@ -149,17 +149,41 @@ export default function PaymentScreen({ route, navigation }) {
     }
   };
 
+  const navigateBackToArtistProfile = () => {
+    const targetArtistId = booking?.artist_id || booking?.artist?.id || route.params?.artistId;
+    if (targetArtistId) {
+      navigation.reset({
+        index: 1,
+        routes: [
+          { name: "Home" },
+          { name: "ArtistProfile", params: { artistId: targetArtistId } }
+        ]
+      });
+    } else {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "Home" }]
+      });
+    }
+  };
+
   const handlePaymentFailure = (error) => {
     setRazorpayModalVisible(false);
     setLoading(false);
-    const errorMsg = error?.description || error?.message || (typeof error === "string" ? error : "Razorpay payment transaction failed.");
-    Alert.alert("Payment Failed", errorMsg);
+    const errorMsg = error?.description || error?.message || (typeof error === "string" ? error : "Payment cancelled or could not be completed.");
+    console.log("[PAYMENT_SCREEN] Payment failed/cancelled:", errorMsg);
+    Alert.alert("Payment Cancelled", errorMsg, [
+      {
+        text: "OK",
+        onPress: () => navigateBackToArtistProfile()
+      }
+    ]);
   };
 
   const handlePaymentDismiss = () => {
     setRazorpayModalVisible(false);
     setLoading(false);
-    Alert.alert("Payment Cancelled", "You cancelled the payment transaction.");
+    navigateBackToArtistProfile();
   };
 
   const handlePay = async () => {

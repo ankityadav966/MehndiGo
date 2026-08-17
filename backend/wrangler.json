@@ -1,7 +1,23 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "mehndigo-backend",
-  "compatibility_date": "2026-08-04",
+  "main": "src/index.js",
+  "compatibility_date": "2024-09-23",
+  "routes": [
+    {
+      "pattern": "api.mehndigo.in",
+      "custom_domain": true
+    }
+  ],
+  "vars": {
+    "ENVIRONMENT": "production",
+    "JWT_SECRET": "mehndigo-super-secret-jwt-token-key-2026",
+    "RAZORPAY_KEY_ID": "rzp_test_TMmMICSifrFCzs",
+    "RAZORPAY_KEY_SECRET": "22VDZugfrRfO7O92iwtDhSrK",
+    "EMAIL_USER": "sonudonyadav87@gmail.com",
+    "EMAIL_PASS": "kwemkkniwxyohmvm",
+    "RESEND_API_KEY": ""
+  },
   "d1_databases": [
     {
       "binding": "DB",

@@ -3,10 +3,18 @@ import React, { createContext, useContext, useState, useEffect } from "react";
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
+  const normalizeUserData = (data) => {
+    if (!data) return null;
+    return {
+      ...data,
+      role: (data.role || "USER").toUpperCase()
+    };
+  };
+
   const [user, setUser] = useState(() => {
     const savedUser = localStorage.getItem("user");
     try {
-      return savedUser ? JSON.parse(savedUser) : null;
+      return savedUser ? normalizeUserData(JSON.parse(savedUser)) : null;
     } catch (e) {
       return null;
     }
@@ -21,9 +29,9 @@ export const AuthProvider = ({ children }) => {
         const payload = JSON.parse(atob(token.split(".")[1]));
         setUser((prev) => {
           if (prev && prev.id === payload.id) {
-            return prev;
+            return { ...prev, role: (prev.role || payload.role || "USER").toUpperCase() };
           }
-          return { id: payload.id, role: payload.role };
+          return { id: payload.id, role: (payload.role || "USER").toUpperCase() };
         });
       } catch (e) {
         logout();
@@ -42,10 +50,11 @@ export const AuthProvider = ({ children }) => {
   }, [theme]);
 
   const loginSuccess = (userToken, userData) => {
+    const cleanUser = normalizeUserData(userData);
     localStorage.setItem("token", userToken);
-    localStorage.setItem("user", JSON.stringify(userData));
+    localStorage.setItem("user", JSON.stringify(cleanUser));
     setToken(userToken);
-    setUser(userData);
+    setUser(cleanUser);
   };
 
   const logout = () => {

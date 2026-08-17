@@ -195,14 +195,78 @@ const db = require("./models");
     await db.sequelize.query('ALTER TABLE "Transactions" ADD COLUMN IF NOT EXISTS razorpay_payment_id VARCHAR(255);');
     await db.sequelize.query('ALTER TABLE "Transactions" ADD COLUMN IF NOT EXISTS razorpay_signature VARCHAR(255);');
 
+    await db.sequelize.query('ALTER TABLE "Bookings" ADD COLUMN IF NOT EXISTS completion_pin VARCHAR(10);');
+    await db.sequelize.query('ALTER TABLE "Bookings" ADD COLUMN IF NOT EXISTS selected_art_id INTEGER;');
+    await db.sequelize.query('ALTER TABLE "Bookings" ADD COLUMN IF NOT EXISTS selected_art_title VARCHAR(255);');
+    await db.sequelize.query('ALTER TABLE "Bookings" ADD COLUMN IF NOT EXISTS selected_art_image VARCHAR(500);');
+    await db.sequelize.query('ALTER TABLE "Bookings" ADD COLUMN IF NOT EXISTS selected_art_tier VARCHAR(50) DEFAULT \'STANDARD\';');
+    await db.sequelize.query('ALTER TABLE "Bookings" ADD COLUMN IF NOT EXISTS selected_art_duration INTEGER DEFAULT 60;');
+    await db.sequelize.query('ALTER TABLE "Bookings" ADD COLUMN IF NOT EXISTS selected_art_price INTEGER;');
+    await db.sequelize.query('ALTER TABLE "Bookings" ADD COLUMN IF NOT EXISTS hold_expires_at TIMESTAMP WITH TIME ZONE;');
+    await db.sequelize.query('ALTER TABLE "Bookings" ADD COLUMN IF NOT EXISTS group_size INTEGER DEFAULT 1;');
+    await db.sequelize.query('ALTER TABLE "Bookings" ADD COLUMN IF NOT EXISTS service_coverage VARCHAR(50) DEFAULT \'BOTH_HANDS\';');
+    await db.sequelize.query('ALTER TABLE "Bookings" ADD COLUMN IF NOT EXISTS reference_images JSONB DEFAULT \'[]\';');
+    await db.sequelize.query('ALTER TABLE "Bookings" ADD COLUMN IF NOT EXISTS pin_attempts INTEGER DEFAULT 0;');
+    await db.sequelize.query('ALTER TABLE "Bookings" ADD COLUMN IF NOT EXISTS pin_locked_until TIMESTAMP WITH TIME ZONE;');
+    await db.sequelize.query('ALTER TABLE "Bookings" ADD COLUMN IF NOT EXISTS cancellation_fee INTEGER DEFAULT 0;');
+    await db.sequelize.query('ALTER TABLE "Bookings" ADD COLUMN IF NOT EXISTS refund_amount INTEGER DEFAULT 0;');
+    await db.sequelize.query('ALTER TABLE "Bookings" ADD COLUMN IF NOT EXISTS is_rescheduled BOOLEAN DEFAULT FALSE;');
+    await db.sequelize.query('ALTER TABLE "Bookings" ADD COLUMN IF NOT EXISTS original_booking_id INTEGER;');
+    await db.sequelize.query('ALTER TABLE "Bookings" ADD COLUMN IF NOT EXISTS travel_origin_type VARCHAR(50) DEFAULT \'HOME_BASE\';');
+    await db.sequelize.query('ALTER TABLE "Bookings" ADD COLUMN IF NOT EXISTS travel_origin_address VARCHAR(500);');
+    await db.sequelize.query('ALTER TABLE "Bookings" ADD COLUMN IF NOT EXISTS travel_distance_km DOUBLE PRECISION;');
+    await db.sequelize.query('ALTER TABLE "Bookings" ADD COLUMN IF NOT EXISTS travel_duration_mins INTEGER;');
+
+    await db.sequelize.query('ALTER TABLE "Portfolios" ADD COLUMN IF NOT EXISTS art_tier VARCHAR(50) DEFAULT \'STANDARD\';');
+    await db.sequelize.query('ALTER TABLE "Portfolios" ADD COLUMN IF NOT EXISTS price INTEGER;');
+    await db.sequelize.query('ALTER TABLE "Portfolios" ADD COLUMN IF NOT EXISTS duration_minutes INTEGER DEFAULT 60;');
+    await db.sequelize.query('ALTER TABLE "Portfolios" ADD COLUMN IF NOT EXISTS complexity_level VARCHAR(50) DEFAULT \'MEDIUM\';');
+
+    await db.sequelize.query('ALTER TABLE "Reviews" ADD COLUMN IF NOT EXISTS video_url VARCHAR(500);');
+    await db.sequelize.query('ALTER TABLE "Reviews" ADD COLUMN IF NOT EXISTS video_thumbnail VARCHAR(500);');
+    await db.sequelize.query('ALTER TABLE "Reviews" ADD COLUMN IF NOT EXISTS photos JSONB DEFAULT \'[]\';');
+    await db.sequelize.query('ALTER TABLE "Reviews" ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT TRUE;');
+
+    await db.sequelize.query('ALTER TABLE "artist_profiles" ADD COLUMN IF NOT EXISTS working_days JSONB DEFAULT \'["MONDAY","TUESDAY","WEDNESDAY","THURSDAY","FRIDAY","SATURDAY"]\';');
+    await db.sequelize.query('ALTER TABLE "artist_profiles" ADD COLUMN IF NOT EXISTS working_start_time VARCHAR(20) DEFAULT \'09:00\';');
+    await db.sequelize.query('ALTER TABLE "artist_profiles" ADD COLUMN IF NOT EXISTS working_end_time VARCHAR(20) DEFAULT \'20:00\';');
+    await db.sequelize.query('ALTER TABLE "artist_profiles" ADD COLUMN IF NOT EXISTS break_start_time VARCHAR(20) DEFAULT \'14:00\';');
+    await db.sequelize.query('ALTER TABLE "artist_profiles" ADD COLUMN IF NOT EXISTS break_end_time VARCHAR(20) DEFAULT \'15:00\';');
+    await db.sequelize.query('ALTER TABLE "artist_profiles" ADD COLUMN IF NOT EXISTS leave_dates JSONB DEFAULT \'[]\';');
+    await db.sequelize.query('ALTER TABLE "artist_profiles" ADD COLUMN IF NOT EXISTS same_day_booking BOOLEAN DEFAULT TRUE;');
+    await db.sequelize.query('ALTER TABLE "artist_profiles" ADD COLUMN IF NOT EXISTS min_advance_hours INTEGER DEFAULT 2;');
+    await db.sequelize.query('ALTER TABLE "artist_profiles" ADD COLUMN IF NOT EXISTS max_advance_days INTEGER DEFAULT 60;');
+    await db.sequelize.query('ALTER TABLE "artist_profiles" ADD COLUMN IF NOT EXISTS max_bookings_per_day INTEGER DEFAULT 4;');
+    await db.sequelize.query('ALTER TABLE "artist_profiles" ADD COLUMN IF NOT EXISTS pan_number VARCHAR(50);');
+    await db.sequelize.query('ALTER TABLE "artist_profiles" ADD COLUMN IF NOT EXISTS bank_account_number VARCHAR(50);');
+    await db.sequelize.query('ALTER TABLE "artist_profiles" ADD COLUMN IF NOT EXISTS bank_ifsc VARCHAR(50);');
+    await db.sequelize.query('ALTER TABLE "artist_profiles" ADD COLUMN IF NOT EXISTS bank_account_holder VARCHAR(255);');
+    await db.sequelize.query('ALTER TABLE "artist_profiles" ADD COLUMN IF NOT EXISTS cancellation_count_30d INTEGER DEFAULT 0;');
+    await db.sequelize.query('ALTER TABLE "artist_profiles" ADD COLUMN IF NOT EXISTS on_time_arrival_rate DOUBLE PRECISION DEFAULT 100.0;');
+
+    await db.sequelize.query('ALTER TABLE "ArtistScores" ADD COLUMN IF NOT EXISTS reliability_score DOUBLE PRECISION DEFAULT 100.0;');
+    await db.sequelize.query('ALTER TABLE "ArtistScores" ADD COLUMN IF NOT EXISTS acceptance_rate DOUBLE PRECISION DEFAULT 100.0;');
+    await db.sequelize.query('ALTER TABLE "ArtistScores" ADD COLUMN IF NOT EXISTS completion_rate DOUBLE PRECISION DEFAULT 100.0;');
+    await db.sequelize.query('ALTER TABLE "ArtistScores" ADD COLUMN IF NOT EXISTS on_time_rate DOUBLE PRECISION DEFAULT 100.0;');
+    await db.sequelize.query('ALTER TABLE "ArtistScores" ADD COLUMN IF NOT EXISTS tier_badge VARCHAR(50) DEFAULT \'ON_TIME_PRO\';');
+
+    await db.sequelize.query('ALTER TABLE "SupportTickets" ADD COLUMN IF NOT EXISTS booking_id INTEGER;');
+    await db.sequelize.query('ALTER TABLE "SupportTickets" ADD COLUMN IF NOT EXISTS dispute_reason VARCHAR(255);');
+
     await db.User.sync({ alter: true });
     await db.Payment.sync({ alter: true });
     await db.Transaction.sync({ alter: true });
     await db.Wallet.sync({ alter: true });
     await db.WalletTransaction.sync({ alter: true });
+    await db.Booking.sync({ alter: true });
+    await db.ArtistProfile.sync({ alter: true });
+    await db.Portfolio.sync({ alter: true });
+    await db.Review.sync({ alter: true });
+    await db.ArtistScore.sync({ alter: true });
+    await db.SupportTicket.sync({ alter: true });
     await db.LedgerEntry.sync({ alter: true });
     await db.OutstandingCommission.sync({ alter: true });
-    console.log("[DB MIGRATION] Users, Payments, Transactions, Wallets, WalletTransactions, Ledger, and OutstandingCommissions schema updated successfully.");
+    console.log("[DB MIGRATION] All database schemas updated successfully.");
   } catch (err) {
     console.log("[DB MIGRATION] Self-healing migration note:", err.message);
   }

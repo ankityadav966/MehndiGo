@@ -54,6 +54,10 @@ export default function AddPortfolioScreen({ navigation }) {
   const [occasion, setOccasion] = useState("");
   const [tags, setTags] = useState("");
   const [location, setLocation] = useState("Jaipur");
+  const [artTier, setArtTier] = useState("STANDARD"); // STANDARD or PREMIUM
+  const [price, setPrice] = useState("");
+  const [durationMinutes, setDurationMinutes] = useState("60");
+  const [complexityLevel, setComplexityLevel] = useState("MEDIUM");
   const [visibility, setVisibility] = useState(true);
   const [media, setMedia] = useState(null); // { uri, type, width, height }
   const [videoThumbnail, setVideoThumbnail] = useState(null);
@@ -139,6 +143,10 @@ export default function AddPortfolioScreen({ navigation }) {
       Alert.alert("Category Required", "Please select a mehndi category.");
       return;
     }
+    if (artTier === "PREMIUM" && (!price || Number(price) <= 0)) {
+      Alert.alert("Price Required", "Please enter a valid price in ₹ for this Premium Art design.");
+      return;
+    }
 
     setSubmitting(true);
     setUploadProgress(0.01);
@@ -166,6 +174,10 @@ export default function AddPortfolioScreen({ navigation }) {
         tags: tags.trim(),
         location,
         visibility,
+        art_tier: artTier,
+        price: artTier === "PREMIUM" ? Number(price) : null,
+        duration_minutes: Number(durationMinutes) || 60,
+        complexity_level: complexityLevel,
         image_url: isVid ? (remoteThumbnailUrl || null) : media.uri,
         video_url: isVid ? media.uri : null
       };
@@ -261,6 +273,72 @@ export default function AddPortfolioScreen({ navigation }) {
             value={title}
             onChangeText={setTitle}
           />
+
+          {/* Art Tier Selector */}
+          <Text style={styles.inputLabel}>Art Listing Tier *</Text>
+          <View style={styles.tierSelectorRow}>
+            <TouchableOpacity
+              style={[styles.tierOption, artTier === "STANDARD" && styles.activeTierOption]}
+              onPress={() => setArtTier("STANDARD")}
+            >
+              <Ionicons name="sparkles" size={16} color={artTier === "STANDARD" ? Colors.white : Colors.primary} />
+              <Text style={[styles.tierOptionText, artTier === "STANDARD" && styles.activeTierOptionText]}>
+                Standard Design
+              </Text>
+              <Text style={[styles.tierSubText, artTier === "STANDARD" && styles.activeTierSubText]}>
+                Included in basic package
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.tierOption, artTier === "PREMIUM" && styles.activeTierOption]}
+              onPress={() => setArtTier("PREMIUM")}
+            >
+              <Ionicons name="diamond" size={16} color={artTier === "PREMIUM" ? Colors.white : "#7C3AED"} />
+              <Text style={[styles.tierOptionText, artTier === "PREMIUM" && styles.activeTierOptionText]}>
+                💎 Premium Art
+              </Text>
+              <Text style={[styles.tierSubText, artTier === "PREMIUM" && styles.activeTierSubText]}>
+                Custom priced design
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Premium Price Input */}
+          {artTier === "PREMIUM" && (
+            <View style={{ marginTop: 4 }}>
+              <Text style={styles.inputLabel}>Premium Art Price (₹) *</Text>
+              <TextInput
+                placeholder="e.g. 2500"
+                placeholderTextColor={Colors.textTertiary}
+                keyboardType="numeric"
+                style={styles.textInput}
+                value={price}
+                onChangeText={setPrice}
+              />
+            </View>
+          )}
+
+          {/* Application Duration & Calendar Buffer */}
+          <View style={{ marginTop: 4 }}>
+            <Text style={styles.inputLabel}>Estimated Application Time (Minutes) *</Text>
+            <View style={styles.durationRow}>
+              {[30, 45, 60, 90, 120, 180].map((mins) => (
+                <TouchableOpacity
+                  key={mins}
+                  style={[styles.durationChip, Number(durationMinutes) === mins && styles.activeDurationChip]}
+                  onPress={() => setDurationMinutes(String(mins))}
+                >
+                  <Text style={[styles.durationChipText, Number(durationMinutes) === mins && styles.activeDurationChipText]}>
+                    {mins}m
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={styles.bufferHint}>
+              ℹ️ MehndiGo automatically adds a 20-min travel & prep buffer before booking your next client.
+            </Text>
+          </View>
 
           <Text style={styles.inputLabel}>Description</Text>
           <TextInput
@@ -512,6 +590,75 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     color: Colors.primary
-  }
+  },
+  tierSelectorRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  tierOption: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: "#E2E8F0",
+    backgroundColor: Colors.white,
+    alignItems: "center",
+  },
+  activeTierOption: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primary,
+  },
+  tierOptionText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: Colors.text,
+    marginTop: 4,
+  },
+  activeTierOptionText: {
+    color: "#FFFFFF",
+  },
+  tierSubText: {
+    fontSize: 10,
+    color: Colors.textTertiary,
+    marginTop: 2,
+    textAlign: "center",
+  },
+  activeTierSubText: {
+    color: "rgba(255,255,255,0.85)",
+  },
+  durationRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 4,
+  },
+  durationChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: "#F1F5F9",
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+  },
+  activeDurationChip: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  durationChipText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#475569",
+  },
+  activeDurationChipText: {
+    color: "#FFFFFF",
+  },
+  bufferHint: {
+    fontSize: 11,
+    color: "#64748B",
+    marginTop: 6,
+    fontStyle: "italic",
+  },
 });
 

@@ -132,7 +132,7 @@ async function getArtistReviews(req, res) {
 
 async function getArtistAvailability(req, res) {
   try {
-    const response = await CustomerService.getArtistAvailability(req.params.id);
+    const response = await CustomerService.getArtistAvailability(req.params.id, req.query);
     return res.status(200).json(SuccessResponse("Artist Availability Fetched Successfully", response));
   } catch (error) {
     return res
@@ -487,20 +487,22 @@ async function deleteAddress(req, res) {
 async function createSupportTicket(req, res) {
   try {
     const db = require("../../models");
-    const { category, subject, description, attachments } = req.body;
+    const { category, subject, description, attachments, booking_id, bookingId, dispute_reason, disputeReason } = req.body;
 
-    if (!subject || !description) {
+    if (!subject && !description && !disputeReason) {
       return res.status(400).json(ErrorResponse("Subject and description are required"));
     }
 
     const ticket = await db.SupportTicket.create({
       user_id: req.user.id,
-      category: category || "Other",
-      subject,
-      description,
+      booking_id: booking_id || bookingId || null,
+      dispute_reason: dispute_reason || disputeReason || null,
+      category: category || (booking_id || bookingId ? "Booking Dispute" : "Other"),
+      subject: subject || `Dispute for Booking #${booking_id || bookingId || ''}`,
+      description: description || dispute_reason || "Dispute submitted by customer",
       attachments: attachments || null,
       status: "OPEN",
-      priority: "LOW"
+      priority: (booking_id || bookingId) ? "HIGH" : "LOW"
     });
 
     return res.status(201).json(SuccessResponse("Support ticket created successfully", ticket));

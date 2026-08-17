@@ -379,12 +379,105 @@ class CustomerService {
     };
   }
 
-  async getArtistAvailability(artistId) {
+  async getArtistAvailability(artistId, query = {}) {
     const slots = await db.AvailabilitySlot.findAll({
       where: { artist_id: artistId },
       order: [["start_time", "ASC"]]
     });
-    return slots;
+
+    const artist = await db.ArtistProfile.findByPk(artistId);
+    if (!artist) {
+      return slots;
+    }
+
+    const { date, selected_art_id, group_size = 1, latitude, longitude } = query;
+    const bookingService = require("./booking.services");
+
+    const targetDate = date ? String(date).substring(0, 10) : new Date().toISOString().substring(0, 10);
+    const dayOfWeek = new Date(targetDate).toLocaleDateString("en-US", { weekday: "long" }).toUpperCase();
+
+    const workingDays = Array.isArray(artist.working_days) ? artist.working_days : ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
+    const leaveDates = Array.isArray(artist.leave_dates) ? artist.leave_dates : [];
+
+    const isWorkingDay = workingDays.includes(dayOfWeek);
+    const isLeave = leaveDates.includes(targetDate);
+
+    // Selected Art Duration
+    let artDuration = 60;
+    if (selected_art_id) {
+      const art = await db.Portfolio.findByPk(selected_art_id);
+      if (art && art.duration_minutes) {
+        artDuration = Number(art.duration_minutes);
+      }
+    }
+    const totalDesignDuration = artDuration * Math.max(1, Number(group_size || 1));
+
+    // Travel calculation from previous booking on that day
+    const travelInfo = await bookingService.calculateTravelAndSequence(
+      artistId,
+      targetDate,
+      null,
+      latitude,
+      longitude
+    );
+
+    // Build standard time slots with feasibility
+    const timeTemplates = [
+      { label: "10:00 AM", startTimeStr: `${targetDate}T10:00:00.000Z`, endTimeStr: `${targetDate}T13:00:00.000Z` },
+      { label: "02:00 PM", startTimeStr: `${targetDate}T14:00:00.000Z`, endTimeStr: `${targetDate}T17:00:00.000Z` },
+      { label: "06:00 PM", startTimeStr: `${targetDate}T18:00:00.000Z`, endTimeStr: `${targetDate}T21:00:00.000Z` }
+    ];
+
+    const startOfDay = new Date(`${targetDate}T00:00:00.000Z`);
+    const endOfDay = new Date(`${targetDate}T23:59:59.999Z`);
+
+    const existingBookings = await db.Booking.findAll({
+      where: {
+        artist_id: artistId,
+        booking_status: { [Op.ne]: "CANCELLED" },
+        createdAt: { [Op.between]: [startOfDay, endOfDay] }
+      },
+      include: [{ model: db.AvailabilitySlot, as: "slot", required: false }]
+    });
+
+    const smartSlots = timeTemplates.map((t) => {
+      const slotStartTime = new Date(t.startTimeStr);
+      const isBooked = existingBookings.some((b) => {
+        if (b.slot?.start_time && new Date(b.slot.start_time).getTime() === slotStartTime.getTime()) return true;
+        if (b.notes && b.notes.includes(t.label)) return true;
+        return false;
+      });
+
+      const isFeasible = isWorkingDay && !isLeave && !isBooked;
+
+      return {
+        label: t.label,
+        start_time: t.startTimeStr,
+        end_time: t.endTimeStr,
+        is_available: isFeasible,
+        is_booked: isBooked,
+        travel_distance_km: travelInfo.distanceKm,
+        travel_duration_mins: travelInfo.durationMins,
+        travel_origin_type: travelInfo.originType,
+        travel_origin_address: travelInfo.originAddress,
+        design_duration_mins: totalDesignDuration,
+        prep_buffer_mins: 15,
+        cooldown_buffer_mins: 20,
+        total_block_mins: travelInfo.durationMins + totalDesignDuration + 15 + 20
+      };
+    });
+
+    return {
+      artist_id: artistId,
+      date: targetDate,
+      is_working_day: isWorkingDay,
+      is_on_leave: isLeave,
+      working_hours: `${artist.working_start_time || '09:00'} - ${artist.working_end_time || '20:00'}`,
+      break_hours: `${artist.break_start_time || '14:00'} - ${artist.break_end_time || '15:00'}`,
+      travel_info: travelInfo,
+      smart_slots: smartSlots,
+      raw_slots: slots
+    };
   }
 
   async getSimilarArtists(artistId) {

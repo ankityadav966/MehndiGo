@@ -2177,6 +2177,22 @@ async createReview(data) {
         type: "BOOKING",
         data: { bookingId: booking.id, booking_id: booking.id }
       });
+      io.to(booking.user_id.toString()).emit("booking_status_updated", {
+        bookingId: booking.id,
+        bookingCode: booking.booking_code,
+        booking_status: "CONFIRMED",
+        detailed_status: "ACCEPTED",
+        status: "ACCEPTED",
+        timestamp: new Date()
+      });
+      io.to(`booking_room_${booking.id}`).emit("booking_status_updated", {
+        bookingId: booking.id,
+        bookingCode: booking.booking_code,
+        booking_status: "CONFIRMED",
+        detailed_status: "ACCEPTED",
+        status: "ACCEPTED",
+        timestamp: new Date()
+      });
     } catch {}
 
     return { success: true };
@@ -2229,6 +2245,22 @@ async createReview(data) {
         message: `Your booking request #${booking.booking_code} was declined by the artist.`,
         type: "BOOKING",
         data: { bookingId: booking.id, booking_id: booking.id }
+      });
+      io.to(booking.user_id.toString()).emit("booking_status_updated", {
+        bookingId: booking.id,
+        bookingCode: booking.booking_code,
+        booking_status: "CANCELLED",
+        detailed_status: "REJECTED",
+        status: "REJECTED",
+        timestamp: new Date()
+      });
+      io.to(`booking_room_${booking.id}`).emit("booking_status_updated", {
+        bookingId: booking.id,
+        bookingCode: booking.booking_code,
+        booking_status: "CANCELLED",
+        detailed_status: "REJECTED",
+        status: "REJECTED",
+        timestamp: new Date()
       });
     } catch {}
 

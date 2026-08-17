@@ -42,7 +42,7 @@ const LoginPage = ({ showToast }) => {
       const data = res.data || res;
       loginSuccess(data.token, data.user);
       showToast("Welcome back!", "success");
-      navigate(data.user.role === "ADMIN" ? "/admin" : "/dashboard");
+      navigate(String(data.user?.role).toUpperCase() === "ADMIN" ? "/admin" : "/dashboard");
     } catch (err) {
       if (err.message && err.message.includes("Email Not Verified")) {
         showToast(err.message, "warning");
@@ -66,7 +66,7 @@ const LoginPage = ({ showToast }) => {
       const data = res.data || res;
       loginSuccess(data.token, data.user);
       showToast("Email verified successfully! Welcome!", "success");
-      navigate(data.user.role === "ADMIN" ? "/admin" : "/dashboard");
+      navigate(String(data.user?.role).toUpperCase() === "ADMIN" ? "/admin" : "/dashboard");
     } catch (err) {
       showToast(err.message || "Invalid OTP", "danger");
     } finally {

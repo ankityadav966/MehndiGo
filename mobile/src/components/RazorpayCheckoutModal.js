@@ -7,9 +7,9 @@ import {
   TouchableOpacity,
   View,
   ActivityIndicator,
-  Platform,
-  Alert
+  Platform
 } from "react-native";
+import Alert from "../utils/Alert";
 import { WebView } from "react-native-webview";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import Colors from "../constants/Colors";

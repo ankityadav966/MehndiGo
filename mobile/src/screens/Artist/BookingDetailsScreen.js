@@ -28,9 +28,26 @@ const STEPS = [
   { key: "ARTIST_ACCEPTED", label: "Accepted" },
   { key: "ARTIST_ON_THE_WAY", label: "On The Way" },
   { key: "ARTIST_ARRIVED", label: "Arrived" },
+  { key: "CUSTOMER_VERIFIED", label: "Verified" },
   { key: "SERVICE_STARTED", label: "Started" },
   { key: "COMPLETED", label: "Completed" }
 ];
+
+const getNormalizedStatus = (b) => {
+  if (!b) return "PENDING";
+  const rawDetailed = String(b.detailed_status || b.detailedStatus || "").toUpperCase();
+  if (rawDetailed) {
+    if (rawDetailed === "ACCEPTED") return "ARTIST_ACCEPTED";
+    if (rawDetailed === "ON_THE_WAY") return "ARTIST_ON_THE_WAY";
+    if (rawDetailed === "ARRIVED") return "ARTIST_ARRIVED";
+    if (rawDetailed === "CHECKED_IN") return "CUSTOMER_VERIFIED";
+    if (rawDetailed === "IN_PROGRESS") return "SERVICE_STARTED";
+    return rawDetailed;
+  }
+  const rawStatus = String(b.booking_status || b.status || "PENDING").toUpperCase();
+  if (rawStatus === "ACCEPTED") return "ARTIST_ACCEPTED";
+  return rawStatus;
+};
 
 function calculateDistance(lat1, lon1, lat2, lon2) {
   const R = 6371; // km
@@ -300,18 +317,29 @@ export default function BookingDetailsScreen({ route, navigation }) {
       navigation.goBack();
       return;
     }
-    const timer = setTimeout(() => {
-      loadDetails();
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [bookingId]);
+    loadDetails();
 
-  const getNormalizedStatus = (b) => {
-    if (!b) return "PENDING";
-    const st = String(b.detailed_status || b.detailedStatus || b.booking_status || b.bookingStatus || b.status || "PENDING").toUpperCase();
-    if (st === "ACCEPTED") return "ARTIST_ACCEPTED";
-    return st;
-  };
+    const unsubscribeFocus = navigation.addListener("focus", () => {
+      loadDetails();
+    });
+
+    // 5-second polling when booking is in active lifecycle
+    const pollInterval = setInterval(() => {
+      if (booking) {
+        const st = String(booking.detailed_status || booking.booking_status || "").toUpperCase();
+        if (["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "ON_THE_WAY", "ARTIST_ARRIVED", "ARRIVED", "CUSTOMER_VERIFIED", "SERVICE_STARTED", "IN_PROGRESS"].includes(st)) {
+          getBookingDetails(bookingId).then((data) => {
+            if (data) setBooking(data);
+          }).catch(() => {});
+        }
+      }
+    }, 5000);
+
+    return () => {
+      unsubscribeFocus();
+      clearInterval(pollInterval);
+    };
+  }, [bookingId]);
 
   // Live Tracking startup/shutdown listener based on active status
   useEffect(() => {
@@ -591,39 +619,41 @@ export default function BookingDetailsScreen({ route, navigation }) {
   };
 
   const handleVerifyCheckInOtp = async () => {
-    if (!checkInOtpText || checkInOtpText.length !== 6) {
-      Alert.alert("Error", "Please enter a valid 6-digit OTP code");
+    const cleanOtp = (checkInOtpText || "").trim();
+    if (!cleanOtp || (cleanOtp.length !== 4 && cleanOtp.length !== 6)) {
+      Alert.alert("Error", "Please enter the customer's 4-digit Check-In OTP");
       return;
     }
     setLoading(true);
     try {
-      await verifyCheckInOtp(bookingId, checkInOtpText);
+      await verifyCheckInOtp(bookingId, cleanOtp);
       setIsCheckInModalVisible(false);
       setCheckInOtpText("");
-      Alert.alert("Success", "Check-In verified successfully! Service has started.");
+      Alert.alert("Customer Verified ✅", "Customer Check-In verified successfully! You can now start the service.");
       loadDetails();
     } catch (err) {
-      Alert.alert("Verification Failed", err.message || "Invalid OTP code. Please retry.");
+      Alert.alert("Verification Failed", err.message || "Invalid Check-In OTP. Please ask the customer for the OTP on their app.");
     } finally {
       setLoading(false);
     }
   };
 
   const handleVerifyCheckOutOtp = async () => {
-    if (!checkOutOtpText || checkOutOtpText.length !== 6) {
-      Alert.alert("Error", "Please enter a valid 6-digit OTP code");
+    const cleanOtp = (checkOutOtpText || "").trim();
+    if (!cleanOtp || (cleanOtp.length !== 4 && cleanOtp.length !== 6)) {
+      Alert.alert("Error", "Please enter the customer's 4-digit Completion PIN.");
       return;
     }
     setLoading(true);
     try {
-      await verifyCheckOutOtp(bookingId, checkOutOtpText);
+      await verifyCheckOutOtp(bookingId, cleanOtp);
       setIsCheckOutModalVisible(false);
       setCheckOutOtpText("");
       setIsMapFullScreen(false);
-      Alert.alert("Success", "Service completed and verified successfully!");
+      Alert.alert("Service Completed 🎉", "Service verified & completed successfully! Payment settlement has been processed.");
       loadDetails();
     } catch (err) {
-      Alert.alert("Verification Failed", err.message || "Invalid OTP code. Please retry.");
+      Alert.alert("Verification Failed", err.message || "Invalid Completion PIN. Please ask customer to confirm the 4-digit PIN on their app.");
     } finally {
       setLoading(false);
     }
@@ -701,7 +731,18 @@ export default function BookingDetailsScreen({ route, navigation }) {
   }
 
   const currentDetailedStatus = getNormalizedStatus(booking);
-  const activeStepIndex = STEPS.findIndex((s) => s.key === currentDetailedStatus);
+  const getActiveStepIndex = (statusStr) => {
+    const st = String(statusStr || "").toUpperCase();
+    if (["COMPLETED", "COMPLETED_CLOSED", "AWAITING_CASH_CONFIRMATION"].includes(st)) return 7;
+    if (["SERVICE_STARTED", "IN_PROGRESS"].includes(st)) return 6;
+    if (["CUSTOMER_VERIFIED", "CHECKED_IN"].includes(st)) return 5;
+    if (["ARTIST_ARRIVED", "ARRIVED"].includes(st)) return 4;
+    if (["ARTIST_ON_THE_WAY", "ON_THE_WAY"].includes(st)) return 3;
+    if (["ARTIST_ACCEPTED", "ACCEPTED"].includes(st)) return 2;
+    if (["CONFIRMED", "WAITING_FOR_USER_PAYMENT"].includes(st)) return 1;
+    return 0;
+  };
+  const activeStepIndex = getActiveStepIndex(currentDetailedStatus);
   const canChat = ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED"].includes(currentDetailedStatus);
 
   // 1. Authoritative Customer Destination Coordinates from Confirmed Booking Location
@@ -845,37 +886,75 @@ export default function BookingDetailsScreen({ route, navigation }) {
       return (
         <View style={styles.footerSingle}>
           <TouchableOpacity style={[styles.footerBtn, { backgroundColor: Colors.primary }]} onPress={handleStartTravel}>
-            <Text style={styles.footerBtnText}>Start Travelling (On The Way)</Text>
+            <Ionicons name="car" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+            <Text style={styles.footerBtnText}>🚗 Start Travelling (On The Way)</Text>
           </TouchableOpacity>
         </View>
       );
     }
 
-    if (currentDetailedStatus === "ARTIST_ON_THE_WAY") {
+    if (currentDetailedStatus === "ARTIST_ON_THE_WAY" || currentDetailedStatus === "ON_THE_WAY") {
+      const isNearby = distanceInMeters !== null && distanceInMeters <= 50;
       return (
-        <View style={styles.footerSingle}>
-          <TouchableOpacity style={[styles.footerBtn, { backgroundColor: Colors.primary }]} onPress={handleOpenCheckInOTP}>
-            <Text style={styles.footerBtnText}>I Have Arrived (Verify Arrival OTP)</Text>
+        <View style={styles.footerActions}>
+          <TouchableOpacity
+            style={[styles.footerBtn, { backgroundColor: isNearby ? "#059669" : Colors.primary, flex: 2 }]}
+            onPress={() => {
+              setIsCheckInModalVisible(true);
+            }}
+          >
+            <Ionicons name="key" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+            <Text style={styles.footerBtnText}>
+              {isNearby ? "📍 Verify Customer (Check In)" : "📍 Reached (Check In)"}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.footerBtn, { backgroundColor: "#4285F4", flex: 1 }]}
+            onPress={openGoogleMapsNavigation}
+          >
+            <Ionicons name="navigate" size={16} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
       );
     }
 
-    if (currentDetailedStatus === "ARTIST_ARRIVED") {
+    if (currentDetailedStatus === "ARTIST_ARRIVED" || currentDetailedStatus === "ARRIVED" || currentDetailedStatus === "CHECK_IN_PENDING") {
       return (
         <View style={styles.footerSingle}>
-          <TouchableOpacity style={[styles.footerBtn, { backgroundColor: Colors.primary }]} onPress={handleOpenCheckInOTP}>
-            <Text style={styles.footerBtnText}>Verify Arrival OTP & Start Service</Text>
+          <TouchableOpacity
+            style={[styles.footerBtn, { backgroundColor: "#059669" }]}
+            onPress={() => setIsCheckInModalVisible(true)}
+          >
+            <Ionicons name="key" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+            <Text style={styles.footerBtnText}>📍 VERIFY CUSTOMER & CHECK IN</Text>
           </TouchableOpacity>
         </View>
       );
     }
 
-    if (currentDetailedStatus === "SERVICE_STARTED") {
+    if (currentDetailedStatus === "CUSTOMER_VERIFIED" || currentDetailedStatus === "CHECKED_IN") {
       return (
         <View style={styles.footerSingle}>
-          <TouchableOpacity style={[styles.footerBtn, { backgroundColor: Colors.primary }]} onPress={handleCompleteService}>
-            <Text style={styles.footerBtnText}>Complete Service (Send Checkout OTP)</Text>
+          <TouchableOpacity
+            style={[styles.footerBtn, { backgroundColor: Colors.primary }]}
+            onPress={handleStartServiceTap}
+          >
+            <Ionicons name="brush" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+            <Text style={styles.footerBtnText}>🎨 START SERVICE</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    if (currentDetailedStatus === "SERVICE_STARTED" || currentDetailedStatus === "IN_PROGRESS" || currentDetailedStatus === "SERVICE_COMPLETED_PENDING_CHECKOUT") {
+      return (
+        <View style={styles.footerSingle}>
+          <TouchableOpacity
+            style={[styles.footerBtn, { backgroundColor: "#B45309" }]}
+            onPress={() => setIsCheckOutModalVisible(true)}
+          >
+            <Ionicons name="lock-closed" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+            <Text style={styles.footerBtnText}>🔐 COMPLETE SERVICE (ENTER PIN)</Text>
           </TouchableOpacity>
         </View>
       );
@@ -989,12 +1068,35 @@ export default function BookingDetailsScreen({ route, navigation }) {
             <InfoRow icon="mail-outline" label="Email" value={booking.user.email} />
           ) : null}
           <InfoRow icon="brush-outline" label="Design Type" value={booking.service?.specialization_name || "Custom design"} />
+          <InfoRow icon="people-outline" label="Persons / Coverage" value={`${booking.group_size || 1} Person(s) • ${booking.service_coverage || "Both Hands"}`} />
           <InfoRow icon="calendar-outline" label="Date" value={getBookingDate(booking)} />
           <InfoRow icon="time-outline" label="Time Slot" value={getBookingTime(booking)} />
-          <InfoRow icon="location-outline" label="Location" value={booking.address || "Client location"} />
-          {booking.landmark ? (
+          <InfoRow
+            icon="navigate-outline"
+            label="Travel Origin"
+            value={booking.travel_origin_type === "PREVIOUS_BOOKING" ? `📍 Previous Client (${booking.travel_origin_address || "En Route"})` : `📍 Artist Base Studio (${booking.travel_origin_address || "Home Studio"})`}
+          />
+          {Boolean(booking.landmark) && (
             <InfoRow icon="pin-outline" label="Landmark" value={booking.landmark} />
-          ) : null}
+          )}
+
+          {/* Selected Mehndi Design Card */}
+          {(Boolean(booking.selected_art_title) || Boolean(booking.selected_art_image)) && (
+            <View style={{ width: "100%", backgroundColor: "#F8FAFC", borderRadius: 10, padding: 10, marginTop: 10, borderWidth: 1, borderColor: "#E2E8F0" }}>
+              <Text style={{ fontSize: 11, fontWeight: "700", color: "#64748B", marginBottom: 6 }}>SELECTED MEHNDI DESIGN</Text>
+              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                {Boolean(booking.selected_art_image) && (
+                  <Image source={{ uri: booking.selected_art_image }} style={{ width: 48, height: 48, borderRadius: 6, marginRight: 10 }} />
+                )}
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 13, fontWeight: "700", color: Colors.text }}>{booking.selected_art_title || "Custom Art"}</Text>
+                  <Text style={{ fontSize: 11, color: Colors.primary, fontWeight: "700" }}>
+                    {booking.selected_art_tier === "PREMIUM" ? `💎 PREMIUM (₹${booking.selected_art_price || "Prem"})` : "✨ STANDARD"} • ⏱️ {booking.selected_art_duration || 60}m
+                  </Text>
+                </View>
+              </View>
+            </View>
+          )}
         </View>
 
         {/* Navigation Map and Transit Times */}
@@ -1364,32 +1466,34 @@ export default function BookingDetailsScreen({ route, navigation }) {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Ionicons name="keypad" size={48} color={Colors.primary} style={styles.modalIcon} />
-            <Text style={styles.modalTitle}>Check-In Verification</Text>
+            <Ionicons name="keypad" size={48} color="#059669" style={styles.modalIcon} />
+            <Text style={styles.modalTitle}>Customer Check-In OTP</Text>
             <Text style={styles.modalDescription}>
-              Ask client {booking?.user?.name || "Customer"} for the Check-In OTP sent to their mobile number ending in {booking?.user?.phone ? booking.user.phone.slice(-4) : "xxxx"}.
+              Ask {booking?.customer_name || booking?.user?.name || "the Customer"} for the 4-digit Check-In OTP displayed on their booking screen:
             </Text>
 
             <TextInput
-              style={{ borderBottomColor: Colors.primary, borderBottomWidth: 2, textAlign: "center", fontSize: 24, letterSpacing: 8, marginVertical: 18, width: "80%", color: Colors.text }}
+              style={{
+                borderBottomColor: "#059669",
+                borderBottomWidth: 2,
+                textAlign: "center",
+                fontSize: 28,
+                letterSpacing: 10,
+                marginVertical: 18,
+                width: "80%",
+                color: Colors.text,
+                fontWeight: "800"
+              }}
               keyboardType="number-pad"
               maxLength={6}
-              placeholder="000000"
+              placeholder="0000"
               placeholderTextColor="#999"
               value={checkInOtpText}
               onChangeText={setCheckInOtpText}
             />
 
-            {otpTimer > 0 ? (
-              <Text style={{ fontSize: 12, color: Colors.textSecondary }}>OTP expires in: {Math.floor(otpTimer / 60)}:{(otpTimer % 60).toString().padStart(2, "0")}</Text>
-            ) : (
-              <TouchableOpacity style={{ padding: 8 }} onPress={handleResendCheckInOtp}>
-                <Text style={{ fontSize: 13, color: Colors.primary, fontWeight: "700" }}>Resend OTP</Text>
-              </TouchableOpacity>
-            )}
-
-            <TouchableOpacity style={[styles.modalPrimaryBtn, { marginTop: 20 }]} onPress={handleVerifyCheckInOtp}>
-              <Text style={styles.modalPrimaryBtnText}>Verify OTP & Start Service</Text>
+            <TouchableOpacity style={[styles.modalPrimaryBtn, { backgroundColor: "#059669", marginTop: 20 }]} onPress={handleVerifyCheckInOtp}>
+              <Text style={styles.modalPrimaryBtnText}>Verify Check-In OTP</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setIsCheckInModalVisible(false)}>
@@ -1399,7 +1503,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
         </View>
       </Modal>
 
-      {/* Check-Out OTP Modal */}
+      {/* Check-Out PIN / OTP Modal */}
       <Modal
         visible={isCheckOutModalVisible}
         transparent={true}
@@ -1408,32 +1512,34 @@ export default function BookingDetailsScreen({ route, navigation }) {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Ionicons name="shield-checkmark" size={48} color={Colors.success} style={styles.modalIcon} />
-            <Text style={styles.modalTitle}>Check-Out Verification</Text>
+            <Ionicons name="shield-checkmark" size={48} color="#B45309" style={styles.modalIcon} />
+            <Text style={styles.modalTitle}>Service Completion PIN</Text>
             <Text style={styles.modalDescription}>
-              Ask the client for the Completion OTP to securely verify checkout and finalize the service.
+              Ask customer for the 4-digit PIN displayed on their active booking screen upon full work satisfaction:
             </Text>
 
             <TextInput
-              style={{ borderBottomColor: Colors.success, borderBottomWidth: 2, textAlign: "center", fontSize: 24, letterSpacing: 8, marginVertical: 18, width: "80%", color: Colors.text }}
+              style={{
+                borderBottomColor: "#B45309",
+                borderBottomWidth: 2,
+                textAlign: "center",
+                fontSize: 28,
+                letterSpacing: 10,
+                marginVertical: 18,
+                width: "80%",
+                color: Colors.text,
+                fontWeight: "800"
+              }}
               keyboardType="number-pad"
               maxLength={6}
-              placeholder="000000"
+              placeholder="0000"
               placeholderTextColor="#999"
               value={checkOutOtpText}
               onChangeText={setCheckOutOtpText}
             />
 
-            {otpTimer > 0 ? (
-              <Text style={{ fontSize: 12, color: Colors.textSecondary }}>OTP expires in: {Math.floor(otpTimer / 60)}:{(otpTimer % 60).toString().padStart(2, "0")}</Text>
-            ) : (
-              <TouchableOpacity style={{ padding: 8 }} onPress={handleResendCheckOutOtp}>
-                <Text style={{ fontSize: 13, color: Colors.success, fontWeight: "700" }}>Resend OTP</Text>
-              </TouchableOpacity>
-            )}
-
-            <TouchableOpacity style={[styles.modalPrimaryBtn, { marginTop: 20, backgroundColor: Colors.success }]} onPress={handleVerifyCheckOutOtp}>
-              <Text style={styles.modalPrimaryBtnText}>Verify OTP & Complete Service</Text>
+            <TouchableOpacity style={[styles.modalPrimaryBtn, { marginTop: 20, backgroundColor: "#B45309" }]} onPress={handleVerifyCheckOutOtp}>
+              <Text style={styles.modalPrimaryBtnText}>Verify PIN & Complete Job</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setIsCheckOutModalVisible(false)}>

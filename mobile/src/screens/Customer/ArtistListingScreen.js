@@ -44,9 +44,6 @@ export default function ArtistListingScreen({ route, navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [hasMore, setHasMore] = useState(true);
 
-  // Layout View mode: 'list' | 'grid' | 'map'
-  const [layoutMode, setLayoutMode] = useState("list");
-
   // Filters State
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [categories, setCategories] = useState([]);
@@ -311,7 +308,11 @@ export default function ArtistListingScreen({ route, navigation }) {
           <View style={styles.subHeaderStats}>
             <View style={styles.ratingBadge}>
               <Ionicons name="star" size={12} color="#FFB800" />
-              <Text style={styles.ratingBadgeText}>{Number(item.avg_rating || 0).toFixed(1)}</Text>
+              <Text style={styles.ratingBadgeText}>
+                {Number(item.avg_rating || item.rating || 0) > 0
+                  ? Number(item.avg_rating || item.rating).toFixed(1)
+                  : "New"}
+              </Text>
             </View>
             <Text style={styles.bulletText}>•</Text>
             <Text style={styles.statsText}>{item.experience_years || 2} Yrs Exp</Text>
@@ -351,65 +352,6 @@ export default function ArtistListingScreen({ route, navigation }) {
         </View>
       </TouchableOpacity>
     );
-
-  };
-
-  // Render Grid View Item Card
-  const renderGridArtistCard = ({ item }) => {
-    const artistId = item.id || item.user_id || item.artist_id;
-    const isFav = favoriteArtistIds.includes(item.id) || favoriteArtistIds.includes(item.user_id) || favoriteArtistIds.includes(item.artist_id) || favoriteArtistIds.includes(artistId);
-    const minPrice = item.starting_price || item.startingPrice || item.price || item.services?.[0]?.minimum_price || item.services?.[0]?.price;
-    const artistName = item.name || item.full_name || item.user?.name || "Mehndi Artist";
-    const rawImage = item.profile_image || item.profileImage || item.avatar || item.user?.profile_image || (Array.isArray(item.portfolio_images) && item.portfolio_images[0]?.url) || (Array.isArray(item.portfolio) && item.portfolio[0]?.url);
-    const avatarUri = getNormalizedUrl(rawImage) || `https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=F3E8FF&color=7C3AED`;
-
-    return (
-      <TouchableOpacity
-        style={styles.gridCard}
-        activeOpacity={0.9}
-        onPress={() => navigation.navigate("ArtistProfile", { artistId: item.id })}
-      >
-        <OptimizedImage
-          source={{ uri: avatarUri }}
-          style={styles.gridArtistImage}
-          width={SCREEN_WIDTH / 2 - 24}
-          height={140}
-        />
-
-        <TouchableOpacity
-          style={styles.gridFavoriteBtn}
-          onPress={() => handleToggleFavorite(item.id)}
-        >
-          <Ionicons
-            name={isFav ? "heart" : "heart-outline"}
-            size={16}
-            color={isFav ? Colors.error : Colors.primary}
-          />
-        </TouchableOpacity>
-
-        <View style={styles.gridInfo}>
-          <Text style={styles.gridArtistName} numberOfLines={1}>{artistName}</Text>
-          
-          <View style={styles.gridStatsRow}>
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <Ionicons name="star" size={11} color="#FFB800" />
-              <Text style={styles.gridRatingText}>{Number(item.avg_rating || 0).toFixed(1)}</Text>
-            </View>
-            <Text style={styles.gridExpText}>{item.experience_years || 2} Yrs Exp</Text>
-          </View>
-
-          <Text style={styles.gridCategoryText} numberOfLines={1}>{categoryName}</Text>
-          <Text style={styles.gridPriceText}>₹{minPrice}+</Text>
-
-          <TouchableOpacity
-            style={styles.gridBookBtn}
-            onPress={() => navigation.navigate("SelectService", { artistId: item.id })}
-          >
-            <Text style={styles.gridBookBtnText}>Quick Book</Text>
-          </TouchableOpacity>
-        </View>
-      </TouchableOpacity>
-    );
   };
 
   return (
@@ -426,27 +368,7 @@ export default function ArtistListingScreen({ route, navigation }) {
           <Text style={styles.locationSubtitle}>📍 Jaipur, Rajasthan</Text>
         </View>
         
-        <View style={{ flexDirection: "row", alignItems: "center" }}>
-          {/* Layout Mode Toggles */}
-          <TouchableOpacity
-            style={[styles.headerIconBtn, layoutMode === "list" ? styles.activeLayoutBtn : null]}
-            onPress={() => setLayoutMode("list")}
-          >
-            <Ionicons name="list" size={18} color={layoutMode === "list" ? Colors.primary : Colors.textSecondary} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.headerIconBtn, layoutMode === "grid" ? styles.activeLayoutBtn : null]}
-            onPress={() => setLayoutMode("grid")}
-          >
-            <Ionicons name="grid" size={18} color={layoutMode === "grid" ? Colors.primary : Colors.textSecondary} style={{ marginLeft: 4 }} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.headerIconBtn, layoutMode === "map" ? styles.activeLayoutBtn : null]}
-            onPress={() => setLayoutMode("map")}
-          >
-            <Ionicons name="map-outline" size={18} color={layoutMode === "map" ? Colors.primary : Colors.textSecondary} style={{ marginLeft: 4 }} />
-          </TouchableOpacity>
-        </View>
+        <View style={{ width: 36 }} />
       </View>
 
       {/* Search Input Bar */}
@@ -576,33 +498,16 @@ export default function ArtistListingScreen({ route, navigation }) {
         </View>
       )}
 
-      {/* Content Renderer Layouts */}
+      {/* Content Renderer - Single Standard List View */}
       {loading ? (
         <View style={{ padding: 16 }}>
           <LoadingSkeleton type="list" count={4} />
         </View>
-      ) : layoutMode === "map" ? (
-        /* Map view placeholder content */
-        <View style={styles.mapPlaceholderContainer}>
-          <Ionicons name="map" size={60} color={Colors.primaryLight} />
-          <Text style={styles.mapTitle}>Interactive Map View</Text>
-          <Text style={styles.mapSubtitle}>Showing 📍 {artists.length} artists nearby on Jaipur map coordinates.</Text>
-          <View style={styles.mapCard}>
-            <Text style={styles.mapAlertText}>Google/Apple Maps integration placeholder. Loading coordinates: Lat {MOCK_LAT}, Lng {MOCK_LNG}</Text>
-          </View>
-          <TouchableOpacity style={styles.backToListBtn} onPress={() => setLayoutMode("list")}>
-            <Text style={styles.backToListText}>Back to List View</Text>
-          </TouchableOpacity>
-        </View>
       ) : (
-        /* Dynamic FlatList - Forces refresh of numColumns by dynamically changing key */
         <FlatList
-          key={layoutMode === "grid" ? "grid-view-list" : "list-view-list"}
           data={artists}
-          numColumns={layoutMode === "grid" ? 2 : 1}
           keyExtractor={(item, index) => String(item.id || item.user_id || item.artist_id || index)}
-          renderItem={layoutMode === "grid" ? renderGridArtistCard : renderListArtistCard}
-          columnWrapperStyle={layoutMode === "grid" ? styles.gridRowWrapper : null}
+          renderItem={renderListArtistCard}
           initialNumToRender={6}
           maxToRenderPerBatch={10}
           windowSize={10}
@@ -639,7 +544,7 @@ export default function ArtistListingScreen({ route, navigation }) {
             </View>
           }
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 60, paddingHorizontal: layoutMode === "grid" ? 12 : 0 }}
+          contentContainerStyle={{ paddingBottom: 60 }}
         />
       )}
 
