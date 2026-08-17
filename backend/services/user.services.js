@@ -7,6 +7,7 @@ const {
 const AppError = require("../utils/errors/app.error");
 const { sendOtpEmail, sendEmail } = require("../utils/mail.service");
 const crypto = require("crypto");
+const { Op } = require("sequelize");
 
 const UserRepositor = new UserRepository();
 const OtpRepositor = new OtpRepository();
@@ -28,6 +29,115 @@ function generateToken(user) {
 }
 
 class UserService {
+  sanitizePhone(phone) {
+    if (!phone) return phone;
+    let cleaned = String(phone).trim();
+    if (cleaned.startsWith("+91")) cleaned = cleaned.substring(3);
+    return cleaned.replace(/[^0-9]/g, "");
+  }
+
+  // 1. Unified Registration - Send OTP
+  async registerSendOtp(data) {
+    console.log("Registration Data received:", data);
+    const { name, email, phone, password, role } = data;
+
+    if (role === "ADMIN") {
+      throw new AppError("Admin registration is not allowed", 403);
+    }
+
+    let user = null;
+    const sanitized = this.sanitizePhone(phone);
+
+    if (sanitized) {
+      user = await UserRepositor.getOne({ phone: sanitized });
+    }
+
+    if (!user && email) {
+      user = await UserRepositor.getOne({ email });
+    }
+
+    const hashPassword = password ? crypto.createHash("sha256").update(password).digest("hex") : null;
+    const mappedRole = role === "CUSTOMER" ? "USER" : (role || "USER");
+
+    if (user) {
+      if (!user.is_verified) {
+        await UserRepositor.update(user.id, {
+          name: name || user.name,
+          ...(hashPassword ? { password: hashPassword } : {}),
+          role: mappedRole
+        });
+      }
+    } else {
+      user = await UserRepositor.create({
+        name: name || "User",
+        phone: sanitized || null,
+        email: email || null,
+        password: hashPassword,
+        role: mappedRole,
+        is_verified: false,
+      });
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    // const hashPassword = password ? crypto.createHash("sha256").update(password).digest("hex") : null;
+
+    const normalizedRole = (String(role).toUpperCase() === "ARTIST") ? "ARTIST" : "USER";
+
+    const trimmedName = String(name).trim();
+    const cleanPhone = phone ? String(phone).trim().replace(/[\s-()]/g, "") : null;
+
+    // Store registration data temporarily in OTP table
+    const payload = JSON.stringify({
+      name: trimmedName,
+      email: trimmedEmail,
+      phone: cleanPhone,
+      password: hashPassword,
+      role: normalizedRole
+    });
+
+    await OtpRepositor.create({
+      phone: cleanPhone,
+      email: trimmedEmail,
+      otp,
+      registration_payload: payload,
+      expires_at: new Date(Date.now() + 5 * 60 * 1000),
+      verified: false,
+    });
+
+    await sendOtpEmail(trimmedEmail, otp, trimmedName);
+    console.log(`\n==================================\nEMAIL OTP (Register)\nEmail: ${trimmedEmail}\nOTP: ${otp}\n==================================\n`);
+
+    console.log(`\n==================================\nREGISTRATION / LOGIN OTP (GMAIL)\nEmail: ${targetEmail}\nOTP: ${otp}\n==================================\n`);
+
+    return {
+      exists: true,
+      email: targetEmail,
+      phone: sanitized || user.phone,
+      role: user.role,
+      otp,
+    };
+  }
+
+  // Aliases for UserController
+  async sendOtp(data) {
+    return this.loginSendOtp(data);
+  }
+
+  async verifyOtp(data) {
+    return this.loginVerifyOtp(data);
+  }
+
+  // 2. Registration - Verify OTP & Create Account
+  async registerVerifyOtp(data) {
+    const { email, phone, otp } = data;
+
+    if (!email && !phone) {
+      throw new AppError("Email or phone required", 400);
+    }
+    if (!otp) {
+      throw new AppError("OTP required", 400);
+    }
+
     const trimmedEmail = email ? String(email).trim().toLowerCase() : null;
     const sanitizedPhone = phone ? this.sanitizePhone(phone) : null;
     const cleanOtp = String(otp).trim();
@@ -62,166 +172,27 @@ class UserService {
       throw new AppError("OTP Expired", 400);
     }
 
-    // Verify OTP
-    await OtpRepositor.update(otpData.id, { verified: true });
-
-    // Mark User as Verified
-    const user = await UserRepositor.getById(otpData.user_id);
-    if (!user) {
-      throw new AppError("User not found", 404);
-    }
-
-    await UserRepositor.update(user.id, {
-      is_verified: true,
-      last_login_at: new Date(),
-    });
-    
-    // Create artist profile if role is ARTIST
-    if (user.role === "ARTIST") {
-      const existingProfile = await ArtistProfileRepositor.getOne({ user_id: user.id });
-      if (!existingProfile) {
-        await ArtistProfileRepositor.create({
-          user_id: user.id,
-          bio: "",
-        });
-      }
-    }
-
-    // Generate Token
-    const token = generateToken({
-      id: user.id,
-      role: user.role,
-    });
-    
-    console.log("Database Query Result (User Verified):", user.id);
-    console.log("Generated JWT:", token);
-
-    return {
-      token,
-      user: {
-        id: user.id,
-        name: user.name,
-        phone: user.phone,
-        email: user.email,
-        role: user.role,
-      },
-    };
-  }
-
-  async sendOtp(data) {
-    console.log("Data received in service:", data);
-=======
-  // 1. Registration - Send OTP (Stores temporarily in Otp table)
-  async registerSendOtp(data) {
-    console.log("Registration Data received:", data);
-    const { name, email, phone, password, role } = data;
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
-
-    if (!name || !email || !role) {
-      throw new AppError("Name, Email, and Role are required for registration", 400);
-    }
-
-    if (role === "ADMIN") {
-      throw new AppError("Admin registration is not allowed", 403);
-    }
-
-    const trimmedEmail = String(email).trim().toLowerCase();
-
-    // Check if user already exists
-    const existingEmail = await UserRepositor.getOne({ email: trimmedEmail });
-    if (existingEmail) {
-      throw new AppError(`This email is already registered. Please log in instead.`, 400);
-    }
-
-    if (phone) {
-      const phoneCleaned = String(phone).trim().replace(/[\s-()]/g, "");
-      if (phoneCleaned !== "") {
-        const existingUser = await UserRepositor.getOne({ phone: phoneCleaned });
-        if (existingUser) {
-          throw new AppError(`This phone number is already registered. Please log in instead.`, 400);
-        }
-      }
-    }
-
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const hashPassword = password ? crypto.createHash("sha256").update(password).digest("hex") : null;
-
-    // Store registration data temporarily in OTP table
-    const payload = JSON.stringify({
-      name,
-      email: trimmedEmail,
-      phone: phone ? phone.trim() : null,
-      password: hashPassword,
-      role
-    });
-
-    await OtpRepositor.create({
-      phone: phone || null,
-      email: trimmedEmail,
-      otp,
-      registration_payload: payload,
-      expires_at: new Date(Date.now() + 5 * 60 * 1000),
-    });
-
-    await sendOtpEmail(trimmedEmail, otp, name);
-    console.log(`\n==================================\nEMAIL OTP (Register)\nEmail: ${trimmedEmail}\nOTP: ${otp}\n==================================\n`);
-
-    return { email: trimmedEmail, otp }; // OTP returned for dev testing easily
-  }
-
-  // 2. Registration - Verify OTP & Create Account
-  async registerVerifyOtp(data) {
-    const { email, otp } = data;
-
-    if (!email || !otp) {
-      throw new AppError("Email and OTP required", 400);
-    }
-
-    const trimmedEmail = String(email).trim().toLowerCase();
-
-    let otpData = null;
-    if (String(otp) === "123456") {
-      otpData = await OtpRepositor.getOne({
-        email: trimmedEmail,
-        verified: false,
-      });
-    } else {
-      otpData = await OtpRepositor.getOne({
-        email: trimmedEmail,
-        otp: String(otp),
-        verified: false,
-      });
-    }
-
-    if (!otpData) {
-      throw new AppError("Invalid OTP", 400);
-    }
-
-    if (new Date(otpData.expires_at) < new Date()) {
-      throw new AppError("OTP Expired", 400);
-    }
-
     if (!otpData.registration_payload) {
       throw new AppError("Registration payload missing", 400);
     }
 
     const payload = JSON.parse(otpData.registration_payload);
+    const dbRole = (String(payload.role).toUpperCase() === "ARTIST") ? "ARTIST" : "USER";
 
     // Verify OTP
     await OtpRepositor.update(otpData.id, { verified: true });
 
-    // Create User (phone is nullable/optional)
+    // Create User (preserves exact name, phone, email, and dbRole)
     const user = await UserRepositor.create({
       name: payload.name,
-      phone: payload.phone || null,
+      phone: payload.phone,
       email: payload.email,
       password: payload.password,
-      role: payload.role,
+      role: dbRole,
       is_verified: true,
       last_login_at: new Date(),
-      is_verified: true,
     });
-    
+
     // Create artist profile if role is ARTIST
     if (user.role === "ARTIST") {
       await ArtistProfileRepositor.create({
@@ -230,11 +201,7 @@ class UserService {
       });
     }
 
-    // Generate Token
     const token = generateToken(user);
-    
-    console.log("Database Query Result (User Created):", user.id);
-    console.log("Generated JWT:", token);
 
     return {
       token,
@@ -250,7 +217,7 @@ class UserService {
 
   // 3. Unified Login - Send OTP
   async loginSendOtp(data) {
-    const { email, phone, role } = data;
+    const { email, phone, role, name } = data;
     const loginValue = email || phone;
 
     if (!loginValue) {
@@ -265,8 +232,6 @@ class UserService {
 
     if (isEmail) {
       trimmedEmail = cleaned.toLowerCase();
-      
-      // Special Admin Logic
       const isSpecialAdmin = trimmedEmail === "ankityadav941318@gmail.com" || trimmedEmail === "sonudonyadav87@gmail.com";
       if (isSpecialAdmin) {
         user = await UserRepositor.getOne({ role: "ADMIN" });
@@ -283,24 +248,23 @@ class UserService {
         user = await UserRepositor.getOne({ email: trimmedEmail });
       }
     } else {
-      const phoneCleaned = cleaned.replace(/[\s-()]/g, "");
+      const phoneCleaned = this.sanitizePhone(cleaned);
       user = await UserRepositor.getOne({ phone: phoneCleaned });
       if (!user && phoneCleaned.length === 10) {
         user = await UserRepositor.getOne({ phone: `+91${phoneCleaned}` });
       }
     }
 
+    const mappedRole = role === "CUSTOMER" ? "USER" : (role || "USER");
+
     if (!user) {
-      throw new AppError("User not found. Please register first.", 404);
-    }
-
-    if (role && user.role !== role) {
-      throw new AppError(`Access denied: Registered as a ${user.role}`, 403);
-    }
-
-    trimmedEmail = isEmail ? cleaned.toLowerCase() : user.email;
-    if (!trimmedEmail) {
-      throw new AppError("No email address is registered on this account.", 400);
+      user = await UserRepositor.create({
+        name: name || (isEmail ? trimmedEmail.split("@")[0] : "User"),
+        phone: !isEmail ? this.sanitizePhone(cleaned) : null,
+        email: isEmail ? trimmedEmail : null,
+        role: mappedRole,
+        is_verified: false,
+      });
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -308,17 +272,23 @@ class UserService {
     await OtpRepositor.create({
       user_id: user.id,
       phone: user.phone || null,
-      email: trimmedEmail,
+      email: user.email || trimmedEmail || null,
       otp,
       expires_at: new Date(Date.now() + 5 * 60 * 1000),
+      verified: false,
     });
 
-    await sendOtpEmail(trimmedEmail, otp, user.name);
-    console.log(`\n==================================\nEMAIL OTP (Login)\nEmail: ${trimmedEmail}\nOTP: ${otp}\n==================================\n`);
+    const targetEmail = user.email || (isEmail ? trimmedEmail : null);
+    if (targetEmail) {
+      try { await sendOtpEmail(targetEmail, otp, user.name); } catch (e) { }
+    }
+
+    console.log(`\n==================================\nLOGIN OTP (GMAIL)\nEmail: ${targetEmail || loginValue}\nOTP: ${otp}\n==================================\n`);
 
     return {
       exists: true,
-      email: trimmedEmail,
+      email: targetEmail,
+      phone: user.phone,
       role: user.role,
       otp,
     };
@@ -328,30 +298,23 @@ class UserService {
   async loginVerifyOtp(data) {
     const { email, phone, otp } = data;
     const loginValue = email || phone;
+    const cleanOtp = String(otp || "").trim();
 
-    if (!loginValue || !otp) {
-      throw new AppError("Email/Mobile and OTP required", 400);
+    if (!cleanOtp) {
+      throw new AppError("OTP required", 400);
     }
 
-    const cleaned = String(loginValue).trim();
+    const cleaned = loginValue ? String(loginValue).trim() : "";
     const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleaned);
 
-    let targetEmail = "";
-    if (isEmail) {
-      targetEmail = cleaned.toLowerCase();
-    } else {
-      const phoneCleaned = cleaned.replace(/[\s-()]/g, "");
-      const user = await UserRepositor.getOne({ phone: phoneCleaned });
-      if (user) {
-        targetEmail = user.email;
+    let user = null;
+    if (cleaned) {
+      if (isEmail) {
+        user = await UserRepositor.getOne({ email: cleaned.toLowerCase() });
       } else {
-        const user91 = await UserRepositor.getOne({ phone: `+91${phoneCleaned}` });
-        if (user91) targetEmail = user91.email;
+        const phoneCleaned = this.sanitizePhone(cleaned);
+        user = await UserRepositor.getOne({ phone: phoneCleaned });
       }
-    }
-
-    if (!targetEmail) {
-      throw new AppError("Valid email or registered phone number required", 400);
     }
 
     let otpData = null;
@@ -392,19 +355,25 @@ class UserService {
 
     await OtpRepositor.update(otpData.id, { verified: true });
 
-    const user = await UserRepositor.getById(otpData.user_id);
-    if (!user) {
-      throw new AppError("User not found", 404);
+    if (!user && otpData.user_id) {
+      user = await UserRepositor.getById(otpData.user_id);
     }
 
-    await UserRepositor.update(user.id, {
-      last_login_at: new Date(),
-    });
+    if (!user && otpData.email) {
+      user = await UserRepositor.getOne({ email: otpData.email });
+    }
+
+    if (!user && otpData.phone) {
+      user = await UserRepositor.getOne({ phone: otpData.phone });
+    }
+
+    if (!user) {
+      throw new AppError("User account not found for this OTP", 404);
+    }
+
+    await UserRepositor.update(user.id, { is_verified: true, last_login_at: new Date() });
 
     const token = generateToken(user);
-
-    console.log("Authenticated User:", user.id);
-    console.log("Generated JWT:", token);
 
     return {
       token,
@@ -418,7 +387,6 @@ class UserService {
     };
   }
 
-  // Legacy/Compatibility fallbacks
   async sendOtp(data) {
     return this.loginSendOtp(data);
   }
@@ -428,23 +396,23 @@ class UserService {
   }
 
   async login(data) {
-    return this.sendOtp(data);
+    return this.loginSendOtp(data);
   }
 
   async adminSendOtp(data) {
     const { email, password } = data;
-    
+
     if (!email || !password) {
       throw new AppError("Email and Password are required", 400);
     }
 
     const trimmedEmail = String(email).trim().toLowerCase();
-    
+
     const user = await UserRepositor.getOne({ email: trimmedEmail, role: "ADMIN" });
     if (!user) {
       throw new AppError("Access denied: Invalid Admin credentials", 403);
     }
-    
+
     const inputHash = crypto.createHash("sha256").update(password).digest("hex");
     if (user.password !== inputHash) {
       throw new AppError("Access denied: Invalid Admin credentials", 403);
@@ -454,9 +422,11 @@ class UserService {
 
     await OtpRepositor.create({
       user_id: user.id,
+      phone: user.phone || null,
       email: trimmedEmail,
       otp,
       expires_at: new Date(Date.now() + 5 * 60 * 1000),
+      verified: false,
     });
 
     await sendEmail(trimmedEmail, "Mehndi Go - Admin Verification Code", `Your Admin security verification OTP is: ${otp}`);
@@ -495,13 +465,8 @@ class UserService {
       throw new AppError("OTP Expired", 400);
     }
 
-    await OtpRepositor.update(otpData.id, {
-      verified: true,
-    });
-
-    await UserRepositor.update(user.id, {
-      last_login_at: new Date(),
-    });
+    await OtpRepositor.update(otpData.id, { verified: true });
+    await UserRepositor.update(user.id, { last_login_at: new Date() });
 
     const token = generateToken(user);
 

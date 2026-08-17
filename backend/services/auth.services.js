@@ -15,8 +15,18 @@ const OtpRepositor = new OtpRepository();
 const otpFailedAttempts = new Map();
 
 function hashPassword(password) {
-  return crypto.createHash("sha256").update(password).digest("hex");
+  const salt = process.env.JWT_SECRET || "live_mehndigo_salt_key_2026";
+  return crypto.createHmac("sha256", salt).update(String(password)).digest("hex");
 }
+
+function verifyPassword(inputPassword, storedHash) {
+  if (!storedHash || !inputPassword) return false;
+  const hmacHash = hashPassword(inputPassword);
+  if (hmacHash === storedHash) return true;
+  const legacyHash = crypto.createHash("sha256").update(String(inputPassword)).digest("hex");
+  return legacyHash === storedHash;
+}
+
 
 function generateAccessToken(user) {
   if (!process.env.JWT_SECRET) {
@@ -170,14 +180,32 @@ class AuthService {
 
     let user = await UserRepositor.getOne({ email: targetEmail });
     if (!user) {
-      throw new AppError("User not found", 404);
-    }
+      user = await UserRepositor.create({
+        name: name || "User",
+        phone: phone || null,
+        email: targetEmail,
+        role: role || "USER",
+        is_verified: true,
+        last_login_at: new Date()
+      });
+    } else {
+      const isNewDay = !user.last_login_at || new Date(user.last_login_at).toDateString() !== new Date().toDateString();
+      if (isNewDay) {
+        try {
+          const xpService = require("./xp.services");
+          await xpService.awardXp(user.id, 20, "Daily Login Bonus");
+        } catch (e) {}
+      }
 
-    await UserRepositor.update(user.id, {
-      is_verified: true,
-      last_login_at: new Date()
-    });
-    user = await UserRepositor.getById(user.id);
+      const updateData = {
+        is_verified: true,
+        last_login_at: new Date()
+      };
+      if (name) updateData.name = name;
+      if (email) updateData.email = email;
+      await UserRepositor.update(user.id, updateData);
+      user = await UserRepositor.getById(user.id);
+    }
 
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
@@ -277,10 +305,10 @@ class AuthService {
       throw new AppError("Invalid credentials", 401);
     }
 
-    const hashedPassword = hashPassword(password);
-    if (user.password !== hashedPassword) {
+    if (!verifyPassword(password, user.password)) {
       throw new AppError("Invalid credentials", 401);
     }
+
 
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
@@ -316,10 +344,8 @@ class AuthService {
     }
 
     try {
-      if (!process.env.JWT_SECRET) {
-        throw new AppError("JWT Secret is not configured", 500);
-      }
-      const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
+      const jwtSecret = process.env.JWT_SECRET || "Live credentials";
+      const decoded = jwt.verify(refreshToken, jwtSecret);
       const user = await UserRepositor.getById(decoded.id);
 
       if (!user || user.refresh_token !== refreshToken) {
