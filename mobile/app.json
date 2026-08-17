@@ -2,11 +2,7 @@
   "expo": {
     "name": "MehndiGo",
     "slug": "sonu-yadav",
-<<<<<<< HEAD
-    "version": "1.0.0",
-=======
     "version": "1.0.3",
->>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "mehendigoo",
@@ -15,10 +11,7 @@
       "icon": "./assets/images/icon.png"
     },
     "android": {
-<<<<<<< HEAD
-=======
       "versionCode": 2,
->>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/images/icon.png"

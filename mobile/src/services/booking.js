@@ -133,13 +133,10 @@ export async function getArtistLocation(bookingId) {
   return res?.data || res;
 }
 
-<<<<<<< HEAD
-=======
 export async function validateArrival(bookingId, force = false) {
   const res = await apiRequest("POST", "/booking/validate-arrival", { bookingId, force }, true);
   return res?.data || res;
 }
->>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
 
 export async function sendCheckInOtp(bookingId) {
   const res = await apiRequest("POST", "/booking/send-checkin-otp", { bookingId }, true);

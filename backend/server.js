@@ -118,8 +118,6 @@ startScheduler();
 const { connectRedis } = require("./config/redis");
 connectRedis();
 
-<<<<<<< HEAD
-=======
 // Self-healing DB Schema Migration for Addresses, Wallets, Ledger, and Commission tables
 const db = require("./models");
 (async () => {
@@ -223,7 +221,6 @@ const db = require("./models");
 })();
 
 
->>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
 server.listen(PORT, "0.0.0.0", () => {
   console.log(
     `Server running on port ${PORT}`

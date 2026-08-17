@@ -77,11 +77,6 @@ const UserDashboard = ({ showToast }) => {
     try {
       showToast("Redirecting to secure Cashfree gateway...", "info");
       const orderRes = await artistService.createOrder(booking.id);
-<<<<<<< HEAD
-      const { payment_session_id } = orderRes.data;
-      const env = "sandbox";
-      window.location.href = `https://${env}.cashfree.com/pg/view/checkout?session_id=${payment_session_id}`;
-=======
       const orderData = orderRes.data || orderRes;
       const { order_id, amount, currency } = orderData;
 
@@ -140,7 +135,6 @@ const UserDashboard = ({ showToast }) => {
       });
 
       razorpayModal.open();
->>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
     } catch (e) {
       showToast("Payment initialization failed: " + e.message, "danger");
     }

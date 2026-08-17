@@ -202,116 +202,6 @@ async function getInvoice(req, res) {
   }
 }
 
-<<<<<<< HEAD
-async function skipReview(req, res) {
-  try {
-    const { bookingId } = req.body;
-    const userId = req.user.id;
-
-    if (!bookingId) {
-      return res.status(400).json(ErrorResponse("Booking ID is required"));
-    }
-
-    const booking = await db.Booking.findByPk(bookingId);
-    if (!booking) {
-      return res.status(404).json(ErrorResponse("Booking not found"));
-    }
-
-    if (booking.user_id !== userId) {
-      return res.status(403).json(ErrorResponse("Unauthorized to modify booking"));
-    }
-
-    await booking.update({
-      review_skipped: true,
-      detailed_status: "COMPLETED_CLOSED"
-    });
-
-    // Notify users about Chat Room Closure
-    try {
-      await db.Notification.create({
-        user_id: userId,
-        title: "Booking Closed & Chat Session Terminated 🔒",
-        message: `Your booking #${booking.booking_code} lifecycle is now fully closed. Chat history is preserved as read-only.`,
-        type: "SYSTEM"
-      });
-
-      const artistProfile = await db.ArtistProfile.findByPk(booking.artist_id);
-      if (artistProfile) {
-        await db.Notification.create({
-          user_id: artistProfile.user_id,
-          title: "Booking Closed & Chat Session Terminated 🔒",
-          message: `Booking #${booking.booking_code} lifecycle is now fully closed. Chat history is preserved as read-only.`,
-          type: "SYSTEM"
-        });
-      }
-    } catch (e) {
-      console.error("[Skip Review Notification] Error:", e.message);
-    }
-
-    return res.status(200).json(SuccessResponse("Review skipped successfully"));
-  } catch (error) {
-    return res.status(500).json(ErrorResponse(error.message, error));
-  }
-}
-
-async function selectCashPayment(req, res) {
-  try {
-    const { bookingId } = req.body;
-    const response = await BookingService.selectCashPayment(bookingId, req.user.id);
-    return res.status(200).json(SuccessResponse("Cash payment method selected", response));
-  } catch (error) {
-    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
-  }
-}
-
-async function confirmCashPayment(req, res) {
-  try {
-    const { bookingId } = req.body;
-    const response = await BookingService.confirmCashPayment(bookingId, req.user.id);
-    return res.status(200).json(SuccessResponse("Cash payment confirmed", response));
-  } catch (error) {
-    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
-  }
-}
-
-async function rejectCashPayment(req, res) {
-  try {
-    const { bookingId } = req.body;
-    const response = await BookingService.rejectCashPayment(bookingId, req.user.id);
-    return res.status(200).json(SuccessResponse("Cash payment rejected (disputed)", response));
-  } catch (error) {
-    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
-  }
-}
-
-async function checkRestrictedBooking(req, res) {
-  try {
-    const hasRestricted = await BookingService.hasRestrictedBooking(req.user.id);
-    let bookingId = null;
-    if (hasRestricted) {
-      const active = await db.Booking.findOne({
-        where: {
-          user_id: req.user.id,
-          booking_status: { [db.Sequelize.Op.ne]: "CANCELLED" },
-          detailed_status: { [db.Sequelize.Op.ne]: "COMPLETED_CLOSED" },
-          review_skipped: false
-        },
-        attributes: ["id"]
-      });
-      if (active) bookingId = active.id;
-    }
-    return res.status(200).json(SuccessResponse("Checked restriction status", { hasRestricted, bookingId }));
-  } catch (error) {
-    return res.status(500).json(ErrorResponse(error.message, error));
-  }
-}
-
-async function onTheWayBooking(req, res) {
-  try {
-    const { bookingId } = req.body;
-    const response = await BookingService.updateBookingStatus(bookingId, req.user.id, req.user.role, "ARTIST_ON_THE_WAY");
-    return res.status(200).json(SuccessResponse("Artist is on the way", response));
-=======
 async function getPendingPayment(req, res) {
   try {
     const response = await BookingService.getPendingPayment(req.user.id);
@@ -327,7 +217,6 @@ async function skipReview(req, res) {
     const { bookingId } = req.body;
     const response = await BookingService.skipReview(bookingId, req.user.id);
     return res.status(200).json(SuccessResponse("Review skipped successfully", response));
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
   } catch (error) {
     return res
       .status(error.statusCode || 500)
@@ -335,74 +224,6 @@ async function skipReview(req, res) {
   }
 }
 
-<<<<<<< HEAD
-=======
-async function sendCheckInOtp(req, res) {
-  try {
-    const { bookingId } = req.body;
-    const response = await BookingService.sendCheckInOtp(bookingId, req.user.id);
-    return res.status(200).json(SuccessResponse("Check-In OTP sent successfully", response));
-  } catch (error) {
-    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
-  }
-}
-
-async function verifyCheckInOtp(req, res) {
-  try {
-    const { bookingId, otp } = req.body;
-    const response = await BookingService.verifyCheckInOtp(bookingId, otp, req.user.id);
-    return res.status(200).json(SuccessResponse("Check-In OTP verified successfully", response));
-  } catch (error) {
-    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
-  }
-}
-
-async function sendCheckOutOtp(req, res) {
-  try {
-    const { bookingId } = req.body;
-    const response = await BookingService.sendCheckOutOtp(bookingId, req.user.id);
-    return res.status(200).json(SuccessResponse("Check-Out OTP sent successfully", response));
-  } catch (error) {
-    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
-  }
-}
-
-async function verifyCheckOutOtp(req, res) {
-  try {
-    const { bookingId, otp } = req.body;
-    const response = await BookingService.verifyCheckOutOtp(bookingId, otp, req.user.id);
-    return res.status(200).json(SuccessResponse("Check-Out OTP verified successfully", response));
-  } catch (error) {
-    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
-  }
-}
-
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
-module.exports = {
-  calculatePriceDetails,
-  createBooking,
-  getBookingDetails,
-  getBookingHistory,
-  applyCoupon,
-  createPaymentSession,
-  verifyPayment,
-  cancelBooking,
-  rescheduleBooking,
-  acceptBooking,
-  rejectBooking,
-  updateOnTheWay,
-  updateArrived,
-  startService,
-  completeService,
-<<<<<<< HEAD
-  onTheWayBooking,
-  getInvoice,
-  skipReview,
-  selectCashPayment,
-  confirmCashPayment,
-  rejectCashPayment,
-  checkRestrictedBooking
-=======
   getInvoice,
   getPendingPayment,
   skipReview,
@@ -410,5 +231,4 @@ module.exports = {
   verifyCheckInOtp,
   sendCheckOutOtp,
   verifyCheckOutOtp
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
 };

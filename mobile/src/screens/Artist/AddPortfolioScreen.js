@@ -162,17 +162,12 @@ export default function AddPortfolioScreen({ navigation }) {
         tags: tags.trim(),
         location,
         visibility,
-<<<<<<< HEAD
-        image_url: remoteThumbnailUrl || media.uri,
-        video_url: media.type === "video" ? media.uri : null
-=======
         art_tier: artTier,
         price: artTier === "PREMIUM" ? Number(price) : null,
         duration_minutes: Number(durationMinutes) || 60,
         complexity_level: complexityLevel,
         image_url: isVid ? (remoteThumbnailUrl || null) : media.uri,
         video_url: isVid ? media.uri : null
->>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
       };
 
       const startVal = remoteThumbnailUrl ? 0.15 : 0.01;

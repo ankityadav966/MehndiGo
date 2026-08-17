@@ -1074,27 +1074,6 @@ export default function HomeScreen({ navigation }) {
 
       {/* 7. Quick Filters Row & All Mehndi Artists */}
       <View style={styles.sectionHeader}>
-<<<<<<< HEAD
-        <Text style={[styles.sectionTitle, { color: currentTextColor }]}>All Nearby Artists</Text>
-        <TouchableOpacity onPress={() => navigation.navigate("ArtistListing", { filter: "nearest" })}>
-          <Text style={styles.viewAllText}>See All</Text>
-        </TouchableOpacity>
-      </View>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.filtersWrapper}
-        style={{ marginBottom: 4 }}
-      >
-        {[
-          { label: "📍 Nearest", value: "Nearest" },
-          { label: "⭐ Top Rated", value: "Top Rated" },
-          { label: "💰 Price Low-High", value: "Price Low-High" },
-          { label: "🏆 5+ Exp Years", value: "5+ Exp Years" },
-        ].map((filter) => (
-          <TouchableOpacity
-            key={filter.value}
-=======
         <View style={{ flexDirection: "row", alignItems: "center" }}>
           <Text style={[styles.sectionTitle, { color: currentTextColor }]}>All Mehndi Artists</Text>
           <View style={{ backgroundColor: Colors.primary + "18", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, marginLeft: 8 }}>
@@ -1113,7 +1092,6 @@ export default function HomeScreen({ navigation }) {
         keyExtractor={(item) => item}
         renderItem={({ item: filter }) => (
           <TouchableOpacity
->>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
             style={[
               styles.filterBadge,
               selectedFilter === filter.value ? styles.activeFilterBadge : null
@@ -1129,20 +1107,8 @@ export default function HomeScreen({ navigation }) {
               {filter.label}
             </Text>
           </TouchableOpacity>
-<<<<<<< HEAD
-        ))}
-        <TouchableOpacity
-          style={styles.filterBadgeMore}
-          onPress={() => navigation.navigate("ArtistListing", { filter: "nearest" })}
-        >
-          <Ionicons name="options-outline" size={13} color={Colors.primary} style={{ marginRight: 4 }} />
-          <Text style={styles.filterBadgeMoreText}>More Filters</Text>
-        </TouchableOpacity>
-      </ScrollView>
-=======
         )}
       />
->>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
     </View>
   );
 
@@ -1188,17 +1154,6 @@ export default function HomeScreen({ navigation }) {
         return priceA - priceB;
       });
     } else if (selectedFilter === "5+ Exp Years") {
-<<<<<<< HEAD
-      result = result.filter(item => {
-        const exp = item.experience_years != null ? Number(item.experience_years) : (item.experience != null ? Number(item.experience) : 0);
-        return exp >= 5;
-      });
-      result.sort((a, b) => {
-        const expA = a.experience_years != null ? Number(a.experience_years) : (a.experience != null ? Number(a.experience) : 0);
-        const expB = b.experience_years != null ? Number(b.experience_years) : (b.experience != null ? Number(b.experience) : 0);
-        return expB - expA;
-      });
-=======
       result = result.filter(item => Number(item.experience_years || item.experience || 0) >= 5);
       result.sort((a, b) => (Number(b.experience_years || b.experience) || 0) - (Number(a.experience_years || a.experience) || 0));
     } else if (selectedFilter === "Bridal") {
@@ -1211,7 +1166,6 @@ export default function HomeScreen({ navigation }) {
       result = result.filter(item => item.home_service !== false);
     } else if (selectedFilter === "Verified") {
       result = result.filter(item => item.verification_status === "APPROVED" || item.status === "approved");
->>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
     }
 
     return result;

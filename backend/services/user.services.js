@@ -5,14 +5,9 @@ const {
 } = require("../repositories/index");
 
 const AppError = require("../utils/errors/app.error");
-<<<<<<< HEAD
-const { generateToken } = require("../utils/jwt");
-const { sendOtp } = require("../utils/twilio.service");
-=======
 const { sendOtpEmail, sendEmail } = require("../utils/mail.service");
 const crypto = require("crypto");
 
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
 const UserRepositor = new UserRepository();
 const OtpRepositor = new OtpRepository();
 const ArtistProfileRepositor = new ArtistProfileRepository();
@@ -33,88 +28,6 @@ function generateToken(user) {
 }
 
 class UserService {
-<<<<<<< HEAD
-  sanitizePhone(phone) {
-    return sanitizePhone(phone);
-  }
-
-  // 1. Unified Registration - Send OTP (pre-creates user to satisfy NOT NULL constraints)
-  async registerSendOtp(data) {
-    console.log("Registration Data received:", data);
-    const { name, email, phone, password, role } = data;
-
-    if (!name || (!phone && !email) || !password || !role) {
-      throw new AppError("Name, phone/email, password, and role are required for registration", 400);
-    }
-
-    if (role === "ADMIN") {
-      throw new AppError("Admin registration is not allowed", 403);
-    }
-
-    const sanitized = sanitizePhone(phone);
-
-    // Check if user already exists
-    if (sanitized) {
-      const existingUser = await UserRepositor.getOne({ phone: sanitized });
-      if (existingUser) {
-        throw new AppError(`This phone number is already registered. Please log in instead.`, 400);
-      }
-    }
-    
-    if (email) {
-      const existingEmail = await UserRepositor.getOne({ email });
-      if (existingEmail) {
-        throw new AppError(`This email is already registered. Please log in instead.`, 400);
-      }
-    }
-
-    const hashPassword = require("crypto").createHash("sha256").update(password).digest("hex");
-
-    // Pre-create the user record so we have a valid user_id
-    const user = await UserRepositor.create({
-      name,
-      phone: sanitized || null,
-      email: email || null,
-      password: hashPassword,
-      role: role === "CUSTOMER" ? "USER" : role,
-      is_verified: false,
-    });
-
-    const otp = Math.floor(100000 + Math.random() * 900000);
-
-    await OtpRepositor.create({
-      user_id: user.id,
-      phone: sanitized || null,
-      email: email || null,
-      otp: String(otp),
-      expires_at: new Date(Date.now() + 5 * 60 * 1000),
-    });
-
-    if (sanitized) {
-      await sendOtp(sanitized, otp);
-      console.log(`\n==================================\nMOBILE REGISTRATION OTP\nMobile: ${sanitized}\nOTP: ${otp}\n==================================\n`);
-    } else {
-      const { sendEmail } = require("../utils/mail.service");
-      await sendEmail(email, "Registration OTP", `Your OTP is: ${otp}`);
-      console.log(`\n==================================\nEMAIL REGISTRATION OTP\nEmail: ${email}\nOTP: ${otp}\n==================================\n`);
-    }
-
-    return { phone: sanitized, email, otp };
-  }
-
-  // 2. Registration - Verify OTP & Create Account
-  async registerVerifyOtp(data) {
-    const { phone, email, otp } = data;
-    const sanitized = sanitizePhone(phone);
-
-    let query = { otp: String(otp), verified: false };
-    if (sanitized) query.phone = sanitized;
-    else if (email) query.email = email;
-    else throw new AppError("Phone or Email required", 400);
-
-<<<<<<< HEAD
-    const otpData = await OtpRepositor.getOne(query);
-=======
     const trimmedEmail = email ? String(email).trim().toLowerCase() : null;
     const sanitizedPhone = phone ? this.sanitizePhone(phone) : null;
     const cleanOtp = String(otp).trim();
@@ -140,7 +53,6 @@ class UserService {
         verified: false,
       });
     }
->>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
 
     if (!otpData) {
       throw new AppError("Invalid OTP", 400);
@@ -243,64 +155,6 @@ class UserService {
       role
     });
 
-<<<<<<< HEAD
-    const mappedRole = role === "CUSTOMER" ? "USER" : role;
-
-    if (user) {
-      if (user.role !== mappedRole) {
-        throw new AppError(
-          `This phone number is already registered as ${user.role}`,
-          400,
-        );
-      }
-    } else {
-      if (mappedRole === "ADMIN") {
-        throw new AppError("Admin registration is not allowed publicly", 403);
-      }
-      user = await UserRepositor.create({
-        name: name || (mappedRole === "ARTIST" ? "Mehndi Artist" : "Mehandi User"),
-        phone,
-        role: mappedRole || "USER",
-      });
-    }
-
-    const otp = Math.floor(100000 + Math.random() * 900000);
-
-    await OtpRepositor.create({
-      user_id: user.id,
-      phone,
-      otp: String(otp),
-      expires_at: new Date(Date.now() + 5 * 60 * 1000), // 5 min expiry
-      verified: false
-    });
-
-    await sendOtp(phone, otp);
-
-    return {
-      phone,
-      role: user.role,
-      otp, // For testing convenience
-    };
-  }
-
-  async verifyOtp(data) {
-    const { phone, otp, role, referralCode } = data;
-    const sanitized = sanitizePhone(phone);
-    const mappedRole = role === "CUSTOMER" ? "USER" : role;
-
-    if (!sanitized) {
-      throw new AppError("Phone number required", 400);
-    }
-    if (!otp) {
-      throw new AppError("OTP required", 400);
-    }
-
-    const otpData = await OtpRepositor.getOne({
-      phone: sanitized,
-      otp: String(otp),
-      verified: false,
-    });
-=======
     await OtpRepositor.create({
       phone: phone || null,
       email: trimmedEmail,
@@ -338,7 +192,6 @@ class UserService {
         verified: false,
       });
     }
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
 
     if (!otpData) {
       throw new AppError("Invalid OTP", 400);
@@ -352,13 +205,7 @@ class UserService {
       throw new AppError("Registration payload missing", 400);
     }
 
-<<<<<<< HEAD
-    if (user.role !== mappedRole) {
-      throw new AppError(`This number belongs to ${user.role}`, 400);
-    }
-=======
     const payload = JSON.parse(otpData.registration_payload);
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
 
     // Verify OTP
     await OtpRepositor.update(otpData.id, { verified: true });
@@ -401,30 +248,17 @@ class UserService {
     };
   }
 
-<<<<<<< HEAD
-  async login(data) {
-    let { phone, role } = data;
-    phone = sanitizePhone(phone);
-    const mappedRole = role === "CUSTOMER" ? "USER" : role;
-=======
   // 3. Unified Login - Send OTP
   async loginSendOtp(data) {
     const { email, phone, role } = data;
     const loginValue = email || phone;
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
 
     if (!loginValue) {
       throw new AppError("Email or Mobile Number is required for login", 400);
     }
 
-<<<<<<< HEAD
-    if (!mappedRole) {
-      throw new AppError("Role required", 400);
-    }
-=======
     const cleaned = String(loginValue).trim();
     const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleaned);
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
 
     let user = null;
     let trimmedEmail = "";
@@ -460,13 +294,8 @@ class UserService {
       throw new AppError("User not found. Please register first.", 404);
     }
 
-<<<<<<< HEAD
-    if (user.role !== mappedRole) {
-      throw new AppError(`This number is registered as ${user.role}`, 400);
-=======
     if (role && user.role !== role) {
       throw new AppError(`Access denied: Registered as a ${user.role}`, 403);
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
     }
 
     trimmedEmail = isEmail ? cleaned.toLowerCase() : user.email;
@@ -478,38 +307,16 @@ class UserService {
 
     await OtpRepositor.create({
       user_id: user.id,
-<<<<<<< HEAD
-      phone,
-      otp: String(otp),
-      expires_at: new Date(Date.now() + 5 * 60 * 1000), // 5 min expiry
-      verified: false,
-=======
       phone: user.phone || null,
       email: trimmedEmail,
       otp,
       expires_at: new Date(Date.now() + 5 * 60 * 1000),
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
     });
 
     await sendOtpEmail(trimmedEmail, otp, user.name);
     console.log(`\n==================================\nEMAIL OTP (Login)\nEmail: ${trimmedEmail}\nOTP: ${otp}\n==================================\n`);
 
     return {
-<<<<<<< HEAD
-      phone,
-      role: user.role,
-      otp, // For testing convenience
-    };
-  }
-
-  async getProfile(id) {
-    const user = await UserRepositor.getById(id);
-    if (!user) {
-      throw new AppError("User not found", 404);
-    }
-    return user;
-  }
-=======
       exists: true,
       email: trimmedEmail,
       role: user.role,
@@ -528,7 +335,6 @@ class UserService {
 
     const cleaned = String(loginValue).trim();
     const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleaned);
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
 
     let targetEmail = "";
     if (isEmail) {
@@ -544,38 +350,11 @@ class UserService {
       }
     }
 
-<<<<<<< HEAD
-    await UserRepositor.update(id, data);
-    return await UserRepositor.getById(id);
-  }
-  
-  async getArtists(query) {
-    return await ArtistProfileRepositor.getArtists(query);
-  }
-
-  async getListing(userId, query) {
-    const user = await UserRepositor.getById(userId);
-
-    if (!user) {
-      throw new AppError("User not found", 404);
-=======
     if (!targetEmail) {
       throw new AppError("Valid email or registered phone number required", 400);
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
     }
 
     let otpData = null;
-<<<<<<< HEAD
-    if (String(otp) === "123456") {
-      otpData = await OtpRepositor.getOne({
-        email: targetEmail,
-        verified: false,
-      });
-    } else {
-      otpData = await OtpRepositor.getOne({
-        email: targetEmail,
-        otp: String(otp),
-=======
 
     if (user) {
       otpData = await OtpRepositor.getLatestOtp({
@@ -599,7 +378,6 @@ class UserService {
     if (!otpData) {
       otpData = await OtpRepositor.getLatestOtp({
         otp: cleanOtp,
->>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
         verified: false,
       });
     }
@@ -676,13 +454,8 @@ class UserService {
 
     await OtpRepositor.create({
       user_id: user.id,
-<<<<<<< HEAD
-      phone: user.phone || null,
-      otp: String(otp),
-=======
       email: trimmedEmail,
       otp,
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
       expires_at: new Date(Date.now() + 5 * 60 * 1000),
     });
 

@@ -125,28 +125,11 @@ export default function ArtistListingScreen({ route, navigation }) {
     }
 
     try {
-<<<<<<< HEAD
-      const filters = {
-        ...(selectedCategory ? { category: selectedCategory } : {}),
-        ...(minPrice ? { minPrice } : {}),
-        ...(maxPrice ? { maxPrice } : {}),
-        ...(rating ? { rating } : {}),
-        ...(experience ? { experience } : {}),
-        ...(verified ? { verified: true } : {}),
-        ...(homeService ? { homeService: true } : {}),
-        ...(studioService ? { studioService: true } : {}),
-        ...(gender ? { gender } : {}),
-        ...(language ? { language } : {}),
-      };
-      const activeSort = overrideSort || sort;
-      const response = await searchArtists(query, filters, activeSort, MOCK_LAT, MOCK_LNG, pageNum, 8);
-=======
       const activeAddr = await getActiveAddress();
       const lat = activeAddr?.latitude || null;
       const lng = activeAddr?.longitude || null;
       const filters = getActiveFilters();
       const response = await searchArtists(query, filters, sort, lat, lng, pageNum, 15);
->>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
       const rows = Array.isArray(response) ? response : (response?.rows || response?.data || []);
       const total = Array.isArray(response) ? response.length : (response?.count || rows.length);
 
@@ -873,12 +856,6 @@ const styles = StyleSheet.create({
     alignItems: "center"
   },
   activeLayoutBtn: { borderColor: Colors.primary, backgroundColor: Colors.primaryLight + "10" },
-<<<<<<< HEAD
-  sortFilterBlock: {
-    backgroundColor: Colors.white,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-=======
   searchBarContainer: {
     marginHorizontal: 16,
     marginBottom: 10,
@@ -918,7 +895,6 @@ const styles = StyleSheet.create({
   activeQuickFilterChipText: {
     color: Colors.white,
     fontWeight: "700"
->>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
   },
   sortBar: {
     flexDirection: "row",

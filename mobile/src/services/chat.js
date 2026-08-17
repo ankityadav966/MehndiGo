@@ -29,56 +29,17 @@ export async function deleteMessage(messageId, deleteType = "me") {
 
 // Upload file to Cloudinary via REST API
 export async function uploadChatMedia(fileUri, fileType, fileName) {
-<<<<<<< HEAD
-  let cleanUri = fileUri || "";
-  if (cleanUri.startsWith("/")) {
-    cleanUri = `file://${cleanUri}`;
-  }
-=======
   try {
     const FileSystem = require("expo-file-system");
     let safeUri = fileUri || "";
     if (safeUri.startsWith("/")) {
       safeUri = `file://${safeUri}`;
     }
->>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
 
     const base64 = await FileSystem.readAsStringAsync(safeUri, {
       encoding: FileSystem.EncodingType.Base64
     });
 
-<<<<<<< HEAD
-  const finalUri = getSafeUri(fileUri);
-  const url = getNormalizedUrl("/chat/upload");
-  console.log(`[API REQUEST] POST (uploadAsync) -> ${url}`);
-
-  const token = await require("../utils/storage").secureStorage.getAccessToken();
-
-  const formData = new FormData();
-  formData.append("file", {
-    uri: cleanUri,
-    name: fileName || `file_${Date.now()}.${type.split("/")[1] || "jpg"}`,
-    type: type
-  });
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: formData
-  });
-
-  let responseData;
-  const contentType = response.headers.get("content-type") || "";
-  if (contentType.includes("application/json")) {
-    responseData = await response.json();
-  } else {
-    const text = await response.text();
-    try { responseData = JSON.parse(text); } catch { responseData = { message: text }; }
-  }
-
-  if (!response.ok) {
-    throw new Error(responseData?.message || `Upload failed with status ${response.status}`);
-=======
     let mime = "image/jpeg";
     if (fileType === "video") mime = "video/mp4";
     else if (fileType === "pdf") mime = "application/pdf";
@@ -134,7 +95,6 @@ export async function uploadChatMedia(fileUri, fileType, fileName) {
     }
 
     return responseData?.data || responseData;
->>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
   }
 }
 

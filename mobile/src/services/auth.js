@@ -98,15 +98,6 @@ export async function sendOtp(emailOrPhone, emailParam, phone, role) {
     targetEmail = sanitized ? `${sanitized}@gmail.com` : "user@mehndigo.com";
   }
 
-<<<<<<< HEAD
-  const data = await apiRequest("POST", "/api/v1/mehndigo/user/send-otp", {
-    email: targetEmail,
-    phone: phone ? sanitizePhone(phone) : null,
-    role: role === "CUSTOMER" ? "USER" : role,
-  });
-
-  return data;
-=======
   const endpoint = "/api/v1/mehndigo/user/send-otp";
   console.log("[OTP] API BASE URL:", BASE_URL);
   console.log("[OTP] REQUEST ENDPOINT:", endpoint);
@@ -124,7 +115,6 @@ export async function sendOtp(emailOrPhone, emailParam, phone, role) {
     console.log("[OTP] RESPONSE MESSAGE:", err?.response?.data?.message || err.message);
     throw err;
   }
->>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
 }
 
 export async function registerSendOtp(name, email, phone, role) {
@@ -251,19 +241,3 @@ export async function signOut() {
   await secureStorage.clearAll();
 }
 
-<<<<<<< HEAD
-export const authService = {
-  register: (data) => apiRequest("POST", "/api/v1/mehndigo/user/register-send-otp", data),
-  registerSendOtp: (data) => apiRequest("POST", "/api/v1/mehndigo/user/register-send-otp", data),
-  registerVerifyOtp: (data) => apiRequest("POST", "/api/v1/mehndigo/user/register-verify-otp", data),
-  verifyEmailOtp: (data) => apiRequest("POST", "/api/v1/mehndigo/user/verify-otp", data),
-  login: (data) => apiRequest("POST", "/api/v1/mehndigo/user/send-otp", data),
-  sendOtp: (data) => apiRequest("POST", "/api/v1/mehndigo/user/send-otp", data),
-  verifyOtp: (data) => apiRequest("POST", "/api/v1/mehndigo/user/verify-otp", data),
-  forgotPassword: (data) => apiRequest("POST", "/api/v1/mehndigo/user/forgot-password", data),
-  verifyForgotPasswordOtp: (data) => apiRequest("POST", "/api/v1/mehndigo/user/verify-forgot-password-otp", data),
-  resetPassword: (data) => apiRequest("POST", "/api/v1/mehndigo/user/reset-password", data),
-  resendOtp: (data) => apiRequest("POST", "/api/v1/mehndigo/user/send-otp", data),
-};
-=======
->>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b

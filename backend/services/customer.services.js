@@ -971,13 +971,6 @@ class CustomerService {
     if (user.profile_image) filledFields++;
     const profileCompletion = Math.round((filledFields / totalFields) * 100);
 
-<<<<<<< HEAD
-    let finalPendingReviewBooking = null;
-    if (pendingReviewBooking) {
-      const isReviewed = await db.Review.findOne({ where: { booking_id: pendingReviewBooking.id } });
-      if (!isReviewed) {
-        finalPendingReviewBooking = pendingReviewBooking;
-=======
     // Find completed & paid bookings for this user that are not skipped
     const completedBookings = await db.Booking.findAll({
       where: {
@@ -1006,7 +999,6 @@ class CustomerService {
       if (!review) {
         pendingReviewBooking = b;
         break;
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
       }
     }
 
@@ -1024,12 +1016,7 @@ class CustomerService {
       walletBalance: wallet ? wallet.balance : 0,
       totalBookings,
       recentBookings,
-<<<<<<< HEAD
-      pendingReviewBooking: finalPendingReviewBooking,
-      pendingSettlementBooking: pendingSettlementBooking
-=======
       pendingReviewBooking
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
     };
   }
 

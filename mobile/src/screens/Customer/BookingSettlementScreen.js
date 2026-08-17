@@ -106,12 +106,7 @@ export default function BookingSettlementScreen({ route, navigation }) {
           
           <View style={styles.row}>
             <Text style={styles.label}>Total Price Amount</Text>
-<<<<<<< HEAD
-            <Text style={styles.value}>₹{booking.total_price || booking.final_amount}</Text>
-
-=======
             <Text style={styles.value}>₹{booking.customer_total_amount ?? booking.total_amount ?? booking.total_price ?? booking.final_amount ?? 0}</Text>
->>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
           </View>
 
           <View style={styles.row}>
@@ -121,14 +116,9 @@ export default function BookingSettlementScreen({ route, navigation }) {
 
           <View style={styles.row}>
             <Text style={styles.label}>Remaining Payable Amount</Text>
-<<<<<<< HEAD
-            <Text style={[styles.value, { color: Colors.primary, fontWeight: "800" }]}>₹{booking.remaining_amount || booking.final_amount}</Text>
-
-=======
             <Text style={[styles.value, { color: Colors.primary, fontWeight: "800" }]}>
               ₹{booking.remaining_amount ?? booking.remainingAmount ?? 0}
             </Text>
->>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
           </View>
 
           <View style={styles.row}>

@@ -435,16 +435,11 @@ export default function ArtistDashboardScreen({ navigation }) {
                 <Text style={styles.viewAll}>View All</Text>
               </Pressable>
             </View>
-<<<<<<< HEAD
-            {dashboard.recentBookings.filter(b => b.booking_status === "PENDING" || (b.booking_status === "CONFIRMED" && b.detailed_status === "CONFIRMED")).slice(0, 3).map((item) => {
-
-=======
             {dashboard.recentBookings.filter(b => {
               const st = String(b.booking_status || b.status || "").toUpperCase();
               const det = String(b.detailed_status || b.detailedStatus || "").toUpperCase();
               return (st === "PENDING" || det === "PENDING") && det !== "ARTIST_ACCEPTED" && det !== "ACCEPTED" && det !== "CONFIRMED" && det !== "CANCELLED" && det !== "REJECTED" && det !== "COMPLETED";
             }).slice(0, 3).map((item) => {
->>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
               const slotDate = item.slot?.start_time ? new Date(item.slot.start_time).toLocaleDateString() : (item.reschedule_date || "TBD");
               const slotTime = item.slot ? `${new Date(item.slot.start_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - ${new Date(item.slot.end_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` : (item.reschedule_time || "TBD");
 
@@ -602,18 +597,6 @@ export default function ArtistDashboardScreen({ navigation }) {
           </Pressable>
         </View>
 
-<<<<<<< HEAD
-        {dashboard?.recentBookings?.slice(0, 3).map((item) => (
-
-          <Pressable
-            key={item.id}
-            style={styles.bookingCard}
-            onPress={() => navigation.navigate("BookingDetails", { bookingId: item.id })}
-          >
-            <View style={styles.bookingLeft}>
-              <View style={styles.avatarPlaceholder}>
-                <Ionicons name="person-outline" size={22} color={Colors.primary} />
-=======
         {dashboard?.recentBookings?.slice(0, 5).map((item) => {
           const customerName = item.user?.name || item.customer_name || item.client_name || item.customer?.name || "Client";
           const customerPhone = item.user?.phone || item.customer_phone || "";
@@ -642,7 +625,6 @@ export default function ArtistDashboardScreen({ navigation }) {
                     Status: {item.detailed_status || item.booking_status} • Value: ₹{item.final_amount || item.total_price}
                   </Text>
                 </View>
->>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
               </View>
               <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
             </Pressable>

@@ -219,26 +219,6 @@ export default function PaymentScreen({ route, navigation }) {
       return;
     }
 
-<<<<<<< HEAD
-    // Native Module Availability Pre-Check
-    const nativeModule = NativeModules.RNRazorpayCheckout || NativeModules.RazorpayCheckout;
-    const isRazorpayAvailable = !!(nativeModule && typeof nativeModule.open === "function");
-
-    if (!isRazorpayAvailable) {
-      console.warn("[RAZORPAY NATIVE CHECK] Razorpay not available in Expo Go. Mocking successful payment for development.");
-      Alert.alert(
-        "Development Mode",
-        "Razorpay module is missing (Expo Go). Simulating a successful payment to continue testing your booking flow.",
-        [
-          { text: "Cancel", style: "cancel", onPress: () => setLoading(false) },
-          { text: "Simulate Payment", onPress: () => simulateMockPayment(targetBookingId) }
-        ]
-      );
-      return;
-    }
-
-=======
->>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
     // Both options (Full Online & Advance + Cash) use Razorpay Checkout
     const paymentMethodType = selectedMethod === "online" ? "FULL_ONLINE" : "ADVANCE_CASH";
 

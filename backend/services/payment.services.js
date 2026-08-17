@@ -31,24 +31,10 @@ class PaymentService {
       if (!booking) {
         throw new AppError("Booking not found", 404);
       }
-<<<<<<< HEAD
-      
-      if (booking.booking_status === "PENDING" && booking.payment_status === "PENDING") {
-        orderAmount = Math.round(booking.final_amount * 0.10);
-        note = `Advance Payment (10%) for Booking #${booking.booking_code}`;
-      } else if (booking.detailed_status === "WAITING_FOR_USER_PAYMENT") {
-        orderAmount = booking.remaining_amount;
-        note = `Remaining Payment (90%) for Booking #${booking.booking_code}`;
-      } else {
-        orderAmount = booking.final_amount;
-        note = `Payment for Booking #${booking.booking_code}`;
-      }
-=======
       const totalAmt = Number(booking.final_amount || booking.total_price || 1800);
       const advanceAmt = Math.round(totalAmt * 0.10);
       orderAmount = Math.round(advanceAmt);
       note = `Booking Advance Payment for Booking #${booking.booking_code}`;
->>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
     }
 
     let cfOrder;
@@ -146,7 +132,6 @@ class PaymentService {
       return tx;
     }
 
-<<<<<<< HEAD
     let orderStatus = "PENDING";
     let paymentDetails = null;
 
@@ -171,40 +156,10 @@ class PaymentService {
       } catch (err) {
         console.error("Cashfree order verification failed:", err.message);
         throw new AppError(err.message || "Failed to verify payment with Cashfree", 400);
-=======
-    // Reject simulated or fake payment payloads
-    if (!rPaymentId || !rSignature || String(rPaymentId).includes("sim") || String(rSignature).includes("simulated") || String(rSignature).includes("test")) {
-      await tx.update({ status: "FAILED" });
-      if (tx.booking_id) {
-        await db.Payment.update({ status: "FAILED" }, {
-          where: {
-            [db.Sequelize.Op.or]: [
-              { razorpay_order_id: rOrderId },
-              { cashfree_order_id: rOrderId }
-            ]
-          }
-        });
->>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
       }
       throw new AppError("Verification rejected: Fake or simulated payment signatures are strictly forbidden.", 400);
     }
 
-<<<<<<< HEAD
-    if (orderStatus !== "PAID") {
-      await tx.update({ status: "FAILED" });
-      if (tx.booking_id) {
-        await db.Payment.update(
-          { status: "FAILED" },
-          { where: { cashfree_order_id } }
-        );
-        await db.Booking.update(
-          { payment_status: "FAILED" },
-          { where: { id: tx.booking_id } }
-        );
-      }
-      throw new AppError(`Payment not completed. Status: ${orderStatus}`, 400);
-    }
-=======
     // Verify HMAC SHA256 Signature
     const isValidSignature = razorpayUtil.verifyRazorpaySignature({
       razorpay_order_id: rOrderId,
@@ -229,7 +184,6 @@ class PaymentService {
     }
 
     const verifiedPaymentId = rPaymentId;
->>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
 
     const cfPaymentId = paymentDetails.cf_payment_id || `pay_${Math.random().toString(36).substring(2, 10)}`;
 
@@ -245,45 +199,14 @@ class PaymentService {
         const isAdvance = booking.payment_status === "PENDING";
         const isRemaining = booking.detailed_status === "WAITING_FOR_USER_PAYMENT";
 
-<<<<<<< HEAD
-    // Update booking status
-    const bookingObj = await db.Booking.findByPk(tx.booking_id);
-    if (!bookingObj) {
-      throw new AppError("Booking not found", 404);
-    }
-
-    const isCompleted = bookingObj.booking_status === "COMPLETED";
-    const targetBookingStatus = isCompleted ? "COMPLETED" : "CONFIRMED";
-    const targetDetailedStatus = isCompleted ? "COMPLETED" : "CONFIRMED";
-
-    await bookingObj.update({
-      payment_status: "PAID",
-      booking_status: targetBookingStatus,
-      detailed_status: targetDetailedStatus
-    });
-
-    await db.BookingStatusHistory.create({
-      booking_id: tx.booking_id,
-      status: targetBookingStatus,
-      changed_by: userId,
-      notes: isCompleted 
-        ? "Payment verified successfully for completed booking. Settlement complete." 
-        : "Payment verified successfully. Booking confirmed."
-    });
-=======
         console.log(`[VERIFY_PAYMENT] Booking #${booking.booking_code} status BEFORE update: booking_status=${booking.booking_status}, payment_status=${booking.payment_status}, detailed_status=${booking.detailed_status}`);
 
         if (isAdvance) {
-<<<<<<< HEAD
-          const advancePaid = Math.round(booking.final_amount * 0.10);
-          console.log(`[VERIFY_PAYMENT] Processing 10% ADVANCE payment of ₹${advancePaid} for Booking #${booking.booking_code}`);
-=======
           const totalAmt = Number(booking.final_amount || booking.total_price || 1800);
           const advancePaid = Math.round(totalAmt * 0.10);
           const remaining = Math.max(0, totalAmt - advancePaid);
           const platformCommission = Math.round(totalAmt * 0.10);
           console.log(`[VERIFY_PAYMENT] Processing FIXED ₹500 ADVANCE payment of ₹${advancePaid} (Remaining: ₹${remaining}, Platform Commission: ₹${platformCommission}) for Booking #${booking.booking_code}`);
->>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
           
           await booking.update({
             payment_status: "PARTIAL",
@@ -291,7 +214,6 @@ class PaymentService {
             detailed_status: "CONFIRMED",
             advance_paid: advancePaid
           });
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
 
           console.log(`[VERIFY_PAYMENT] Booking #${booking.booking_code} status AFTER ADVANCE update: booking_status=${booking.booking_status}, payment_status=${booking.payment_status}, detailed_status=${booking.detailed_status}`);
 
@@ -302,16 +224,6 @@ class PaymentService {
             notes: `Advance payment of ₹${advancePaid} verified successfully. Booking confirmed.`
           });
 
-<<<<<<< HEAD
-        // Artist Wallet Escrow Credit and Platform Commission splitting
-        try {
-          await this.processPaymentDistribution(booking);
-          if (booking.booking_status === "COMPLETED") {
-            await this.completeBookingSettlement(booking.id);
-          }
-        } catch (artistTxErr) {
-          console.error("Error running payment distribution on verification:", artistTxErr.message);
-=======
           // Create Invoice record
           const invoiceNum = `INV-${Date.now()}`;
           await db.Invoice.create({
@@ -429,18 +341,8 @@ class PaymentService {
           });
         } else {
           console.log(`[VERIFY_PAYMENT] Warning: Booking #${booking.booking_code} payment status state did not match expected split conditions.`);
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
         }
 
-<<<<<<< HEAD
-      // Notify customer
-      await db.Notification.create({
-        user_id: booking.user_id,
-        title: "Payment Received Successfully! 🎉",
-        message: `Your payment of ₹${booking.final_amount} for booking #${booking.booking_code} was received.`,
-        type: "PAYMENT",
-        data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
-=======
         // Always update Payment record
         await db.Payment.update(
           {
@@ -456,30 +358,9 @@ class PaymentService {
       const [wallet] = await db.Wallet.findOrCreate({
         where: { user_id: tx.user_id },
         defaults: { balance: 0 }
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
       });
       await wallet.increment("balance", { by: tx.amount });
 
-<<<<<<< HEAD
-      // Notify artist
-      const artist = await db.ArtistProfile.findByPk(booking.artist_id);
-      if (artist) {
-        const notifTitle = booking.booking_status === "COMPLETED"
-          ? "Payment Received Successfully"
-          : "New Booking Confirmed 📅";
-        const notifMessage = booking.booking_status === "COMPLETED"
-          ? `The customer has successfully completed the online payment for Booking #${booking.booking_code}.`
-          : `Mehndi booking request #${booking.booking_code} has been paid and confirmed.`;
-
-        await db.Notification.create({
-          user_id: artist.user_id,
-          title: notifTitle,
-          message: notifMessage,
-          type: "BOOKING",
-          data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
-        });
-      }
-=======
       await db.WalletTransaction.create({
         wallet_id: wallet.id,
         transaction_type: "RECHARGE",
@@ -488,7 +369,6 @@ class PaymentService {
         description: `Wallet recharge via Cashfree (Order: ${tx.cashfree_order_id})`
       });
       console.log(`[Recharge Success] Credited ₹${tx.amount} to user ID ${tx.user_id} wallet`);
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
     }
 
     return tx;
@@ -501,34 +381,6 @@ class PaymentService {
       return { status: "SECRET_MISSING" };
     }
 
-<<<<<<< HEAD
-    const payload = JSON.parse(rawBody);
-    const event = payload.event;
-
-    console.log(`Razorpay Webhook Event Received: ${event}`);
-
-    if (event === "payment.captured" || event === "order.paid") {
-      const orderId = payload.payload.payment.entity.order_id;
-      const paymentId = payload.payload.payment.entity.id;
-
-      const tx = await db.Transaction.findOne({ where: { razorpay_order_id: orderId } });
-      if (tx && tx.status !== "SUCCESS") {
-        await tx.update({ status: "SUCCESS", razorpay_payment_id: paymentId });
-        await db.Payment.update({ status: "SUCCESS", razorpay_payment_id: paymentId, paid_at: new Date() }, { where: { razorpay_order_id: orderId } });
-        const booking = await db.Booking.findByPk(tx.booking_id);
-        if (booking) {
-          const isCompleted = booking.booking_status === "COMPLETED";
-          await booking.update({
-            payment_status: "PAID",
-            booking_status: isCompleted ? "COMPLETED" : "CONFIRMED",
-            detailed_status: isCompleted ? "COMPLETED" : "CONFIRMED"
-          });
-          await this.processPaymentDistribution(booking);
-          if (isCompleted) {
-            await this.completeBookingSettlement(booking.id);
-          }
-        }
-=======
     if (signature && timestamp) {
       const expectedSignature = crypto
         .createHmac("sha256", secret)
@@ -538,7 +390,6 @@ class PaymentService {
       if (expectedSignature !== signature) {
         console.error("Invalid Cashfree webhook signature");
         throw new AppError("Invalid webhook signature", 400);
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
       }
     }
 
@@ -769,24 +620,6 @@ class PaymentService {
     });
   }
 
-<<<<<<< HEAD
-  async getInvoiceByBooking(bookingId) {
-    const invoice = await db.Invoice.findOne({
-      where: { booking_id: bookingId },
-      include: [
-        {
-          model: db.Booking,
-          as: "booking",
-          include: [
-            { model: db.User, as: "user", attributes: ["name", "phone", "email"] },
-            { model: db.Service, as: "service", attributes: ["specialization_name"] }
-          ]
-        }
-      ]
-    });
-    if (!invoice) {
-      throw new AppError("Invoice not found for this booking", 404);
-=======
   async handleWebhook(rawBody, signature, timestamp) {
     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || process.env.RAZORPAY_KEY_SECRET;
     
@@ -801,7 +634,6 @@ class PaymentService {
         console.error("[WEBHOOK] Invalid Razorpay webhook signature");
         throw new AppError("Invalid webhook signature", 400);
       }
->>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
     }
 
     const payload = typeof rawBody === "string" ? JSON.parse(rawBody) : rawBody;
@@ -877,17 +709,6 @@ class PaymentService {
       payableAmount = booking.final_amount;
     }
 
-<<<<<<< HEAD
-    // 1. Create Wallet Transaction
-    await db.WalletTransaction.create({
-      wallet_id: wallet.id,
-      transaction_type: "PAYMENT",
-      amount: Number(booking.final_amount),
-      status: "SUCCESS",
-      booking_id: booking.id,
-      description: `Deducted for booking #${booking.booking_code} (Wallet Checkout)`
-    });
-=======
     const t = await db.sequelize.transaction();
     try {
       const WalletService = require("./wallet.services");
@@ -901,7 +722,6 @@ class PaymentService {
       if (!wallet) {
         wallet = await db.Wallet.create({ user_id: userId, balance: 0 }, { transaction: t });
       }
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
 
       // Insufficient balance check (Backend validation)
       if (wallet.balance < payableAmount) {
@@ -909,23 +729,6 @@ class PaymentService {
         throw new AppError("Insufficient wallet balance. Please add money to your wallet and try again.", 400);
       }
 
-<<<<<<< HEAD
-    // 3. Update Booking
-    const isCompleted = booking.booking_status === "COMPLETED";
-    await booking.update({
-      payment_status: "PAID",
-      booking_status: isCompleted ? "COMPLETED" : "CONFIRMED",
-      detailed_status: isCompleted ? "COMPLETED" : "CONFIRMED"
-    });
-
-    // 4. Booking status history
-    await db.BookingStatusHistory.create({
-      booking_id: booking.id,
-      status: isCompleted ? "COMPLETED" : "CONFIRMED",
-      changed_by: userId,
-      notes: isCompleted ? "Paid via MehndiGo Wallet. Booking settled." : "Paid via MehndiGo Wallet. Booking confirmed."
-    });
-=======
       const newBalance = wallet.balance - payableAmount;
       await wallet.update({ balance: newBalance }, { transaction: t });
 
@@ -938,7 +741,6 @@ class PaymentService {
         booking_id: booking.id,
         description: `Deducted for booking #${booking.booking_code} (Wallet Checkout)`
       }, { transaction: t });
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
 
       // 2. Create online payment transaction simulation (Add user_id and remove payment_method)
       await db.Transaction.create({
@@ -950,15 +752,6 @@ class PaymentService {
         cashfree_payment_id: `wallet_pay_${Date.now()}`
       }, { transaction: t });
 
-<<<<<<< HEAD
-    // Apply payment distribution automatically
-    await this.processPaymentDistribution(booking);
-    if (isCompleted) {
-      await this.completeBookingSettlement(booking.id);
-    }
-
-    return booking;
-=======
       // 3. Update Booking
       if (booking.booking_status === "PENDING" && booking.payment_status === "PENDING") {
         // Advance paid
@@ -1045,7 +838,6 @@ class PaymentService {
       await t.rollback();
       throw error;
     }
->>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
   }
 
   async processPaymentDistribution(booking) {

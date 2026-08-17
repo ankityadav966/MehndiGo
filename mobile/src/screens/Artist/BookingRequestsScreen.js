@@ -200,14 +200,7 @@ export default function BookingRequestsScreen({ route, navigation }) {
       }
       
       if (activeTab === "Accepted") {
-<<<<<<< HEAD
-        return ["ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "ARTIST_ARRIVED", "SERVICE_STARTED", "RESCHEDULED", "CASH_PAYMENT_PENDING", "CASH_DISPUTED", "WAITING_FOR_USER_PAYMENT"].includes(status);
-      } else {
-        return ["COMPLETED", "CANCELLED", "REJECTED", "REFUNDED", "AWAITING_CASH_CONFIRMATION", "COMPLETED_CLOSED"].includes(status);
-
-=======
         return ["ARTIST_ACCEPTED", "ACCEPTED", "CONFIRMED", "ARTIST_ON_THE_WAY", "ARTIST_ARRIVED", "SERVICE_STARTED", "RESCHEDULED", "CASH_PAYMENT_PENDING", "CASH_DISPUTED", "WAITING_FOR_USER_PAYMENT"].includes(status);
->>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
       }
 
       if (activeTab === "Cancelled") {
