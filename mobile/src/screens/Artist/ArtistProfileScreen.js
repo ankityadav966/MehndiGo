@@ -44,8 +44,8 @@ export default function ArtistProfileScreen({ navigation }) {
     refreshPortfolios,
   } = usePortfolio();
   const [activeTab, setActiveTab] = useState("Posts");
-  const [profile, setProfile] = useState(null);
-  const [profileLoading, setProfileLoading] = useState(true);
+  const [profile, setProfile] = useState(user ? { user } : null);
+  const [profileLoading, setProfileLoading] = useState(!user);
 
   const [instagramHandle, setInstagramHandle] = useState("");
   const [facebookHandle, setFacebookHandle] = useState("");
@@ -444,7 +444,7 @@ export default function ArtistProfileScreen({ navigation }) {
 
         <View style={styles.profileSection}>
           <View style={styles.profileTopHeader}>
-            <TouchableOpacity style={styles.avatarContainer} onPress={handleUploadAvatar} activeOpacity={0.8}>
+            <View style={styles.avatarContainer}>
               <Image
                 source={
                   profile?.user?.profile_image
@@ -455,10 +455,7 @@ export default function ArtistProfileScreen({ navigation }) {
                 }
                 style={styles.avatar}
               />
-              <View style={styles.addAvatarBadge}>
-                <Ionicons name="camera" size={12} color={Colors.white} />
-              </View>
-            </TouchableOpacity>
+            </View>
 
             <View style={styles.profileMainInfo}>
               <Text style={styles.name}>
@@ -556,7 +553,7 @@ export default function ArtistProfileScreen({ navigation }) {
           </View>
         </View>
 
-        {/* Social Connections */}
+        {/* Social Connections (View-Only / Click to Open) */}
         <View style={styles.socialCard}>
           <Text style={styles.socialSectionTitle}>Social Connections</Text>
           
@@ -565,7 +562,7 @@ export default function ArtistProfileScreen({ navigation }) {
             <TouchableOpacity 
               style={styles.socialLeft} 
               activeOpacity={instagramHandle ? 0.7 : 1}
-              onPress={() => openSocialLink("instagram", instagramHandle)}
+              onPress={() => instagramHandle ? openSocialLink("instagram", instagramHandle) : navigation.navigate("EditProfile")}
             >
               <View style={[styles.socialIconCircle, { backgroundColor: "#FFE5EC" }]}>
                 <Ionicons name="logo-instagram" size={20} color="#E1306C" />
@@ -573,16 +570,16 @@ export default function ArtistProfileScreen({ navigation }) {
               <View>
                 <Text style={styles.socialLabel}>Instagram</Text>
                 <Text style={[styles.socialValue, instagramHandle && { color: Colors.primary, fontWeight: "600" }]}>
-                  {instagramHandle ? `@${instagramHandle} (Tap to view)` : "Not Connected"}
+                  {instagramHandle ? `@${instagramHandle}` : "Not Connected"}
                 </Text>
               </View>
             </TouchableOpacity>
             <TouchableOpacity 
-              style={[styles.connectBtn, instagramHandle && styles.disconnectBtn]} 
-              onPress={handleInstagramConnect}
+              style={styles.connectBtn} 
+              onPress={() => instagramHandle ? openSocialLink("instagram", instagramHandle) : navigation.navigate("EditProfile")}
             >
-              <Text style={[styles.connectBtnText, instagramHandle && styles.disconnectBtnText]}>
-                {instagramHandle ? "Disconnect" : "Connect"}
+              <Text style={styles.connectBtnText}>
+                {instagramHandle ? "View" : "Edit"}
               </Text>
             </TouchableOpacity>
           </View>
@@ -592,7 +589,7 @@ export default function ArtistProfileScreen({ navigation }) {
             <TouchableOpacity 
               style={styles.socialLeft} 
               activeOpacity={facebookHandle ? 0.7 : 1}
-              onPress={() => openSocialLink("facebook", facebookHandle)}
+              onPress={() => facebookHandle ? openSocialLink("facebook", facebookHandle) : navigation.navigate("EditProfile")}
             >
               <View style={[styles.socialIconCircle, { backgroundColor: "#E8F0FE" }]}>
                 <Ionicons name="logo-facebook" size={20} color="#1877F2" />
@@ -600,72 +597,20 @@ export default function ArtistProfileScreen({ navigation }) {
               <View>
                 <Text style={styles.socialLabel}>Facebook</Text>
                 <Text style={[styles.socialValue, facebookHandle && { color: "#1877F2", fontWeight: "600" }]}>
-                  {facebookHandle ? `${facebookHandle} (Tap to view)` : "Not Connected"}
+                  {facebookHandle ? `${facebookHandle}` : "Not Connected"}
                 </Text>
               </View>
             </TouchableOpacity>
             <TouchableOpacity 
-              style={[styles.connectBtn, facebookHandle && styles.disconnectBtn]} 
-              onPress={handleFacebookConnect}
+              style={styles.connectBtn} 
+              onPress={() => facebookHandle ? openSocialLink("facebook", facebookHandle) : navigation.navigate("EditProfile")}
             >
-              <Text style={[styles.connectBtnText, facebookHandle && styles.disconnectBtnText]}>
-                {facebookHandle ? "Disconnect" : "Connect"}
+              <Text style={styles.connectBtnText}>
+                {facebookHandle ? "View" : "Edit"}
               </Text>
             </TouchableOpacity>
           </View>
         </View>
-
-        {/* Instagram modal */}
-        <Modal visible={instagramModalVisible} transparent animationType="slide">
-          <View style={styles.modalBg}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Connect Instagram</Text>
-              <Text style={styles.modalDesc}>Enter your Instagram username (e.g. priya_mehndi_goa)</Text>
-              <TextInput
-                placeholder="Username"
-                placeholderTextColor={Colors.textTertiary}
-                style={styles.modalInput}
-                value={tempInsta}
-                onChangeText={setTempInsta}
-                autoCapitalize="none"
-              />
-              <View style={styles.modalActions}>
-                <TouchableOpacity style={styles.cancelBtn} onPress={() => setInstagramModalVisible(false)}>
-                  <Text style={styles.cancelBtnText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.submitBtn} onPress={saveInstagram}>
-                  <Text style={styles.submitBtnText}>Save</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
-
-        {/* Facebook modal */}
-        <Modal visible={facebookModalVisible} transparent animationType="slide">
-          <View style={styles.modalBg}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Connect Facebook</Text>
-              <Text style={styles.modalDesc}>Enter your Facebook profile handle or page link</Text>
-              <TextInput
-                placeholder="Username or URL"
-                placeholderTextColor={Colors.textTertiary}
-                style={styles.modalInput}
-                value={tempFB}
-                onChangeText={setTempFB}
-                autoCapitalize="none"
-              />
-              <View style={styles.modalActions}>
-                <TouchableOpacity style={styles.cancelBtn} onPress={() => setFacebookModalVisible(false)}>
-                  <Text style={styles.cancelBtnText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.submitBtn} onPress={saveFacebook}>
-                  <Text style={styles.submitBtnText}>Save</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
 
         <View style={styles.tabBar}>
           {TABS.map((tab) => (

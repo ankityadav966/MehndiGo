@@ -13,7 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import Colors from "../../constants/Colors";
 import Alert from "../../utils/Alert";
-import { registerSendOtp } from "../../services/auth";
+import { registerSendOtp, sanitizePhone } from "../../services/auth";
 
 export default function RegisterScreen({ navigation, route }) {
   const { email: initialEmail } = route.params || {};
@@ -52,7 +52,7 @@ export default function RegisterScreen({ navigation, route }) {
     setError("");
     const trimmedName = name.trim();
     const trimmedEmail = email.trim().toLowerCase();
-    const cleanPhone = phone.trim().replace(/[^0-9]/g, "");
+    const cleanPhone = sanitizePhone(phone);
 
     if (!trimmedName) {
       const msg = "Please enter your full name";
@@ -100,13 +100,10 @@ export default function RegisterScreen({ navigation, route }) {
     setLoading(true);
     try {
       console.log("[ROLE TRACE 1] RegisterScreen selectedRole:", selectedRole);
-      console.log("[ROLE TRACE 3] /register-send-otp payload:", { trimmedName, trimmedEmail, cleanPhone, selectedRole });
       const res = await registerSendOtp(trimmedName, trimmedEmail, cleanPhone, selectedRole);
       const data = res?.data || res;
-      const otp = data.otp ? String(data.otp) : "";
-
-      console.log("[ROLE TRACE 2] Role passed to OtpScreen navigation:", selectedRole);
-      Alert.alert("Registration OTP Sent", `Verification OTP has been sent to your email. (Dev code: ${otp})`);
+      console.log(`[SIGNUP OTP DISPATCH SUCCESS] Real OTP sent to email: ${trimmedEmail}`);
+      Alert.alert("Verification Code Sent 📩", `A 6-digit verification code has been sent to ${trimmedEmail}. Please check your email inbox to complete registration.`);
       navigation.navigate("Otp", {
         name: trimmedName,
         email: trimmedEmail,
@@ -114,14 +111,37 @@ export default function RegisterScreen({ navigation, route }) {
         role: selectedRole,
         isRegistering: true,
         flow: "SIGNUP",
-        otp,
         referralCode: referralCode || "",
       });
     } catch (e) {
       console.log("[REGISTER ERROR]:", e);
       const msg = e?.response?.data?.message || e.message || "Failed to process registration. Please try again.";
-      setError(msg);
-      Alert.alert("Registration Error", msg);
+      const lowerMsg = msg.toLowerCase();
+
+      if (lowerMsg.includes("email address already registered") || lowerMsg.includes("email already registered")) {
+        Alert.alert(
+          "Email Already Registered 📩",
+          `The email address ${trimmedEmail} is already registered.\n\nWould you like to log in instead?`,
+          [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Log In",
+              onPress: () => navigation.navigate("Login", { email: trimmedEmail }),
+            },
+          ]
+        );
+        setError(`Email ${trimmedEmail} is already registered. Please log in.`);
+      } else if (lowerMsg.includes("phone number already registered") || lowerMsg.includes("phone already registered")) {
+        Alert.alert(
+          "Phone Number Already Registered 📱",
+          `The mobile number (${cleanPhone}) is already linked to another account.\n\nPlease enter a different phone number to complete registration.`,
+          [{ text: "OK" }]
+        );
+        setError(`Phone number ${cleanPhone} is already registered. Please use another mobile number.`);
+      } else {
+        setError(msg);
+        Alert.alert("Registration Error", msg);
+      }
     } finally {
       setLoading(false);
     }

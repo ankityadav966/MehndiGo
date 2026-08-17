@@ -13,7 +13,17 @@ import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import CustomButton from "../../components/CustomButton";
-import { getBookingDetails, selectCashPayment } from "../../services/booking";
+import { getBookingDetails } from "../../services/booking";
+
+const resolveImage = (uri) => {
+  if (!uri || typeof uri !== "string") return null;
+  if (uri.startsWith("http://") || uri.startsWith("https://") || uri.startsWith("data:")) return uri;
+  if (uri.startsWith("/")) {
+    const { BASE_URL } = require("../../services/api");
+    return `${BASE_URL}${uri}`;
+  }
+  return uri;
+};
 
 export default function BookingSettlementScreen({ route, navigation }) {
   const { bookingId } = route.params || {};
@@ -54,29 +64,6 @@ export default function BookingSettlementScreen({ route, navigation }) {
     });
   };
 
-  const handlePayCash = async () => {
-    setActionLoading(true);
-    try {
-      await selectCashPayment(bookingId);
-      Alert.alert(
-        "Waiting for Artist Confirmation",
-        "Your cash payment request has been sent to the artist. You will be notified once the artist confirms payment.",
-        [
-          {
-            text: "OK",
-            onPress: () => {
-              fetchDetails();
-            }
-          }
-        ]
-      );
-    } catch (err) {
-      Alert.alert("Error", err.message || "Failed to submit cash selection request.");
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
   if (loading || !booking) {
     return (
       <View style={styles.centerContainer}>
@@ -86,7 +73,6 @@ export default function BookingSettlementScreen({ route, navigation }) {
   }
 
   const currentDetailedStatus = booking.detailed_status || booking.booking_status || "PENDING";
-  const isAwaitingCash = currentDetailedStatus === "AWAITING_CASH_CONFIRMATION";
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -101,11 +87,11 @@ export default function BookingSettlementScreen({ route, navigation }) {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <View style={styles.artistCard}>
           <Image
-            source={{ uri: booking.artist?.user?.profile_image || "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=300" }}
+            source={{ uri: resolveImage(booking.artist?.user?.profile_image) || resolveImage(booking.artist_image) || "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=300" }}
             style={styles.avatar}
           />
-          <Text style={styles.artistName}>{booking.artist?.user?.name || "Professional Specialist"}</Text>
-          <Text style={styles.bookingCode}>Booking Reference ID: #{booking.booking_code}</Text>
+          <Text style={styles.artistName}>{booking.artist?.user?.name || booking.artist_name || booking.artist?.business_name || "Mehndi Specialist"}</Text>
+          <Text style={styles.bookingCode}>Booking Reference ID: #{booking.booking_code || (`MG-${String(booking.id).padStart(6, "0")}`)}</Text>
         </View>
 
         <View style={styles.detailsCard}>
@@ -114,33 +100,41 @@ export default function BookingSettlementScreen({ route, navigation }) {
           <View style={styles.row}>
             <Text style={styles.label}>Booking Date</Text>
             <Text style={styles.value}>
-              {booking.slot?.start_time || booking.slot?.date ? new Date(booking.slot.start_time || booking.slot.date).toLocaleDateString() : (booking.reschedule_date || "TBD")}
+              {booking.booking_date || booking.bookingDate || booking.slot?.date || (booking.slot?.start_time ? new Date(booking.slot.start_time).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : (booking.reschedule_date || "As Scheduled"))}
             </Text>
           </View>
           
           <View style={styles.row}>
             <Text style={styles.label}>Total Price Amount</Text>
+<<<<<<< HEAD
             <Text style={styles.value}>₹{booking.total_price || booking.final_amount}</Text>
 
+=======
+            <Text style={styles.value}>₹{booking.customer_total_amount ?? booking.total_amount ?? booking.total_price ?? booking.final_amount ?? 0}</Text>
+>>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
           </View>
 
-          {booking.advance_paid !== undefined && (
-            <View style={styles.row}>
-              <Text style={styles.label}>Advance Paid (10%)</Text>
-              <Text style={styles.value}>₹{booking.advance_paid}</Text>
-            </View>
-          )}
+          <View style={styles.row}>
+            <Text style={styles.label}>Advance Paid</Text>
+            <Text style={styles.value}>₹{booking.advance_paid ?? 0}</Text>
+          </View>
 
           <View style={styles.row}>
             <Text style={styles.label}>Remaining Payable Amount</Text>
+<<<<<<< HEAD
             <Text style={[styles.value, { color: Colors.primary, fontWeight: "800" }]}>₹{booking.remaining_amount || booking.final_amount}</Text>
 
+=======
+            <Text style={[styles.value, { color: Colors.primary, fontWeight: "800" }]}>
+              ₹{booking.remaining_amount ?? booking.remainingAmount ?? 0}
+            </Text>
+>>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
           </View>
 
           <View style={styles.row}>
             <Text style={styles.label}>Payment Status</Text>
-            <Text style={[styles.value, { color: booking.payment_status === "PAID" ? Colors.success : Colors.primary }]}>
-              {booking.payment_status}
+            <Text style={[styles.value, { color: String(booking.payment_status).toUpperCase() === "PAID" ? Colors.success : Colors.primary }]}>
+              {booking.payment_status || "pending"}
             </Text>
           </View>
 
@@ -150,41 +144,20 @@ export default function BookingSettlementScreen({ route, navigation }) {
           </View>
         </View>
 
-        {isAwaitingCash ? (
-          <View style={styles.waitingCard}>
-            <Ionicons name="time" size={24} color="#D97706" />
-            <Text style={styles.waitingTitle}>Waiting for Artist Confirmation</Text>
-            <Text style={styles.waitingMsg}>
-              Your cash payment request has been sent to the artist. You will be notified once the artist confirms payment.
-            </Text>
-          </View>
-        ) : (
-          <View style={styles.optionsContainer}>
-            <Text style={styles.sectionTitle}>Choose Payment Method</Text>
+        <View style={styles.optionsContainer}>
+          <Text style={styles.sectionTitle}>Payment Method</Text>
 
-            <TouchableOpacity style={styles.optionBtn} onPress={handlePayOnline} disabled={actionLoading}>
-              <View style={styles.optionLeft}>
-                <Ionicons name="card" size={22} color={Colors.primary} />
-                <View style={styles.optionText}>
-                  <Text style={styles.optionTitle}>Pay Online</Text>
-                  <Text style={styles.optionSubtitle}>Secure payment using UPI, Card or Wallet</Text>
-                </View>
+          <TouchableOpacity style={styles.optionBtn} onPress={handlePayOnline} disabled={actionLoading} activeOpacity={0.8}>
+            <View style={styles.optionLeft}>
+              <Ionicons name="card" size={22} color={Colors.primary} />
+              <View style={styles.optionText}>
+                <Text style={styles.optionTitle}>Pay Online</Text>
+                <Text style={styles.optionSubtitle}>Secure payment using UPI, Cards, Net Banking or Wallet</Text>
               </View>
-              <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
-            </TouchableOpacity>
-
-            <TouchableOpacity style={[styles.optionBtn, { marginTop: 12 }]} onPress={handlePayCash} disabled={actionLoading}>
-              <View style={styles.optionLeft}>
-                <Ionicons name="cash" size={22} color={Colors.success} />
-                <View style={styles.optionText}>
-                  <Text style={styles.optionTitle}>Cash Payment</Text>
-                  <Text style={styles.optionSubtitle}>Pay the Mehendi Artist physically in hand</Text>
-                </View>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
-            </TouchableOpacity>
-          </View>
-        )}
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={Colors.primary} />
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -212,8 +185,5 @@ const styles = StyleSheet.create({
   optionLeft: { flexDirection: "row", alignItems: "center" },
   optionText: { marginLeft: 14 },
   optionTitle: { fontSize: 13, fontWeight: "700", color: Colors.text },
-  optionSubtitle: { fontSize: 10, color: Colors.textSecondary, marginTop: 2 },
-  waitingCard: { margin: 16, backgroundColor: "#FEF3C7", borderRadius: 16, padding: 18, alignItems: "center", borderWidth: 1, borderColor: "#F59E0B" },
-  waitingTitle: { fontSize: 14, fontWeight: "700", color: "#D97706", marginTop: 8, marginBottom: 6 },
-  waitingMsg: { fontSize: 12, color: "#92400E", textAlign: "center", lineHeight: 18 }
+  optionSubtitle: { fontSize: 10, color: Colors.textSecondary, marginTop: 2 }
 });

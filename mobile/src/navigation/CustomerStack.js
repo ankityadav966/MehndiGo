@@ -4,6 +4,7 @@ import ChangePasswordScreen from "../screens/Common/ChangePasswordScreen";
 import VideoPlayerScreen from "../screens/Common/VideoPlayerScreen";
 import DeleteAccountScreen from "../screens/Common/DeleteAccountScreen";
 import EditProfileScreen from "../screens/Common/EditProfileScreen";
+import SecurityPrivacyScreen from "../screens/Customer/SecurityPrivacyScreen";
 import NotificationCenterScreen from "../screens/Common/NotificationCenterScreen";
 import PrivacyPolicyScreen from "../screens/Common/PrivacyPolicyScreen";
 import SettingsScreen from "../screens/Common/SettingsScreen";
@@ -72,6 +73,7 @@ export default function CustomerStack() {
       <Stack.Screen name="Support" component={SupportScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+      <Stack.Screen name="SecurityPrivacy" component={SecurityPrivacyScreen} />
       <Stack.Screen name="BookingDetails" component={BookingDetailsScreen} />
       <Stack.Screen name="BookingSettlement" component={BookingSettlementScreen} />
       <Stack.Screen name="NotificationCenter" component={NotificationCenterScreen} />

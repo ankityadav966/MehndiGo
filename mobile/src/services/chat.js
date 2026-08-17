@@ -29,16 +29,25 @@ export async function deleteMessage(messageId, deleteType = "me") {
 
 // Upload file to Cloudinary via REST API
 export async function uploadChatMedia(fileUri, fileType, fileName) {
+<<<<<<< HEAD
   let cleanUri = fileUri || "";
   if (cleanUri.startsWith("/")) {
     cleanUri = `file://${cleanUri}`;
   }
+=======
+  try {
+    const FileSystem = require("expo-file-system");
+    let safeUri = fileUri || "";
+    if (safeUri.startsWith("/")) {
+      safeUri = `file://${safeUri}`;
+    }
+>>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
 
-  let type = "image/jpeg";
-  if (fileType === "video") type = "video/mp4";
-  else if (fileType === "pdf") type = "application/pdf";
-  else if (fileType === "voice") type = "audio/m4a";
+    const base64 = await FileSystem.readAsStringAsync(safeUri, {
+      encoding: FileSystem.EncodingType.Base64
+    });
 
+<<<<<<< HEAD
   const finalUri = getSafeUri(fileUri);
   const url = getNormalizedUrl("/chat/upload");
   console.log(`[API REQUEST] POST (uploadAsync) -> ${url}`);
@@ -69,9 +78,64 @@ export async function uploadChatMedia(fileUri, fileType, fileName) {
 
   if (!response.ok) {
     throw new Error(responseData?.message || `Upload failed with status ${response.status}`);
-  }
+=======
+    let mime = "image/jpeg";
+    if (fileType === "video") mime = "video/mp4";
+    else if (fileType === "pdf") mime = "application/pdf";
+    else if (fileType === "voice") mime = "audio/m4a";
 
-  return responseData?.data || responseData;
+    const dataUrl = `data:${mime};base64,${base64}`;
+
+    const apiRequest = require("./api").default;
+    const res = await apiRequest("POST", "/chat/upload", {
+      file_url: dataUrl,
+      url: dataUrl,
+      file_type: fileType
+    }, true);
+
+    const dataObj = res?.data || res;
+    return {
+      file_url: dataObj.file_url || dataObj.url || dataUrl,
+      url: dataObj.url || dataObj.file_url || dataUrl,
+      file_type: fileType
+    };
+  } catch (err) {
+    console.log("[CHAT MEDIA BASE64 READ WARNING, FALLBACK TO MULTIPART]", err.message);
+    const getSafeUri = (uri) => {
+      if (!uri) return uri;
+      let cleanUri = uri;
+      if (cleanUri.startsWith("/")) {
+        cleanUri = `file://${cleanUri}`;
+      }
+      return cleanUri;
+    };
+
+    let type = "image/jpeg";
+    if (fileType === "video") type = "video/mp4";
+    else if (fileType === "pdf") type = "application/pdf";
+    else if (fileType === "voice") type = "audio/m4a";
+
+    const finalUri = getSafeUri(fileUri);
+    const url = getNormalizedUrl("/chat/upload");
+    const token = await require("../utils/storage").secureStorage.getAccessToken();
+
+    const FileSystemLegacy = require("expo-file-system/legacy");
+    const response = await FileSystemLegacy.uploadAsync(url, finalUri, {
+      httpMethod: "POST",
+      uploadType: FileSystemLegacy.FileSystemUploadType.MULTIPART,
+      fieldName: "file",
+      mimeType: type,
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    });
+
+    const responseData = JSON.parse(response.body);
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(responseData?.message || `Upload failed with status ${response.status}`);
+    }
+
+    return responseData?.data || responseData;
+>>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
+  }
 }
 
 // Fetch media history attachments

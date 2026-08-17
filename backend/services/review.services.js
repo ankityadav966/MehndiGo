@@ -58,7 +58,7 @@ class ReviewService {
   }
 
   async createReview(userId, data) {
-    const { booking_id, rating, comment, design_quality, punctuality, professionalism } = data;
+    const { booking_id, rating, comment, design_quality, punctuality, professionalism, video_url, video_thumbnail, photos } = data;
 
     // Validate booking
     const booking = await db.Booking.findByPk(booking_id);
@@ -80,7 +80,11 @@ class ReviewService {
       comment: comment || "",
       design_quality_rating: design_quality ? Number(design_quality) : null,
       punctuality_rating: punctuality ? Number(punctuality) : null,
-      professionalism_rating: professionalism ? Number(professionalism) : null
+      professionalism_rating: professionalism ? Number(professionalism) : null,
+      video_url: video_url || null,
+      video_thumbnail: video_thumbnail || null,
+      photos: Array.isArray(photos) ? photos : (photos ? [photos] : []),
+      is_verified: true
     });
 
     await this.recalculateArtistRating(booking.artist_id);

@@ -423,7 +423,11 @@ export default function ArtistDashboardScreen({ navigation }) {
         </ScrollView>
 
         {/* 6. Active Actions (Pending Bookings) */}
-        {dashboard?.recentBookings?.filter(b => b.booking_status === "PENDING" || (b.booking_status === "CONFIRMED" && b.detailed_status === "CONFIRMED")).length > 0 && (
+        {dashboard?.recentBookings?.filter(b => {
+          const st = String(b.booking_status || b.status || "").toUpperCase();
+          const det = String(b.detailed_status || b.detailedStatus || "").toUpperCase();
+          return (st === "PENDING" || det === "PENDING") && det !== "ARTIST_ACCEPTED" && det !== "ACCEPTED" && det !== "CONFIRMED" && det !== "CANCELLED" && det !== "REJECTED" && det !== "COMPLETED";
+        }).length > 0 && (
           <View style={styles.cashSection}>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
               <Text style={styles.sectionTitle}>New Pending Bookings</Text>
@@ -431,8 +435,16 @@ export default function ArtistDashboardScreen({ navigation }) {
                 <Text style={styles.viewAll}>View All</Text>
               </Pressable>
             </View>
+<<<<<<< HEAD
             {dashboard.recentBookings.filter(b => b.booking_status === "PENDING" || (b.booking_status === "CONFIRMED" && b.detailed_status === "CONFIRMED")).slice(0, 3).map((item) => {
 
+=======
+            {dashboard.recentBookings.filter(b => {
+              const st = String(b.booking_status || b.status || "").toUpperCase();
+              const det = String(b.detailed_status || b.detailedStatus || "").toUpperCase();
+              return (st === "PENDING" || det === "PENDING") && det !== "ARTIST_ACCEPTED" && det !== "ACCEPTED" && det !== "CONFIRMED" && det !== "CANCELLED" && det !== "REJECTED" && det !== "COMPLETED";
+            }).slice(0, 3).map((item) => {
+>>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
               const slotDate = item.slot?.start_time ? new Date(item.slot.start_time).toLocaleDateString() : (item.reschedule_date || "TBD");
               const slotTime = item.slot ? `${new Date(item.slot.start_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - ${new Date(item.slot.end_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` : (item.reschedule_time || "TBD");
 
@@ -440,12 +452,12 @@ export default function ArtistDashboardScreen({ navigation }) {
                 <View key={item.id} style={styles.cashConfirmCard}>
                   <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 12 }}>
                     <Image
-                      source={{ uri: item.user?.profile_image || "https://picsum.photos/200" }}
+                      source={{ uri: item.customer_avatar || item.user?.profile_image || item.customer?.profile_image || "https://picsum.photos/200" }}
                       style={{ width: 44, height: 44, borderRadius: 22, marginRight: 12 }}
                     />
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.cashCustomer}>{item.user?.name || "Client"}</Text>
-                      <Text style={styles.cashService}>{item.service?.specialization_name || "Mehndi Design"}</Text>
+                      <Text style={styles.cashCustomer}>{item.customer_name || item.client_name || item.user?.name || item.customer?.name || "Client"}</Text>
+                      <Text style={styles.cashService}>{item.service?.specialization_name || item.service_title || "Mehndi Design"}</Text>
                     </View>
                   </View>
                   <View style={styles.itemMetaRow}>
@@ -590,6 +602,7 @@ export default function ArtistDashboardScreen({ navigation }) {
           </Pressable>
         </View>
 
+<<<<<<< HEAD
         {dashboard?.recentBookings?.slice(0, 3).map((item) => (
 
           <Pressable
@@ -600,18 +613,41 @@ export default function ArtistDashboardScreen({ navigation }) {
             <View style={styles.bookingLeft}>
               <View style={styles.avatarPlaceholder}>
                 <Ionicons name="person-outline" size={22} color={Colors.primary} />
+=======
+        {dashboard?.recentBookings?.slice(0, 5).map((item) => {
+          const customerName = item.user?.name || item.customer_name || item.client_name || item.customer?.name || "Client";
+          const customerPhone = item.user?.phone || item.customer_phone || "";
+          const customerAvatar = resolveImage(item.user?.profile_image || item.customer_avatar || item.customer?.profile_image);
+          
+          return (
+            <Pressable
+              key={item.id}
+              style={styles.bookingCard}
+              onPress={() => navigation.navigate("BookingDetails", { bookingId: item.id })}
+            >
+              <View style={styles.bookingLeft}>
+                <Image
+                  source={{ uri: customerAvatar }}
+                  style={{ width: 46, height: 46, borderRadius: 23, borderWidth: 1, borderColor: Colors.border }}
+                />
+                <View style={styles.bookingInfo}>
+                  <Text style={styles.customerName}>{customerName}</Text>
+                  {customerPhone ? (
+                    <Text style={{ fontSize: 11, color: Colors.primary, fontWeight: "600", marginTop: 1 }}>
+                      📞 {customerPhone}
+                    </Text>
+                  ) : null}
+                  <Text style={styles.serviceName}>{item.service?.specialization_name || "Mehndi Booking"}</Text>
+                  <Text style={styles.bookingDate}>
+                    Status: {item.detailed_status || item.booking_status} • Value: ₹{item.final_amount || item.total_price}
+                  </Text>
+                </View>
+>>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
               </View>
-              <View style={styles.bookingInfo}>
-                <Text style={styles.customerName}>{item.user?.name || "Client Name"}</Text>
-                <Text style={styles.serviceName}>{item.service?.specialization_name || "Mehndi Booking"}</Text>
-                <Text style={styles.bookingDate}>
-                  Status: {item.booking_status} • Value: ₹{item.total_price}
-                </Text>
-              </View>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
-          </Pressable>
-        ))}
+              <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
+            </Pressable>
+          );
+        })}
 
         {(!dashboard?.recentBookings || dashboard.recentBookings.length === 0) && (
           <Text style={styles.emptyText}>No booking details mapped.</Text>

@@ -35,8 +35,14 @@ const getSocketUrl = () => {
 export const SOCKET_URL = getSocketUrl();
 
 export function getNormalizedUrl(endpoint) {
+  if (!endpoint) return "";
+  let path = String(endpoint).trim();
+
+  if (path.startsWith("http://") || path.startsWith("https://") || path.startsWith("data:")) {
+    return path;
+  }
+
   let base = BASE_URL.replace(/\/+$/, "");
-  let path = (endpoint || "").trim();
 
   if (!path.startsWith("/")) {
     path = "/" + path;
@@ -55,7 +61,7 @@ export function getNormalizedUrl(endpoint) {
   return `${base}${path}`;
 }
 
-async function apiRequest(method, endpoint, body = null, auth = false) {
+async function apiRequest(method, endpoint, body = null, auth = false, customTimeoutMs = 12000) {
   const url = getNormalizedUrl(endpoint);
   console.log(`[API REQUEST] ${method} -> ${url}`);
 
@@ -68,12 +74,19 @@ async function apiRequest(method, endpoint, body = null, auth = false) {
     }
   }
 
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timeoutId = controller ? setTimeout(() => controller.abort(), customTimeoutMs) : null;
+
   const options = { method, headers };
+  if (controller) {
+    options.signal = controller.signal;
+  }
   if (body) {
     options.body = JSON.stringify(body);
   }
   try {
     const response = await fetch(url, options);
+    if (timeoutId) clearTimeout(timeoutId);
 
     let data;
     const contentType = response.headers.get("content-type") || "";

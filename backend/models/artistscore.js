@@ -43,6 +43,31 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.FLOAT,
         allowNull: false,
         defaultValue: 0.0
+      },
+      reliability_score: {
+        type: DataTypes.FLOAT,
+        allowNull: false,
+        defaultValue: 100.0
+      },
+      acceptance_rate: {
+        type: DataTypes.FLOAT,
+        allowNull: false,
+        defaultValue: 100.0
+      },
+      completion_rate: {
+        type: DataTypes.FLOAT,
+        allowNull: false,
+        defaultValue: 100.0
+      },
+      on_time_rate: {
+        type: DataTypes.FLOAT,
+        allowNull: false,
+        defaultValue: 100.0
+      },
+      tier_badge: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        defaultValue: "ON_TIME_PRO"
       }
     },
     {

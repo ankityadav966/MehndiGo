@@ -104,6 +104,32 @@ async function getArtistReviewsAnalytics(req, res) {
   }
 }
 
+async function uploadReviewMedia(req, res) {
+  try {
+    if (!req.file && (!req.files || req.files.length === 0)) {
+      return res.status(400).json(ErrorResponse("No media file uploaded"));
+    }
+
+    const file = req.file || (Array.isArray(req.files) ? req.files[0] : null);
+    const isVideo = file?.mimetype?.startsWith("video") || /\.(mp4|mov|3gp|mkv|webm)$/i.test(file?.originalname || "");
+    const mediaUrl = file?.path;
+    let thumbnailUrl = null;
+
+    if (isVideo && mediaUrl && mediaUrl.includes("/video/upload/")) {
+      thumbnailUrl = mediaUrl.replace("/video/upload/", "/video/upload/so_0,f_jpg/").replace(/\.(mp4|mov|3gp|mkv|webm)$/i, ".jpg");
+    }
+
+    return res.status(200).json(SuccessResponse("Review media uploaded successfully", {
+      url: mediaUrl,
+      thumbnail: thumbnailUrl,
+      isVideo: !!isVideo,
+      mimetype: file?.mimetype
+    }));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
 module.exports = {
   getReviews,
   getReviewById,
@@ -115,5 +141,6 @@ module.exports = {
   submitHelpfulVote,
   removeHelpfulVote,
   getArtistReviews,
-  getArtistReviewsAnalytics
+  getArtistReviewsAnalytics,
+  uploadReviewMedia
 };

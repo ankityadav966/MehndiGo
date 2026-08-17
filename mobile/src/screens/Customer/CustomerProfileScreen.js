@@ -18,26 +18,23 @@ import { useAuth } from "../../context/AuthContext";
 import { getCustomerDashboard, getCustomerProfile } from "../../services/customer";
 
 export default function CustomerProfileScreen({ navigation }) {
-  const { logout, isDarkMode } = useAuth();
+  const { user, logout, isDarkMode } = useAuth();
 
-  const [profileData, setProfileData] = useState(null);
+  const [profileData, setProfileData] = useState(user || null);
   const [dashboardData, setDashboardData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!user);
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchDashboardDetails = React.useCallback(async () => {
     try {
       const [profile, dashboard] = await Promise.all([
-        getCustomerProfile(),
-        getCustomerDashboard()
+        getCustomerProfile().catch(() => null),
+        getCustomerDashboard().catch(() => null)
       ]);
-      setProfileData(profile);
-      setDashboardData(dashboard);
+      if (profile) setProfileData(profile);
+      if (dashboard) setDashboardData(dashboard);
     } catch (err) {
       console.log("Failed to load dashboard metrics:", err.message);
-      Alert.alert("Error", "Failed to load account metrics from backend.");
-      setProfileData(null);
-      setDashboardData(null);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -46,10 +43,7 @@ export default function CustomerProfileScreen({ navigation }) {
 
   useFocusEffect(
     React.useCallback(() => {
-      const timer = setTimeout(() => {
-        fetchDashboardDetails();
-      }, 0);
-      return () => clearTimeout(timer);
+      fetchDashboardDetails();
     }, [fetchDashboardDetails])
   );
 
@@ -65,32 +59,7 @@ export default function CustomerProfileScreen({ navigation }) {
     ]);
   };
 
-  const handleDeleteAccount = () => {
-    Alert.alert(
-      "Delete Account",
-      "Are you sure you want to permanently delete your account? All saved addresses, referral history, and wallet data will be removed.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete Permanently",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              const { deleteCustomerAccount } = require("../../services/customer");
-              if (deleteCustomerAccount) await deleteCustomerAccount();
-            } catch (e) {
-              console.log("Delete account error:", e);
-            } finally {
-              logout();
-            }
-          }
-        }
-      ]
-    );
-  };
-
-
-  if (loading) {
+  if (loading && !profileData && !user) {
     return (
       <View style={styles.centerContainer}>
         <ActivityIndicator size="large" color={Colors.primary} />
@@ -113,7 +82,7 @@ export default function CustomerProfileScreen({ navigation }) {
     { icon: "share-social-outline", label: "Refer & Earn", screen: "ReferralDashboard" },
     { icon: "pricetag-outline", label: "Coupons & Offers", screen: "Coupons" },
     { icon: "star-outline", label: "My Reviews", screen: "Reviews" },
-    { icon: "shield-checkmark-outline", label: "Security & Privacy", screen: "EditProfile" },
+    { icon: "shield-checkmark-outline", label: "Security & Privacy", screen: "SecurityPrivacy" },
     { icon: "headset-outline", label: "Support Helpdesk", screen: "Support" },
   ];
 
@@ -217,15 +186,9 @@ export default function CustomerProfileScreen({ navigation }) {
         </View>
 
         {/* Logout Button */}
-        <TouchableOpacity style={[styles.logoutButton, { backgroundColor: currentCardBg, marginBottom: 12 }]} activeOpacity={0.8} onPress={handleLogout}>
+        <TouchableOpacity style={[styles.logoutButton, { backgroundColor: currentCardBg, marginBottom: 40 }]} activeOpacity={0.8} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={18} color={Colors.error} />
           <Text style={styles.logoutText}>Logout Session</Text>
-        </TouchableOpacity>
-
-        {/* Delete Account Button */}
-        <TouchableOpacity style={[styles.logoutButton, { backgroundColor: currentCardBg, borderColor: "#DC2626", marginBottom: 40 }]} activeOpacity={0.8} onPress={handleDeleteAccount}>
-          <Ionicons name="trash-outline" size={18} color="#DC2626" />
-          <Text style={[styles.logoutText, { color: "#DC2626" }]}>Delete Account</Text>
         </TouchableOpacity>
 
       </ScrollView>

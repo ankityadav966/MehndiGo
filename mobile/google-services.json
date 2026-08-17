@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "454865722637",
+    "project_id": "mehndigo-87331",
+    "storage_bucket": "mehndigo-87331.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:454865722637:android:08e8541e37e628b539e444",
+        "android_client_info": {
+          "package_name": "com.sonuy123.mehendigoo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCsuaKl1LmQ779ndbaCPeTt64qm3_te73w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

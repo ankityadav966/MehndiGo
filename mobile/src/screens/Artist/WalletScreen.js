@@ -65,19 +65,21 @@ export default function WalletScreen({ route, navigation }) {
 
   const loadWalletDataset = useCallback(async () => {
     try {
-      const wallet = await getUserWallet();
-      setWalletData(wallet);
-      setBalance(wallet?.balance || 0);
+      const [wallet, history, requests, bank] = await Promise.all([
+        getUserWallet().catch(() => null),
+        getWalletHistory().catch(() => []),
+        getWithdrawalHistory().catch(() => []),
+        getBankAccountDetails().catch(() => null)
+      ]);
 
-      const history = await getWalletHistory();
+      if (wallet) {
+        setWalletData(wallet);
+        setBalance(wallet.balance || 0);
+      }
       setTransactions(Array.isArray(history) ? history : []);
-
-      const requests = await getWithdrawalHistory();
       setWithdraws(Array.isArray(requests) ? requests : []);
-
-      const bank = await getBankAccountDetails();
-      setBankAccount(bank);
       if (bank) {
+        setBankAccount(bank);
         setBankForm({
           accountHolderName: bank.account_holder_name || "",
           accountNumber: bank.account_number || "",
@@ -312,15 +314,15 @@ export default function WalletScreen({ route, navigation }) {
                   <Ionicons name="trending-up" size={16} color={Colors.success} />
                 </View>
                 <Text style={styles.statMiniLabel}>Lifetime Earnings</Text>
-                <Text style={styles.statMiniValue}>₹{(walletData?.lifetime_earnings || 0).toLocaleString("en-IN")}</Text>
+                <Text style={styles.statMiniValue}>₹{Number(walletData?.total_earnings || walletData?.lifetime_earnings || 0).toLocaleString("en-IN")}</Text>
               </View>
 
               <View style={styles.statMiniCard}>
                 <View style={[styles.statIconBadge, { backgroundColor: "#FFFBEB" }]}>
-                  <Ionicons name="time-outline" size={16} color={Colors.warning} />
+                  <Ionicons name="lock-closed-outline" size={16} color={Colors.warning} />
                 </View>
-                <Text style={styles.statMiniLabel}>Escrow Pending</Text>
-                <Text style={styles.statMiniValue}>₹{(walletData?.pending_balance || 0).toLocaleString("en-IN")}</Text>
+                <Text style={styles.statMiniLabel}>In Escrow</Text>
+                <Text style={styles.statMiniValue}>₹{Number(walletData?.escrow_balance || walletData?.pending_balance || 0).toLocaleString("en-IN")}</Text>
               </View>
             </View>
 

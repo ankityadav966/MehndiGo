@@ -44,7 +44,7 @@ function App() {
             
             {isAuthenticated && (
               <>
-                {user?.role === "ADMIN" ? (
+                {String(user?.role).toUpperCase() === "ADMIN" ? (
                   <Link to="/admin" className="nav-link" style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
                     <ShieldAlert style={{ width: "16px" }} /> Admin
                   </Link>
@@ -135,9 +135,9 @@ function App() {
               path="/dashboard"
               element={
                 <ProtectedRoute>
-                  {user?.role === "ARTIST" ? (
+                  {String(user?.role).toUpperCase() === "ARTIST" ? (
                     <ArtistDashboard showToast={showToast} />
-                  ) : user?.role === "ADMIN" ? (
+                  ) : String(user?.role).toUpperCase() === "ADMIN" ? (
                     <Navigate to="/admin" replace />
                   ) : (
                     <UserDashboard showToast={showToast} />
@@ -150,7 +150,7 @@ function App() {
               path="/admin"
               element={
                 <ProtectedRoute>
-                  {user?.role === "ADMIN" ? (
+                  {String(user?.role).toUpperCase() === "ADMIN" ? (
                     <AdminDashboard showToast={showToast} />
                   ) : (
                     <Navigate to="/dashboard" replace />

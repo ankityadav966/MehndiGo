@@ -41,6 +41,34 @@ function generateRefreshToken(user) {
 }
 
 class AuthService {
+  async sendEmailDispatch(data) {
+    const { to, email, otp, code, name } = data;
+    const targetEmail = String(to || email || "").trim().toLowerCase();
+    const targetOtp = String(otp || code || "").trim();
+    const targetName = name || "Mehndi User";
+
+    if (!targetEmail || !targetOtp) {
+      throw new AppError("Email Address and OTP code are required for dispatch", 400);
+    }
+
+    process.env.EMAIL_USER = process.env.EMAIL_USER || "sonudonyadav87@gmail.com";
+    process.env.EMAIL_PASS = process.env.EMAIL_PASS || "kwemkkniwxyohmvm";
+
+    console.log(`[AUTH SERVICE DISPATCH] Delivering OTP ${targetOtp} to ${targetEmail}...`);
+    const result = await sendOtpEmail(targetEmail, targetOtp, targetName);
+
+    if (result && result.mock) {
+      throw new AppError(`Email delivery failed: ${result.error || "Nodemailer unconfigured"}`, 500);
+    }
+
+    console.log(`[AUTH SERVICE DISPATCH SUCCESS] Delivered to ${targetEmail}, messageId: ${result.messageId}`);
+    return {
+      success: true,
+      email: targetEmail,
+      messageId: result.messageId
+    };
+  }
+
   async sendOtp(data) {
     const { email } = data;
 
@@ -50,12 +78,15 @@ class AuthService {
 
     const targetEmail = String(email).trim().toLowerCase();
     const user = await UserRepositor.getOne({ email: targetEmail });
+    const otp = String(data.otp || data.code || Math.floor(100000 + Math.random() * 900000)).trim();
 
     if (!user) {
-      // Dynamic Check: user does not exist, return exists: false
+      console.log(`[AUTH SERVICE] Sending OTP ${otp} to new recipient ${targetEmail}...`);
+      await sendOtpEmail(targetEmail, otp, "Mehndi User");
       return {
         exists: false,
-        email: targetEmail
+        email: targetEmail,
+        otp
       };
     }
 
@@ -74,8 +105,6 @@ class AuthService {
       throw new AppError("Too many OTP requests. Please try again after 10 minutes.", 429);
     }
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-
     // Save OTP to database
     await OtpRepositor.create({
       user_id: user.id,
@@ -86,10 +115,10 @@ class AuthService {
       verified: false
     });
 
-    console.log(otp, 'OtpR');
+    console.log(`[AUTH SERVICE] Sending OTP ${otp} to existing recipient ${targetEmail}...`);
 
-    // Send via SMTP
-    await sendOtpEmail(targetEmail, otp, user.name);
+    // Send via SMTP using Gmail App Password credentials
+    await sendOtpEmail(targetEmail, otp, user.name || "Mehndi User");
 
     return {
       exists: true,

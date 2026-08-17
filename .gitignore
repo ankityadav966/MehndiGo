@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
 
 # dependencies
@@ -41,3 +42,43 @@ example
 # generated native folders
 /ios
 /android
+=======
+# Environment files
+.env
+.env.local
+.env.*.local
+*.env
+
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Builds and generated files
+dist/
+build/
+.expo/
+android/.gradle/
+android/app/build/
+android/build/
+
+# Uploads & Media Files (Prevent large files > 100MB in Git)
+backend/uploads/
+backend/temp_uploads/
+backend/scratch/
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.zip
+*.tar.gz
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# System files
+.DS_Store
+Thumbs.db
+>>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b

@@ -11,19 +11,20 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
-import { verifyUserOtp, registerVerifyOtp } from "../../services/auth";
+import { verifyUserOtp, registerVerifyOtp, sendOtp, registerSendOtp } from "../../services/auth";
 import { secureStorage } from "../../utils/storage";
 import { useAuth } from "../../context/AuthContext";
 import { useArtistOnboarding } from "../../context/ArtistOnboardingContext";
 
 export default function OtpScreen({ navigation, route }) {
-  const { name, email, phone, role, otp: initialOtp, isRegistering } = route.params || {};
-  const [otp, setOtp] = useState(initialOtp ? initialOtp.split("") : ["", "", "", "", "", ""]);
+  const { name, email, phone, role, isRegistering } = route.params || {};
+  const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const inputRefs = useRef([]);
   const { dispatch } = useAuth();
   const { setArtistProfileCompleted } = useArtistOnboarding();
   const [timer, setTimer] = useState(30);
   const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -34,18 +35,56 @@ export default function OtpScreen({ navigation, route }) {
     return () => clearInterval(interval);
   }, [timer]);
 
-  useEffect(() => {
-    if (initialOtp && initialOtp.length === 6) {
-      inputRefs.current[5]?.focus();
+  const handleResend = async () => {
+    if (resending || timer > 0) return;
+    setError("");
+    setResending(true);
+    try {
+      let res;
+      if (isRegistering) {
+        res = await registerSendOtp(name, email, phone, role);
+      } else {
+        res = await sendOtp(email);
+      }
+      setTimer(30);
+      setOtp(["", "", "", "", "", ""]);
+      inputRefs.current[0]?.focus();
+      const Alert = require("../../utils/Alert").default;
+      Alert.alert("OTP Resent 📩", `A new 6-digit verification code has been sent to ${email || "your email"}. Please check your inbox.`);
+    } catch (e) {
+      console.log("Resend OTP error:", e);
+      const msg = e?.response?.data?.message || e.message || "Failed to resend OTP. Please try again.";
+      setError(msg);
+    } finally {
+      setResending(false);
     }
+  };
+
+  useEffect(() => {
+    // Focus first input box on mount
+    inputRefs.current[0]?.focus();
   }, []);
 
   const handleOtpChange = (text, index) => {
+    const cleanText = String(text || "").replace(/[^0-9]/g, "");
+    if (cleanText.length > 1) {
+      const pastedDigits = cleanText.slice(0, 6).split("");
+      const newOtp = ["", "", "", "", "", ""];
+      pastedDigits.forEach((digit, idx) => {
+        if (idx < 6) newOtp[idx] = digit;
+      });
+      setOtp(newOtp);
+      setError("");
+      const nextIndex = Math.min(pastedDigits.length - 1, 5);
+      inputRefs.current[nextIndex]?.focus();
+      return;
+    }
+
     const newOtp = [...otp];
-    newOtp[index] = text;
+    newOtp[index] = cleanText;
     setOtp(newOtp);
     setError("");
-    if (text && index < 5) {
+    if (cleanText && index < 5) {
       inputRefs.current[index + 1]?.focus();
     }
   };
@@ -179,27 +218,24 @@ export default function OtpScreen({ navigation, route }) {
         </View>
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-        <Text style={styles.resend}>
+        <View style={{ alignItems: "center", marginTop: 30 }}>
           {timer > 0 ? (
-            <>
+            <Text style={styles.resend}>
               Resend OTP in{" "}
               <Text style={styles.timer}>
                 00:{timer.toString().padStart(2, "0")}
               </Text>
-            </>
+            </Text>
           ) : (
-            <TouchableOpacity
-              onPress={() => {
-                setTimer(30);
-                setOtp(["", "", "", "", "", ""]);
-                setError("");
-                inputRefs.current[0]?.focus();
-              }}
-            >
-              <Text style={styles.timer}>Resend OTP</Text>
+            <TouchableOpacity onPress={handleResend} disabled={resending}>
+              {resending ? (
+                <ActivityIndicator color={Colors.primary} size="small" />
+              ) : (
+                <Text style={styles.timer}>Resend OTP</Text>
+              )}
             </TouchableOpacity>
           )}
-        </Text>
+        </View>
 
         <TouchableOpacity
           style={[styles.button, loading && styles.disabledButton]}

@@ -1,12 +1,16 @@
 import apiRequest from "./api";
 
-export async function createPaymentSession(bookingId, amount) {
-  const res = await apiRequest("POST", "/payment/create-session", { bookingId, amount }, true);
+export async function createPaymentSession(bookingId, paymentMethodOrAmount, purpose) {
+  const isNumber = typeof paymentMethodOrAmount === "number";
+  const payload = isNumber
+    ? { bookingId, amount: paymentMethodOrAmount, payment_mode: "FULL_ONLINE", purpose: purpose || (!bookingId ? "recharge" : "booking") }
+    : { bookingId, payment_mode: paymentMethodOrAmount || "ADVANCE_CASH", purpose: purpose || "booking" };
+  const res = await apiRequest("POST", "/payment/create-session", payload, true);
   return res?.data || res;
 }
 
-export async function createPaymentOrder(bookingId, amount) {
-  return await createPaymentSession(bookingId, amount);
+export async function createPaymentOrder(bookingId, paymentMethodOrAmount) {
+  return await createPaymentSession(bookingId, paymentMethodOrAmount);
 }
 
 export async function verifyPaymentSignature(paymentDetails) {

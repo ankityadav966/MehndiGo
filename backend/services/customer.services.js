@@ -61,6 +61,35 @@ class CustomerService {
   }
 
   async getOffers() {
+    try {
+      const db = require("../models");
+      if (db.Banner) {
+        const banners = await db.Banner.findAll({
+          where: { is_active: true },
+          order: [["createdAt", "DESC"]]
+        });
+        if (banners && banners.length > 0) {
+          return banners.map((b) => ({
+            id: b.id,
+            title: b.title,
+            subtitle: b.subtitle || b.description,
+            description: b.description || b.subtitle,
+            code: b.promo_code || b.code || "",
+            discount: b.discount_value ? `${b.discount_value}% OFF` : (b.discount || "Special Offer"),
+            discount_text: b.discount_text || (b.discount_value ? `${b.discount_value}% OFF` : "Special Offer"),
+            image: b.image_url || b.banner_image || b.image,
+            banner: b.image_url || b.banner_image || b.image,
+            banner_image: b.image_url || b.banner_image || b.image,
+            image_url: b.image_url || b.banner_image || b.image,
+            target_type: b.target_type || "category",
+            target_id: b.target_id || null,
+            cta_link: b.cta_link || "Coupons"
+          }));
+        }
+      }
+    } catch (e) {
+      console.log("Failed to load banners from DB:", e.message);
+    }
     return offersList;
   }
 
@@ -68,8 +97,8 @@ class CustomerService {
     const response = await repo.getArtists({
       latitude: lat,
       longitude: lng,
-      sort: "rating",
-      limit: 6
+      sort: "highest_rated",
+      limit: 10
     });
     return response.rows;
   }
@@ -78,10 +107,10 @@ class CustomerService {
     const response = await repo.getArtists({
       latitude: lat,
       longitude: lng,
-      radius: radius || 50,
+      radius: radius || null,
       sort: "distance",
       page: page || 1,
-      limit: limit || 10
+      limit: limit || 15
     });
     return response;
   }
@@ -90,16 +119,16 @@ class CustomerService {
     const response = await repo.getArtists({
       latitude: lat,
       longitude: lng,
-      sort: "rating",
-      limit: 6
+      sort: "trending",
+      limit: 10
     });
     return response.rows;
   }
 
-  async searchArtists(query, filters = {}, sort = "nearest", lat = null, lng = null, page = 1, limit = 10) {
+  async searchArtists(query, filters = {}, sort = "nearest", lat = null, lng = null, page = 1, limit = 15) {
     const offset = (Number(page) - 1) * Number(limit);
     let where = {
-      verification_status: "APPROVED"
+      verification_status: { [Op.ne]: "REJECTED" }
     };
 
     if (filters.category) {
@@ -168,12 +197,12 @@ class CustomerService {
         db.sequelize.literal(`EXISTS (
           SELECT 1 FROM "Users" AS u 
           WHERE u.id = "ArtistProfile".user_id 
-          AND u.name Ilike '${searchPattern}'
+          AND u.name ILIKE '${searchPattern}'
         )`),
         db.sequelize.literal(`EXISTS (
           SELECT 1 FROM "Services" AS s 
           WHERE s.artist_id = "ArtistProfile".id 
-          AND (s.specialization_name Ilike '${searchPattern}' OR s.category Ilike '${searchPattern}')
+          AND (s.specialization_name ILIKE '${searchPattern}' OR s.category ILIKE '${searchPattern}')
         )`)
       ];
     }
@@ -185,7 +214,7 @@ class CustomerService {
 
     let distanceSql = null;
     if (lat && lng) {
-      distanceSql = `(6371 * acos(cos(radians(${Number(lat)})) * cos(radians(latitude::double precision)) * cos(radians(longitude::double precision) - radians(${Number(lng)})) + sin(radians(${Number(lat)})) * sin(radians(latitude::double precision))))`;
+      distanceSql = `(6371 * acos(LEAST(1.0, GREATEST(-1.0, cos(radians(${Number(lat)})) * cos(radians(COALESCE(latitude::double precision, ${Number(lat)}))) * cos(radians(COALESCE(longitude::double precision, ${Number(lng)})) - radians(${Number(lng)})) + sin(radians(${Number(lat)})) * sin(radians(COALESCE(latitude::double precision, ${Number(lat)})))))))`;
       attributes.include.push([db.sequelize.literal(distanceSql), "distance"]);
       
       if (filters.radius) {
@@ -198,8 +227,10 @@ class CustomerService {
 
     if (sort === "nearest" && distanceSql) {
       order.push([db.sequelize.literal(distanceSql), "ASC"]);
+      order.push(["avg_rating", "DESC"]);
     } else if (sort === "highest_rated" || sort === "rating") {
       order.push(["avg_rating", "DESC"]);
+      order.push(["total_reviews", "DESC"]);
     } else if (sort === "lowest_price") {
       order.push([
         db.sequelize.literal(`(
@@ -211,6 +242,7 @@ class CustomerService {
       order.push(["experience_years", "DESC"]);
     } else if (sort === "trending" || sort === "most_booked") {
       order.push(["total_bookings", "DESC"]);
+      order.push(["avg_rating", "DESC"]);
     } else {
       order.push(["createdAt", "DESC"]);
     }
@@ -228,6 +260,11 @@ class CustomerService {
           model: db.Service,
           as: "services",
           required: false,
+        },
+        {
+          model: db.Portfolio,
+          as: "portfolio",
+          required: false,
         }
       ],
       order,
@@ -238,7 +275,7 @@ class CustomerService {
     const mappedRows = artists.rows.map((item) => {
       const data = item.toJSON();
       data.response_time = item.id % 2 === 0 ? "15 mins" : "within 2 hours";
-      data.languages = "Hindi, English, Rajasthani";
+      data.languages = item.languages || "Hindi, English, Rajasthani";
       return data;
     });
 
@@ -330,12 +367,105 @@ class CustomerService {
     };
   }
 
-  async getArtistAvailability(artistId) {
+  async getArtistAvailability(artistId, query = {}) {
     const slots = await db.AvailabilitySlot.findAll({
       where: { artist_id: artistId },
       order: [["start_time", "ASC"]]
     });
-    return slots;
+
+    const artist = await db.ArtistProfile.findByPk(artistId);
+    if (!artist) {
+      return slots;
+    }
+
+    const { date, selected_art_id, group_size = 1, latitude, longitude } = query;
+    const bookingService = require("./booking.services");
+
+    const targetDate = date ? String(date).substring(0, 10) : new Date().toISOString().substring(0, 10);
+    const dayOfWeek = new Date(targetDate).toLocaleDateString("en-US", { weekday: "long" }).toUpperCase();
+
+    const workingDays = Array.isArray(artist.working_days) ? artist.working_days : ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
+    const leaveDates = Array.isArray(artist.leave_dates) ? artist.leave_dates : [];
+
+    const isWorkingDay = workingDays.includes(dayOfWeek);
+    const isLeave = leaveDates.includes(targetDate);
+
+    // Selected Art Duration
+    let artDuration = 60;
+    if (selected_art_id) {
+      const art = await db.Portfolio.findByPk(selected_art_id);
+      if (art && art.duration_minutes) {
+        artDuration = Number(art.duration_minutes);
+      }
+    }
+    const totalDesignDuration = artDuration * Math.max(1, Number(group_size || 1));
+
+    // Travel calculation from previous booking on that day
+    const travelInfo = await bookingService.calculateTravelAndSequence(
+      artistId,
+      targetDate,
+      null,
+      latitude,
+      longitude
+    );
+
+    // Build standard time slots with feasibility
+    const timeTemplates = [
+      { label: "10:00 AM", startTimeStr: `${targetDate}T10:00:00.000Z`, endTimeStr: `${targetDate}T13:00:00.000Z` },
+      { label: "02:00 PM", startTimeStr: `${targetDate}T14:00:00.000Z`, endTimeStr: `${targetDate}T17:00:00.000Z` },
+      { label: "06:00 PM", startTimeStr: `${targetDate}T18:00:00.000Z`, endTimeStr: `${targetDate}T21:00:00.000Z` }
+    ];
+
+    const startOfDay = new Date(`${targetDate}T00:00:00.000Z`);
+    const endOfDay = new Date(`${targetDate}T23:59:59.999Z`);
+
+    const existingBookings = await db.Booking.findAll({
+      where: {
+        artist_id: artistId,
+        booking_status: { [Op.ne]: "CANCELLED" },
+        createdAt: { [Op.between]: [startOfDay, endOfDay] }
+      },
+      include: [{ model: db.AvailabilitySlot, as: "slot", required: false }]
+    });
+
+    const smartSlots = timeTemplates.map((t) => {
+      const slotStartTime = new Date(t.startTimeStr);
+      const isBooked = existingBookings.some((b) => {
+        if (b.slot?.start_time && new Date(b.slot.start_time).getTime() === slotStartTime.getTime()) return true;
+        if (b.notes && b.notes.includes(t.label)) return true;
+        return false;
+      });
+
+      const isFeasible = isWorkingDay && !isLeave && !isBooked;
+
+      return {
+        label: t.label,
+        start_time: t.startTimeStr,
+        end_time: t.endTimeStr,
+        is_available: isFeasible,
+        is_booked: isBooked,
+        travel_distance_km: travelInfo.distanceKm,
+        travel_duration_mins: travelInfo.durationMins,
+        travel_origin_type: travelInfo.originType,
+        travel_origin_address: travelInfo.originAddress,
+        design_duration_mins: totalDesignDuration,
+        prep_buffer_mins: 15,
+        cooldown_buffer_mins: 20,
+        total_block_mins: travelInfo.durationMins + totalDesignDuration + 15 + 20
+      };
+    });
+
+    return {
+      artist_id: artistId,
+      date: targetDate,
+      is_working_day: isWorkingDay,
+      is_on_leave: isLeave,
+      working_hours: `${artist.working_start_time || '09:00'} - ${artist.working_end_time || '20:00'}`,
+      break_hours: `${artist.break_start_time || '14:00'} - ${artist.break_end_time || '15:00'}`,
+      travel_info: travelInfo,
+      smart_slots: smartSlots,
+      raw_slots: slots
+    };
   }
 
   async getSimilarArtists(artistId) {

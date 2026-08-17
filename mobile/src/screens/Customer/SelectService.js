@@ -13,7 +13,7 @@ import Colors from "../../constants/Colors";
 import { fetchArtistServices } from "../../services/customer";
 
 export default function SelectService({ route, navigation }) {
-  const { artistId, selectedDate, selectedTimeSlot } = route.params || {};
+  const { artistId, selectedDate, selectedTimeSlot, selectedArt } = route.params || {};
 
   const [services, setServices] = useState([]);
   const [selectedServiceId, setSelectedServiceId] = useState(null);
@@ -53,7 +53,8 @@ export default function SelectService({ route, navigation }) {
       artistId,
       serviceId: selectedServiceId,
       selectedDate,
-      selectedTimeSlot
+      selectedTimeSlot,
+      selectedArt
     });
   };
 

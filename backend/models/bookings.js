@@ -241,6 +241,104 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true
 >>>>>>> 4d915c3802f113e08be4419d02b3e34ad3df788a
       },
+      arrival_verified_at: {
+        type: DataTypes.DATE,
+        allowNull: true
+      },
+      completion_pin: {
+        type: DataTypes.STRING(10),
+        allowNull: true
+      },
+      selected_art_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true
+      },
+      selected_art_title: {
+        type: DataTypes.STRING,
+        allowNull: true
+      },
+      selected_art_image: {
+        type: DataTypes.STRING,
+        allowNull: true
+      },
+      selected_art_tier: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        defaultValue: "STANDARD"
+      },
+      selected_art_duration: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        defaultValue: 60
+      },
+      selected_art_price: {
+        type: DataTypes.INTEGER,
+        allowNull: true
+      },
+      hold_expires_at: {
+        type: DataTypes.DATE,
+        allowNull: true
+      },
+      group_size: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 1
+      },
+      service_coverage: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        defaultValue: "BOTH_HANDS"
+      },
+      reference_images: {
+        type: DataTypes.JSONB,
+        allowNull: true,
+        defaultValue: []
+      },
+      pin_attempts: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0
+      },
+      pin_locked_until: {
+        type: DataTypes.DATE,
+        allowNull: true
+      },
+      cancellation_fee: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0
+      },
+      refund_amount: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0
+      },
+      is_rescheduled: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false
+      },
+      original_booking_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true
+      },
+      travel_origin_type: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        defaultValue: "HOME_BASE"
+      },
+      travel_origin_address: {
+        type: DataTypes.STRING,
+        allowNull: true
+      },
+      travel_distance_km: {
+        type: DataTypes.FLOAT,
+        allowNull: true
+      },
+      travel_duration_mins: {
+        type: DataTypes.INTEGER,
+        allowNull: true
+      },
     },
     {
       sequelize,

@@ -77,6 +77,25 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         defaultValue: 0,
       },
+      art_tier: {
+        type: DataTypes.ENUM("STANDARD", "PREMIUM", "BRIDAL_EXCLUSIVE"),
+        allowNull: false,
+        defaultValue: "STANDARD"
+      },
+      price: {
+        type: DataTypes.INTEGER,
+        allowNull: true
+      },
+      duration_minutes: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        defaultValue: 60
+      },
+      complexity_level: {
+        type: DataTypes.ENUM("SIMPLE", "MEDIUM", "INTRICATE", "MASTERPIECE"),
+        allowNull: true,
+        defaultValue: "MEDIUM"
+      },
     },
     {
       sequelize,

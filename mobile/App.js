@@ -47,7 +47,7 @@ try {
   console.error("[ImagePicker Interceptor] Failed to override expo-image-picker methods:", e);
 }
 
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { NavigationContainer, createNavigationContainerRef } from "@react-navigation/native";
 import { StatusBar, Alert } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -90,6 +90,14 @@ export default function App() {
   const [fontsLoaded, fontError] = useFonts({
     Poppins: Poppins_400Regular,
   });
+  const [fontTimeout, setFontTimeout] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setFontTimeout(true);
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     const handleDeepLink = async (url) => {
@@ -132,13 +140,17 @@ export default function App() {
     };
   }, []);
 
-  const onLayoutRootView = useCallback(async () => {
-    if (fontsLoaded || fontError) {
-      await SplashScreen.hideAsync();
-    }
-  }, [fontsLoaded, fontError]);
+  const isReady = fontsLoaded || fontError || fontTimeout;
 
-  if (!fontsLoaded && !fontError) {
+  const onLayoutRootView = useCallback(async () => {
+    if (isReady) {
+      try {
+        await SplashScreen.hideAsync();
+      } catch (e) {}
+    }
+  }, [isReady]);
+
+  if (!isReady) {
     return null;
   }
 

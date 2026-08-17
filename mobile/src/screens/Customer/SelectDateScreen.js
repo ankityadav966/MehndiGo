@@ -11,7 +11,7 @@ import { fetchArtistAvailability } from "../../services/customer";
 import { checkRestrictedBooking } from "../../services/booking";
 
 export default function SelectDateScreen({ route, navigation }) {
-  const { artistId, serviceId, selectedDate: initialDate, selectedTimeSlot } = route.params || {};
+  const { artistId, serviceId, selectedDate: initialDate, selectedTimeSlot, selectedArt } = route.params || {};
 
   // Single Date Selection Rule: Exactly 1 selected date string (YYYY-MM-DD)
   const todayStr = moment().format("YYYY-MM-DD");
@@ -98,7 +98,8 @@ export default function SelectDateScreen({ route, navigation }) {
       artistId,
       serviceId,
       selectedDate,
-      selectedTimeSlot
+      selectedTimeSlot,
+      selectedArt
     });
   };
 

@@ -29,9 +29,26 @@ const STEPS = [
   { key: "ARTIST_ACCEPTED", label: "Accepted" },
   { key: "ARTIST_ON_THE_WAY", label: "On The Way" },
   { key: "ARTIST_ARRIVED", label: "Arrived" },
+  { key: "CUSTOMER_VERIFIED", label: "Verified" },
   { key: "SERVICE_STARTED", label: "Started" },
   { key: "COMPLETED", label: "Completed" }
 ];
+
+const getNormalizedStatus = (b) => {
+  if (!b) return "PENDING";
+  const rawDetailed = String(b.detailed_status || b.detailedStatus || "").toUpperCase();
+  if (rawDetailed) {
+    if (rawDetailed === "ACCEPTED") return "ARTIST_ACCEPTED";
+    if (rawDetailed === "ON_THE_WAY") return "ARTIST_ON_THE_WAY";
+    if (rawDetailed === "ARRIVED") return "ARTIST_ARRIVED";
+    if (rawDetailed === "CHECKED_IN") return "CUSTOMER_VERIFIED";
+    if (rawDetailed === "IN_PROGRESS") return "SERVICE_STARTED";
+    return rawDetailed;
+  }
+  const rawStatus = String(b.booking_status || b.status || "PENDING").toUpperCase();
+  if (rawStatus === "ACCEPTED") return "ARTIST_ACCEPTED";
+  return rawStatus;
+};
 
 function calculateDistance(lat1, lon1, lat2, lon2) {
   const R = 6371; // km
@@ -65,6 +82,25 @@ export default function BookingDetailsScreen({ route, navigation }) {
   const [checkInOtpText, setCheckInOtpText] = useState("");
   const [checkOutOtpText, setCheckOutOtpText] = useState("");
   const [otpTimer, setOtpTimer] = useState(300);
+  const [isTravelChargeModalVisible, setIsTravelChargeModalVisible] = useState(false);
+  const [travelChargeInput, setTravelChargeInput] = useState("");
+
+  const handleSubmitTravelCharge = async () => {
+    const amount = Number(travelChargeInput);
+    if (!amount || isNaN(amount) || amount <= 0) {
+      Alert.alert("Invalid Amount", "Please enter a valid travel charge amount.");
+      return;
+    }
+    try {
+      const { requestTravelCharge } = require("../../services/booking");
+      await requestTravelCharge(booking.id || bookingId, amount, Math.round(distance || 0));
+      setIsTravelChargeModalVisible(false);
+      Alert.alert("Request Sent", "Travel charge request of ₹" + amount + " sent to customer for confirmation.");
+      loadDetails();
+    } catch (err) {
+      Alert.alert("Error", err.message || "Failed to send travel charge request.");
+    }
+  };
 
   const simulateLocation = async () => {
     const customerLat = booking && booking.latitude && parseFloat(booking.latitude) !== 0 ? parseFloat(booking.latitude) : 26.9124;
@@ -156,106 +192,112 @@ export default function BookingDetailsScreen({ route, navigation }) {
 
   const checkAndGetArtistLocation = async (showAlert = false) => {
     try {
-      const { status: currentStatus } = await Location.getForegroundPermissionsAsync();
-      let permissionStatus = currentStatus;
-      if (permissionStatus !== "granted") {
-        const { status: requestStatus } = await Location.requestForegroundPermissionsAsync();
-        permissionStatus = requestStatus;
-      }
+      const { status: fgStatus } = await Location.getForegroundPermissionsAsync();
+      const providerStatus = await Location.getProviderStatusAsync();
 
-      if (permissionStatus !== "granted") {
-        setPermissionError("Location permission denied");
+      const watcherActive = Boolean(artistCoords);
+      const latestGPSAvailable = Boolean(artistCoords && artistCoords.lat && artistCoords.lng);
+
+      console.log("[GPS FETCH]");
+      console.log("permission:", fgStatus);
+      console.log("locationServicesEnabled:", Boolean(providerStatus.locationServicesEnabled || providerStatus.gpsEnabled));
+      console.log("watcherActive:", watcherActive);
+      console.log("latestGPSAvailable:", latestGPSAvailable);
+
+      if (fgStatus !== "granted") {
+        setPermissionError("Location permission required for live tracking");
         if (showAlert) {
-          Alert.alert(
-            "Location Permission Required",
-            "Please allow MehndiGo to access your location to navigate and track your arrival for the customer.",
-            [
-              { text: "Cancel", style: "cancel" },
-              { text: "Settings", onPress: () => Linking.openSettings() }
-            ]
-          );
+          Alert.alert("Permission Required", "Location permission is required for live tracking.");
         }
         return null;
       }
 
-      const providerStatus = await Location.getProviderStatusAsync();
-      if (!providerStatus.locationServicesEnabled) {
-        if (Platform.OS === "android") {
-          try {
-            await Location.enableNetworkProviderAsync();
-          } catch (providerErr) {
-            console.warn("Failed to enable network provider, opening settings:", providerErr.message);
-            if (showAlert) {
-              Alert.alert(
-                "GPS Services Disabled",
-                "GPS location services are disabled on your device. Please turn on GPS/Location services.",
-                [
-                  { text: "Cancel", style: "cancel" },
-                  { text: "Settings", onPress: () => openLocationSettings() }
-                ]
-              );
-            }
-          }
-          // Recheck status
-          const finalStatus = await Location.getProviderStatusAsync();
-          if (!finalStatus.locationServicesEnabled) {
-            setPermissionError("GPS location services are disabled");
-            return null;
-          }
-        } else {
-          setPermissionError("GPS location services are disabled");
-          if (showAlert) {
-            Alert.alert(
-              "GPS Services Disabled",
-              "Please enable Location/GPS services in your device settings to start tracking.",
-              [
-                { text: "Cancel", style: "cancel" },
-                { text: "Settings", onPress: () => openLocationSettings() }
-              ]
-            );
-          }
-          return null;
+      if (!providerStatus.locationServicesEnabled && !providerStatus.gpsEnabled) {
+        setPermissionError("GPS location services are disabled");
+        if (showAlert) {
+          Alert.alert("GPS Services Disabled", "Please enable Location/GPS services in device settings.");
         }
+        return null;
       }
 
-      setPermissionError(null);
-      setIsLocationModalVisible(false);
+      // GUARD: If real GPS watcher is already active and we have latest Artist GPS coordinates, reuse them!
+      if (artistCoords && artistCoords.lat && artistCoords.lng) {
+        console.log("[GPS FETCH FALLBACK]");
+        console.log("reason: Real GPS watcher active & latest coordinates available.");
+        console.log("usingLatestWatcherLocation: true");
+        return artistCoords;
+      }
 
-      // Try fetching current location with 10-second timeout
-      const current = await Promise.race([
-        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("Location fetch timeout")), 10000))
-      ]);
-
-      const coords = {
-        lat: current.coords.latitude,
-        lng: current.coords.longitude
-      };
-      setArtistCoords(coords);
-      return coords;
-    } catch (err) {
-      console.warn("[BookingDetails] High accuracy location fetch failed, attempting fallback:", err.message);
-      
-      // Fallback to last known position
+      // Otherwise attempt a quick 3-tier location fetch
+      let current = null;
       try {
-        const lastKnown = await Location.getLastKnownPositionAsync({});
-        if (lastKnown) {
-          const coords = {
-            lat: lastKnown.coords.latitude,
-            lng: lastKnown.coords.longitude
-          };
-          setArtistCoords(coords);
-          setPermissionError(null);
-          setIsLocationModalVisible(false);
-          return coords;
+        current = await Promise.race([
+          Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("High accuracy timeout")), 3000))
+        ]);
+      } catch (highErr) {
+        try {
+          current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        } catch (balancedErr) {
+          try {
+            current = await Location.getLastKnownPositionAsync({});
+          } catch (_) {}
         }
-      } catch (fallbackErr) {
-        console.warn("[BookingDetails] Fallback location fetch also failed:", fallbackErr.message);
       }
-      
-      setPermissionError("Failed to obtain accurate GPS location");
+
+      if (current && current.coords) {
+        const coords = {
+          lat: current.coords.latitude,
+          lng: current.coords.longitude
+        };
+        setArtistCoords(coords);
+        setPermissionError(null);
+        setIsLocationModalVisible(false);
+
+        console.log("[GPS FETCH RESULT]");
+        console.log("success: true");
+        console.log("latitude:", coords.lat);
+        console.log("longitude:", coords.lng);
+        console.log("accuracy:", current.coords.accuracy || "High");
+
+        return coords;
+      }
+
+      console.log("[GPS FETCH FALLBACK]");
+      console.log("reason: One-time location fetch unavailable. Waiting for watchPositionAsync ticks.");
+      console.log("usingLatestWatcherLocation: false");
+
+      return null;
+    } catch (err) {
+      console.log("[GPS FETCH FALLBACK]");
+      console.log("reason:", err.message);
+      console.log("usingLatestWatcherLocation: false");
       return null;
     }
+  };
+
+  const openGoogleMapsNavigation = () => {
+    const destLat = customerCoords.lat;
+    const destLng = customerCoords.lng;
+    const addressLabel = encodeURIComponent(booking?.address || booking?.user?.name || "Customer Location");
+    
+    let url = `https://www.google.com/maps/dir/?api=1&destination=${destLat},${destLng}&destination_place_id=${addressLabel}&travelmode=driving`;
+    
+    if (Platform.OS === "android") {
+      url = `google.navigation:q=${destLat},${destLng}&mode=d`;
+    }
+
+    Linking.canOpenURL(url).then((supported) => {
+      if (supported) {
+        Linking.openURL(url);
+      } else {
+        const browserUrl = `https://www.google.com/maps/dir/?api=1&destination=${destLat},${destLng}`;
+        Linking.openURL(browserUrl);
+      }
+    }).catch(() => {
+      const browserUrl = `https://www.google.com/maps/dir/?api=1&destination=${destLat},${destLng}`;
+      Linking.openURL(browserUrl);
+    });
   };
 
   const loadDetails = async () => {
@@ -276,16 +318,34 @@ export default function BookingDetailsScreen({ route, navigation }) {
       navigation.goBack();
       return;
     }
-    const timer = setTimeout(() => {
+    loadDetails();
+
+    const unsubscribeFocus = navigation.addListener("focus", () => {
       loadDetails();
-    }, 0);
-    return () => clearTimeout(timer);
+    });
+
+    // 5-second polling when booking is in active lifecycle
+    const pollInterval = setInterval(() => {
+      if (booking) {
+        const st = String(booking.detailed_status || booking.booking_status || "").toUpperCase();
+        if (["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "ON_THE_WAY", "ARTIST_ARRIVED", "ARRIVED", "CUSTOMER_VERIFIED", "SERVICE_STARTED", "IN_PROGRESS"].includes(st)) {
+          getBookingDetails(bookingId).then((data) => {
+            if (data) setBooking(data);
+          }).catch(() => {});
+        }
+      }
+    }, 5000);
+
+    return () => {
+      unsubscribeFocus();
+      clearInterval(pollInterval);
+    };
   }, [bookingId]);
 
   // Live Tracking startup/shutdown listener based on active status
   useEffect(() => {
     if (!booking) return;
-    const currentDetailedStatus = booking.detailed_status || booking.booking_status || "PENDING";
+    const currentDetailedStatus = getNormalizedStatus(booking);
     const activeTrackingStatuses = ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED", "WAITING_FOR_USER_PAYMENT", "COMPLETED"];
 
     if (activeTrackingStatuses.includes(currentDetailedStatus)) {
@@ -303,7 +363,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
   // Auto-prompt Start Travel if booking is ready to travel
   useEffect(() => {
     if (booking && !hasPromptedTravel) {
-      const currentDetailedStatus = booking.detailed_status || booking.booking_status || "PENDING";
+      const currentDetailedStatus = getNormalizedStatus(booking);
       if (currentDetailedStatus === "ARTIST_ACCEPTED" || currentDetailedStatus === "CONFIRMED") {
         setHasPromptedTravel(true);
         Alert.alert(
@@ -341,7 +401,13 @@ export default function BookingDetailsScreen({ route, navigation }) {
     });
 
     return () => {
-      subscription.remove();
+      try {
+        if (subscription && typeof subscription.remove === "function") {
+          subscription.remove();
+        } else if (typeof subscription === "function") {
+          subscription();
+        }
+      } catch (_) {}
     };
   }, [booking, hasPromptedTravel, pendingAction]);
 
@@ -378,8 +444,8 @@ export default function BookingDetailsScreen({ route, navigation }) {
     setIsArrivalModalVisible(false);
     setLoading(true);
     try {
-      await updateArrived(bookingId);
-      await sendCheckInOtp(bookingId);
+      const { validateArrival } = require("../../services/booking");
+      await validateArrival(bookingId, true);
       setOtpTimer(300);
       setIsCheckInModalVisible(true);
     } catch (err) {
@@ -409,8 +475,8 @@ export default function BookingDetailsScreen({ route, navigation }) {
         locationSubscription = await Location.watchPositionAsync(
           {
             accuracy: Location.Accuracy.High,
-            timeInterval: 5000,
-            distanceInterval: 5
+            timeInterval: 3000,
+            distanceInterval: 3
           },
           (location) => {
             if (location && location.coords) {
@@ -419,7 +485,11 @@ export default function BookingDetailsScreen({ route, navigation }) {
                 lng: location.coords.longitude
               };
               setArtistCoords(coords);
-              console.log("[watchPosition] Artist moved:", coords);
+              console.log("[ARTIST REAL GPS]");
+              console.log("latitude:", coords.lat);
+              console.log("longitude:", coords.lng);
+              console.log("accuracy:", location.coords.accuracy || "High");
+              console.log("timestamp:", new Date(location.timestamp || Date.now()).toISOString());
             }
           }
         );
@@ -550,39 +620,41 @@ export default function BookingDetailsScreen({ route, navigation }) {
   };
 
   const handleVerifyCheckInOtp = async () => {
-    if (!checkInOtpText || checkInOtpText.length !== 6) {
-      Alert.alert("Error", "Please enter a valid 6-digit OTP code");
+    const cleanOtp = (checkInOtpText || "").trim();
+    if (!cleanOtp || (cleanOtp.length !== 4 && cleanOtp.length !== 6)) {
+      Alert.alert("Error", "Please enter the customer's 4-digit Check-In OTP");
       return;
     }
     setLoading(true);
     try {
-      await verifyCheckInOtp(bookingId, checkInOtpText);
+      await verifyCheckInOtp(bookingId, cleanOtp);
       setIsCheckInModalVisible(false);
       setCheckInOtpText("");
-      Alert.alert("Success", "Check-In verified successfully! Service has started.");
+      Alert.alert("Customer Verified ✅", "Customer Check-In verified successfully! You can now start the service.");
       loadDetails();
     } catch (err) {
-      Alert.alert("Verification Failed", err.message || "Invalid OTP code. Please retry.");
+      Alert.alert("Verification Failed", err.message || "Invalid Check-In OTP. Please ask the customer for the OTP on their app.");
     } finally {
       setLoading(false);
     }
   };
 
   const handleVerifyCheckOutOtp = async () => {
-    if (!checkOutOtpText || checkOutOtpText.length !== 6) {
-      Alert.alert("Error", "Please enter a valid 6-digit OTP code");
+    const cleanOtp = (checkOutOtpText || "").trim();
+    if (!cleanOtp || (cleanOtp.length !== 4 && cleanOtp.length !== 6)) {
+      Alert.alert("Error", "Please enter the customer's 4-digit Completion PIN.");
       return;
     }
     setLoading(true);
     try {
-      await verifyCheckOutOtp(bookingId, checkOutOtpText);
+      await verifyCheckOutOtp(bookingId, cleanOtp);
       setIsCheckOutModalVisible(false);
       setCheckOutOtpText("");
       setIsMapFullScreen(false);
-      Alert.alert("Success", "Service completed and verified successfully!");
+      Alert.alert("Service Completed 🎉", "Service verified & completed successfully! Payment settlement has been processed.");
       loadDetails();
     } catch (err) {
-      Alert.alert("Verification Failed", err.message || "Invalid OTP code. Please retry.");
+      Alert.alert("Verification Failed", err.message || "Invalid Completion PIN. Please ask customer to confirm the 4-digit PIN on their app.");
     } finally {
       setLoading(false);
     }
@@ -659,50 +731,82 @@ export default function BookingDetailsScreen({ route, navigation }) {
     );
   }
 
-  const currentDetailedStatus = booking.detailed_status || booking.booking_status || "PENDING";
-  const activeStepIndex = STEPS.findIndex((s) => s.key === currentDetailedStatus);
+  const currentDetailedStatus = getNormalizedStatus(booking);
+  const getActiveStepIndex = (statusStr) => {
+    const st = String(statusStr || "").toUpperCase();
+    if (["COMPLETED", "COMPLETED_CLOSED", "AWAITING_CASH_CONFIRMATION"].includes(st)) return 7;
+    if (["SERVICE_STARTED", "IN_PROGRESS"].includes(st)) return 6;
+    if (["CUSTOMER_VERIFIED", "CHECKED_IN"].includes(st)) return 5;
+    if (["ARTIST_ARRIVED", "ARRIVED"].includes(st)) return 4;
+    if (["ARTIST_ON_THE_WAY", "ON_THE_WAY"].includes(st)) return 3;
+    if (["ARTIST_ACCEPTED", "ACCEPTED"].includes(st)) return 2;
+    if (["CONFIRMED", "WAITING_FOR_USER_PAYMENT"].includes(st)) return 1;
+    return 0;
+  };
+  const activeStepIndex = getActiveStepIndex(currentDetailedStatus);
   const canChat = ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED"].includes(currentDetailedStatus);
 
-  const customerCoords = {
-    lat: booking && booking.latitude && parseFloat(booking.latitude) !== 0 ? parseFloat(booking.latitude) : 26.9124,
-    lng: booking && booking.longitude && parseFloat(booking.longitude) !== 0 ? parseFloat(booking.longitude) : 75.7873
-  };
+  // 1. Authoritative Customer Destination Coordinates from Confirmed Booking Location
+  const customerCoords = (booking && booking.latitude && parseFloat(booking.latitude) !== 0)
+    ? { lat: parseFloat(booking.latitude), lng: parseFloat(booking.longitude) }
+    : { lat: 26.9124, lng: 75.7873 };
 
-  const artistCoordsToUse = artistCoords || {
-    lat: customerCoords.lat - 0.005,
-    lng: customerCoords.lng - 0.005
-  };
+  // 2. Authoritative Artist Coordinates (Real Live GPS or Saved DB location ONLY - NO Customer Fallback!)
+  let artistCoordsToUse = null;
+  let artistLocationSource = "Pending / Locating Artist...";
 
-  const distance = roadDistance !== null ? roadDistance : calculateDistance(artistCoordsToUse.lat, artistCoordsToUse.lng, customerCoords.lat, customerCoords.lng);
-  const distanceInMeters = distance !== null ? distance * 1000 : null;
+  if (artistCoords && artistCoords.lat && artistCoords.lng) {
+    artistCoordsToUse = artistCoords;
+    artistLocationSource = "Artist Real-Time Live Device GPS";
+  } else if (booking && (booking.artist_latitude || booking.artist_lat) && parseFloat(booking.artist_latitude || booking.artist_lat) !== 0) {
+    artistCoordsToUse = {
+      lat: parseFloat(booking.artist_latitude || booking.artist_lat),
+      lng: parseFloat(booking.artist_longitude || booking.artist_lng)
+    };
+    artistLocationSource = "Saved Database Location";
+  }
 
+  // 3. Direct Straight-Line Haversine GPS Distance Engine (Runs ONLY when BOTH coordinates are valid)
+  let distanceInMeters = null;
+  let haversineKm = null;
+  let formattedDistance = "Locating artist...";
+
+  if (artistCoordsToUse && customerCoords) {
+    haversineKm = calculateDistance(artistCoordsToUse.lat, artistCoordsToUse.lng, customerCoords.lat, customerCoords.lng);
+    distanceInMeters = haversineKm * 1000;
+    formattedDistance = distanceInMeters < 1000
+      ? `${Math.round(distanceInMeters)} m`
+      : `${(distanceInMeters / 1000).toFixed(1)} km`;
+  }
+
+  const distance = haversineKm;
   const walkTime = distance ? Math.round((distance / 5) * 60) : 0;
   const bikeTime = distance ? Math.round((distance / 25) * 60) : 0;
   const carTime = roadDuration !== null ? Math.round(roadDuration) : (distance ? Math.round((distance / 45) * 60) : 0);
 
-  // STEP 1: Customer Location Log
-  console.log("[DEBUG STEP 1] Customer Location:", {
-    bookingId: booking?.id,
-    latitude: customerCoords.lat,
-    longitude: customerCoords.lng
-  });
+  // 4. REQUIRED DEBUG LOGS EXACT FORMAT
+  console.log("[LOCATION DISTANCE DEBUG]");
+  console.log("Customer Lat:", customerCoords ? customerCoords.lat : "N/A");
+  console.log("Customer Lng:", customerCoords ? customerCoords.lng : "N/A");
+  console.log("Artist Lat:", artistCoordsToUse ? artistCoordsToUse.lat : "Pending...");
+  console.log("Artist Lng:", artistCoordsToUse ? artistCoordsToUse.lng : "Pending...");
+  console.log("Distance Meters:", distanceInMeters !== null ? Math.round(distanceInMeters) : "Pending...");
+  console.log("Distance KM:", distanceInMeters !== null ? (distanceInMeters / 1000).toFixed(2) : "Pending...");
+  console.log("Customer location source: Customer Confirmed Booking Location");
+  console.log("Artist location source:", artistLocationSource);
 
-  // STEP 2: Artist Live Location Log
-  console.log("[DEBUG STEP 2] Artist Live Location:", {
-    latitude: artistCoordsToUse.lat,
-    longitude: artistCoordsToUse.lng,
-    timestamp: new Date().toISOString(),
-    isMocked: !artistCoords
-  });
-
-  // STEP 3: Distance Calculation Log
-  console.log("[DEBUG STEP 3] Distance Calculation:", {
-    artistLat: artistCoordsToUse.lat,
-    artistLng: artistCoordsToUse.lng,
-    customerLat: customerCoords.lat,
-    customerLng: customerCoords.lng,
-    calculatedDistanceMeters: distanceInMeters
-  });
+  // 5. REQUIRED SAME LOCATION DEBUG LOG FORMAT
+  console.log("==================================================");
+  console.log("[SAME LOCATION DEBUG]");
+  console.log("Customer address:", booking?.address || "Customer Location");
+  console.log("Customer latitude:", customerCoords ? customerCoords.lat : "N/A");
+  console.log("Customer longitude:", customerCoords ? customerCoords.lng : "N/A");
+  console.log("Artist address:", booking?.artist?.address || booking?.artist_profile?.locality || "Artist Live Location");
+  console.log("Artist latitude:", artistCoordsToUse ? artistCoordsToUse.lat : "Pending...");
+  console.log("Artist longitude:", artistCoordsToUse ? artistCoordsToUse.lng : "Pending...");
+  console.log("Customer coordinates source: Customer Confirmed Booking Location");
+  console.log("Artist coordinates source:", artistLocationSource);
+  console.log("==================================================");
 
   // STEP 5: State Update Log
   console.log("[DEBUG STEP 5] State Update:", {
@@ -720,28 +824,49 @@ export default function BookingDetailsScreen({ route, navigation }) {
   };
 
   const formatTime = (timeVal) => {
-    if (!timeVal) return "";
-    const localMoment = getMoment();
-    const formats = [
-      "YYYY-MM-DD HH:mm:ss",
-      "YYYY-MM-DDTHH:mm:ssZ",
-      "YYYY-MM-DDTHH:mm:ss.SSSZ",
-      "HH:mm:ss",
-      "HH:mm",
-      "hh:mm A",
-      "hh:mm"
-    ];
-    return localMoment(timeVal, formats).format("hh:mm A");
+    if (!timeVal) return "TBD";
+    if (typeof timeVal === "string" && (timeVal.includes("AM") || timeVal.includes("PM") || timeVal.includes("-"))) {
+      return timeVal.trim();
+    }
+    try {
+      const localMoment = getMoment();
+      const formats = [
+        "YYYY-MM-DD HH:mm:ss",
+        "YYYY-MM-DDTHH:mm:ssZ",
+        "YYYY-MM-DDTHH:mm:ss.SSSZ",
+        "HH:mm:ss",
+        "HH:mm",
+        "hh:mm A",
+        "hh:mm"
+      ];
+      const m = localMoment(timeVal, formats);
+      return m.isValid() ? m.format("hh:mm A") : String(timeVal);
+    } catch (e) {
+      return String(timeVal);
+    }
   };
 
   const formatDate = (dateVal) => {
     if (!dateVal) return "TBD";
     try {
       const localMoment = getMoment();
-      return localMoment(dateVal).format("DD MMM YYYY (dddd)");
+      const m = localMoment(dateVal);
+      return m.isValid() ? m.format("DD MMM YYYY (dddd)") : String(dateVal);
     } catch (e) {
-      return dateVal;
+      return String(dateVal);
     }
+  };
+
+  const getBookingDate = (b) => {
+    if (!b) return "TBD";
+    const rawDate = b.booking_date || b.date || b.event_date || b.reschedule_date || b.slot?.date || b.slot?.start_time || b.created_at;
+    return formatDate(rawDate);
+  };
+
+  const getBookingTime = (b) => {
+    if (!b) return "TBD";
+    const rawTime = b.booking_time || b.time || b.time_slot || b.reschedule_time || (b.slot ? `${formatTime(b.slot.start_time)} - ${formatTime(b.slot.end_time)}` : null) || b.slot?.time_label;
+    return formatTime(rawTime);
   };
 
   const renderStatusFooter = () => {
@@ -761,38 +886,77 @@ export default function BookingDetailsScreen({ route, navigation }) {
     if (currentDetailedStatus === "CONFIRMED" || currentDetailedStatus === "ARTIST_ACCEPTED" || currentDetailedStatus === "ACCEPTED") {
       return (
         <View style={styles.footerSingle}>
-          <CustomButton title="Start Travel (On the Way)" onPress={handleStartTravel} />
+          <TouchableOpacity style={[styles.footerBtn, { backgroundColor: Colors.primary }]} onPress={handleStartTravel}>
+            <Ionicons name="car" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+            <Text style={styles.footerBtnText}>🚗 Start Travelling (On The Way)</Text>
+          </TouchableOpacity>
         </View>
       );
     }
 
-    if (currentDetailedStatus === "ARTIST_ON_THE_WAY") {
-      if (distanceInMeters !== null && distanceInMeters <= 50) {
-        return (
-          <View style={styles.footerSingle}>
-            <CustomButton title="Verify Check-In OTP" onPress={handleOpenCheckInOTP} />
-          </View>
-        );
-      }
+    if (currentDetailedStatus === "ARTIST_ON_THE_WAY" || currentDetailedStatus === "ON_THE_WAY") {
+      const isNearby = distanceInMeters !== null && distanceInMeters <= 50;
       return (
-        <View style={styles.footerSingle}>
-          <CustomButton title="On The Way (Navigating)" disabled={true} style={{ backgroundColor: Colors.border }} />
+        <View style={styles.footerActions}>
+          <TouchableOpacity
+            style={[styles.footerBtn, { backgroundColor: isNearby ? "#059669" : Colors.primary, flex: 2 }]}
+            onPress={() => {
+              setIsCheckInModalVisible(true);
+            }}
+          >
+            <Ionicons name="key" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+            <Text style={styles.footerBtnText}>
+              {isNearby ? "📍 Verify Customer (Check In)" : "📍 Reached (Check In)"}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.footerBtn, { backgroundColor: "#4285F4", flex: 1 }]}
+            onPress={openGoogleMapsNavigation}
+          >
+            <Ionicons name="navigate" size={16} color="#FFFFFF" />
+          </TouchableOpacity>
         </View>
       );
     }
 
-    if (currentDetailedStatus === "ARTIST_ARRIVED") {
+    if (currentDetailedStatus === "ARTIST_ARRIVED" || currentDetailedStatus === "ARRIVED" || currentDetailedStatus === "CHECK_IN_PENDING") {
       return (
         <View style={styles.footerSingle}>
-          <CustomButton title="Verify Check-In OTP" onPress={handleOpenCheckInOTP} />
+          <TouchableOpacity
+            style={[styles.footerBtn, { backgroundColor: "#059669" }]}
+            onPress={() => setIsCheckInModalVisible(true)}
+          >
+            <Ionicons name="key" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+            <Text style={styles.footerBtnText}>📍 VERIFY CUSTOMER & CHECK IN</Text>
+          </TouchableOpacity>
         </View>
       );
     }
 
-    if (currentDetailedStatus === "SERVICE_STARTED") {
+    if (currentDetailedStatus === "CUSTOMER_VERIFIED" || currentDetailedStatus === "CHECKED_IN") {
       return (
         <View style={styles.footerSingle}>
-          <CustomButton title="Complete Service" onPress={handleCompleteService} />
+          <TouchableOpacity
+            style={[styles.footerBtn, { backgroundColor: Colors.primary }]}
+            onPress={handleStartServiceTap}
+          >
+            <Ionicons name="brush" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+            <Text style={styles.footerBtnText}>🎨 START SERVICE</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    if (currentDetailedStatus === "SERVICE_STARTED" || currentDetailedStatus === "IN_PROGRESS" || currentDetailedStatus === "SERVICE_COMPLETED_PENDING_CHECKOUT") {
+      return (
+        <View style={styles.footerSingle}>
+          <TouchableOpacity
+            style={[styles.footerBtn, { backgroundColor: "#B45309" }]}
+            onPress={() => setIsCheckOutModalVisible(true)}
+          >
+            <Ionicons name="lock-closed" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+            <Text style={styles.footerBtnText}>🔐 COMPLETE SERVICE (ENTER PIN)</Text>
+          </TouchableOpacity>
         </View>
       );
     }
@@ -801,7 +965,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
       return (
         <View style={styles.footerActions}>
           <TouchableOpacity style={[styles.footerBtn, { backgroundColor: Colors.success }]} onPress={handleConfirmCash}>
-            <Text style={styles.footerBtnText}>Payment Received</Text>
+            <Text style={styles.footerBtnText}>Payment Received (Finish)</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[styles.footerBtn, { backgroundColor: "#EF4444" }]} onPress={handleRejectCash}>
             <Text style={styles.footerBtnText}>Payment Not Received</Text>
@@ -817,6 +981,22 @@ export default function BookingDetailsScreen({ route, navigation }) {
         <Text style={styles.completedBannerText}>This booking is {currentDetailedStatus}</Text>
       </View>
     );
+  };
+
+  const resolveImage = (uri) => {
+    const placeholder = "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=300";
+    if (!uri) return placeholder;
+    if (uri.startsWith("http://") || uri.startsWith("https://") || uri.startsWith("file://") || uri.startsWith("content://")) {
+      return uri;
+    }
+    const cleanUri = uri.startsWith("/") ? uri : `/${uri}`;
+    const { SOCKET_URL } = require("../../services/api");
+    if (!SOCKET_URL) return placeholder;
+    const finalUrl = `${SOCKET_URL}${cleanUri}`;
+    if (!finalUrl.startsWith("http://") && !finalUrl.startsWith("https://")) {
+      return placeholder;
+    }
+    return finalUrl;
   };
 
   return (
@@ -876,20 +1056,48 @@ export default function BookingDetailsScreen({ route, navigation }) {
         {/* Customer Detail Card */}
         <View style={styles.customerCard}>
           <Image
-            source={{ uri: booking.user?.profile_image || "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=300" }}
+            source={{ uri: resolveImage(booking.customer_avatar || booking.user?.profile_image || booking.user?.avatar || booking.customer?.profile_image) }}
             style={styles.avatar}
           />
-          <Text style={styles.customerName}>{booking.user?.name || "Client"}</Text>
+          <Text style={styles.customerName}>{booking.customer_name || booking.client_name || booking.user?.name || booking.customer?.name || "Client"}</Text>
           <Text style={styles.bookingCode}>Booking ID: {booking.booking_code}</Text>
 
           <View style={styles.divider} />
 
+          <InfoRow icon="person-outline" label="Client Name" value={booking.user?.name || booking.customer_name || "Client"} />
+          <InfoRow icon="call-outline" label="Phone Number" value={booking.user?.phone || booking.customer_phone || "Not provided"} />
+          {booking.user?.email ? (
+            <InfoRow icon="mail-outline" label="Email" value={booking.user.email} />
+          ) : null}
           <InfoRow icon="brush-outline" label="Design Type" value={booking.service?.specialization_name || "Custom design"} />
-          <InfoRow icon="calendar-outline" label="Date" value={formatDate(booking.slot?.date || booking.reschedule_date)} />
-          <InfoRow icon="time-outline" label="Time Slot" value={booking.slot ? `${formatTime(booking.slot.start_time)} - ${formatTime(booking.slot.end_time)}` : (booking.reschedule_time ? formatTime(booking.reschedule_time) : "TBD")} />
-          <InfoRow icon="location-outline" label="Location" value={booking.address} />
-          {booking.landmark && (
+          <InfoRow icon="people-outline" label="Persons / Coverage" value={`${booking.group_size || 1} Person(s) • ${booking.service_coverage || "Both Hands"}`} />
+          <InfoRow icon="calendar-outline" label="Date" value={getBookingDate(booking)} />
+          <InfoRow icon="time-outline" label="Time Slot" value={getBookingTime(booking)} />
+          <InfoRow
+            icon="navigate-outline"
+            label="Travel Origin"
+            value={booking.travel_origin_type === "PREVIOUS_BOOKING" ? `📍 Previous Client (${booking.travel_origin_address || "En Route"})` : `📍 Artist Base Studio (${booking.travel_origin_address || "Home Studio"})`}
+          />
+          {Boolean(booking.landmark) && (
             <InfoRow icon="pin-outline" label="Landmark" value={booking.landmark} />
+          )}
+
+          {/* Selected Mehndi Design Card */}
+          {(Boolean(booking.selected_art_title) || Boolean(booking.selected_art_image)) && (
+            <View style={{ width: "100%", backgroundColor: "#F8FAFC", borderRadius: 10, padding: 10, marginTop: 10, borderWidth: 1, borderColor: "#E2E8F0" }}>
+              <Text style={{ fontSize: 11, fontWeight: "700", color: "#64748B", marginBottom: 6 }}>SELECTED MEHNDI DESIGN</Text>
+              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                {Boolean(booking.selected_art_image) && (
+                  <Image source={{ uri: booking.selected_art_image }} style={{ width: 48, height: 48, borderRadius: 6, marginRight: 10 }} />
+                )}
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 13, fontWeight: "700", color: Colors.text }}>{booking.selected_art_title || "Custom Art"}</Text>
+                  <Text style={{ fontSize: 11, color: Colors.primary, fontWeight: "700" }}>
+                    {booking.selected_art_tier === "PREMIUM" ? `💎 PREMIUM (₹${booking.selected_art_price || "Prem"})` : "✨ STANDARD"} • ⏱️ {booking.selected_art_duration || 60}m
+                  </Text>
+                </View>
+              </View>
+            </View>
           )}
         </View>
 
@@ -934,7 +1142,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
               {/* Distance Indicator */}
               <View style={styles.distanceBadge}>
                 <Ionicons name="navigate" size={16} color={Colors.primary} />
-                <Text style={styles.distanceText}>Distance: {distance.toFixed(1)} KM</Text>
+                <Text style={styles.distanceText}>Distance: {formattedDistance}</Text>
               </View>
               
               {/* Travel Time Estimations */}
@@ -955,26 +1163,111 @@ export default function BookingDetailsScreen({ route, navigation }) {
                   <Text style={styles.transitVal}>{carTime} mins</Text>
                 </View>
               </View>
+
+              {/* Real Google Maps Turn-by-Turn Button */}
+              <TouchableOpacity
+                style={{
+                  marginTop: 12,
+                  backgroundColor: "#4285F4",
+                  borderRadius: 10,
+                  paddingVertical: 12,
+                  paddingHorizontal: 16,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  elevation: 2
+                }}
+                onPress={openGoogleMapsNavigation}
+              >
+                <Ionicons name="navigate-circle-outline" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+                <Text style={{ color: "#FFFFFF", fontWeight: "700", fontSize: 13 }}>
+                  Open Turn-by-Turn Voice Navigation (Google Maps)
+                </Text>
+              </TouchableOpacity>
+
+              {/* 1-Tap Simulate Arrival for Testing Check-in */}
+              <TouchableOpacity
+                style={{
+                  marginTop: 8,
+                  backgroundColor: "#10B981",
+                  borderRadius: 10,
+                  paddingVertical: 10,
+                  paddingHorizontal: 16,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center"
+                }}
+                onPress={simulateLocation}
+              >
+                <Ionicons name="checkmark-circle-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={{ color: "#FFFFFF", fontWeight: "700", fontSize: 12 }}>
+                  Simulate Arrival at Customer Location (Test 0m Check-in)
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
         )}
 
         {/* Price Summary */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Earnings & Payments</Text>
+          <Text style={styles.cardTitle}>Earnings & Financial Breakdown</Text>
           <View style={styles.row}>
-            <Text style={styles.label}>Service Cost</Text>
-            <Text style={styles.val}>₹{booking.total_price}</Text>
+            <Text style={styles.label}>Base Service Amount</Text>
+            <Text style={styles.val}>₹{booking.base_service_amount || booking.total_price || booking.total_amount || 0}</Text>
           </View>
           <View style={styles.row}>
-            <Text style={styles.label}>Travel Allowance</Text>
-            <Text style={styles.val}>₹{booking.travel_charges}</Text>
+            <Text style={styles.label}>Artist Service Share (90%)</Text>
+            <Text style={[styles.val, { color: Colors.success, fontWeight: "600" }]}>
+              ₹{booking.artist_service_amount || Math.round((booking.base_service_amount || booking.total_price || 0) * 0.90)}
+            </Text>
           </View>
+          <View style={styles.row}>
+            <Text style={styles.label}>Admin Platform Fee (10%)</Text>
+            <Text style={[styles.val, { color: "#9CA3AF" }]}>
+              -₹{booking.admin_commission || Math.round((booking.base_service_amount || booking.total_price || 0) * 0.10)}
+            </Text>
+          </View>
+
+          <View style={styles.row}>
+            <Text style={styles.label}>
+              Travel / Distance Charge
+              {booking.travel_charge_status && booking.travel_charge_status !== "NONE" ? ` (${booking.travel_charge_status})` : ""}
+            </Text>
+            <Text style={[styles.val, { color: booking.travel_charge_status === "CONFIRMED" ? Colors.success : Colors.primary }]}>
+              ₹{booking.travel_charge || 0}
+            </Text>
+          </View>
+
           <View style={styles.divider} />
           <View style={styles.row}>
-            <Text style={styles.totalLabel}>Your Total Share</Text>
-            <Text style={styles.totalVal}>₹{booking.total_price + booking.travel_charges}</Text>
+            <Text style={styles.totalLabel}>Your Total Payable Share</Text>
+            <Text style={[styles.totalVal, { color: Colors.primary, fontSize: 17 }]}>
+              ₹{booking.artist_total_payable || (Math.round((booking.base_service_amount || booking.total_price || 0) * 0.90) + (booking.travel_charge_status === "CONFIRMED" ? Number(booking.travel_charge || 0) : 0))}
+            </Text>
           </View>
+
+          {/* Travel Charge Request Button */}
+          {booking.travel_charge_status !== "CONFIRMED" && (
+            <TouchableOpacity
+              style={{
+                marginTop: 12,
+                backgroundColor: "#FFFBEB",
+                borderColor: Colors.primary,
+                borderWidth: 1,
+                borderRadius: 8,
+                paddingVertical: 10,
+                alignItems: "center"
+              }}
+              onPress={() => {
+                setTravelChargeInput(String(booking.travel_charge || ""));
+                setIsTravelChargeModalVisible(true);
+              }}
+            >
+              <Text style={{ color: Colors.primary, fontWeight: "700", fontSize: 13 }}>
+                {booking.travel_charge_status === "REQUESTED" ? "Update Travel Charge Request" : "+ Request Travel / Distance Charge"}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Custom notes */}
@@ -1073,7 +1366,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
             </View>
 
             <View style={{ alignItems: "flex-end", minWidth: 60 }}>
-              <Text style={{ fontSize: 13, fontWeight: "700", color: Colors.primary }}>{distance.toFixed(1)} km</Text>
+              <Text style={{ fontSize: 13, fontWeight: "700", color: Colors.primary }}>{formattedDistance}</Text>
               <Text style={{ fontSize: 10, color: Colors.textTertiary }}>{carTime} mins</Text>
             </View>
           </View>
@@ -1095,7 +1388,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
           <View style={{ position: "absolute", bottom: 24, left: 16, right: 16, backgroundColor: Colors.white, borderRadius: 14, padding: 14, elevation: 5, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 8 }}>
             <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
               <Ionicons name="navigate" size={16} color={Colors.primary} />
-              <Text style={{ marginLeft: 6, fontSize: 13, fontWeight: "700", color: Colors.text }}>Distance: {distance.toFixed(1)} KM</Text>
+              <Text style={{ marginLeft: 6, fontSize: 13, fontWeight: "700", color: Colors.text }}>Distance: {formattedDistance}</Text>
             </View>
             <View style={styles.transitTimesContainer}>
               <View style={styles.transitModeCard}>
@@ -1111,6 +1404,26 @@ export default function BookingDetailsScreen({ route, navigation }) {
                 <Text style={styles.transitLabel}>Car: {carTime}m</Text>
               </View>
             </View>
+
+            <TouchableOpacity
+              style={{
+                marginTop: 10,
+                backgroundColor: "#4285F4",
+                borderRadius: 10,
+                paddingVertical: 12,
+                paddingHorizontal: 16,
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
+                elevation: 2
+              }}
+              onPress={openGoogleMapsNavigation}
+            >
+              <Ionicons name="navigate-circle-outline" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+              <Text style={{ color: "#FFFFFF", fontWeight: "700", fontSize: 13 }}>
+                Open Turn-by-Turn Google Maps
+              </Text>
+            </TouchableOpacity>
           </View>
         </SafeAreaView>
       </Modal>
@@ -1155,32 +1468,34 @@ export default function BookingDetailsScreen({ route, navigation }) {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Ionicons name="keypad" size={48} color={Colors.primary} style={styles.modalIcon} />
-            <Text style={styles.modalTitle}>Check-In Verification</Text>
+            <Ionicons name="keypad" size={48} color="#059669" style={styles.modalIcon} />
+            <Text style={styles.modalTitle}>Customer Check-In OTP</Text>
             <Text style={styles.modalDescription}>
-              Ask client {booking?.user?.name || "Customer"} for the Check-In OTP sent to their mobile number ending in {booking?.user?.phone ? booking.user.phone.slice(-4) : "xxxx"}.
+              Ask {booking?.customer_name || booking?.user?.name || "the Customer"} for the 4-digit Check-In OTP displayed on their booking screen:
             </Text>
 
             <TextInput
-              style={{ borderBottomColor: Colors.primary, borderBottomWidth: 2, textAlign: "center", fontSize: 24, letterSpacing: 8, marginVertical: 18, width: "80%", color: Colors.text }}
+              style={{
+                borderBottomColor: "#059669",
+                borderBottomWidth: 2,
+                textAlign: "center",
+                fontSize: 28,
+                letterSpacing: 10,
+                marginVertical: 18,
+                width: "80%",
+                color: Colors.text,
+                fontWeight: "800"
+              }}
               keyboardType="number-pad"
               maxLength={6}
-              placeholder="000000"
+              placeholder="0000"
               placeholderTextColor="#999"
               value={checkInOtpText}
               onChangeText={setCheckInOtpText}
             />
 
-            {otpTimer > 0 ? (
-              <Text style={{ fontSize: 12, color: Colors.textSecondary }}>OTP expires in: {Math.floor(otpTimer / 60)}:{(otpTimer % 60).toString().padStart(2, "0")}</Text>
-            ) : (
-              <TouchableOpacity style={{ padding: 8 }} onPress={handleResendCheckInOtp}>
-                <Text style={{ fontSize: 13, color: Colors.primary, fontWeight: "700" }}>Resend OTP</Text>
-              </TouchableOpacity>
-            )}
-
-            <TouchableOpacity style={[styles.modalPrimaryBtn, { marginTop: 20 }]} onPress={handleVerifyCheckInOtp}>
-              <Text style={styles.modalPrimaryBtnText}>Verify OTP & Start Service</Text>
+            <TouchableOpacity style={[styles.modalPrimaryBtn, { backgroundColor: "#059669", marginTop: 20 }]} onPress={handleVerifyCheckInOtp}>
+              <Text style={styles.modalPrimaryBtnText}>Verify Check-In OTP</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setIsCheckInModalVisible(false)}>
@@ -1190,7 +1505,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
         </View>
       </Modal>
 
-      {/* Check-Out OTP Modal */}
+      {/* Check-Out PIN / OTP Modal */}
       <Modal
         visible={isCheckOutModalVisible}
         transparent={true}
@@ -1199,35 +1514,83 @@ export default function BookingDetailsScreen({ route, navigation }) {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Ionicons name="shield-checkmark" size={48} color={Colors.success} style={styles.modalIcon} />
-            <Text style={styles.modalTitle}>Check-Out Verification</Text>
+            <Ionicons name="shield-checkmark" size={48} color="#B45309" style={styles.modalIcon} />
+            <Text style={styles.modalTitle}>Service Completion PIN</Text>
             <Text style={styles.modalDescription}>
-              Ask the client for the Completion OTP to securely verify checkout and finalize the service.
+              Ask customer for the 4-digit PIN displayed on their active booking screen upon full work satisfaction:
             </Text>
 
             <TextInput
-              style={{ borderBottomColor: Colors.success, borderBottomWidth: 2, textAlign: "center", fontSize: 24, letterSpacing: 8, marginVertical: 18, width: "80%", color: Colors.text }}
+              style={{
+                borderBottomColor: "#B45309",
+                borderBottomWidth: 2,
+                textAlign: "center",
+                fontSize: 28,
+                letterSpacing: 10,
+                marginVertical: 18,
+                width: "80%",
+                color: Colors.text,
+                fontWeight: "800"
+              }}
               keyboardType="number-pad"
               maxLength={6}
-              placeholder="000000"
+              placeholder="0000"
               placeholderTextColor="#999"
               value={checkOutOtpText}
               onChangeText={setCheckOutOtpText}
             />
 
-            {otpTimer > 0 ? (
-              <Text style={{ fontSize: 12, color: Colors.textSecondary }}>OTP expires in: {Math.floor(otpTimer / 60)}:{(otpTimer % 60).toString().padStart(2, "0")}</Text>
-            ) : (
-              <TouchableOpacity style={{ padding: 8 }} onPress={handleResendCheckOutOtp}>
-                <Text style={{ fontSize: 13, color: Colors.success, fontWeight: "700" }}>Resend OTP</Text>
-              </TouchableOpacity>
-            )}
-
-            <TouchableOpacity style={[styles.modalPrimaryBtn, { marginTop: 20, backgroundColor: Colors.success }]} onPress={handleVerifyCheckOutOtp}>
-              <Text style={styles.modalPrimaryBtnText}>Verify OTP & Complete Service</Text>
+            <TouchableOpacity style={[styles.modalPrimaryBtn, { marginTop: 20, backgroundColor: "#B45309" }]} onPress={handleVerifyCheckOutOtp}>
+              <Text style={styles.modalPrimaryBtnText}>Verify PIN & Complete Job</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setIsCheckOutModalVisible(false)}>
+              <Text style={styles.modalCancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Travel Charge Request Modal */}
+      <Modal
+        visible={isTravelChargeModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setIsTravelChargeModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Ionicons name="car" size={44} color={Colors.primary} style={styles.modalIcon} />
+            <Text style={styles.modalTitle}>Request Travel Charge</Text>
+            <Text style={styles.modalDescription}>
+              Travel charges must be communicated to and accepted by the customer before adding to booking total.
+            </Text>
+
+            <TextInput
+              style={{
+                borderWidth: 1,
+                borderColor: Colors.border,
+                borderRadius: 10,
+                paddingHorizontal: 16,
+                paddingVertical: 12,
+                fontSize: 18,
+                width: "100%",
+                color: Colors.text,
+                textAlign: "center",
+                marginVertical: 16
+              }}
+              keyboardType="number-pad"
+              placeholder="Enter Amount (₹)"
+              placeholderTextColor="#999"
+              value={travelChargeInput}
+              onChangeText={setTravelChargeInput}
+            />
+
+            <TouchableOpacity style={styles.modalPrimaryBtn} onPress={handleSubmitTravelCharge}>
+              <Text style={styles.modalPrimaryBtnText}>Submit Request</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setIsTravelChargeModalVisible(false)}>
               <Text style={styles.modalCancelBtnText}>Cancel</Text>
             </TouchableOpacity>
           </View>

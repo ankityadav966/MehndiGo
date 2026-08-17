@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { adminService } from "../services/api";
-import { Check, X, ShieldAlert, Users, Award, ShieldCheck, Eye, Calendar, DollarSign, MessageSquare, Bell, Send, Tag, Gift, TrendingUp, Plus, Trash, Grid } from "lucide-react";
+import { Check, X, ShieldAlert, Users, Award, ShieldCheck, Eye, Calendar, DollarSign, MessageSquare, Bell, Send, Tag, Gift, TrendingUp, Plus, Trash, Grid, Star } from "lucide-react";
 
 const AdminDashboard = ({ showToast }) => {
   const [users, setUsers] = useState([]);
@@ -10,6 +10,8 @@ const AdminDashboard = ({ showToast }) => {
   const [notifications, setNotifications] = useState([]);
   const [chats, setChats] = useState([]);
   const [pendingArtists, setPendingArtists] = useState([]);
+  const [adminReviews, setAdminReviews] = useState([]);
+  const [reviewFilter, setReviewFilter] = useState("PENDING");
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("overview");
   const [rejectId, setRejectId] = useState(null);
@@ -114,7 +116,7 @@ const AdminDashboard = ({ showToast }) => {
 
   useEffect(() => {
     fetchAdminData();
-  }, [activeTab, analyticsFilters.startDate, analyticsFilters.endDate, analyticsFilters.city, analyticsFilters.artistId, walletPage, walletSearch, walletStatusFilter, walletStartDate, walletEndDate]);
+  }, [activeTab, reviewFilter, analyticsFilters.startDate, analyticsFilters.endDate, analyticsFilters.city, analyticsFilters.artistId, walletPage, walletSearch, walletStatusFilter, walletStartDate, walletEndDate]);
 
   const fetchAdminData = async () => {
     setLoading(true);
@@ -150,6 +152,9 @@ const AdminDashboard = ({ showToast }) => {
         if (chats.length > 0) return;
         const chatsRes = await adminService.getChats();
         setChats(chatsRes.data || []);
+      } else if (activeTab === "reviews") {
+        const revsRes = await adminService.getReviews(reviewFilter);
+        setAdminReviews(revsRes.data || []);
       } else if (activeTab === "notifications") {
         if (notifications.length > 0) return;
         const notifsRes = await adminService.getNotifications();
@@ -260,6 +265,26 @@ const AdminDashboard = ({ showToast }) => {
       fetchAdminData();
     } catch (e) {
       showToast(e.message, "danger");
+    }
+  };
+
+  const handleApproveReview = async (reviewId) => {
+    try {
+      await adminService.approveReview(reviewId);
+      showToast("Review approved and published to artist profile!", "success");
+      fetchAdminData();
+    } catch (e) {
+      showToast("Failed to approve review: " + e.message, "danger");
+    }
+  };
+
+  const handleRejectReview = async (reviewId) => {
+    try {
+      await adminService.rejectReview(reviewId);
+      showToast("Review rejected and removed", "info");
+      fetchAdminData();
+    } catch (e) {
+      showToast("Failed to reject review: " + e.message, "danger");
     }
   };
 
@@ -502,6 +527,14 @@ const AdminDashboard = ({ showToast }) => {
           style={{ width: "100%", justifyContent: "flex-start", border: "none", background: "none" }}
         >
           <MessageSquare style={{ width: "18px" }} /> Chat Activity Stream
+        </button>
+
+        <button
+          className={`sidebar-link btn-secondary ${activeTab === "reviews" ? "active" : ""}`}
+          onClick={() => setActiveTab("reviews")}
+          style={{ width: "100%", justifyContent: "flex-start", border: "none", background: "none" }}
+        >
+          <Star style={{ width: "18px", color: "#FFB800" }} /> Review Moderation
         </button>
 
         <button
@@ -1030,6 +1063,142 @@ const AdminDashboard = ({ showToast }) => {
                           <td style={{ padding: "1rem", fontSize: "0.85rem" }}>{new Date(c.createdAt).toLocaleString()}</td>
                         </tr>
                       ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Tab: Customer Review Moderation & Approvals */}
+            {activeTab === "reviews" && (
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "1rem" }}>
+                  <div>
+                    <h1 style={{ fontSize: "2rem", fontWeight: 800 }}>Customer Reviews Moderation</h1>
+                    <p style={{ color: "var(--text-secondary)", marginTop: "0.25rem" }}>
+                      Approve customer reviews before they are published to artist profiles and calculated into ratings.
+                    </p>
+                  </div>
+                  <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                    <button
+                      className={`btn ${reviewFilter === "PENDING" ? "btn-primary" : "btn-secondary"}`}
+                      onClick={() => setReviewFilter("PENDING")}
+                      style={{ padding: "0.4rem 0.8rem", fontSize: "0.85rem" }}
+                    >
+                      Pending Approval
+                    </button>
+                    <button
+                      className={`btn ${reviewFilter === "APPROVED" ? "btn-primary" : "btn-secondary"}`}
+                      onClick={() => setReviewFilter("APPROVED")}
+                      style={{ padding: "0.4rem 0.8rem", fontSize: "0.85rem" }}
+                    >
+                      Approved & Live
+                    </button>
+                    <button
+                      className={`btn ${reviewFilter === "REJECTED" ? "btn-primary" : "btn-secondary"}`}
+                      onClick={() => setReviewFilter("REJECTED")}
+                      style={{ padding: "0.4rem 0.8rem", fontSize: "0.85rem" }}
+                    >
+                      Rejected
+                    </button>
+                    <button
+                      className={`btn ${reviewFilter === "ALL" ? "btn-primary" : "btn-secondary"}`}
+                      onClick={() => setReviewFilter("ALL")}
+                      style={{ padding: "0.4rem 0.8rem", fontSize: "0.85rem" }}
+                    >
+                      All Reviews
+                    </button>
+                  </div>
+                </div>
+
+                <div className="glass-panel" style={{ padding: "1.5rem", overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+                    <thead>
+                      <tr style={{ borderBottom: "2px solid var(--border-color)" }}>
+                        <th style={{ padding: "1rem" }}>Customer</th>
+                        <th style={{ padding: "1rem" }}>Artist</th>
+                        <th style={{ padding: "1rem" }}>Rating</th>
+                        <th style={{ padding: "1rem" }}>Feedback / Review</th>
+                        <th style={{ padding: "1rem" }}>Status</th>
+                        <th style={{ padding: "1rem" }}>Submitted At</th>
+                        <th style={{ padding: "1rem", textAlign: "center" }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {adminReviews.length === 0 ? (
+                        <tr>
+                          <td colSpan="7" style={{ textAlign: "center", padding: "2.5rem", color: "var(--text-secondary)" }}>
+                            No reviews found under "{reviewFilter}" filter.
+                          </td>
+                        </tr>
+                      ) : (
+                        adminReviews.map((r) => (
+                          <tr key={r.id} style={{ borderBottom: "1px solid var(--border-color)" }}>
+                            <td style={{ padding: "1rem", fontWeight: 600 }}>
+                              {r.customer_name}
+                              <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", fontWeight: 400 }}>
+                                {r.customer_email || r.customer_phone || `ID: ${r.customer_id}`}
+                              </div>
+                            </td>
+                            <td style={{ padding: "1rem", fontWeight: 600 }}>
+                              {r.artist_name}
+                              <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", fontWeight: 400 }}>
+                                {r.artist_email || `Artist ID: ${r.artist_id}`}
+                              </div>
+                            </td>
+                            <td style={{ padding: "1rem" }}>
+                              <span style={{ fontWeight: 700, color: "#FFB800" }}>
+                                {"⭐".repeat(Math.min(5, Math.max(1, r.rating)))} {Number(r.rating).toFixed(1)}
+                              </span>
+                            </td>
+                            <td style={{ padding: "1rem", maxWidth: "280px" }}>
+                              <div style={{ fontSize: "0.9rem", color: "var(--text-primary)" }}>
+                                "{r.comment || "No written text"}"
+                              </div>
+                              {r.booking_id && (
+                                <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "2px" }}>
+                                  Booking #{r.booking_id}
+                                </div>
+                              )}
+                            </td>
+                            <td style={{ padding: "1rem" }}>
+                              <span className={`badge ${
+                                r.status === "APPROVED" ? "badge-success" :
+                                r.status === "REJECTED" ? "badge-danger" : "badge-warning"
+                              }`}>
+                                {r.status === "APPROVED" ? "Live on Profile" : r.status === "REJECTED" ? "Rejected" : "Pending Review"}
+                              </span>
+                            </td>
+                            <td style={{ padding: "1rem", fontSize: "0.85rem" }}>
+                              {r.created_at ? new Date(r.created_at).toLocaleString() : "Recently"}
+                            </td>
+                            <td style={{ padding: "1rem", textAlign: "center" }}>
+                              <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center" }}>
+                                {r.status !== "APPROVED" && (
+                                  <button
+                                    className="btn btn-primary"
+                                    onClick={() => handleApproveReview(r.id)}
+                                    style={{ padding: "0.35rem 0.75rem", fontSize: "0.8rem", background: "var(--success-color)", border: "none" }}
+                                    title="Approve and publish to artist profile"
+                                  >
+                                    <Check style={{ width: "14px" }} /> Approve
+                                  </button>
+                                )}
+                                {r.status !== "REJECTED" && (
+                                  <button
+                                    className="btn btn-danger"
+                                    onClick={() => handleRejectReview(r.id)}
+                                    style={{ padding: "0.35rem 0.75rem", fontSize: "0.8rem" }}
+                                    title="Reject review"
+                                  >
+                                    <X style={{ width: "14px" }} /> Reject
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
                     </tbody>
                   </table>
                 </div>

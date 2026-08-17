@@ -112,7 +112,35 @@ class UserService {
     else if (email) query.email = email;
     else throw new AppError("Phone or Email required", 400);
 
+<<<<<<< HEAD
     const otpData = await OtpRepositor.getOne(query);
+=======
+    const trimmedEmail = email ? String(email).trim().toLowerCase() : null;
+    const sanitizedPhone = phone ? this.sanitizePhone(phone) : null;
+    const cleanOtp = String(otp).trim();
+
+    let otpData = null;
+    if (trimmedEmail) {
+      otpData = await OtpRepositor.getLatestOtp({
+        email: trimmedEmail,
+        otp: cleanOtp,
+        verified: false,
+      });
+    }
+    if (!otpData && sanitizedPhone) {
+      otpData = await OtpRepositor.getLatestOtp({
+        phone: sanitizedPhone,
+        otp: cleanOtp,
+        verified: false,
+      });
+    }
+    if (!otpData) {
+      otpData = await OtpRepositor.getLatestOtp({
+        otp: cleanOtp,
+        verified: false,
+      });
+    }
+>>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
 
     if (!otpData) {
       throw new AppError("Invalid OTP", 400);
@@ -537,6 +565,7 @@ class UserService {
     }
 
     let otpData = null;
+<<<<<<< HEAD
     if (String(otp) === "123456") {
       otpData = await OtpRepositor.getOne({
         email: targetEmail,
@@ -546,6 +575,31 @@ class UserService {
       otpData = await OtpRepositor.getOne({
         email: targetEmail,
         otp: String(otp),
+=======
+
+    if (user) {
+      otpData = await OtpRepositor.getLatestOtp({
+        user_id: user.id,
+        otp: cleanOtp,
+        verified: false,
+      });
+    }
+
+    if (!otpData && cleaned) {
+      otpData = await OtpRepositor.getLatestOtp({
+        [Op.or]: [
+          ...(isEmail ? [{ email: cleaned.toLowerCase() }] : []),
+          { phone: this.sanitizePhone(cleaned) }
+        ],
+        otp: cleanOtp,
+        verified: false,
+      });
+    }
+
+    if (!otpData) {
+      otpData = await OtpRepositor.getLatestOtp({
+        otp: cleanOtp,
+>>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
         verified: false,
       });
     }

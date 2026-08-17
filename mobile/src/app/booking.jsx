@@ -115,6 +115,7 @@ export default function BookingScreen() {
           return;
         }
 
+<<<<<<< HEAD
         if (sessionData.payment_session_id && (sessionData.payment_session_id.startsWith("session_mock") || sessionData.payment_session_id.startsWith("mock_session") || sessionData.mock_mode)) {
           console.log("[BOOKING_JSX] Mock session detected, triggering simulator payment success flow directly.");
           Alert.alert("Payment Simulation", "Simulating Cashfree Payment Success (Sandbox)...");
@@ -135,6 +136,18 @@ export default function BookingScreen() {
           }
           return;
         }
+=======
+        const options = {
+          description: `Payment for Booking #${targetBookingId}`,
+          image: "https://api.mehndigo.in/logo.png",
+          currency: sessionData.currency || "INR",
+          key: sessionData.key_id,
+          amount: sessionData.amount, // in paise
+          name: "MehndiGo",
+          order_id: sessionData.order_id,
+          theme: { color: "#ff7e5f" }
+        };
+>>>>>>> 3d724d199dd5257dfe28c46b3e3429559b9d412b
 
         try {
           const onVerify = async (orderIdVal) => {

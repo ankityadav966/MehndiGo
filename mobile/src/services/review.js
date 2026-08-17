@@ -13,6 +13,44 @@ export async function fetchReviewById(id) {
   return res?.data || res;
 }
 
+export async function uploadReviewMedia(fileUri, isVideo = false) {
+  try {
+    const { getNormalizedUrl } = require("./api");
+    const { secureStorage } = require("../utils/storage");
+    const FileSystem = require("expo-file-system/legacy");
+
+    let cleanUri = fileUri;
+    if (cleanUri.startsWith("/")) {
+      cleanUri = `file://${cleanUri}`;
+    }
+
+    const endpoint = getNormalizedUrl("/reviews/upload");
+    const token = await secureStorage.getAccessToken();
+
+    const response = await FileSystem.uploadAsync(endpoint, cleanUri, {
+      httpMethod: "POST",
+      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+      fieldName: "media",
+      mimeType: isVideo ? "video/mp4" : "image/jpeg",
+      parameters: {
+        type: isVideo ? "video" : "image",
+        is_video: isVideo ? "true" : "false"
+      },
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    });
+
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(`Review media upload failed (${response.status}): ${response.body}`);
+    }
+
+    const responseData = JSON.parse(response.body);
+    return responseData?.data || responseData;
+  } catch (err) {
+    console.error("[uploadReviewMedia] Error:", err);
+    throw err;
+  }
+}
+
 export async function createNewReview(reviewData) {
   const payload = {
     bookingId: reviewData.booking_id || reviewData.bookingId,
@@ -23,9 +61,12 @@ export async function createNewReview(reviewData) {
     comment: reviewData.comment,
     design_quality: reviewData.design_quality,
     punctuality: reviewData.punctuality,
-    professionalism: reviewData.professionalism
+    professionalism: reviewData.professionalism,
+    video_url: reviewData.video_url || null,
+    video_thumbnail: reviewData.video_thumbnail || null,
+    photos: reviewData.photos || []
   };
-  const res = await apiRequest("POST", "/customer/review", payload, true);
+  const res = await apiRequest("POST", "/reviews", payload, true);
   return res?.data || res;
 }
 

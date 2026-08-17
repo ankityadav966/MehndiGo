@@ -9,9 +9,8 @@ import moment from "moment";
 import { fetchArtistAvailability } from "../../services/customer";
 
 export default function SelectTimeSlotScreen({ route, navigation }) {
-  const { artistId, serviceId, selectedDate: paramDate } = route.params || {};
+  const { artistId, serviceId, selectedDate: paramDate, selectedArt } = route.params || {};
 
-  // Single Date & Single Slot Rule: Exactly 1 Date (string YYYY-MM-DD)
   const targetDate = typeof paramDate === "string" ? paramDate : (Array.isArray(paramDate) ? paramDate[0] : moment().format("YYYY-MM-DD"));
 
   const [availableSlots, setAvailableSlots] = useState([]);
@@ -27,32 +26,50 @@ export default function SelectTimeSlotScreen({ route, navigation }) {
 
     const loadSlots = async () => {
       try {
-        const data = await fetchArtistAvailability(artistId);
-        
-        // Filter slots matching the target date
-        const daySlots = (data || []).filter((slot) => {
-          const slotDate = moment(slot.start_time).format("YYYY-MM-DD");
-          return slotDate === targetDate;
+        const rawData = await fetchArtistAvailability(artistId);
+        const slotsList = Array.isArray(rawData) ? rawData : (rawData?.slots || rawData?.data || []);
+
+        // Filter slots matching target date
+        let daySlots = (slotsList || []).filter((slot) => {
+          const sDate = slot.date || (slot.start_time ? moment(slot.start_time).format("YYYY-MM-DD") : null);
+          return sDate === targetDate;
         });
 
-        // Fallback standard time slots if no availability record is seeded for this date
-        let finalSlots = daySlots;
-        if (daySlots.length === 0) {
-          finalSlots = [
-            { id: `slot_${targetDate}_10am`, start_time: `${targetDate}T10:00:00.000Z`, end_time: `${targetDate}T13:00:00.000Z`, is_booked: false },
-            { id: `slot_${targetDate}_02pm`, start_time: `${targetDate}T14:00:00.000Z`, end_time: `${targetDate}T17:00:00.000Z`, is_booked: false },
-            { id: `slot_${targetDate}_06pm`, start_time: `${targetDate}T18:00:00.000Z`, end_time: `${targetDate}T21:00:00.000Z`, is_booked: false }
-          ];
+        // Default 5-6 standard time slots if artist has no custom seeded slots for this date
+        if (!daySlots || daySlots.length === 0) {
+          const standardTimes = ["09:00 AM", "11:30 AM", "02:00 PM", "04:30 PM", "07:00 PM"];
+          const isToday = targetDate === moment().format("YYYY-MM-DD");
+          const nowHour = moment().hour();
+          const nowMin = moment().minute();
+
+          daySlots = standardTimes.map((t, idx) => {
+            let [timePart, modifier] = t.split(" ");
+            let [h, m] = timePart.split(":").map(Number);
+            if (modifier === "PM" && h < 12) h += 12;
+            if (modifier === "AM" && h === 12) h = 0;
+
+            const isPast = isToday && (h < nowHour || (h === nowHour && m <= nowMin));
+            return {
+              id: `def_${targetDate}_${idx}`,
+              artist_id: artistId,
+              date: targetDate,
+              time_slot: t,
+              slot_time: t,
+              is_available: !isPast,
+              status: isPast ? "past" : "available"
+            };
+          });
         }
 
-        setAvailableSlots(finalSlots);
+        setAvailableSlots(daySlots);
 
-        // Pre-select first non-booked slot
-        const firstAvailable = finalSlots.find(s => !s.is_booked);
-        if (firstAvailable) {
-          setSelectedSlotId(firstAvailable.id);
+        // Pre-select first available slot
+        const firstAvail = daySlots.find(s => s.is_available && s.status !== "booked" && s.status !== "past");
+        if (firstAvail) {
+          setSelectedSlotId(firstAvail.id);
         }
       } catch (err) {
+        console.log("Error loading availability slots:", err.message);
         Alert.alert("Error", "Failed to fetch time slots for selected date.");
       } finally {
         setLoading(false);
@@ -63,11 +80,10 @@ export default function SelectTimeSlotScreen({ route, navigation }) {
   }, [artistId, targetDate]);
 
   const handleSlotPress = (slot) => {
-    if (slot.is_booked) {
-      Alert.alert("Unavailable", "This time slot is already booked. Please select another slot.");
+    if (!slot.is_available || slot.status === "booked" || slot.status === "past") {
+      Alert.alert("Unavailable Slot", "This time slot is not available for booking. Please pick another slot.");
       return;
     }
-    // Single Time Slot Rule: Selecting a slot replaces any previous selection automatically!
     setSelectedSlotId(slot.id);
   };
 
@@ -83,18 +99,16 @@ export default function SelectTimeSlotScreen({ route, navigation }) {
       return;
     }
 
-    const startStr = moment(chosenSlot.start_time).format("hh:mm A");
-    const endStr = moment(chosenSlot.end_time).format("hh:mm A");
-    const timeLabel = `${startStr} - ${endStr}`;
-    const cleanSlotId = String(chosenSlot.id).startsWith("slot_") ? null : chosenSlot.id;
+    const timeLabel = chosenSlot.time_slot || chosenSlot.slot_time || (chosenSlot.start_time ? moment(chosenSlot.start_time).format("hh:mm A") : "10:00 AM");
+    const cleanSlotId = String(chosenSlot.id).startsWith("def_") || String(chosenSlot.id).startsWith("slot_") ? null : chosenSlot.id;
 
-    // Pass strictly 1 date & 1 time slot to AddressSelection
     navigation.navigate("AddressSelection", {
       artistId,
       serviceId,
       selectedDate: targetDate,
       slotId: cleanSlotId,
-      timeLabel: timeLabel
+      timeLabel: timeLabel,
+      selectedArt
     });
   };
 
@@ -128,37 +142,39 @@ export default function SelectTimeSlotScreen({ route, navigation }) {
 
           <View style={styles.slotContainer}>
             {availableSlots.map((item) => {
-              const startLabel = moment(item.start_time).format("hh:mm A");
-              const endLabel = moment(item.end_time).format("hh:mm A");
-              const label = `${startLabel} - ${endLabel}`;
+              const label = item.time_slot || item.slot_time || (item.start_time ? moment(item.start_time).format("hh:mm A") : "10:00 AM");
               const isSelected = selectedSlotId === item.id;
-              const isBooked = item.is_booked;
+              const isBookedOrPast = !item.is_available || item.status === "booked" || item.status === "past";
+              const isBooked = item.status === "booked";
+              const isPast = item.status === "past";
 
               return (
                 <TouchableOpacity
                   key={item.id}
-                  activeOpacity={isBooked ? 1 : 0.8}
-                  disabled={isBooked}
+                  activeOpacity={isBookedOrPast ? 1 : 0.8}
+                  disabled={isBookedOrPast}
                   onPress={() => handleSlotPress(item)}
                   style={[
                     styles.slotCard,
                     isSelected && styles.selectedSlot,
-                    isBooked && styles.bookedSlot
+                    isBookedOrPast && styles.bookedSlot
                   ]}
                 >
                   <View style={{ flexDirection: "row", alignItems: "center" }}>
                     <Ionicons
-                      name={isBooked ? "close-circle" : isSelected ? "radio-button-on" : "radio-button-off"}
+                      name={isBookedOrPast ? "close-circle" : isSelected ? "radio-button-on" : "radio-button-off"}
                       size={20}
-                      color={isBooked ? Colors.error : isSelected ? Colors.white : Colors.textTertiary}
+                      color={isBookedOrPast ? Colors.textTertiary : isSelected ? Colors.white : Colors.textTertiary}
                       style={{ marginRight: 10 }}
                     />
-                    <Text style={[styles.slotText, isSelected && styles.selectedText, isBooked && styles.bookedText]}>
+                    <Text style={[styles.slotText, isSelected && styles.selectedText, isBookedOrPast && styles.bookedText]}>
                       {label}
                     </Text>
                   </View>
                   {isBooked ? (
                     <Text style={styles.bookedBadge}>Already Booked</Text>
+                  ) : isPast ? (
+                    <Text style={styles.bookedBadge}>Passed</Text>
                   ) : isSelected ? (
                     <Text style={styles.selectedBadge}>Selected</Text>
                   ) : null}

@@ -5,9 +5,7 @@ const getBaseUrl = () => {
   if (envUrl) {
     return envUrl;
   }
-  return typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" || window.location.hostname.startsWith("192."))
-    ? "http://localhost:8000/api/v1/mehndigo"
-    : "https://mehandigo-api.globalrns.com/api/v1/mehndigo";
+  return "https://api.mehndigo.in/api/v1/mehndigo";
 };
 
 const API_BASE_URL = getBaseUrl();
@@ -140,7 +138,12 @@ export const adminService = {
   createCategory: (formData) => apiClient.post("/category/admin", formData, { headers: { "Content-Type": "multipart/form-data" } }),
   updateCategory: (id, formData) => apiClient.put(`/category/admin/${id}`, formData, { headers: { "Content-Type": "multipart/form-data" } }),
   deleteCategory: (id) => apiClient.delete(`/category/admin/${id}`),
-  toggleCategoryStatus: (id) => apiClient.patch(`/category/admin/${id}/status`)
+  toggleCategoryStatus: (id) => apiClient.patch(`/category/admin/${id}/status`),
+
+  // Review Moderation
+  getReviews: (status = "ALL") => apiClient.get(`/admin/reviews?status=${status}`),
+  approveReview: (id) => apiClient.patch(`/admin/review/${id}/approve`),
+  rejectReview: (id, reason = "") => apiClient.patch(`/admin/review/${id}/reject`, { reason }),
 };
 
 export const chatService = {

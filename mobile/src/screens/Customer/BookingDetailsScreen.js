@@ -29,6 +29,7 @@ const STEPS = [
   { key: "ARTIST_ACCEPTED", label: "Accepted" },
   { key: "ARTIST_ON_THE_WAY", label: "On The Way" },
   { key: "ARTIST_ARRIVED", label: "Arrived" },
+  { key: "CUSTOMER_VERIFIED", label: "Verified" },
   { key: "SERVICE_STARTED", label: "Started" },
   { key: "COMPLETED", label: "Completed" }
 ];
@@ -55,6 +56,12 @@ export default function BookingDetailsScreen({ route, navigation }) {
   const [rescheduleModalVisible, setRescheduleModalVisible] = useState(false);
   const [rescheduleDate, setRescheduleDate] = useState(new Date().toISOString().split("T")[0]);
   const [rescheduleTimeSlot, setRescheduleTimeSlot] = useState("10:00 AM - 11:00 AM");
+
+  // Dispute Modal states
+  const [disputeModalVisible, setDisputeModalVisible] = useState(false);
+  const [disputeReason, setDisputeReason] = useState("Artist didn't arrive");
+  const [disputeDescription, setDisputeDescription] = useState("");
+  const [submittingDispute, setSubmittingDispute] = useState(false);
 
   // Review Modal states
   const [reviewModalVisible, setReviewModalVisible] = useState(false);
@@ -143,35 +150,74 @@ export default function BookingDetailsScreen({ route, navigation }) {
 
     if (!socket) return;
     const handleLocationUpdate = (payload) => {
-      if (payload.bookingId === Number(bookingId)) {
-        console.log("[Customer BookingDetails] Socket update received:", payload);
+      if (payload && (Number(payload.bookingId) === Number(bookingId) || Number(payload.booking_id) === Number(bookingId))) {
+        console.log("[Customer BookingDetails] Socket location update received:", payload);
         setArtistCoords({
           lat: Number(payload.latitude),
           lng: Number(payload.longitude),
-          speed: Number(payload.speed),
-          heading: Number(payload.heading)
+          speed: Number(payload.speed || 0),
+          heading: Number(payload.heading || 0)
         });
-        setLastUpdated(new Date(payload.updatedAt));
+        setLastUpdated(new Date(payload.updatedAt || Date.now()));
       }
     };
 
     socket.on("artistLocationUpdated", handleLocationUpdate);
+    socket.on("artist_location_update", handleLocationUpdate);
     return () => {
       socket.off("artistLocationUpdated", handleLocationUpdate);
+      socket.off("artist_location_update", handleLocationUpdate);
     };
   }, [socket, bookingId]);
 
-  // Socket listeners for realtime OTP events, service start, and completion
+  // Socket listeners for realtime OTP events, status transitions, service start, and completion
+  // Auto re-fetch on focus and initialize
   useEffect(() => {
     if (!bookingId) {
       navigation.replace("CustomerTabs", { screen: "Bookings" });
       return;
     }
     loadDetails();
+
+    const unsubscribeFocus = navigation.addListener("focus", () => {
+      loadDetails();
+    });
+
+    // 5-second polling when booking is in active travel or service
+    const pollInterval = setInterval(() => {
+      if (booking) {
+        const st = String(booking.detailed_status || booking.booking_status || "").toUpperCase();
+        if (["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "ON_THE_WAY", "ARTIST_ARRIVED", "ARRIVED", "CUSTOMER_VERIFIED", "SERVICE_STARTED", "IN_PROGRESS"].includes(st)) {
+          getBookingDetails(bookingId).then((data) => {
+            if (data) setBooking(data);
+          }).catch(() => {});
+        }
+      }
+    }, 5000);
+
+    return () => {
+      unsubscribeFocus();
+      clearInterval(pollInterval);
+    };
   }, [bookingId]);
 
   useEffect(() => {
     if (!socket || !bookingId) return;
+
+    const handleStatusUpdated = (payload) => {
+      console.log("[Customer screen] booking_status_updated received:", payload);
+      if (payload && (Number(payload.bookingId) === Number(bookingId) || Number(payload.booking_id) === Number(bookingId))) {
+        setBooking((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            booking_status: payload.booking_status || payload.status || prev.booking_status,
+            detailed_status: payload.detailed_status || payload.status || prev.detailed_status
+          };
+        });
+        loadDetails();
+      }
+    };
 
     const handleCheckInOtp = (payload) => {
       console.log("[Customer screen] checkin_otp_received:", payload);
@@ -180,6 +226,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
           "Check-In OTP Sent",
           "Artist has arrived at your location. A Check-In OTP has been sent to your registered mobile number as a real SMS. Please share it with your artist to verify arrival and start the service."
         );
+        loadDetails();
       }
     };
 
@@ -190,6 +237,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
           "Check-Out OTP Sent",
           "Mehndi service has been completed. A Check-Out OTP has been sent to your registered mobile number as a real SMS. Please share it with your artist to verify and complete the booking."
         );
+        loadDetails();
       }
     };
 
@@ -208,12 +256,14 @@ export default function BookingDetailsScreen({ route, navigation }) {
       }
     };
 
+    socket.on("booking_status_updated", handleStatusUpdated);
     socket.on("checkin_otp_received", handleCheckInOtp);
     socket.on("checkout_otp_received", handleCheckOutOtp);
     socket.on("service_started", handleServiceStarted);
     socket.on("booking_completed", handleBookingCompleted);
 
     return () => {
+      socket.off("booking_status_updated", handleStatusUpdated);
       socket.off("checkin_otp_received", handleCheckInOtp);
       socket.off("checkout_otp_received", handleCheckOutOtp);
       socket.off("service_started", handleServiceStarted);
@@ -229,26 +279,33 @@ export default function BookingDetailsScreen({ route, navigation }) {
     return () => clearInterval(timer);
   }, []);
 
-  const getDistance = () => {
-    if (roadDistance !== null) return roadDistance.toFixed(1);
-    if (!booking || !artistCoords) return null;
-    const lat1 = Number(booking.latitude || 26.9124);
-    const lon1 = Number(booking.longitude || 75.7873);
-    const lat2 = artistCoords.lat;
-    const lon2 = artistCoords.lng;
+  // Helper to validate coordinate values
+const isValidCoordinate = (value) =>
+  value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value)) &&
+  Number(value) >= -90 && Number(value) <= 90;
 
-    const R = 6371; // km
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(lat1 * Math.PI / 180) *
-        Math.cos(lat2 * Math.PI / 180) *
-        Math.sin(dLon / 2) *
-        Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return (R * c).toFixed(1);
-  };
+// Calculate straight-line distance (fallback) using Haversine formula
+const getDistance = () => {
+  if (roadDistance !== null) return roadDistance.toFixed(1);
+  if (!booking || !artistCoords) return null;
+  const lat1 = Number(booking.latitude);
+  const lon1 = Number(booking.longitude);
+  const lat2 = artistCoords.lat;
+  const lon2 = artistCoords.lng;
+
+  if (!isValidCoordinate(lat1) || !isValidCoordinate(lon1) || !isValidCoordinate(lat2) || !isValidCoordinate(lon2)) {
+    return null;
+  }
+
+  const R = 6371; // km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return (R * c).toFixed(1);
+};
 
   const getETA = (distanceKm) => {
     if (roadDuration !== null) {
@@ -323,21 +380,51 @@ export default function BookingDetailsScreen({ route, navigation }) {
     }
   };
 
+  const handleReportDispute = async () => {
+    if (!disputeDescription.trim()) {
+      Alert.alert("Required", "Please describe the issue or problem you faced.");
+      return;
+    }
+    setSubmittingDispute(true);
+    try {
+      const { reportBookingDispute } = require("../../services/booking");
+      await reportBookingDispute(bookingId, disputeReason, disputeDescription.trim());
+      setDisputeModalVisible(false);
+      setDisputeDescription("");
+      Alert.alert("Dispute Submitted", "Our support & escalation team has received your ticket and will resolve this within 24 hours.");
+    } catch (err) {
+      Alert.alert("Error", err.message || "Failed to submit dispute.");
+    } finally {
+      setSubmittingDispute(false);
+    }
+  };
+
   const handleDownloadInvoice = async () => {
     try {
+      setLoading(true);
       const inv = await getInvoice(bookingId);
-      if (inv && inv.invoice_url) {
-        let url = inv.invoice_url;
-        if (!url.startsWith("http://") && !url.startsWith("https://")) {
-          const { BASE_URL } = require("../../services/api");
-          url = `${BASE_URL}${url.startsWith("/") ? "" : "/"}${url}`;
+      setLoading(false);
+      if (inv) {
+        if (inv.invoice_url) {
+          let url = inv.invoice_url;
+          if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            const { BASE_URL } = require("../../services/api");
+            url = `${BASE_URL}${url.startsWith("/") ? "" : "/"}${url}`;
+          }
+          await Linking.openURL(url);
+        } else {
+          Alert.alert(
+            `Tax Invoice (${inv.invoice_number || "MG-" + bookingId})`,
+            `Booking Ref: ${inv.booking_number || "MG-" + bookingId}\nCustomer: ${inv.customer_name || "Valued Customer"}\nArtist: ${inv.artist_name || "Mehndi Specialist"}\nService: ${inv.service_title || "Mehndi Service"}\nDate: ${inv.booking_date || ""}\n\nTotal Amount: ₹${inv.total_amount}\nPaid Amount: ₹${inv.advance_paid}\nRemaining: ₹${inv.remaining_amount}\nStatus: ${inv.payment_status}\nTxn ID: ${inv.transaction_id || "N/A"}`,
+            [{ text: "OK" }]
+          );
         }
-        await Linking.openURL(url);
       } else {
-        Alert.alert("Error", "Invoice link is not available.");
+        Alert.alert("Notice", "Invoice document is not generated yet.");
       }
     } catch (err) {
-      Alert.alert("Error", "Invoice document is not generated yet. Payment is required.");
+      setLoading(false);
+      Alert.alert("Error", err.message || "Invoice details currently unavailable.");
     }
   };
 
@@ -358,7 +445,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
       setSubmittingReview(false);
       setReviewModalVisible(false);
       setHasPromptedReview(true);
-      setCurrentDetailedStatus("COMPLETED_CLOSED");
+      loadDetails();
       const artistName = booking.artist?.user?.name || "the artist";
 
       Alert.alert(
@@ -379,10 +466,23 @@ export default function BookingDetailsScreen({ route, navigation }) {
     );
   }
 
-  const currentDetailedStatus = booking.detailed_status || booking.booking_status || "PENDING";
-  const activeStepIndex = STEPS.findIndex((s) => s.key === currentDetailedStatus);
+  const currentDetailedStatus = String(booking.detailed_status || booking.booking_status || booking.status || "PENDING").toUpperCase();
 
-  const canChat = ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED", "COMPLETED"].includes(currentDetailedStatus);
+  const getActiveStepIndex = (statusStr) => {
+    const st = String(statusStr || "").toUpperCase();
+    if (["COMPLETED", "COMPLETED_CLOSED", "AWAITING_CASH_CONFIRMATION"].includes(st)) return 7;
+    if (["SERVICE_STARTED", "IN_PROGRESS"].includes(st)) return 6;
+    if (["CUSTOMER_VERIFIED", "CHECKED_IN"].includes(st)) return 5;
+    if (["ARTIST_ARRIVED", "ARRIVED"].includes(st)) return 4;
+    if (["ARTIST_ON_THE_WAY", "ON_THE_WAY"].includes(st)) return 3;
+    if (["ARTIST_ACCEPTED", "ACCEPTED"].includes(st)) return 2;
+    if (["CONFIRMED", "WAITING_FOR_USER_PAYMENT"].includes(st)) return 1;
+    return 0;
+  };
+
+  const activeStepIndex = getActiveStepIndex(currentDetailedStatus);
+
+  const canChat = ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "ON_THE_WAY", "ARRIVED", "ARTIST_ARRIVED", "SERVICE_STARTED", "IN_PROGRESS", "COMPLETED", "COMPLETED_CLOSED"].includes(currentDetailedStatus);
 
   const getMoment = () => {
     const m = require("moment");
@@ -390,32 +490,53 @@ export default function BookingDetailsScreen({ route, navigation }) {
   };
 
   const formatTime = (timeVal) => {
-    if (!timeVal) return "";
-    const localMoment = getMoment();
-    const formats = [
-      "YYYY-MM-DD HH:mm:ss",
-      "YYYY-MM-DDTHH:mm:ssZ",
-      "YYYY-MM-DDTHH:mm:ss.SSSZ",
-      "HH:mm:ss",
-      "HH:mm",
-      "hh:mm A",
-      "hh:mm"
-    ];
-    return localMoment(timeVal, formats).format("hh:mm A");
+    if (!timeVal) return "TBD";
+    if (typeof timeVal === "string" && (timeVal.includes("AM") || timeVal.includes("PM") || timeVal.includes("-"))) {
+      return timeVal.trim();
+    }
+    try {
+      const localMoment = getMoment();
+      const formats = [
+        "YYYY-MM-DD HH:mm:ss",
+        "YYYY-MM-DDTHH:mm:ssZ",
+        "YYYY-MM-DDTHH:mm:ss.SSSZ",
+        "HH:mm:ss",
+        "HH:mm",
+        "hh:mm A",
+        "hh:mm"
+      ];
+      const m = localMoment(timeVal, formats);
+      return m.isValid() ? m.format("hh:mm A") : String(timeVal);
+    } catch (e) {
+      return String(timeVal);
+    }
   };
 
   const formatDate = (dateVal) => {
     if (!dateVal) return "TBD";
     try {
       const localMoment = getMoment();
-      return localMoment(dateVal).format("DD MMM YYYY (dddd)");
+      const m = localMoment(dateVal);
+      return m.isValid() ? m.format("DD MMM YYYY (dddd)") : String(dateVal);
     } catch (e) {
-      return dateVal;
+      return String(dateVal);
     }
   };
 
+  const getBookingDate = (b) => {
+    if (!b) return "TBD";
+    const rawDate = b.booking_date || b.date || b.event_date || b.reschedule_date || b.slot?.date || b.slot?.start_time || b.created_at;
+    return formatDate(rawDate);
+  };
+
+  const getBookingTime = (b) => {
+    if (!b) return "TBD";
+    const rawTime = b.booking_time || b.time || b.time_slot || b.reschedule_time || (b.slot ? `${formatTime(b.slot.start_time)} - ${formatTime(b.slot.end_time)}` : null) || b.slot?.time_label;
+    return formatTime(rawTime);
+  };
+
   const resolveImage = (uri) => {
-    const placeholder = "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=300";
+    const placeholder = `https://ui-avatars.com/api/?name=${encodeURIComponent(booking.artist_name || "Mehndi Artist")}&background=F3E8FF&color=7C3AED`;
     if (!uri) return placeholder;
     if (uri.startsWith("http://") || uri.startsWith("https://") || uri.startsWith("file://") || uri.startsWith("content://")) {
       return uri;
@@ -542,11 +663,100 @@ export default function BookingDetailsScreen({ route, navigation }) {
         )}
 
         <Image
-          source={{ uri: resolveImage(booking.artist_image || booking.artist?.profile_image || booking.artist?.user?.profile_image) || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400" }}
+          source={{ uri: resolveImage(booking.artist_image || booking.artist?.profile_image || booking.artist?.user?.profile_image) || `https://ui-avatars.com/api/?name=${encodeURIComponent(booking.artist_name || "Mehndi Artist")}&background=F3E8FF&color=7C3AED` }}
           style={styles.artistImage}
         />
 
         <View style={styles.content}>
+          {/* 1. Doorstep Check-In OTP Card (Visible to customer when artist is approaching / arrived) */}
+          {(currentDetailedStatus === "ARTIST_ON_THE_WAY" || currentDetailedStatus === "ON_THE_WAY" || currentDetailedStatus === "ARTIST_ARRIVED" || currentDetailedStatus === "ARRIVED" || currentDetailedStatus === "CHECK_IN_PENDING") && Boolean(booking.checkin_otp) && (
+            <View style={styles.checkinOtpCard}>
+              <View style={styles.checkinOtpHeader}>
+                <Ionicons name="key" size={20} color="#059669" />
+                <Text style={styles.checkinOtpTitle}>Doorstep Check-In OTP</Text>
+              </View>
+              <Text style={styles.checkinOtpSubtitle}>
+                Share this 4-digit OTP with your artist when they reach your location to verify arrival and start service:
+              </Text>
+              <View style={styles.checkinOtpDigitsRow}>
+                {String(booking.checkin_otp).split("").map((digit, i) => (
+                  <View key={i} style={styles.checkinOtpDigitBox}>
+                    <Text style={styles.checkinOtpDigitText}>{digit}</Text>
+                  </View>
+                ))}
+              </View>
+              <Text style={styles.checkinOtpSecurityNote}>
+                📍 Artist must enter this OTP at your doorstep to check in.
+              </Text>
+            </View>
+          )}
+
+          {/* 2. Customer Verified Notice Banner */}
+          {currentDetailedStatus === "CUSTOMER_VERIFIED" && (
+            <View style={styles.verifiedNoticeCard}>
+              <Ionicons name="checkmark-circle" size={22} color="#059669" />
+              <View style={{ marginLeft: 10, flex: 1 }}>
+                <Text style={styles.verifiedNoticeTitle}>Artist Arrived & Customer Verified</Text>
+                <Text style={styles.verifiedNoticeSub}>Artist is preparing to start your Mehndi service.</Text>
+              </View>
+            </View>
+          )}
+
+          {/* 3. Service Completion PIN Card (Visible during active service) */}
+          {(currentDetailedStatus === "SERVICE_STARTED" || currentDetailedStatus === "IN_PROGRESS" || currentDetailedStatus === "SERVICE_COMPLETED_PENDING_CHECKOUT") && Boolean(booking.completion_pin || booking.checkout_otp) && (
+            <View style={styles.pinCard}>
+              <View style={styles.pinCardHeader}>
+                <Ionicons name="keypad" size={20} color="#B45309" />
+                <Text style={styles.pinCardTitle}>Service Completion PIN</Text>
+              </View>
+              <Text style={styles.pinCardSubtitle}>
+                Share this 4-digit PIN with the artist <Text style={{fontWeight: "700", color: "#92400E"}}>ONLY</Text> after your Mehndi design is completely finished:
+              </Text>
+              <View style={styles.pinDigitsRow}>
+                {String(booking.completion_pin || booking.checkout_otp).split("").map((digit, i) => (
+                  <View key={i} style={styles.pinDigitBox}>
+                    <Text style={styles.pinDigitText}>{digit}</Text>
+                  </View>
+                ))}
+              </View>
+              <Text style={styles.pinSecurityNote}>
+                🔒 Instant PIN verification ensures the artist gets credited only after full work satisfaction.
+              </Text>
+            </View>
+          )}
+
+          {/* Selected Art Card */}
+          {(Boolean(booking.selected_art_title) || Boolean(booking.selected_art_image)) && (
+            <View style={styles.selectedArtCard}>
+              <View style={styles.selectedArtHeader}>
+                <Ionicons name="color-palette" size={18} color={Colors.primary} />
+                <Text style={styles.selectedArtHeaderTitle}>Selected Mehndi Design</Text>
+              </View>
+              <View style={styles.selectedArtContentRow}>
+                {Boolean(booking.selected_art_image) && (
+                  <Image source={{ uri: booking.selected_art_image }} style={styles.selectedArtThumb} />
+                )}
+                <View style={styles.selectedArtInfo}>
+                  <Text style={styles.selectedArtTitle} numberOfLines={1}>{booking.selected_art_title || "Custom Art Design"}</Text>
+                  <View style={styles.selectedArtBadgeRow}>
+                    <View style={[styles.tierBadge, booking.selected_art_tier === "PREMIUM" ? styles.premiumBadge : styles.standardBadge]}>
+                      <Text style={[styles.tierBadgeText, booking.selected_art_tier === "PREMIUM" ? styles.premiumBadgeText : styles.standardBadgeText]}>
+                        {booking.selected_art_tier === "PREMIUM" ? "💎 PREMIUM ART" : "✨ STANDARD ART"}
+                      </Text>
+                    </View>
+                    <View style={styles.durationBadge}>
+                      <Ionicons name="time-outline" size={12} color="#475569" />
+                      <Text style={styles.durationBadgeText}>{booking.selected_art_duration || 60} Mins</Text>
+                    </View>
+                  </View>
+                  {Boolean(booking.selected_art_price) && (
+                    <Text style={styles.selectedArtPriceText}>Art Price: ₹{booking.selected_art_price}</Text>
+                  )}
+                </View>
+              </View>
+            </View>
+          )}
+
           {booking.payment_status === "PENDING" && currentDetailedStatus !== "CANCELLED" && (() => {
             const isCompletedOrDisputed = booking.booking_status === "COMPLETED" || ["CASH_DISPUTED", "AWAITING_CASH_CONFIRMATION", "CASH_PAYMENT_PENDING"].includes(currentDetailedStatus);
             return (
@@ -654,7 +864,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
               <Text style={styles.artistCardHeaderTitle}>Assigned Specialist Details</Text>
               <View style={styles.artistCardBody}>
                 <Image
-                  source={{ uri: resolveImage(booking.artist_image || booking.artist?.profile_image || booking.artist?.user?.profile_image) || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400" }}
+                  source={{ uri: resolveImage(booking.artist_image || booking.artist?.profile_image || booking.artist?.user?.profile_image) || `https://ui-avatars.com/api/?name=${encodeURIComponent(booking.artist_name || "Mehndi Artist")}&background=F3E8FF&color=7C3AED` }}
                   style={styles.artistCardAvatar}
                 />
                 <View style={styles.artistCardMeta}>
@@ -665,7 +875,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
                     </View>
                   </View>
                   <Text style={styles.artistCardSubText}>
-                    Location: {booking.artist_city || booking.artist?.city || "Jaipur"} • ⭐ 4.8 Rating
+                    {booking.artist_city || booking.artist?.city ? `Location: ${booking.artist_city || booking.artist?.city} • ` : ""}⭐ {booking.artist_rating || booking.artist?.rating || "5.0"} Rating
                   </Text>
                   <Text style={styles.artistCardPhone}>
                     📞 {booking.artist_phone || booking.artist?.phone || booking.artist?.user?.phone || "Phone verified"}
@@ -692,12 +902,12 @@ export default function BookingDetailsScreen({ route, navigation }) {
             <DetailRow
               icon="calendar-outline"
               label="Date"
-              value={formatDate(booking.slot?.date || booking.reschedule_date)}
+              value={getBookingDate(booking)}
             />
              <DetailRow
               icon="time-outline"
               label="Time Slot"
-              value={booking.slot ? `${formatTime(booking.slot.start_time)} - ${formatTime(booking.slot.end_time)}` : (booking.reschedule_time ? formatTime(booking.reschedule_time) : "TBD")}
+              value={getBookingTime(booking)}
             />
             <DetailRow icon="location-outline" label="Location" value={booking.address} />
             {booking.landmark && (
@@ -709,39 +919,102 @@ export default function BookingDetailsScreen({ route, navigation }) {
             <DetailRow
               icon="wallet-outline"
               label="Paid Amount"
-              value={`₹${booking.final_amount}`}
+              value={`₹${booking.advance_paid || 0}`}
+            />
+            <DetailRow
+              icon="cash-outline"
+              label="Remaining Amount"
+              value={`₹${booking.remaining_amount !== undefined ? booking.remaining_amount : ((booking.total_amount || 0) - (booking.advance_paid || 0))}`}
             />
           </View>
+
+          {/* Travel Charge Request Warning Card */}
+          {booking.travel_charge_status === "REQUESTED" && (
+            <View style={[styles.card, { backgroundColor: "#FFFBEB", borderColor: "#F59E0B", borderWidth: 1 }]}>
+              <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
+                <Ionicons name="warning-outline" size={22} color="#D97706" />
+                <Text style={{ fontSize: 15, fontWeight: "700", color: "#92400E", marginLeft: 6 }}>
+                  Additional Travel Charge Requested
+                </Text>
+              </View>
+              <Text style={{ fontSize: 13, color: "#78350F", lineHeight: 18, marginBottom: 12 }}>
+                ⚠️ The artist has requested an additional distance/travel charge of ₹{booking.travel_charge} ({booking.travel_distance_km || "N/A"} KM). Please review and confirm this amount.
+              </Text>
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                <TouchableOpacity
+                  style={{ flex: 1, backgroundColor: "#10B981", paddingVertical: 10, borderRadius: 8, alignItems: "center" }}
+                  onPress={async () => {
+                    try {
+                      const { respondTravelCharge } = require("../../services/booking");
+                      await respondTravelCharge(booking.id, "ACCEPT");
+                      Alert.alert("Success", "Travel charge accepted.");
+                      loadDetails();
+                    } catch (e) {
+                      Alert.alert("Error", e.message || "Failed to accept travel charge.");
+                    }
+                  }}
+                >
+                  <Text style={{ color: "#FFF", fontWeight: "700", fontSize: 14 }}>Accept ₹{booking.travel_charge}</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={{ flex: 1, backgroundColor: "#EF4444", paddingVertical: 10, borderRadius: 8, alignItems: "center" }}
+                  onPress={async () => {
+                    try {
+                      const { respondTravelCharge } = require("../../services/booking");
+                      await respondTravelCharge(booking.id, "REJECT");
+                      Alert.alert("Declined", "Travel charge declined.");
+                      loadDetails();
+                    } catch (e) {
+                      Alert.alert("Error", e.message || "Failed to decline travel charge.");
+                    }
+                  }}
+                >
+                  <Text style={{ color: "#FFF", fontWeight: "700", fontSize: 14 }}>Decline</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
 
           {/* Pricing detail breakdown collapse */}
           <View style={styles.card}>
             <Text style={styles.cardSectionTitle}>Pricing Details</Text>
             <View style={styles.pricingRow}>
-              <Text style={styles.priceLabel}>Service Price</Text>
-              <Text style={styles.priceVal}>₹{booking.total_price}</Text>
+              <Text style={styles.priceLabel}>Base Service Amount</Text>
+              <Text style={styles.priceVal}>₹{booking.base_service_amount || booking.service_price || booking.total_amount || 0}</Text>
             </View>
-            {booking.travel_charges > 0 && (
+            {Number(booking.travel_charge || 0) > 0 && (
               <View style={styles.pricingRow}>
-                <Text style={styles.priceLabel}>Travel Fee</Text>
-                <Text style={styles.priceVal}>₹{booking.travel_charges}</Text>
+                <Text style={styles.priceLabel}>Travel / Distance Fee ({booking.travel_charge_status || "CONFIRMED"})</Text>
+                <Text style={[styles.priceVal, { color: booking.travel_charge_status === "CONFIRMED" ? Colors.primary : "#9CA3AF" }]}>
+                  ₹{booking.travel_charge}
+                </Text>
               </View>
             )}
-            {booking.coupon_discount > 0 && (
+            {Number(booking.coupon_discount || booking.discount || 0) > 0 && (
               <View style={styles.pricingRow}>
                 <Text style={[styles.priceLabel, { color: Colors.primary }]}>Discount</Text>
-                <Text style={[styles.priceVal, { color: Colors.primary }]}>-₹{booking.coupon_discount}</Text>
+                <Text style={[styles.priceVal, { color: Colors.primary }]}>-₹{booking.coupon_discount || booking.discount}</Text>
               </View>
             )}
             <View style={styles.cardDivider} />
             <View style={styles.pricingRow}>
-              <Text style={styles.totalPriceLabel}>Total Booking Amount</Text>
-              <Text style={styles.totalPriceVal}>₹{booking.final_amount}</Text>
+              <Text style={styles.totalPriceLabel}>Total Payable Amount</Text>
+              <Text style={styles.totalPriceVal}>₹{booking.customer_total_amount || booking.total_amount || booking.service_price || 0}</Text>
+            </View>
+            <View style={styles.pricingRow}>
+              <Text style={styles.priceLabel}>Advance Paid</Text>
+              <Text style={[styles.priceVal, { color: Colors.success || "#10B981", fontWeight: "600" }]}>₹{booking.advance_paid || 0}</Text>
+            </View>
+            <View style={styles.pricingRow}>
+              <Text style={styles.priceLabel}>Remaining Due</Text>
+              <Text style={[styles.priceVal, { color: Colors.primary, fontWeight: "600" }]}>₹{booking.remaining_amount !== undefined ? booking.remaining_amount : ((booking.total_amount || 0) - (booking.advance_paid || 0))}</Text>
             </View>
           </View>
 
 
           {/* Action options */}
-          {canChat && (
+          {canChat ? (
             <View style={styles.actionsPanel}>
               {/* Call artist */}
               <TouchableOpacity
@@ -768,6 +1041,10 @@ export default function BookingDetailsScreen({ route, navigation }) {
                 <Text style={styles.actionBtnText}>Message Artist</Text>
               </TouchableOpacity>
             </View>
+          ) : (
+            <View style={styles.pendingBanner}>
+              <Text style={styles.pendingText}>Waiting for artist to accept your booking.</Text>
+            </View>
           )}
 
           {/* Reschedule option */}
@@ -788,6 +1065,17 @@ export default function BookingDetailsScreen({ route, navigation }) {
               onPress={() => setCancelModalVisible(true)}
             >
               <Text style={styles.cancelBtnText}>Cancel Booking</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Report Issue / Dispute Option */}
+          {(["COMPLETED", "COMPLETED_CLOSED", "CANCELLED", "CONFIRMED"].includes(currentDetailedStatus)) && (
+            <TouchableOpacity
+              style={[styles.secondaryBtn, { marginTop: 10, borderColor: "#EF4444" }]}
+              onPress={() => setDisputeModalVisible(true)}
+            >
+              <Ionicons name="alert-circle-outline" size={16} color="#EF4444" />
+              <Text style={[styles.secondaryBtnText, { color: "#EF4444" }]}>Report Issue / Dispute</Text>
             </TouchableOpacity>
           )}
 
@@ -871,18 +1159,26 @@ export default function BookingDetailsScreen({ route, navigation }) {
         </View>
       </Modal>
 
-      {/* Cancel Modal */}
+      {/* Cancel Modal with Policy */}
       <Modal visible={cancelModalVisible} transparent={true} animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Cancel Appointment</Text>
+            
+            <View style={{ backgroundColor: "#F8FAFC", borderRadius: 8, padding: 10, marginBottom: 12 }}>
+              <Text style={{ fontSize: 12, fontWeight: "700", color: Colors.text, marginBottom: 4 }}>📋 Cancellation Refund Policy:</Text>
+              <Text style={{ fontSize: 11, color: Colors.textSecondary }}>• &gt;24 hrs before slot: 100% full refund</Text>
+              <Text style={{ fontSize: 11, color: Colors.textSecondary }}>• 12 - 24 hrs before slot: 50% partial refund</Text>
+              <Text style={{ fontSize: 11, color: Colors.textSecondary }}>• &lt;12 hrs before slot: No refund (cancellation fee)</Text>
+            </View>
+
             <Text style={styles.modalSub}>
               Please explain why you want to cancel this booking request.
             </Text>
             <TextInput
               placeholder="Cancellation Reason..."
               placeholderTextColor={Colors.textTertiary}
-              style={[styles.modalInput, { height: 80, textAlignVertical: "top" }]}
+              style={[styles.modalInput, { height: 70, textAlignVertical: "top" }]}
               multiline
               value={cancelReason}
               onChangeText={setCancelReason}
@@ -890,6 +1186,64 @@ export default function BookingDetailsScreen({ route, navigation }) {
             <CustomButton title="Confirm Cancel" onPress={handleCancelBooking} style={{ marginTop: 14 }} />
             <TouchableOpacity style={styles.modalCancelLink} onPress={() => setCancelModalVisible(false)}>
               <Text style={styles.modalCancelLinkText}>Go Back</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Dispute / Issue Modal */}
+      <Modal visible={disputeModalVisible} transparent={true} animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Report Booking Dispute</Text>
+            <Text style={styles.modalSub}>Select issue reason and provide details:</Text>
+            
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+              {[
+                "Artist didn't arrive",
+                "Artist arrived late",
+                "Design mismatch",
+                "Incomplete service",
+                "Payment issue",
+                "Poor hygiene",
+                "Other"
+              ].map((reason) => (
+                <TouchableOpacity
+                  key={reason}
+                  onPress={() => setDisputeReason(reason)}
+                  style={{
+                    paddingHorizontal: 8,
+                    paddingVertical: 4,
+                    borderRadius: 6,
+                    borderWidth: 1,
+                    borderColor: disputeReason === reason ? Colors.primary : "#CBD5E1",
+                    backgroundColor: disputeReason === reason ? "#FEF2F2" : "#FFF"
+                  }}
+                >
+                  <Text style={{ fontSize: 11, fontWeight: disputeReason === reason ? "700" : "500", color: disputeReason === reason ? Colors.primary : Colors.text }}>
+                    {reason}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TextInput
+              placeholder="Explain the problem in detail..."
+              placeholderTextColor={Colors.textTertiary}
+              style={[styles.modalInput, { height: 80, textAlignVertical: "top" }]}
+              multiline
+              value={disputeDescription}
+              onChangeText={setDisputeDescription}
+            />
+
+            <CustomButton
+              title={submittingDispute ? "Submitting..." : "Submit Dispute to Admin"}
+              onPress={handleReportDispute}
+              style={{ marginTop: 12, backgroundColor: "#EF4444" }}
+              disabled={submittingDispute}
+            />
+            <TouchableOpacity style={styles.modalCancelLink} onPress={() => setDisputeModalVisible(false)}>
+              <Text style={styles.modalCancelLinkText}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1024,6 +1378,8 @@ const styles = StyleSheet.create({
   modalLabel: { fontSize: 12, fontWeight: "700", color: Colors.text, marginTop: 14, marginBottom: 6 },
   modalInput: { height: 44, backgroundColor: Colors.background, borderRadius: 8, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 12, fontSize: 12, color: Colors.text },
   modalCancelLink: { marginTop: 12, alignItems: "center" },
+  pendingBanner: { backgroundColor: Colors.warning + "15", padding: 12, borderRadius: 8, alignItems: "center", marginTop: 12 },
+  pendingText: { color: Colors.warning, fontSize: 13, fontWeight: "600" },
   modalCancelLinkText: { fontSize: 12, color: Colors.textTertiary, fontWeight: "600" },
   starsRow: { flexDirection: "row", justifyContent: "center", marginVertical: 14 },
 
@@ -1145,6 +1501,267 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: Colors.primary,
     marginRight: 6,
+  },
+  pendingBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFF7E6",
+    borderWidth: 1,
+    borderColor: "#FFECB3",
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 10,
+  },
+  pendingText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#B58900",
+    flex: 1,
+  },
+  checkinOtpCard: {
+    backgroundColor: "#ECFDF5",
+    borderWidth: 1.5,
+    borderColor: "#059669",
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: "#059669",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  checkinOtpHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  checkinOtpTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#065F46",
+    marginLeft: 8,
+  },
+  checkinOtpSubtitle: {
+    fontSize: 13,
+    color: "#047857",
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  checkinOtpDigitsRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 12,
+    marginVertical: 6,
+  },
+  checkinOtpDigitBox: {
+    width: 48,
+    height: 54,
+    borderRadius: 10,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 2,
+    borderColor: "#059669",
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  checkinOtpDigitText: {
+    fontSize: 26,
+    fontWeight: "900",
+    color: "#065F46",
+  },
+  checkinOtpSecurityNote: {
+    fontSize: 11,
+    color: "#065F46",
+    fontStyle: "italic",
+    marginTop: 10,
+    textAlign: "center",
+  },
+  verifiedNoticeCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ECFDF5",
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+  },
+  verifiedNoticeTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#065F46",
+  },
+  verifiedNoticeSub: {
+    fontSize: 12,
+    color: "#047857",
+    marginTop: 2,
+  },
+  pinCard: {
+    backgroundColor: "#FEF3C7",
+    borderWidth: 1.5,
+    borderColor: "#F59E0B",
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: "#F59E0B",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  pinCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  pinCardTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#92400E",
+    marginLeft: 8,
+  },
+  pinCardSubtitle: {
+    fontSize: 13,
+    color: "#78350F",
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  pinDigitsRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 12,
+    marginVertical: 6,
+  },
+  pinDigitBox: {
+    width: 48,
+    height: 54,
+    borderRadius: 10,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 2,
+    borderColor: "#D97706",
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  pinDigitText: {
+    fontSize: 26,
+    fontWeight: "900",
+    color: "#92400E",
+  },
+  pinSecurityNote: {
+    fontSize: 11,
+    color: "#92400E",
+    fontStyle: "italic",
+    marginTop: 10,
+    textAlign: "center",
+  },
+  selectedArtCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  selectedArtHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  selectedArtHeaderTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: Colors.text,
+    marginLeft: 6,
+  },
+  selectedArtContentRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  selectedArtThumb: {
+    width: 64,
+    height: 64,
+    borderRadius: 10,
+    backgroundColor: "#F1F5F9",
+    marginRight: 12,
+  },
+  selectedArtInfo: {
+    flex: 1,
+  },
+  selectedArtTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: Colors.text,
+    marginBottom: 4,
+  },
+  selectedArtBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 6,
+    marginBottom: 4,
+  },
+  tierBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  premiumBadge: {
+    backgroundColor: "#EDE9FE",
+    borderWidth: 1,
+    borderColor: "#C4B5FD",
+  },
+  standardBadge: {
+    backgroundColor: "#F1F5F9",
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+  },
+  tierBadgeText: {
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  premiumBadgeText: {
+    color: "#7C3AED",
+  },
+  standardBadgeText: {
+    color: "#475569",
+  },
+  durationBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F8FAFC",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  durationBadgeText: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#475569",
+    marginLeft: 3,
+  },
+  selectedArtPriceText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: Colors.primary,
   },
 });
 
