@@ -24,13 +24,16 @@ export async function getOffers() {
   return res?.data || res;
 }
 
-export async function getNearbyArtists(latitude = null, longitude = null, radius = null, page = 1, limit = 15) {
+export async function getNearbyArtists(latitude = null, longitude = null, radius = null, page = 1, limit = 15, filter = null) {
   let endpoint = `/customer/nearby-artists?page=${page}&limit=${limit}`;
   if (radius) {
     endpoint += `&radius=${radius}`;
   }
   if (latitude && longitude) {
     endpoint += `&latitude=${latitude}&longitude=${longitude}`;
+  }
+  if (filter) {
+    endpoint += `&filter=${encodeURIComponent(filter)}`;
   }
   const res = await apiRequest("GET", endpoint, null, true);
   return res?.data || res;
@@ -387,4 +390,72 @@ export async function markTicketAsRead(id) {
   return { success: true };
 }
 
+export async function getReels(page = 1, limit = 10) {
+  try {
+    const data = await apiRequest("GET", `/customer/reels?page=${page}&limit=${limit}`, null, true);
+    return data?.data || data;
+  } catch (error) {
+    console.error("Error fetching reels:", error);
+    throw error;
+  }
+}
 
+export async function likePortfolio(id) {
+  try {
+    const data = await apiRequest("POST", "/customer/portfolio/like", { portfolio_id: id }, true);
+    return data?.data || data;
+  } catch (error) {
+    console.error("Error liking portfolio:", error);
+    throw error;
+  }
+}
+
+export async function unlikePortfolio(id) {
+  try {
+    const data = await apiRequest("DELETE", "/customer/portfolio/like", { portfolio_id: id }, true);
+    return data?.data || data;
+  } catch (error) {
+    console.error("Error unliking portfolio:", error);
+    throw error;
+  }
+}
+
+export async function commentPortfolio(id, text) {
+  try {
+    const data = await apiRequest("POST", `/customer/portfolio/${id}/comment`, { text }, true);
+    return data?.data || data;
+  } catch (error) {
+    console.error("Error commenting on portfolio:", error);
+    throw error;
+  }
+}
+
+export async function getPortfolioComments(id, page = 1, limit = 20) {
+  try {
+    const data = await apiRequest("GET", `/customer/portfolio/${id}/comments?page=${page}&limit=${limit}`, null, true);
+    return data?.data || data;
+  } catch (error) {
+    console.error("Error fetching comments:", error);
+    throw error;
+  }
+}
+
+export async function deletePortfolioComment(commentId) {
+  try {
+    const data = await apiRequest("DELETE", `/customer/portfolio/comment/${commentId}`, null, true);
+    return data?.data || data;
+  } catch (error) {
+    console.error("Error deleting comment:", error);
+    throw error;
+  }
+}
+
+export async function addViewToPortfolio(id) {
+  try {
+    const data = await apiRequest("POST", `/customer/portfolio/${id}/view`, null, true);
+    return data?.data || data;
+  } catch (error) {
+    console.warn("View tracking failed (ignored):", error);
+    return false;
+  }
+}

@@ -50,13 +50,17 @@ router.delete("/portfolio/like", authenticate, CustomerController.unlikePortfoli
 router.post("/portfolio/save", authenticate, CustomerController.savePortfolio);
 router.delete("/portfolio/save", authenticate, CustomerController.unsavePortfolio);
 router.get("/portfolio/saved", authenticate, CustomerController.getSavedPortfolios);
-
+router.post("/portfolio/:id/comment", authenticate, CustomerController.commentPortfolio);
+router.get("/portfolio/:id/comments", authenticate, CustomerController.getPortfolioComments);
+router.delete("/portfolio/comment/:commentId", authenticate, CustomerController.deletePortfolioComment);
+router.post("/portfolio/:id/view", authenticate, CustomerController.addViewToPortfolio);
 // Customer dashboard module sub-resources routes
 router.get("/dashboard", authenticate, CustomerController.getDashboard);
 router.get("/bookings", authenticate, CustomerController.getBookings);
 router.get("/profile", authenticate, CustomerController.getProfile);
 router.put("/profile", authenticate, CustomerController.updateProfile);
 router.get("/wishlist", authenticate, CustomerController.getWishlist);
+router.get("/reels", authenticate, CustomerController.getReels);
 const ArtistController = require("../controllers/artist/artist.controller");
 
 router.get("/coupons", authenticate, CustomerController.getCoupons);

@@ -87,11 +87,15 @@ export default function SelectDateScreen({ route, navigation }) {
     loadArtistAvailability();
   }, [artistId, serviceId]);
 
+  const [isNavigating, setIsNavigating] = useState(false);
+
   const handleContinue = () => {
     if (!selectedDate) {
       Alert.alert("Required", "Please select a booking date to proceed.");
       return;
     }
+    if (isNavigating) return;
+    setIsNavigating(true);
 
     // Pass strictly 1 selected date to SelectTimeSlotScreen
     navigation.navigate("SelectTimeSlot", {
@@ -101,7 +105,11 @@ export default function SelectDateScreen({ route, navigation }) {
       selectedTimeSlot,
       selectedArt
     });
+    
+    // reset lock after a short delay
+    setTimeout(() => setIsNavigating(false), 500);
   };
+
 
   const getMarkedDates = () => {
     const marked = {};

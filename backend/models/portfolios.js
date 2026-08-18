@@ -17,6 +17,10 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: "portfolio_id",
         as: "saves",
       });
+      Portfolio.hasMany(models.PortfolioComment, {
+        foreignKey: "portfolio_id",
+        as: "comments",
+      });
     }
   }
 
@@ -73,6 +77,11 @@ module.exports = (sequelize, DataTypes) => {
         defaultValue: 0,
       },
       likes_count: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+      },
+      views_count: {
         type: DataTypes.INTEGER,
         allowNull: false,
         defaultValue: 0,

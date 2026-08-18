@@ -205,6 +205,7 @@ export default function PaymentScreen({ route, navigation }) {
       return;
     }
 
+    if (loading) return;
     setLoading(true);
     try {
       console.log(`[TEST_PAYMENT] Triggering verified test payment for booking ID: ${targetBookingId}`);

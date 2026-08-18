@@ -51,6 +51,17 @@ async function getBookingHistory(req, res) {
   }
 }
 
+async function checkRestrictedBooking(req, res) {
+  try {
+    const response = await BookingService.checkRestrictedBooking(req.user.id);
+    return res.status(200).json(SuccessResponse("Restricted booking check completed", response));
+  } catch (error) {
+    return res
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
+  }
+}
+
 async function applyCoupon(req, res) {
   try {
     const { couponCode, serviceId } = req.body;
@@ -212,6 +223,7 @@ async function getPendingPayment(req, res) {
       .json(ErrorResponse(error.message, error));
   }
 }
+
 async function skipReview(req, res) {
   try {
     const { bookingId } = req.body;
@@ -224,9 +236,127 @@ async function skipReview(req, res) {
   }
 }
 
+async function selectCashPayment(req, res) {
+  try {
+    const { bookingId } = req.body;
+    const response = await BookingService.selectCashPayment(bookingId, req.user.id);
+    return res.status(200).json(SuccessResponse("Cash payment selected successfully", response));
+  } catch (error) {
+    return res
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
+  }
+}
+
+async function confirmCashPayment(req, res) {
+  try {
+    const { bookingId } = req.body;
+    const response = await BookingService.confirmCashPayment(bookingId, req.user.id);
+    return res.status(200).json(SuccessResponse("Cash payment confirmed successfully", response));
+  } catch (error) {
+    return res
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
+  }
+}
+
+async function rejectCashPayment(req, res) {
+  try {
+    const { bookingId } = req.body;
+    const response = await BookingService.rejectCashPayment(bookingId, req.user.id);
+    return res.status(200).json(SuccessResponse("Cash payment dispute logged", response));
+  } catch (error) {
+    return res
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
+  }
+}
+
+// ─── OTP Controller Functions (were missing — caused 500 on all OTP routes) ───
+
+async function sendCheckInOtp(req, res) {
+  try {
+    const { bookingId } = req.body;
+    if (!bookingId) {
+      return res.status(400).json(ErrorResponse("bookingId is required"));
+    }
+    const response = await BookingService.sendCheckInOtp(bookingId, req.user.id);
+    return res.status(200).json(SuccessResponse("Check-In OTP sent successfully", response));
+  } catch (error) {
+    return res
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
+  }
+}
+
+async function verifyCheckInOtp(req, res) {
+  try {
+    const { bookingId, otp } = req.body;
+    if (!bookingId || !otp) {
+      return res.status(400).json(ErrorResponse("bookingId and otp are required"));
+    }
+    const response = await BookingService.verifyCheckInOtp(bookingId, otp, req.user.id);
+    return res.status(200).json(SuccessResponse("Check-In OTP verified successfully", response));
+  } catch (error) {
+    return res
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
+  }
+}
+
+async function sendCheckOutOtp(req, res) {
+  try {
+    const { bookingId } = req.body;
+    if (!bookingId) {
+      return res.status(400).json(ErrorResponse("bookingId is required"));
+    }
+    const response = await BookingService.sendCheckOutOtp(bookingId, req.user.id);
+    return res.status(200).json(SuccessResponse("Check-Out OTP sent successfully", response));
+  } catch (error) {
+    return res
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
+  }
+}
+
+async function verifyCheckOutOtp(req, res) {
+  try {
+    const { bookingId, otp } = req.body;
+    if (!bookingId || !otp) {
+      return res.status(400).json(ErrorResponse("bookingId and otp are required"));
+    }
+    const response = await BookingService.verifyCheckOutOtp(bookingId, otp, req.user.id);
+    return res.status(200).json(SuccessResponse("Service completed successfully", response));
+  } catch (error) {
+    return res
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
+  }
+}
+
+module.exports = {
+  calculatePriceDetails,
+  createBooking,
+  getBookingDetails,
+  getBookingHistory,
+  checkRestrictedBooking,
+  applyCoupon,
+  createPaymentSession,
+  verifyPayment,
+  cancelBooking,
+  rescheduleBooking,
+  acceptBooking,
+  rejectBooking,
+  updateOnTheWay,
+  updateArrived,
+  startService,
+  completeService,
   getInvoice,
   getPendingPayment,
   skipReview,
+  selectCashPayment,
+  confirmCashPayment,
+  rejectCashPayment,
   sendCheckInOtp,
   verifyCheckInOtp,
   sendCheckOutOtp,

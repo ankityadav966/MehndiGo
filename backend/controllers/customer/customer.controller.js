@@ -49,8 +49,8 @@ async function getFeaturedArtists(req, res) {
 
 async function getNearbyArtists(req, res) {
   try {
-    const { latitude, longitude, radius, page, limit } = req.query;
-    const response = await CustomerService.getNearbyArtists(latitude, longitude, radius, page, limit);
+    const { latitude, longitude, radius, page, limit, filter } = req.query;
+    const response = await CustomerService.getNearbyArtists(latitude, longitude, radius, page, limit, filter);
     return res.status(200).json(SuccessResponse("Nearby Artists Fetched Successfully", response));
   } catch (error) {
     return res
@@ -623,3 +623,64 @@ module.exports = {
   replySupportTicket,
   closeSupportTicket
 };
+
+async function getReels(req, res) {
+  try {
+    const { page, limit } = req.query;
+    const userId = req.user ? req.user.id : null;
+    const response = await CustomerService.getReels(userId, page, limit);
+    return res.status(200).json(SuccessResponse("Reels fetched successfully", response));
+  } catch (error) {
+    return res
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
+  }
+}
+async function commentPortfolio(req, res) {
+  try {
+    const { id } = req.params;
+    const { text } = req.body;
+    if (!text) return res.status(400).json(ErrorResponse("Comment text is required"));
+    const response = await CustomerService.commentPortfolio(req.user.id, id, text);
+    return res.status(201).json(SuccessResponse("Comment added", response));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+async function getPortfolioComments(req, res) {
+  try {
+    const { id } = req.params;
+    const { page, limit } = req.query;
+    const response = await CustomerService.getPortfolioComments(id, page, limit);
+    return res.status(200).json(SuccessResponse("Comments fetched", response));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+async function deletePortfolioComment(req, res) {
+  try {
+    const { commentId } = req.params;
+    await CustomerService.deletePortfolioComment(req.user.id, commentId);
+    return res.status(200).json(SuccessResponse("Comment deleted"));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+async function addViewToPortfolio(req, res) {
+  try {
+    const { id } = req.params;
+    await CustomerService.addViewToPortfolio(id);
+    return res.status(200).json(SuccessResponse("View added"));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+module.exports.getReels = getReels;
+module.exports.commentPortfolio = commentPortfolio;
+module.exports.getPortfolioComments = getPortfolioComments;
+module.exports.deletePortfolioComment = deletePortfolioComment;
+module.exports.addViewToPortfolio = addViewToPortfolio;

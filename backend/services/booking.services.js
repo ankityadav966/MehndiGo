@@ -760,11 +760,25 @@ class BookingService {
       detailed_status: newStatus
     };
 
-    if (role === "ARTIST" || newStatus === "ARTIST_ACCEPTED" || newStatus === "ACCEPTED") {
-      const artistProfile = await db.ArtistProfile.findOne({ where: { user_id: userId } });
-      if (artistProfile) {
-        updates.artist_id = artistProfile.id;
+    if (role === "ADMIN") {
+      // Admins are fully authorized
+    } else if (role === "CUSTOMER" || role === "USER") {
+      if (booking.user_id !== userId) {
+        throw new AppError("Forbidden: You do not own this booking", 403);
       }
+      if (["ARTIST_ACCEPTED", "ACCEPTED", "CONFIRMED", "ARTIST_ON_THE_WAY", "ARTIST_ARRIVED", "SERVICE_STARTED", "COMPLETED"].includes(newStatus)) {
+        throw new AppError("Forbidden: Customers cannot trigger artist-specific status updates", 403);
+      }
+    } else if (role === "ARTIST") {
+      const artistProfile = await db.ArtistProfile.findOne({ where: { user_id: userId } });
+      if (!artistProfile) {
+        throw new AppError("Forbidden: Artist profile not found", 403);
+      }
+      if (booking.artist_id !== artistProfile.id) {
+        throw new AppError("Forbidden: You are not the assigned artist for this booking", 403);
+      }
+    } else {
+      throw new AppError("Forbidden: Invalid role for status update", 403);
     }
 
     if (newStatus === "CANCELLED") {
@@ -1407,16 +1421,16 @@ class BookingService {
 
     await booking.update({
       booking_status: "CONFIRMED",
-      detailed_status: "SERVICE_STARTED",
+      detailed_status: "CUSTOMER_VERIFIED",
       check_in_otp_verified: true,
       check_in_time: new Date()
     });
 
     await db.BookingStatusHistory.create({
       booking_id: booking.id,
-      status: "SERVICE_STARTED",
+      status: "CUSTOMER_VERIFIED",
       changed_by: userId,
-      notes: "Check-In OTP verified successfully. Service started."
+      notes: "Check-In OTP verified successfully. Customer identity confirmed — artist may now begin service."
     });
 
     // Notify customer and artist
@@ -1443,23 +1457,33 @@ class BookingService {
       // Emit realtime socket event to customer
       const { getIO } = require("../sockets/socket");
       const io = getIO();
-      io.to(booking.user_id.toString()).emit("service_started", { bookingId: booking.id });
       io.to(booking.user_id.toString()).emit("booking_status_updated", {
         bookingId: booking.id,
         bookingCode: booking.booking_code,
         booking_status: "CONFIRMED",
-        detailed_status: "SERVICE_STARTED",
-        status: "SERVICE_STARTED",
+        detailed_status: "CUSTOMER_VERIFIED",
+        status: "CUSTOMER_VERIFIED",
         timestamp: new Date()
       });
       io.to(`booking_room_${booking.id}`).emit("booking_status_updated", {
         bookingId: booking.id,
         bookingCode: booking.booking_code,
         booking_status: "CONFIRMED",
-        detailed_status: "SERVICE_STARTED",
-        status: "SERVICE_STARTED",
+        detailed_status: "CUSTOMER_VERIFIED",
+        status: "CUSTOMER_VERIFIED",
         timestamp: new Date()
       });
+      // Also notify the artist (by their user_id via booking.artist profile)
+      const artistProfile2 = await db.ArtistProfile.findByPk(booking.artist_id).catch(() => null);
+      if (artistProfile2) {
+        io.to(artistProfile2.user_id.toString()).emit("booking_status_updated", {
+          bookingId: booking.id,
+          booking_status: "CONFIRMED",
+          detailed_status: "CUSTOMER_VERIFIED",
+          status: "CUSTOMER_VERIFIED",
+          timestamp: new Date()
+        });
+      }
     } catch (err) {
       console.error("Error dispatching Check-In confirmations:", err.message);
     }

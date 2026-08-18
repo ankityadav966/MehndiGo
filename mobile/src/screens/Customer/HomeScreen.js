@@ -23,6 +23,8 @@ import Alert from "../../utils/Alert";
 import Colors from "../../constants/Colors";
 import LoadingSkeleton from "../../components/LoadingSkeleton";
 import OptimizedImage from "../../components/OptimizedImage";
+import PaymentModal from "../../components/customer/PaymentModal";
+import HomeHeader from "../../components/customer/HomeHeader";
 import { useAuth } from "../../context/AuthContext";
 import { useNotifications } from "../../context/NotificationContext";
 
@@ -33,11 +35,9 @@ import {
   getFavorites,
   addFavorite,
   removeFavorite,
-  getCustomerDashboard,
   getCustomerAddresses,
   saveCustomerAddress,
 } from "../../services/customer";
-import { getPendingPayment } from "../../services/booking";
 import {
   getActiveAddress,
   setActiveAddress,
@@ -295,7 +295,7 @@ export default function HomeScreen({ navigation }) {
 
       // Check for split payment pending remaining amount (ONLY open modal once on first arrival if not dismissed)
       try {
-        const pendingBooking = await getPendingPayment();
+        const pendingBooking = data?.pendingPaymentBooking;
         if (pendingBooking && pendingBooking.id && Number(pendingBooking.remaining_amount || 0) > 0) {
           setPendingPaymentBooking(pendingBooking);
           if (!hasShownPendingPaymentModalRef.current && !dismissedPendingBookingIdsRef.current.has(pendingBooking.id)) {
@@ -307,9 +307,8 @@ export default function HomeScreen({ navigation }) {
           setPaymentModalVisible(false);
 
           // If no pending payment, check for pending unreviewed bookings
-          const custDash = await getCustomerDashboard();
-          if (custDash?.pendingReviewBooking) {
-            const pending = custDash.pendingReviewBooking;
+          if (data?.pendingReviewBooking) {
+            const pending = data.pendingReviewBooking;
             navigation.navigate("ReviewSubmission", {
               bookingId: pending.id,
               artistName: pending.artist?.user?.name,
@@ -348,13 +347,14 @@ export default function HomeScreen({ navigation }) {
   }, [categories]);
 
   // Load nearby artists paginated
-  const loadNearby = async (page = 1, isRefresh = false) => {
+  const loadNearby = async (page = 1, isRefresh = false, filterOverride = null) => {
     if (nearbyLoading) return;
     setNearbyLoading(true);
     try {
       const lat = activeAddressState?.latitude || null;
       const lng = activeAddressState?.longitude || null;
-      const data = await getNearbyArtists(lat, lng, null, page, 15);
+      const currentFilter = filterOverride !== null ? filterOverride : selectedFilter;
+      const data = await getNearbyArtists(lat, lng, null, page, 15, currentFilter);
       const list = data?.rows || [];
       const total = data?.count || 0;
 
@@ -628,7 +628,7 @@ export default function HomeScreen({ navigation }) {
       >
         <View style={styles.bannerSlideInner}>
           {bannerImg && !hasImageError ? (
-            <Image
+            <OptimizedImage
               source={bannerImg}
               onError={() => setBannerErrors((prev) => ({ ...prev, [item.id]: true }))}
               style={styles.bannerBgImage}
@@ -674,7 +674,7 @@ export default function HomeScreen({ navigation }) {
         style={[styles.recentArtistCard, { backgroundColor: currentCardBg, borderColor: currentBorderColor }]}
         onPress={() => navigation.navigate("ArtistProfile", { artistId: item.id })}
       >
-        <Image
+        <OptimizedImage
           source={{ uri: item.profile_image || "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=150" }}
           style={styles.recentArtistAvatar}
         />
@@ -721,7 +721,7 @@ export default function HomeScreen({ navigation }) {
         style={[styles.horizontalArtistCard, { backgroundColor: currentCardBg, borderColor: currentBorderColor }]}
         onPress={() => navigation.navigate("ArtistProfile", { artistId })}
       >
-        <Image
+        <OptimizedImage
           source={{ uri: artistImage }}
           style={styles.horizontalArtistImage}
           width={280}
@@ -774,7 +774,7 @@ export default function HomeScreen({ navigation }) {
         style={[styles.nearbyArtistCard, { backgroundColor: currentCardBg, borderColor: currentBorderColor }]}
         onPress={() => navigation.navigate("ArtistProfile", { artistId })}
       >
-        <Image
+        <OptimizedImage
           source={{ uri: artistImage }}
           style={styles.nearbyArtistImage}
           width={120}
@@ -825,53 +825,15 @@ export default function HomeScreen({ navigation }) {
   // Header sections nested in FlatList for virtual list performance
   const renderListHeader = () => (
     <View>
-      {/* 1. Welcome Header */}
-      <View style={styles.welcomeHeader}>
-        <View style={styles.userInfo}>
-          <Image
-            source={{ uri: user?.profile_image || "https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=150" }}
-            style={styles.avatar}
-          />
-          <View style={styles.userMeta}>
-            <Text style={[styles.helloText, { color: currentSecTextColor }]}>Welcome back 👋</Text>
-            <Text style={[styles.userNameText, { color: currentTextColor }]}>{user?.name || "Customer"}</Text>
-            <TouchableOpacity style={styles.locationWrapper} onPress={() => setLocationModalVisible(true)} activeOpacity={0.8}>
-              <Ionicons name="location-sharp" size={14} color={Colors.primary} />
-              <Text style={[styles.locationText, { color: currentSecTextColor, maxWidth: 180 }]} numberOfLines={1}>
-                {activeAddressState?.label
-                  ? `${activeAddressState.label}: ${activeAddressState.fullAddress}`
-                  : activeAddressState?.fullAddress || user?.city || "Jaipur, Rajasthan"}
-              </Text>
-              <Ionicons name="chevron-down" size={12} color={currentSecTextColor} style={{ marginLeft: 4 }} />
-            </TouchableOpacity>
-
-          </View>
-        </View>
-        <TouchableOpacity
-          style={styles.notificationBtn}
-          onPress={() => navigation.navigate("NotificationCenter")}
-        >
-          <Ionicons name="notifications-outline" size={24} color={currentTextColor} />
-          {unreadCount > 0 && (
-            <View style={{
-              position: "absolute",
-              top: 2,
-              right: 2,
-              backgroundColor: Colors.primary,
-              borderRadius: 10,
-              minWidth: 16,
-              height: 16,
-              justifyContent: "center",
-              alignItems: "center",
-              paddingHorizontal: 4,
-            }}>
-              <Text style={{ color: Colors.white, fontSize: 10, fontWeight: "bold" }}>
-                {unreadCount > 99 ? "99+" : unreadCount}
-              </Text>
-            </View>
-          )}
-        </TouchableOpacity>
-      </View>
+      <HomeHeader
+        user={user}
+        activeAddressState={activeAddressState}
+        unreadCount={unreadCount}
+        currentTextColor={currentTextColor}
+        currentSecTextColor={currentSecTextColor}
+        setLocationModalVisible={setLocationModalVisible}
+        navigation={navigation}
+      />
 
       {/* 2. Search Bar Trigger */}
       <TouchableOpacity
@@ -907,7 +869,7 @@ export default function HomeScreen({ navigation }) {
             </TouchableOpacity>
           </View>
           <View style={styles.premiumPendingBody}>
-            <Image
+            <OptimizedImage
               source={{ uri: resolveImage(pendingPaymentBooking.artist?.user?.profile_image) || "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=150" }}
               style={styles.premiumPendingAvatar}
             />
@@ -1094,17 +1056,22 @@ export default function HomeScreen({ navigation }) {
           <TouchableOpacity
             style={[
               styles.filterBadge,
-              selectedFilter === filter.value ? styles.activeFilterBadge : null
+              selectedFilter === filter ? styles.activeFilterBadge : null
             ]}
-            onPress={() => setSelectedFilter(filter.value)}
+            onPress={() => {
+              if (selectedFilter === filter) return;
+              setSelectedFilter(filter);
+              setNearbyArtists([]);
+              loadNearby(1, false, filter);
+            }}
           >
             <Text
               style={[
                 styles.filterBadgeText,
-                selectedFilter === filter.value ? styles.activeFilterBadgeText : null
+                selectedFilter === filter ? styles.activeFilterBadgeText : null
               ]}
             >
-              {filter.label}
+              {filter}
             </Text>
           </TouchableOpacity>
         )}
@@ -1140,48 +1107,16 @@ export default function HomeScreen({ navigation }) {
     return null;
   };
 
-  const processedNearbyArtists = React.useMemo(() => {
-    let result = [...nearbyArtists];
-
-    if (selectedFilter === "Nearest") {
-      result.sort((a, b) => (Number(a.distance) || Number(a.id) || 0) - (Number(b.distance) || Number(b.id) || 0));
-    } else if (selectedFilter === "Top Rated") {
-      result.sort((a, b) => (Number(b.rating || b.avg_rating) || 0) - (Number(a.rating || a.avg_rating) || 0));
-    } else if (selectedFilter === "Price Low-High") {
-      result.sort((a, b) => {
-        const priceA = Number(a.starting_price || a.minimum_price || a.price || a.services?.[0]?.minimum_price || 1500);
-        const priceB = Number(b.starting_price || b.minimum_price || b.price || b.services?.[0]?.minimum_price || 1500);
-        return priceA - priceB;
-      });
-    } else if (selectedFilter === "5+ Exp Years") {
-      result = result.filter(item => Number(item.experience_years || item.experience || 0) >= 5);
-      result.sort((a, b) => (Number(b.experience_years || b.experience) || 0) - (Number(a.experience_years || a.experience) || 0));
-    } else if (selectedFilter === "Bridal") {
-      result = result.filter(item => {
-        const bio = (item.bio || "").toLowerCase();
-        const serv = (item.services || []).some(s => (s.category || "").toLowerCase().includes("bridal") || (s.specialization_name || "").toLowerCase().includes("bridal"));
-        return bio.includes("bridal") || serv;
-      });
-    } else if (selectedFilter === "Home Service") {
-      result = result.filter(item => item.home_service !== false);
-    } else if (selectedFilter === "Verified") {
-      result = result.filter(item => item.verification_status === "APPROVED" || item.status === "approved");
-    }
-
-    return result;
-  }, [nearbyArtists, selectedFilter]);
-
-  // Home Page Preview limited to maximum 10 unique real artists
   const homePreviewNearbyArtists = React.useMemo(() => {
     const map = new Map();
-    (processedNearbyArtists || []).forEach((item) => {
+    (nearbyArtists || []).forEach((item) => {
       const key = String(item.id || item.user_id || item.artist_id);
       if (key && !map.has(key)) {
         map.set(key, item);
       }
     });
-    return Array.from(map.values()).slice(0, 10);
-  }, [processedNearbyArtists]);
+    return Array.from(map.values());
+  }, [nearbyArtists]);
 
   if (dashboardLoading) {
     return (
@@ -1222,191 +1157,30 @@ export default function HomeScreen({ navigation }) {
         contentContainerStyle={{ paddingBottom: 180 }}
       />
 
-      <Modal
+      <PaymentModal
         visible={paymentModalVisible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => {
+        booking={pendingPaymentBooking}
+        onClose={() => {
           if (pendingPaymentBooking?.id) {
             dismissedPendingBookingIdsRef.current.add(pendingPaymentBooking.id);
           }
           hasShownPendingPaymentModalRef.current = true;
           setPaymentModalVisible(false);
         }}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            {/* Header Icon */}
-            <View style={styles.modalHeaderIconContainer}>
-              <Ionicons name="time-outline" size={30} color={Colors.primary} />
-            </View>
-
-            <Text style={styles.modalTitle}>Remaining Payment Pending</Text>
-            <Text style={styles.modalSubtitle}>Please clear the remaining dues to complete your booking.</Text>
-
-            {pendingPaymentBooking && (
-              <View style={{ width: "100%" }}>
-                {/* Artist Info Card */}
-                <View style={styles.modalArtistCard}>
-                  <Image
-                    source={{ uri: resolveImage(pendingPaymentBooking.artist?.user?.profile_image) || "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=300" }}
-                    style={styles.modalArtistPhoto}
-                  />
-                  <View style={styles.modalArtistMeta}>
-                    <Text style={styles.modalArtistName}>
-                      {pendingPaymentBooking.artist?.user?.name || pendingPaymentBooking.artist?.business_name || "Mehndi Specialist"}
-                    </Text>
-                    <Text style={styles.modalArtistCategory}>
-                      {pendingPaymentBooking.service?.specialization_name || pendingPaymentBooking.service?.category || "Mehndi Specialist"}
-                    </Text>
-
-                    <View style={styles.modalArtistStats}>
-                      <View style={styles.modalStatItem}>
-                        <Ionicons name="star" size={13} color="#FFB800" />
-                        <Text style={styles.modalStatItemText}>
-                          {Number(pendingPaymentBooking.artist?.avg_rating || 5.0).toFixed(1)}
-                        </Text>
-                      </View>
-                      <Text style={styles.modalDivider}>•</Text>
-                      <Text style={styles.modalStatItemText}>
-                        {pendingPaymentBooking.artist?.experience_years || 4} Yrs Exp
-                      </Text>
-                      <Text style={styles.modalDivider}>•</Text>
-                      <Text style={styles.modalStatItemText} numberOfLines={1}>
-                        {pendingPaymentBooking.artist?.city || pendingPaymentBooking.artist?.locality || "Jaipur"}
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-
-                {/* Booking Info Card */}
-                <View style={styles.modalBookingDetailsCard}>
-                  <View style={styles.modalDetailRow}>
-                    <Ionicons name="receipt-outline" size={14} color={Colors.textSecondary} />
-                    <Text style={styles.modalDetailLabel}>Booking ID:</Text>
-                    <Text style={styles.modalDetailValue} numberOfLines={1}>
-                      #{pendingPaymentBooking.booking_code || (`MG-${String(pendingPaymentBooking.id).padStart(6, "0")}`)}
-                    </Text>
-                  </View>
-
-                  <View style={styles.modalDetailRow}>
-                    <Ionicons name="calendar-outline" size={14} color={Colors.textSecondary} />
-                    <Text style={styles.modalDetailLabel}>Date & Time:</Text>
-                    <Text style={styles.modalDetailValue}>
-                      {(() => {
-                        const dateStr = getModalBookingDate(pendingPaymentBooking);
-                        const timeStr = getModalBookingTime(pendingPaymentBooking);
-                        if (dateStr && timeStr) return `${dateStr} at ${timeStr}`;
-                        if (dateStr) return dateStr;
-                        if (timeStr) return timeStr;
-                        return "Confirmed Schedule";
-                      })()}
-                    </Text>
-                  </View>
-
-                  <View style={styles.modalDetailRow}>
-                    <Ionicons name="flower-outline" size={14} color={Colors.textSecondary} />
-                    <Text style={styles.modalDetailLabel}>Service:</Text>
-                    <Text style={styles.modalDetailValue} numberOfLines={1}>
-                      {pendingPaymentBooking.service?.specialization_name || pendingPaymentBooking.selected_art_title || "Mehndi Service"}
-                    </Text>
-                  </View>
-
-                  <View style={styles.modalDetailRow}>
-                    <Ionicons name="ribbon-outline" size={14} color={Colors.textSecondary} />
-                    <Text style={styles.modalDetailLabel}>Package:</Text>
-                    <Text style={styles.modalDetailValue} numberOfLines={1}>
-                      {getModalPackageText(pendingPaymentBooking)}
-                    </Text>
-                  </View>
-
-                  <View style={[styles.modalDetailRow, { alignItems: "flex-start" }]}>
-                    <Ionicons name="pin-outline" size={14} color={Colors.textSecondary} style={{ marginTop: 2 }} />
-                    <Text style={styles.modalDetailLabel}>Address:</Text>
-                    <Text style={[styles.modalDetailValue, { flex: 1 }]} numberOfLines={2}>
-                      {pendingPaymentBooking.address || pendingPaymentBooking.landmark || "Customer Location Details"}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Billing Summary Box */}
-                {(() => {
-                  const remBal = Number(pendingPaymentBooking.remaining_amount || pendingPaymentBooking.remainingAmount || 0);
-                  const totalAmt = Number(
-                    pendingPaymentBooking.customer_total_amount ||
-                    pendingPaymentBooking.total_amount ||
-                    pendingPaymentBooking.totalAmount ||
-                    pendingPaymentBooking.total_price ||
-                    pendingPaymentBooking.final_amount ||
-                    pendingPaymentBooking.finalAmount ||
-                    (remBal > 0 ? remBal + Number(pendingPaymentBooking.advance_paid || 0) : 0)
-                  );
-                  const advPaid = Number(
-                    pendingPaymentBooking.advance_paid ||
-                    pendingPaymentBooking.advance_amount ||
-                    pendingPaymentBooking.required_advance ||
-                    Math.max(0, totalAmt - remBal)
-                  );
-
-                  return (
-                    <View style={styles.modalBillingSummary}>
-                      <View style={styles.modalBillRow}>
-                        <Text style={styles.modalBillLabel}>Total Amount</Text>
-                        <Text style={styles.modalBillValue}>₹{totalAmt}</Text>
-                      </View>
-                      <View style={styles.modalBillRow}>
-                        <Text style={styles.modalBillLabel}>Advance Paid</Text>
-                        <Text style={[styles.modalBillValue, { color: "#2E7D32" }]}>-₹{advPaid}</Text>
-                      </View>
-                      <View style={styles.modalDividerLine} />
-                      <View style={styles.modalBillRow}>
-                        <Text style={[styles.modalBillLabel, { fontWeight: "700", color: Colors.text }]}>Remaining Balance</Text>
-                        <Text style={[styles.modalBillValue, { fontWeight: "800", color: Colors.primary, fontSize: 15 }]}>
-                          ₹{remBal}
-                        </Text>
-                      </View>
-                    </View>
-                  );
-                })()}
-              </View>
-            )}
-
-            {/* Actions */}
-            <View style={styles.modalActionRow}>
-              <TouchableOpacity
-                style={styles.modalLaterBtn}
-                onPress={() => {
-                  if (pendingPaymentBooking?.id) {
-                    dismissedPendingBookingIdsRef.current.add(pendingPaymentBooking.id);
-                  }
-                  hasShownPendingPaymentModalRef.current = true;
-                  setPaymentModalVisible(false);
-                }}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.modalLaterText}>Later</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.modalPayBtn}
-                activeOpacity={0.8}
-                onPress={() => {
-                  if (pendingPaymentBooking?.id) {
-                    dismissedPendingBookingIdsRef.current.add(pendingPaymentBooking.id);
-                  }
-                  hasShownPendingPaymentModalRef.current = true;
-                  setPaymentModalVisible(false);
-                  navigation.navigate("BookingSettlement", {
-                    bookingId: pendingPaymentBooking.id
-                  });
-                }}
-              >
-                <Text style={styles.modalPayText}>Pay Remaining Amount</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+        onPay={() => {
+          if (pendingPaymentBooking?.id) {
+            dismissedPendingBookingIdsRef.current.add(pendingPaymentBooking.id);
+          }
+          hasShownPendingPaymentModalRef.current = true;
+          setPaymentModalVisible(false);
+          navigation.navigate("BookingSettlement", {
+            bookingId: pendingPaymentBooking.id
+          });
+        }}
+        getModalBookingDate={getModalBookingDate}
+        getModalBookingTime={getModalBookingTime}
+        getModalPackageText={getModalPackageText}
+      />
 
       {/* Location Switcher Bottom Sheet Modal */}
       <Modal visible={locationModalVisible} animationType="slide" transparent>

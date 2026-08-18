@@ -7,7 +7,9 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  View
+  View,
+  Image,
+  ScrollView
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
@@ -21,7 +23,13 @@ export default function ReviewsScreen({ navigation }) {
   const fetchReviewsDataset = React.useCallback(async () => {
     try {
       const data = await getArtistReviewsData();
-      setReviews(data || []);
+      if (data && data.reviews) {
+        setReviews(data.reviews);
+      } else if (Array.isArray(data)) {
+        setReviews(data);
+      } else {
+        setReviews([]);
+      }
     } catch (err) {
       console.log("Failed to load reviews:", err.message);
     } finally {
@@ -68,9 +76,16 @@ export default function ReviewsScreen({ navigation }) {
     </View>
   );
 
+  const resolveImage = (url) => {
+    if (!url) return null;
+    if (url.startsWith("http") || url.startsWith("file://")) return url;
+    return `https://api.mehndigo.in${url.startsWith("/") ? "" : "/"}${url}`;
+  };
+
   const renderReview = ({ item }) => {
-    const name = item.user?.name || "Client Name";
+    const name = item.user?.name || item.customer_name || "Client Name";
     const initial = name[0]?.toUpperCase() || "C";
+    const photos = Array.isArray(item.photos) ? item.photos : (typeof item.photos === 'string' ? JSON.parse(item.photos || "[]") : []);
 
     return (
       <View style={styles.reviewCard}>
@@ -80,7 +95,7 @@ export default function ReviewsScreen({ navigation }) {
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.name}>{name}</Text>
-            <Text style={styles.date}>{new Date(item.createdAt).toDateString()}</Text>
+            <Text style={styles.date}>{new Date(item.created_at || item.createdAt).toDateString()}</Text>
           </View>
           <View style={styles.reviewStars}>
             {[1, 2, 3, 4, 5].map((star) => (
@@ -94,6 +109,30 @@ export default function ReviewsScreen({ navigation }) {
           </View>
         </View>
         <Text style={styles.reviewText}>{item.comment || "No comment provided."}</Text>
+        
+        {/* Render Media */}
+        {(item.video_url || photos.length > 0) && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12 }}>
+            {item.video_url && (
+              <View style={{ marginRight: 8, position: "relative" }}>
+                <Image 
+                  source={{ uri: resolveImage(item.video_thumbnail) || "https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=300" }} 
+                  style={{ width: 100, height: 100, borderRadius: 8, backgroundColor: "#f0f0f0" }} 
+                />
+                <View style={{ position: "absolute", top: "50%", left: "50%", marginLeft: -12, marginTop: -12, backgroundColor: "rgba(0,0,0,0.6)", borderRadius: 12, padding: 4 }}>
+                  <Ionicons name="play" size={16} color="#fff" />
+                </View>
+              </View>
+            )}
+            {photos.map((photo, pIdx) => (
+              <Image 
+                key={pIdx} 
+                source={{ uri: resolveImage(photo) }} 
+                style={{ width: 100, height: 100, borderRadius: 8, marginRight: 8, backgroundColor: "#f0f0f0" }} 
+              />
+            ))}
+          </ScrollView>
+        )}
       </View>
     );
   };

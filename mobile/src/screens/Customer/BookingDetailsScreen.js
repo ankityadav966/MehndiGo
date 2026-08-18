@@ -139,7 +139,8 @@ export default function BookingDetailsScreen({ route, navigation }) {
             speed: Number(locationData.speed),
             heading: Number(locationData.heading)
           });
-          setLastUpdated(new Date(locationData.updatedAt));
+          const rawTs = locationData.updatedAt ? new Date(locationData.updatedAt).getTime() : null;
+          setLastUpdated(new Date(rawTs && !isNaN(rawTs) ? rawTs : Date.now()));
         }
       } catch (err) {
         console.log("[Customer BookingDetails] Initial artist location not available:", err.message);
@@ -158,7 +159,8 @@ export default function BookingDetailsScreen({ route, navigation }) {
           speed: Number(payload.speed || 0),
           heading: Number(payload.heading || 0)
         });
-        setLastUpdated(new Date(payload.updatedAt || Date.now()));
+        const socketTs = payload.updatedAt ? new Date(payload.updatedAt).getTime() : null;
+        setLastUpdated(new Date(socketTs && !isNaN(socketTs) ? socketTs : Date.now()));
       }
     };
 
@@ -211,8 +213,8 @@ export default function BookingDetailsScreen({ route, navigation }) {
           if (!prev) return prev;
           return {
             ...prev,
-            booking_status: payload.booking_status || payload.status || prev.booking_status,
-            detailed_status: payload.detailed_status || payload.status || prev.detailed_status
+            booking_status: payload.booking_status || prev.booking_status,
+            detailed_status: payload.detailed_status || prev.detailed_status
           };
         });
         loadDetails();
@@ -482,7 +484,7 @@ const getDistance = () => {
 
   const activeStepIndex = getActiveStepIndex(currentDetailedStatus);
 
-  const canChat = ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "ON_THE_WAY", "ARRIVED", "ARTIST_ARRIVED", "SERVICE_STARTED", "IN_PROGRESS", "COMPLETED", "COMPLETED_CLOSED"].includes(currentDetailedStatus);
+  const canChat = ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "ON_THE_WAY", "ARRIVED", "ARTIST_ARRIVED", "CUSTOMER_VERIFIED", "SERVICE_STARTED", "IN_PROGRESS"].includes(currentDetailedStatus);
 
   const getMoment = () => {
     const m = require("moment");
@@ -606,34 +608,32 @@ const getDistance = () => {
         )}
 
         {/* Live Tracking Map Card */}
-        {booking && ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY"].includes(currentDetailedStatus) && (
+        {booking && ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "ON_THE_WAY", "ARTIST_ARRIVED", "ARRIVED"].includes(currentDetailedStatus) && (
           <View style={styles.trackingCard}>
+            {/* Header: title + subtle connection indicator */}
             <View style={styles.trackingHeader}>
               <View style={styles.trackingTitleRow}>
                 <Ionicons name="location" size={18} color={Colors.primary} />
                 <Text style={styles.trackingTitle}>Live Tracking</Text>
               </View>
-              <View style={[
-                styles.connBadge,
-                connected ? styles.connBadgeSuccess : styles.connBadgeWarn
-              ]}>
-                <View style={[
-                  styles.connIndicator,
-                  connected ? styles.connIndicatorSuccess : styles.connIndicatorWarn
-                ]} />
-                <Text style={[
-                  styles.connText,
-                  connected ? styles.connTextSuccess : styles.connTextWarn
-                ]}>
-                  {connected ? "Connected" : "Reconnecting..."}
-                </Text>
-              </View>
+              {/* Show dot-only when connected; show amber badge only when reconnecting */}
+              {connected ? (
+                <View style={[styles.connBadge, styles.connBadgeSuccess]}>
+                  <View style={[styles.connIndicator, styles.connIndicatorSuccess]} />
+                </View>
+              ) : (
+                <View style={[styles.connBadge, styles.connBadgeWarn]}>
+                  <View style={[styles.connIndicator, styles.connIndicatorWarn]} />
+                  <Text style={[styles.connText, styles.connTextWarn]}>Reconnecting</Text>
+                </View>
+              )}
             </View>
 
+            {/* Map — always rendered, shows waiting state internally when no artist coords */}
             <LeafletMapView
-              customerCoords={{ 
-                lat: Number(booking.latitude || 26.9124), 
-                lng: Number(booking.longitude || 75.7873) 
+              customerCoords={{
+                lat: Number(booking.latitude || 26.9124),
+                lng: Number(booking.longitude || 75.7873)
               }}
               artistCoords={artistCoords}
               onRouteUpdate={(dist, dur) => {
@@ -642,23 +642,29 @@ const getDistance = () => {
               }}
             />
 
-            <View style={styles.trackingStats}>
-              <Text style={styles.trackingStatusText}>Artist is on the way</Text>
-              <View style={styles.statsRow}>
-                <View style={styles.statCol}>
-                  <Text style={styles.statLabel}>Distance</Text>
-                  <Text style={styles.statVal}>{getDistance() ? `${getDistance()} KM Away` : "Calculating..."}</Text>
+            {/* Distance + ETA info row — or waiting fallback */}
+            {artistCoords ? (
+              <View style={styles.trackingInfoRow}>
+                <View style={styles.trackingInfoItem}>
+                  <Text style={styles.trackingInfoIcon}>📍</Text>
+                  <Text style={styles.trackingInfoVal}>
+                    {getDistance() ? `${getDistance()} km` : "Locating..."}
+                  </Text>
                 </View>
-                <View style={styles.statDivider} />
-                <View style={styles.statCol}>
-                  <Text style={styles.statLabel}>Estimated Arrival</Text>
-                  <Text style={styles.statVal}>{getDistance() ? getETA(getDistance()) : "Calculating..."}</Text>
+                <View style={styles.trackingInfoDivider} />
+                <View style={styles.trackingInfoItem}>
+                  <Text style={styles.trackingInfoIcon}>⏱</Text>
+                  <Text style={styles.trackingInfoVal}>
+                    {getDistance() ? getETA(getDistance()) : "Calculating"}
+                  </Text>
                 </View>
               </View>
-              <Text style={styles.lastUpdatedText}>
-                Last Updated: {getRelativeTime()}
-              </Text>
-            </View>
+            ) : (
+              <View style={styles.trackingWaiting}>
+                <ActivityIndicator size="small" color={Colors.primary} />
+                <Text style={styles.trackingWaitingText}>Waiting for artist location...</Text>
+              </View>
+            )}
           </View>
         )}
 
@@ -1092,7 +1098,7 @@ const getDistance = () => {
 
           {/* Review options */}
           {(() => {
-            const isAlreadyReviewed = currentDetailedStatus === "COMPLETED_CLOSED" || !!booking?.review || booking?.is_reviewed || booking?.has_reviewed;
+            const isAlreadyReviewed = !!booking?.review || booking?.is_reviewed || booking?.has_reviewed;
             if (isAlreadyReviewed) {
               return (
                 <View style={styles.reviewedBanner}>
@@ -1103,7 +1109,7 @@ const getDistance = () => {
                 </View>
               );
             }
-            if (currentDetailedStatus === "COMPLETED") {
+            if (currentDetailedStatus === "COMPLETED" || currentDetailedStatus === "COMPLETED_CLOSED") {
               return (
                 <TouchableOpacity
                   style={[styles.secondaryBtn, { marginTop: 10, borderColor: Colors.success }]}
@@ -1397,14 +1403,14 @@ const styles = StyleSheet.create({
   connText: { fontSize: 10, fontWeight: "600" },
   connTextSuccess: { color: Colors.success },
   connTextWarn: { color: "#D97706" },
-  trackingStats: { marginTop: 12, alignItems: "center" },
-  trackingStatusText: { fontSize: 13, fontWeight: "700", color: Colors.text, marginBottom: 8 },
-  statsRow: { flexDirection: "row", justifyContent: "space-between", width: "100%", paddingVertical: 8, borderTopWidth: 1, borderBottomWidth: 1, borderColor: Colors.border },
-  statCol: { flex: 1, alignItems: "center" },
-  statLabel: { fontSize: 10, color: Colors.textSecondary, marginBottom: 2 },
-  statVal: { fontSize: 14, fontWeight: "800", color: Colors.primary },
-  statDivider: { width: 1, height: "80%", backgroundColor: Colors.border, alignSelf: "center" },
-  lastUpdatedText: { fontSize: 9, color: Colors.textTertiary, marginTop: 8 },
+  // New clean tracking info row (replaces old broken stats block)
+  trackingInfoRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginTop: 12, paddingVertical: 10, borderTopWidth: 1, borderColor: Colors.border },
+  trackingInfoItem: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center" },
+  trackingInfoIcon: { fontSize: 16, marginRight: 6 },
+  trackingInfoVal: { fontSize: 15, fontWeight: "800", color: Colors.primary },
+  trackingInfoDivider: { width: 1, height: 28, backgroundColor: Colors.border, marginHorizontal: 8 },
+  trackingWaiting: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginTop: 12, paddingVertical: 10, borderTopWidth: 1, borderColor: Colors.border },
+  trackingWaitingText: { fontSize: 13, color: Colors.textSecondary, marginLeft: 8, fontStyle: "italic" },
   reviewedBanner: {
     flexDirection: "row",
     alignItems: "center",

@@ -23,7 +23,7 @@ import { SkeletonGrid } from "../../components/LoadingSkeleton";
 import Colors from "../../constants/Colors";
 import { useAuth } from "../../context/AuthContext";
 import { usePortfolio } from "../../context/PortfolioContext";
-import { getArtistDetails, getArtistPortfolio, updateArtistProfileDetails, uploadPortfolioMedia } from "../../services/artist";
+import { getArtistDetails, getArtistPortfolio, getArtistServices, updateArtistProfileDetails, uploadPortfolioMedia } from "../../services/artist";
 import { secureStorage } from "../../utils/storage";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -274,7 +274,8 @@ export default function ArtistProfileScreen({ navigation }) {
   const fetchProfile = async () => {
     try {
       const data = await getArtistDetails();
-      setProfile(data);
+      const servicesData = await getArtistServices().catch(() => []);
+      setProfile({ ...data, services: servicesData });
     } catch (err) {
       console.log("Failed to fetch artist details:", err?.message);
     } finally {
@@ -323,21 +324,21 @@ export default function ArtistProfileScreen({ navigation }) {
 
   const filteredPortfolios = useMemo(() => {
     if (activeTab === "Services") {
-      return portfolios;
+      return profile?.services || [];
     }
     return portfolioItems.filter((item) => {
       if (activeTab === "Posts") return !item.video_url;
       if (activeTab === "Videos") return !!item.video_url;
       return true;
     });
-  }, [activeTab, portfolios, portfolioItems]);
+  }, [activeTab, profile?.services, portfolioItems]);
 
   const renderGridItem = (item, index) => {
     const isService = activeTab === "Services";
-    const rawUri = isService ? item.image : (item.image_url || item.video_url);
+    const rawUri = isService ? (item.service_image || "https://images.unsplash.com/photo-1605559424843-9e4c228bf1c2?w=500") : (item.image_url || item.video_url);
     const uri = resolveImage(rawUri, item.video_url);
     const isVideo = !isService && !!item.video_url;
-    const title = isService ? item.serviceName : item.title;
+    const title = isService ? item.specialization_name : item.title;
 
     return (
       <TouchableOpacity
