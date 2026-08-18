@@ -1,24 +1,20 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
   TextInput,
-  ActivityIndicator,
-  Modal
+  ActivityIndicator
 } from "react-native";
 import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import Colors from "../../constants/Colors";
-import CustomButton from "../../components/CustomButton";
 import OptimizedImage from "../../components/OptimizedImage";
 import { getPriceDetails, createBooking } from "../../services/booking";
 import { getArtistById } from "../../services/customer";
-
 
 export default function BookingSummaryScreen({ route, navigation }) {
   const params = route.params || {};
@@ -48,9 +44,9 @@ export default function BookingSummaryScreen({ route, navigation }) {
   // Form states
   const [notes, setNotes] = useState("");
   const [couponInput, setCouponInput] = useState("");
-  const [appliedCoupon, setAppliedCoupon] = useState(null); // String of applied code
+  const [appliedCoupon, setAppliedCoupon] = useState(null);
 
-  const fetchPricingAndArtist = async (couponCode = null, newGroupSize = groupSize, newCoverage = serviceCoverage) => {
+  const fetchPricingAndArtist = useCallback(async (couponCode = null, newGroupSize = groupSize, newCoverage = serviceCoverage) => {
     try {
       const [artistData, pricing] = await Promise.all([
         getArtistById(artistId),
@@ -62,23 +58,23 @@ export default function BookingSummaryScreen({ route, navigation }) {
         setAppliedCoupon(couponCode);
       }
     } catch (err) {
-      Alert.alert("Error", "Failed to retrieve booking cost estimates.");
+      console.log("Failed to retrieve booking cost estimates:", err.message);
     } finally {
       setLoading(false);
     }
-  };
+  }, [artistId, serviceId, selectedArt, groupSize, serviceCoverage]);
 
   useEffect(() => {
     if (!artistId || !serviceId) {
-      Alert.alert("Error", "Invalid booking route context.");
+      Alert.alert("Error", "Invalid booking parameters.");
       navigation.goBack();
       return;
     }
-    const timer = setTimeout(() => {
+    const unsubscribe = navigation.addListener("focus", () => {
       fetchPricingAndArtist();
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [artistId, serviceId]);
+    });
+    return unsubscribe;
+  }, [artistId, serviceId, navigation, fetchPricingAndArtist]);
 
   const handleGroupSizeChange = (newSize) => {
     if (newSize < 1 || newSize > 10) return;
@@ -112,7 +108,6 @@ export default function BookingSummaryScreen({ route, navigation }) {
   const handleProceedToPayment = async () => {
     setSubmitting(true);
     try {
-      // 1. Create booking record
       const bookingData = {
         artistId,
         serviceId,
@@ -145,330 +140,762 @@ export default function BookingSummaryScreen({ route, navigation }) {
 
       const newBooking = await createBooking(bookingData);
 
-      // 2. Navigate to secure Payment screen passing real booking details
+      // Navigate to secure Figma-matched Payment screen
       navigation.navigate("Payment", {
         bookingId: newBooking.id,
         bookingCode: newBooking.booking_code,
-        finalAmount: priceDetails.finalAmount,
-        artistId: artistId
+        finalAmount: priceDetails?.final_amount || priceDetails?.total_amount || 0,
+        advanceAmount: priceDetails?.advance_amount,
+        remainingAmount: priceDetails?.remaining_amount,
+        artistName: artist?.user?.name || artist?.business_name,
+        serviceTitle: selectedArt?.title || "Mehndi Service",
+        isSettlement: false
       });
     } catch (err) {
-      Alert.alert("Booking Failed", err.message || "Failed to initiate payment checkout.");
+      Alert.alert("Booking Error", err.message || "Failed to create booking request.");
     } finally {
       setSubmitting(false);
     }
   };
 
+  if (loading && !priceDetails) {
+    return (
+      <SafeAreaView style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#E91E63" />
+        <Text style={styles.loadingText}>Calculating pricing & booking summary...</Text>
+      </SafeAreaView>
+    );
+  }
+
+  const basePrice = Number(priceDetails?.base_amount || priceDetails?.subtotal || 0);
+  const discountAmount = Number(priceDetails?.discount_amount || priceDetails?.coupon_discount || 0);
+  const totalAmount = Number(priceDetails?.final_amount || priceDetails?.total_amount || (basePrice - discountAmount));
+  const advanceAmount = Number(priceDetails?.advance_amount || Math.round(totalAmount * 0.10));
+  const remainingAmount = Number(priceDetails?.remaining_amount !== undefined ? priceDetails?.remaining_amount : (totalAmount - advanceAmount));
+
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
+      {/* 1. Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Ionicons name="chevron-back" size={22} color={Colors.text} />
+        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.7}>
+          <Ionicons name="chevron-back" size={22} color="#212121" />
         </TouchableOpacity>
-        <Text style={styles.title}>Confirm Booking</Text>
-        <View style={{ width: 40 }} />
+        <View style={styles.headerTitleContainer}>
+          <Text style={styles.headerTitle}>Booking Summary</Text>
+          <Text style={styles.headerSubtitle}>Review details & deposit</Text>
+        </View>
+        <View style={styles.secureBadge}>
+          <Ionicons name="shield-checkmark" size={14} color="#059669" />
+          <Text style={styles.secureBadgeText}>100% Escrow</Text>
+        </View>
       </View>
 
-      {loading ? (
-        <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-        </View>
-      ) : (
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
-          
-          {/* Temporary 15-min Slot Hold Banner */}
-          <View style={{ backgroundColor: "#FEF3C7", borderColor: "#F59E0B", borderWidth: 1, borderRadius: 10, padding: 12, marginBottom: 12, flexDirection: "row", alignItems: "center" }}>
-            <Text style={{ fontSize: 20, marginRight: 8 }}>⏱️</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 13, fontWeight: "700", color: "#92400E" }}>15-Minute Slot Hold Active</Text>
-              <Text style={{ fontSize: 11, color: "#B45309" }}>This slot is reserved for you. Complete payment to confirm booking.</Text>
-            </View>
-          </View>
-
-          {/* Group Size & Coverage Options */}
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>People & Coverage</Text>
-            
-            {/* Group Size Counter */}
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <View>
-                <Text style={{ fontSize: 14, fontWeight: "600", color: Colors.text }}>Number of Persons</Text>
-                <Text style={{ fontSize: 11, color: Colors.textSecondary }}>Dynamic duration & pricing calculated</Text>
-              </View>
-              <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#F1F5F9", borderRadius: 8, padding: 4 }}>
-                <TouchableOpacity onPress={() => handleGroupSizeChange(groupSize - 1)} style={{ paddingHorizontal: 10, paddingVertical: 4 }}>
-                  <Text style={{ fontSize: 18, fontWeight: "bold", color: groupSize > 1 ? Colors.text : "#CBD5E1" }}>-</Text>
-                </TouchableOpacity>
-                <Text style={{ fontSize: 15, fontWeight: "bold", paddingHorizontal: 8, color: Colors.text }}>{groupSize}</Text>
-                <TouchableOpacity onPress={() => handleGroupSizeChange(groupSize + 1)} style={{ paddingHorizontal: 10, paddingVertical: 4 }}>
-                  <Text style={{ fontSize: 18, fontWeight: "bold", color: Colors.primary }}>+</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Coverage Selector */}
-            <Text style={{ fontSize: 13, fontWeight: "600", color: Colors.text, marginBottom: 8 }}>Design Coverage</Text>
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-              {[
-                { id: "BOTH_HANDS", label: "Both Hands (Standard)" },
-                { id: "ONE_HAND", label: "One Hand (-30%)" },
-                { id: "FEET_AND_HANDS", label: "Hands & Feet (+50%)" },
-                { id: "BRIDAL_FULL", label: "Bridal Full (+50%)" }
-              ].map((cov) => (
-                <TouchableOpacity
-                  key={cov.id}
-                  onPress={() => handleCoverageChange(cov.id)}
-                  style={{
-                    paddingHorizontal: 10,
-                    paddingVertical: 6,
-                    borderRadius: 6,
-                    borderWidth: 1,
-                    borderColor: serviceCoverage === cov.id ? Colors.primary : "#E2E8F0",
-                    backgroundColor: serviceCoverage === cov.id ? "#FEF2F2" : "#FFFFFF"
-                  }}
-                >
-                  <Text style={{ fontSize: 12, fontWeight: serviceCoverage === cov.id ? "700" : "500", color: serviceCoverage === cov.id ? Colors.primary : Colors.text }}>
-                    {cov.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-
-          {/* Selected Art Design Card if applicable */}
-          {selectedArt && (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Selected Mehndi Art Design</Text>
-              <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4 }}>
-                {Boolean(selectedArt.image_url) && (
-                  <OptimizedImage
-                    source={{ uri: selectedArt.image_url }}
-                    style={{ width: 56, height: 56, borderRadius: 8, marginRight: 12 }}
-                    width={56}
-                    height={56}
-                  />
-                )}
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: "700", color: Colors.text }}>{selectedArt.title || "Custom Art Design"}</Text>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 }}>
-                    <View style={{ backgroundColor: selectedArt.art_tier === "PREMIUM" ? "#EDE9FE" : "#F1F5F9", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
-                      <Text style={{ fontSize: 10, fontWeight: "800", color: selectedArt.art_tier === "PREMIUM" ? "#7C3AED" : "#475569" }}>
-                        {selectedArt.art_tier === "PREMIUM" ? "💎 PREMIUM ART" : "✨ STANDARD ART"}
-                      </Text>
-                    </View>
-                    <Text style={{ fontSize: 11, color: Colors.textSecondary }}>⏱️ {(selectedArt.duration_minutes || 60) * groupSize} mins total</Text>
-                  </View>
-                </View>
-              </View>
-            </View>
-          )}
-
-          {/* Artist details */}
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Professional Artist</Text>
-            <View style={styles.row}>
-              <Text style={styles.label}>Name</Text>
-              <Text style={styles.value}>{artist?.user?.name || "Mehndi Specialist"}</Text>
-            </View>
-            <View style={styles.row}>
-              <Text style={styles.label}>Experience</Text>
-              <Text style={styles.value}>{artist?.experience_years || 5} Years</Text>
-            </View>
-          </View>
-
-          {/* Date and time slot details */}
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Schedule details</Text>
-            <View style={styles.row}>
-              <Text style={styles.label}>Date</Text>
-              <Text style={styles.value}>{selectedDate ? selectedDate.replace(/-/g, "/") : ""}</Text>
-            </View>
-            <View style={styles.row}>
-              <Text style={styles.label}>Time Slot</Text>
-              <Text style={styles.value}>{timeLabel}</Text>
-            </View>
-          </View>
-
-          {/* Visit location address */}
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Visit Address</Text>
-            <Text style={styles.address}>{address}</Text>
-            {landmark ? (
-              <Text style={[styles.address, { fontStyle: "italic", marginTop: 4 }]}>
-                📍 Landmark: {landmark}
-              </Text>
-            ) : null}
-          </View>
-
-          {/* Coupon codes panel */}
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Promotional Coupon</Text>
-            {!appliedCoupon ? (
-              <View style={{ flexDirection: "column" }}>
-                <View style={styles.couponForm}>
-                  <TextInput
-                    placeholder="Enter Code (e.g. TEEJ20)"
-                    placeholderTextColor={Colors.textTertiary}
-                    style={styles.couponInput}
-                    value={couponInput}
-                    onChangeText={setCouponInput}
-                    autoCapitalize="characters"
-                  />
-                  <TouchableOpacity style={styles.applyBtn} onPress={handleApplyCoupon}>
-                    <Text style={styles.applyBtnText}>Apply</Text>
-                  </TouchableOpacity>
-                </View>
-                <TouchableOpacity
-                  style={{ marginTop: 10, alignSelf: "flex-start" }}
-                  onPress={() => navigation.navigate("Coupons", {
-                    onSelectCoupon: (code) => {
-                      setCouponInput(code);
-                      setLoading(true);
-                      fetchPricingAndArtist(code);
-                    }
-                  })}
-                >
-                  <Text style={{ color: Colors.primary, fontWeight: "700", fontSize: 13 }}>
-                    View Available Coupons & Offers →
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <View style={styles.couponAppliedRow}>
-                <Ionicons name="checkmark-circle" size={20} color={Colors.primary} />
-                <Text style={styles.couponAppliedText}>Code {appliedCoupon} Applied</Text>
-                <TouchableOpacity onPress={handleRemoveCoupon}>
-                  <Text style={styles.removeCouponText}>Remove</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-
-          {/* Booking notes inputs */}
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Additional Notes</Text>
-            <TextInput
-              placeholder="Any specific design requests or instructions..."
-              placeholderTextColor={Colors.textTertiary}
-              style={styles.notesInput}
-              value={notes}
-              onChangeText={setNotes}
-              multiline
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        {/* 2. Artist Profile & Service Card */}
+        <View style={styles.card}>
+          <View style={styles.artistRow}>
+            <OptimizedImage
+              source={{ uri: artist?.user?.profile_image || artist?.profile_image || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200" }}
+              style={styles.artistAvatar}
             />
+            <View style={styles.artistInfo}>
+              <View style={styles.nameRow}>
+                <Text style={styles.artistName} numberOfLines={1}>
+                  {artist?.user?.name || artist?.business_name || "Mehndi Artist"}
+                </Text>
+                <Ionicons name="checkmark-circle" size={16} color="#059669" />
+              </View>
+              <Text style={styles.artistCategory}>
+                {selectedArt?.title || artist?.specialization_name || "Custom Henna Design"}
+              </Text>
+              <View style={styles.ratingBadge}>
+                <Ionicons name="star" size={12} color="#D97706" />
+                <Text style={styles.ratingText}>{Number(artist?.rating_avg || 4.9).toFixed(1)}</Text>
+                <Text style={styles.reviewCount}>({artist?.review_count || 38} reviews)</Text>
+              </View>
+            </View>
           </View>
 
-          {/* Pricing calculations details */}
-          {priceDetails && (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Bill & Price Breakdown</Text>
-              
-              <View style={styles.row}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>Mehndi Service Rate</Text>
-                  <Text style={styles.subTextLabel}>Base price for design & application</Text>
-                </View>
-                <Text style={styles.value}>₹{priceDetails.servicePrice || priceDetails.basePrice}</Text>
-              </View>
+          <View style={styles.divider} />
 
-              <View style={styles.row}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>Artist Travel Charge</Text>
-                  <Text style={styles.subTextLabel}>0-10 KM Free • 100% Artist Earning</Text>
-                </View>
-                <Text style={[styles.value, { color: (priceDetails.confirmed_travel_charge || priceDetails.travel_charge || priceDetails.travelCharges || 0) === 0 ? "#10B981" : Colors.text }]}>
-                  {(priceDetails.confirmed_travel_charge || priceDetails.travel_charge || priceDetails.travelCharges || 0) === 0 ? "FREE (0-10 KM)" : `₹${priceDetails.confirmed_travel_charge || priceDetails.travel_charge || priceDetails.travelCharges}`}
+          {/* Schedule & Location Details */}
+          <View style={styles.metaGrid}>
+            <View style={styles.metaItem}>
+              <Ionicons name="calendar-outline" size={16} color="#E91E63" />
+              <View style={styles.metaTextGroup}>
+                <Text style={styles.metaLabel}>Date</Text>
+                <Text style={styles.metaValue}>{selectedDate || "Today"}</Text>
+              </View>
+            </View>
+
+            <View style={styles.metaItem}>
+              <Ionicons name="time-outline" size={16} color="#701DDB" />
+              <View style={styles.metaTextGroup}>
+                <Text style={styles.metaLabel}>Time Slot</Text>
+                <Text style={styles.metaValue}>{timeLabel || "Flexible"}</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.addressBox}>
+            <Ionicons name="location-outline" size={16} color="#6B7280" />
+            <Text style={styles.addressText} numberOfLines={2}>
+              {address ? `${address}${landmark ? `, ${landmark}` : ""}` : "Customer Location"}
+            </Text>
+          </View>
+        </View>
+
+        {/* 3. Group Size & Coverage Options */}
+        <View style={styles.card}>
+          <Text style={styles.cardSectionTitle}>Booking Customization</Text>
+
+          {/* Group Size Selector */}
+          <View style={styles.customRow}>
+            <View>
+              <Text style={styles.customLabel}>Number of Persons</Text>
+              <Text style={styles.customSub}>Select total guests for mehndi</Text>
+            </View>
+            <View style={styles.stepperContainer}>
+              <TouchableOpacity
+                style={[styles.stepperBtn, groupSize <= 1 && styles.stepperBtnDisabled]}
+                onPress={() => handleGroupSizeChange(groupSize - 1)}
+                disabled={groupSize <= 1 || loading}
+              >
+                <Ionicons name="remove" size={16} color={groupSize <= 1 ? "#9CA3AF" : "#212121"} />
+              </TouchableOpacity>
+              <Text style={styles.stepperValue}>{groupSize}</Text>
+              <TouchableOpacity
+                style={[styles.stepperBtn, groupSize >= 10 && styles.stepperBtnDisabled]}
+                onPress={() => handleGroupSizeChange(groupSize + 1)}
+                disabled={groupSize >= 10 || loading}
+              >
+                <Ionicons name="add" size={16} color={groupSize >= 10 ? "#9CA3AF" : "#212121"} />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={styles.divider} />
+
+          {/* Coverage Options */}
+          <Text style={[styles.customLabel, { marginTop: 4, marginBottom: 8 }]}>Hand Coverage</Text>
+          <View style={styles.coverageGrid}>
+            {[
+              { id: "BOTH_HANDS", label: "Both Hands (Palm & Back)" },
+              { id: "FULL_HANDS", label: "Full Hands (Up to Elbow)" },
+              { id: "FEET_AND_HANDS", label: "Feet & Hands Combo" }
+            ].map((cov) => (
+              <TouchableOpacity
+                key={cov.id}
+                style={[styles.coverageChip, serviceCoverage === cov.id && styles.coverageChipActive]}
+                onPress={() => handleCoverageChange(cov.id)}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name={serviceCoverage === cov.id ? "radio-button-on" : "radio-button-off"}
+                  size={16}
+                  color={serviceCoverage === cov.id ? "#E91E63" : "#9CA3AF"}
+                />
+                <Text style={[styles.coverageChipText, serviceCoverage === cov.id && styles.coverageChipTextActive]}>
+                  {cov.label}
                 </Text>
-              </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
 
-              {(priceDetails.couponDiscount || priceDetails.discount || 0) > 0 && (
-                <View style={styles.row}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.label, { color: Colors.primary }]}>Promotional Discount</Text>
-                    <Text style={[styles.subTextLabel, { color: Colors.primary }]}>Coupon {appliedCoupon || ""} applied</Text>
-                  </View>
-                  <Text style={[styles.value, { color: Colors.primary, fontWeight: "700" }]}>
-                    -₹{priceDetails.couponDiscount || priceDetails.discount}
-                  </Text>
-                </View>
-              )}
-
-              <View style={styles.divider} />
-
-              <View style={styles.row}>
-                <Text style={styles.totalLabel}>Total Booking Amount</Text>
-                <Text style={styles.totalAmount}>₹{priceDetails.finalAmount || priceDetails.totalAmount}</Text>
-              </View>
-
-              <View style={styles.splitBreakdownCard}>
-                <View style={styles.splitRow}>
-                  <Text style={styles.splitLabel}>• Advance Deposit (10% Online):</Text>
-                  <Text style={[styles.splitValue, { color: Colors.primary }]}>
-                    ₹{priceDetails.requiredAdvance || Math.round((priceDetails.finalAmount || priceDetails.totalAmount || 0) * 0.10)}
-                  </Text>
-                </View>
-                <View style={styles.splitRow}>
-                  <Text style={styles.splitLabel}>• Remaining Cash (To Artist):</Text>
-                  <Text style={[styles.splitValue, { color: "#10B981" }]}>
-                    ₹{Math.max(0, (priceDetails.finalAmount || priceDetails.totalAmount || 0) - (priceDetails.requiredAdvance || Math.round((priceDetails.finalAmount || priceDetails.totalAmount || 0) * 0.10)))}
-                  </Text>
+        {/* 4. Promo Coupon Section */}
+        <View style={styles.card}>
+          <Text style={styles.cardSectionTitle}>Have a Promo Code?</Text>
+          {appliedCoupon ? (
+            <View style={styles.appliedCouponCard}>
+              <View style={styles.couponLeft}>
+                <Ionicons name="pricetag" size={18} color="#059669" />
+                <View>
+                  <Text style={styles.appliedCode}>{appliedCoupon}</Text>
+                  <Text style={styles.appliedSavings}>Saved ₹{discountAmount} on this booking!</Text>
                 </View>
               </View>
+              <TouchableOpacity onPress={handleRemoveCoupon} style={styles.removeCouponBtn}>
+                <Text style={styles.removeCouponText}>Remove</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.couponInputRow}>
+              <TextInput
+                style={styles.couponInput}
+                value={couponInput}
+                onChangeText={(t) => setCouponInput(t.toUpperCase())}
+                placeholder="Enter coupon code (e.g. MEHNDI500)"
+                placeholderTextColor="#9CA3AF"
+                autoCapitalize="characters"
+              />
+              <TouchableOpacity
+                style={styles.applyBtn}
+                onPress={handleApplyCoupon}
+                disabled={loading}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.applyBtnText}>Apply</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
+        {/* 5. Special Notes */}
+        <View style={styles.card}>
+          <Text style={styles.cardSectionTitle}>Special Instructions (Optional)</Text>
+          <TextInput
+            style={styles.notesInput}
+            value={notes}
+            onChangeText={setNotes}
+            placeholder="e.g., Organic henna preferred, landmark near green gate..."
+            placeholderTextColor="#9CA3AF"
+            multiline
+            numberOfLines={2}
+          />
+        </View>
+
+        {/* 6. Authoritative Financial Breakdown Card */}
+        <View style={[styles.card, styles.amountCard]}>
+          <Text style={styles.cardSectionTitle}>Payment Breakdown</Text>
+
+          <View style={styles.amountRow}>
+            <Text style={styles.amountLabel}>Service Base Price ({groupSize} {groupSize > 1 ? "Persons" : "Person"})</Text>
+            <Text style={styles.amountVal}>₹{basePrice}</Text>
+          </View>
+
+          {discountAmount > 0 && (
+            <View style={styles.amountRow}>
+              <Text style={[styles.amountLabel, { color: "#059669" }]}>Coupon Discount</Text>
+              <Text style={[styles.amountVal, { color: "#059669" }]}>- ₹{discountAmount}</Text>
             </View>
           )}
 
-        </ScrollView>
-      )}
+          <View style={styles.divider} />
 
-      {/* Booking Checkout proceed Button */}
-      <View style={styles.footer}>
-        <CustomButton
-          title={submitting ? "Initiating Order..." : "Proceed To Payment"}
-          disabled={loading || submitting}
+          <View style={styles.amountRow}>
+            <Text style={styles.totalLabel}>Total Booking Amount</Text>
+            <Text style={styles.totalVal}>₹{totalAmount}</Text>
+          </View>
+
+          {/* Dual Payment Highlight Box */}
+          <View style={styles.depositBox}>
+            <View style={styles.depositLeft}>
+              <View style={styles.depositPill}>
+                <Ionicons name="lock-closed" size={12} color="#059669" />
+                <Text style={styles.depositPillText}>10% ADVANCE DEPOSIT</Text>
+              </View>
+              <Text style={styles.depositDesc}>Pay now to lock artist slot (Held in Escrow)</Text>
+            </View>
+            <Text style={styles.depositAmount}>₹{advanceAmount}</Text>
+          </View>
+
+          <View style={styles.remainingBox}>
+            <View style={styles.remainingLeft}>
+              <View style={styles.remainingPill}>
+                <Ionicons name="time" size={12} color="#701DDB" />
+                <Text style={styles.remainingPillText}>REMAINING BALANCE</Text>
+              </View>
+              <Text style={styles.remainingDesc}>Pay after service completion directly</Text>
+            </View>
+            <Text style={styles.remainingAmount}>₹{remainingAmount}</Text>
+          </View>
+        </View>
+
+        <View style={{ height: 100 }} />
+      </ScrollView>
+
+      {/* 7. Bottom CTA Bar */}
+      <View style={styles.bottomBar}>
+        <View style={styles.bottomPriceGroup}>
+          <Text style={styles.bottomPayLabel}>Pay Advance Today</Text>
+          <Text style={styles.bottomPayAmount}>₹{advanceAmount}</Text>
+          <Text style={styles.bottomTotalSub}>Total: ₹{totalAmount}</Text>
+        </View>
+
+        <TouchableOpacity
+          style={styles.payBtn}
           onPress={handleProceedToPayment}
-        />
+          disabled={submitting || loading}
+          activeOpacity={0.8}
+        >
+          {submitting ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <>
+              <Text style={styles.payBtnText}>Proceed to Pay</Text>
+              <Ionicons name="arrow-forward" size={18} color="#FFFFFF" style={{ marginLeft: 6 }} />
+            </>
+          )}
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12, backgroundColor: Colors.white },
-  backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.background, justifyContent: "center", alignItems: "center" },
-  title: { fontSize: 18, fontWeight: "700", color: Colors.text },
-  centerContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
-  content: { paddingBottom: 120, paddingTop: 12 },
-  card: { marginHorizontal: 16, marginBottom: 12, backgroundColor: Colors.white, borderRadius: 14, padding: 14, elevation: 1 },
-  cardTitle: { fontSize: 13, fontWeight: "700", marginBottom: 12, color: Colors.text },
-  row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", marginBottom: 8 },
-  label: { fontSize: 13, color: Colors.textSecondary },
-  subTextLabel: { fontSize: 10, color: Colors.textTertiary, marginTop: 1 },
-  value: { fontSize: 13, fontWeight: "600", color: Colors.text, textAlign: "right" },
-  splitBreakdownCard: { marginTop: 10, padding: 10, backgroundColor: "#f9fafb", borderRadius: 8, borderWidth: 1, borderColor: "#f3f4f6" },
-  splitRow: { flexDirection: "row", justifyContent: "space-between", marginVertical: 3 },
-  splitLabel: { fontSize: 11, color: Colors.textSecondary },
-  splitValue: { fontSize: 11, fontWeight: "700" },
-  address: { fontSize: 13, color: Colors.textSecondary, lineHeight: 18 },
-  couponForm: { flexDirection: "row" },
-  couponInput: { flex: 1, height: 40, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, paddingHorizontal: 10, fontSize: 12, color: Colors.text },
-  applyBtn: { marginLeft: 8, paddingHorizontal: 16, height: 40, backgroundColor: Colors.primary, borderRadius: 8, justifyContent: "center", alignItems: "center" },
-  applyBtnText: { color: Colors.white, fontSize: 12, fontWeight: "700" },
-  couponAppliedRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  couponAppliedText: { flex: 1, marginLeft: 8, fontSize: 12, fontWeight: "700", color: Colors.primary },
-  removeCouponText: { fontSize: 12, color: Colors.error, fontWeight: "600" },
-  notesInput: { height: 60, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 12, color: Colors.text, textAlignVertical: "top" },
-  divider: { height: 1, backgroundColor: Colors.border, marginVertical: 10 },
-  totalLabel: { fontSize: 14, fontWeight: "700" },
-  totalAmount: { fontSize: 16, fontWeight: "800", color: Colors.primary },
-  footer: { padding: 16, backgroundColor: Colors.white, borderTopWidth: 1, borderTopColor: Colors.border },
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", padding: 20 },
-  modalCard: { backgroundColor: Colors.white, borderRadius: 18, padding: 20, alignItems: "center" },
-  modalHeader: { flexDirection: "row", alignItems: "center", marginBottom: 16 },
-  modalTitle: { fontSize: 15, fontWeight: "800", color: Colors.text, marginLeft: 8 },
-  modalLabel: { fontSize: 12, color: Colors.textSecondary, marginBottom: 4 },
-  modalAmountText: { fontSize: 18, fontWeight: "800", color: Colors.primary, marginBottom: 12 },
-  modalDesc: { fontSize: 12, color: Colors.textTertiary, textAlign: "center", marginBottom: 20, lineHeight: 18 },
-  simulateBtn: { width: "100%", height: 44, borderRadius: 10, backgroundColor: Colors.primary, justifyContent: "center", alignItems: "center", marginBottom: 10 },
-  simulateBtnText: { color: Colors.white, fontWeight: "700", fontSize: 13 }
+  container: {
+    flex: 1,
+    backgroundColor: "#FFFFFF"
+  },
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+    justifyContent: "center",
+    alignItems: "center"
+  },
+  loadingText: {
+    fontSize: 13,
+    color: "#6B7280",
+    marginTop: 10,
+    fontWeight: "600"
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6"
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: "#F9FAFB",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    justifyContent: "center",
+    alignItems: "center"
+  },
+  headerTitleContainer: {
+    alignItems: "center"
+  },
+  headerTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#212121"
+  },
+  headerSubtitle: {
+    fontSize: 11,
+    color: "#6B7280",
+    marginTop: 1
+  },
+  secureBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ECFDF5",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    gap: 4
+  },
+  secureBadgeText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#059669"
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 40
+  },
+  card: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1.5,
+    borderColor: "#F3F4F6",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1
+  },
+  cardSectionTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#212121",
+    marginBottom: 10
+  },
+  artistRow: {
+    flexDirection: "row",
+    alignItems: "center"
+  },
+  artistAvatar: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: "#F3F4F6"
+  },
+  artistInfo: {
+    flex: 1,
+    marginLeft: 12
+  },
+  nameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4
+  },
+  artistName: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#212121"
+  },
+  artistCategory: {
+    fontSize: 12,
+    color: "#6B7280",
+    marginTop: 1
+  },
+  ratingBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 3,
+    gap: 3
+  },
+  ratingText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#212121"
+  },
+  reviewCount: {
+    fontSize: 11,
+    color: "#6B7280"
+  },
+  divider: {
+    height: 1,
+    backgroundColor: "#F3F4F6",
+    marginVertical: 12
+  },
+  metaGrid: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 10
+  },
+  metaItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8
+  },
+  metaTextGroup: {},
+  metaLabel: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#6B7280",
+    textTransform: "uppercase"
+  },
+  metaValue: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#212121"
+  },
+  addressBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F9FAFB",
+    padding: 10,
+    borderRadius: 10,
+    gap: 6
+  },
+  addressText: {
+    fontSize: 12,
+    color: "#4B5563",
+    flex: 1,
+    lineHeight: 16
+  },
+  customRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center"
+  },
+  customLabel: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#212121"
+  },
+  customSub: {
+    fontSize: 11,
+    color: "#6B7280",
+    marginTop: 1
+  },
+  stepperContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F9FAFB",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    padding: 2
+  },
+  stepperBtn: {
+    width: 32,
+    height: 32,
+    justifyContent: "center",
+    alignItems: "center",
+    borderRadius: 8
+  },
+  stepperBtnDisabled: {
+    opacity: 0.4
+  },
+  stepperValue: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#212121",
+    paddingHorizontal: 12
+  },
+  coverageGrid: {
+    gap: 8
+  },
+  coverageChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: "#F9FAFB",
+    borderWidth: 1.5,
+    borderColor: "#F3F4F6",
+    gap: 8
+  },
+  coverageChipActive: {
+    backgroundColor: "#FDF2F8",
+    borderColor: "#E91E63"
+  },
+  coverageChipText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#4B5563"
+  },
+  coverageChipTextActive: {
+    color: "#E91E63",
+    fontWeight: "700"
+  },
+  couponInputRow: {
+    flexDirection: "row",
+    gap: 8
+  },
+  couponInput: {
+    flex: 1,
+    height: 44,
+    backgroundColor: "#F9FAFB",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#212121"
+  },
+  applyBtn: {
+    paddingHorizontal: 16,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: "#701DDB",
+    justifyContent: "center",
+    alignItems: "center"
+  },
+  applyBtnText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#FFFFFF"
+  },
+  appliedCouponCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#ECFDF5",
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#A7F3D0"
+  },
+  couponLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10
+  },
+  appliedCode: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#065F46"
+  },
+  appliedSavings: {
+    fontSize: 11,
+    color: "#047857"
+  },
+  removeCouponBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4
+  },
+  removeCouponText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#DC2626"
+  },
+  notesInput: {
+    backgroundColor: "#F9FAFB",
+    borderRadius: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    fontSize: 12,
+    color: "#212121",
+    minHeight: 50,
+    textAlignVertical: "top"
+  },
+  amountCard: {
+    borderColor: "#FCE7F3"
+  },
+  amountRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8
+  },
+  amountLabel: {
+    fontSize: 13,
+    color: "#4B5563"
+  },
+  amountVal: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#212121"
+  },
+  totalLabel: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#212121"
+  },
+  totalVal: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#E91E63"
+  },
+  depositBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#ECFDF5",
+    padding: 12,
+    borderRadius: 12,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: "#A7F3D0"
+  },
+  depositLeft: {
+    flex: 1,
+    marginRight: 10
+  },
+  depositPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4
+  },
+  depositPillText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#065F46"
+  },
+  depositDesc: {
+    fontSize: 10,
+    color: "#047857",
+    marginTop: 2
+  },
+  depositAmount: {
+    fontSize: 16,
+    fontWeight: "900",
+    color: "#059669"
+  },
+  remainingBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#F3E8FF",
+    padding: 12,
+    borderRadius: 12,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: "#E9D5FF"
+  },
+  remainingLeft: {
+    flex: 1,
+    marginRight: 10
+  },
+  remainingPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4
+  },
+  remainingPillText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#701DDB"
+  },
+  remainingDesc: {
+    fontSize: 10,
+    color: "#6B21A8",
+    marginTop: 2
+  },
+  remainingAmount: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#701DDB"
+  },
+  bottomBar: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "#FFFFFF",
+    borderTopWidth: 1,
+    borderTopColor: "#F3F4F6",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 24,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 8
+  },
+  bottomPriceGroup: {},
+  bottomPayLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#059669",
+    textTransform: "uppercase"
+  },
+  bottomPayAmount: {
+    fontSize: 20,
+    fontWeight: "900",
+    color: "#212121"
+  },
+  bottomTotalSub: {
+    fontSize: 11,
+    color: "#6B7280"
+  },
+  payBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#E91E63",
+    paddingHorizontal: 22,
+    height: 48,
+    borderRadius: 14,
+    shadowColor: "#E91E63",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 4
+  },
+  payBtnText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#FFFFFF"
+  }
 });

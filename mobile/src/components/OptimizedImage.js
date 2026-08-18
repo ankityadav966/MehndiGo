@@ -1,13 +1,14 @@
 import React, { useState } from "react";
-import { Image, View, StyleSheet, ActivityIndicator } from "react-native";
+import { View, StyleSheet, ActivityIndicator } from "react-native";
+import { Image as ExpoImage } from "expo-image";
 import { getThumbnailUrl } from "../utils/cloudinary";
 import Colors from "../constants/Colors";
 
 const DEFAULT_PLACEHOLDER = "https://ui-avatars.com/api/?name=MehndiGo&background=F3E8FF&color=7C3AED";
 
 /**
- * 60 FPS Fast Image Component with dynamic Cloudinary thumbnailing,
- * loading indicator, and placeholder error fallback.
+ * High-performance hardware-accelerated Image Component using expo-image (Glide/SDWebImage)
+ * with dynamic Cloudinary thumbnailing, memory-disk cache policy, and placeholder fallback.
  */
 function OptimizedImage({
   source,
@@ -15,7 +16,9 @@ function OptimizedImage({
   width = 300,
   height = 300,
   resizeMode = "cover",
+  contentFit,
   fallbackUri = DEFAULT_PLACEHOLDER,
+  priority = "medium",
   ...props
 }) {
   const [loading, setLoading] = useState(false);
@@ -32,21 +35,23 @@ function OptimizedImage({
   }
 
   const imageSource = typeof source === "number" ? source : { uri: rawUri };
+  const fitMode = contentFit || resizeMode || "cover";
 
   return (
     <View style={[styles.container, style]}>
-      <Image
+      <ExpoImage
         {...props}
         source={imageSource}
         style={[style, styles.imageFix]}
-        resizeMode={resizeMode}
+        contentFit={fitMode}
+        cachePolicy="memory-disk"
+        transition={150}
         onLoadStart={() => {
           if (!hasError) setLoading(true);
         }}
         onLoad={() => setLoading(false)}
         onLoadEnd={() => setLoading(false)}
-        onError={(err) => {
-          console.warn("[OptimizedImage] Image load error for:", rawUri, err?.nativeEvent?.error);
+        onError={() => {
           setLoading(false);
           if (!useRawOriginal && initialUri && typeof initialUri === "string" && initialUri.includes("cloudinary.com")) {
             setUseRawOriginal(true);

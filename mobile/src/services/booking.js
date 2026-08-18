@@ -52,7 +52,7 @@ export async function checkRestrictedBooking() {
   try {
     const res = await apiRequest("GET", "/booking/check-restricted", null, true);
     return res?.data || res || { hasRestricted: false };
-  } catch (err) {
+  } catch (_) {
     return { hasRestricted: false };
   }
 }
@@ -86,7 +86,7 @@ export async function acceptBooking(bookingId) {
   try {
     const res = await apiRequest("PUT", "/booking/accept", { bookingId, booking_id: bookingId, id: bookingId, status: "accepted", detailed_status: "ARTIST_ACCEPTED" }, true);
     return res?.data || res;
-  } catch (e) {
+  } catch (_) {
     const res2 = await apiRequest("POST", "/booking/accept", { bookingId, booking_id: bookingId, id: bookingId, status: "accepted", detailed_status: "ARTIST_ACCEPTED" }, true);
     return res2?.data || res2;
   }
@@ -96,7 +96,7 @@ export async function rejectBooking(bookingId, rejectReason) {
   try {
     const res = await apiRequest("PUT", "/booking/reject", { bookingId, booking_id: bookingId, id: bookingId, rejectReason, status: "cancelled", detailed_status: "CANCELLED" }, true);
     return res?.data || res;
-  } catch (e) {
+  } catch (_) {
     const res2 = await apiRequest("POST", "/booking/reject", { bookingId, booking_id: bookingId, id: bookingId, rejectReason, status: "cancelled", detailed_status: "CANCELLED" }, true);
     return res2?.data || res2;
   }

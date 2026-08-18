@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { Image, StyleSheet, Text, TouchableOpacity, View, Linking } from "react-native";
 import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from "react-native-maps";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -24,7 +24,7 @@ export default function LiveTrackingScreen({ route, navigation }) {
 
   const mapRef = useRef(null);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     if (!bookingId) return;
     try {
       const details = await getBookingDetails(bookingId);
@@ -79,13 +79,18 @@ export default function LiveTrackingScreen({ route, navigation }) {
     } catch (e) {
       console.log("Error loading tracking details:", e);
     }
-  };
+  }, [bookingId]);
 
   useEffect(() => {
-    loadData();
+    const timer = setTimeout(() => {
+      loadData();
+    }, 0);
     const interval = setInterval(loadData, 5000);
-    return () => clearInterval(interval);
-  }, [bookingId]);
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+    };
+  }, [loadData]);
 
   // Real-time socket GPS position updates
   useEffect(() => {
@@ -121,12 +126,18 @@ export default function LiveTrackingScreen({ route, navigation }) {
 
     socket.on("artist_location_update", handleLocationUpdate);
     socket.on("artistLocationUpdated", handleLocationUpdate);
+    socket.on("location-update", handleLocationUpdate);
     socket.on("booking_status_updated", handleStatusUpdate);
+    socket.on("booking-status-updated", handleStatusUpdate);
+    socket.on("bookingStatusUpdated", handleStatusUpdate);
 
     return () => {
       socket.off("artist_location_update", handleLocationUpdate);
       socket.off("artistLocationUpdated", handleLocationUpdate);
+      socket.off("location-update", handleLocationUpdate);
       socket.off("booking_status_updated", handleStatusUpdate);
+      socket.off("booking-status-updated", handleStatusUpdate);
+      socket.off("bookingStatusUpdated", handleStatusUpdate);
     };
   }, [socket, bookingId, customerCoords]);
 
@@ -146,6 +157,7 @@ export default function LiveTrackingScreen({ route, navigation }) {
     });
   };
 
+  const isCheckInVerified = Number(booking?.checkin_otp_verified) === 1 || Number(booking?.checkin_verified) === 1 || String(booking?.detailed_status || "").toUpperCase() === "SERVICE_IN_PROGRESS" || String(booking?.status || "").toUpperCase() === "IN_PROGRESS";
   const checkinOtp = booking?.checkin_otp;
 
   return (
@@ -204,8 +216,8 @@ export default function LiveTrackingScreen({ route, navigation }) {
           </View>
         </View>
 
-        {/* Check-In PIN Card if artist is near / arrived */}
-        {Boolean(checkinOtp) && (
+        {/* Check-In PIN Card (Only before check-in is verified) */}
+        {Boolean(checkinOtp) && !isCheckInVerified && (
           <View style={styles.checkinCard}>
             <Text style={styles.checkinLabel}>Doorstep Check-In PIN</Text>
             <View style={styles.pinRow}>
@@ -216,6 +228,17 @@ export default function LiveTrackingScreen({ route, navigation }) {
               ))}
             </View>
             <Text style={styles.pinHint}>Share this 4-digit PIN with the artist upon arrival.</Text>
+          </View>
+        )}
+
+        {/* Service In Progress Banner if already verified */}
+        {isCheckInVerified && (
+          <View style={[styles.checkinCard, { backgroundColor: "#FCE7F3", borderColor: "#FBCFE8" }]}>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", marginBottom: 4 }}>
+              <Ionicons name="color-palette" size={18} color="#E91E63" style={{ marginRight: 6 }} />
+              <Text style={[styles.checkinLabel, { color: "#E91E63", marginBottom: 0 }]}>Service In Progress 🌸</Text>
+            </View>
+            <Text style={[styles.pinHint, { color: "#9D174D" }]}>Your mehndi service is active. Track progress in details.</Text>
           </View>
         )}
 

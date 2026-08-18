@@ -169,6 +169,8 @@ const db = require("./models");
     await db.sequelize.query('ALTER TABLE "Portfolios" ADD COLUMN IF NOT EXISTS price INTEGER;');
     await db.sequelize.query('ALTER TABLE "Portfolios" ADD COLUMN IF NOT EXISTS duration_minutes INTEGER DEFAULT 60;');
     await db.sequelize.query('ALTER TABLE "Portfolios" ADD COLUMN IF NOT EXISTS complexity_level VARCHAR(50) DEFAULT \'MEDIUM\';');
+    await db.sequelize.query('ALTER TABLE "Portfolios" ADD COLUMN IF NOT EXISTS views_count INTEGER DEFAULT 0;');
+    await db.sequelize.query('ALTER TABLE "Portfolios" ADD COLUMN IF NOT EXISTS caption VARCHAR(255);');
 
     await db.sequelize.query('ALTER TABLE "Reviews" ADD COLUMN IF NOT EXISTS video_url VARCHAR(500);');
     await db.sequelize.query('ALTER TABLE "Reviews" ADD COLUMN IF NOT EXISTS video_thumbnail VARCHAR(500);');
@@ -209,6 +211,9 @@ const db = require("./models");
     await db.Booking.sync({ alter: true });
     await db.ArtistProfile.sync({ alter: true });
     await db.Portfolio.sync({ alter: true });
+    await db.PortfolioLike.sync({ alter: true });
+    await db.PortfolioComment.sync({ alter: true });
+    await db.PortfolioSave.sync({ alter: true });
     await db.Review.sync({ alter: true });
     await db.ArtistScore.sync({ alter: true });
     await db.SupportTicket.sync({ alter: true });

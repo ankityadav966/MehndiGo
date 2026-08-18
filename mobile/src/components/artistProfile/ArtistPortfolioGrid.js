@@ -23,7 +23,8 @@ function ArtistPortfolioGrid({ portfolio = [], onSelectPhoto }) {
   const leftColumn = [];
   const rightColumn = [];
 
-  portfolio.forEach((item, index) => {
+  const displayList = (portfolio || []).slice(0, 24);
+  displayList.forEach((item, index) => {
     if (index % 2 === 0) leftColumn.push({ item, index });
     else rightColumn.push({ item, index });
   });

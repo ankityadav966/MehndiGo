@@ -18,8 +18,26 @@ export function isRazorpayNativeAvailable() {
  * - If running in a native compiled APK/build: uses `RazorpayCheckout.open(options)`
  * - If running in Expo Go or environment without native binary: calls `onWebFallback(options)`
  */
-export async function openRazorpayCheckout(options, callbacks = {}) {
-  const { onSuccess, onFailure, onDismiss, onWebFallback } = callbacks;
+export async function openRazorpayCheckout(
+  options,
+  callbacksOrSuccess = {},
+  optionalFailure,
+  optionalDismiss,
+  optionalWebFallback
+) {
+  let onSuccess, onFailure, onDismiss, onWebFallback;
+
+  if (typeof callbacksOrSuccess === "function") {
+    onSuccess = callbacksOrSuccess;
+    onFailure = optionalFailure;
+    onDismiss = optionalDismiss;
+    onWebFallback = optionalWebFallback;
+  } else if (callbacksOrSuccess && typeof callbacksOrSuccess === "object") {
+    onSuccess = callbacksOrSuccess.onSuccess;
+    onFailure = callbacksOrSuccess.onFailure;
+    onDismiss = callbacksOrSuccess.onDismiss;
+    onWebFallback = callbacksOrSuccess.onWebFallback;
+  }
 
   const isNative = isRazorpayNativeAvailable();
 

@@ -42,6 +42,9 @@ export default function RazorpayCheckoutModal({
       contact: options.prefill?.contact || "9829011001"
     },
     notes: options.notes || {},
+    theme: {
+      color: options.theme?.color || options.themeColor || "#E91E63"
+    },
     isTestMode: (options.key || options.key_id || options.keyId || "").startsWith("rzp_test_")
   };
 
@@ -75,7 +78,7 @@ export default function RazorpayCheckoutModal({
     }
     .spinner {
       border: 4px solid #f3f3f3;
-      border-top: 4px solid ${cleanOptions.theme.color};
+      border-top: 4px solid ${cleanOptions.theme?.color || "#E91E63"};
       border-radius: 50%;
       width: 44px;
       height: 44px;

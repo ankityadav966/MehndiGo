@@ -86,10 +86,6 @@ export default function MyBookingsScreen({ navigation }) {
   }, []);
 
   useEffect(() => {
-    fetchHistory();
-  }, [fetchHistory]);
-
-  useEffect(() => {
     const unsubscribe = navigation.addListener("focus", () => {
       fetchHistory();
     });
@@ -124,8 +120,17 @@ export default function MyBookingsScreen({ navigation }) {
     if (["COMPLETED", "COMPLETED_CLOSED", "AWAITING_CASH_CONFIRMATION"].includes(st)) {
       return { bg: "#EFF6FF", text: "#1D4ED8", label: "Completed" };
     }
-    if (["ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "ARTIST_ARRIVED", "SERVICE_STARTED", "ON_THE_WAY", "IN_PROGRESS"].includes(st)) {
-      return { bg: "#ECFDF5", text: "#047857", label: "Accepted" };
+    if (["SERVICE_IN_PROGRESS", "IN_PROGRESS", "PROCESSING", "CUSTOMER_VERIFIED", "SERVICE_STARTED"].includes(st)) {
+      return { bg: "#FCE7F3", text: "#E91E63", label: "In Progress" };
+    }
+    if (["ARTIST_ARRIVED", "ARRIVED"].includes(st)) {
+      return { bg: "#DBEAFE", text: "#2563EB", label: "Arrived" };
+    }
+    if (["ARTIST_ON_THE_WAY", "ON_THE_WAY"].includes(st)) {
+      return { bg: "#EDE9FE", text: "#701DDB", label: "On The Way" };
+    }
+    if (["ARTIST_ACCEPTED", "ACCEPTED"].includes(st)) {
+      return { bg: "#ECFDF5", text: "#047857", label: "Confirmed" };
     }
     if (["PENDING", "VIEWED", "CONFIRMED", "WAITING_FOR_USER_PAYMENT"].includes(st)) {
       return { bg: "#FFFBEB", text: "#D97706", label: "Pending" };
@@ -150,14 +155,14 @@ export default function MyBookingsScreen({ navigation }) {
     const rawTime = item.booking_time || item.time || item.time_slot || item.reschedule_time || (item.slot ? `${formatTime(item.slot.start_time)} - ${formatTime(item.slot.end_time)}` : null) || item.slot?.time_label;
     let timeStr = rawTime ? (rawTime.includes("AM") || rawTime.includes("PM") || rawTime.includes("-") ? rawTime : formatTime(rawTime)) : "TBD";
 
-    const isLiveBooking = ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "ARTIST_ARRIVED", "SERVICE_STARTED"].includes(status);
+    const isLiveBooking = ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "ON_THE_WAY", "ARTIST_ARRIVED", "ARRIVED", "SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS", "CHECKOUT"].includes(String(status).toUpperCase());
     const artistName = item.artist_name || item.artist?.user?.name || item.service_title || item.service?.specialization_name || "Mehndi Booking";
 
     return (
       <TouchableOpacity
         activeOpacity={0.9}
         style={[styles.card, { backgroundColor: currentCardBg, borderColor: currentBorderColor }]}
-        onPress={() => navigation.navigate("BookingDetails", { bookingId: item.id })}
+        onPress={() => navigation.navigate("BookingDetails", { bookingId: item.id, id: item.id })}
       >
         {/* Top Header */}
         <View style={styles.cardTopRow}>

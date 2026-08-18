@@ -1,4 +1,3 @@
-import Ionicons from "@expo/vector-icons/Ionicons";
 import React, { useState, useEffect, useCallback } from "react";
 import {
   ActivityIndicator,
@@ -6,31 +5,40 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  View
+  View,
+  Modal
 } from "react-native";
 import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import Colors from "../../constants/Colors";
-import CustomButton from "../../components/CustomButton";
 import RazorpayCheckoutModal from "../../components/RazorpayCheckoutModal";
-import { createPaymentSession, verifyPaymentSignature, payWithWallet } from "../../services/payment";
+import { createPaymentSession, verifyPaymentSignature } from "../../services/payment";
 import { getBookingDetails, selectCashPayment } from "../../services/booking";
-import { getWalletDetails } from "../../services/customer";
 import { openRazorpayCheckout } from "../../services/razorpayHelper";
 
 export default function PaymentScreen({ route, navigation }) {
-  const { bookingId, bookingCode, finalAmount, isSettlement } = route.params || {};
+  const {
+    bookingId,
+    bookingCode,
+    finalAmount,
+    advanceAmount: routeAdvance,
+    remainingAmount: routeRemaining,
+    artistName: routeArtist,
+    serviceTitle: routeService,
+    isSettlement
+  } = route.params || {};
 
   const [booking, setBooking] = useState(null);
-  const [selectedMethod, setSelectedMethod] = useState("online");
+  const [selectedMethod, setSelectedMethod] = useState("online"); // "online" or "cash"
   const [loading, setLoading] = useState(false);
+  const [processingModalVisible, setProcessingModalVisible] = useState(false);
   const [orderId, setOrderId] = useState("");
-  const [razorpayKeyId, setRazorpayKeyId] = useState("");
-  const [walletBalance, setWalletBalance] = useState(0);
+  const [, setRazorpayKeyId] = useState("");
 
   const [activeBookingId, setActiveBookingId] = useState(bookingId || null);
 
-  // In-App Razorpay Web Checkout state (fallback for Expo Go / simulators)
+  // In-App Razorpay Web Checkout fallback (for Expo Go / simulators)
   const [razorpayModalVisible, setRazorpayModalVisible] = useState(false);
   const [razorpayOptions, setRazorpayOptions] = useState(null);
   const [currentSessionData, setCurrentSessionData] = useState(null);
@@ -42,13 +50,6 @@ export default function PaymentScreen({ route, navigation }) {
     try {
       const details = await getBookingDetails(idToFetch);
       setBooking(details);
-
-      try {
-        const walletData = await getWalletDetails();
-        setWalletBalance(walletData?.balance || 0);
-      } catch (walletErr) {
-        console.log("Failed to load wallet balance inside PaymentScreen:", walletErr.message);
-      }
     } catch (err) {
       console.log("Failed to fetch booking details in PaymentScreen:", err.message);
     }
@@ -85,6 +86,7 @@ export default function PaymentScreen({ route, navigation }) {
   // Payment Verification Handler
   const handlePaymentSuccess = async (data, sessionDataToUse) => {
     setRazorpayModalVisible(false);
+    setProcessingModalVisible(true);
     setLoading(true);
 
     const activeSession = sessionDataToUse || currentSessionData;
@@ -95,22 +97,20 @@ export default function PaymentScreen({ route, navigation }) {
         bookingId: targetBookingId,
         razorpay_order_id: data?.razorpay_order_id || activeSession?.order_id || orderId,
         razorpay_payment_id: data?.razorpay_payment_id || `pay_${Date.now()}`,
-        razorpay_signature: data?.razorpay_signature || "verified_signature"
+        razorpay_signature: data?.razorpay_signature || "verified_signature",
+        isSettlement: Boolean(isSettlement)
       };
 
-      console.log("[PAYMENT_SCREEN] Calling verifyPaymentSignature with payload:", JSON.stringify(verifyData, null, 2));
-      let response = null;
+      console.log("[PAYMENT_SCREEN] Verifying payment with backend:", JSON.stringify(verifyData, null, 2));
       try {
-        response = await verifyPaymentSignature(verifyData);
-        console.log("[PAYMENT_SCREEN] verifyPaymentSignature succeeded:", JSON.stringify(response, null, 2));
+        await verifyPaymentSignature(verifyData);
       } catch (apiErr) {
-        console.warn("[PAYMENT_SCREEN] Verification API call soft warning:", apiErr.message);
-        // Fallback: If network glitch occurs after Razorpay success, assume confirmation
-        response = { success: true };
+        console.warn("[PAYMENT_SCREEN] Verification API call warning:", apiErr.message);
       }
 
       setLoading(false);
-      
+      setProcessingModalVisible(false);
+
       const resolvedCode = bookingCode || booking?.booking_code || booking?.booking_number || `MG-${targetBookingId || 'SUCCESS'}`;
 
       if (isSettlement) {
@@ -118,12 +118,9 @@ export default function PaymentScreen({ route, navigation }) {
           index: 0,
           routes: [
             {
-              name: "ReviewSubmission",
+              name: "BookingDetails",
               params: {
-                bookingId: targetBookingId,
-                artistName: booking?.artist?.user?.name || booking?.artist_name,
-                artistImage: booking?.artist?.user?.profile_image || booking?.artist_image,
-                specializationName: booking?.service?.specialization_name
+                bookingId: targetBookingId
               }
             }
           ]
@@ -144,60 +141,29 @@ export default function PaymentScreen({ route, navigation }) {
       }
     } catch (verifyErr) {
       setLoading(false);
+      setProcessingModalVisible(false);
       console.error("[PAYMENT_SCREEN] Verification error:", verifyErr.message);
-      navigation.navigate("PaymentFailed", { bookingId: targetBookingId, finalAmount });
-    }
-  };
-
-  const navigateBackToArtistProfile = () => {
-    const targetArtistId = booking?.artist_id || booking?.artist?.id || route.params?.artistId;
-    if (targetArtistId) {
-      navigation.reset({
-        index: 1,
-        routes: [
-          { name: "Home" },
-          { name: "ArtistProfile", params: { artistId: targetArtistId } }
-        ]
-      });
-    } else {
-      navigation.reset({
-        index: 0,
-        routes: [{ name: "Home" }]
-      });
+      Alert.alert("Verification Notice", "We are validating your transaction. Check your booking details.");
+      navigation.navigate("BookingDetails", { bookingId: targetBookingId });
     }
   };
 
   const handlePaymentFailure = (error) => {
     setRazorpayModalVisible(false);
+    setProcessingModalVisible(false);
     setLoading(false);
-    const errorMsg = error?.description || error?.message || (typeof error === "string" ? error : "Payment could not be completed. You can try again or use Instant Test Payment.");
+    const errorMsg = error?.description || error?.message || "Payment cancelled or could not be completed.";
     console.log("[PAYMENT_SCREEN] Payment failed/cancelled:", errorMsg);
-    Alert.alert(
-      "Payment Not Completed",
-      errorMsg,
-      [
-        {
-          text: "Try Again",
-          onPress: () => handlePay()
-        },
-        {
-          text: "Use Test Payment",
-          onPress: () => handleSimulateTestPayment()
-        },
-        {
-          text: "Cancel",
-          style: "cancel"
-        }
-      ]
-    );
+    Alert.alert("Payment Incomplete", errorMsg);
   };
 
   const handlePaymentDismiss = () => {
     setRazorpayModalVisible(false);
+    setProcessingModalVisible(false);
     setLoading(false);
   };
 
-  // FULLY VERIFIED TEST PAYMENT FOR DEVELOPMENT / TESTING
+  // FULLY VERIFIED TEST PAYMENT FOR DEVELOPMENT / SIMULATORS
   const handleSimulateTestPayment = async () => {
     const targetBookingId = activeBookingId || bookingId;
     if (!targetBookingId) {
@@ -207,8 +173,8 @@ export default function PaymentScreen({ route, navigation }) {
 
     if (loading) return;
     setLoading(true);
+    setProcessingModalVisible(true);
     try {
-      console.log(`[TEST_PAYMENT] Triggering verified test payment for booking ID: ${targetBookingId}`);
       const testPaymentData = {
         razorpay_order_id: orderId || `order_test_${Date.now()}`,
         razorpay_payment_id: `pay_test_${Date.now()}`,
@@ -220,12 +186,56 @@ export default function PaymentScreen({ route, navigation }) {
       });
     } catch (e) {
       setLoading(false);
+      setProcessingModalVisible(false);
       Alert.alert("Test Payment Error", e.message);
+    }
+  };
+
+  // CASH PAYMENT SELECTION
+  const handleSelectCash = async () => {
+    const targetBookingId = activeBookingId || bookingId;
+    if (!targetBookingId) {
+      Alert.alert("Error", "No active booking selected.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await selectCashPayment(targetBookingId);
+      setLoading(false);
+      Alert.alert(
+        "Cash Payment Selected 💵",
+        "Your booking is confirmed! Please pay the remaining amount directly to the artist upon service completion.",
+        [
+          {
+            text: "View Booking",
+            onPress: () => {
+              navigation.reset({
+                index: 0,
+                routes: [
+                  {
+                    name: "BookingDetails",
+                    params: { bookingId: targetBookingId }
+                  }
+                ]
+              });
+            }
+          }
+        ]
+      );
+    } catch (err) {
+      setLoading(false);
+      Alert.alert("Error", err.message || "Failed to select cash payment.");
     }
   };
 
   const handlePay = async () => {
     if (loading) return; // Prevent double-tap clicks
+
+    if (selectedMethod === "cash") {
+      await handleSelectCash();
+      return;
+    }
 
     const targetBookingId = activeBookingId || bookingId;
     if (!targetBookingId) {
@@ -233,16 +243,13 @@ export default function PaymentScreen({ route, navigation }) {
       return;
     }
 
-    // Both options (Full Online & Advance + Cash) use Razorpay Checkout
-    const paymentMethodType = selectedMethod === "online" ? "FULL_ONLINE" : "ADVANCE_CASH";
+    const paymentMethodType = isSettlement ? "SETTLEMENT" : "ADVANCE_CASH";
 
     setLoading(true);
+    setProcessingModalVisible(true);
     let sessionData = null;
     try {
-      console.log(`[PAYMENT_SCREEN] Creating Razorpay payment order for booking ID: ${targetBookingId}, mode: ${paymentMethodType}`);
       sessionData = await createPaymentSession(targetBookingId, paymentMethodType);
-
-      console.log("[PAYMENT_SCREEN] Razorpay payment order response data:", JSON.stringify(sessionData, null, 2));
 
       const keyId = sessionData?.key_id || sessionData?.key || sessionData?.keyId;
       const orderIdVal = sessionData?.order_id || sessionData?.orderId;
@@ -254,18 +261,21 @@ export default function PaymentScreen({ route, navigation }) {
 
       if (!sessionData || !isValidRazorpayKey) {
         setLoading(false);
+        setProcessingModalVisible(false);
         Alert.alert("Checkout Error", `Invalid Razorpay Public Key ID: ${keyId}`);
         return;
       }
 
       if (typeof orderIdVal !== "string" || !orderIdVal.startsWith("order_")) {
         setLoading(false);
+        setProcessingModalVisible(false);
         Alert.alert("Checkout Error", `Invalid Razorpay Order ID: ${orderIdVal}`);
         return;
       }
 
       if (!Number.isFinite(amountPaise) || amountPaise <= 0) {
         setLoading(false);
+        setProcessingModalVisible(false);
         Alert.alert("Checkout Error", `Invalid payable amount: ${amountPaise}`);
         return;
       }
@@ -283,7 +293,7 @@ export default function PaymentScreen({ route, navigation }) {
         image: "https://api.mehndigo.in/logo.png",
         currency: "INR",
         key: keyId,
-        amount: amountPaise, // in paise (e.g. 500 INR = 50000 paise)
+        amount: amountPaise,
         name: "MehndiGo",
         order_id: orderIdVal,
         prefill: {
@@ -295,273 +305,571 @@ export default function PaymentScreen({ route, navigation }) {
           booking_id: String(targetBookingId),
           service_name: String(booking?.service_title || "Mehndi Service")
         },
-        theme: { color: Colors.primary || "#9333EA" }
+        theme: { color: "#E91E63" }
       };
 
       setRazorpayOptions(options);
-      setLoading(false);
 
-      // Launch Native or in-app Web Razorpay
+      // Attempt native checkout or fallback to in-app webview modal
       await openRazorpayCheckout(options, {
         onSuccess: (data) => handlePaymentSuccess(data, sessionData),
         onFailure: (err) => handlePaymentFailure(err),
         onDismiss: () => handlePaymentDismiss(),
         onWebFallback: () => {
+          setProcessingModalVisible(false);
           setRazorpayModalVisible(true);
         }
       });
-    } catch (sdkErr) {
+    } catch (e) {
       setLoading(false);
-      console.log("[RAZORPAY INITIATION ERROR]", sdkErr);
-      Alert.alert("Checkout Error", sdkErr.message || "Could not launch Razorpay checkout.");
+      setProcessingModalVisible(false);
+      Alert.alert("Payment Error", e.message || "Failed to initialize payment gateway.");
     }
   };
 
-  if (loading && !razorpayModalVisible) {
-    return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.loaderText}>Processing secure gateway...</Text>
-      </View>
-    );
-  }
+  const totalAmount = Number(booking?.total_amount || booking?.final_amount || finalAmount || 0);
+  const advanceAmount = Number(booking?.advance_amount || booking?.advance_paid || routeAdvance || Math.round(totalAmount * 0.10));
+  const remainingAmount = Number(booking?.remaining_amount !== undefined ? booking?.remaining_amount : (routeRemaining !== undefined ? routeRemaining : (totalAmount - advanceAmount)));
 
-  const handleHeaderBack = () => {
-    if (navigation.canGoBack && navigation.canGoBack()) {
-      navigation.goBack();
-    } else {
-      navigation.navigate("Home");
-    }
-  };
+  const payableNow = isSettlement ? remainingAmount : advanceAmount;
+  const balanceAfter = isSettlement ? 0 : remainingAmount;
+
+  const displayCode = booking?.booking_code || bookingCode || (activeBookingId ? `MG-${String(activeBookingId).padStart(6, "0")}` : "MG-PENDING");
+  const artistName = booking?.artist_name || booking?.artist?.user?.name || routeArtist || "Mehndi Specialist";
+  const serviceName = booking?.service_name || booking?.service_title || routeService || "Henna Application";
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* 1. Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={handleHeaderBack}>
-          <Ionicons name="chevron-back" size={22} color={Colors.text} />
+        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.7}>
+          <Ionicons name="chevron-back" size={22} color="#212121" />
         </TouchableOpacity>
-        <Text style={styles.title}>Secure Checkout</Text>
-        <View style={styles.secureBadgeHeader}>
-          <Ionicons name="shield-checkmark" size={14} color="#10B981" />
-          <Text style={styles.secureHeaderTxt}>Secure</Text>
+        <View style={styles.headerTitleContainer}>
+          <Text style={styles.headerTitle}>{isSettlement ? "Final Settlement" : "Secure Payment"}</Text>
+          <Text style={styles.headerSubtitle}>#{displayCode}</Text>
+        </View>
+        <View style={styles.secureBadge}>
+          <Ionicons name="lock-closed" size={12} color="#059669" />
+          <Text style={styles.secureBadgeText}>256-Bit SSL</Text>
         </View>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <View style={styles.sslBadge}>
-          <Ionicons name="lock-closed" size={14} color="#10B981" />
-          <Text style={styles.sslText}>256-Bit SSL Encrypted secure Razorpay connection</Text>
-        </View>
-
-        {booking && (() => {
-          const totAmt = Number(booking?.customer_total_amount || booking?.total_amount || booking?.totalAmount || booking?.final_amount || finalAmount || 0);
-          const serviceAmt = Number(booking?.base_service_amount || booking?.service_price || totAmt);
-          const travelAmt = Number(booking?.confirmed_travel_charge || booking?.travel_charge || 0);
-          const advAmt = Number(booking?.required_advance || booking?.advance_amount || Math.round(totAmt * 0.10));
-          const remAmt = Math.max(0, totAmt - advAmt);
-
-          return (
-            <View style={styles.detailsCard}>
-              <Text style={styles.detailsCardTitle}>Booking Financial Summary</Text>
-              
-              <View style={styles.detailsRow}>
-                <Text style={styles.detailsLabel}>Service Name</Text>
-                <Text style={styles.detailsValue}>{booking.service_title || booking.service?.title || "Mehndi Service"}</Text>
-              </View>
-              <View style={styles.detailsRow}>
-                <Text style={styles.detailsLabel}>Booking Code</Text>
-                <Text style={styles.detailsValue}>#{booking.booking_code || booking.booking_number || booking.id}</Text>
-              </View>
-
-              <View style={styles.divider} />
-
-              <View style={styles.detailsRow}>
-                <Text style={styles.detailsLabel}>Service Amount</Text>
-                <Text style={styles.detailsValue}>₹{serviceAmt}</Text>
-              </View>
-              <View style={styles.detailsRow}>
-                <Text style={styles.detailsLabel}>Travel Charge (0-10 KM Free)</Text>
-                <Text style={[styles.detailsValue, { color: travelAmt === 0 ? "#10B981" : Colors.text }]}>
-                  {travelAmt === 0 ? "FREE (0-10 KM)" : `₹${travelAmt}`}
-                </Text>
-              </View>
-
-              <View style={styles.divider} />
-
-              <View style={styles.detailsRow}>
-                <Text style={[styles.detailsLabel, { fontWeight: "700", color: Colors.text }]}>Total Booking Amount</Text>
-                <Text style={[styles.detailsValue, { fontWeight: "800", color: Colors.primary, fontSize: 14 }]}>₹{totAmt}</Text>
-              </View>
-              <View style={styles.detailsRow}>
-                <Text style={[styles.detailsLabel, { color: Colors.primary, fontWeight: "700" }]}>• Booking Advance (10% Online)</Text>
-                <Text style={[styles.detailsValue, { color: Colors.primary, fontWeight: "700" }]}>₹{advAmt}</Text>
-              </View>
-              <View style={styles.detailsRow}>
-                <Text style={[styles.detailsLabel, { color: "#10B981" }]}>• Remaining Amount (Pay to Artist)</Text>
-                <Text style={[styles.detailsValue, { color: "#10B981", fontWeight: "700" }]}>₹{remAmt}</Text>
-              </View>
+        {/* 2. Order Summary Card */}
+        <View style={styles.summaryCard}>
+          <View style={styles.summaryTop}>
+            <View style={styles.serviceIconBox}>
+              <Ionicons name="color-palette" size={22} color="#E91E63" />
             </View>
-          );
-        })()}
+            <View style={styles.summaryInfo}>
+              <Text style={styles.serviceName}>{serviceName}</Text>
+              <Text style={styles.artistName}>By {artistName}</Text>
+            </View>
+          </View>
 
-        <View style={styles.amountCard}>
-          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-            <View>
-              <Text style={styles.amountLabel}>Booking Advance Payable Now (10%)</Text>
-              <Text style={styles.amount}>
-                ₹{Number(booking?.required_advance || booking?.advance_amount || Math.round(Number(booking?.customer_total_amount || booking?.total_amount || finalAmount || 0) * 0.10))}
+          <View style={styles.divider} />
+
+          {/* Amount Breakdown Box */}
+          <View style={styles.amountGrid}>
+            <View style={styles.amountBoxPrimary}>
+              <Text style={styles.amountBoxLabel}>
+                {isSettlement ? "REMAINING PAYABLE NOW" : "10% ADVANCE DUE TODAY"}
+              </Text>
+              <Text style={styles.amountBoxValPrimary}>₹{payableNow}</Text>
+              <Text style={styles.amountBoxSubPrimary}>
+                {isSettlement ? "Final balance to complete booking" : "Held in 100% Secure Escrow"}
               </Text>
             </View>
-            <View style={styles.secureTrustCard}>
-              <Ionicons name="ribbon-outline" size={24} color={Colors.primary} />
-              <Text style={styles.trustText}>Razorpay Verified</Text>
+
+            <View style={styles.amountBoxSecondary}>
+              <View style={styles.amountRowSub}>
+                <Text style={styles.subLabel}>Total Booking:</Text>
+                <Text style={styles.subVal}>₹{totalAmount}</Text>
+              </View>
+              <View style={styles.amountRowSub}>
+                <Text style={styles.subLabel}>
+                  {isSettlement ? "Advance Paid:" : "Remaining Balance:"}
+                </Text>
+                <Text style={[styles.subVal, { color: isSettlement ? "#059669" : "#701DDB" }]}>
+                  ₹{isSettlement ? advanceAmount : balanceAfter}
+                </Text>
+              </View>
             </View>
           </View>
         </View>
 
-        <Text style={styles.sectionTitle}>Select Payment Method</Text>
+        {/* 3. Payment Method Selection */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Select Payment Method</Text>
+        </View>
 
-        {[
-          {
-            id: "cash",
-            title: "10% Online Advance + Remaining Cash",
-            subtitle: (() => {
-              const totAmt = Number(booking?.customer_total_amount || booking?.total_amount || finalAmount || 0);
-              const advAmt = Number(booking?.required_advance || Math.round(totAmt * 0.10));
-              const remAmt = Math.max(0, totAmt - advAmt);
-              return `Pay ₹${advAmt} online advance (10%) now, pay remaining ₹${remAmt} to artist upon service completion`;
-            })(),
-            icon: "cash-outline"
-          },
-          {
-            id: "online",
-            title: "10% Online Advance (Digital UPI / Card)",
-            subtitle: (() => {
-              const totAmt = Number(booking?.customer_total_amount || booking?.total_amount || finalAmount || 0);
-              const advAmt = Number(booking?.required_advance || Math.round(totAmt * 0.10));
-              return `Pay ₹${advAmt} (10% advance deposit) securely online via UPI, Cards, Netbanking`;
-            })(),
-            icon: "card-outline"
-          }
-        ].map((item) => (
+        {/* Option A: Pay Online (Razorpay) */}
+        <TouchableOpacity
+          style={[styles.methodCard, selectedMethod === "online" && styles.methodCardActive]}
+          onPress={() => setSelectedMethod("online")}
+          activeOpacity={0.8}
+        >
+          <View style={styles.methodLeft}>
+            <View style={[styles.methodIconBox, { backgroundColor: "#FDF2F8" }]}>
+              <Ionicons name="card" size={22} color="#E91E63" />
+            </View>
+            <View style={styles.methodMeta}>
+              <View style={styles.methodTitleRow}>
+                <Text style={styles.methodTitle}>Pay Online (Instant UPI & Cards)</Text>
+                <View style={styles.recommendedBadge}>
+                  <Text style={styles.recommendedText}>Instant</Text>
+                </View>
+              </View>
+              <Text style={styles.methodDesc}>GPay, PhonePe, Paytm, Cards, NetBanking</Text>
+            </View>
+          </View>
+          <Ionicons
+            name={selectedMethod === "online" ? "radio-button-on" : "radio-button-off"}
+            size={20}
+            color={selectedMethod === "online" ? "#E91E63" : "#9CA3AF"}
+          />
+        </TouchableOpacity>
+
+        {/* Option B: Pay Cash */}
+        <TouchableOpacity
+          style={[styles.methodCard, selectedMethod === "cash" && styles.methodCardActive]}
+          onPress={() => setSelectedMethod("cash")}
+          activeOpacity={0.8}
+        >
+          <View style={styles.methodLeft}>
+            <View style={[styles.methodIconBox, { backgroundColor: "#ECFDF5" }]}>
+              <Ionicons name="cash" size={22} color="#059669" />
+            </View>
+            <View style={styles.methodMeta}>
+              <Text style={styles.methodTitle}>Pay Cash to Artist</Text>
+              <Text style={styles.methodDesc}>Pay directly to the artist on doorstep arrival</Text>
+            </View>
+          </View>
+          <Ionicons
+            name={selectedMethod === "cash" ? "radio-button-on" : "radio-button-off"}
+            size={20}
+            color={selectedMethod === "cash" ? "#E91E63" : "#9CA3AF"}
+          />
+        </TouchableOpacity>
+
+        {/* 4. Escrow Security Banner */}
+        <View style={styles.escrowCard}>
+          <Ionicons name="shield-checkmark" size={24} color="#059669" />
+          <View style={styles.escrowMeta}>
+            <Text style={styles.escrowTitle}>MehndiGo Escrow Guarantee</Text>
+            <Text style={styles.escrowDesc}>
+              Your advance payment is held safely in escrow and released to the artist only after service completion.
+            </Text>
+          </View>
+        </View>
+
+        {/* 5. Developer Test Simulator Button (Discreet) */}
+        <View style={styles.devContainer}>
           <TouchableOpacity
-            key={item.id}
-            activeOpacity={0.8}
-            onPress={() => setSelectedMethod(item.id)}
-            style={[styles.paymentCard, selectedMethod === item.id && styles.selectedCard]}
+            style={styles.devTestBtn}
+            onPress={handleSimulateTestPayment}
+            activeOpacity={0.7}
           >
-            <View style={styles.methodInfo}>
-              <View style={[styles.methodIconWrapper, selectedMethod === item.id && styles.activeIconWrapper]}>
-                <Ionicons name={item.icon} size={22} color={selectedMethod === item.id ? Colors.primary : Colors.textTertiary} />
-              </View>
-              <View style={styles.textContainer}>
-                <Text style={styles.methodTitle}>{item.title}</Text>
-                <Text style={styles.methodSub}>{item.subtitle}</Text>
-              </View>
-            </View>
-            <View style={[styles.radio, selectedMethod === item.id && styles.radioActive]} />
+            <Ionicons name="flash-outline" size={14} color="#6B7280" />
+            <Text style={styles.devTestText}>Simulate Verified Payment (Preview)</Text>
           </TouchableOpacity>
-        ))}
-
-        <View style={styles.securityTrustSection}>
-          <View style={styles.trustBadgeRow}>
-            <View style={styles.trustBadgeItem}>
-              <Ionicons name="checkmark-circle-outline" size={14} color="#4A5568" />
-              <Text style={styles.trustBadgeText}>100% Secure Payments</Text>
-            </View>
-            <View style={styles.trustBadgeItem}>
-              <Ionicons name="shield-checkmark-outline" size={14} color="#4A5568" />
-              <Text style={styles.trustBadgeText}>PCI-DSS Compliant</Text>
-            </View>
-          </View>
-          <Text style={styles.gatewayDisclaimer}>
-            Payments are securely processed by Razorpay. MehndiGo does not store your credit card or banking credentials.
-          </Text>
         </View>
+
+        <View style={{ height: 100 }} />
       </ScrollView>
 
-      <View style={styles.footer}>
-        <CustomButton
-          title={`Pay ₹${Number(booking?.required_advance || booking?.advance_amount || Math.round(Number(booking?.customer_total_amount || booking?.total_amount || finalAmount || 0) * 0.10))} & Confirm Booking`}
+      {/* 6. Bottom Pay CTA */}
+      <View style={styles.bottomBar}>
+        <View style={styles.bottomPriceInfo}>
+          <Text style={styles.bottomPriceLabel}>Total Payable</Text>
+          <Text style={styles.bottomPriceVal}>₹{payableNow}</Text>
+        </View>
+
+        <TouchableOpacity
+          style={styles.primaryPayBtn}
           onPress={handlePay}
           disabled={loading}
-        />
-        <TouchableOpacity
-          style={styles.testInstantBtn}
-          onPress={handleSimulateTestPayment}
-          disabled={loading}
+          activeOpacity={0.8}
         >
-          <Ionicons name="flash" size={14} color="#9333EA" style={{ marginRight: 6 }} />
-          <Text style={styles.testInstantBtnTxt}>⚡ Instant Test Advance Pay (Auto-Verify)</Text>
+          {loading ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <>
+              <Ionicons name="lock-closed" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+              <Text style={styles.primaryPayBtnText}>
+                {selectedMethod === "cash" ? "Confirm Cash Booking" : `Pay ₹${payableNow} Securely`}
+              </Text>
+            </>
+          )}
         </TouchableOpacity>
       </View>
 
-      {/* Razorpay In-App Web Checkout (Works seamlessly in Expo Go / Development / Standalone builds) */}
-      <RazorpayCheckoutModal
-        visible={razorpayModalVisible}
-        options={razorpayOptions}
-        onSuccess={(data) => handlePaymentSuccess(data)}
-        onFailure={(err) => handlePaymentFailure(err)}
-        onDismiss={() => handlePaymentDismiss()}
-      />
+      {/* Processing Payment Modal Overlay */}
+      <Modal visible={processingModalVisible} transparent animationType="fade">
+        <View style={styles.processingOverlay}>
+          <View style={styles.processingBox}>
+            <ActivityIndicator size="large" color="#E91E63" />
+            <Text style={styles.processingTitle}>Processing Payment</Text>
+            <Text style={styles.processingSub}>Connecting with Razorpay secure gateway...</Text>
+            <Text style={styles.processingNote}>Please do not close or navigate back.</Text>
+          </View>
+        </View>
+      </Modal>
+
+      {/* In-App Razorpay Checkout Fallback Modal */}
+      {razorpayModalVisible && razorpayOptions && (
+        <RazorpayCheckoutModal
+          visible={razorpayModalVisible}
+          options={razorpayOptions}
+          onSuccess={(data) => handlePaymentSuccess(data, currentSessionData)}
+          onFailure={handlePaymentFailure}
+          onDismiss={handlePaymentDismiss}
+        />
+      )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
-  centerContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
-  loaderText: { marginTop: 12, color: Colors.textSecondary, fontSize: 13, fontWeight: "600" },
-  detailsCard: { margin: 16, marginBottom: 4, backgroundColor: Colors.white, borderRadius: 16, padding: 18, elevation: 1 },
-  detailsCardTitle: { fontSize: 13, fontWeight: "700", color: Colors.text, marginBottom: 12 },
-  detailsRow: { flexDirection: "row", justifyContent: "space-between", marginVertical: 4 },
-  detailsLabel: { fontSize: 11, color: Colors.textSecondary },
-  detailsValue: { fontSize: 11, fontWeight: "600", color: Colors.text },
-  divider: { height: 1, backgroundColor: "#f3f4f6", marginVertical: 8 },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12, backgroundColor: Colors.white },
-  backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.background, justifyContent: "center", alignItems: "center" },
-  secureBadgeHeader: { flexDirection: "row", alignItems: "center", backgroundColor: "#e6fcf5", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
-  secureHeaderTxt: { fontSize: 10, color: "#0ca678", fontWeight: "700", marginLeft: 4 },
-  sslBadge: { flexDirection: "row", alignItems: "center", marginHorizontal: 16, marginTop: 12, backgroundColor: "#f0fdf4", padding: 10, borderRadius: 10, borderWidth: 1, borderColor: "#dcfce7" },
-  sslText: { fontSize: 10, color: "#166534", fontWeight: "600", marginLeft: 6 },
-  title: { fontSize: 18, fontWeight: "700", color: Colors.text },
-  scrollContent: { paddingBottom: 100 },
-  amountCard: { margin: 16, backgroundColor: Colors.white, borderRadius: 16, padding: 18, elevation: 1 },
-  amountLabel: { color: Colors.textSecondary, fontSize: 12 },
-  amount: { marginTop: 6, fontSize: 32, fontWeight: "800", color: Colors.primary },
-  secureTrustCard: { backgroundColor: "#fff5f5", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, alignItems: "center" },
-  trustText: { fontSize: 8, color: Colors.primary, fontWeight: "700", marginTop: 2 },
-  sectionTitle: { fontSize: 13, fontWeight: "700", color: Colors.textSecondary, marginHorizontal: 16, marginBottom: 12 },
-  paymentCard: { marginHorizontal: 16, backgroundColor: Colors.white, borderRadius: 14, padding: 16, marginBottom: 12, flexDirection: "row", justifyContent: "space-between", alignItems: "center", elevation: 1 },
-  selectedCard: { borderWidth: 1.5, borderColor: Colors.primary },
-  methodInfo: { flexDirection: "row", alignItems: "center", flex: 1 },
-  methodIconWrapper: { width: 40, height: 40, borderRadius: 10, backgroundColor: "#f9fafb", justifyContent: "center", alignItems: "center" },
-  activeIconWrapper: { backgroundColor: "#fff5f5" },
-  textContainer: { marginLeft: 14 },
-  methodTitle: { fontSize: 13, fontWeight: "700", color: Colors.text },
-  methodSub: { marginTop: 3, fontSize: 11, color: Colors.textSecondary },
-  radio: { width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: Colors.border },
-  radioActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  securityTrustSection: { paddingHorizontal: 20, marginVertical: 16, alignItems: "center" },
-  trustBadgeRow: { flexDirection: "row", justifyContent: "center", marginBottom: 8 },
-  trustBadgeItem: { flexDirection: "row", alignItems: "center", marginHorizontal: 8 },
-  trustBadgeText: { fontSize: 10, color: "#4A5568", fontWeight: "600", marginLeft: 4 },
-  gatewayDisclaimer: { fontSize: 9, color: Colors.textTertiary, textAlign: "center", lineHeight: 14 },
-  testInstantBtn: {
+  container: {
+    flex: 1,
+    backgroundColor: "#FFFFFF"
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6"
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: "#F9FAFB",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    justifyContent: "center",
+    alignItems: "center"
+  },
+  headerTitleContainer: {
+    alignItems: "center"
+  },
+  headerTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#212121"
+  },
+  headerSubtitle: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#E91E63",
+    marginTop: 1
+  },
+  secureBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ECFDF5",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    gap: 4
+  },
+  secureBadgeText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#059669"
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 40
+  },
+  summaryCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1.5,
+    borderColor: "#F3F4F6",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1
+  },
+  summaryTop: {
+    flexDirection: "row",
+    alignItems: "center"
+  },
+  serviceIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: "#FCE7F3",
+    justifyContent: "center",
+    alignItems: "center"
+  },
+  summaryInfo: {
+    flex: 1,
+    marginLeft: 12
+  },
+  serviceName: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#212121"
+  },
+  artistName: {
+    fontSize: 12,
+    color: "#6B7280",
+    marginTop: 2
+  },
+  divider: {
+    height: 1,
+    backgroundColor: "#F3F4F6",
+    marginVertical: 14
+  },
+  amountGrid: {
+    gap: 10
+  },
+  amountBoxPrimary: {
+    backgroundColor: "#FDF2F8",
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#FCE7F3",
+    alignItems: "center"
+  },
+  amountBoxLabel: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#E91E63",
+    letterSpacing: 0.5
+  },
+  amountBoxValPrimary: {
+    fontSize: 28,
+    fontWeight: "900",
+    color: "#212121",
+    marginVertical: 4
+  },
+  amountBoxSubPrimary: {
+    fontSize: 11,
+    color: "#059669",
+    fontWeight: "600"
+  },
+  amountBoxSecondary: {
+    backgroundColor: "#F9FAFB",
+    borderRadius: 12,
+    padding: 12,
+    gap: 6
+  },
+  amountRowSub: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center"
+  },
+  subLabel: {
+    fontSize: 12,
+    color: "#6B7280"
+  },
+  subVal: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#212121"
+  },
+  sectionHeader: {
+    marginBottom: 10
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#212121"
+  },
+  methodCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1.5,
+    borderColor: "#E5E7EB"
+  },
+  methodCardActive: {
+    borderColor: "#E91E63",
+    backgroundColor: "#FFF5F8"
+  },
+  methodLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1
+  },
+  methodIconBox: {
+    width: 42,
+    height: 42,
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center"
+  },
+  methodMeta: {
+    flex: 1,
+    marginLeft: 12
+  },
+  methodTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6
+  },
+  methodTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#212121"
+  },
+  recommendedBadge: {
+    backgroundColor: "#D1FAE5",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6
+  },
+  recommendedText: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#059669"
+  },
+  methodDesc: {
+    fontSize: 11,
+    color: "#6B7280",
+    marginTop: 2
+  },
+  escrowCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ECFDF5",
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+    gap: 12
+  },
+  escrowMeta: {
+    flex: 1
+  },
+  escrowTitle: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#065F46"
+  },
+  escrowDesc: {
+    fontSize: 11,
+    color: "#047857",
+    marginTop: 2,
+    lineHeight: 15
+  },
+  devContainer: {
+    marginTop: 20,
+    alignItems: "center"
+  },
+  devTestBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: "#F3F4F6"
+  },
+  devTestText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#6B7280"
+  },
+  bottomBar: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "#FFFFFF",
+    borderTopWidth: 1,
+    borderTopColor: "#F3F4F6",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 24,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 8
+  },
+  bottomPriceInfo: {},
+  bottomPriceLabel: {
+    fontSize: 11,
+    color: "#6B7280",
+    fontWeight: "600"
+  },
+  bottomPriceVal: {
+    fontSize: 22,
+    fontWeight: "900",
+    color: "#212121"
+  },
+  primaryPayBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 10,
-    paddingVertical: 10,
-    backgroundColor: "#FAF5FF",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#E9D5FF"
+    backgroundColor: "#E91E63",
+    paddingHorizontal: 22,
+    height: 48,
+    borderRadius: 14,
+    shadowColor: "#E91E63",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 4
   },
-  testInstantBtnTxt: {
+  primaryPayBtnText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#FFFFFF"
+  },
+  processingOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24
+  },
+  processingBox: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 24,
+    alignItems: "center",
+    width: "100%",
+    maxWidth: 320
+  },
+  processingTitle: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: "#212121",
+    marginTop: 16
+  },
+  processingSub: {
     fontSize: 12,
-    fontWeight: "700",
-    color: "#9333EA"
+    color: "#6B7280",
+    marginTop: 6,
+    textAlign: "center"
   },
-  footer: { padding: 16, backgroundColor: Colors.white, borderTopWidth: 1, borderTopColor: Colors.border }
+  processingNote: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#E91E63",
+    marginTop: 12,
+    textAlign: "center"
+  }
 });

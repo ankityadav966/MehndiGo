@@ -11,6 +11,7 @@
       "icon": "./assets/images/icon.png"
     },
     "android": {
+      "largeHeap": true,
       "versionCode": 2,
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",

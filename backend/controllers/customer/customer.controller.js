@@ -309,7 +309,8 @@ async function getPortfolios(req, res) {
 
 async function likePortfolio(req, res) {
   try {
-    const { portfolioId } = req.body;
+    const portfolioId = req.body.portfolioId || req.body.portfolio_id || req.query.portfolioId || req.query.portfolio_id || req.params.id;
+    if (!portfolioId) return res.status(400).json(ErrorResponse("Portfolio ID is required"));
     const response = await CustomerService.likePortfolio(req.user.id, portfolioId);
     return res.status(201).json(SuccessResponse("Portfolio Liked Successfully", response));
   } catch (error) {
@@ -321,7 +322,8 @@ async function likePortfolio(req, res) {
 
 async function unlikePortfolio(req, res) {
   try {
-    const { portfolioId } = req.query;
+    const portfolioId = req.query.portfolioId || req.query.portfolio_id || req.body.portfolioId || req.body.portfolio_id || req.params.id;
+    if (!portfolioId) return res.status(400).json(ErrorResponse("Portfolio ID is required"));
     await CustomerService.unlikePortfolio(req.user.id, portfolioId);
     return res.status(200).json(SuccessResponse("Portfolio Unliked Successfully"));
   } catch (error) {
@@ -333,7 +335,8 @@ async function unlikePortfolio(req, res) {
 
 async function savePortfolio(req, res) {
   try {
-    const { portfolioId } = req.body;
+    const portfolioId = req.body.portfolioId || req.body.portfolio_id || req.query.portfolioId || req.query.portfolio_id || req.params.id;
+    if (!portfolioId) return res.status(400).json(ErrorResponse("Portfolio ID is required"));
     const response = await CustomerService.savePortfolio(req.user.id, portfolioId);
     return res.status(201).json(SuccessResponse("Portfolio Saved Successfully", response));
   } catch (error) {
@@ -345,7 +348,8 @@ async function savePortfolio(req, res) {
 
 async function unsavePortfolio(req, res) {
   try {
-    const { portfolioId } = req.query;
+    const portfolioId = req.query.portfolioId || req.query.portfolio_id || req.body.portfolioId || req.body.portfolio_id || req.params.id;
+    if (!portfolioId) return res.status(400).json(ErrorResponse("Portfolio ID is required"));
     await CustomerService.unsavePortfolio(req.user.id, portfolioId);
     return res.status(200).json(SuccessResponse("Portfolio Unsaved Successfully"));
   } catch (error) {
@@ -640,8 +644,14 @@ async function commentPortfolio(req, res) {
   try {
     const { id } = req.params;
     const { text } = req.body;
-    if (!text) return res.status(400).json(ErrorResponse("Comment text is required"));
-    const response = await CustomerService.commentPortfolio(req.user.id, id, text);
+    if (!id) return res.status(400).json(ErrorResponse("Portfolio ID is required"));
+    if (!text || typeof text !== "string" || !text.trim()) {
+      return res.status(400).json(ErrorResponse("Comment text is required"));
+    }
+    if (text.trim().length > 1000) {
+      return res.status(400).json(ErrorResponse("Comment exceeds maximum allowed length of 1000 characters"));
+    }
+    const response = await CustomerService.commentPortfolio(req.user.id, id, text.trim());
     return res.status(201).json(SuccessResponse("Comment added", response));
   } catch (error) {
     return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
@@ -651,6 +661,7 @@ async function commentPortfolio(req, res) {
 async function getPortfolioComments(req, res) {
   try {
     const { id } = req.params;
+    if (!id) return res.status(400).json(ErrorResponse("Portfolio ID is required"));
     const { page, limit } = req.query;
     const response = await CustomerService.getPortfolioComments(id, page, limit);
     return res.status(200).json(SuccessResponse("Comments fetched", response));
@@ -662,6 +673,7 @@ async function getPortfolioComments(req, res) {
 async function deletePortfolioComment(req, res) {
   try {
     const { commentId } = req.params;
+    if (!commentId) return res.status(400).json(ErrorResponse("Comment ID is required"));
     await CustomerService.deletePortfolioComment(req.user.id, commentId);
     return res.status(200).json(SuccessResponse("Comment deleted"));
   } catch (error) {
@@ -672,6 +684,7 @@ async function deletePortfolioComment(req, res) {
 async function addViewToPortfolio(req, res) {
   try {
     const { id } = req.params;
+    if (!id) return res.status(400).json(ErrorResponse("Portfolio ID is required"));
     await CustomerService.addViewToPortfolio(id);
     return res.status(200).json(SuccessResponse("View added"));
   } catch (error) {

@@ -1006,6 +1006,11 @@ class CustomerService {
   }
 
   async likePortfolio(userId, portfolioId) {
+    const portfolio = await db.Portfolio.findByPk(portfolioId);
+    if (!portfolio) {
+      throw new AppError("Portfolio not found", 404);
+    }
+
     const like = await db.PortfolioLike.findOrCreate({
       where: { user_id: userId, portfolio_id: portfolioId }
     });
@@ -1022,6 +1027,11 @@ class CustomerService {
   }
 
   async unlikePortfolio(userId, portfolioId) {
+    const portfolio = await db.Portfolio.findByPk(portfolioId);
+    if (!portfolio) {
+      throw new AppError("Portfolio not found", 404);
+    }
+
     const deleted = await db.PortfolioLike.destroy({
       where: { user_id: userId, portfolio_id: portfolioId }
     });
@@ -1511,6 +1521,11 @@ class CustomerService {
     };
   }
   async commentPortfolio(userId, portfolioId, text) {
+    const portfolio = await db.Portfolio.findByPk(portfolioId);
+    if (!portfolio) {
+      throw new AppError("Portfolio not found", 404);
+    }
+
     const comment = await db.PortfolioComment.create({
       user_id: userId,
       portfolio_id: portfolioId,
@@ -1519,7 +1534,6 @@ class CustomerService {
     
     // Attempt notification creation (failsafe)
     try {
-      const portfolio = await db.Portfolio.findByPk(portfolioId);
       if (portfolio && portfolio.artist_id) {
         const artist = await db.ArtistProfile.findByPk(portfolio.artist_id);
         if (artist && artist.user_id !== userId) {
@@ -1540,6 +1554,11 @@ class CustomerService {
   }
 
   async getPortfolioComments(portfolioId, page = 1, limit = 20) {
+    const portfolio = await db.Portfolio.findByPk(portfolioId);
+    if (!portfolio) {
+      throw new AppError("Portfolio not found", 404);
+    }
+
     const offset = (page - 1) * limit;
     const { rows, count } = await db.PortfolioComment.findAndCountAll({
       where: { portfolio_id: portfolioId },
@@ -1570,6 +1589,11 @@ class CustomerService {
   }
   
   async addViewToPortfolio(portfolioId) {
+    const portfolio = await db.Portfolio.findByPk(portfolioId);
+    if (!portfolio) {
+      throw new AppError("Portfolio not found", 404);
+    }
+
     await db.Portfolio.increment("views_count", {
       by: 1,
       where: { id: portfolioId }

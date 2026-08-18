@@ -2,8 +2,20 @@ import React from "react";
 import { View, Text, TouchableOpacity, Modal, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import OptimizedImage from "../OptimizedImage";
-import Colors from "../../../constants/Colors";
-import { resolveImage } from "../../../utils/imageHelper";
+import Colors from "../../constants/Colors";
+import { BASE_URL } from "../../services/api";
+
+const resolveImage = (uri) => {
+  if (!uri || typeof uri !== "string") return null;
+  if (uri.startsWith("http://") || uri.startsWith("https://") || uri.startsWith("data:")) {
+    return uri;
+  }
+  if (uri.startsWith("/")) {
+    const cleanBase = (BASE_URL || "").replace(/\/api\/v1\/?$/, "");
+    return `${cleanBase}${uri}`;
+  }
+  return uri;
+};
 
 const PaymentModal = ({
   visible,

@@ -2576,6 +2576,42 @@ const handleCustomerDynamic = async (c) => {
   const method = c.req.method.toUpperCase();
   const u = getUserFromHeader(c);
 
+  // 0. Reels & Portfolio Social Interaction Routing
+  if (path.includes("reels") || path.endsWith("/reels")) {
+    return handleGetReels(c);
+  }
+  if (path.includes("portfolio")) {
+    if (path.includes("/like") || path.endsWith("/like") || path.includes("/unlike") || path.endsWith("/unlike")) {
+      if (method === "DELETE" || path.includes("/unlike")) {
+        return handleUnlikePortfolio(c);
+      }
+      return handleLikePortfolio(c);
+    }
+    if (path.includes("/save") || path.endsWith("/save") || path.includes("/unsave") || path.endsWith("/unsave")) {
+      if (method === "DELETE" || path.includes("/unsave")) {
+        return handleUnsavePortfolio(c);
+      }
+      if (method === "GET" || path.includes("/saved")) {
+        return handleGetSavedPortfolios(c);
+      }
+      return handleSavePortfolio(c);
+    }
+    if (path.includes("/comment")) {
+      if (method === "DELETE") {
+        return handleDeletePortfolioComment(c);
+      }
+      if (method === "GET" || path.includes("/comments")) {
+        return handleGetPortfolioComments(c);
+      }
+      if (method === "POST") {
+        return handleCommentPortfolio(c);
+      }
+    }
+    if (path.includes("/view")) {
+      return handleAddViewToPortfolio(c);
+    }
+  }
+
   // Search Helper Sub-routes
   if (path.includes("recent-search")) {
     await db.run("CREATE TABLE IF NOT EXISTS recent_searches (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, query TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)").catch(() => { });
@@ -4102,6 +4138,628 @@ const INITIAL_PORTFOLIO = [
 
 let globalPortfolioMemory = [];
 
+// =============================================================
+// REELS & SOCIAL PORTFOLIO LAYER (CLOUDFLARE D1 BACKED)
+// =============================================================
+
+export async function ensureReelsTables(db) {
+  try {
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS portfolio_likes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        portfolio_id INTEGER NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, portfolio_id)
+      )
+    `).catch(() => null);
+
+    await db.run(`CREATE INDEX IF NOT EXISTS idx_portfolio_likes_portfolio ON portfolio_likes(portfolio_id)`).catch(() => null);
+    await db.run(`CREATE INDEX IF NOT EXISTS idx_portfolio_likes_user ON portfolio_likes(user_id)`).catch(() => null);
+
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS portfolio_comments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        portfolio_id INTEGER NOT NULL,
+        text TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `).catch(() => null);
+
+    await db.run(`CREATE INDEX IF NOT EXISTS idx_portfolio_comments_portfolio ON portfolio_comments(portfolio_id)`).catch(() => null);
+    await db.run(`CREATE INDEX IF NOT EXISTS idx_portfolio_comments_user ON portfolio_comments(user_id)`).catch(() => null);
+
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS portfolio_saves (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        portfolio_id INTEGER NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, portfolio_id)
+      )
+    `).catch(() => null);
+
+    await db.run(`CREATE INDEX IF NOT EXISTS idx_portfolio_saves_portfolio ON portfolio_saves(portfolio_id)`).catch(() => null);
+    await db.run(`CREATE INDEX IF NOT EXISTS idx_portfolio_saves_user ON portfolio_saves(user_id)`).catch(() => null);
+
+    // Ensure columns exist on both portfolios and artist_portfolios tables
+    await db.run(`ALTER TABLE portfolios ADD COLUMN views_count INTEGER DEFAULT 0`).catch(() => null);
+    await db.run(`ALTER TABLE portfolios ADD COLUMN likes_count INTEGER DEFAULT 0`).catch(() => null);
+    await db.run(`ALTER TABLE portfolios ADD COLUMN caption TEXT`).catch(() => null);
+    await db.run(`ALTER TABLE artist_portfolios ADD COLUMN views_count INTEGER DEFAULT 0`).catch(() => null);
+    await db.run(`ALTER TABLE artist_portfolios ADD COLUMN likes_count INTEGER DEFAULT 0`).catch(() => null);
+    await db.run(`ALTER TABLE artist_portfolios ADD COLUMN caption TEXT`).catch(() => null);
+
+    // Auto-seed sample video reels if no video items exist in D1
+    const videoCountRow = await db.first(
+      "SELECT COUNT(*) as count FROM portfolios WHERE video_url IS NOT NULL AND video_url != '' AND video_url != 'null'"
+    ).catch(() => ({ count: 0 }));
+
+    if (!videoCountRow || Number(videoCountRow.count) === 0) {
+      const sampleReels = [
+        {
+          id: 501,
+          artist_id: 201,
+          title: "Royal Bridal Dulhan Masterpiece ✨",
+          caption: "Full hand intricate traditional Rajasthani bridal henna by Pooja Sharma. Natural herbal dark stain.",
+          category: "Bridal Mehndi",
+          image_url: "https://images.unsplash.com/photo-1596461404969-9ae70f2830c1?auto=format&fit=crop&w=600&q=80",
+          video_url: "https://assets.mixkit.co/videos/preview/mixkit-hands-of-a-woman-applying-henna-41982-large.mp4",
+          likes_count: 142,
+          views_count: 530,
+          visibility: 1
+        },
+        {
+          id: 502,
+          artist_id: 202,
+          title: "Contemporary Arabic Floral Lace 🌸",
+          caption: "Negative space shaded mandalas & floral trails for bridesmaid sangeet by Aisha Khan.",
+          category: "Arabic Mehndi",
+          image_url: "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?auto=format&fit=crop&w=600&q=80",
+          video_url: "https://assets.mixkit.co/videos/preview/mixkit-close-up-of-a-woman-with-mehndi-tattoos-41980-large.mp4",
+          likes_count: 98,
+          views_count: 380,
+          visibility: 1
+        },
+        {
+          id: 503,
+          artist_id: 203,
+          title: "Marwari Doli & Baraat Artwork 👑",
+          caption: "Heritage storytelling wedding henna featuring bride groom figures by Kiran Rajput.",
+          category: "Rajasthani & Marwari",
+          image_url: "https://images.unsplash.com/photo-1582192732961-2364f55b1a3d?auto=format&fit=crop&w=600&q=80",
+          video_url: "https://assets.mixkit.co/videos/preview/mixkit-bride-showing-her-mehndi-decorated-hands-41979-large.mp4",
+          likes_count: 215,
+          views_count: 890,
+          visibility: 1
+        },
+        {
+          id: 504,
+          artist_id: 204,
+          title: "Minimalist Modern Lotus Wrist Cuff 🪷",
+          caption: "Delicate lotus motif on wrists with fine geometric jaal work by Shalu Saini.",
+          category: "Minimalist & Geometric",
+          image_url: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=600&q=80",
+          video_url: "https://assets.mixkit.co/videos/preview/mixkit-woman-drawing-mehndi-on-a-hand-41981-large.mp4",
+          likes_count: 76,
+          views_count: 245,
+          visibility: 1
+        }
+      ];
+
+      for (const reel of sampleReels) {
+        await db.run(
+          `INSERT OR REPLACE INTO portfolios (id, artist_id, title, description, caption, category, image_url, video_url, likes_count, views_count, visibility)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [reel.id, reel.artist_id, reel.title, reel.caption, reel.caption, reel.category, reel.image_url, reel.video_url, reel.likes_count, reel.views_count, reel.visibility]
+        ).catch(() => null);
+
+        await db.run(
+          `INSERT OR REPLACE INTO artist_portfolios (id, artist_id, title, description, caption, category, image_url, video_url, likes_count, views_count, visibility)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [reel.id, reel.artist_id, reel.title, reel.caption, reel.caption, reel.category, reel.image_url, reel.video_url, reel.likes_count, reel.views_count, reel.visibility]
+        ).catch(() => null);
+      }
+    }
+  } catch (err) {
+    console.error("[ReelsService] Table initialization warning:", err.message);
+  }
+}
+
+const handleGetReels = async (c) => {
+  try {
+    const db = getDb(c.env);
+    await ensureReelsTables(db);
+
+    const u = getUserFromHeader(c);
+    const userId = u && u.id ? Number(u.id) : null;
+
+    const page = Math.max(1, Number(c.req.query("page")) || 1);
+    const limit = Math.min(50, Math.max(1, Number(c.req.query("limit")) || 10));
+    const offset = (page - 1) * limit;
+
+    const rows = await db.all(`
+      SELECT p.*,
+             u.id as user_id, u.full_name as artist_name, u.avatar as artist_avatar,
+             ap.profile_image as artist_profile_image, ap.rating as artist_rating,
+             ap.city as artist_city, ap.locality as artist_locality
+      FROM (
+        SELECT id, artist_id, title, description, category, occasion, location, tags,
+               visibility, image_url, video_url, likes_count, views_count, caption, created_at
+        FROM portfolios
+        WHERE (video_url IS NOT NULL AND video_url != '' AND video_url != 'null')
+          AND (visibility = 1 OR visibility IS NULL)
+        UNION
+        SELECT id, artist_id, title, description, category, occasion, location, tags,
+               visibility, image_url, video_url, likes_count, views_count, caption, created_at
+        FROM artist_portfolios
+        WHERE (video_url IS NOT NULL AND video_url != '' AND video_url != 'null')
+          AND (visibility = 1 OR visibility IS NULL)
+          AND id NOT IN (SELECT id FROM portfolios WHERE video_url IS NOT NULL AND video_url != '' AND video_url != 'null')
+      ) p
+      LEFT JOIN users u ON (p.artist_id = u.id OR CAST(p.artist_id AS TEXT) = CAST(u.id AS TEXT))
+      LEFT JOIN artist_profiles ap ON (p.artist_id = ap.user_id OR CAST(p.artist_id AS TEXT) = CAST(ap.user_id AS TEXT))
+      ORDER BY p.id DESC
+      LIMIT ? OFFSET ?
+    `, [limit, offset]).catch(async () => {
+      return await db.all(`
+        SELECT p.*, u.full_name as artist_name, u.avatar as artist_avatar
+        FROM portfolios p
+        LEFT JOIN users u ON p.artist_id = u.id
+        WHERE p.video_url IS NOT NULL AND p.video_url != ''
+        ORDER BY p.id DESC LIMIT ? OFFSET ?
+      `, [limit, offset]).catch(() => []);
+    });
+
+    const totalRow = await db.first(`
+      SELECT COUNT(*) as count FROM (
+        SELECT id FROM portfolios WHERE video_url IS NOT NULL AND video_url != '' AND video_url != 'null'
+        UNION
+        SELECT id FROM artist_portfolios WHERE video_url IS NOT NULL AND video_url != '' AND video_url != 'null'
+      )
+    `).catch(() => ({ count: rows.length }));
+    const total = totalRow?.count || rows.length;
+
+    let userLikedSet = new Set();
+    let userSavedSet = new Set();
+    if (userId) {
+      const likedRows = await db.all("SELECT portfolio_id FROM portfolio_likes WHERE user_id = ?", [userId]).catch(() => []);
+      likedRows.forEach(r => userLikedSet.add(Number(r.portfolio_id)));
+
+      const savedRows = await db.all("SELECT portfolio_id FROM portfolio_saves WHERE user_id = ?", [userId]).catch(() => []);
+      savedRows.forEach(r => userSavedSet.add(Number(r.portfolio_id)));
+    }
+
+    const reels = rows.map((r) => {
+      const pId = Number(r.id);
+      const isLiked = userLikedSet.has(pId);
+      const isSaved = userSavedSet.has(pId);
+      return {
+        id: pId,
+        portfolio_id: pId,
+        artist_id: r.artist_id || 1,
+        title: r.title || "Mehndi Reel",
+        description: r.description || r.caption || "",
+        caption: r.caption || r.description || "",
+        category: r.category || "Bridal Mehndi",
+        video_url: r.video_url,
+        image_url: r.image_url || r.thumbnail_url || "",
+        thumbnail_url: r.image_url || r.thumbnail_url || "",
+        likes_count: Number(r.likes_count || 0),
+        views_count: Number(r.views_count || 0),
+        isLiked,
+        is_liked: isLiked,
+        isSaved,
+        is_saved: isSaved,
+        artist: {
+          id: r.artist_id || 1,
+          name: r.artist_name || "Mehndi Artist",
+          avatar: r.artist_avatar || r.artist_profile_image || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=400",
+          rating: r.artist_rating ? Number(r.artist_rating) : 4.9,
+          location: r.artist_locality ? `${r.artist_locality}, ${r.artist_city || 'Jaipur'}` : (r.artist_city || "Jaipur")
+        },
+        artist_name: r.artist_name || "Mehndi Artist",
+        artist_avatar: r.artist_avatar || r.artist_profile_image || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=400",
+        created_at: r.created_at || new Date().toISOString()
+      };
+    });
+
+    const hasMore = offset + reels.length < total;
+
+    return jsonRes(c, true, {
+      reels,
+      data: reels,
+      total,
+      hasMore,
+      page,
+      limit
+    }, "Reels fetched successfully");
+  } catch (err) {
+    console.error("[Reels GET Error]:", err);
+    return jsonRes(c, false, { reels: [], data: [], total: 0, hasMore: false }, `Failed to fetch reels: ${err.message}`, 500);
+  }
+};
+
+const handleLikePortfolio = async (c) => {
+  try {
+    const db = getDb(c.env);
+    await ensureReelsTables(db);
+
+    const u = getUserFromHeader(c);
+    if (!u || !u.id) {
+      return jsonRes(c, false, null, "Unauthorized: Please login to like reels", 401);
+    }
+
+    let body = {};
+    try {
+      body = await c.req.json();
+    } catch (_) {
+      try { body = await c.req.parseBody(); } catch (__) {}
+    }
+
+    const portfolioId = Number(body.portfolio_id || body.portfolioId || c.req.query("portfolio_id") || c.req.query("portfolioId"));
+    if (!portfolioId || isNaN(portfolioId)) {
+      return jsonRes(c, false, null, "Portfolio ID is required", 400);
+    }
+
+    // Verify portfolio exists
+    const item = await db.first("SELECT id, artist_id FROM portfolios WHERE id = ? UNION SELECT id, artist_id FROM artist_portfolios WHERE id = ?", [portfolioId, portfolioId]).catch(() => null);
+    if (!item) {
+      return jsonRes(c, false, null, "Portfolio item not found", 404);
+    }
+
+    // Check existing like
+    const existing = await db.first("SELECT id FROM portfolio_likes WHERE user_id = ? AND portfolio_id = ?", [u.id, portfolioId]).catch(() => null);
+    if (!existing) {
+      await db.run("INSERT INTO portfolio_likes (user_id, portfolio_id) VALUES (?, ?)", [u.id, portfolioId]);
+      await db.run("UPDATE portfolios SET likes_count = COALESCE(likes_count, 0) + 1 WHERE id = ?", [portfolioId]).catch(() => null);
+      await db.run("UPDATE artist_portfolios SET likes_count = COALESCE(likes_count, 0) + 1 WHERE id = ?", [portfolioId]).catch(() => null);
+    }
+
+    return jsonRes(c, true, { portfolio_id: portfolioId, isLiked: true }, "Portfolio Liked Successfully", 201);
+  } catch (err) {
+    console.error("[Like Error]:", err);
+    return jsonRes(c, false, null, `Like failed: ${err.message}`, 500);
+  }
+};
+
+const handleUnlikePortfolio = async (c) => {
+  try {
+    const db = getDb(c.env);
+    await ensureReelsTables(db);
+
+    const u = getUserFromHeader(c);
+    if (!u || !u.id) {
+      return jsonRes(c, false, null, "Unauthorized: Please login", 401);
+    }
+
+    let body = {};
+    try {
+      body = await c.req.json();
+    } catch (_) {
+      try { body = await c.req.parseBody(); } catch (__) {}
+    }
+
+    const portfolioId = Number(c.req.query("portfolio_id") || c.req.query("portfolioId") || body.portfolio_id || body.portfolioId);
+    if (!portfolioId || isNaN(portfolioId)) {
+      return jsonRes(c, false, null, "Portfolio ID is required", 400);
+    }
+
+    const existing = await db.first("SELECT id FROM portfolio_likes WHERE user_id = ? AND portfolio_id = ?", [u.id, portfolioId]).catch(() => null);
+    if (existing) {
+      await db.run("DELETE FROM portfolio_likes WHERE user_id = ? AND portfolio_id = ?", [u.id, portfolioId]);
+      await db.run("UPDATE portfolios SET likes_count = MAX(0, COALESCE(likes_count, 1) - 1) WHERE id = ?", [portfolioId]).catch(() => null);
+      await db.run("UPDATE artist_portfolios SET likes_count = MAX(0, COALESCE(likes_count, 1) - 1) WHERE id = ?", [portfolioId]).catch(() => null);
+    }
+
+    return jsonRes(c, true, { portfolio_id: portfolioId, isLiked: false }, "Portfolio Unliked Successfully", 200);
+  } catch (err) {
+    console.error("[Unlike Error]:", err);
+    return jsonRes(c, false, null, `Unlike failed: ${err.message}`, 500);
+  }
+};
+
+const handleSavePortfolio = async (c) => {
+  try {
+    const db = getDb(c.env);
+    await ensureReelsTables(db);
+
+    const u = getUserFromHeader(c);
+    if (!u || !u.id) {
+      return jsonRes(c, false, null, "Unauthorized: Please login", 401);
+    }
+
+    let body = {};
+    try { body = await c.req.json(); } catch (_) {}
+    const portfolioId = Number(body.portfolio_id || body.portfolioId || c.req.query("portfolio_id") || c.req.query("portfolioId"));
+    if (!portfolioId || isNaN(portfolioId)) {
+      return jsonRes(c, false, null, "Portfolio ID is required", 400);
+    }
+
+    const existing = await db.first("SELECT id FROM portfolio_saves WHERE user_id = ? AND portfolio_id = ?", [u.id, portfolioId]).catch(() => null);
+    if (!existing) {
+      await db.run("INSERT INTO portfolio_saves (user_id, portfolio_id) VALUES (?, ?)", [u.id, portfolioId]);
+    }
+
+    return jsonRes(c, true, { portfolio_id: portfolioId, isSaved: true }, "Portfolio saved successfully", 201);
+  } catch (err) {
+    console.error("[Save Error]:", err);
+    return jsonRes(c, false, null, `Save failed: ${err.message}`, 500);
+  }
+};
+
+const handleUnsavePortfolio = async (c) => {
+  try {
+    const db = getDb(c.env);
+    await ensureReelsTables(db);
+
+    const u = getUserFromHeader(c);
+    if (!u || !u.id) {
+      return jsonRes(c, false, null, "Unauthorized: Please login", 401);
+    }
+
+    let body = {};
+    try { body = await c.req.json(); } catch (_) {}
+    const portfolioId = Number(c.req.query("portfolio_id") || c.req.query("portfolioId") || body.portfolio_id || body.portfolioId);
+    if (!portfolioId || isNaN(portfolioId)) {
+      return jsonRes(c, false, null, "Portfolio ID is required", 400);
+    }
+
+    await db.run("DELETE FROM portfolio_saves WHERE user_id = ? AND portfolio_id = ?", [u.id, portfolioId]);
+    return jsonRes(c, true, { portfolio_id: portfolioId, isSaved: false }, "Portfolio unsaved successfully", 200);
+  } catch (err) {
+    console.error("[Unsave Error]:", err);
+    return jsonRes(c, false, null, `Unsave failed: ${err.message}`, 500);
+  }
+};
+
+const handleGetSavedPortfolios = async (c) => {
+  try {
+    const db = getDb(c.env);
+    await ensureReelsTables(db);
+
+    const u = getUserFromHeader(c);
+    if (!u || !u.id) {
+      return jsonRes(c, false, null, "Unauthorized: Please login", 401);
+    }
+
+    const saved = await db.all(`
+      SELECT p.*, ps.created_at as saved_at, u.full_name as artist_name, u.avatar as artist_avatar
+      FROM portfolio_saves ps
+      JOIN portfolios p ON ps.portfolio_id = p.id
+      LEFT JOIN users u ON p.artist_id = u.id
+      WHERE ps.user_id = ?
+      ORDER BY ps.id DESC
+    `, [u.id]).catch(() => []);
+
+    return jsonRes(c, true, saved || [], "Saved portfolios fetched successfully", 200);
+  } catch (err) {
+    console.error("[Get Saved Error]:", err);
+    return jsonRes(c, false, [], `Failed to fetch saved: ${err.message}`, 500);
+  }
+};
+
+const handleCommentPortfolio = async (c) => {
+  try {
+    const db = getDb(c.env);
+    await ensureReelsTables(db);
+
+    const u = getUserFromHeader(c);
+    if (!u || !u.id) {
+      return jsonRes(c, false, null, "Unauthorized: Please login to comment", 401);
+    }
+
+    let body = {};
+    try {
+      body = await c.req.json();
+    } catch (_) {
+      try { body = await c.req.parseBody(); } catch (__) {}
+    }
+
+    const pathParts = c.req.path.split("/").filter(Boolean);
+    let paramId = c.req.param("id");
+    if (!paramId) {
+      const idx = pathParts.indexOf("portfolio");
+      if (idx !== -1 && pathParts[idx + 1] && pathParts[idx + 1] !== "comment") {
+        paramId = pathParts[idx + 1];
+      }
+    }
+
+    const portfolioId = Number(paramId || body.portfolio_id || body.portfolioId);
+    if (!portfolioId || isNaN(portfolioId)) {
+      return jsonRes(c, false, null, "Portfolio ID is required", 400);
+    }
+
+    const text = String(body.text || body.comment || "").trim();
+    if (!text) {
+      return jsonRes(c, false, null, "Comment text cannot be empty", 400);
+    }
+    if (text.length > 1000) {
+      return jsonRes(c, false, null, "Comment text cannot exceed 1000 characters", 400);
+    }
+
+    // Verify portfolio existence
+    const port = await db.first("SELECT id, artist_id FROM portfolios WHERE id = ? UNION SELECT id, artist_id FROM artist_portfolios WHERE id = ?", [portfolioId, portfolioId]).catch(() => null);
+    if (!port) {
+      return jsonRes(c, false, null, "Portfolio item not found", 404);
+    }
+
+    const res = await db.run(
+      "INSERT INTO portfolio_comments (user_id, portfolio_id, text, created_at, updated_at) VALUES (?, ?, ?, datetime('now'), datetime('now'))",
+      [u.id, portfolioId, text]
+    );
+    const commentId = res.meta?.last_row_id;
+
+    const user = await db.first("SELECT id, full_name, avatar, profile_image FROM users WHERE id = ?", [u.id]).catch(() => null);
+
+    const newComment = {
+      id: commentId,
+      user_id: u.id,
+      portfolio_id: portfolioId,
+      text,
+      user: {
+        id: u.id,
+        name: user?.full_name || "User",
+        profile_image: user?.avatar || user?.profile_image || null
+      },
+      createdAt: new Date().toISOString(),
+      created_at: new Date().toISOString()
+    };
+
+    return jsonRes(c, true, newComment, "Comment added successfully", 201);
+  } catch (err) {
+    console.error("[Comment Error]:", err);
+    return jsonRes(c, false, null, `Comment failed: ${err.message}`, 500);
+  }
+};
+
+const handleGetPortfolioComments = async (c) => {
+  try {
+    const db = getDb(c.env);
+    await ensureReelsTables(db);
+
+    const pathParts = c.req.path.split("/").filter(Boolean);
+    let paramId = c.req.param("id");
+    if (!paramId) {
+      const idx = pathParts.indexOf("portfolio");
+      if (idx !== -1 && pathParts[idx + 1] && pathParts[idx + 1] !== "comments") {
+        paramId = pathParts[idx + 1];
+      }
+    }
+
+    const portfolioId = Number(paramId || c.req.query("portfolio_id") || c.req.query("portfolioId"));
+    if (!portfolioId || isNaN(portfolioId)) {
+      return jsonRes(c, false, null, "Portfolio ID is required", 400);
+    }
+
+    const page = Math.max(1, Number(c.req.query("page")) || 1);
+    const limit = Math.min(100, Math.max(1, Number(c.req.query("limit")) || 20));
+    const offset = (page - 1) * limit;
+
+    const rows = await db.all(`
+      SELECT pc.id, pc.user_id, pc.portfolio_id, pc.text, pc.created_at, pc.updated_at,
+             u.full_name as user_name, u.avatar as user_avatar, u.profile_image as user_profile_image
+      FROM portfolio_comments pc
+      LEFT JOIN users u ON pc.user_id = u.id
+      WHERE pc.portfolio_id = ?
+      ORDER BY pc.id DESC
+      LIMIT ? OFFSET ?
+    `, [portfolioId, limit, offset]).catch(() => []);
+
+    const countRow = await db.first("SELECT COUNT(*) as count FROM portfolio_comments WHERE portfolio_id = ?", [portfolioId]).catch(() => ({ count: 0 }));
+    const total = countRow?.count || 0;
+
+    const comments = rows.map((r) => ({
+      id: r.id,
+      user_id: r.user_id,
+      portfolio_id: r.portfolio_id,
+      text: r.text,
+      user: {
+        id: r.user_id,
+        name: r.user_name || "User",
+        profile_image: r.user_avatar || r.user_profile_image || null
+      },
+      createdAt: r.created_at,
+      created_at: r.created_at
+    }));
+
+    return jsonRes(c, true, {
+      comments,
+      data: comments,
+      total,
+      page,
+      limit,
+      hasMore: offset + comments.length < total
+    }, "Comments retrieved successfully", 200);
+  } catch (err) {
+    console.error("[Get Comments Error]:", err);
+    return jsonRes(c, false, { comments: [], data: [], total: 0 }, `Failed to fetch comments: ${err.message}`, 500);
+  }
+};
+
+const handleDeletePortfolioComment = async (c) => {
+  try {
+    const db = getDb(c.env);
+    await ensureReelsTables(db);
+
+    const u = getUserFromHeader(c);
+    if (!u || !u.id) {
+      return jsonRes(c, false, null, "Unauthorized: Please login", 401);
+    }
+
+    const pathParts = c.req.path.split("/").filter(Boolean);
+    let commentId = Number(c.req.param("commentId") || c.req.param("id"));
+    if (!commentId || isNaN(commentId)) {
+      const lastPart = pathParts[pathParts.length - 1];
+      commentId = Number(lastPart);
+    }
+
+    if (!commentId || isNaN(commentId)) {
+      return jsonRes(c, false, null, "Comment ID is required", 400);
+    }
+
+    const comment = await db.first(`
+      SELECT pc.*, p.artist_id
+      FROM portfolio_comments pc
+      LEFT JOIN portfolios p ON pc.portfolio_id = p.id
+      WHERE pc.id = ?
+    `, [commentId]).catch(() => null);
+
+    if (!comment) {
+      return jsonRes(c, false, null, "Comment not found", 404);
+    }
+
+    const isAuthor = Number(comment.user_id) === Number(u.id);
+    const isReelOwner = Number(comment.artist_id) === Number(u.id);
+    const isAdmin = u.role === "admin" || u.role === "ADMIN";
+
+    if (!isAuthor && !isReelOwner && !isAdmin) {
+      return jsonRes(c, false, null, "Unauthorized to delete this comment", 403);
+    }
+
+    await db.run("DELETE FROM portfolio_comments WHERE id = ?", [commentId]);
+
+    return jsonRes(c, true, { id: commentId }, "Comment deleted successfully", 200);
+  } catch (err) {
+    console.error("[Delete Comment Error]:", err);
+    return jsonRes(c, false, null, `Delete comment failed: ${err.message}`, 500);
+  }
+};
+
+const handleAddViewToPortfolio = async (c) => {
+  try {
+    const db = getDb(c.env);
+    await ensureReelsTables(db);
+
+    const pathParts = c.req.path.split("/").filter(Boolean);
+    let paramId = c.req.param("id");
+    if (!paramId) {
+      const idx = pathParts.indexOf("portfolio");
+      if (idx !== -1 && pathParts[idx + 1] && pathParts[idx + 1] !== "view") {
+        paramId = pathParts[idx + 1];
+      }
+    }
+
+    let body = {};
+    try { body = await c.req.json(); } catch (_) {}
+
+    const portfolioId = Number(paramId || body.portfolio_id || body.portfolioId || c.req.query("portfolio_id"));
+    if (!portfolioId || isNaN(portfolioId)) {
+      return jsonRes(c, false, null, "Portfolio ID is required", 400);
+    }
+
+    await db.run("UPDATE portfolios SET views_count = COALESCE(views_count, 0) + 1 WHERE id = ?", [portfolioId]).catch(() => null);
+    await db.run("UPDATE artist_portfolios SET views_count = COALESCE(views_count, 0) + 1 WHERE id = ?", [portfolioId]).catch(() => null);
+
+    return jsonRes(c, true, { portfolio_id: portfolioId, success: true }, "View added successfully", 200);
+  } catch (err) {
+    console.error("[Add View Error]:", err);
+    return jsonRes(c, false, null, `View update failed: ${err.message}`, 500);
+  }
+};
+
 const handleGetArtistPortfolio = async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
@@ -4597,7 +5255,7 @@ const handleGetArtistBookings = async (c) => {
   if (statusParam === "pending" || path.includes("pending")) {
     sql += " AND LOWER(b.status) IN ('pending', 'requested', 'confirmed') AND LOWER(COALESCE(b.detailed_status, '')) NOT IN ('accepted', 'artist_accepted', 'rejected', 'cancelled', 'completed')";
   } else if (statusParam === "accepted" || statusParam === "upcoming" || path.includes("accepted") || path.includes("upcoming")) {
-    sql += " AND (LOWER(b.status) IN ('accepted', 'confirmed', 'artist_accepted', 'on_the_way', 'arrived', 'service_started') OR LOWER(COALESCE(b.detailed_status, '')) IN ('artist_accepted', 'accepted')) AND LOWER(b.status) NOT IN ('cancelled', 'rejected')";
+    sql += " AND (LOWER(b.status) IN ('accepted', 'confirmed', 'artist_accepted', 'on_the_way', 'arrived', 'service_started', 'in_progress') OR LOWER(COALESCE(b.detailed_status, '')) IN ('artist_accepted', 'accepted', 'artist_on_the_way', 'artist_arrived', 'service_started', 'service_in_progress', 'in_progress')) AND LOWER(b.status) NOT IN ('cancelled', 'rejected')";
   } else if (statusParam === "completed" || path.includes("completed")) {
     sql += " AND (LOWER(b.status) = 'completed' OR LOWER(COALESCE(b.detailed_status, '')) = 'completed')";
   }
@@ -4611,7 +5269,18 @@ const handleGetArtistBookings = async (c) => {
     let normDetailed = (item.detailed_status || item.status || "PENDING").toUpperCase();
     if (normDetailed === "ACCEPTED") normDetailed = "ARTIST_ACCEPTED";
 
-    const normBookingStatus = (normDetailed === "ARTIST_ACCEPTED" || rawStatus === "ACCEPTED" || rawStatus === "ARTIST_ACCEPTED") ? "CONFIRMED" : rawStatus;
+    const isCheckInVerified = Number(item.checkin_otp_verified) === 1;
+    if (isCheckInVerified || rawStatus === "IN_PROGRESS" || normDetailed === "IN_PROGRESS") {
+      if (normDetailed !== "COMPLETED" && normDetailed !== "CANCELLED") {
+        normDetailed = "SERVICE_IN_PROGRESS";
+      }
+    }
+
+    const normBookingStatus = (isCheckInVerified || rawStatus === "IN_PROGRESS" || normDetailed === "SERVICE_IN_PROGRESS")
+      ? "IN_PROGRESS"
+      : (normDetailed === "ARTIST_ACCEPTED" || rawStatus === "ACCEPTED" || rawStatus === "ARTIST_ACCEPTED")
+        ? "CONFIRMED"
+        : rawStatus;
 
     const custName = item.customer_name || "Customer";
     const custPhone = item.customer_phone || "";
@@ -6727,8 +7396,8 @@ const handleGetArtistProfileById = async (c) => {
     ? Math.min(...services.map(s => Number(s.price || s.minimum_price || 0)).filter(p => p > 0))
     : 0;
 
-  const portfolio = await db.all("SELECT * FROM artist_portfolios WHERE artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT) ORDER BY id DESC", [id, id]).catch(() => []);
-  const reviews = await db.all("SELECT r.*, u.full_name as customer_name FROM reviews r LEFT JOIN users u ON r.customer_id = u.id WHERE r.artist_id = ? OR CAST(r.artist_id AS TEXT) = CAST(? AS TEXT)", [id, id]).catch(() => []);
+  const portfolio = await db.all("SELECT id, artist_id, title, description, category, image_url, video_url, likes_count, views_count, created_at FROM artist_portfolios WHERE artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT) ORDER BY id DESC LIMIT 30", [id, id]).catch(() => []);
+  const reviews = await db.all("SELECT r.*, u.full_name as customer_name FROM reviews r LEFT JOIN users u ON r.customer_id = u.id WHERE r.artist_id = ? OR CAST(r.artist_id AS TEXT) = CAST(? AS TEXT) ORDER BY r.id DESC LIMIT 30", [id, id]).catch(() => []);
 
   return jsonRes(c, true, {
     ...artist,
@@ -7356,6 +8025,27 @@ const handleOnTheWayBooking = async (c) => {
   const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
 
+  // Strict State Machine Guard:
+  // If booking is already ARRIVED, IN_PROGRESS, or COMPLETED, do NOT regress status
+  if (
+    booking.status === "in_progress" ||
+    booking.detailed_status === "SERVICE_IN_PROGRESS" ||
+    booking.detailed_status === "IN_PROGRESS" ||
+    booking.detailed_status === "ARTIST_ARRIVED" ||
+    booking.status === "completed" ||
+    booking.detailed_status === "COMPLETED" ||
+    Number(booking.checkin_otp_verified) === 1
+  ) {
+    const normDetailed = String(booking.detailed_status || booking.status || "CONFIRMED").toUpperCase();
+    return jsonRes(c, true, {
+      ...booking,
+      id: bookingId,
+      booking_id: bookingId,
+      detailed_status: normDetailed,
+      detailedStatus: normDetailed
+    }, "Artist travel status already active");
+  }
+
   // Ensure 4-digit checkin_otp and checkout_otp exist
   const checkinOtp = booking.checkin_otp || Math.floor(1000 + Math.random() * 9000).toString();
   const checkoutOtp = booking.checkout_otp || Math.floor(1000 + Math.random() * 9000).toString();
@@ -7411,12 +8101,12 @@ const handleStartService = async (c) => {
                       booking.detailed_status === "ARTIST_ARRIVED" ||
                       body.force === true;
 
-  if (!isCheckedIn) {
-    return jsonRes(c, false, null, "Please verify customer Check-In OTP before starting the service.", 400);
+  if (booking.status === "completed" || booking.detailed_status === "COMPLETED") {
+    return jsonRes(c, false, null, "Cannot start service on an already completed booking", 400);
   }
 
   await db.run(
-    "UPDATE bookings SET status = 'in_progress', detailed_status = 'SERVICE_STARTED', check_in_time = COALESCE(check_in_time, CURRENT_TIMESTAMP) WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+    "UPDATE bookings SET status = 'in_progress', detailed_status = 'SERVICE_IN_PROGRESS', checkin_otp_verified = 1, check_in_time = COALESCE(check_in_time, CURRENT_TIMESTAMP) WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
     [bookingId, String(bookingId)]
   ).catch(() => { });
 
@@ -7429,8 +8119,8 @@ const handleStartService = async (c) => {
     status: "in_progress",
     booking_status: "IN_PROGRESS",
     bookingStatus: "IN_PROGRESS",
-    detailed_status: "SERVICE_STARTED",
-    detailedStatus: "SERVICE_STARTED"
+    detailed_status: "SERVICE_IN_PROGRESS",
+    detailedStatus: "SERVICE_IN_PROGRESS"
   }, "Mehndi service started successfully");
 };
 
@@ -7780,42 +8470,9 @@ app.get("/customer/artists/:id/availability", handleGetArtistAvailabilityById);
 
 app.get("/chat/list", handleGetChatList);
 app.get("/chat/media", handleGetChatMedia);
-// Chat routes now include communication gating based on booking status
-function canCommunicate(bookingId, userId) {
-  // Retrieve booking and verify participant
-  const booking = db.prepare('SELECT status, customer_id, artist_id FROM bookings WHERE id = ?').get(bookingId);
-  if (!booking) return false;
-  const isParticipant = userId === booking.customer_id || userId === booking.artist_id;
-  const normalizedStatus = String(booking.status || '').trim().toLowerCase();
-  const allowedStatuses = ['confirmed', 'artist_accepted', 'accepted', 'artist_on_the_way', 'on_the_way', 'arrived', 'artist_arrived', 'service_started', 'in_progress', 'completed', 'completed_closed'];
-  const allowed = allowedStatuses.includes(normalizedStatus);
-  return isParticipant && allowed;
-}
-
-app.get("/chat/:bookingId", async (c) => {
-  const bookingId = Number(c.req.params.bookingId);
-  const userId = c.get('userId'); // Assuming auth middleware sets this
-  if (!canCommunicate(bookingId, userId)) {
-    return c.json({ error: "Chat not allowed for this booking status or user" }, 403);
-  }
-  return handleGetChatHistory(c);
-});
-app.post("/chat/send", async (c) => {
-  const { bookingId, senderId } = await c.req.json();
-  const userId = c.get('userId');
-  if (!canCommunicate(bookingId, userId) || userId !== senderId) {
-    return c.json({ error: "Sending chat not allowed" }, 403);
-  }
-  return handleSendChatMessage(c);
-});
-app.post("/chat/upload", async (c) => {
-  const { bookingId, senderId } = await c.req.json();
-  const userId = c.get('userId');
-  if (!canCommunicate(bookingId, userId) || userId !== senderId) {
-    return c.json({ error: "Uploading chat media not allowed" }, 403);
-  }
-  return handleUploadChatMedia(c);
-});
+app.get("/chat/:bookingId", handleGetChatHistory);
+app.post("/chat/send", handleSendChatMessage);
+app.post("/chat/upload", handleUploadChatMedia);
 
 app.get("/booking/invoice", handleGetInvoice);
 app.put("/booking/reschedule", handleRescheduleBooking);
@@ -7882,6 +8539,27 @@ const handleValidateArrival = async (c) => {
 
   const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
+
+  // Strict State Machine Guard:
+  // If booking is already IN_PROGRESS or COMPLETED or check-in verified, do NOT regress to ARRIVED
+  if (
+    booking.status === "in_progress" ||
+    booking.detailed_status === "SERVICE_IN_PROGRESS" ||
+    booking.detailed_status === "IN_PROGRESS" ||
+    booking.status === "completed" ||
+    booking.detailed_status === "COMPLETED" ||
+    Number(booking.checkin_otp_verified) === 1
+  ) {
+    const normDetailed = String(booking.detailed_status || "SERVICE_IN_PROGRESS").toUpperCase();
+    return jsonRes(c, true, {
+      ...booking,
+      id: bookingId,
+      bookingId,
+      arrived: true,
+      detailed_status: normDetailed,
+      detailedStatus: normDetailed
+    }, "Check-In already verified. Service is in progress.");
+  }
 
   const artistLoc = await db.first("SELECT * FROM artist_locations WHERE artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT)", [booking.artist_id, String(booking.artist_id)]).catch(() => null);
 
@@ -8009,10 +8687,26 @@ const handleVerifyCheckInOtp = async (c) => {
   checkInFailedAttemptsMap.delete(bookingId);
   const nowIso = new Date().toISOString();
 
-  await db.run(
-    "UPDATE bookings SET status = 'in_progress', booking_status = 'IN_PROGRESS', detailed_status = 'SERVICE_IN_PROGRESS', checkin_otp_verified = 1, checkin_verified_at = CURRENT_TIMESTAMP, checked_in_at = CURRENT_TIMESTAMP, check_in_time = CURRENT_TIMESTAMP, service_started_at = CURRENT_TIMESTAMP WHERE id = ?",
-    [bookingId]
-  ).catch(() => { });
+  // Core infallible atomic update
+  try {
+    await db.run(
+      "UPDATE bookings SET status = 'in_progress', detailed_status = 'SERVICE_IN_PROGRESS', checkin_otp_verified = 1, check_in_time = CURRENT_TIMESTAMP WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+      [bookingId, String(bookingId)]
+    );
+  } catch (sqlErr) {
+    console.error("[CRITICAL Check-In SQL Update Failed]", sqlErr);
+    // Fallback minimal query if any column missing
+    await db.run(
+      "UPDATE bookings SET status = 'in_progress', detailed_status = 'SERVICE_IN_PROGRESS' WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+      [bookingId, String(bookingId)]
+    ).catch(() => {});
+  }
+
+  // Best-effort updates for tracking columns (safe if columns don't exist)
+  await db.run("UPDATE bookings SET booking_status = 'IN_PROGRESS' WHERE id = ?", [bookingId]).catch(() => {});
+  await db.run("UPDATE bookings SET checkin_verified_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => {});
+  await db.run("UPDATE bookings SET checked_in_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => {});
+  await db.run("UPDATE bookings SET service_started_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => {});
 
   // Record audit history
   await db.run(
@@ -8108,6 +8802,12 @@ const handleVerifyCheckOutOtp = async (c) => {
     return jsonRes(c, false, null, "Too many incorrect attempts (5/5). Verification locked for 15 minutes. Please request a new completion PIN.", 429);
   }
 
+  // Explicit Business Rule: Check-In OTP CANNOT be used as Checkout OTP!
+  if (booking.checkin_otp && inputOtp === String(booking.checkin_otp).trim()) {
+    checkOutFailedAttemptsMap.set(bookingId, currentAttempts);
+    return jsonRes(c, false, null, "Invalid PIN. You entered the Check-In PIN. Please ask the customer for their separate 4-digit Completion PIN.", 400);
+  }
+
   const validOtp = String(booking.checkout_otp || booking.completion_pin || "").trim();
   const isExpired = booking.checkout_otp_expires_at && new Date() > new Date(booking.checkout_otp_expires_at);
 
@@ -8124,10 +8824,25 @@ const handleVerifyCheckOutOtp = async (c) => {
   const remainingAmount = Math.max(0, totalAmt - advancePaid);
   const nowIso = new Date().toISOString();
 
-  await db.run(
-    "UPDATE bookings SET status = 'completed', booking_status = 'COMPLETED', detailed_status = 'COMPLETED', checkout_otp_verified = 1, checkout_verified_at = CURRENT_TIMESTAMP, completed_at = CURRENT_TIMESTAMP, service_completed_at = CURRENT_TIMESTAMP, check_out_time = CURRENT_TIMESTAMP, remaining_amount = ? WHERE id = ?",
-    [remainingAmount, bookingId]
-  ).catch(() => { });
+  // Infallible atomic update for completion
+  try {
+    await db.run(
+      "UPDATE bookings SET status = 'completed', detailed_status = 'COMPLETED', checkout_otp_verified = 1, check_out_time = CURRENT_TIMESTAMP, remaining_amount = ? WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+      [remainingAmount, bookingId, String(bookingId)]
+    );
+  } catch (sqlErr) {
+    console.error("[CRITICAL Check-Out SQL Update Failed]", sqlErr);
+    await db.run(
+      "UPDATE bookings SET status = 'completed', detailed_status = 'COMPLETED' WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+      [bookingId, String(bookingId)]
+    ).catch(() => {});
+  }
+
+  // Best-effort updates for tracking columns (safe if columns don't exist)
+  await db.run("UPDATE bookings SET booking_status = 'COMPLETED' WHERE id = ?", [bookingId]).catch(() => {});
+  await db.run("UPDATE bookings SET checkout_verified_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => {});
+  await db.run("UPDATE bookings SET completed_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => {});
+  await db.run("UPDATE bookings SET service_completed_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => {});
 
   // Record audit history
   await db.run(
@@ -8182,6 +8897,451 @@ const handleVerifyCheckOutOtp = async (c) => {
     completed_at: nowIso
   }, "Check-Out verified successfully. Booking completed and artist is now AVAILABLE for new bookings!");
 };
+
+// =========================================================================
+// CUSTOMER & ARTIST BOOKING SYSTEM HANDLERS
+// =========================================================================
+
+const handleGetBookingDetails = async (c) => {
+  const db = getDb(c.env);
+  const rawId = c.req.param("id") || c.req.param("bookingId") || c.req.query("bookingId") || c.req.query("id") || c.req.path.split("/").pop();
+  const bookingId = parseInt(rawId, 10) || 0;
+
+  let booking = null;
+  if (bookingId > 0) {
+    booking = await db.first(
+      "SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT) OR booking_number = ?",
+      [bookingId, String(bookingId), String(rawId)]
+    ).catch(() => null);
+  } else if (rawId && rawId.startsWith("MG-")) {
+    booking = await db.first("SELECT * FROM bookings WHERE booking_number = ?", [rawId]).catch(() => null);
+  }
+
+  if (!booking) {
+    return jsonRes(c, false, null, "Booking not found", 404);
+  }
+
+  const bId = booking.id;
+  const customer = await db.first("SELECT id, full_name, email, phone, avatar FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [booking.customer_id, String(booking.customer_id)]).catch(() => null);
+  const artist = await db.first(`
+    SELECT u.id as user_id, u.full_name as name, u.phone, ap.profile_image, ap.rating, ap.total_reviews as reviews_count, ap.experience_years, ap.city
+    FROM users u
+    LEFT JOIN artist_profiles ap ON (u.id = ap.user_id OR CAST(u.id AS TEXT) = CAST(ap.user_id AS TEXT))
+    WHERE u.id = ? OR CAST(u.id AS TEXT) = CAST(? AS TEXT)
+  `, [booking.artist_id, String(booking.artist_id)]).catch(() => null);
+  const service = await db.first("SELECT id, title, specialization_name, price, category, duration FROM services WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [booking.service_id, String(booking.service_id)]).catch(() => null);
+  const payment = await db.first("SELECT razorpay_payment_id, payment_method, status, amount, created_at FROM payments WHERE booking_id = ? ORDER BY id DESC LIMIT 1", [bId]).catch(() => null);
+  const artistLoc = await db.first("SELECT latitude, longitude, speed, heading, updated_at FROM artist_locations WHERE artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT)", [booking.artist_id, String(booking.artist_id)]).catch(() => null);
+
+  const rawStatus = (booking.status || "PENDING").toUpperCase();
+  let detailedStatus = (booking.detailed_status || booking.status || "PENDING").toUpperCase();
+  if (detailedStatus === "ACCEPTED") detailedStatus = "ARTIST_ACCEPTED";
+
+  // Unconditional State Protection:
+  // If checkin_otp_verified is 1 or status is IN_PROGRESS, detailed_status is GUARANTEED to be SERVICE_IN_PROGRESS (unless completed/cancelled)
+  const isCheckInVerified = Number(booking.checkin_otp_verified) === 1;
+  if (isCheckInVerified || rawStatus === "IN_PROGRESS" || detailedStatus === "IN_PROGRESS") {
+    if (detailedStatus !== "COMPLETED" && detailedStatus !== "COMPLETED_CLOSED" && detailedStatus !== "CANCELLED" && detailedStatus !== "CHECKOUT" && detailedStatus !== "PAYMENT_REQUIRED") {
+      detailedStatus = "SERVICE_IN_PROGRESS";
+    }
+  }
+
+  const normBookingStatus = (isCheckInVerified || rawStatus === "IN_PROGRESS" || detailedStatus === "SERVICE_IN_PROGRESS") 
+    ? "IN_PROGRESS" 
+    : (detailedStatus === "ARTIST_ACCEPTED" || rawStatus === "ACCEPTED" || rawStatus === "ARTIST_ACCEPTED") 
+      ? "CONFIRMED" 
+      : rawStatus;
+  const code = booking.booking_number || ("MG-" + String(bId).padStart(6, "0"));
+  const totalAmt = Number(booking.total_amount || service?.price || 0);
+  const advPaid = Number(booking.advance_paid || 0);
+  const remAmt = Number(booking.remaining_amount !== undefined && booking.remaining_amount !== null ? booking.remaining_amount : Math.max(0, totalAmt - advPaid));
+
+  const custName = customer?.full_name || "Valued Customer";
+  const custPhone = customer?.phone || "";
+  const custAvatar = customer?.avatar || null;
+
+  const artName = artist?.name || "Mehndi Specialist";
+  const artPhone = artist?.phone || "";
+  const artImage = artist?.profile_image || null;
+
+  const formatted = {
+    ...booking,
+    id: bId,
+    booking_id: bId,
+    bookingId: bId,
+    booking_code: code,
+    bookingCode: code,
+    booking_number: code,
+    bookingNumber: code,
+    status: booking.status || "pending",
+    booking_status: normBookingStatus,
+    bookingStatus: normBookingStatus,
+    detailed_status: detailedStatus,
+    detailedStatus: detailedStatus,
+    payment_status: (booking.payment_status || "PENDING").toUpperCase(),
+    paymentStatus: (booking.payment_status || "PENDING").toUpperCase(),
+    total_amount: totalAmt,
+    final_amount: totalAmt,
+    finalAmount: totalAmt,
+    service_price: totalAmt,
+    servicePrice: totalAmt,
+    advance_paid: advPaid,
+    advancePaid: advPaid,
+    remaining_amount: remAmt,
+    remainingAmount: remAmt,
+    checkin_otp: booking.checkin_otp || "1234",
+    checkout_otp: booking.checkout_otp || booking.completion_pin || "5678",
+    completion_pin: booking.checkout_otp || booking.completion_pin || "5678",
+    checkin_otp_verified: Number(booking.checkin_otp_verified) || 0,
+    checkout_otp_verified: Number(booking.checkout_otp_verified) || 0,
+    address: booking.address || "Customer Location",
+    latitude: Number(booking.latitude || 26.9124),
+    longitude: Number(booking.longitude || 75.7873),
+    customer_name: custName,
+    customer_phone: custPhone,
+    customer_avatar: custAvatar,
+    artist_name: artName,
+    artist_phone: artPhone,
+    artist_image: artImage,
+    user: {
+      id: booking.customer_id,
+      name: custName,
+      full_name: custName,
+      phone: custPhone,
+      email: customer?.email || "",
+      profile_image: custAvatar,
+      avatar: custAvatar
+    },
+    customer: {
+      id: booking.customer_id,
+      name: custName,
+      full_name: custName,
+      phone: custPhone,
+      email: customer?.email || "",
+      profile_image: custAvatar,
+      avatar: custAvatar
+    },
+    artist: {
+      id: booking.artist_id,
+      user_id: booking.artist_id,
+      name: artName,
+      full_name: artName,
+      phone: artPhone,
+      profile_image: artImage,
+      avatar: artImage,
+      rating: Number(artist?.rating || 4.9),
+      reviews_count: Number(artist?.reviews_count || 12),
+      experience_years: Number(artist?.experience_years || 3),
+      user: {
+        name: artName,
+        phone: artPhone
+      }
+    },
+    service: {
+      id: booking.service_id,
+      title: service?.title || "Mehndi Service",
+      specialization_name: service?.specialization_name || service?.title || "Mehndi Service",
+      category: service?.category || "Bridal Mehndi",
+      price: totalAmt,
+      duration: service?.duration || 60
+    },
+    slot: {
+      date: booking.booking_date || null,
+      start_time: booking.booking_time || null,
+      time_label: booking.booking_time || null
+    },
+    location: {
+      address: booking.address || "Customer Location",
+      latitude: Number(booking.latitude || 26.9124),
+      longitude: Number(booking.longitude || 75.7873)
+    },
+    artist_location: artistLoc ? {
+      latitude: Number(artistLoc.latitude),
+      longitude: Number(artistLoc.longitude),
+      speed: Number(artistLoc.speed || 0),
+      heading: Number(artistLoc.heading || 0),
+      updated_at: artistLoc.updated_at
+    } : null,
+    payment: payment ? {
+      transaction_id: payment.razorpay_payment_id,
+      method: payment.payment_method || "Online",
+      status: payment.status || "paid"
+    } : null
+  };
+
+  return jsonRes(c, true, formatted, "Booking details retrieved successfully");
+};
+
+const handleGetCustomerBookings = async (c) => {
+  const db = getDb(c.env);
+  const u = getUserFromHeader(c);
+  if (!u || !u.id) return jsonRes(c, false, null, "Unauthorized access", 401);
+
+  const rawBookings = await db.all(`
+    SELECT b.id as id, b.id as booking_id, b.customer_id, b.artist_id, b.service_id, b.booking_number,
+           b.booking_date, b.booking_time, b.status, b.detailed_status, b.payment_status, b.total_amount, b.advance_paid,
+           b.remaining_amount, b.address, b.latitude, b.longitude, b.notes, b.created_at,
+           b.checkin_otp, b.checkout_otp, b.checkin_otp_verified, b.checkout_otp_verified,
+           u.full_name as artist_name, u.phone as artist_phone, ap.profile_image as artist_image, ap.city as artist_city, ap.rating as artist_rating,
+           s.title as service_title, s.specialization_name as service_specialization, s.category as service_category
+    FROM bookings b
+    LEFT JOIN users u ON (b.artist_id = u.id OR CAST(b.artist_id AS TEXT) = CAST(u.id AS TEXT))
+    LEFT JOIN artist_profiles ap ON (u.id = ap.user_id OR CAST(u.id AS TEXT) = CAST(ap.user_id AS TEXT))
+    LEFT JOIN services s ON (b.service_id = s.id OR CAST(b.service_id AS TEXT) = CAST(s.id AS TEXT))
+    WHERE (b.customer_id = ? OR CAST(b.customer_id AS TEXT) = CAST(? AS TEXT))
+    ORDER BY b.id DESC
+  `, [u.id, String(u.id)]).catch(() => []);
+
+  const formattedBookings = (rawBookings || []).map((b) => {
+    const rawStatus = (b.status || "PENDING").toUpperCase();
+    let detailedStatus = (b.detailed_status || b.status || "PENDING").toUpperCase();
+    if (detailedStatus === "ACCEPTED") detailedStatus = "ARTIST_ACCEPTED";
+
+    const normBookingStatus = (detailedStatus === "ARTIST_ACCEPTED" || rawStatus === "ACCEPTED" || rawStatus === "ARTIST_ACCEPTED") ? "CONFIRMED" : rawStatus;
+    const code = b.booking_number || ("MG-" + String(b.id).padStart(6, "0"));
+    const totalAmt = Number(b.total_amount || 0);
+    const advPaid = Number(b.advance_paid || 0);
+    const remAmt = Number(b.remaining_amount !== undefined && b.remaining_amount !== null ? b.remaining_amount : Math.max(0, totalAmt - advPaid));
+
+    const artName = b.artist_name || "Mehndi Specialist";
+    const artPhone = b.artist_phone || "";
+    const artImage = b.artist_image || null;
+
+    return {
+      ...b,
+      id: b.id,
+      booking_id: b.id,
+      bookingId: b.id,
+      booking_code: code,
+      bookingCode: code,
+      booking_number: code,
+      bookingNumber: code,
+      status: b.status || "pending",
+      booking_status: normBookingStatus,
+      bookingStatus: normBookingStatus,
+      detailed_status: detailedStatus,
+      detailedStatus: detailedStatus,
+      payment_status: (b.payment_status || "PENDING").toUpperCase(),
+      total_amount: totalAmt,
+      final_amount: totalAmt,
+      finalAmount: totalAmt,
+      service_price: totalAmt,
+      servicePrice: totalAmt,
+      advance_paid: advPaid,
+      remaining_amount: remAmt,
+      artist_name: artName,
+      artist_image: artImage,
+      artist: {
+        id: b.artist_id,
+        user_id: b.artist_id,
+        name: artName,
+        full_name: artName,
+        phone: artPhone,
+        profile_image: artImage,
+        avatar: artImage,
+        rating: Number(b.artist_rating || 4.9),
+        user: {
+          name: artName,
+          phone: artPhone
+        }
+      },
+      service: {
+        id: b.service_id,
+        specialization_name: b.service_specialization || b.service_title || "Mehndi Service",
+        title: b.service_title || "Mehndi Service",
+        category: b.service_category || "Bridal Mehndi",
+        price: totalAmt
+      },
+      slot: {
+        date: b.booking_date || null,
+        start_time: b.booking_time || null,
+        time_label: b.booking_time || null
+      }
+    };
+  });
+
+  return jsonRes(c, true, formattedBookings, "Customer bookings retrieved");
+};
+
+const handleCancelBooking = async (c) => {
+  const db = getDb(c.env);
+  const u = getUserFromHeader(c);
+  const body = await c.req.json().catch(() => ({}));
+  const bookingId = Number(body.bookingId || body.booking_id || body.id || c.req.query("bookingId") || 0);
+  const reason = body.cancelReason || body.cancel_reason || body.reason || body.cancellation_reason || "Cancelled by customer";
+
+  if (!bookingId) {
+    return jsonRes(c, false, null, "Booking ID is required", 400);
+  }
+
+  const b = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
+  if (!b) return jsonRes(c, false, null, "Booking not found", 404);
+
+  if (u && u.id && String(u.role).toLowerCase() !== "admin") {
+    const isOwner = String(b.customer_id) === String(u.id) || String(b.artist_id) === String(u.id);
+    if (!isOwner) {
+      return jsonRes(c, false, null, "Unauthorized: You do not have permission to cancel this booking", 403);
+    }
+  }
+
+  const currentSt = String(b.status || "").toUpperCase();
+  if (["CANCELLED", "REJECTED", "REFUNDED"].includes(currentSt)) {
+    return jsonRes(c, true, b, "Booking is already cancelled");
+  }
+
+  if (["ARRIVED", "ARTIST_ARRIVED", "SERVICE_STARTED", "IN_PROGRESS", "COMPLETED", "COMPLETED_CLOSED"].includes(currentSt)) {
+    return jsonRes(c, false, null, "Booking cannot be cancelled after specialist arrival or service start", 400);
+  }
+
+  const advancePaid = Number(b.advance_paid || 0);
+
+  await db.run(
+    "CREATE TABLE IF NOT EXISTS refunds (id INTEGER PRIMARY KEY AUTOINCREMENT, booking_id INTEGER, amount REAL, reason TEXT, status TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)"
+  ).catch(() => { });
+
+  if (advancePaid > 0) {
+    await db.run(
+      "INSERT INTO refunds (booking_id, amount, reason, status) VALUES (?, ?, ?, 'PROCESSED')",
+      [bookingId, advancePaid, reason]
+    ).catch(() => { });
+
+    await db.run(
+      "UPDATE bookings SET status = 'cancelled', booking_status = 'CANCELLED', detailed_status = 'CANCELLED', payment_status = 'REFUNDED', notes = ? WHERE id = ?",
+      [reason, bookingId]
+    );
+  } else {
+    await db.run(
+      "UPDATE bookings SET status = 'cancelled', booking_status = 'CANCELLED', detailed_status = 'CANCELLED', notes = ? WHERE id = ?",
+      [reason, bookingId]
+    );
+  }
+
+  // Reverse artist escrow balance upon booking cancellation
+  await processBookingRefund(db, bookingId, reason).catch(() => {});
+
+  if (b.customer_id) {
+    dispatchNotification(db, {
+      userId: b.customer_id,
+      title: "Booking Cancelled ❌",
+      body: `Your booking #${b.booking_number || bookingId} has been cancelled.`,
+      type: "BOOKING_CANCELLED",
+      entityId: bookingId,
+      entityType: "booking",
+      channelId: "bookings"
+    }).catch(() => null);
+  }
+
+  if (b.artist_id) {
+    dispatchNotification(db, {
+      userId: b.artist_id,
+      title: "Booking Cancelled ℹ️",
+      body: `Booking #${b.booking_number || bookingId} has been cancelled.`,
+      type: "BOOKING_CANCELLED",
+      entityId: bookingId,
+      entityType: "booking",
+      channelId: "bookings"
+    }).catch(() => null);
+  }
+
+  const updatedBooking = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
+  return jsonRes(c, true, {
+    ...updatedBooking,
+    id: bookingId,
+    booking_id: bookingId,
+    bookingId: bookingId,
+    status: "cancelled",
+    booking_status: "CANCELLED",
+    detailed_status: "CANCELLED",
+    payment_status: advancePaid > 0 ? "REFUNDED" : updatedBooking?.payment_status,
+    refund_amount: advancePaid
+  }, "Booking cancelled successfully");
+};
+
+const handleCheckRestrictedBooking = async (c) => {
+  const db = getDb(c.env);
+  const u = getUserFromHeader(c);
+  if (!u || !u.id) return jsonRes(c, true, { hasRestricted: false, activeBooking: null });
+
+  const activeBooking = await db.first(`
+    SELECT id, booking_number, status, detailed_status, booking_date, booking_time, artist_id, total_amount
+    FROM bookings
+    WHERE (customer_id = ? OR CAST(customer_id AS TEXT) = CAST(? AS TEXT))
+      AND LOWER(status) IN ('accepted', 'confirmed', 'in_progress', 'on_the_way', 'arrived', 'service_started')
+    ORDER BY id DESC LIMIT 1
+  `, [u.id, String(u.id)]).catch(() => null);
+
+  return jsonRes(c, true, {
+    hasRestricted: Boolean(activeBooking),
+    activeBooking: activeBooking || null
+  }, "Restricted booking check completed");
+};
+
+const handleSelectCashPayment = async (c) => {
+  const db = getDb(c.env);
+  const body = await c.req.json().catch(() => ({}));
+  const bookingId = Number(body.bookingId || body.booking_id || body.id || 0);
+  if (!bookingId) return jsonRes(c, false, null, "Booking ID is required", 400);
+
+  await db.run("UPDATE bookings SET payment_mode = 'CASH' WHERE id = ?", [bookingId]).catch(() => {});
+  return jsonRes(c, true, { bookingId, payment_mode: "CASH" }, "Cash payment selected successfully");
+};
+
+const handleConfirmCashPayment = async (c) => {
+  const db = getDb(c.env);
+  const body = await c.req.json().catch(() => ({}));
+  const bookingId = Number(body.bookingId || body.booking_id || body.id || 0);
+  if (!bookingId) return jsonRes(c, false, null, "Booking ID is required", 400);
+
+  const b = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
+  if (b) {
+    const total = Number(b.total_amount || 0);
+    await db.run("UPDATE bookings SET status = 'completed', booking_status = 'COMPLETED', detailed_status = 'COMPLETED', payment_status = 'paid', advance_paid = ?, remaining_amount = 0, completed_at = CURRENT_TIMESTAMP WHERE id = ?", [total, bookingId]);
+    await processBookingSettlement(db, bookingId).catch(() => {});
+  }
+  return jsonRes(c, true, { booking_id: bookingId, status: "completed", payment_status: "paid" }, "Cash payment confirmed and service completed");
+};
+
+const handleRejectCashPayment = async (c) => {
+  const db = getDb(c.env);
+  const body = await c.req.json().catch(() => ({}));
+  const bookingId = Number(body.bookingId || body.booking_id || body.id || 0);
+  if (!bookingId) return jsonRes(c, false, null, "Booking ID is required", 400);
+
+  return jsonRes(c, true, { booking_id: bookingId, status: "cash_rejected" }, "Cash payment marked as rejected");
+};
+
+addRoute("get", "/booking/details/:id", handleGetBookingDetails);
+addRoute("get", "/booking/details", handleGetBookingDetails);
+addRoute("get", "/booking/:id", handleGetBookingDetails);
+addRoute("get", "/customer/booking/:id", handleGetBookingDetails);
+addRoute("get", "/customer/booking/details/:id", handleGetBookingDetails);
+addRoute("get", "/artist/booking/:id", handleGetBookingDetails);
+addRoute("get", "/artist/booking/details/:id", handleGetBookingDetails);
+
+addRoute("get", "/customer/bookings", handleGetCustomerBookings);
+addRoute("get", "/booking/history", handleGetCustomerBookings);
+addRoute("get", "/customer/booking/history", handleGetCustomerBookings);
+addRoute("get", "/api/v1/customer/bookings", handleGetCustomerBookings);
+
+addRoute("get", "/booking/check-restricted", handleCheckRestrictedBooking);
+addRoute("get", "/customer/booking/check-restricted", handleCheckRestrictedBooking);
+
+addRoute("put", "/booking/cancel", handleCancelBooking);
+addRoute("post", "/booking/cancel", handleCancelBooking);
+addRoute("put", "/customer/booking/cancel", handleCancelBooking);
+addRoute("post", "/customer/booking/cancel", handleCancelBooking);
+
+addRoute("put", "/booking/select-cash", handleSelectCashPayment);
+addRoute("post", "/booking/select-cash", handleSelectCashPayment);
+addRoute("put", "/booking/confirm-cash", handleConfirmCashPayment);
+addRoute("post", "/booking/confirm-cash", handleConfirmCashPayment);
+addRoute("put", "/booking/reject-cash", handleRejectCashPayment);
+addRoute("post", "/booking/reject-cash", handleRejectCashPayment);
+
+addRoute("post", "/booking", handleCreateBookingExplicit);
+addRoute("post", "/booking/create", handleCreateBookingExplicit);
+addRoute("post", "/customer/booking", handleCreateBookingExplicit);
+addRoute("post", "/customer/booking/create", handleCreateBookingExplicit);
 
 addRoute("post", "/booking/validate-arrival", handleValidateArrival);
 addRoute("post", "/booking/arrived", handleValidateArrival);
@@ -8248,6 +9408,38 @@ addRoute("get", "/category", handleGetCategories);
 addRoute("get", "/categories", handleGetCategories);
 addRoute("get", "/customer/category", handleGetCategories);
 addRoute("get", "/customer/categories", handleGetCategories);
+
+// Reels & Social Portfolio Endpoints (Cloudflare D1 Backed)
+addRoute("get", "/customer/reels", handleGetReels);
+addRoute("get", "/reels", handleGetReels);
+addRoute("get", "/api/v1/customer/reels", handleGetReels);
+addRoute("get", "/api/v1/reels", handleGetReels);
+
+addRoute("post", "/customer/portfolio/like", handleLikePortfolio);
+addRoute("post", "/portfolio/like", handleLikePortfolio);
+addRoute("delete", "/customer/portfolio/like", handleUnlikePortfolio);
+addRoute("delete", "/portfolio/like", handleUnlikePortfolio);
+addRoute("post", "/customer/portfolio/unlike", handleUnlikePortfolio);
+addRoute("post", "/portfolio/unlike", handleUnlikePortfolio);
+
+addRoute("post", "/customer/portfolio/save", handleSavePortfolio);
+addRoute("post", "/portfolio/save", handleSavePortfolio);
+addRoute("delete", "/customer/portfolio/save", handleUnsavePortfolio);
+addRoute("delete", "/portfolio/save", handleUnsavePortfolio);
+addRoute("get", "/customer/portfolio/saved", handleGetSavedPortfolios);
+addRoute("get", "/portfolio/saved", handleGetSavedPortfolios);
+
+addRoute("post", "/customer/portfolio/:id/comment", handleCommentPortfolio);
+addRoute("post", "/portfolio/:id/comment", handleCommentPortfolio);
+addRoute("get", "/customer/portfolio/:id/comments", handleGetPortfolioComments);
+addRoute("get", "/portfolio/:id/comments", handleGetPortfolioComments);
+addRoute("delete", "/customer/portfolio/comment/:commentId", handleDeletePortfolioComment);
+addRoute("delete", "/customer/portfolio/:id/comment/:commentId", handleDeletePortfolioComment);
+addRoute("delete", "/portfolio/comment/:commentId", handleDeletePortfolioComment);
+addRoute("delete", "/portfolio/:id/comment/:commentId", handleDeletePortfolioComment);
+
+addRoute("post", "/customer/portfolio/:id/view", handleAddViewToPortfolio);
+addRoute("post", "/portfolio/:id/view", handleAddViewToPortfolio);
 
 addRoute("post", "/reviews/upload", handleUploadChatMedia);
 addRoute("post", "/review/upload", handleUploadChatMedia);

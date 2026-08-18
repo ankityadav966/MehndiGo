@@ -17,13 +17,7 @@ import { acceptBooking, rejectBooking } from "../../services/booking";
 import { getArtistBookingsData } from "../../services/artist";
 
 export default function BookingRequestsScreen({ route, navigation }) {
-  const [activeTab, setActiveTab] = useState("Pending");
-
-  useEffect(() => {
-    if (route.params?.initialTab) {
-      setActiveTab(route.params.initialTab);
-    }
-  }, [route.params?.initialTab]);
+  const [activeTab, setActiveTab] = useState(route.params?.initialTab || "Pending");
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -204,8 +198,8 @@ export default function BookingRequestsScreen({ route, navigation }) {
         status = "ARTIST_ON_THE_WAY";
       } else if (rawStatus === "ARRIVED" || rawDetailed === "ARTIST_ARRIVED") {
         status = "ARTIST_ARRIVED";
-      } else if (rawStatus === "IN_PROGRESS" || rawDetailed === "SERVICE_STARTED") {
-        status = "SERVICE_STARTED";
+      } else if (rawStatus === "IN_PROGRESS" || rawDetailed === "SERVICE_IN_PROGRESS" || rawDetailed === "SERVICE_STARTED" || rawDetailed === "IN_PROGRESS" || rawDetailed === "PROCESSING") {
+        status = "SERVICE_IN_PROGRESS";
       } else if (rawStatus === "CANCELLED" || rawStatus === "REJECTED" || rawStatus === "DECLINED" || rawDetailed === "CANCELLED" || rawDetailed === "REJECTED" || rawDetailed === "DECLINED" || rawDetailed === "REFUNDED") {
         status = "CANCELLED";
       } else if (rawStatus === "COMPLETED" || rawDetailed === "COMPLETED" || rawDetailed === "AWAITING_CASH_CONFIRMATION" || rawDetailed === "COMPLETED_CLOSED") {
@@ -221,7 +215,7 @@ export default function BookingRequestsScreen({ route, navigation }) {
       }
       
       if (activeTab === "Accepted") {
-        return ["ARTIST_ACCEPTED", "ACCEPTED", "CONFIRMED", "ARTIST_ON_THE_WAY", "ARTIST_ARRIVED", "SERVICE_STARTED", "RESCHEDULED", "CASH_PAYMENT_PENDING", "CASH_DISPUTED", "WAITING_FOR_USER_PAYMENT"].includes(status);
+        return ["ARTIST_ACCEPTED", "ACCEPTED", "CONFIRMED", "ARTIST_ON_THE_WAY", "ON_THE_WAY", "ARTIST_ARRIVED", "ARRIVED", "SERVICE_IN_PROGRESS", "SERVICE_STARTED", "IN_PROGRESS", "PROCESSING", "CHECKOUT", "RESCHEDULED", "CASH_PAYMENT_PENDING", "CASH_DISPUTED", "WAITING_FOR_USER_PAYMENT"].includes(status);
       }
 
       if (activeTab === "Cancelled") {

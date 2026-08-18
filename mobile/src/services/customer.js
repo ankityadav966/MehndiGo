@@ -291,7 +291,7 @@ export async function submitSupportTicket(ticketData) {
   try {
     const res = await apiRequest("POST", "/support/ticket", ticketData, true);
     return res?.data || res;
-  } catch (err) {
+  } catch (_) {
     const res = await apiRequest("POST", "/customer/support/ticket", ticketData, true);
     return res?.data || res;
   }
@@ -301,7 +301,7 @@ export async function getSupportTickets() {
   try {
     const res = await apiRequest("GET", "/support/tickets", null, true);
     return res?.data || res;
-  } catch (err) {
+  } catch (_) {
     const res = await apiRequest("GET", "/customer/support/tickets", null, true);
     return res?.data || res;
   }
@@ -343,10 +343,10 @@ export async function replySupportTicket(id, replyData) {
   let backendResult = null;
   try {
     backendResult = await apiRequest("POST", `/support/tickets/${id}/reply`, replyData, true);
-  } catch (err) {
+  } catch (_) {
     try {
       backendResult = await apiRequest("POST", `/customer/support/tickets/${id}/reply`, replyData, true);
-    } catch (_) {}
+    } catch (__) {}
   }
 
   // Also post an in-app notification so Admin sees the user reply in real time
@@ -370,7 +370,7 @@ export async function closeSupportTicket(id) {
   try {
     const res = await apiRequest("PUT", `/support/tickets/${id}/close`, null, true);
     return res?.data || res;
-  } catch (err) {
+  } catch (_) {
     const res = await apiRequest("PUT", `/customer/support/tickets/${id}/close`, null, true);
     return res?.data || res;
   }
@@ -380,7 +380,7 @@ export async function reopenSupportTicket(id) {
   try {
     const res = await apiRequest("POST", `/support/tickets/${id}/reopen`, null, true);
     return res?.data || res;
-  } catch (err) {
+  } catch (_) {
     const res = await apiRequest("PUT", `/support/tickets/${id}/status`, { status: "OPEN" }, true);
     return res?.data || res;
   }
