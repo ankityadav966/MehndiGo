@@ -362,7 +362,9 @@ export default function BookingDetailsScreen({ route, navigation }) {
   useEffect(() => {
     if (!booking) return;
     const currentDetailedStatus = getNormalizedStatus(booking);
-    const activeTrackingStatuses = ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED", "WAITING_FOR_USER_PAYMENT", "COMPLETED"];
+    // Only run GPS tracking while artist is actively traveling to customer.
+    // After OTP verification (CUSTOMER_VERIFIED+) tracking is no longer needed.
+    const activeTrackingStatuses = ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY"];
 
     if (activeTrackingStatuses.includes(currentDetailedStatus)) {
       checkAndGetArtistLocation(false);
@@ -715,28 +717,53 @@ export default function BookingDetailsScreen({ route, navigation }) {
     }
   };
 
-  const handleConfirmCash = async () => {
-    setLoading(true);
-    try {
-      await confirmCashPayment(bookingId);
-      Alert.alert("Payment Confirmed", "You confirmed that cash payment was received. Booking completed & settled.");
-      loadDetails();
-    } catch (err) {
-      Alert.alert("Error", err.message || "Failed to confirm cash payment.");
-      setLoading(false);
-    }
+  const handleConfirmCash = () => {
+    Alert.alert(
+      "Confirm Cash Received",
+      "Have you received the full amount from the customer? This action cannot be undone and commission will be deducted from your wallet.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Confirm", 
+          onPress: async () => {
+            setLoading(true);
+            try {
+              await confirmCashPayment(bookingId);
+              Alert.alert("Payment Confirmed", "You confirmed that cash payment was received. Booking completed & settled.");
+              loadDetails();
+            } catch (err) {
+              Alert.alert("Error", err.message || "Failed to confirm cash payment.");
+              setLoading(false);
+            }
+          }
+        }
+      ]
+    );
   };
 
-  const handleRejectCash = async () => {
-    setLoading(true);
-    try {
-      await rejectCashPayment(bookingId);
-      Alert.alert("Dispute Logged", "You reported that cash payment was not received. Admin has been notified.");
-      loadDetails();
-    } catch (err) {
-      Alert.alert("Error", err.message || "Failed to reject cash payment.");
-      setLoading(false);
-    }
+  const handleRejectCash = () => {
+    Alert.alert(
+      "Report Payment Not Received",
+      "Are you sure you haven't received the cash? The booking will be flagged and Admin will be notified.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Report Issue",
+          style: "destructive",
+          onPress: async () => {
+            setLoading(true);
+            try {
+              await rejectCashPayment(bookingId);
+              Alert.alert("Dispute Logged", "You reported that cash payment was not received. Admin has been notified.");
+              loadDetails();
+            } catch (err) {
+              Alert.alert("Error", err.message || "Failed to reject cash payment.");
+              setLoading(false);
+            }
+          }
+        }
+      ]
+    );
   };
 
   if (loading || !booking) {
@@ -760,7 +787,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
     return 0;
   };
   const activeStepIndex = getActiveStepIndex(currentDetailedStatus);
-  const canChat = ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED"].includes(currentDetailedStatus);
+  const canChat = ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "ARTIST_ARRIVED", "CUSTOMER_VERIFIED", "SERVICE_STARTED"].includes(currentDetailedStatus);
 
   // 1. Authoritative Customer Destination Coordinates from Confirmed Booking Location
   const customerCoords = (booking && booking.latitude && parseFloat(booking.latitude) !== 0)
@@ -953,11 +980,11 @@ export default function BookingDetailsScreen({ route, navigation }) {
       return (
         <View style={styles.footerSingle}>
           <TouchableOpacity
-            style={[styles.footerBtn, { backgroundColor: Colors.primary }]}
+            style={[styles.footerBtn, { backgroundColor: "#059669" }]}
             onPress={handleStartServiceTap}
           >
-            <Ionicons name="brush" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-            <Text style={styles.footerBtnText}>🎨 START SERVICE</Text>
+            <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+            <Text style={styles.footerBtnText}>✅ CHECK IN — Start Service</Text>
           </TouchableOpacity>
         </View>
       );
@@ -1089,6 +1116,9 @@ export default function BookingDetailsScreen({ route, navigation }) {
           <InfoRow icon="people-outline" label="Persons / Coverage" value={`${booking.group_size || 1} Person(s) • ${booking.service_coverage || "Both Hands"}`} />
           <InfoRow icon="calendar-outline" label="Date" value={getBookingDate(booking)} />
           <InfoRow icon="time-outline" label="Time Slot" value={getBookingTime(booking)} />
+          {Boolean(booking.address) && (
+            <InfoRow icon="location-outline" label="Customer Address" value={booking.address} />
+          )}
           <InfoRow
             icon="navigate-outline"
             label="Travel Origin"
@@ -1117,8 +1147,8 @@ export default function BookingDetailsScreen({ route, navigation }) {
           )}
         </View>
 
-        {/* Navigation Map and Transit Times */}
-        {["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "SERVICE_STARTED", "WAITING_FOR_USER_PAYMENT", "COMPLETED"].includes(currentDetailedStatus) && (
+        {/* Navigation Map and Transit Times — visible only while artist is traveling */}
+        {["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY"].includes(currentDetailedStatus) && (
           <View style={styles.mapCard}>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
               <Text style={[styles.cardTitle, { marginBottom: 0 }]}>Travel Navigation Map</Text>
@@ -1277,8 +1307,14 @@ export default function BookingDetailsScreen({ route, navigation }) {
         {/* Contacts */}
         <View style={styles.contactPanel}>
           <TouchableOpacity
-            style={styles.contactBtn}
-            onPress={() => Linking.openURL(`tel:${booking.user?.phone || "9999999999"}`)}
+            style={[styles.contactBtn, !canChat && styles.disabledContactBtn]}
+            onPress={() => {
+              if (!canChat) {
+                Alert.alert("Denied", "Action not allowed for completed or cancelled bookings.");
+                return;
+              }
+              Linking.openURL(`tel:${booking.user?.phone || "9999999999"}`);
+            }}
           >
             <Ionicons name="call" size={16} color={Colors.white} />
             <Text style={styles.contactBtnText}>Call Customer</Text>

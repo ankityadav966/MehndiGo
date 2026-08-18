@@ -726,16 +726,30 @@ export default function ArtistProfileScreen({ route, navigation }) {
                   </Text>
                 </View>
                 <Text style={styles.reviewContent}>{rev.comment || rev.review_text}</Text>
-                
-                {/* Review Photos if any */}
-                {Array.isArray(rev.photos) && rev.photos.length > 0 && (
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
-                    {rev.photos.map((pUrl, pIdx) => (
-                      <Image key={pIdx} source={{ uri: pUrl }} style={styles.reviewPhotoAttachment} />
-                    ))}
-                  </ScrollView>
-                )}
-                
+                {/* Review Media (Photos/Video) */}
+                {(() => {
+                  const photosList = Array.isArray(rev.photos) ? rev.photos : (typeof rev.photos === 'string' ? JSON.parse(rev.photos || "[]") : []);
+                  if (photosList.length === 0 && !rev.video_url) return null;
+                  
+                  return (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
+                      {rev.video_url && (
+                        <View style={{ marginRight: 8, position: "relative" }}>
+                          <Image 
+                            source={{ uri: rev.video_thumbnail || "https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=300" }} 
+                            style={styles.reviewPhotoAttachment} 
+                          />
+                          <View style={{ position: "absolute", top: "50%", left: "50%", marginLeft: -12, marginTop: -12, backgroundColor: "rgba(0,0,0,0.6)", borderRadius: 12, padding: 4 }}>
+                            <Ionicons name="play" size={16} color="#fff" />
+                          </View>
+                        </View>
+                      )}
+                      {photosList.map((pUrl, pIdx) => (
+                        <Image key={pIdx} source={{ uri: pUrl }} style={styles.reviewPhotoAttachment} />
+                      ))}
+                    </ScrollView>
+                  );
+                })()}
                 {/* Artist Reply */}
                 {rev.reply_text && (
                   <View style={styles.replyBox}>

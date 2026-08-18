@@ -13,6 +13,7 @@ import HomeScreen from "../screens/Customer/HomeScreen";
 import MyBookingsScreen from "../screens/Customer/MyBookingsScreen";
 import WishlistScreen from "../screens/Customer/WishlistScreen";
 import CustomerProfileScreen from "@/screens/Customer/CustomerProfileScreen";
+import ReelsScreen from "../screens/Customer/ReelsScreen";
 
 const Tab = createBottomTabNavigator();
 
@@ -22,6 +23,12 @@ const customerRoutes = [
     component: HomeScreen,
     icon: "home-outline",
     activeIcon: "home",
+  },
+  {
+    name: "Reels",
+    component: ReelsScreen,
+    icon: "play-circle-outline",
+    activeIcon: "play-circle",
   },
   {
     name: "Wishlist",
@@ -35,12 +42,12 @@ const customerRoutes = [
     icon: "calendar-outline",
     activeIcon: "calendar",
   },
-  {
-    name: "Wallet",
-    component: WalletScreen,
-    icon: "wallet-outline",
-    activeIcon: "wallet",
-  },
+  // {
+  //   name: "Wallet",
+  //   component: WalletScreen,
+  //   icon: "wallet-outline",
+  //   activeIcon: "wallet",
+  // },
   {
     name: "Profile",
     component: CustomerProfileScreen,

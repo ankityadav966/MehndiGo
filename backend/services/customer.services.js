@@ -46,12 +46,24 @@ const trendingSearchesList = [
 class CustomerService {
   async getCategories() {
     try {
+      const { client: redisClient } = require("../../config/redis");
+      if (redisClient.isReady) {
+        const cached = await redisClient.get("home:categories");
+        if (cached) return JSON.parse(cached);
+      }
+    } catch (e) { /* ignore redis error */ }
+
+    try {
       const db = require("../models");
       const list = await db.Category.findAll({
         where: { status: "ACTIVE" },
         order: [["sort_order", "ASC"]]
       });
       if (list && list.length > 0) {
+        try {
+          const { client: redisClient } = require("../../config/redis");
+          if (redisClient.isReady) await redisClient.setEx("home:categories", 3600, JSON.stringify(list));
+        } catch (e) { /* ignore */ }
         return list;
       }
     } catch (err) {
@@ -62,6 +74,14 @@ class CustomerService {
 
   async getOffers() {
     try {
+      const { client: redisClient } = require("../../config/redis");
+      if (redisClient.isReady) {
+        const cached = await redisClient.get("home:offers");
+        if (cached) return JSON.parse(cached);
+      }
+    } catch (e) { /* ignore redis error */ }
+
+    try {
       const db = require("../models");
       if (db.Banner) {
         const banners = await db.Banner.findAll({
@@ -69,7 +89,7 @@ class CustomerService {
           order: [["createdAt", "DESC"]]
         });
         if (banners && banners.length > 0) {
-          return banners.map((b) => ({
+          const mapped = banners.map((b) => ({
             id: b.id,
             title: b.title,
             subtitle: b.subtitle || b.description,
@@ -85,6 +105,13 @@ class CustomerService {
             target_id: b.target_id || null,
             cta_link: b.cta_link || "Coupons"
           }));
+
+          try {
+            const { client: redisClient } = require("../../config/redis");
+            if (redisClient.isReady) await redisClient.setEx("home:offers", 3600, JSON.stringify(mapped));
+          } catch (e) { /* ignore */ }
+
+          return mapped;
         }
       }
     } catch (e) {
@@ -103,25 +130,61 @@ class CustomerService {
     return response.rows;
   }
 
-  async getNearbyArtists(lat, lng, radius, page, limit) {
-    const response = await repo.getArtists({
-      latitude: lat,
-      longitude: lng,
-      radius: radius || null,
-      sort: "distance",
-      page: page || 1,
-      limit: limit || 15
-    });
-    return response;
+  async getNearbyArtists(lat, lng, radius, page, limit, filter) {
+    if (!filter || filter === "All" || filter === "Nearest") {
+      const response = await repo.getArtists({
+        latitude: lat,
+        longitude: lng,
+        radius: radius || null,
+        sort: "distance",
+        page: page || 1,
+        limit: limit || 15
+      });
+      return response;
+    }
+
+    let searchFilters = {};
+    let sort = "nearest";
+
+    if (filter === "Top Rated") {
+      sort = "highest_rated";
+    } else if (filter === "Price Low-High") {
+      sort = "lowest_price";
+    } else if (filter === "5+ Exp Years") {
+      searchFilters.experience = 5;
+    } else if (filter === "Bridal") {
+      searchFilters.category = "Bridal";
+    } else if (filter === "Home Service") {
+      searchFilters.homeService = true;
+    } else if (filter === "Verified") {
+      searchFilters.verified = true;
+    }
+
+    return await this.searchArtists("", searchFilters, sort, lat, lng, page, limit);
   }
 
   async getPopularArtists(lat, lng) {
+    const cacheKey = `home:popularArtists:${lat || "none"}:${lng || "none"}`;
+    try {
+      const { client: redisClient } = require("../../config/redis");
+      if (redisClient.isReady) {
+        const cached = await redisClient.get(cacheKey);
+        if (cached) return JSON.parse(cached);
+      }
+    } catch (e) { /* ignore */ }
+
     const response = await repo.getArtists({
       latitude: lat,
       longitude: lng,
       sort: "trending",
       limit: 10
     });
+
+    try {
+      const { client: redisClient } = require("../../config/redis");
+      if (redisClient.isReady) await redisClient.setEx(cacheKey, 3600, JSON.stringify(response.rows));
+    } catch (e) { /* ignore */ }
+
     return response.rows;
   }
 
@@ -720,11 +783,44 @@ class CustomerService {
     const activeFestival = this.getActiveFestivalCampaign();
 
     let recentlyBooked = [];
+    let pendingPaymentBooking = null;
+    let pendingReviewBooking = null;
+
     if (userId) {
       try {
-        recentlyBooked = await this.getRecentlyBookedArtists(userId);
+        const bookingService = require("./booking.services");
+        
+        const [recent, pendingPay, pendingReview] = await Promise.all([
+          this.getRecentlyBookedArtists(userId),
+          bookingService.getPendingPayment(userId),
+          db.Booking.findOne({
+            where: {
+              user_id: userId,
+              booking_status: "COMPLETED",
+              payment_status: "PAID",
+              review_skipped: false
+            },
+            include: [
+              {
+                model: db.ArtistProfile,
+                as: "artist",
+                include: [{ model: db.User, as: "user", attributes: ["name", "profile_image"] }]
+              },
+              {
+                model: db.Service,
+                as: "service",
+                attributes: ["specialization_name", "minimum_price"]
+              }
+            ],
+            order: [["updatedAt", "DESC"]]
+          }).then(b => b ? b.toJSON() : null).catch(() => null)
+        ]);
+        
+        recentlyBooked = recent || [];
+        pendingPaymentBooking = pendingPay;
+        pendingReviewBooking = pendingReview;
       } catch (err) {
-        console.error("Error fetching recently booked artists:", err.message);
+        console.error("Error fetching personalized dashboard extensions:", err.message);
       }
     }
 
@@ -735,7 +831,9 @@ class CustomerService {
       popularArtists: popular,
       recommendations,
       activeFestival,
-      recentlyBooked
+      recentlyBooked,
+      pendingPaymentBooking,
+      pendingReviewBooking
     };
   }
 
@@ -912,11 +1010,13 @@ class CustomerService {
       where: { user_id: userId, portfolio_id: portfolioId }
     });
     
-    // Increment likes counter in portfolios table
-    await db.Portfolio.increment("likes_count", {
-      by: 1,
-      where: { id: portfolioId }
-    });
+    // Increment likes counter in portfolios table only if the like is new
+    if (like[1]) {
+      await db.Portfolio.increment("likes_count", {
+        by: 1,
+        where: { id: portfolioId }
+      });
+    }
 
     return like[0];
   }
@@ -1339,6 +1439,142 @@ class CustomerService {
       await remaining[0].update({ is_default: true });
     }
     return deleted;
+  }
+
+  async getReels(userId, page = 1, limit = 10) {
+    const offset = (page - 1) * limit;
+
+    const { rows: reels, count } = await db.Portfolio.findAndCountAll({
+      where: {
+        video_url: { 
+          [Op.and]: [
+            { [Op.not]: null },
+            { [Op.ne]: "" },
+            { [Op.ne]: "null" }
+          ]
+        },
+        [Op.or]: [
+          { visibility: true },
+          { visibility: null }
+        ]
+      },
+      order: [["createdAt", "DESC"]],
+      limit: parseInt(limit, 10),
+      offset: parseInt(offset, 10),
+      include: [
+        {
+          model: db.ArtistProfile,
+          as: "artist",
+          include: [
+            {
+              model: db.User,
+              as: "user",
+              attributes: ["id", "name", "profile_image", "email", "phone"]
+            }
+          ]
+        }
+      ]
+    });
+
+    let reelsData = reels.map((r) => r.toJSON());
+
+    // If userId provided, check like/save status
+    if (userId) {
+      const reelIds = reelsData.map((r) => r.id);
+      if (reelIds.length > 0) {
+        const userLikes = await db.PortfolioLike.findAll({
+          where: { user_id: userId, portfolio_id: { [Op.in]: reelIds } }
+        });
+        const likedIds = new Set(userLikes.map((l) => l.portfolio_id));
+
+        const userSaves = await db.PortfolioSave.findAll({
+          where: { user_id: userId, portfolio_id: { [Op.in]: reelIds } }
+        });
+        const savedIds = new Set(userSaves.map((s) => s.portfolio_id));
+
+        reelsData = reelsData.map((r) => ({
+          ...r,
+          isLiked: likedIds.has(r.id),
+          isSaved: savedIds.has(r.id)
+        }));
+      }
+    }
+
+    return {
+      data: reelsData,
+      pagination: {
+        total: count,
+        page: parseInt(page, 10),
+        limit: parseInt(limit, 10),
+        hasMore: offset + reels.length < count
+      }
+    };
+  }
+  async commentPortfolio(userId, portfolioId, text) {
+    const comment = await db.PortfolioComment.create({
+      user_id: userId,
+      portfolio_id: portfolioId,
+      text: text
+    });
+    
+    // Attempt notification creation (failsafe)
+    try {
+      const portfolio = await db.Portfolio.findByPk(portfolioId);
+      if (portfolio && portfolio.artist_id) {
+        const artist = await db.ArtistProfile.findByPk(portfolio.artist_id);
+        if (artist && artist.user_id !== userId) {
+          const user = await db.User.findByPk(userId);
+          await db.Notification.create({
+            user_id: artist.user_id,
+            title: "New Comment",
+            message: `${user?.name || "Someone"} commented on your reel.`,
+            type: "COMMENT",
+            related_id: portfolioId
+          });
+        }
+      }
+    } catch(e) {
+      console.warn("Notification failed", e);
+    }
+    return comment;
+  }
+
+  async getPortfolioComments(portfolioId, page = 1, limit = 20) {
+    const offset = (page - 1) * limit;
+    const { rows, count } = await db.PortfolioComment.findAndCountAll({
+      where: { portfolio_id: portfolioId },
+      include: [{ model: db.User, as: "user", attributes: ["id", "name", "profile_image"] }],
+      order: [["createdAt", "DESC"]],
+      limit: parseInt(limit, 10),
+      offset: parseInt(offset, 10)
+    });
+    return { data: rows, total: count, hasMore: offset + rows.length < count };
+  }
+
+  async deletePortfolioComment(userId, commentId) {
+    const comment = await db.PortfolioComment.findByPk(commentId, { include: [{ model: db.Portfolio, as: "portfolio" }] });
+    if (!comment) throw new AppError("Comment not found", 404);
+    
+    // Allow deletion if it's the author OR the artist of the portfolio
+    let isArtist = false;
+    if (comment.portfolio) {
+      const artistProfile = await db.ArtistProfile.findOne({ where: { user_id: userId } });
+      if (artistProfile && artistProfile.id === comment.portfolio.artist_id) isArtist = true;
+    }
+    
+    if (comment.user_id !== userId && !isArtist) {
+      throw new AppError("Unauthorized to delete this comment", 403);
+    }
+    await comment.destroy();
+    return true;
+  }
+  
+  async addViewToPortfolio(portfolioId) {
+    await db.Portfolio.increment("views_count", {
+      by: 1,
+      where: { id: portfolioId }
+    });
+    return true;
   }
 }
 

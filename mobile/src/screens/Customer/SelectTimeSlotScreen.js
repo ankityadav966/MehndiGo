@@ -119,6 +119,8 @@ export default function SelectTimeSlotScreen({ route, navigation }) {
     setSelectedSlotId(slot.id);
   };
 
+  const [isNavigating, setIsNavigating] = useState(false);
+
   const handleContinue = () => {
     if (!selectedSlotId) {
       Alert.alert("Required", "Please choose 1 time slot to proceed with your booking.");
@@ -130,6 +132,9 @@ export default function SelectTimeSlotScreen({ route, navigation }) {
       Alert.alert("Error", "Selected time slot is invalid.");
       return;
     }
+    
+    if (isNavigating) return;
+    setIsNavigating(true);
 
     const timeLabel = chosenSlot.time_slot || chosenSlot.slot_time || (chosenSlot.start_time ? moment(chosenSlot.start_time).format("hh:mm A") : "10:00 AM");
     const cleanSlotId = String(chosenSlot.id).startsWith("def_") || String(chosenSlot.id).startsWith("slot_") ? null : chosenSlot.id;
@@ -142,6 +147,8 @@ export default function SelectTimeSlotScreen({ route, navigation }) {
       timeLabel: timeLabel,
       selectedArt
     });
+    
+    setTimeout(() => setIsNavigating(false), 500);
   };
 
   return (

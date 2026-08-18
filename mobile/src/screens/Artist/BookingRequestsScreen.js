@@ -317,6 +317,14 @@ export default function BookingRequestsScreen({ route, navigation }) {
               <Ionicons name="calendar-outline" size={13} color={Colors.textTertiary} />
               <Text style={styles.date}>{dateStr} • {timeStr}</Text>
             </View>
+            {Boolean(item.address || item.landmark) && (
+              <View style={[styles.row, { marginTop: 4, alignItems: "flex-start" }]}>
+                <Ionicons name="location-outline" size={13} color={Colors.textTertiary} style={{ marginTop: 2 }} />
+                <Text style={[styles.date, { flex: 1, flexWrap: "wrap", lineHeight: 18 }]} numberOfLines={2}>
+                  {item.address} {item.landmark ? `(Landmark: ${item.landmark})` : ""}
+                </Text>
+              </View>
+            )}
           </View>
           <Text style={styles.price}>₹{item.final_amount || item.total_price || item.remaining_amount}</Text>
         </View>
