@@ -2101,7 +2101,7 @@ const handleAddWalletMoney = async (c) => {
   const paymentId = body.razorpay_payment_id || body.payment_id;
   const orderId = body.razorpay_order_id || body.order_id;
   const signature = body.razorpay_signature;
-  const keySecret = c.env.RAZORPAY_KEY_SECRET || "xMxDHNwnadR2sr5uiEk7QmH6";
+  const keySecret = (c?.env?.RAZORPAY_KEY_SECRET || "P1O71RSSuCVTAULIlf8WJaru").trim();
 
   if (!paymentId || !orderId || !signature) {
     return jsonRes(c, false, null, "Missing required verification parameters (razorpay_order_id, razorpay_payment_id, razorpay_signature)", 400);
@@ -3194,7 +3194,7 @@ const handleCustomerDynamic = async (c) => {
       const paymentId = body.razorpay_payment_id || body.payment_id;
       const orderId = body.razorpay_order_id || body.order_id;
       const signature = body.razorpay_signature || body.signature;
-      const keySecret = c.env.RAZORPAY_KEY_SECRET || "xMxDHNwnadR2sr5uiEk7QmH6";
+      const keySecret = (c?.env?.RAZORPAY_KEY_SECRET || "P1O71RSSuCVTAULIlf8WJaru").trim();
 
       if (!bookingId || !paymentId || !orderId || !signature) {
         return jsonRes(c, false, null, "Missing required verification parameters (bookingId, razorpay_order_id, razorpay_payment_id, razorpay_signature)", 400);
