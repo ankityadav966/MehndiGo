@@ -662,10 +662,19 @@ async function sendEmail(
   const errors = [];
 
   // ==========================================================
-  // PRIMARY PROVIDER: AZURE COMMUNICATION SERVICES
+  // PROVIDER ROUTING (GMAIL SMTP / AZURE / RESEND)
   // ==========================================================
 
-  if (AZURE_EMAIL_CONNECTION_STRING) {
+  if (EMAIL_PROVIDER === "gmail" && EMAIL_USER && EMAIL_PASS) {
+    try {
+      return await sendUsingGmail(to, subject, body, finalHtml);
+    } catch (error) {
+      console.error(`❌ Gmail SMTP failed for ${to}:`, error.message);
+      errors.push(`Gmail: ${error.message}`);
+    }
+  }
+
+  if (AZURE_EMAIL_CONNECTION_STRING && AZURE_EMAIL_CONNECTION_STRING !== "AZURE_KEY_REMOVED") {
     try {
       return await sendUsingAzure(to, subject, body, finalHtml);
     } catch (error) {
@@ -673,10 +682,6 @@ async function sendEmail(
       errors.push(`Azure: ${error.message}`);
     }
   }
-
-  // ==========================================================
-  // FALLBACK 1: GMAIL SMTP
-  // ==========================================================
 
   if (EMAIL_USER && EMAIL_PASS) {
     try {

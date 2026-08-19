@@ -49,12 +49,16 @@ export default function OtpScreen({ navigation, route }) {
       setTimer(30);
       setOtp(["", "", "", "", "", ""]);
       inputRefs.current[0]?.focus();
-      const Alert = require("../../utils/Alert").default;
-      Alert.alert("OTP Resent 📩", `A new 6-digit verification code has been sent to ${email || "your email"}. Please check your inbox.`);
+      if (global.showToast) {
+        global.showToast(`New OTP sent to ${email || "your email"}`, "success");
+      }
     } catch (e) {
       console.log("Resend OTP error:", e);
       const msg = e?.response?.data?.message || e.message || "Failed to resend OTP. Please try again.";
       setError(msg);
+      if (global.showToast) {
+        global.showToast(msg, "error");
+      }
     } finally {
       setResending(false);
     }
@@ -184,6 +188,9 @@ export default function OtpScreen({ navigation, route }) {
       const message =
         error?.response?.data?.message || error.message || "Invalid OTP. Please try again.";
       setError(message);
+      if (global.showToast) {
+        global.showToast(message, "error");
+      }
     } finally {
       setLoading(false);
     }

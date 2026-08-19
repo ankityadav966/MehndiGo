@@ -57,53 +57,53 @@ export default function RegisterScreen({ navigation, route }) {
     if (!trimmedName) {
       const msg = "Please enter your full name";
       setError(msg);
-      Alert.alert("Required Field", msg);
+      if (global.showToast) global.showToast(msg, "warning");
       return;
     }
 
     if (!trimmedEmail) {
       const msg = "Please enter your email address";
       setError(msg);
-      Alert.alert("Required Field", msg);
+      if (global.showToast) global.showToast(msg, "warning");
       return;
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(trimmedEmail)) {
-      const msg = "Please enter a valid email address (e.g. user@example.com)";
+      const msg = "Please enter a valid email address";
       setError(msg);
-      Alert.alert("Invalid Email", msg);
+      if (global.showToast) global.showToast(msg, "warning");
       return;
     }
 
     if (!cleanPhone) {
       const msg = "Please enter your mobile phone number";
       setError(msg);
-      Alert.alert("Required Field", msg);
+      if (global.showToast) global.showToast(msg, "warning");
       return;
     }
 
     if (cleanPhone.length !== 10) {
       const msg = "Mobile number must be exactly 10 digits";
       setError(msg);
-      Alert.alert("Invalid Phone Number", msg);
+      if (global.showToast) global.showToast(msg, "warning");
       return;
     }
 
     if (!selectedRole) {
       const msg = "Please select a role";
       setError(msg);
-      Alert.alert("Role Required", msg);
+      if (global.showToast) global.showToast(msg, "warning");
       return;
     }
 
     setLoading(true);
     try {
-      console.log("[ROLE TRACE 1] RegisterScreen selectedRole:", selectedRole);
       const res = await registerSendOtp(trimmedName, trimmedEmail, cleanPhone, selectedRole);
       const data = res?.data || res;
-      console.log(`[SIGNUP OTP DISPATCH SUCCESS] Real OTP sent to email: ${trimmedEmail}`);
-      Alert.alert("Verification Code Sent 📩", `A 6-digit verification code has been sent to ${trimmedEmail}. Please check your email inbox to complete registration.`);
+      if (global.showToast) {
+        global.showToast(`Verification code sent to ${trimmedEmail}`, "success");
+      }
       navigation.navigate("Otp", {
         name: trimmedName,
         email: trimmedEmail,

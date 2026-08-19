@@ -348,7 +348,7 @@ const sendAzureEmailWorkerDirect = async (c, toEmail, subject, htmlBody, plainTe
 
   const connStr = (
     c?.env?.AZURE_EMAIL_CONNECTION_STRING ||
-    "AZURE_KEY_REMOVED"
+    ""
   ).trim();
 
   const sender = (

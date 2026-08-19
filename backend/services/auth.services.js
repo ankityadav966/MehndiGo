@@ -90,16 +90,6 @@ class AuthService {
     const user = await UserRepositor.getOne({ email: targetEmail });
     const otp = String(data.otp || data.code || Math.floor(100000 + Math.random() * 900000)).trim();
 
-    if (!user) {
-      console.log(`[AUTH SERVICE] Sending OTP ${otp} to new recipient ${targetEmail}...`);
-      await sendOtpEmail(targetEmail, otp, "Mehndi User");
-      return {
-        exists: false,
-        email: targetEmail,
-        otp
-      };
-    }
-
     // Rate Limit check
     const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
     const recentOtpsCount = await db.Otp.count({
@@ -115,25 +105,25 @@ class AuthService {
       throw new AppError("Too many OTP requests. Please try again after 10 minutes.", 429);
     }
 
-    // Save OTP to database
+    // Save OTP to database (even if user is new, so verifyOtp can verify it)
     await OtpRepositor.create({
-      user_id: user.id,
-      phone: user.phone || null,
+      user_id: user ? user.id : null,
+      phone: user ? user.phone : null,
       email: targetEmail,
       otp,
       expires_at: new Date(Date.now() + 5 * 60 * 1000), // 5 min expiry
       verified: false
     });
 
-    console.log(`[AUTH SERVICE] Sending OTP ${otp} to existing recipient ${targetEmail}...`);
+    console.log(`[AUTH SERVICE] Sending OTP ${otp} to recipient ${targetEmail}...`);
 
     // Send via SMTP using Gmail App Password credentials
-    await sendOtpEmail(targetEmail, otp, user.name || "Mehndi User");
+    await sendOtpEmail(targetEmail, otp, user ? (user.name || "Mehndi User") : "Mehndi User");
 
     return {
-      exists: true,
+      exists: !!user,
       email: targetEmail,
-      role: user.role,
+      role: user ? user.role : "USER",
       otp,
     };
   }

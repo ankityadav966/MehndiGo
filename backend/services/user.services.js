@@ -45,33 +45,35 @@ class UserService {
       throw new AppError("Admin registration is not allowed", 403);
     }
 
-    let user = null;
-    const sanitized = this.sanitizePhone(phone);
+    const trimmedEmail = email ? String(email).trim().toLowerCase() : null;
+    const sanitized = this.sanitizePhone(phone) || null;
+    const trimmedName = String(name || "").trim() || (trimmedEmail ? trimmedEmail.split("@")[0] : "User");
+    const normalizedRole = (String(role).toUpperCase() === "ARTIST") ? "ARTIST" : "USER";
+    const mappedRole = role === "CUSTOMER" ? "USER" : (role || "USER");
+    const hashPassword = password ? crypto.createHash("sha256").update(password).digest("hex") : null;
 
+    let user = null;
     if (sanitized) {
       user = await UserRepositor.getOne({ phone: sanitized });
     }
 
-    if (!user && email) {
-      user = await UserRepositor.getOne({ email });
+    if (!user && trimmedEmail) {
+      user = await UserRepositor.getOne({ email: trimmedEmail });
     }
-
-    const hashPassword = password ? crypto.createHash("sha256").update(password).digest("hex") : null;
-    const mappedRole = role === "CUSTOMER" ? "USER" : (role || "USER");
 
     if (user) {
       if (!user.is_verified) {
         await UserRepositor.update(user.id, {
-          name: name || user.name,
+          name: trimmedName,
           ...(hashPassword ? { password: hashPassword } : {}),
           role: mappedRole
         });
       }
     } else {
       user = await UserRepositor.create({
-        name: name || "User",
-        phone: sanitized || null,
-        email: email || null,
+        name: trimmedName,
+        phone: sanitized,
+        email: trimmedEmail,
         password: hashPassword,
         role: mappedRole,
         is_verified: false,
@@ -79,24 +81,19 @@ class UserService {
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    // const hashPassword = password ? crypto.createHash("sha256").update(password).digest("hex") : null;
-
-    const normalizedRole = (String(role).toUpperCase() === "ARTIST") ? "ARTIST" : "USER";
-
-    const trimmedName = String(name).trim();
-    const cleanPhone = phone ? String(phone).trim().replace(/[\s-()]/g, "") : null;
 
     // Store registration data temporarily in OTP table
     const payload = JSON.stringify({
       name: trimmedName,
       email: trimmedEmail,
-      phone: cleanPhone,
+      phone: sanitized,
       password: hashPassword,
       role: normalizedRole
     });
 
     await OtpRepositor.create({
-      phone: cleanPhone,
+      user_id: user ? user.id : null,
+      phone: sanitized,
       email: trimmedEmail,
       otp,
       registration_payload: payload,
@@ -104,16 +101,20 @@ class UserService {
       verified: false,
     });
 
-    await sendOtpEmail(trimmedEmail, otp, trimmedName);
+    if (trimmedEmail) {
+      try {
+        await sendOtpEmail(trimmedEmail, otp, trimmedName);
+      } catch (e) {
+        console.error("Error sending registration OTP email:", e.message);
+      }
+    }
     console.log(`\n==================================\nEMAIL OTP (Register)\nEmail: ${trimmedEmail}\nOTP: ${otp}\n==================================\n`);
-
-    console.log(`\n==================================\nREGISTRATION / LOGIN OTP (GMAIL)\nEmail: ${targetEmail}\nOTP: ${otp}\n==================================\n`);
 
     return {
       exists: true,
-      email: targetEmail,
-      phone: sanitized || user.phone,
-      role: user.role,
+      email: trimmedEmail,
+      phone: sanitized || (user ? user.phone : null),
+      role: user ? user.role : mappedRole,
       otp,
     };
   }
