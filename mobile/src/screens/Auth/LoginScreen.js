@@ -47,8 +47,9 @@ export default function LoginScreen({ navigation, route }) {
       const data = res?.data || res;
 
       if (data) {
-        console.log(`[OTP DISPATCH SUCCESS] Real OTP sent to email: ${trimmedEmail}`);
-        Alert.alert("Verification Code Sent 📩", `A 6-digit verification code has been sent to ${trimmedEmail}. Please check your email inbox to continue.`);
+        if (global.showToast) {
+          global.showToast(`Verification code sent to ${trimmedEmail}`, "success");
+        }
         navigation.navigate("Otp", {
           email: trimmedEmail,
           role: data.role || "USER",
@@ -67,11 +68,13 @@ export default function LoginScreen({ navigation, route }) {
         msg.toLowerCase().includes("please register") ||
         msg.toLowerCase().includes("register first")
       ) {
-        // Email does NOT exist in DB -> Confirmed by API 404 response -> Navigate to Register Screen
-        console.log("[AUTH DEBUG] Backend confirmed 404 (User Not Found). Navigating to Register screen with email:", trimmedEmail);
+        // Direct seamless navigation to Register screen
         navigation.navigate("Register", { email: trimmedEmail });
       } else {
         setError(msg || "Failed to proceed. Please try again.");
+        if (global.showToast) {
+          global.showToast(msg || "Failed to proceed. Please try again.", "error");
+        }
       }
     } finally {
       setLoading(false);

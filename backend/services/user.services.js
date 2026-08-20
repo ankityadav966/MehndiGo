@@ -37,7 +37,94 @@ class UserService {
 
   // 1. Unified Registration - Send OTP
   async registerSendOtp(data) {
-    return await AuthService.registerSendOtp(data);
+    console.log("Registration Data received:", data);
+    const { name, email, phone, password, role } = data;
+
+    if (role === "ADMIN") {
+      throw new AppError("Admin registration is not allowed", 403);
+    }
+
+    const trimmedEmail = email ? String(email).trim().toLowerCase() : null;
+    const sanitized = this.sanitizePhone(phone) || null;
+    const trimmedName = String(name || "").trim() || (trimmedEmail ? trimmedEmail.split("@")[0] : "User");
+    const normalizedRole = (String(role).toUpperCase() === "ARTIST") ? "ARTIST" : "USER";
+    const mappedRole = role === "CUSTOMER" ? "USER" : (role || "USER");
+    const hashPassword = password ? crypto.createHash("sha256").update(password).digest("hex") : null;
+
+    let user = null;
+    if (sanitized) {
+      user = await UserRepositor.getOne({ phone: sanitized });
+    }
+
+    if (!user && trimmedEmail) {
+      user = await UserRepositor.getOne({ email: trimmedEmail });
+    }
+
+    if (user) {
+      if (!user.is_verified) {
+        await UserRepositor.update(user.id, {
+          name: trimmedName,
+          ...(hashPassword ? { password: hashPassword } : {}),
+          role: mappedRole
+        });
+      }
+    } else {
+      user = await UserRepositor.create({
+        name: trimmedName,
+        phone: sanitized,
+        email: trimmedEmail,
+        password: hashPassword,
+        role: mappedRole,
+        is_verified: false,
+      });
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // Store registration data temporarily in OTP table
+    const payload = JSON.stringify({
+      name: trimmedName,
+      email: trimmedEmail,
+      phone: sanitized,
+      password: hashPassword,
+      role: normalizedRole
+    });
+
+    await OtpRepositor.create({
+      user_id: user ? user.id : null,
+      phone: sanitized,
+      email: trimmedEmail,
+      otp,
+      registration_payload: payload,
+      expires_at: new Date(Date.now() + 5 * 60 * 1000),
+      verified: false,
+    });
+
+    if (trimmedEmail) {
+      try {
+        await sendOtpEmail(trimmedEmail, otp, trimmedName);
+      } catch (e) {
+        console.error("Error sending registration OTP email:", e.message);
+      }
+    }
+    console.log(`\n==================================\nEMAIL OTP (Register)\nEmail: ${trimmedEmail}\nOTP: ${otp}\n==================================\n`);
+
+    return {
+      exists: true,
+      email: trimmedEmail,
+      phone: sanitized || (user ? user.phone : null),
+      role: user ? user.role : mappedRole,
+      otp,
+    };
+  }
+
+  // Aliases for UserController
+  async sendOtp(data) {
+    return this.loginSendOtp(data);
+  }
+
+  async verifyOtp(data) {
+    return this.loginVerifyOtp(data);
   }
 
   // 2. Registration - Verify OTP & Create Account

@@ -1,15 +1,19 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { StyleSheet, Text, Animated, View, Platform } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import Colors from "../constants/Colors";
 
 export default function GlobalToast() {
+  const insets = useSafeAreaInsets();
   const [visible, setVisible] = useState(false);
   const [message, setMessage] = useState("");
   const [type, setType] = useState("info"); // success, error, warning, info
 
   const [fadeAnim] = useState(() => new Animated.Value(0));
-  const [slideAnim] = useState(() => new Animated.Value(-120));
+  const [slideAnim] = useState(() => new Animated.Value(-150));
+
+  const targetTop = (insets.top > 0 ? insets.top : (Platform.OS === "android" ? 28 : 44)) + 12;
 
   useEffect(() => {
     global.showToast = (msg, toastType = "info") => {
@@ -25,17 +29,17 @@ export default function GlobalToast() {
 
   useEffect(() => {
     if (visible) {
-      // Spring layout animation
+      // Spring layout animation below status bar
       Animated.parallel([
         Animated.timing(fadeAnim, {
           toValue: 1,
-          duration: 300,
+          duration: 250,
           useNativeDriver: true,
         }),
         Animated.spring(slideAnim, {
-          toValue: Platform.OS === "ios" ? 54 : 36, // Top position offset
-          friction: 6,
-          tension: 40,
+          toValue: targetTop,
+          friction: 7,
+          tension: 50,
           useNativeDriver: true,
         }),
       ]).start();
@@ -45,12 +49,12 @@ export default function GlobalToast() {
         Animated.parallel([
           Animated.timing(fadeAnim, {
             toValue: 0,
-            duration: 250,
+            duration: 220,
             useNativeDriver: true,
           }),
           Animated.timing(slideAnim, {
-            toValue: -120,
-            duration: 250,
+            toValue: -150,
+            duration: 220,
             useNativeDriver: true,
           }),
         ]).start(() => setVisible(false));
@@ -58,40 +62,46 @@ export default function GlobalToast() {
 
       return () => clearTimeout(timer);
     }
-  }, [visible]);
+  }, [visible, insets.top]);
 
   if (!visible) return null;
 
-  // Type theme mapping
-  let bg = "#1E293B"; // slate-800
+  // Type theme mapping with high-contrast sleek styling
+  let bg = "#1E293B"; // Dark slate
   let border = "#334155";
   let icon = "information-circle";
-  let iconColor = Colors.info || "#3B82F6";
+  let iconColor = "#38BDF8";
+  let textColor = "#FFFFFF";
 
   if (type === "success") {
-    bg = "#F0FDF4"; // Light emerald
-    border = "#DCFCE7";
+    bg = "#064E3B"; // Dark emerald
+    border = "#059669";
     icon = "checkmark-circle";
-    iconColor = Colors.success || "#16A34A";
+    iconColor = "#34D399";
+    textColor = "#FFFFFF";
   } else if (type === "error") {
-    bg = "#FEF2F2"; // Light red
-    border = "#FEE2E2";
+    bg = "#7F1D1D"; // Dark red
+    border = "#DC2626";
     icon = "alert-circle";
-    iconColor = Colors.error || "#EF4444";
+    iconColor = "#F87171";
+    textColor = "#FFFFFF";
   } else if (type === "warning") {
-    bg = "#FFFBEB"; // Light amber
-    border = "#FEF3C7";
+    bg = "#78350F"; // Dark amber
+    border = "#D97706";
     icon = "warning";
-    iconColor = Colors.warning || "#F59E0B";
+    iconColor = "#FBBF24";
+    textColor = "#FFFFFF";
   } else if (type === "info") {
-    bg = "#EFF6FF"; // Light blue
-    border = "#DBEAFE";
+    bg = "#0F172A"; // Sleek dark slate
+    border = "#38BDF8";
     icon = "information-circle";
-    iconColor = Colors.info || "#3B82F6";
+    iconColor = "#38BDF8";
+    textColor = "#FFFFFF";
   }
 
   return (
     <Animated.View
+      pointerEvents="none"
       style={[
         styles.container,
         {
@@ -102,9 +112,9 @@ export default function GlobalToast() {
     >
       <View style={[styles.toastCard, { backgroundColor: bg, borderColor: border }]}>
         <View style={styles.iconCircle}>
-          <Ionicons name={icon} size={20} color={iconColor} />
+          <Ionicons name={icon} size={18} color={iconColor} />
         </View>
-        <Text style={[styles.text, { color: type === "info" || type === "success" || type === "warning" || type === "error" ? Colors.text : "#FFFFFF" }]}>
+        <Text style={[styles.text, { color: textColor }]}>
           {message}
         </Text>
       </View>
@@ -116,24 +126,25 @@ const styles = StyleSheet.create({
   container: {
     position: "absolute",
     top: 0,
-    left: 16,
-    right: 16,
-    zIndex: 10000,
+    left: 20,
+    right: 20,
+    zIndex: 99999,
+    elevation: 99999,
     alignItems: "center",
   },
   toastCard: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: 24,
     borderWidth: 1,
-    shadowColor: Colors.black,
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 8,
-    maxWidth: "96%",
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 12,
+    maxWidth: "92%",
   },
   iconCircle: {
     marginRight: 10,
@@ -141,10 +152,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   text: {
-    fontSize: 13,
+    fontSize: 13.5,
     fontWeight: "600",
     lineHeight: 18,
     textAlign: "left",
-    fontFamily: "Poppins",
+    flexShrink: 1,
   },
 });

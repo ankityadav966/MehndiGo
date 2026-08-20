@@ -3,6 +3,7 @@ import SplashScreen from "../screens/Auth/SplashScreen";
 import Onboarding3 from "../screens/Auth/Onboarding3";
 import LoginScreen from "../screens/Auth/LoginScreen";
 import RegisterScreen from "../screens/Auth/RegisterScreen";
+import RoleSelectionScreen from "../screens/Auth/RoleSelectionScreen";
 import OtpScreen from "../screens/Auth/OtpScreen";
 import RoleSelectionScreen from "../screens/Auth/RoleSelectionScreen";
 import ArtistFlowStack from "./ArtistFlowStack";
@@ -51,6 +52,7 @@ export default function RootNavigator() {
           <Stack.Screen name="Onboarding3" component={Onboarding3} />
           <Stack.Screen name="Login" component={LoginScreen} />
           <Stack.Screen name="Register" component={RegisterScreen} />
+          <Stack.Screen name="RoleSelection" component={RoleSelectionScreen} />
           <Stack.Screen name="Otp" component={OtpScreen} />
           <Stack.Screen name="RoleSelection" component={RoleSelectionScreen} />
         </>

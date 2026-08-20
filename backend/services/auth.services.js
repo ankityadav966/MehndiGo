@@ -94,36 +94,11 @@ class AuthService {
       throw new AppError("Full Name is required", 400);
     }
 
-    if (!email || !String(email).trim()) {
-      throw new AppError("Email address is required", 400);
-    }
+    const targetEmail = String(email).trim().toLowerCase();
+    const user = await UserRepositor.getOne({ email: targetEmail });
+    const otp = String(data.otp || data.code || Math.floor(100000 + Math.random() * 900000)).trim();
 
-    const trimmedName = String(name).trim();
-    const trimmedEmail = String(email).trim().toLowerCase();
-    const cleanPhone = sanitizePhone(phone);
-
-    if (!cleanPhone) {
-      throw new AppError("Valid 10-digit mobile number is required", 400);
-    }
-
-    const normalizedRole = String(role || "USER").toUpperCase() === "ARTIST" ? "ARTIST" : "USER";
-    if (normalizedRole === "ADMIN") {
-      throw new AppError("Admin registration is not allowed", 403);
-    }
-
-    // Check if email already registered and verified
-    const existingEmailUser = await UserRepositor.getOne({ email: trimmedEmail });
-    if (existingEmailUser && existingEmailUser.is_verified) {
-      throw new AppError("Email address already registered. Please log in.", 400);
-    }
-
-    // Check if phone already registered and verified
-    const existingPhoneUser = await UserRepositor.getOne({ phone: cleanPhone });
-    if (existingPhoneUser && existingPhoneUser.is_verified) {
-      throw new AppError("Phone number already registered. Please log in.", 400);
-    }
-
-    // Rate Limit check (max 5 OTPs per 10 min)
+    // Rate Limit check
     const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
     const recentOtpsCount = await db.Otp.count({
       where: {
@@ -136,40 +111,25 @@ class AuthService {
       throw new AppError("Too many OTP requests. Please try again after 10 minutes.", 429);
     }
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const hashedPassword = password ? hashPassword(password) : null;
-
-    const payload = JSON.stringify({
-      name: trimmedName,
-      email: trimmedEmail,
-      phone: cleanPhone,
-      password: hashedPassword,
-      role: normalizedRole
-    });
-
-    // Store registration data temporarily in OTP table without premature user duplication
+    // Save OTP to database (even if user is new, so verifyOtp can verify it)
     await OtpRepositor.create({
-      phone: cleanPhone,
-      email: trimmedEmail,
+      user_id: user ? user.id : null,
+      phone: user ? user.phone : null,
+      email: targetEmail,
       otp,
-      registration_payload: payload,
       expires_at: new Date(Date.now() + 5 * 60 * 1000), // 5 min expiry
-      verified: false,
+      verified: false
     });
 
-    try {
-      await sendOtpEmail(trimmedEmail, otp, trimmedName);
-    } catch (mailErr) {
-      console.warn("[AUTH] SMTP dispatch notice:", mailErr.message);
-    }
+    console.log(`[AUTH SERVICE] Sending OTP ${otp} to recipient ${targetEmail}...`);
 
-    console.log(`\n==================================\nREGISTRATION OTP (GMAIL)\nEmail: ${trimmedEmail}\nPhone: ${cleanPhone}\nOTP: ${otp}\n==================================\n`);
+    // Send via SMTP using Gmail App Password credentials
+    await sendOtpEmail(targetEmail, otp, user ? (user.name || "Mehndi User") : "Mehndi User");
 
     return {
-      exists: false,
-      email: trimmedEmail,
-      phone: cleanPhone,
-      role: normalizedRole,
+      exists: !!user,
+      email: targetEmail,
+      role: user ? user.role : "USER",
       otp,
     };
   }

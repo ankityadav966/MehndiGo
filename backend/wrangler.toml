@@ -13,6 +13,7 @@ RAZORPAY_KEY_ID = "rzp_live_TOnEe0jhl1qgO5"
 RAZORPAY_KEY_SECRET = "P1O71RSSuCVTAULIlf8WJaru"
 EMAIL_USER = "sonudonyadav87@gmail.com"
 EMAIL_PASS = "kwemkkniwxyohmvm"
+AZURE_EMAIL_FROM = "donotreply@mehndigo.in"
 RESEND_API_KEY = ""
 
 [[d1_databases]]
