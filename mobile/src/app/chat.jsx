@@ -8,8 +8,6 @@ import { Colors } from '../theme/colors';
 import { chatService, adminService, artistService, SOCKET_URL } from '../services/api';
 import { Send, User, ChevronLeft, MessageSquare } from 'lucide-react-native';
 
-import { SOCKET_URL } from '../services/api';
-
 export default function ChatScreen() {
   const { user, theme } = useAuth();
   const styles = getGlobalStyles(theme);
@@ -189,7 +187,8 @@ export default function ChatScreen() {
     return (
       <KeyboardAvoidingView 
         style={[styles.container, { padding: 0 }]} 
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: colors.bgSecondary, borderBottomWidth: 1, borderBottomColor: colors.borderColor }}>
           <TouchableOpacity onPress={() => setActiveReceiver(null)} style={{ marginRight: 16 }}>

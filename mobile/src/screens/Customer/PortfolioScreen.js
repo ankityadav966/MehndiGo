@@ -19,29 +19,35 @@ import ImageViewing from "react-native-image-viewing";
 import Colors from "../../constants/Colors";
 import CustomButton from "../../components/CustomButton";
 import LoadingSkeleton from "../../components/LoadingSkeleton";
+import { getNormalizedUrl } from "../../services/api";
 import {
   fetchPortfolios,
   likePortfolioItem,
   unlikePortfolioItem,
   savePortfolioItem,
-  unsavePortfolioItem
+  unsavePortfolioItem,
+  getCategories
 } from "../../services/customer";
+import { createPortfolioDeepLink } from "../../services/deepLink";
 
-const CATEGORIES = [
-  "All",
-  "Bridal Mehndi",
-  "Arabic Mehndi",
-  "Royal Mehndi",
-  "Indo Arabic",
-  "Portrait Mehndi",
-  "Minimal Mehndi",
-  "Engagement",
-  "Festival",
-  "Kids Mehndi"
-];
+const resolveImage = (uri) => {
+  if (!uri || typeof uri !== "string") return "";
+  const trimmed = uri.trim();
+  if (
+    trimmed.startsWith("http://") ||
+    trimmed.startsWith("https://") ||
+    trimmed.startsWith("file://") ||
+    trimmed.startsWith("content://") ||
+    trimmed.startsWith("data:")
+  ) {
+    return trimmed;
+  }
+  return getNormalizedUrl(trimmed);
+};
 
 export default function PortfolioScreen({ navigation }) {
   const [query, setQuery] = useState("");
+  const [categories, setCategories] = useState(["All"]);
   const [selectedCategory, setSelectedCategory] = useState("All");
   
   const [portfolioItems, setPortfolioItems] = useState([]);
@@ -58,6 +64,23 @@ export default function PortfolioScreen({ navigation }) {
   // Fullscreen Viewer state
   const [viewerVisible, setViewerVisible] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(0);
+
+  useEffect(() => {
+    let isMounted = true;
+    getCategories()
+      .then((res) => {
+        const list = Array.isArray(res) ? res : (res?.data || res?.categories || []);
+        if (isMounted && list.length > 0) {
+          setCategories(["All", ...list.map((c) => c.name || c.category_name).filter(Boolean)]);
+        }
+      })
+      .catch((err) => {
+        console.log("Failed to load categories for portfolio gallery:", err.message);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const fetchItems = async (pageNum = 1, isRefresh = false) => {
     if (pageNum === 1) {
@@ -165,9 +188,12 @@ export default function PortfolioScreen({ navigation }) {
   // Share portfolio item trigger
   const handleShareItem = async (item) => {
     try {
+      const artId = artistId || item.artist_id || item.artistProfileId;
+      const shareUrl = artId ? createPortfolioDeepLink(artId) : (item.image_url || "https://mehendigoo.com");
       await Share.share({
         title: item.title || "Mehndi design sample",
-        message: `Look at this beautiful mehndi art design: ${item.title || "Traditional Sample"} by artist on MehandiGo. Photo: ${item.image_url}`
+        message: `Look at this beautiful mehndi art design: ${item.title || "Traditional Sample"} on MehandiGo!\n\nView Portfolio: ${shareUrl}`,
+        url: shareUrl
       });
     } catch (e) {
       console.log("Share failed:", e.message);
@@ -200,7 +226,7 @@ export default function PortfolioScreen({ navigation }) {
             }
           }}
         >
-          <Image source={{ uri: item.image_url }} style={styles.image} />
+          <Image source={{ uri: resolveImage(item.image_url) || item.image_url }} style={styles.image} />
           {item.video_url && (
             <View style={styles.videoBadge}>
               <Ionicons name="play" size={14} color={Colors.white} />
@@ -224,7 +250,7 @@ export default function PortfolioScreen({ navigation }) {
         <View style={styles.cardInfo}>
           <Text style={styles.cardTitle} numberOfLines={1}>{item.title || "Traditional Henna"}</Text>
           <Text style={styles.cardArtist} numberOfLines={1}>
-            By: {item.artist?.user?.name || "Mehndi Artist"}
+            By: {item.artist?.user?.name || item.artist?.business_name || "Mehndi Artist"}
           </Text>
           
           <View style={styles.cardFooter}>
@@ -249,7 +275,7 @@ export default function PortfolioScreen({ navigation }) {
   };
 
   // Convert portfolio images list to viewer structure
-  const viewerImages = portfolioItems.map((item) => ({ uri: item.image_url }));
+  const viewerImages = portfolioItems.map((item) => ({ uri: resolveImage(item.image_url) || item.image_url }));
 
   return (
     <SafeAreaView style={styles.container}>
@@ -282,7 +308,7 @@ export default function PortfolioScreen({ navigation }) {
       {/* Categories Badge list */}
       <View style={{ height: 40, marginBottom: 10 }}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16 }}>
-          {CATEGORIES.map((cat) => {
+          {categories.map((cat) => {
             const isSelected = selectedCategory === cat;
             return (
               <TouchableOpacity

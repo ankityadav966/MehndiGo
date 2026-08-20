@@ -9,42 +9,12 @@ import { retryPaymentOrder, verifyPaymentSignature } from "../../services/paymen
 export default function PaymentFailedScreen({ route, navigation }) {
   const { bookingId, finalAmount } = route.params || {};
 
-  const [loading, setLoading] = useState(false);
-  const [retryModalVisible, setRetryModalVisible] = useState(false);
-  const [newOrderId, setNewOrderId] = useState("");
-
-  const handleRetry = async () => {
+  const handleRetry = () => {
     if (!bookingId) {
       Alert.alert("Error", "Missing booking ID reference.");
       return;
     }
-    setLoading(true);
-    try {
-      const order = await retryPaymentOrder(bookingId);
-      setNewOrderId(order.id);
-      setRetryModalVisible(true);
-    } catch (err) {
-      Alert.alert("Retry Failed", "Could not generate retry order.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleRetrySuccess = async () => {
-    setRetryModalVisible(false);
-    setLoading(true);
-    try {
-      const verifyData = {
-        razorpay_order_id: newOrderId,
-        payment_session_id: `session_mock_${Math.random().toString(36).substring(2, 10)}`
-      };
-      await verifyPaymentSignature(verifyData);
-      navigation.replace("BookingSuccess", { bookingCode: `BK-${Math.floor(100000 + Math.random() * 900000)}` });
-    } catch (err) {
-      Alert.alert("Payment Verification Error", err.message || "Could not verify transaction.");
-    } finally {
-      setLoading(false);
-    }
+    navigation.navigate("Payment", { bookingId, finalAmount });
   };
 
   return (
@@ -58,49 +28,24 @@ export default function PaymentFailedScreen({ route, navigation }) {
           {"We couldn't process your transaction. This might be due to incorrect details or network delays."}
         </Text>
 
-        {loading ? (
-          <ActivityIndicator size="large" color={Colors.primary} style={{ marginVertical: 20 }} />
-        ) : (
-          <>
-            <TouchableOpacity style={styles.button} onPress={handleRetry}>
-              <Text style={styles.buttonText}>Retry Payment</Text>
-            </TouchableOpacity>
+        <TouchableOpacity style={styles.button} onPress={handleRetry}>
+          <Text style={styles.buttonText}>Retry Payment</Text>
+        </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.outlinedButton}
-              onPress={() => navigation.navigate("Payment", { bookingId, finalAmount })}
-            >
-              <Text style={styles.outlinedButtonText}>Change Payment Method</Text>
-            </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.outlinedButton}
+          onPress={() => navigation.navigate("Payment", { bookingId, finalAmount })}
+        >
+          <Text style={styles.outlinedButtonText}>Change Payment Method</Text>
+        </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.textButton}
-              onPress={() => navigation.replace("MyBookings")}
-            >
-              <Text style={styles.textButtonLabel}>View My Bookings</Text>
-            </TouchableOpacity>
-          </>
-        )}
+        <TouchableOpacity
+          style={styles.textButton}
+          onPress={() => navigation.replace("MyBookings")}
+        >
+          <Text style={styles.textButtonLabel}>View My Bookings</Text>
+        </TouchableOpacity>
       </View>
-
-      {/* Retry Checkout Modal */}
-      <Modal visible={retryModalVisible} transparent animationType="slide">
-        <View style={styles.modalBg}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Ionicons name="shield-checkmark" size={24} color={Colors.primary} />
-              <Text style={styles.modalTitle}>Retry Razorpay Checkout</Text>
-            </View>
-            <Text style={styles.modalAmount}>₹{finalAmount}</Text>
-            <TouchableOpacity style={styles.successBtn} onPress={handleRetrySuccess}>
-              <Text style={styles.successBtnText}>Simulate Success</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.failBtn} onPress={() => setRetryModalVisible(false)}>
-              <Text style={styles.failBtnText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }

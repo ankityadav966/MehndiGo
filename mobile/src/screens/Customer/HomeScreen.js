@@ -669,13 +669,16 @@ export default function HomeScreen({ navigation }) {
   // Render recently booked artist card
   const renderRecentlyBookedItem = ({ item }) => {
     const formattedDate = item.booking_date ? new Date(item.booking_date).toLocaleDateString() : "Recently";
+    const artistName = item.name || item.full_name || item.user?.name || "Mehndi Specialist";
+    const avatarUrl = resolveImage(item.profile_image) || `https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=F3E8FF&color=7C3AED`;
+
     return (
       <TouchableOpacity
         style={[styles.recentArtistCard, { backgroundColor: currentCardBg, borderColor: currentBorderColor }]}
         onPress={() => navigation.navigate("ArtistProfile", { artistId: item.id })}
       >
         <OptimizedImage
-          source={{ uri: item.profile_image || "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=150" }}
+          source={{ uri: avatarUrl }}
           style={styles.recentArtistAvatar}
         />
         <View style={styles.recentArtistBadge}>
@@ -686,10 +689,10 @@ export default function HomeScreen({ navigation }) {
         </View>
         <View style={styles.recentArtistDetails}>
           <Text style={[styles.recentArtistName, { color: currentTextColor }]} numberOfLines={1}>
-            {item.name || item.full_name || item.user?.name || "Specialist"}
+            {artistName}
           </Text>
           <Text style={[styles.recentArtistCat, { color: currentSecTextColor }]} numberOfLines={1}>
-            {item.specialization_name || "Bridal Mehndi"}
+            {item.specialization_name || "Mehndi Specialist"}
           </Text>
           <Text style={[styles.recentArtistDate, { color: currentSecTextColor }]}>
             Booked: {formattedDate}
@@ -697,7 +700,7 @@ export default function HomeScreen({ navigation }) {
           <View style={styles.recentArtistLoc}>
             <Ionicons name="location-outline" size={10} color={Colors.textTertiary} />
             <Text style={[styles.recentArtistLocText, { color: currentSecTextColor }]} numberOfLines={1}>
-              {item.city || "Jaipur"}
+              {item.city || "Location not set"}
             </Text>
           </View>
         </View>
@@ -802,20 +805,24 @@ export default function HomeScreen({ navigation }) {
           <View style={styles.nearbyStatsRow}>
             <View style={styles.ratingBadge}>
               <Ionicons name="star" size={12} color="#FFB800" />
-              <Text style={styles.ratingBadgeText}>{ratingVal}</Text>
+              <Text style={styles.ratingBadgeText}>{ratingVal ? ratingVal : "New"}</Text>
             </View>
             <Text style={[styles.nearbyBulletText, { color: currentSecTextColor }]}>•</Text>
-            <Text style={[styles.nearbyStatsText, { color: currentSecTextColor }]}>{item.experience_years || 2} Years Exp</Text>
+            <Text style={[styles.nearbyStatsText, { color: currentSecTextColor }]}>{expText}</Text>
             <Text style={[styles.nearbyBulletText, { color: currentSecTextColor }]}>•</Text>
             <Text style={[styles.nearbyStatsText, { color: currentSecTextColor }]}>{distanceVal}</Text>
           </View>
 
           <View style={styles.nearbyFooter}>
-            <Text style={[styles.nearbyPriceText, { color: currentTextColor }]}>Starting from ₹{startingPrice}</Text>
-            <View style={styles.availableTodayBadge}>
-              <View style={styles.activeDot} />
-              <Text style={styles.availableTodayText}>Available Today</Text>
-            </View>
+            <Text style={[styles.nearbyPriceText, { color: currentTextColor }]}>
+              {startingPrice ? `Starting from ₹${startingPrice}` : "View Profile"}
+            </Text>
+            {(item.status === "approved" || item.status === "APPROVED" || item.verification_status === "APPROVED") && (
+              <View style={styles.availableTodayBadge}>
+                <View style={styles.activeDot} />
+                <Text style={styles.availableTodayText}>Verified Artist</Text>
+              </View>
+            )}
           </View>
         </View>
       </TouchableOpacity>
@@ -870,7 +877,7 @@ export default function HomeScreen({ navigation }) {
           </View>
           <View style={styles.premiumPendingBody}>
             <OptimizedImage
-              source={{ uri: resolveImage(pendingPaymentBooking.artist?.user?.profile_image) || "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=150" }}
+              source={{ uri: resolveImage(pendingPaymentBooking.artist?.user?.profile_image) || `https://ui-avatars.com/api/?name=${encodeURIComponent(pendingPaymentBooking.artist?.user?.name || "Specialist")}&background=F3E8FF&color=7C3AED` }}
               style={styles.premiumPendingAvatar}
             />
             <View style={styles.premiumPendingInfo}>
@@ -1557,24 +1564,26 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center"
   },
-  bannerTextContainer: { flex: 1 },
-  bannerTitle: { color: Colors.white, fontSize: 18, fontWeight: "700" },
-  bannerSubTitle: { color: Colors.white, fontSize: 12, opacity: 0.85, marginTop: 4 },
+  bannerTextContainer: { flex: 1, paddingRight: 8, justifyContent: "center" },
+  bannerTitle: { color: Colors.white, fontSize: 16, fontWeight: "700" },
+  bannerSubTitle: { color: Colors.white, fontSize: 11, opacity: 0.85, marginTop: 2 },
   promoBadge: {
     backgroundColor: Colors.primary,
     alignSelf: "flex-start",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: 6,
-    marginTop: 8
+    marginTop: 6,
+    maxWidth: "100%"
   },
   promoBadgeText: { color: Colors.white, fontSize: 10, fontWeight: "600" },
   bannerDiscountText: {
     color: Colors.white,
-    fontSize: 32,
+    fontSize: 24,
     fontWeight: "800",
-    marginLeft: 10,
-    textAlign: "right"
+    marginLeft: 6,
+    textAlign: "right",
+    flexShrink: 0
   },
   paginationDots: {
     flexDirection: "row",

@@ -28,11 +28,34 @@ export default function AddressSelection({ route, navigation }) {
   const [landmark, setLandmark] = useState("");
   const [fullAddressText, setFullAddressText] = useState("");
 
+  const [savedAddresses, setSavedAddresses] = useState([]);
+  const [fetchingAddresses, setFetchingAddresses] = useState(false);
+  const [selectedAddressId, setSelectedAddressId] = useState(null);
+
   const [loading, setLoading] = useState(false);
   const [latitude, setLatitude] = useState(null);
   const [longitude, setLongitude] = useState(null);
 
   useEffect(() => {
+    // Fetch user's saved addresses
+    (async () => {
+      try {
+        setFetchingAddresses(true);
+        const addrs = await getCustomerAddresses();
+        if (addrs && Array.isArray(addrs) && addrs.length > 0) {
+          setSavedAddresses(addrs);
+          const defaultAddr = addrs.find(a => a.is_default) || addrs[0];
+          if (defaultAddr) {
+            handleSelectSavedAddress(defaultAddr);
+          }
+        }
+      } catch (err) {
+        console.log("Failed to fetch saved addresses:", err.message);
+      } finally {
+        setFetchingAddresses(false);
+      }
+    })();
+
     // Automatically fetch user's real current GPS coordinates in background on screen open
     (async () => {
       try {
@@ -50,6 +73,16 @@ export default function AddressSelection({ route, navigation }) {
       }
     })();
   }, []);
+
+  const handleSelectSavedAddress = (addr) => {
+    setSelectedAddressId(addr.id);
+    setHouseFlat(addr.address_line_1 || "");
+    setLocalityArea(addr.address_line_2 || "");
+    setCity(addr.city || "Jaipur");
+    setStateName(addr.state || "Rajasthan");
+    setPincode(addr.pincode || "");
+    setFullAddressText([addr.address_line_1, addr.address_line_2, addr.city, addr.state, addr.pincode].filter(Boolean).join(", "));
+  };
 
   const handleUseCurrentLocation = async () => {
     try {
@@ -268,6 +301,34 @@ export default function AddressSelection({ route, navigation }) {
           <View style={{ width: 40 }} />
         </View>
 
+        {fetchingAddresses ? (
+          <ActivityIndicator size="small" color={Colors.primary} style={{ marginTop: 20 }} />
+        ) : savedAddresses.length > 0 ? (
+          <View style={styles.savedAddressesContainer}>
+            <Text style={[styles.sectionHeaderTitle, { paddingHorizontal: 16 }]}>Saved Addresses</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8, paddingTop: 4 }}>
+              {savedAddresses.map((addr) => {
+                const isSelected = selectedAddressId === addr.id;
+                return (
+                  <TouchableOpacity
+                    key={addr.id}
+                    style={[styles.addressCard, isSelected && styles.addressCardSelected]}
+                    onPress={() => handleSelectSavedAddress(addr)}
+                  >
+                    <View style={styles.addressCardHeader}>
+                      <Ionicons name={addr.name?.toLowerCase() === "home" ? "home" : addr.name?.toLowerCase() === "work" ? "briefcase" : "location"} size={16} color={isSelected ? Colors.primary : Colors.textSecondary} />
+                      <Text style={[styles.addressCardTitle, isSelected && { color: Colors.primary }]}>{addr.name || "Address"}</Text>
+                    </View>
+                    <Text style={styles.addressCardText} numberOfLines={2}>
+                      {[addr.address_line_1, addr.address_line_2, addr.city].filter(Boolean).join(", ")}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        ) : null}
+
         <TouchableOpacity style={styles.locationButton} onPress={handleUseCurrentLocation}>
           <Ionicons name="location" size={18} color={Colors.primary} />
           <Text style={styles.locationText}>Use Current GPS Location</Text>
@@ -373,5 +434,11 @@ const styles = StyleSheet.create({
   manualForm: { paddingHorizontal: 16 },
   inputLabel: { fontSize: 12, fontWeight: "700", color: Colors.text, marginTop: 10, marginBottom: 4 },
   textInput: { height: 44, backgroundColor: Colors.white, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 12, fontSize: 13, color: Colors.text },
-  footer: { padding: 16, backgroundColor: Colors.white, borderTopWidth: 1, borderTopColor: Colors.border }
+  footer: { padding: 16, backgroundColor: Colors.white, borderTopWidth: 1, borderTopColor: Colors.border },
+  savedAddressesContainer: { marginTop: 12 },
+  addressCard: { width: 220, backgroundColor: Colors.background, padding: 12, borderRadius: 12, marginRight: 12, borderWidth: 1.5, borderColor: "transparent" },
+  addressCardSelected: { backgroundColor: "#FFF0F4", borderColor: Colors.primary },
+  addressCardHeader: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
+  addressCardTitle: { fontSize: 14, fontWeight: "700", color: Colors.text, marginLeft: 6 },
+  addressCardText: { fontSize: 12, color: Colors.textSecondary, lineHeight: 18 }
 });

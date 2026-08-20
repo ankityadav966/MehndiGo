@@ -52,7 +52,7 @@ async function getPendingArtists(req, res) {
 }
 async function approveArtist(req, res) {
   try {
-    await AdminService.approveArtist(req.params.id);
+    await AdminService.approveArtist(req.params.id, req.user?.id);
     return res.status(200).json(SuccessResponse("Artist approved"));
   } catch (error) {
     return res
@@ -62,8 +62,30 @@ async function approveArtist(req, res) {
 }
 async function rejectArtist(req, res) {
   try {
-    await AdminService.rejectArtist(req.params.id, req.body.reason);
+    await AdminService.rejectArtist(req.params.id, req.body.reason, req.user?.id);
     return res.status(200).json(SuccessResponse("Artist rejected"));
+  } catch (error) {
+    return res
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
+  }
+}
+
+async function suspendArtist(req, res) {
+  try {
+    await AdminService.suspendArtist(req.params.id, req.body.reason, req.user?.id);
+    return res.status(200).json(SuccessResponse("Artist suspended successfully"));
+  } catch (error) {
+    return res
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
+  }
+}
+
+async function reactivateArtist(req, res) {
+  try {
+    await AdminService.reactivateArtist(req.params.id, req.user?.id);
+    return res.status(200).json(SuccessResponse("Artist reactivated successfully"));
   } catch (error) {
     return res
       .status(error.statusCode || 500)
@@ -189,6 +211,75 @@ async function getWalletTransactionDetails(req, res) {
   }
 }
 
+// --- REVIEW MODERATION ---
+async function getReviews(req, res) {
+  try {
+    const { status } = req.query;
+    const reviews = await AdminService.getReviews(status);
+    return res.status(200).json(SuccessResponse("Reviews fetched successfully", reviews));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+async function approveReview(req, res) {
+  try {
+    const review = await AdminService.approveReview(req.params.id);
+    return res.status(200).json(SuccessResponse("Review approved successfully", review));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+async function rejectReview(req, res) {
+  try {
+    const { reason } = req.body;
+    const review = await AdminService.rejectReview(req.params.id, reason);
+    return res.status(200).json(SuccessResponse("Review rejected successfully", review));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+// --- SUPPORT TICKETS ---
+async function getSupportTickets(req, res) {
+  try {
+    const tickets = await AdminService.getSupportTickets(req.query);
+    return res.status(200).json(SuccessResponse("Support tickets fetched successfully", tickets));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+async function getSupportTicketDetails(req, res) {
+  try {
+    const ticket = await AdminService.getSupportTicketDetails(req.params.id);
+    return res.status(200).json(SuccessResponse("Support ticket details fetched successfully", ticket));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+async function updateTicketStatus(req, res) {
+  try {
+    const { status } = req.body;
+    const ticket = await AdminService.updateTicketStatus(req.params.id, status);
+    return res.status(200).json(SuccessResponse("Ticket status updated successfully", ticket));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+async function replySupportTicket(req, res) {
+  try {
+    const { message, status } = req.body;
+    const ticket = await AdminService.replySupportTicket(req.params.id, message, status, req.user.id);
+    return res.status(200).json(SuccessResponse("Reply sent successfully", ticket));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
 module.exports = {
   getStats,
   getAllUsers,
@@ -196,6 +287,8 @@ module.exports = {
   getPendingArtists,
   approveArtist,
   rejectArtist,
+  suspendArtist,
+  reactivateArtist,
   getAllArtists,
   getAllBookings,
   getAllPayments,
@@ -208,5 +301,12 @@ module.exports = {
   getWalletSummary,
   getCommissionHistory,
   getDashboardSummary,
-  getWalletTransactionDetails
+  getWalletTransactionDetails,
+  getReviews,
+  approveReview,
+  rejectReview,
+  getSupportTickets,
+  getSupportTicketDetails,
+  updateTicketStatus,
+  replySupportTicket
 };

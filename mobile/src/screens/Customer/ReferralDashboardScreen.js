@@ -14,6 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import Colors from "../../constants/Colors";
 import { getReferralDashboard, getReferralHistory } from "../../services/referral";
+import { createReferralDeepLink } from "../../services/deepLink";
 
 export default function ReferralDashboardScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
@@ -51,12 +52,15 @@ export default function ReferralDashboardScreen({ navigation }) {
   };
 
   const handleShareInvite = async () => {
-    if (!dashboardData?.referralLink) return;
+    const refCode = dashboardData?.referralCode;
+    if (!refCode) return;
+    const shareLink = dashboardData?.referralLink || createReferralDeepLink(refCode);
     try {
-      const messageText = `Hey! Join MehndiGo for premium home mehndi artists. Sign up with my link and verify your phone number to get welcome wallet cashbacks! Use my invite code: ${dashboardData.referralCode}\n\n${dashboardData.referralLink}`;
+      const messageText = `Hey! Join MehndiGo for premium home mehndi artists. Sign up with my link and verify your phone number to get welcome wallet cashbacks! Use my invite code: ${refCode}\n\n${shareLink}`;
       await Share.share({
         message: messageText,
-        title: " MehndiGo Invitation"
+        title: "MehndiGo Invitation",
+        url: shareLink
       });
     } catch (err) {
       console.log("Share failed:", err.message);

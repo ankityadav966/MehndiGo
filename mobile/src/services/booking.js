@@ -107,8 +107,11 @@ export async function updateOnTheWay(bookingId) {
   return res?.data || res;
 }
 
-export async function updateArrived(bookingId) {
-  const res = await apiRequest("POST", "/booking/validate-arrival", { bookingId, force: true }, true);
+export async function updateArrived(bookingId, latitude = null, longitude = null) {
+  const payload = { bookingId, booking_id: bookingId };
+  if (latitude !== null && latitude !== undefined) payload.latitude = latitude;
+  if (longitude !== null && longitude !== undefined) payload.longitude = longitude;
+  const res = await apiRequest("POST", "/booking/validate-arrival", payload, true);
   return res?.data || res;
 }
 
@@ -134,7 +137,7 @@ export async function getPendingPayment() {
 }
 
 export async function updateArtistLocation(payload) {
-  const res = await apiRequest("POST", "/api/v1/mehndigo/artist/location/update", payload, true);
+  const res = await apiRequest("POST", "/artist/location/update", payload, true);
   return res?.data || res;
 }
 
@@ -143,8 +146,11 @@ export async function getArtistLocation(bookingId) {
   return res?.data || res;
 }
 
-export async function validateArrival(bookingId, force = false) {
-  const res = await apiRequest("POST", "/booking/validate-arrival", { bookingId, force }, true);
+export async function validateArrival(bookingId, latitude = null, longitude = null) {
+  const payload = { bookingId, booking_id: bookingId };
+  if (latitude !== null && latitude !== undefined) payload.latitude = latitude;
+  if (longitude !== null && longitude !== undefined) payload.longitude = longitude;
+  const res = await apiRequest("POST", "/booking/validate-arrival", payload, true);
   return res?.data || res;
 }
 

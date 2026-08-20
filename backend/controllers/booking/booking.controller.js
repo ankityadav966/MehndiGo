@@ -4,9 +4,18 @@ const db = require("../../models");
 
 async function calculatePriceDetails(req, res) {
   try {
-    const { serviceId, couponCode, slotCount } = req.query;
+    const { serviceId, couponCode, slotCount, customArtPrice, groupSize, serviceCoverage, distanceKm } = req.query;
     const count = slotCount ? parseInt(slotCount) : 1;
-    const response = await BookingService.calculatePriceDetails(serviceId, couponCode, req.user ? req.user.id : null, count);
+    const response = await BookingService.calculatePriceDetails(
+      serviceId,
+      couponCode,
+      req.user ? req.user.id : null,
+      count,
+      distanceKm ? Number(distanceKm) : 0,
+      customArtPrice ? Number(customArtPrice) : null,
+      groupSize ? Number(groupSize) : 1,
+      serviceCoverage || "BOTH_HANDS"
+    );
     return res.status(200).json(SuccessResponse("Pricing details calculated successfully", response));
   } catch (error) {
     return res
@@ -78,7 +87,7 @@ async function createPaymentSession(req, res) {
   try {
     const { bookingId } = req.body;
     const response = await BookingService.createPaymentSession(bookingId, req.user.id);
-    return res.status(201).json(SuccessResponse("Cashfree payment session created successfully", response));
+    return res.status(201).json(SuccessResponse("Payment session created successfully", response));
   } catch (error) {
     return res
       .status(error.statusCode || 500)
@@ -156,8 +165,11 @@ async function rejectBooking(req, res) {
 
 async function updateOnTheWay(req, res) {
   try {
-    const { bookingId } = req.body;
-    const response = await BookingService.updateBookingStatus(bookingId, req.user.id, req.user.role, "ARTIST_ON_THE_WAY");
+    const bookingId = req.body.bookingId || req.body.booking_id || req.body.id;
+    if (!bookingId) {
+      return res.status(400).json(ErrorResponse("bookingId is required"));
+    }
+    const response = await BookingService.updateBookingStatus(bookingId, req.user.id, req.user.role, "ARTIST_ON_THE_WAY", req.body);
     return res.status(200).json(SuccessResponse("Artist is now on the way", response));
   } catch (error) {
     return res
@@ -168,8 +180,11 @@ async function updateOnTheWay(req, res) {
 
 async function updateArrived(req, res) {
   try {
-    const { bookingId } = req.body;
-    const response = await BookingService.updateBookingStatus(bookingId, req.user.id, req.user.role, "ARTIST_ARRIVED");
+    const bookingId = req.body.bookingId || req.body.booking_id || req.body.id;
+    if (!bookingId) {
+      return res.status(400).json(ErrorResponse("bookingId is required"));
+    }
+    const response = await BookingService.updateBookingStatus(bookingId, req.user.id, req.user.role, "ARTIST_ARRIVED", req.body);
     return res.status(200).json(SuccessResponse("Artist has arrived at customer location", response));
   } catch (error) {
     return res

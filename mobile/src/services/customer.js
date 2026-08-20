@@ -286,6 +286,16 @@ export async function deleteCustomerAddress(addressId) {
   return res?.data || res;
 }
 
+export async function changePassword(passwordData) {
+  const res = await apiRequest("POST", "/customer/change-password", passwordData, true);
+  return res?.data || res;
+}
+
+export async function deleteAccount(confirmationData) {
+  const res = await apiRequest("DELETE", "/customer/account", confirmationData, true);
+  return res?.data || res;
+}
+
 
 export async function submitSupportTicket(ticketData) {
   try {
@@ -309,61 +319,23 @@ export async function getSupportTickets() {
 
 export async function getSupportTicketDetails(id) {
   try {
-    const res = await apiRequest("GET", `/support/tickets/${id}`, null, true);
-    if (res?.data) return res.data;
-    if (res?.id || res?.ticket_id) return res;
-  } catch (_) {}
-
-  try {
     const res = await apiRequest("GET", `/customer/support/tickets/${id}`, null, true);
     if (res?.data) return res.data;
     if (res?.id || res?.ticket_id) return res;
   } catch (_) {}
 
-  try {
-    const res = await apiRequest("GET", "/support/tickets", null, true);
-    const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []);
-    const found = list.find(t => String(t.id) === String(id) || String(t.ticket_id) === String(id));
-    if (found) return found;
-  } catch (_) {}
-
-  return {
-    id,
-    ticket_id: id,
-    subject: `Support Ticket #${id}`,
-    description: "Support request submitted.",
-    status: "OPEN",
-    category: "General",
-    created_at: new Date().toISOString(),
-    replies: []
-  };
+  const res = await apiRequest("GET", `/support/tickets/${id}`, null, true);
+  return res?.data || res;
 }
 
 export async function replySupportTicket(id, replyData) {
-  let backendResult = null;
   try {
-    backendResult = await apiRequest("POST", `/support/tickets/${id}/reply`, replyData, true);
+    const res = await apiRequest("POST", `/customer/support/tickets/${id}/reply`, replyData, true);
+    return res?.data || res;
   } catch (_) {
-    try {
-      backendResult = await apiRequest("POST", `/customer/support/tickets/${id}/reply`, replyData, true);
-    } catch (__) {}
+    const res = await apiRequest("POST", `/support/tickets/${id}/reply`, replyData, true);
+    return res?.data || res;
   }
-
-  // Also post an in-app notification so Admin sees the user reply in real time
-  try {
-    await apiRequest("POST", "/admin/notifications", {
-      user_id: 1,
-      title: `Support Ticket #${id} User Reply`,
-      message: replyData.message || replyData.text || "User replied to ticket",
-      type: "SUPPORT_TICKET_USER_REPLY"
-    }, true);
-  } catch (_) {}
-
-  return backendResult?.data || backendResult || {
-    ticket_id: id,
-    status: "OPEN",
-    replies: []
-  };
 }
 
 export async function closeSupportTicket(id) {

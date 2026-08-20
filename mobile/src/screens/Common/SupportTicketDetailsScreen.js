@@ -299,7 +299,7 @@ export default function SupportTicketDetailsScreen({ route, navigation }) {
   const ticketNumberDisplay = ticket.ticket_number || `#MG-${1000 + (ticket.id || 1)}`;
 
   return (
-    <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
+    <SafeAreaView style={styles.container} edges={["top"]}>
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
@@ -324,7 +324,8 @@ export default function SupportTicketDetailsScreen({ route, navigation }) {
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 10 : 0}
       >
         <FlatList
           ref={listRef}

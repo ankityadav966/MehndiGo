@@ -1,5 +1,6 @@
 import React from "react";
 import { Calendar, Clock } from "lucide-react";
+import { formatAdminDate, formatAdminTime } from "../utils/dateFormatter";
 
 const BookingModal = ({
   artist,
@@ -105,7 +106,7 @@ const BookingModal = ({
               <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>No availability slots set up by this artist.</p>
             ) : (
               artist.slots?.map((slot) => {
-                const start = new Date(slot.start_time);
+                const startTimeVal = slot.start_time || slot.slot_time || slot.date;
                 const isSelected = selectedSlot?.id === slot.id;
                 return (
                   <label
@@ -123,8 +124,8 @@ const BookingModal = ({
                   >
                     <input type="radio" name="slot" style={{ display: "none" }} onChange={() => setSelectedSlot(slot)} />
                     <Calendar style={{ width: "12px", marginRight: "3px" }} />
-                    {start.toLocaleDateString()} - <Clock style={{ width: "12px", margin: "0 3px" }} />
-                    {start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    {formatAdminDate(startTimeVal)} - <Clock style={{ width: "12px", margin: "0 3px" }} />
+                    {formatAdminTime(startTimeVal)}
                   </label>
                 );
               })

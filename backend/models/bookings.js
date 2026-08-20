@@ -48,6 +48,10 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: "booking_id",
         as: "payments"
       });
+      Booking.hasOne(models.Review, {
+        foreignKey: "booking_id",
+        as: "review"
+      });
     }
   }
 
@@ -210,6 +214,10 @@ module.exports = (sequelize, DataTypes) => {
         defaultValue: false
       },
       check_in_time: {
+        type: DataTypes.DATE,
+        allowNull: true
+      },
+      service_started_at: {
         type: DataTypes.DATE,
         allowNull: true
       },

@@ -24,17 +24,21 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     if (token) {
-      // Decode user details from token if needed, or get from profile API
       try {
-        const payload = JSON.parse(atob(token.split(".")[1]));
-        setUser((prev) => {
-          if (prev && prev.id === payload.id) {
-            return { ...prev, role: (prev.role || payload.role || "USER").toUpperCase() };
-          }
-          return { id: payload.id, role: (payload.role || "USER").toUpperCase() };
-        });
+        const parts = String(token).split(".");
+        if (parts.length >= 2) {
+          let base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+          while (base64.length % 4) base64 += "=";
+          const payload = JSON.parse(atob(base64));
+          setUser((prev) => {
+            if (prev && prev.id === payload.id) {
+              return { ...prev, role: (prev.role || payload.role || "USER").toUpperCase() };
+            }
+            return { id: payload.id, role: (payload.role || "USER").toUpperCase() };
+          });
+        }
       } catch (e) {
-        logout();
+        console.warn("[AuthContext] Token parse notice:", e.message);
       }
     }
   }, [token]);

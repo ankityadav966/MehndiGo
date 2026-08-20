@@ -10,7 +10,9 @@ import {
   RefreshControl,
   TextInput,
   Modal,
-  ScrollView
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform
 } from "react-native";
 import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -377,7 +379,10 @@ export default function WalletScreen({ navigation }) {
         animationType="slide"
         onRequestClose={() => setShowAddModal(false)}
       >
-        <View style={styles.modalBg}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={styles.modalBg}
+        >
           <View style={styles.modalSheet}>
             <View style={styles.modalHandle} />
             <View style={styles.modalTopRow}>
@@ -434,7 +439,7 @@ export default function WalletScreen({ navigation }) {
               )}
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* 2. Transaction Details Modal */}

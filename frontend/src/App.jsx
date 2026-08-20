@@ -149,13 +149,11 @@ function App() {
             <Route
               path="/admin"
               element={
-                <ProtectedRoute>
-                  {String(user?.role).toUpperCase() === "ADMIN" ? (
-                    <AdminDashboard showToast={showToast} />
-                  ) : (
-                    <Navigate to="/dashboard" replace />
-                  )}
-                </ProtectedRoute>
+                isAuthenticated && String(user?.role).toUpperCase() === "ADMIN" ? (
+                  <AdminDashboard showToast={showToast} />
+                ) : (
+                  <Navigate to="/secret-admin-login" replace />
+                )
               }
             />
 

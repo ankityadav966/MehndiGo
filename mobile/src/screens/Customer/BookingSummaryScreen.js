@@ -6,7 +6,9 @@ import {
   TouchableOpacity,
   View,
   TextInput,
-  ActivityIndicator
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform
 } from "react-native";
 import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -89,20 +91,48 @@ export default function BookingSummaryScreen({ route, navigation }) {
     fetchPricingAndArtist(appliedCoupon, groupSize, newCoverage);
   };
 
-  const handleApplyCoupon = () => {
-    if (!couponInput.trim()) {
+  const handleApplyCoupon = async () => {
+    const code = couponInput.trim().toUpperCase();
+    if (!code) {
       Alert.alert("Error", "Please enter a coupon code.");
       return;
     }
+    if (code === appliedCoupon) {
+      Alert.alert("Notice", "This coupon is already applied.");
+      return;
+    }
     setLoading(true);
-    fetchPricingAndArtist(couponInput.trim().toUpperCase());
+    try {
+      const pricing = await getPriceDetails(serviceId, code, 1, selectedArt?.price, groupSize, serviceCoverage);
+      const discount = Number(pricing?.couponDiscount || pricing?.coupon_discount || 0);
+      if (discount > 0) {
+        setPriceDetails(pricing);
+        setAppliedCoupon(code);
+        Alert.alert("Coupon Applied 🎉", `Successfully applied ${code}! Saved ₹${discount}.`);
+      } else {
+        setAppliedCoupon(null);
+        Alert.alert("Coupon Notice", "This coupon does not provide a discount for this booking.");
+      }
+    } catch (err) {
+      setAppliedCoupon(null);
+      Alert.alert("Coupon Error", err.message || "Failed to apply coupon.");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleRemoveCoupon = () => {
+  const handleRemoveCoupon = async () => {
     setLoading(true);
     setCouponInput("");
     setAppliedCoupon(null);
-    fetchPricingAndArtist(null);
+    try {
+      const pricing = await getPriceDetails(serviceId, null, 1, selectedArt?.price, groupSize, serviceCoverage);
+      setPriceDetails(pricing);
+    } catch (err) {
+      console.log("Failed to refresh pricing on coupon removal:", err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleProceedToPayment = async () => {
@@ -167,41 +197,51 @@ export default function BookingSummaryScreen({ route, navigation }) {
     );
   }
 
-  const basePrice = Number(priceDetails?.base_amount || priceDetails?.subtotal || 0);
-  const discountAmount = Number(priceDetails?.discount_amount || priceDetails?.coupon_discount || 0);
-  const totalAmount = Number(priceDetails?.final_amount || priceDetails?.total_amount || (basePrice - discountAmount));
-  const advanceAmount = Number(priceDetails?.advance_amount || Math.round(totalAmount * 0.10));
-  const remainingAmount = Number(priceDetails?.remaining_amount !== undefined ? priceDetails?.remaining_amount : (totalAmount - advanceAmount));
+  const basePrice = Number(priceDetails?.servicePrice || priceDetails?.service_price || priceDetails?.base_amount || priceDetails?.subtotal || 0);
+  const discountAmount = Number(priceDetails?.couponDiscount || priceDetails?.coupon_discount || priceDetails?.discount_amount || 0);
+  const totalAmount = Number(priceDetails?.finalAmount || priceDetails?.final_amount || priceDetails?.total_amount || (basePrice - discountAmount));
+  const advanceAmount = Number(priceDetails?.advanceAmount || priceDetails?.advance_amount || Math.round(totalAmount * 0.10));
+  const remainingAmount = Number(priceDetails?.remainingCash !== undefined ? priceDetails?.remainingCash : (priceDetails?.remaining_amount !== undefined ? priceDetails?.remaining_amount : (totalAmount - advanceAmount)));
+
+  const artistName = artist?.user?.name || artist?.business_name || "Mehndi Artist";
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* 1. Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.7}>
-          <Ionicons name="chevron-back" size={22} color="#212121" />
-        </TouchableOpacity>
-        <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerTitle}>Booking Summary</Text>
-          <Text style={styles.headerSubtitle}>Review details & deposit</Text>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        {/* 1. Header */}
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.7}>
+            <Ionicons name="chevron-back" size={22} color="#212121" />
+          </TouchableOpacity>
+          <View style={styles.headerTitleContainer}>
+            <Text style={styles.headerTitle}>Booking Summary</Text>
+            <Text style={styles.headerSubtitle}>Review details & deposit</Text>
+          </View>
+          <View style={styles.secureBadge}>
+            <Ionicons name="shield-checkmark" size={14} color="#059669" />
+            <Text style={styles.secureBadgeText}>100% Escrow</Text>
+          </View>
         </View>
-        <View style={styles.secureBadge}>
-          <Ionicons name="shield-checkmark" size={14} color="#059669" />
-          <Text style={styles.secureBadgeText}>100% Escrow</Text>
-        </View>
-      </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+        >
         {/* 2. Artist Profile & Service Card */}
         <View style={styles.card}>
           <View style={styles.artistRow}>
             <OptimizedImage
-              source={{ uri: artist?.user?.profile_image || artist?.profile_image || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200" }}
+              source={{ uri: artist?.user?.profile_image || artist?.profile_image || `https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=800020&color=fff&size=200` }}
               style={styles.artistAvatar}
             />
             <View style={styles.artistInfo}>
               <View style={styles.nameRow}>
                 <Text style={styles.artistName} numberOfLines={1}>
-                  {artist?.user?.name || artist?.business_name || "Mehndi Artist"}
+                  {artistName}
                 </Text>
                 <Ionicons name="checkmark-circle" size={16} color="#059669" />
               </View>
@@ -210,8 +250,8 @@ export default function BookingSummaryScreen({ route, navigation }) {
               </Text>
               <View style={styles.ratingBadge}>
                 <Ionicons name="star" size={12} color="#D97706" />
-                <Text style={styles.ratingText}>{Number(artist?.rating_avg || 4.9).toFixed(1)}</Text>
-                <Text style={styles.reviewCount}>({artist?.review_count || 38} reviews)</Text>
+                <Text style={styles.ratingText}>{Number(artist?.avg_rating || artist?.rating_avg || 5.0).toFixed(1)}</Text>
+                <Text style={styles.reviewCount}>({artist?.total_reviews || artist?.review_count || 0} reviews)</Text>
               </View>
             </View>
           </View>
@@ -428,7 +468,8 @@ export default function BookingSummaryScreen({ route, navigation }) {
             </>
           )}
         </TouchableOpacity>
-      </View>
+        </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

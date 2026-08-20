@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, KeyboardAvoidingView, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Location from "expo-location";
 import Colors from "../../constants/Colors";
@@ -22,6 +22,20 @@ export default function PersonalDetailsScreen({ navigation, route }) {
   const [phone, setPhone] = useState(artistDetails.phone || user?.phone || "");
 
   const [errors, setErrors] = useState({});
+
+  useEffect(() => {
+    if (artistDetails) {
+      if (artistDetails.bio && !bio) setBio(artistDetails.bio);
+      if (artistDetails.experienceYears && !experienceYears) setExperienceYears(String(artistDetails.experienceYears));
+      if (artistDetails.homeService !== undefined) setHomeService(artistDetails.homeService !== false);
+      if (artistDetails.salonService !== undefined) setSalonService(Boolean(artistDetails.salonService));
+      if (artistDetails.city && !city) setCity(artistDetails.city);
+      if (artistDetails.state && !state) setState(artistDetails.state);
+      if (artistDetails.location && !location) setLocation(artistDetails.location);
+      if (artistDetails.pincode && !pincode) setPincode(artistDetails.pincode);
+      if ((artistDetails.phone || user?.phone) && !phone) setPhone(artistDetails.phone || user?.phone || "");
+    }
+  }, [artistDetails, user]);
 
   useEffect(() => {
     (async () => {
@@ -90,8 +104,16 @@ export default function PersonalDetailsScreen({ navigation, route }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>Tell us about yourself</Text>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <ScrollView
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Text style={styles.title}>Tell us about yourself</Text>
 
         <View style={styles.formGroup}>
           <Text style={styles.label}>Bio</Text>
@@ -213,6 +235,7 @@ export default function PersonalDetailsScreen({ navigation, route }) {
           <Text style={styles.buttonText}>Continue</Text>
         </TouchableOpacity>
       </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

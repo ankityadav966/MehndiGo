@@ -1,4 +1,5 @@
 const CustomerService = require("../../services/customer.services");
+const ReviewService = require("../../services/review.services");
 const { SuccessResponse, ErrorResponse } = require("../../utils/common");
 
 async function getHomeDashboard(req, res) {
@@ -247,7 +248,7 @@ async function getFilterMetadata(req, res) {
 
 async function addFavorite(req, res) {
   try {
-    const { artistId } = req.body;
+    const artistId = req.body?.artistId || req.query?.artistId || req.params?.artistId;
     const response = await CustomerService.addFavorite(req.user.id, artistId);
     return res.status(201).json(SuccessResponse("Artist Added to Favorites Successfully", response));
   } catch (error) {
@@ -259,7 +260,7 @@ async function addFavorite(req, res) {
 
 async function removeFavorite(req, res) {
   try {
-    const { artistId } = req.query;
+    const artistId = req.query?.artistId || req.body?.artistId || req.params?.artistId;
     await CustomerService.removeFavorite(req.user.id, artistId);
     return res.status(200).json(SuccessResponse("Artist Removed from Favorites Successfully"));
   } catch (error) {
@@ -273,6 +274,29 @@ async function getFavorites(req, res) {
   try {
     const response = await CustomerService.getFavorites(req.user.id);
     return res.status(200).json(SuccessResponse("Favorites Fetched Successfully", response));
+  } catch (error) {
+    return res
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
+  }
+}
+
+async function getReviews(req, res) {
+  try {
+    const response = await ReviewService.getMyReviews(req.user.id);
+    return res.status(200).json(SuccessResponse("Customer Reviews Fetched Successfully", response));
+  } catch (error) {
+    return res
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
+  }
+}
+
+async function getArtistReviews(req, res) {
+  try {
+    const artistId = req.params.id || req.params.artistId;
+    const response = await ReviewService.getReviews({ artist_id: artistId });
+    return res.status(200).json(SuccessResponse("Artist Reviews Fetched Successfully", response));
   } catch (error) {
     return res
       .status(error.statusCode || 500)
@@ -460,6 +484,44 @@ async function addAddress(req, res) {
   }
 }
 
+async function updateAddress(req, res) {
+  try {
+    const response = await CustomerService.updateAddress(req.user.id, req.params.id, req.body);
+    return res.status(200).json(SuccessResponse("Address updated successfully", response));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+async function setDefaultAddress(req, res) {
+  try {
+    const response = await CustomerService.setDefaultAddress(req.user.id, req.params.id);
+    return res.status(200).json(SuccessResponse("Primary address updated successfully", response));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+async function changePassword(req, res) {
+  try {
+    const AuthService = require("../../services/auth.services");
+    const response = await AuthService.changePassword(req.user.id, req.body);
+    return res.status(200).json(SuccessResponse("Password changed successfully", response));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+async function deleteAccount(req, res) {
+  try {
+    const AuthService = require("../../services/auth.services");
+    const response = await AuthService.deleteAccount(req.user.id, req.body);
+    return res.status(200).json(SuccessResponse("Account deleted successfully", response));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
 async function deleteAddress(req, res) {
   try {
     const response = await CustomerService.deleteAddress(req.user.id, req.params.id);
@@ -472,22 +534,53 @@ async function deleteAddress(req, res) {
 async function createSupportTicket(req, res) {
   try {
     const db = require("../../models");
+    const { Op } = require("sequelize");
     const { category, subject, description, attachments, booking_id, bookingId, dispute_reason, disputeReason } = req.body;
 
     if (!subject && !description && !disputeReason) {
       return res.status(400).json(ErrorResponse("Subject and description are required"));
     }
 
+    const targetBookingId = booking_id || bookingId || null;
+    if (targetBookingId) {
+      const booking = await db.Booking.findByPk(targetBookingId);
+      if (!booking) {
+        return res.status(400).json(ErrorResponse("Referenced booking not found"));
+      }
+      const isCustomer = booking.user_id === req.user.id;
+      const isArtist = booking.artist_id === req.user.id || (req.user.artist_id && booking.artist_id === req.user.artist_id);
+      if (!isCustomer && !isArtist && req.user.role !== "ADMIN" && req.user.role !== "SUPER_ADMIN") {
+        return res.status(403).json(ErrorResponse("Invalid booking reference: booking does not belong to your account"));
+      }
+    }
+
+    const finalSubject = subject || `Dispute for Booking #${targetBookingId || ''}`;
+    const finalDescription = description || dispute_reason || "Dispute submitted by customer";
+
+    // Idempotency: Prevent duplicate submissions within 15 seconds
+    const recentDuplicate = await db.SupportTicket.findOne({
+      where: {
+        user_id: req.user.id,
+        subject: finalSubject,
+        description: finalDescription,
+        createdAt: { [Op.gte]: new Date(Date.now() - 15000) }
+      }
+    });
+
+    if (recentDuplicate) {
+      return res.status(200).json(SuccessResponse("Support ticket already submitted", recentDuplicate));
+    }
+
     const ticket = await db.SupportTicket.create({
       user_id: req.user.id,
-      booking_id: booking_id || bookingId || null,
+      booking_id: targetBookingId,
       dispute_reason: dispute_reason || disputeReason || null,
-      category: category || (booking_id || bookingId ? "Booking Dispute" : "Other"),
-      subject: subject || `Dispute for Booking #${booking_id || bookingId || ''}`,
-      description: description || dispute_reason || "Dispute submitted by customer",
+      category: category || (targetBookingId ? "Booking Dispute" : "Other"),
+      subject: finalSubject,
+      description: finalDescription,
       attachments: attachments || null,
       status: "OPEN",
-      priority: (booking_id || bookingId) ? "HIGH" : "LOW"
+      priority: targetBookingId ? "HIGH" : "LOW"
     });
 
     return res.status(201).json(SuccessResponse("Support ticket created successfully", ticket));
@@ -512,8 +605,14 @@ async function getSupportTickets(req, res) {
 async function getSupportTicketDetails(req, res) {
   try {
     const db = require("../../models");
+    const isAdmin = req.user.role === "ADMIN" || req.user.role === "SUPER_ADMIN";
+    const where = isAdmin ? { id: req.params.id } : { id: req.params.id, user_id: req.user.id };
+
     const ticket = await db.SupportTicket.findOne({
-      where: { id: req.params.id, user_id: req.user.id }
+      where,
+      include: [
+        { model: db.User, as: "user", attributes: ["id", "name", "email", "phone", "profile_image", "role"] }
+      ]
     });
     if (!ticket) {
       return res.status(404).json(ErrorResponse("Ticket not found"));
@@ -527,33 +626,56 @@ async function getSupportTicketDetails(req, res) {
 async function replySupportTicket(req, res) {
   try {
     const db = require("../../models");
-    const { message, attachments } = req.body;
+    const { message, attachments, status } = req.body;
     if (!message && (!attachments || attachments.length === 0)) {
       return res.status(400).json(ErrorResponse("Either a message or an attachment is required"));
     }
 
-    const ticket = await db.SupportTicket.findOne({
-      where: { id: req.params.id, user_id: req.user.id }
-    });
+    const isAdmin = req.user.role === "ADMIN" || req.user.role === "SUPER_ADMIN";
+    const where = isAdmin ? { id: req.params.id } : { id: req.params.id, user_id: req.user.id };
+
+    const ticket = await db.SupportTicket.findOne({ where });
     if (!ticket) {
       return res.status(404).json(ErrorResponse("Ticket not found"));
     }
 
+    if (ticket.status === "CLOSED" && !isAdmin) {
+      return res.status(400).json(ErrorResponse("Cannot reply to a closed support ticket"));
+    }
+
     const sender = await db.User.findByPk(req.user.id);
-    const repliesList = ticket.replies ? JSON.parse(ticket.replies) : [];
+    let repliesList = [];
+    try {
+      repliesList = ticket.replies ? (typeof ticket.replies === "string" ? JSON.parse(ticket.replies) : ticket.replies) : [];
+    } catch (_) {
+      repliesList = [];
+    }
+
+    // Idempotency: Prevent immediate duplicate reply within 10 seconds
+    if (repliesList.length > 0) {
+      const lastReply = repliesList[repliesList.length - 1];
+      if (
+        lastReply.sender_id === req.user.id &&
+        lastReply.message === message &&
+        (new Date() - new Date(lastReply.created_at)) < 10000
+      ) {
+        return res.status(200).json(SuccessResponse("Reply already submitted", ticket));
+      }
+    }
 
     repliesList.push({
       sender_id: req.user.id,
-      sender_name: sender ? sender.name : "User",
+      sender_name: sender ? sender.name : (isAdmin ? "Admin Support" : "User"),
       sender_role: req.user.role,
       message,
       attachments: attachments || null,
       created_at: new Date().toISOString()
     });
 
+    const newStatus = status ? status : (isAdmin ? "OPEN" : "OPEN");
     await ticket.update({
       replies: JSON.stringify(repliesList),
-      status: "OPEN"
+      status: newStatus
     });
 
     return res.status(200).json(SuccessResponse("Reply added successfully", ticket));
@@ -565,9 +687,10 @@ async function replySupportTicket(req, res) {
 async function closeSupportTicket(req, res) {
   try {
     const db = require("../../models");
-    const ticket = await db.SupportTicket.findOne({
-      where: { id: req.params.id, user_id: req.user.id }
-    });
+    const isAdmin = req.user.role === "ADMIN" || req.user.role === "SUPER_ADMIN";
+    const where = isAdmin ? { id: req.params.id } : { id: req.params.id, user_id: req.user.id };
+
+    const ticket = await db.SupportTicket.findOne({ where });
     if (!ticket) {
       return res.status(404).json(ErrorResponse("Ticket not found"));
     }
@@ -621,7 +744,11 @@ module.exports = {
   getAddresses,
   getReviews,
   addAddress,
+  updateAddress,
+  setDefaultAddress,
   deleteAddress,
+  changePassword,
+  deleteAccount,
   getSupportTickets,
   getSupportTicketDetails,
   replySupportTicket,

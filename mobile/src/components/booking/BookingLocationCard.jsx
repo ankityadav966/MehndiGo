@@ -11,18 +11,19 @@ export default function BookingLocationCard({
   longitude,
   isArtist = false
 }) {
-  const fullAddress = address || "Customer Address";
+  const fullAddress = address || "Customer Appointment Address";
 
   const handleOpenMaps = () => {
     const lat = latitude ? parseFloat(latitude) : null;
     const lng = longitude ? parseFloat(longitude) : null;
 
     if (lat && lng && lat !== 0 && lng !== 0) {
-      const url = Platform.select({
-        ios: `maps:0,0?q=${lat},${lng}`,
-        android: `geo:0,0?q=${lat},${lng}(${encodeURIComponent(fullAddress)})`
-      }) || `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
-      
+      const url =
+        Platform.select({
+          ios: `maps:0,0?q=${lat},${lng}`,
+          android: `geo:0,0?q=${lat},${lng}(${encodeURIComponent(fullAddress)})`
+        }) || `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+
       Linking.openURL(url).catch(() => {
         Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`);
       });
@@ -36,32 +37,44 @@ export default function BookingLocationCard({
     <View style={styles.card}>
       <View style={styles.headerRow}>
         <View style={styles.titleRow}>
-          <Ionicons name="location-outline" size={16} color="#E91E63" style={{ marginRight: 6 }} />
-          <Text style={styles.titleText}>Service Location</Text>
+          <View style={styles.iconBox}>
+            <Ionicons name="location" size={14} color="#E91E63" />
+          </View>
+          <Text style={styles.titleText} numberOfLines={1}>Service Location</Text>
         </View>
 
-        <TouchableOpacity style={styles.directionBtn} onPress={handleOpenMaps} activeOpacity={0.7}>
-          <Ionicons name="navigate-circle-outline" size={14} color="#701DDB" />
+        <TouchableOpacity
+          style={styles.directionBtn}
+          onPress={handleOpenMaps}
+          activeOpacity={0.75}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="navigate" size={13} color="#701DDB" />
           <Text style={styles.directionBtnText}>{isArtist ? "Navigate" : "Open Map"}</Text>
         </TouchableOpacity>
       </View>
 
       <View style={styles.divider} />
 
-      <Text style={styles.addressText}>{fullAddress}</Text>
+      <View style={styles.addressContainer}>
+        <Text style={styles.addressText}>{fullAddress}</Text>
 
-      {landmark ? (
-        <View style={styles.landmarkRow}>
-          <Ionicons name="business-outline" size={13} color="#6B7280" />
-          <Text style={styles.landmarkText}>Landmark: {landmark}</Text>
-        </View>
-      ) : null}
+        {landmark ? (
+          <View style={styles.landmarkRow}>
+            <Ionicons name="business" size={12} color="#701DDB" />
+            <Text style={styles.landmarkText} numberOfLines={1}>Landmark: {landmark}</Text>
+          </View>
+        ) : null}
 
-      {(city || pincode) && (
-        <Text style={styles.cityPincodeText}>
-          {[city, pincode].filter(Boolean).join(" - ")}
-        </Text>
-      )}
+        {(city || pincode) && (
+          <View style={styles.cityRow}>
+            <Ionicons name="map-outline" size={12} color="#9CA3AF" />
+            <Text style={styles.cityPincodeText} numberOfLines={1}>
+              {[city, pincode].filter(Boolean).join(" • ")}
+            </Text>
+          </View>
+        )}
+      </View>
     </View>
   );
 }
@@ -69,7 +82,7 @@ export default function BookingLocationCard({
 const styles = StyleSheet.create({
   card: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 16,
+    borderRadius: 18,
     padding: 16,
     marginHorizontal: 16,
     marginTop: 12,
@@ -79,36 +92,56 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
     shadowRadius: 6,
-    elevation: 1
+    elevation: 2,
+    overflow: "hidden"
   },
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center"
+    alignItems: "center",
+    gap: 8
   },
   titleRow: {
     flexDirection: "row",
-    alignItems: "center"
+    alignItems: "center",
+    flex: 1,
+    flexShrink: 1
+  },
+  iconBox: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    backgroundColor: "#FFF8FA",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: "#FCE7F3",
+    flexShrink: 0
   },
   titleText: {
-    fontSize: 13,
-    fontWeight: "700",
+    fontSize: 12,
+    fontWeight: "800",
     color: "#6B7280",
     textTransform: "uppercase",
-    letterSpacing: 0.5
+    letterSpacing: 0.6,
+    flexShrink: 1
   },
   directionBtn: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F3E8FF",
+    backgroundColor: "#F5F3FF",
     paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingVertical: 6,
     borderRadius: 10,
-    gap: 4
+    borderWidth: 1,
+    borderColor: "#DDD6FE",
+    gap: 4,
+    flexShrink: 0
   },
   directionBtnText: {
-    fontSize: 11,
-    fontWeight: "700",
+    fontSize: 11.5,
+    fontWeight: "800",
     color: "#701DDB"
   },
   divider: {
@@ -116,26 +149,47 @@ const styles = StyleSheet.create({
     backgroundColor: "#F3F4F6",
     marginVertical: 12
   },
+  addressContainer: {
+    backgroundColor: "#F9FAFB",
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#F3F4F6"
+  },
   addressText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#212121",
+    fontSize: 13.5,
+    fontWeight: "700",
+    color: "#1F2937",
     lineHeight: 20
   },
   landmarkRow: {
     flexDirection: "row",
     alignItems: "center",
+    marginTop: 8,
+    backgroundColor: "#F5F3FF",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    alignSelf: "flex-start",
+    gap: 4,
+    maxWidth: "100%"
+  },
+  landmarkText: {
+    fontSize: 11.5,
+    color: "#701DDB",
+    fontWeight: "700",
+    flexShrink: 1
+  },
+  cityRow: {
+    flexDirection: "row",
+    alignItems: "center",
     marginTop: 6,
     gap: 4
   },
-  landmarkText: {
-    fontSize: 12,
-    color: "#6B7280"
-  },
   cityPincodeText: {
-    fontSize: 12,
-    fontWeight: "500",
-    color: "#9CA3AF",
-    marginTop: 4
+    fontSize: 11.5,
+    fontWeight: "600",
+    color: "#6B7280",
+    flexShrink: 1
   }
 });

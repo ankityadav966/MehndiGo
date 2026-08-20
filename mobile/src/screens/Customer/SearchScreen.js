@@ -127,7 +127,7 @@ export default function SearchScreen({ navigation }) {
     if (item.type === "artist" && item.artistId) {
       navigation.navigate("ArtistProfile", { artistId: item.artistId });
     } else if (item.type === "category") {
-      navigation.navigate("ArtistListing", { category: item.text });
+      navigation.navigate("ArtistListing", { category: item.text, categoryId: item.id || null });
     } else {
       handleSearchSubmit(item.text);
     }
@@ -156,27 +156,23 @@ export default function SearchScreen({ navigation }) {
     );
   };
 
+  const [isListening, setIsListening] = useState(false);
 
-      {/* Voice Search Simulation State */}
-      const [isListening, setIsListening] = useState(false);
+  const handleVoiceSearch = () => {
+    setIsListening(true);
+    setTimeout(() => {
+      setIsListening(false);
+    }, 2500);
+  };
 
-      const handleVoiceSearch = () => {
-        setIsListening(true);
-        // Simulate speech recognition timer
-        setTimeout(() => {
-          setIsListening(false);
-          setQuery("Bridal Mehendi Jaipur");
-        }, 2200);
-      };
-
-      const QUICK_FILTERS = [
-        { label: "Bridal", query: "Bridal Mehendi", icon: "sparkles-outline" },
-        { label: "Arabic", query: "Arabic Mehendi", icon: "color-wand-outline" },
-        { label: "Under ₹1000", query: "Under 1000", icon: "wallet-outline" },
-        { label: "4.5★+ Rating", query: "Top Rated", icon: "star-outline" },
-        { label: "Nearest", query: "Nearest", icon: "navigate-outline" },
-        { label: "5+ Yrs Exp", query: "Experienced", icon: "ribbon-outline" },
-      ];
+  const QUICK_FILTERS = [
+    { label: "Bridal", query: "Bridal Mehendi", icon: "sparkles-outline" },
+    { label: "Arabic", query: "Arabic Mehendi", icon: "color-wand-outline" },
+    { label: "Under ₹1000", query: "Under 1000", icon: "wallet-outline" },
+    { label: "4.5★+ Rating", query: "Top Rated", icon: "star-outline" },
+    { label: "Nearest", query: "Nearest", icon: "navigate-outline" },
+    { label: "5+ Yrs Exp", query: "Experienced", icon: "ribbon-outline" },
+  ];
 
   return (
     <View style={styles.container}>

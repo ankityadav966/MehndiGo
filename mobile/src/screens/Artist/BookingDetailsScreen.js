@@ -8,7 +8,9 @@ import {
   Modal,
   Text,
   TextInput,
-  TouchableOpacity
+  TouchableOpacity,
+  KeyboardAvoidingView,
+  Platform
 } from "react-native";
 import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -74,13 +76,18 @@ export default function BookingDetailsScreen({ route, navigation }) {
       const data = await getBookingDetails(bookingId);
       if (data) {
         setBooking((prev) => {
-          // Stale data protection:
-          // If previous state was already IN_PROGRESS (checkin_otp_verified = 1),
-          // and incoming data has checkin_otp_verified = 0 or status = ARRIVED due to any network lag/caching,
-          // preserve the verified IN_PROGRESS state!
-          const prevVerified = prev && (Number(prev.checkin_otp_verified) === 1 || Number(prev.checkin_verified) === 1 || String(prev.detailed_status).toUpperCase() === "SERVICE_IN_PROGRESS");
-          const incomingVerified = Number(data.checkin_otp_verified) === 1 || Number(data.checkin_verified) === 1 || String(data.detailed_status).toUpperCase() === "SERVICE_IN_PROGRESS";
-          const isFinished = ["COMPLETED", "COMPLETED_CLOSED", "CANCELLED", "CHECKOUT"].includes(String(data.detailed_status || data.status || "").toUpperCase());
+          const prevVerified =
+            prev &&
+            (Number(prev.checkin_otp_verified) === 1 ||
+              Number(prev.checkin_verified) === 1 ||
+              String(prev.detailed_status).toUpperCase() === "SERVICE_IN_PROGRESS");
+          const incomingVerified =
+            Number(data.checkin_otp_verified) === 1 ||
+            Number(data.checkin_verified) === 1 ||
+            String(data.detailed_status).toUpperCase() === "SERVICE_IN_PROGRESS";
+          const isFinished = ["COMPLETED", "COMPLETED_CLOSED", "CANCELLED", "CHECKOUT"].includes(
+            String(data.detailed_status || data.status || "").toUpperCase()
+          );
 
           if (prevVerified && !incomingVerified && !isFinished) {
             return {
@@ -110,7 +117,9 @@ export default function BookingDetailsScreen({ route, navigation }) {
     });
 
     pollIntervalRef.current = setInterval(() => {
-      const status = String(booking?.detailed_status || booking?.booking_status || booking?.status || "").toUpperCase();
+      const status = String(
+        booking?.detailed_status || booking?.booking_status || booking?.status || ""
+      ).toUpperCase();
       const activeLifecycleStatuses = [
         "PENDING",
         "REQUESTED",
@@ -142,7 +151,9 @@ export default function BookingDetailsScreen({ route, navigation }) {
 
   // Real-time GPS location broadcasting when ON_THE_WAY
   useEffect(() => {
-    const status = String(booking?.detailed_status || booking?.booking_status || booking?.status || "").toUpperCase();
+    const status = String(
+      booking?.detailed_status || booking?.booking_status || booking?.status || ""
+    ).toUpperCase();
 
     if (status === "ARTIST_ON_THE_WAY" || status === "ON_THE_WAY") {
       let isMounted = true;
@@ -256,7 +267,22 @@ export default function BookingDetailsScreen({ route, navigation }) {
   const handleArrived = async () => {
     setActionLoading(true);
     try {
-      await updateArrived(bookingId);
+      let lat = null;
+      let lng = null;
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === "granted") {
+          const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          if (pos?.coords) {
+            lat = pos.coords.latitude;
+            lng = pos.coords.longitude;
+          }
+        }
+      } catch (locErr) {
+        console.warn("[handleArrived] GPS fetch notice:", locErr.message);
+      }
+
+      await updateArrived(bookingId, lat, lng);
       Alert.alert("Arrived! 📍", "You have arrived at the customer doorstep. Ask the customer for their 4-digit check-in PIN.");
       setOtpType("CHECKIN");
       loadDetails();
@@ -275,7 +301,6 @@ export default function BookingDetailsScreen({ route, navigation }) {
       if (otpType === "CHECKIN") {
         const res = await verifyCheckInOtp(bookingId, otp);
         setOtpModalVisible(false);
-        // Instantly update local state to IN_PROGRESS so OTP card vanishes without UI lag
         setBooking((prev) => ({
           ...(prev || {}),
           ...(res?.data || res || {}),
@@ -340,7 +365,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
     const remaining = Number(booking?.remaining_amount || 0);
     Alert.alert(
       "Confirm Cash Collection",
-      `Have you received ₹${remaining} in cash from the customer?`,
+      `Have you received ₹${remaining.toLocaleString("en-IN")} in cash from the customer?`,
       [
         { text: "No", style: "cancel" },
         {
@@ -382,7 +407,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
     try {
       await requestTravelCharge(bookingId, amount, 10);
       setTravelChargeModalVisible(false);
-      Alert.alert("Request Sent", `Travel allowance of ₹${amount} sent to customer.`);
+      Alert.alert("Request Sent", `Travel allowance of ₹${amount.toLocaleString("en-IN")} sent to customer.`);
       loadDetails();
     } catch (err) {
       Alert.alert("Error", err.message || "Failed to request travel allowance.");
@@ -395,243 +420,281 @@ export default function BookingDetailsScreen({ route, navigation }) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#E91E63" />
-        <Text style={styles.loadingText}>Loading artist booking details...</Text>
+        <Text style={styles.loadingText}>Loading appointment details...</Text>
       </SafeAreaView>
     );
   }
 
-  const rawStatus = String(booking?.detailed_status || booking?.booking_status || booking?.status || "PENDING").toUpperCase();
-  const isCheckInVerified = Number(booking?.checkin_otp_verified) === 1 || Number(booking?.checkin_verified) === 1;
+  const rawStatus = String(
+    booking?.detailed_status || booking?.booking_status || booking?.status || "PENDING"
+  ).toUpperCase();
+  const isCheckInVerified =
+    Number(booking?.checkin_otp_verified) === 1 || Number(booking?.checkin_verified) === 1;
 
   const isPending = rawStatus === "PENDING" || rawStatus === "REQUESTED";
   const isAccepted = ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED"].includes(rawStatus);
   const isOnTheWay = ["ARTIST_ON_THE_WAY", "ON_THE_WAY"].includes(rawStatus);
-  
+
   // Arrived state is active ONLY when arrived AND check-in OTP is not yet verified
   const isArrived = (rawStatus === "ARTIST_ARRIVED" || rawStatus === "ARRIVED") && !isCheckInVerified;
-  
+
   // Service is active whenever status is in_progress / service_in_progress OR checkin is verified
-  const isServiceActive = (["SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS", "CUSTOMER_VERIFIED"].includes(rawStatus) || isCheckInVerified) && rawStatus !== "COMPLETED" && rawStatus !== "COMPLETED_CLOSED" && rawStatus !== "CANCELLED";
-  
+  const isServiceActive =
+    (["SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS", "CUSTOMER_VERIFIED"].includes(rawStatus) ||
+      isCheckInVerified) &&
+    rawStatus !== "COMPLETED" &&
+    rawStatus !== "COMPLETED_CLOSED" &&
+    rawStatus !== "CANCELLED";
+
   const isCheckout = ["CHECKOUT", "PAYMENT_REQUIRED"].includes(rawStatus) && rawStatus !== "COMPLETED";
   const isCompleted = rawStatus === "COMPLETED" || rawStatus === "COMPLETED_CLOSED";
   const isCancelled = rawStatus === "CANCELLED" || rawStatus === "REJECTED";
 
-  const customerCoords = booking?.latitude && booking?.longitude ? {
-    lat: Number(booking.latitude),
-    lng: Number(booking.longitude)
-  } : null;
+  const customerCoords =
+    booking?.latitude && booking?.longitude
+      ? {
+          lat: Number(booking.latitude),
+          lng: Number(booking.longitude)
+        }
+      : null;
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* 1. Header with Status Pill */}
-      <BookingStatusHeader
-        bookingCode={booking?.booking_code || booking?.booking_number || booking?.id}
-        status={rawStatus}
-        onBack={() => navigation.goBack()}
-      />
-
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#E91E63" />}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        {/* 2. Step Progression Timeline */}
-        <BookingTimeline status={rawStatus} isCancelled={isCancelled} />
+        {/* 1. Header with Status Pill */}
+        <BookingStatusHeader
+          bookingCode={booking?.booking_code || booking?.booking_number || booking?.id}
+          status={rawStatus}
+          onBack={() => navigation.goBack()}
+        />
 
-        {/* 3. PENDING REQUEST ACTIONS (Accept / Reject) */}
-        {isPending && (
-          <View style={styles.requestActionCard}>
-            <View style={styles.requestBadge}>
-              <Ionicons name="notifications" size={16} color="#D97706" />
-              <Text style={styles.requestBadgeText}>NEW BOOKING REQUEST</Text>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#E91E63" />
+          }
+        >
+          {/* 2. Step Progression Timeline */}
+          <BookingTimeline status={rawStatus} isCancelled={isCancelled} />
+
+          {/* 3. PENDING REQUEST ACTIONS (Accept / Reject) */}
+          {isPending && (
+            <View style={styles.requestActionCard}>
+              <View style={styles.requestBadgeRow}>
+                <View style={styles.requestBadge}>
+                  <Ionicons name="notifications" size={13} color="#D97706" />
+                  <Text style={styles.requestBadgeText}>NEW REQUEST</Text>
+                </View>
+                <Text style={styles.requestPriceTag}>
+                  ₹{Number(booking?.final_amount || booking?.total_amount || 0).toLocaleString("en-IN")}
+                </Text>
+              </View>
+              <Text style={styles.requestTitle}>Accept Appointment Request</Text>
+              <Text style={styles.requestSubtitle}>
+                Client has requested you for their appointment. Accept to confirm your booking slot.
+              </Text>
+
+              <View style={styles.requestBtnRow}>
+                <TouchableOpacity
+                  style={styles.rejectBtn}
+                  onPress={() => setRejectModalVisible(true)}
+                  disabled={actionLoading}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="close" size={17} color="#DC2626" />
+                  <Text style={styles.rejectBtnText}>Decline</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.acceptBtn}
+                  onPress={handleAccept}
+                  disabled={actionLoading}
+                  activeOpacity={0.85}
+                >
+                  {actionLoading ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <Ionicons name="checkmark-circle" size={17} color="#FFFFFF" />
+                      <Text style={styles.acceptBtnText}>Accept Booking</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
             </View>
-            <Text style={styles.requestTitle}>Respond to Customer Request</Text>
-            <Text style={styles.requestSubtitle}>
-              Customer has selected you for their mehndi appointment. Accept to lock the booking slot.
-            </Text>
+          )}
 
-            <View style={styles.requestBtnRow}>
-              <TouchableOpacity
-                style={styles.rejectBtn}
-                onPress={() => setRejectModalVisible(true)}
-                disabled={actionLoading}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="close" size={18} color="#DC2626" />
-                <Text style={styles.rejectBtnText}>Decline</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.acceptBtn}
-                onPress={handleAccept}
-                disabled={actionLoading}
-                activeOpacity={0.8}
-              >
-                {actionLoading ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <>
-                    <Ionicons name="checkmark" size={18} color="#FFFFFF" />
-                    <Text style={styles.acceptBtnText}>Accept Booking</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
-        {/* 4. ACCEPTED ACTIONS (Start Travel CTA) */}
-        {isAccepted && (
-          <View style={styles.actionCard}>
-            <View style={styles.actionCardHeader}>
-              <Ionicons name="car-sport" size={20} color="#E91E63" />
-              <Text style={styles.actionCardTitle}>Ready for Departure?</Text>
-            </View>
-            <Text style={styles.actionCardDesc}>
-              Tap below when you depart for the customer address to activate live GPS navigation.
-            </Text>
-
-            <TouchableOpacity
-              style={styles.startTravelBtn}
-              onPress={handleStartTravel}
-              disabled={actionLoading}
-              activeOpacity={0.8}
-            >
-              {actionLoading ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <>
-                  <Ionicons name="navigate" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-                  <Text style={styles.startTravelBtnText}>Start Travel & Share Location</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* 5. ON THE WAY ACTIONS (Arrived CTA & Live Map) */}
-        {isOnTheWay && (
-          <View>
-            <LiveTrackingCard
-              artistCoords={artistCoords}
-              customerCoords={customerCoords}
-              distanceText="Live Transit"
-              etaText="On Route"
-              statusText="Broadcasting real GPS to customer"
-              height={180}
-            />
-
+          {/* 4. ACCEPTED ACTIONS (Start Travel CTA) */}
+          {isAccepted && (
             <View style={styles.actionCard}>
+              <View style={styles.actionCardHeader}>
+                <View style={styles.carIconBox}>
+                  <Ionicons name="car-sport" size={17} color="#E91E63" />
+                </View>
+                <View style={{ flex: 1, flexShrink: 1 }}>
+                  <Text style={styles.actionCardTitle} numberOfLines={1}>Ready for Departure?</Text>
+                  <Text style={styles.actionCardDesc} numberOfLines={2}>
+                    Tap below when you begin travel to share live GPS coordinates with the customer.
+                  </Text>
+                </View>
+              </View>
+
               <TouchableOpacity
-                style={styles.arrivedBtn}
-                onPress={handleArrived}
+                style={styles.startTravelBtn}
+                onPress={handleStartTravel}
                 disabled={actionLoading}
-                activeOpacity={0.8}
+                activeOpacity={0.85}
               >
                 {actionLoading ? (
                   <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
                   <>
-                    <Ionicons name="location" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-                    <Text style={styles.arrivedBtnText}>I have Arrived at Doorstep</Text>
+                    <Ionicons name="navigate" size={17} color="#FFFFFF" style={{ marginRight: 6 }} />
+                    <Text style={styles.startTravelBtnText}>Start Travel & Share Location</Text>
                   </>
                 )}
               </TouchableOpacity>
             </View>
-          </View>
-        )}
+          )}
 
-        {/* 6. ARRIVED STATE ACTIONS (Enter Check-In OTP - Visible ONLY before verification) */}
-        {isArrived && (
-          <OtpVerificationCard
+          {/* 5. ON THE WAY ACTIONS (Arrived CTA & Live Map) */}
+          {isOnTheWay && (
+            <View>
+              <LiveTrackingCard
+                artistCoords={artistCoords}
+                customerCoords={customerCoords}
+                distanceText="Live Transit"
+                etaText="On Route"
+                statusText="Broadcasting real GPS coordinates to client"
+                height={190}
+              />
+
+              <View style={styles.actionCard}>
+                <TouchableOpacity
+                  style={styles.arrivedBtn}
+                  onPress={handleArrived}
+                  disabled={actionLoading}
+                  activeOpacity={0.85}
+                >
+                  {actionLoading ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <Ionicons name="location" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                      <Text style={styles.arrivedBtnText}>I have Arrived at Doorstep</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {/* 6. ARRIVED STATE ACTIONS (Enter Check-In OTP - Visible ONLY before verification) */}
+          {isArrived && (
+            <OtpVerificationCard
+              isArtist={true}
+              onVerify={handleVerifyOtp}
+              loading={actionLoading}
+              otpType="CHECKIN"
+              errorMessage={otpError}
+            />
+          )}
+
+          {/* 7. ACTIVE SERVICE (Live Elapsed Timer & Checkout Button) */}
+          {isServiceActive && !isCheckout && (
+            <ServiceProgressCard
+              startTime={
+                booking?.service_started_at ||
+                booking?.check_in_time ||
+                booking?.checked_in_at ||
+                booking?.service_start_time
+              }
+              isArtist={true}
+              onCheckout={handleFinishAndCheckout}
+              serviceName={booking?.service_name || booking?.package_name || "Mehndi Service"}
+              estimatedDurationMinutes={booking?.duration_minutes || 60}
+            />
+          )}
+
+          {/* 8. CHECKOUT / SETTLEMENT CARD */}
+          {isCheckout && (
+            <CheckoutCard
+              booking={booking}
+              isArtist={true}
+              onConfirmCash={handleConfirmCash}
+              loading={actionLoading}
+            />
+          )}
+
+          {/* 9. Quick Chat & Call Banner */}
+          {!isCancelled && !isCompleted && (
+            <BookingChatCard
+              otherPartyName={booking?.customer_name || booking?.user?.name || "Customer"}
+              phone={booking?.customer_phone || booking?.user?.phone}
+              onOpenChat={() =>
+                navigation.navigate("ChatRoom", {
+                  bookingId: booking.id,
+                  receiverId: booking.user_id || booking.user?.id || booking.customer_id,
+                  receiverName: booking?.customer_name || booking?.user?.name || "Customer",
+                  receiverImage: booking?.customer_image || booking?.user?.profile_image
+                })
+              }
+            />
+          )}
+
+          {/* 10. Booking Summary Card */}
+          <BookingSummaryCard booking={booking} isArtistView={true} />
+
+          {/* 11. Customer Location Card */}
+          <BookingLocationCard
+            address={booking?.address}
+            landmark={booking?.landmark}
+            city={booking?.city}
+            pincode={booking?.pincode}
+            latitude={booking?.latitude}
+            longitude={booking?.longitude}
             isArtist={true}
-            onVerify={handleVerifyOtp}
-            loading={actionLoading}
-            otpType="CHECKIN"
-            errorMessage={otpError}
           />
-        )}
 
-        {/* 7. ACTIVE SERVICE (Live Elapsed Timer & Checkout Button) */}
-        {isServiceActive && !isCheckout && (
-          <ServiceProgressCard
-            startTime={booking?.service_started_at || booking?.service_start_time || booking?.checked_in_at || booking?.updated_at || booking?.updatedAt}
-            isArtist={true}
-            onCheckout={handleFinishAndCheckout}
-            serviceName={booking?.service_name || booking?.package_name || "Mehndi Service"}
-            estimatedDurationMinutes={booking?.duration_minutes || 60}
-          />
-        )}
+          {/* 12. Financial Amount Breakdown */}
+          <BookingAmountCard booking={booking} />
 
-        {/* 8. CHECKOUT / SETTLEMENT CARD */}
-        {isCheckout && (
-          <CheckoutCard
-            booking={booking}
-            isArtist={true}
-            onConfirmCash={handleConfirmCash}
-            loading={actionLoading}
-          />
-        )}
+          {/* 13. Travel Allowance Request Option */}
+          {isServiceActive && !booking?.travel_charge && (
+            <View style={styles.travelAllowanceContainer}>
+              <TouchableOpacity
+                style={styles.travelAllowanceBtn}
+                onPress={() => setTravelChargeModalVisible(true)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="speedometer-outline" size={15} color="#701DDB" style={{ marginRight: 6 }} />
+                <Text style={styles.travelAllowanceBtnText}>Request Extra Travel Allowance</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
-        {/* 9. Quick Chat & Call Banner */}
-        {!isCancelled && !isCompleted && (
-          <BookingChatCard
-            otherPartyName={booking?.customer_name || booking?.user?.name || "Customer"}
-            phone={booking?.customer_phone || booking?.user?.phone}
-            onOpenChat={() => navigation.navigate("ChatRoom", {
-              bookingId: booking.id,
-              receiverId: booking.user_id || booking.user?.id || booking.customer_id,
-              receiverName: booking?.customer_name || booking?.user?.name || "Customer",
-              receiverImage: booking?.customer_image || booking?.user?.profile_image
-            })}
-          />
-        )}
-
-        {/* 10. Booking Summary Card */}
-        <BookingSummaryCard
-          booking={booking}
-          isArtistView={true}
-        />
-
-        {/* 11. Customer Location Card */}
-        <BookingLocationCard
-          address={booking?.address}
-          landmark={booking?.landmark}
-          city={booking?.city}
-          pincode={booking?.pincode}
-          latitude={booking?.latitude}
-          longitude={booking?.longitude}
-          isArtist={true}
-        />
-
-        {/* 12. Financial Amount Breakdown */}
-        <BookingAmountCard booking={booking} />
-
-        {/* 13. Travel Allowance Request Option */}
-        {isServiceActive && !booking?.travel_charge && (
-          <View style={styles.travelAllowanceContainer}>
-            <TouchableOpacity
-              style={styles.travelAllowanceBtn}
-              onPress={() => setTravelChargeModalVisible(true)}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="speedometer-outline" size={16} color="#701DDB" style={{ marginRight: 6 }} />
-              <Text style={styles.travelAllowanceBtnText}>Request Extra Travel Allowance</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        <View style={{ height: 40 }} />
-      </ScrollView>
+          <View style={{ height: 40 }} />
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* Checkout Completion PIN Modal */}
       <Modal visible={otpModalVisible} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
           <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>Enter Customer Completion PIN</Text>
-            <Text style={styles.modalDesc}>
-              Ask the customer for their 4-digit completion PIN to verify service completion and release your earnings.
+            <View style={styles.modalHeaderIcon}>
+              <Ionicons name="ribbon" size={22} color="#701DDB" />
+            </View>
+            <Text style={styles.modalTitle} numberOfLines={1}>Service Completion PIN</Text>
+            <Text style={styles.modalDesc} numberOfLines={2}>
+              Ask the customer for their 4-digit completion PIN to verify service completion and release earnings.
             </Text>
 
             <OtpVerificationCard
@@ -650,18 +713,24 @@ export default function BookingDetailsScreen({ route, navigation }) {
               }}
               disabled={actionLoading}
             >
-              <Text style={styles.modalCloseBtnText}>Close</Text>
+              <Text style={styles.modalCloseBtnText}>Close Modal</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Decline Booking Modal */}
       <Modal visible={rejectModalVisible} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
           <View style={styles.modalBox}>
+            <View style={[styles.modalHeaderIcon, { backgroundColor: "#FEE2E2" }]}>
+              <Ionicons name="close-circle" size={22} color="#DC2626" />
+            </View>
             <Text style={styles.modalTitle}>Decline Request?</Text>
-            <Text style={styles.modalDesc}>Please tell the customer why you cannot accept this appointment.</Text>
+            <Text style={styles.modalDesc}>Please provide a reason why you cannot accept this appointment.</Text>
 
             <TextInput
               style={styles.modalInput}
@@ -695,13 +764,19 @@ export default function BookingDetailsScreen({ route, navigation }) {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Travel Charge Request Modal */}
       <Modal visible={travelChargeModalVisible} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
           <View style={styles.modalBox}>
+            <View style={styles.modalHeaderIcon}>
+              <Ionicons name="speedometer" size={22} color="#701DDB" />
+            </View>
             <Text style={styles.modalTitle}>Request Travel Allowance</Text>
             <Text style={styles.modalDesc}>Enter additional travel charge (₹) for approval by the customer.</Text>
 
@@ -736,7 +811,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
@@ -745,11 +820,11 @@ export default function BookingDetailsScreen({ route, navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#FFFFFF"
+    backgroundColor: "#FFF8FA"
   },
   loadingContainer: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#FFF8FA",
     justifyContent: "center",
     alignItems: "center"
   },
@@ -757,60 +832,86 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#6B7280",
     marginTop: 10,
-    fontWeight: "600"
+    fontWeight: "700"
   },
   scrollContent: {
     paddingBottom: 40
   },
   requestActionCard: {
     backgroundColor: "#FFFBEB",
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 18,
+    padding: 14,
     marginHorizontal: 16,
     marginTop: 12,
     borderWidth: 1.5,
-    borderColor: "#FDE68A"
+    borderColor: "#FDE68A",
+    shadowColor: "#D97706",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
+    overflow: "hidden"
+  },
+  requestBadgeRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 6,
+    gap: 6
   },
   requestBadge: {
     flexDirection: "row",
     alignItems: "center",
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
     gap: 4,
-    marginBottom: 6
+    flexShrink: 0
   },
   requestBadgeText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "800",
-    color: "#D97706"
+    color: "#D97706",
+    letterSpacing: 0.3
+  },
+  requestPriceTag: {
+    fontSize: 15.5,
+    fontWeight: "900",
+    color: "#059669",
+    flexShrink: 0
   },
   requestTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "800",
-    color: "#212121"
+    color: "#1F2937"
   },
   requestSubtitle: {
-    fontSize: 12,
+    fontSize: 11.5,
     color: "#6B7280",
     marginTop: 2,
     lineHeight: 16
   },
   requestBtnRow: {
     flexDirection: "row",
-    gap: 12,
-    marginTop: 14
+    gap: 10,
+    marginTop: 12
   },
   rejectBtn: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    height: 48,
+    height: 46,
     borderRadius: 12,
     backgroundColor: "#FEE2E2",
-    gap: 6
+    borderWidth: 1,
+    borderColor: "#FECACA",
+    gap: 4
   },
   rejectBtnText: {
-    fontSize: 14,
-    fontWeight: "700",
+    fontSize: 13,
+    fontWeight: "800",
     color: "#DC2626"
   },
   acceptBtn: {
@@ -818,10 +919,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    height: 48,
+    height: 46,
     borderRadius: 12,
     backgroundColor: "#059669",
-    gap: 6,
+    gap: 4,
     shadowColor: "#059669",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
@@ -829,56 +930,68 @@ const styles = StyleSheet.create({
     elevation: 3
   },
   acceptBtnText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "800",
     color: "#FFFFFF"
   },
   actionCard: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 18,
+    padding: 14,
     marginHorizontal: 16,
     marginTop: 12,
-    borderWidth: 1.5,
+    borderWidth: 1.2,
     borderColor: "#F3F4F6",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
     shadowRadius: 6,
-    elevation: 1
+    elevation: 2,
+    overflow: "hidden"
   },
   actionCardHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6
+    gap: 10
+  },
+  carIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: "#FFF8FA",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#FCE7F3",
+    flexShrink: 0
   },
   actionCardTitle: {
-    fontSize: 15,
+    fontSize: 14.5,
     fontWeight: "800",
-    color: "#212121"
+    color: "#1F2937"
   },
   actionCardDesc: {
-    fontSize: 12,
+    fontSize: 11,
     color: "#6B7280",
-    marginTop: 4,
-    lineHeight: 16
+    marginTop: 2,
+    lineHeight: 15
   },
   startTravelBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     height: 48,
-    borderRadius: 12,
+    borderRadius: 14,
     backgroundColor: "#E91E63",
-    marginTop: 14,
+    marginTop: 12,
     shadowColor: "#E91E63",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 5,
-    elevation: 2
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.28,
+    shadowRadius: 6,
+    elevation: 3
   },
   startTravelBtnText: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: "800",
     color: "#FFFFFF"
   },
@@ -887,22 +1000,22 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     height: 48,
-    borderRadius: 12,
+    borderRadius: 14,
     backgroundColor: "#701DDB",
     shadowColor: "#701DDB",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 5,
-    elevation: 2
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.28,
+    shadowRadius: 6,
+    elevation: 3
   },
   arrivedBtnText: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: "800",
     color: "#FFFFFF"
   },
   travelAllowanceContainer: {
     paddingHorizontal: 16,
-    marginTop: 8
+    marginTop: 10
   },
   travelAllowanceBtn: {
     flexDirection: "row",
@@ -915,41 +1028,51 @@ const styles = StyleSheet.create({
     borderColor: "#DDD6FE"
   },
   travelAllowanceBtnText: {
-    fontSize: 13,
-    fontWeight: "700",
+    fontSize: 12.5,
+    fontWeight: "800",
     color: "#701DDB"
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor: "rgba(0,0,0,0.55)",
     justifyContent: "center",
     alignItems: "center",
-    padding: 20
+    padding: 16
   },
   modalBox: {
     width: "100%",
     backgroundColor: "#FFFFFF",
-    borderRadius: 20,
+    borderRadius: 22,
     padding: 20,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 5
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 6
+  },
+  modalHeaderIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#EDE9FE",
+    justifyContent: "center",
+    alignItems: "center",
+    alignSelf: "center",
+    marginBottom: 10
   },
   modalTitle: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: "800",
-    color: "#212121",
+    color: "#1F2937",
     textAlign: "center"
   },
   modalDesc: {
-    fontSize: 12,
+    fontSize: 11.5,
     color: "#6B7280",
-    marginTop: 4,
+    marginTop: 3,
     textAlign: "center",
     lineHeight: 16,
-    marginBottom: 16
+    marginBottom: 14
   },
   modalInput: {
     backgroundColor: "#F9FAFB",
@@ -958,26 +1081,26 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 12,
     fontSize: 13,
-    color: "#212121",
+    color: "#1F2937",
     textAlignVertical: "top",
     minHeight: 80,
-    marginBottom: 16
+    marginBottom: 14
   },
   modalInputSingle: {
     backgroundColor: "#F9FAFB",
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderWidth: 1.5,
+    borderColor: "#CBD5E1",
     borderRadius: 12,
-    padding: 12,
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#212121",
+    padding: 10,
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#1F2937",
     textAlign: "center",
-    marginBottom: 16
+    marginBottom: 14
   },
   modalBtnRow: {
     flexDirection: "row",
-    gap: 12
+    gap: 10
   },
   modalCancelBtn: {
     flex: 1,
@@ -1002,7 +1125,7 @@ const styles = StyleSheet.create({
   },
   modalDeclineBtnText: {
     fontSize: 13,
-    fontWeight: "700",
+    fontWeight: "800",
     color: "#FFFFFF"
   },
   modalSubmitChargeBtn: {
@@ -1015,11 +1138,11 @@ const styles = StyleSheet.create({
   },
   modalSubmitChargeBtnText: {
     fontSize: 13,
-    fontWeight: "700",
+    fontWeight: "800",
     color: "#FFFFFF"
   },
   modalCloseBtn: {
-    marginTop: 12,
+    marginTop: 10,
     height: 44,
     borderRadius: 12,
     backgroundColor: "#F3F4F6",

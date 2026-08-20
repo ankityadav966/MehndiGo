@@ -8,7 +8,9 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
+  KeyboardAvoidingView,
+  Platform
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import Alert from "../../utils/Alert";
@@ -165,135 +167,144 @@ export default function ReviewSubmissionScreen({ route, navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-            <Ionicons name="chevron-back" size={22} color={Colors.text} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Write Review</Text>
-          <TouchableOpacity style={styles.skipHeaderBtn} onPress={handleSkip}>
-            <Text style={styles.skipBtnText}>Skip</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.artistCard}>
-          <Image
-            source={{ uri: artistImage || "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200" }}
-            style={styles.artistImage}
-          />
-          <View style={styles.artistInfo}>
-            <Text style={styles.artistName}>{artistName || "Mehndi Artist"}</Text>
-            <Text style={styles.artistService}>{specializationName || "Mehndi Style Session"}</Text>
-          </View>
-        </View>
-
-        {/* 1. Overall Rating */}
-        <View style={styles.ratingSection}>
-          <Text style={styles.ratingLabel}>Overall Experience Rating *</Text>
-          {renderStarsSelector(rating, setRating)}
-        </View>
-
-        {/* 2. Sub Category Ratings */}
-        <View style={styles.subRatingsCard}>
-          <Text style={styles.subTitle}>Rate Specific Elements</Text>
-
-          <View style={styles.subRow}>
-            <Text style={styles.subLabel}>Design Quality</Text>
-            {renderStarsSelector(designRating, setDesignRating)}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.header}>
+            <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+              <Ionicons name="chevron-back" size={22} color={Colors.text} />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Write Review</Text>
+            <TouchableOpacity style={styles.skipHeaderBtn} onPress={handleSkip}>
+              <Text style={styles.skipBtnText}>Skip</Text>
+            </TouchableOpacity>
           </View>
 
-          <View style={styles.subRow}>
-            <Text style={styles.subLabel}>Punctuality</Text>
-            {renderStarsSelector(punctualityRating, setPunctualityRating)}
+          <View style={styles.artistCard}>
+            <Image
+              source={{ uri: artistImage || "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200" }}
+              style={styles.artistImage}
+            />
+            <View style={styles.artistInfo}>
+              <Text style={styles.artistName}>{artistName || "Mehndi Artist"}</Text>
+              <Text style={styles.artistService}>{specializationName || "Mehndi Style Session"}</Text>
+            </View>
           </View>
 
-          <View style={styles.subRow}>
-            <Text style={styles.subLabel}>Professionalism</Text>
-            {renderStarsSelector(professionalismRating, setProfessionalismRating)}
+          {/* 1. Overall Rating */}
+          <View style={styles.ratingSection}>
+            <Text style={styles.ratingLabel}>Overall Experience Rating *</Text>
+            {renderStarsSelector(rating, setRating)}
           </View>
-        </View>
 
-        {/* 3. Preset Tags Selection */}
-        <View style={styles.tagsContainer}>
-          <Text style={styles.sectionLabel}>Select Highlights</Text>
-          <View style={styles.tagsRow}>
-            {PRESET_TAGS.map((tag) => {
-              const isSelected = selectedTags.includes(tag);
-              return (
-                <TouchableOpacity
-                  key={tag}
-                  style={[styles.tagChip, isSelected && styles.selectedTagChip]}
-                  onPress={() => toggleTag(tag)}
-                >
-                  <Text style={[styles.tagText, isSelected && styles.selectedTagText]}>{tag}</Text>
-                </TouchableOpacity>
-              );
-            })}
+          {/* 2. Sub Category Ratings */}
+          <View style={styles.subRatingsCard}>
+            <Text style={styles.subTitle}>Rate Specific Elements</Text>
+
+            <View style={styles.subRow}>
+              <Text style={styles.subLabel}>Design Quality</Text>
+              {renderStarsSelector(designRating, setDesignRating)}
+            </View>
+
+            <View style={styles.subRow}>
+              <Text style={styles.subLabel}>Punctuality</Text>
+              {renderStarsSelector(punctualityRating, setPunctualityRating)}
+            </View>
+
+            <View style={styles.subRow}>
+              <Text style={styles.subLabel}>Professionalism</Text>
+              {renderStarsSelector(professionalismRating, setProfessionalismRating)}
+            </View>
           </View>
-        </View>
 
-        {/* 4. Video Review & Proof Media */}
-        <View style={styles.mediaUploadSection}>
-          <Text style={styles.sectionLabel}>Add Visual Proof (Video & Photos)</Text>
-          <Text style={styles.mediaHint}>Upload a 15–60s video of your Mehndi design or clear photos to earn a Verified Review badge.</Text>
+          {/* 3. Preset Tags Selection */}
+          <View style={styles.tagsContainer}>
+            <Text style={styles.sectionLabel}>Select Highlights</Text>
+            <View style={styles.tagsRow}>
+              {PRESET_TAGS.map((tag) => {
+                const isSelected = selectedTags.includes(tag);
+                return (
+                  <TouchableOpacity
+                    key={tag}
+                    style={[styles.tagChip, isSelected && styles.selectedTagChip]}
+                    onPress={() => toggleTag(tag)}
+                  >
+                    <Text style={[styles.tagText, isSelected && styles.selectedTagText]}>{tag}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
 
-          {/* Video Review Attachment */}
-          <View style={styles.videoPickerRow}>
-            {videoMedia ? (
-              <View style={styles.selectedVideoCard}>
-                <Ionicons name="videocam" size={24} color={Colors.primary} />
-                <View style={{ flex: 1, marginLeft: 10 }}>
-                  <Text style={styles.selectedVideoTitle} numberOfLines={1}>Video Review Selected</Text>
-                  <Text style={styles.selectedVideoSub}>Duration: {videoMedia.duration ? `${Math.round(videoMedia.duration)}s` : "< 60s"}</Text>
+          {/* 4. Video Review & Proof Media */}
+          <View style={styles.mediaUploadSection}>
+            <Text style={styles.sectionLabel}>Add Visual Proof (Video & Photos)</Text>
+            <Text style={styles.mediaHint}>Upload a 15–60s video of your Mehndi design or clear photos to earn a Verified Review badge.</Text>
+
+            {/* Video Review Attachment */}
+            <View style={styles.videoPickerRow}>
+              {videoMedia ? (
+                <View style={styles.selectedVideoCard}>
+                  <Ionicons name="videocam" size={24} color={Colors.primary} />
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={styles.selectedVideoTitle} numberOfLines={1}>Video Review Selected</Text>
+                    <Text style={styles.selectedVideoSub}>Duration: {videoMedia.duration ? `${Math.round(videoMedia.duration)}s` : "< 60s"}</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setVideoMedia(null)} style={styles.removeMediaBtn}>
+                    <Ionicons name="close-circle" size={22} color="#EF4444" />
+                  </TouchableOpacity>
                 </View>
-                <TouchableOpacity onPress={() => setVideoMedia(null)} style={styles.removeMediaBtn}>
-                  <Ionicons name="close-circle" size={22} color="#EF4444" />
+              ) : (
+                <TouchableOpacity style={styles.addVideoBtn} onPress={handlePickVideo}>
+                  <Ionicons name="videocam-outline" size={22} color={Colors.primary} />
+                  <Text style={styles.addVideoBtnText}>Record / Select Video Review (15-60s)</Text>
                 </TouchableOpacity>
-              </View>
-            ) : (
-              <TouchableOpacity style={styles.addVideoBtn} onPress={handlePickVideo}>
-                <Ionicons name="videocam-outline" size={22} color={Colors.primary} />
-                <Text style={styles.addVideoBtnText}>Record / Select Video Review (15-60s)</Text>
-              </TouchableOpacity>
-            )}
+              )}
+            </View>
+
+            {/* Photos Attachment */}
+            <View style={styles.photosGridRow}>
+              {photos.map((p, pIdx) => (
+                <View key={pIdx} style={styles.photoThumbWrapper}>
+                  <Image source={{ uri: p.uri }} style={styles.photoThumb} />
+                  <TouchableOpacity
+                    style={styles.removePhotoBtn}
+                    onPress={() => setPhotos((prev) => prev.filter((_, idx) => idx !== pIdx))}
+                  >
+                    <Ionicons name="close-circle" size={18} color="#EF4444" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+              {photos.length < 4 && (
+                <TouchableOpacity style={styles.addPhotoSlot} onPress={handlePickPhotos}>
+                  <Ionicons name="camera-outline" size={22} color="#64748B" />
+                  <Text style={styles.addPhotoSlotText}>Add Photo</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
 
-          {/* Photos Attachment */}
-          <View style={styles.photosGridRow}>
-            {photos.map((p, pIdx) => (
-              <View key={pIdx} style={styles.photoThumbWrapper}>
-                <Image source={{ uri: p.uri }} style={styles.photoThumb} />
-                <TouchableOpacity
-                  style={styles.removePhotoBtn}
-                  onPress={() => setPhotos((prev) => prev.filter((_, idx) => idx !== pIdx))}
-                >
-                  <Ionicons name="close-circle" size={18} color="#EF4444" />
-                </TouchableOpacity>
-              </View>
-            ))}
-            {photos.length < 4 && (
-              <TouchableOpacity style={styles.addPhotoSlot} onPress={handlePickPhotos}>
-                <Ionicons name="camera-outline" size={22} color="#64748B" />
-                <Text style={styles.addPhotoSlotText}>Add Photo</Text>
-              </TouchableOpacity>
-            )}
+          <View style={styles.reviewSection}>
+            <Text style={styles.reviewLabel}>Detailed Comment</Text>
+            <TextInput
+              style={styles.reviewInput}
+              placeholder="Help others decide by describing your overall experience..."
+              placeholderTextColor={Colors.textTertiary}
+              value={comment}
+              onChangeText={setComment}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+            />
           </View>
-        </View>
-
-        <View style={styles.reviewSection}>
-          <Text style={styles.reviewLabel}>Detailed Comment</Text>
-          <TextInput
-            style={styles.reviewInput}
-            placeholder="Help others decide by describing your overall experience..."
-            placeholderTextColor={Colors.textTertiary}
-            value={comment}
-            onChangeText={setComment}
-            multiline
-            numberOfLines={4}
-            textAlignVertical="top"
-          />
-        </View>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       <View style={styles.footer}>
         {loading ? (

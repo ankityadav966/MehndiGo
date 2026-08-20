@@ -145,30 +145,47 @@ class SettlementService {
       return { type: "ONLINE_SETTLEMENT", settlement, netSettledAmount };
 
     } else {
-      // 2. Outstanding Commission for Cash Booking
-      const totalDue = totalPlatformDeduction;
+      // 2. Outstanding Commission for Cash Booking (offset against any online advance already paid)
+      const advancePaid = Number(booking.advance_paid || 0);
+      const totalDue = Math.max(0, totalPlatformDeduction - advancePaid);
+      const surplusAdvance = Math.max(0, advancePaid - totalPlatformDeduction);
 
-      const outstandingRec = await db.OutstandingCommission.create(
-        {
-          artist_id: artistId,
-          booking_id: bookingId,
-          gross_amount: grossAmount,
-          commission_amount: commissionAmount,
-          gst_amount: gstAmount,
-          total_due: totalDue,
-          status: "PENDING"
-        },
-        options
-      );
+      let outstandingRec = null;
 
-      // Update Artist Wallet Outstanding Commission Balance
-      const newOutstanding = Number(artistWallet.outstanding_commission || 0) + totalDue;
-      await artistWallet.update(
-        {
-          outstanding_commission: newOutstanding
-        },
-        options
-      );
+      if (totalDue > 0) {
+        outstandingRec = await db.OutstandingCommission.create(
+          {
+            artist_id: artistId,
+            booking_id: bookingId,
+            gross_amount: grossAmount,
+            commission_amount: commissionAmount,
+            gst_amount: gstAmount,
+            total_due: totalDue,
+            status: "PENDING"
+          },
+          options
+        );
+
+        // Update Artist Wallet Outstanding Commission Balance
+        const newOutstanding = Number(artistWallet.outstanding_commission || 0) + totalDue;
+        await artistWallet.update(
+          {
+            outstanding_commission: newOutstanding
+          },
+          options
+        );
+      }
+
+      if (surplusAdvance > 0) {
+        const newAvail = Number(artistWallet.available_balance || 0) + surplusAdvance;
+        await artistWallet.update(
+          {
+            balance: newAvail,
+            available_balance: newAvail
+          },
+          options
+        );
+      }
 
       // Immutable Ledger Entry for Cash Collection
       await ledgerService.recordEntry({
@@ -182,18 +199,20 @@ class SettlementService {
         description: `Cash collection by artist for booking #${booking.booking_code}`
       }, transaction);
 
-      await ledgerService.recordEntry({
-        userId: artistUserId,
-        walletId: artistWallet.id,
-        bookingId: bookingId,
-        entryType: "COMMISSION",
-        amount: totalDue,
-        balanceAfter: Number(artistWallet.available_balance || 0),
-        referenceId: `OUTSTANDING-${outstandingRec.id}`,
-        description: `Outstanding platform commission due for cash booking #${booking.booking_code}`
-      }, transaction);
+      if (totalDue > 0) {
+        await ledgerService.recordEntry({
+          userId: artistUserId,
+          walletId: artistWallet.id,
+          bookingId: bookingId,
+          entryType: "COMMISSION",
+          amount: totalDue,
+          balanceAfter: Number(artistWallet.available_balance || 0),
+          referenceId: `OUTSTANDING-${outstandingRec?.id || bookingId}`,
+          description: `Outstanding platform commission due for cash booking #${booking.booking_code}`
+        }, transaction);
+      }
 
-      return { type: "CASH_SETTLEMENT", outstandingRec, totalDue };
+      return { type: "CASH_SETTLEMENT", outstandingRec, totalDue, surplusAdvance };
     }
   }
 

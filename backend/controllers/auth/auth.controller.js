@@ -101,6 +101,28 @@ async function sendEmailDispatch(req, res) {
   }
 }
 
+async function changePassword(req, res) {
+  try {
+    const response = await AuthService.changePassword(req.user.id, req.body);
+    return res.status(200).json(SuccessResponse("Password changed successfully", response));
+  } catch (error) {
+    return res
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
+  }
+}
+
+async function deleteAccount(req, res) {
+  try {
+    const response = await AuthService.deleteAccount(req.user.id, req.body);
+    return res.status(200).json(SuccessResponse("Account deleted successfully", response));
+  } catch (error) {
+    return res
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
+  }
+}
+
 module.exports = {
   sendOtp,
   sendEmailDispatch,
@@ -111,4 +133,6 @@ module.exports = {
   logout,
   getProfile,
   updateProfile,
+  changePassword,
+  deleteAccount,
 };

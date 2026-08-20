@@ -75,7 +75,7 @@ module.exports = (sequelize, DataTypes) => {
       gateway: {
         type: DataTypes.STRING,
         allowNull: false,
-        defaultValue: "CASHFREE",
+        defaultValue: "RAZORPAY",
       },
 
       currency: {

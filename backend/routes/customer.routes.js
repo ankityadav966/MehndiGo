@@ -40,8 +40,14 @@ router.get("/filter", authenticate, CustomerController.getFilterMetadata);
 
 // Customer favorites routes
 router.get("/favorite", authenticate, CustomerController.getFavorites);
+router.get("/favorites", authenticate, CustomerController.getFavorites);
 router.post("/favorite", authenticate, CustomerController.addFavorite);
+router.post("/favorites", authenticate, CustomerController.addFavorite);
 router.delete("/favorite", authenticate, CustomerController.removeFavorite);
+router.delete("/favorites", authenticate, CustomerController.removeFavorite);
+router.get("/wishlist", authenticate, CustomerController.getFavorites);
+router.post("/wishlist", authenticate, CustomerController.addFavorite);
+router.delete("/wishlist", authenticate, CustomerController.removeFavorite);
 
 // Customer portfolio gallery & reaction routes
 router.get("/portfolio", authenticate, CustomerController.getPortfolios);
@@ -67,7 +73,11 @@ router.get("/coupons", authenticate, CustomerController.getCoupons);
 router.get("/notifications", authenticate, CustomerController.getNotifications);
 router.get("/addresses", authenticate, CustomerController.getAddresses);
 router.post("/addresses", authenticate, CustomerController.addAddress);
+router.put("/addresses/:id", authenticate, CustomerController.updateAddress);
+router.patch("/addresses/:id/default", authenticate, CustomerController.setDefaultAddress);
 router.delete("/addresses/:id", authenticate, CustomerController.deleteAddress);
+router.post("/change-password", authenticate, CustomerController.changePassword);
+router.delete("/account", authenticate, CustomerController.deleteAccount);
 router.get("/reviews", authenticate, CustomerController.getReviews);
 router.post("/support/ticket", authenticate, CustomerController.createSupportTicket);
 router.get("/support/tickets", authenticate, CustomerController.getSupportTickets);

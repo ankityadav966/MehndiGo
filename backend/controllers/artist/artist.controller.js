@@ -272,6 +272,204 @@ async function getCustomerServiceDetail(req, res) {
   }
 }
 
+async function createPackage(req, res) {
+  try {
+    const { serviceId } = req.params;
+    const response = await ArtistService.createServicePackage(serviceId, req.user.id, req.body);
+    return res.status(201).json(SuccessResponse("Package created successfully", response));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+async function updatePackage(req, res) {
+  try {
+    const { id } = req.params;
+    const response = await ArtistService.updateServicePackage(id, req.user.id, req.body);
+    return res.status(200).json(SuccessResponse("Package updated successfully", response));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+async function deletePackage(req, res) {
+  try {
+    const { id } = req.params;
+    await ArtistService.deleteServicePackage(id, req.user.id);
+    return res.status(200).json(SuccessResponse("Package deleted successfully", null));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+async function getAvailability(req, res) {
+  try {
+    const response = await ArtistService.getAvailabilitySchedule(req.user.id);
+    return res.status(200).json(SuccessResponse("Availability schedule fetched successfully", response));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+async function updateAvailability(req, res) {
+  try {
+    const response = await ArtistService.updateAvailabilitySchedule(req.user.id, req.body);
+    return res.status(200).json(SuccessResponse("Availability schedule updated successfully", response));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+async function addBlockedDate(req, res) {
+  try {
+    const { date } = req.body;
+    const response = await ArtistService.addBlockedDate(req.user.id, date);
+    return res.status(200).json(SuccessResponse("Date blocked successfully", response));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+async function removeBlockedDate(req, res) {
+  try {
+    const { date } = req.body;
+    const response = await ArtistService.removeBlockedDate(req.user.id, date);
+    return res.status(200).json(SuccessResponse("Date unblocked successfully", response));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+async function getMyPortfolio(req, res) {
+  try {
+    const response = await ArtistService.getMyPortfolio(req.user.id);
+    return res.status(200).json(SuccessResponse("Portfolio fetched successfully", response));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+async function getPortfolioById(req, res) {
+  try {
+    const response = await ArtistService.getPortfolioById(req.params.id);
+    return res.status(200).json(SuccessResponse("Portfolio item fetched successfully", response));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+async function createPortfolio(req, res) {
+  try {
+    const isVideo = req.file?.mimetype?.startsWith("video/") || req.body.video_url;
+    const path = req.file?.path || req.body.image_url || null;
+
+    const payload = {
+      artist_id: req.user.id,
+      image_url: isVideo ? (req.body.image_url || path) : path,
+      video_url: isVideo ? path : (req.body.video_url || null),
+      title: req.body.title || null,
+      caption: req.body.caption || null,
+      description: req.body.description || null,
+      category: req.body.category || null,
+      occasion: req.body.occasion || null,
+      tags: req.body.tags || null,
+      location: req.body.location || null,
+      visibility: req.body.visibility === undefined ? true : (req.body.visibility === "true" || req.body.visibility === true),
+      display_order: req.body.display_order !== undefined ? Number(req.body.display_order) : 0,
+      art_tier: req.body.art_tier || "STANDARD",
+      price: req.body.price !== undefined && req.body.price !== "" ? Number(req.body.price) : null,
+      duration_minutes: req.body.duration_minutes ? Number(req.body.duration_minutes) : 60,
+      complexity_level: req.body.complexity_level || "MEDIUM",
+      is_cover: req.body.is_cover === true || req.body.is_cover === "true",
+      is_featured: req.body.is_featured === true || req.body.is_featured === "true"
+    };
+
+    const response = await ArtistService.createPortfolio(req.user.id, payload);
+    return res.status(201).json(SuccessResponse("Portfolio item created successfully", response));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+async function updatePortfolio(req, res) {
+  try {
+    const response = await ArtistService.updatePortfolio(req.params.id, req.user.id, req.body);
+    return res.status(200).json(SuccessResponse("Portfolio item updated successfully", response));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+async function deletePortfolio(req, res) {
+  try {
+    await ArtistService.deletePortfolio(req.params.id, req.user.id);
+    return res.status(200).json(SuccessResponse("Portfolio item deleted successfully"));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+async function reorderPortfolio(req, res) {
+  try {
+    const items = req.body.items || req.body;
+    const response = await ArtistService.reorderPortfolio(req.user.id, items);
+    return res.status(200).json(SuccessResponse("Portfolio display order updated successfully", response));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+async function setCoverImage(req, res) {
+  try {
+    const response = await ArtistService.setCoverImage(req.user.id, req.body);
+    return res.status(200).json(SuccessResponse("Cover image updated successfully", response));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+async function uploadPortfolioMedia(req, res) {
+  try {
+    const files = req.files || (req.file ? [req.file] : []);
+    const results = [];
+    for (const file of files) {
+      const isVideo = file.mimetype?.startsWith("video/") || /\.(mp4|mov|3gp|mkv)$/i.test(file.originalname || "");
+      results.push({
+        url: file.path,
+        type: isVideo ? "video" : "image"
+      });
+    }
+    return res.status(200).json(SuccessResponse("Media uploaded successfully", results));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
+async function getUploadSignature(req, res) {
+  try {
+    const cloudinary = require("../../config/cloudinary");
+    const timestamp = Math.round(new Date().getTime() / 1000);
+    const folder = "mehndigo/portfolio";
+    const signature = cloudinary.utils.api_sign_request(
+      {
+        timestamp: timestamp,
+        folder: folder
+      },
+      cloudinary.config().api_secret
+    );
+
+    return res.status(200).json(SuccessResponse("Signature generated successfully", {
+      signature,
+      timestamp,
+      folder,
+      api_key: cloudinary.config().api_key,
+      cloud_name: cloudinary.config().cloud_name
+    }));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
 module.exports = {
   getDashboard,
   getBookings,
@@ -298,5 +496,21 @@ module.exports = {
   postServiceMedia,
   deleteServiceMedia,
   getCustomerServices,
-  getCustomerServiceDetail
+  getCustomerServiceDetail,
+  createPackage,
+  updatePackage,
+  deletePackage,
+  getAvailability,
+  updateAvailability,
+  addBlockedDate,
+  removeBlockedDate,
+  getMyPortfolio,
+  getPortfolioById,
+  createPortfolio,
+  updatePortfolio,
+  deletePortfolio,
+  reorderPortfolio,
+  setCoverImage,
+  uploadPortfolioMedia,
+  getUploadSignature
 };

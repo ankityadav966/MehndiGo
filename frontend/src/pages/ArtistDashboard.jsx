@@ -6,6 +6,7 @@ import { io } from "socket.io-client";
 import { Plus, Trash2, Calendar, Check, X, FileText, Bell, BarChart2, DollarSign, Award, Clock, Image, Settings } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { useNavigate } from "react-router-dom";
+import { formatAdminDate, formatAdminTime, formatAdminDateTime, safeParseDate } from "../utils/dateFormatter";
 
 const ArtistDashboard = ({ showToast }) => {
   const { logout, user } = useAuth();
@@ -352,7 +353,7 @@ const ArtistDashboard = ({ showToast }) => {
   const chartData = bookings
     .filter((b) => b.booking_status === "COMPLETED" || b.payment_status === "PAID")
     .map((b) => ({
-      date: new Date(b.createdAt).toLocaleDateString([], { month: "short", day: "numeric" }),
+      date: formatAdminDate(b.created_at || b.createdAt || b.booking_date || b.slot?.start_time),
       earnings: b.total_price,
     }));
 
@@ -607,7 +608,7 @@ const ArtistDashboard = ({ showToast }) => {
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
                 {bookings.map((booking) => {
-                  const start = new Date(booking.slot?.start_time);
+                  const startTimeVal = booking.slot?.start_time || booking.booking_date || booking.created_at;
                   return (
                     <div key={booking.id} className="glass-panel" style={{ padding: "1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem" }}>
                       <div>
@@ -615,8 +616,8 @@ const ArtistDashboard = ({ showToast }) => {
                         <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>Client: {booking.user?.name}</div>
                         <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>Address: {booking.address}</div>
                         <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)", display: "flex", gap: "1rem", marginTop: "0.3rem" }}>
-                          <span>Date: {start.toLocaleDateString()}</span>
-                          <span>Time: {start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                          <span>Date: {formatAdminDate(startTimeVal)}</span>
+                          <span>Time: {formatAdminTime(startTimeVal)}</span>
                         </div>
                       </div>
 
@@ -769,13 +770,13 @@ const ArtistDashboard = ({ showToast }) => {
                 ) : (
                   <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem" }}>
                     {slots.map((s) => {
-                      const start = new Date(s.start_time);
+                      const startTimeVal = s.start_time || s.slot_time || s.created_at;
                       return (
                         <div key={s.id} className="glass-panel" style={{ padding: "0.6rem 1rem", display: "flex", alignItems: "center", gap: "1rem", background: s.is_booked ? "var(--bg-tertiary)" : "var(--bg-secondary)" }}>
                           <div>
-                            <div style={{ fontWeight: 600, fontSize: "0.9rem" }}>{start.toLocaleDateString()}</div>
+                            <div style={{ fontWeight: 600, fontSize: "0.9rem" }}>{formatAdminDate(startTimeVal)}</div>
                             <div style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>
-                              {start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                              {formatAdminTime(startTimeVal)}
                             </div>
                           </div>
                           {s.is_booked ? (

@@ -21,42 +21,50 @@ export default function CheckoutCard({
     <View style={styles.card}>
       <View style={styles.headerRow}>
         <View style={styles.iconCircle}>
-          <Ionicons name="card-outline" size={18} color="#DC2626" />
+          <Ionicons name="receipt" size={16} color="#DC2626" />
         </View>
         <View style={styles.headerTextContainer}>
-          <Text style={styles.titleText}>
-            {isArtist ? "Final Settlement Breakdown" : "Service Completed — Payment Required"}
+          <Text style={styles.titleText} numberOfLines={1} ellipsizeMode="tail">
+            {isArtist ? "Final Settlement Breakdown" : "Payment Due"}
           </Text>
-          <Text style={styles.subtitleText}>
+          <Text style={styles.subtitleText} numberOfLines={2}>
             {isArtist
-              ? "Verify the balance collection before finalizing the booking."
-              : "Please complete the remaining balance to finalize your service."}
+              ? "Verify balance collection from customer before marking service settled."
+              : "Please complete remaining balance payment to finalize appointment."}
           </Text>
         </View>
       </View>
 
       <View style={styles.divider} />
 
+      {/* Itemized Breakdown */}
       <View style={styles.row}>
-        <Text style={styles.label}>Total Service Charge</Text>
-        <Text style={styles.value}>₹{totalAmount}</Text>
+        <Text style={styles.label} numberOfLines={1}>Total Service Charge</Text>
+        <Text style={styles.value}>₹{totalAmount.toLocaleString("en-IN")}</Text>
       </View>
 
       <View style={styles.row}>
-        <Text style={styles.label}>Advance Deposit Credited</Text>
-        <Text style={[styles.value, { color: "#059669" }]}>- ₹{advanceAmount}</Text>
+        <View style={styles.advanceLabelRow}>
+          <Ionicons name="shield-checkmark" size={11} color="#059669" style={{ marginRight: 4 }} />
+          <Text style={styles.label} numberOfLines={1}>Advance Deposit Credited</Text>
+        </View>
+        <Text style={[styles.value, { color: "#059669" }]}>- ₹{advanceAmount.toLocaleString("en-IN")}</Text>
       </View>
 
       <View style={styles.divider} />
 
+      {/* Due Balance Highlight Box */}
       <View style={styles.dueRow}>
-        <View>
-          <Text style={styles.dueLabel}>Remaining Balance Due</Text>
-          <Text style={styles.dueSublabel}>
-            {paymentMethod === "cash" ? "Selected Cash Payment" : "Online / Cash Payment"}
+        <View style={{ flex: 1, marginRight: 8 }}>
+          <Text style={styles.dueLabel} numberOfLines={1}>Remaining Balance</Text>
+          <Text style={styles.dueSublabel} numberOfLines={1}>
+            {paymentMethod === "cash" ? "Mode: Direct Cash Collection" : "Mode: Online / Cash Payment"}
           </Text>
         </View>
-        <Text style={styles.dueValue}>₹{remainingAmount}</Text>
+        <View style={styles.dueValueContainer}>
+          <Text style={styles.currencySymbol}>₹</Text>
+          <Text style={styles.dueValue}>{remainingAmount.toLocaleString("en-IN")}</Text>
+        </View>
       </View>
 
       {/* Customer Action Buttons */}
@@ -69,7 +77,7 @@ export default function CheckoutCard({
               disabled={loading}
               activeOpacity={0.8}
             >
-              <Ionicons name="cash-outline" size={16} color="#212121" />
+              <Ionicons name="cash-outline" size={15} color="#1F2937" />
               <Text style={styles.secondaryBtnText}>Pay Cash</Text>
             </TouchableOpacity>
           )}
@@ -79,10 +87,10 @@ export default function CheckoutCard({
               style={styles.primaryBtn}
               onPress={onPayOnline}
               disabled={loading}
-              activeOpacity={0.8}
+              activeOpacity={0.85}
             >
-              <Ionicons name="card" size={16} color="#FFFFFF" />
-              <Text style={styles.primaryBtnText}>Pay Online (₹{remainingAmount})</Text>
+              <Ionicons name="card" size={15} color="#FFFFFF" />
+              <Text style={styles.primaryBtnText} numberOfLines={1}>Pay Online (₹{remainingAmount})</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -96,10 +104,12 @@ export default function CheckoutCard({
               style={styles.confirmCashBtn}
               onPress={onConfirmCash}
               disabled={loading}
-              activeOpacity={0.8}
+              activeOpacity={0.85}
             >
               <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-              <Text style={styles.confirmCashBtnText}>Confirm Cash Received (₹{remainingAmount})</Text>
+              <Text style={styles.confirmCashBtnText} numberOfLines={1} ellipsizeMode="tail">
+                Confirm Cash Received (₹{remainingAmount.toLocaleString("en-IN")})
+              </Text>
             </TouchableOpacity>
           )}
         </View>
@@ -111,29 +121,31 @@ export default function CheckoutCard({
 const styles = StyleSheet.create({
   card: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 18,
+    padding: 14,
     marginHorizontal: 16,
     marginTop: 12,
     borderWidth: 1.5,
-    borderColor: "#FEE2E2",
+    borderColor: "#FECACA",
     shadowColor: "#DC2626",
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.08,
     shadowRadius: 8,
-    elevation: 2
+    elevation: 3,
+    overflow: "hidden"
   },
   headerRow: {
     flexDirection: "row",
     alignItems: "flex-start"
   },
   iconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 34,
+    height: 34,
+    borderRadius: 10,
     backgroundColor: "#FEE2E2",
     justifyContent: "center",
-    alignItems: "center"
+    alignItems: "center",
+    flexShrink: 0
   },
   headerTextContainer: {
     marginLeft: 10,
@@ -142,7 +154,7 @@ const styles = StyleSheet.create({
   titleText: {
     fontSize: 14,
     fontWeight: "800",
-    color: "#212121"
+    color: "#1F2937"
   },
   subtitleText: {
     fontSize: 11,
@@ -159,16 +171,26 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 6
+    marginBottom: 6,
+    gap: 8
+  },
+  advanceLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    flexShrink: 1
   },
   label: {
-    fontSize: 12,
-    color: "#6B7280"
+    fontSize: 12.5,
+    color: "#6B7280",
+    fontWeight: "500",
+    flexShrink: 1
   },
   value: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#212121"
+    fontSize: 12.5,
+    fontWeight: "700",
+    color: "#1F2937",
+    flexShrink: 0
   },
   dueRow: {
     flexDirection: "row",
@@ -177,18 +199,30 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFF8FA",
     padding: 12,
     borderRadius: 12,
-    borderWidth: 1,
+    borderWidth: 1.2,
     borderColor: "#FCE7F3"
   },
   dueLabel: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: "800",
-    color: "#212121"
+    color: "#1F2937"
   },
   dueSublabel: {
     fontSize: 10,
     color: "#6B7280",
-    marginTop: 1
+    marginTop: 2,
+    fontWeight: "500"
+  },
+  dueValueContainer: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    flexShrink: 0
+  },
+  currencySymbol: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#DC2626",
+    marginRight: 2
   },
   dueValue: {
     fontSize: 20,
@@ -197,8 +231,8 @@ const styles = StyleSheet.create({
   },
   btnRow: {
     flexDirection: "row",
-    gap: 10,
-    marginTop: 14
+    gap: 8,
+    marginTop: 12
   },
   secondaryBtn: {
     flex: 1,
@@ -208,12 +242,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#F3F4F6",
     height: 46,
     borderRadius: 12,
-    gap: 6
+    gap: 4
   },
   secondaryBtnText: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#212121"
+    color: "#1F2937"
   },
   primaryBtn: {
     flex: 1.5,
@@ -223,7 +257,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#E91E63",
     height: 46,
     borderRadius: 12,
-    gap: 6,
+    gap: 4,
     shadowColor: "#E91E63",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
@@ -232,11 +266,11 @@ const styles = StyleSheet.create({
   },
   primaryBtnText: {
     fontSize: 13,
-    fontWeight: "700",
+    fontWeight: "800",
     color: "#FFFFFF"
   },
   artistActionContainer: {
-    marginTop: 14
+    marginTop: 12
   },
   confirmCashBtn: {
     flexDirection: "row",
@@ -244,7 +278,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: "#059669",
     height: 48,
-    borderRadius: 12,
+    borderRadius: 14,
+    paddingHorizontal: 12,
     shadowColor: "#059669",
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.25,
@@ -252,8 +287,10 @@ const styles = StyleSheet.create({
     elevation: 3
   },
   confirmCashBtnText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#FFFFFF"
+    fontSize: 13.5,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    letterSpacing: 0.2,
+    flexShrink: 1
   }
 });

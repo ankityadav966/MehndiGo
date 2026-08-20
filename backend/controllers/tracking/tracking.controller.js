@@ -124,9 +124,21 @@ async function getArtistLocation(req, res) {
       return res.status(404).json(ErrorResponse("Booking not found with the provided ID"));
     }
 
-    // 2. Validate booking owner (only customer who owns the booking can view tracking)
-    if (booking.user_id !== req.user.id) {
-      return res.status(403).json(ErrorResponse("Unauthorized. Only the booking customer can view live tracking"));
+    // 2. Validate booking authorization (customer who owns booking, assigned artist, or admin)
+    let isAuthorized = false;
+    if (booking.user_id === req.user.id) {
+      isAuthorized = true;
+    } else if (req.user.role === "ADMIN") {
+      isAuthorized = true;
+    } else if (req.user.role === "ARTIST") {
+      const artistProfile = await db.ArtistProfile.findOne({ where: { user_id: req.user.id } });
+      if (artistProfile && (booking.artist_id === artistProfile.id || booking.artist_id === req.user.id)) {
+        isAuthorized = true;
+      }
+    }
+
+    if (!isAuthorized) {
+      return res.status(403).json(ErrorResponse("Unauthorized. Only the booking customer, assigned artist, or admin can view live tracking"));
     }
 
     // 3. Fetch latest location from Redis

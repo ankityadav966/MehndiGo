@@ -42,19 +42,19 @@ export default function ReviewSubmitScreen({ navigation }) {
 
       await secureStorage.setArtistProfileCompleted(true);
       await secureStorage.setArtistOnboardingDone(true);
-      submitArtistProfile();
+      await submitArtistProfile();
       navigation.reset({
         index: 0,
-        routes: [{ name: "ArtistStack" }],
+        routes: [{ name: "ApprovalPending" }],
       });
     } catch (err) {
       if (err.message && err.message.includes("already exists")) {
         await secureStorage.setArtistProfileCompleted(true);
         await secureStorage.setArtistOnboardingDone(true);
-        submitArtistProfile();
+        await submitArtistProfile();
         navigation.reset({
           index: 0,
-          routes: [{ name: "ArtistStack" }],
+          routes: [{ name: "ApprovalPending" }],
         });
       } else {
         setError(err.message || "Failed to submit profile. Please try again.");

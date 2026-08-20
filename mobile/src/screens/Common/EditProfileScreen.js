@@ -21,6 +21,7 @@ import { useAuth } from "../../context/AuthContext";
 import { getCustomerProfile, updateCustomerProfile } from "../../services/customer";
 import { getArtistDetails, updateArtistProfileDetails, uploadPortfolioMedia } from "../../services/artist";
 import { secureStorage } from "../../utils/storage";
+import { resolveImage } from "../../utils/imageHelper";
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -36,14 +37,14 @@ export default function EditProfileScreen({ navigation }) {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [avatarUri, setAvatarUri] = useState("");
+  const [city, setCity] = useState("");
+  const [state, setState] = useState("");
+  const [pincode, setPincode] = useState("");
 
   // Artist Fields
   const [bio, setBio] = useState("");
   const [experience, setExperience] = useState("");
-  const [city, setCity] = useState("");
-  const [state, setState] = useState("");
   const [location, setLocation] = useState("");
-  const [pincode, setPincode] = useState("");
   const [languages, setLanguages] = useState("");
   const [instagramHandle, setInstagramHandle] = useState("");
   const [facebookHandle, setFacebookHandle] = useState("");
@@ -77,6 +78,9 @@ export default function EditProfileScreen({ navigation }) {
         setFullName(data.name || "");
         setEmail(data.email || "");
         setPhone(data.phone || "");
+        setCity(data.city || "");
+        setState(data.state || "");
+        setPincode(data.pincode || "");
         setAvatarUri(resolveImage(data.profile_image));
       }
     } catch (err) {
@@ -213,6 +217,9 @@ export default function EditProfileScreen({ navigation }) {
           email: email.trim(),
           profile_image: finalAvatar,
           phone: cleanPhone,
+          city: city.trim(),
+          state: state.trim(),
+          pincode: pincode.trim(),
         });
       }
 
@@ -225,6 +232,9 @@ export default function EditProfileScreen({ navigation }) {
         avatar: finalAvatar, // Sync avatar key
         email: email.trim(),
         phone: cleanPhone,
+        city: city.trim(),
+        state: state.trim(),
+        pincode: pincode.trim(),
       };
       await secureStorage.setUserData(updatedUser);
       dispatch({ type: "UPDATE_USER", payload: updatedUser });
@@ -331,6 +341,56 @@ export default function EditProfileScreen({ navigation }) {
               />
             </View>
 
+            <Text style={styles.label}>City</Text>
+            <View style={styles.inputContainer}>
+              <Ionicons
+                name="business-outline"
+                size={20}
+                color={Colors.textTertiary}
+              />
+              <TextInput
+                value={city}
+                onChangeText={setCity}
+                placeholder="City (e.g. Jaipur)"
+                placeholderTextColor={Colors.textTertiary}
+                style={styles.input}
+              />
+            </View>
+
+            <Text style={styles.label}>State</Text>
+            <View style={styles.inputContainer}>
+              <Ionicons
+                name="map-outline"
+                size={20}
+                color={Colors.textTertiary}
+              />
+              <TextInput
+                value={state}
+                onChangeText={setState}
+                placeholder="State (e.g. Rajasthan)"
+                placeholderTextColor={Colors.textTertiary}
+                style={styles.input}
+              />
+            </View>
+
+            <Text style={styles.label}>Pincode</Text>
+            <View style={styles.inputContainer}>
+              <Ionicons
+                name="pin-outline"
+                size={20}
+                color={Colors.textTertiary}
+              />
+              <TextInput
+                value={pincode}
+                onChangeText={setPincode}
+                placeholder="6-digit Pincode"
+                placeholderTextColor={Colors.textTertiary}
+                keyboardType="numeric"
+                maxLength={6}
+                style={styles.input}
+              />
+            </View>
+
             {isArtist && (
               <>
                 <Text style={styles.label}>Bio</Text>
@@ -369,39 +429,7 @@ export default function EditProfileScreen({ navigation }) {
                   />
                 </View>
 
-                <Text style={styles.label}>City</Text>
-                <View style={styles.inputContainer}>
-                  <Ionicons
-                    name="business-outline"
-                    size={20}
-                    color={Colors.textTertiary}
-                  />
-                  <TextInput
-                    value={city}
-                    onChangeText={setCity}
-                    placeholder="City"
-                    placeholderTextColor={Colors.textTertiary}
-                    style={styles.input}
-                  />
-                </View>
-
-                <Text style={styles.label}>State</Text>
-                <View style={styles.inputContainer}>
-                  <Ionicons
-                    name="map-outline"
-                    size={20}
-                    color={Colors.textTertiary}
-                  />
-                  <TextInput
-                    value={state}
-                    onChangeText={setState}
-                    placeholder="State"
-                    placeholderTextColor={Colors.textTertiary}
-                    style={styles.input}
-                  />
-                </View>
-
-                <Text style={styles.label}>Location / Address</Text>
+                <Text style={styles.label}>Studio / Workshop Location</Text>
                 <View style={styles.inputContainer}>
                   <Ionicons
                     name="location-outline"
@@ -411,25 +439,8 @@ export default function EditProfileScreen({ navigation }) {
                   <TextInput
                     value={location}
                     onChangeText={setLocation}
-                    placeholder="Full Address"
+                    placeholder="Full Studio Address"
                     placeholderTextColor={Colors.textTertiary}
-                    style={styles.input}
-                  />
-                </View>
-
-                <Text style={styles.label}>Pincode</Text>
-                <View style={styles.inputContainer}>
-                  <Ionicons
-                    name="pin-outline"
-                    size={20}
-                    color={Colors.textTertiary}
-                  />
-                  <TextInput
-                    value={pincode}
-                    onChangeText={setPincode}
-                    placeholder="Pincode"
-                    placeholderTextColor={Colors.textTertiary}
-                    keyboardType="numeric"
                     style={styles.input}
                   />
                 </View>

@@ -20,6 +20,25 @@ function validateBody(requiredFields) {
   };
 }
 
+function validateAtLeastOne(fields) {
+  return (req, res, next) => {
+    const hasAtLeastOne = fields.some(
+      (field) =>
+        req.body[field] !== undefined &&
+        req.body[field] !== null &&
+        String(req.body[field]).trim() !== ""
+    );
+    if (!hasAtLeastOne) {
+      return res.status(400).json({
+        success: false,
+        message: `Validation error: At least one of the following is required: ${fields.join(", ")}`,
+      });
+    }
+    next();
+  };
+}
+
 module.exports = {
   validateBody,
+  validateAtLeastOne,
 };

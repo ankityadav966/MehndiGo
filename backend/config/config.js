@@ -15,6 +15,14 @@ const getDbConfig = () => {
     };
   }
 
+  if (process.env.DB_DIALECT === "sqlite" || (process.env.NODE_ENV === "test" && !process.env.DATABASE_URL && !process.env.DB_HOST)) {
+    return {
+      dialect: "sqlite",
+      storage: process.env.DB_STORAGE || ":memory:",
+      logging: false,
+    };
+  }
+
   const host = (process.env.DB_HOST || "127.0.0.1").trim();
   const port = parseInt((process.env.DB_PORT || "5432").trim(), 10);
   const username = (process.env.DB_USER || "postgres").trim();

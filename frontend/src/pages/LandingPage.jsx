@@ -10,6 +10,7 @@ import {
   BookOpen,
   ShieldCheck,
 } from "lucide-react";
+import { formatAdminDate, formatAdminTime } from "../utils/dateFormatter";
 
 const LandingPage = ({ showToast }) => {
   const { isAuthenticated, user } = useAuth();
@@ -669,7 +670,7 @@ const LandingPage = ({ showToast }) => {
                       </p>
                     ) : (
                       selectedArtist.slots?.map((slot) => {
-                        const start = new Date(slot.start_time);
+                        const startTimeVal = slot.start_time || slot.slot_time || slot.date;
                         const isSelected = selectedSlot?.id === slot.id;
                         return (
                           <label
@@ -700,12 +701,9 @@ const LandingPage = ({ showToast }) => {
                             <Calendar
                               style={{ width: "12px", marginRight: "3px" }}
                             />
-                            {start.toLocaleDateString()} -{" "}
+                            {formatAdminDate(startTimeVal)} -{" "}
                             <Clock style={{ width: "12px", margin: "0 3px" }} />
-                            {start.toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
+                            {formatAdminTime(startTimeVal)}
                           </label>
                         );
                       })

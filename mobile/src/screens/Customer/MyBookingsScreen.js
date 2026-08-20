@@ -148,7 +148,7 @@ export default function MyBookingsScreen({ navigation }) {
     const status = item.detailed_status || item.booking_status || "PENDING";
     const statusConfig = getStatusBadgeConfig(status);
     const localMoment = getMoment();
-    
+
     const rawDate = item.booking_date || item.date || item.event_date || item.reschedule_date || item.slot?.date || item.slot?.start_time || item.created_at;
     let dateStr = rawDate ? localMoment(rawDate).format("DD MMM YYYY") : "Today";
 
@@ -192,12 +192,12 @@ export default function MyBookingsScreen({ navigation }) {
         {/* Schedule & Price Details */}
         <View style={styles.detailsRow}>
           <View style={styles.detailItem}>
-            <Ionicons name="calendar-outline" size={14} color={Colors.primary} style={{ marginRight: 6 }} />
-            <Text style={[styles.detailText, { color: currentTextColor }]}>{dateStr}</Text>
+            <Ionicons name="calendar-outline" size={13} color={Colors.primary} style={{ marginRight: 4 }} />
+            <Text style={[styles.detailText, { color: currentTextColor }]} numberOfLines={1}>{dateStr}</Text>
           </View>
           <View style={styles.detailItem}>
-            <Ionicons name="time-outline" size={14} color={Colors.primary} style={{ marginRight: 6 }} />
-            <Text style={[styles.detailText, { color: currentTextColor }]}>{timeStr}</Text>
+            <Ionicons name="time-outline" size={13} color={Colors.primary} style={{ marginRight: 4 }} />
+            <Text style={[styles.detailText, { color: currentTextColor }]} numberOfLines={1}>{timeStr}</Text>
           </View>
           <View style={styles.detailItemEnd}>
             <Text style={styles.priceLabel}>Amount</Text>
@@ -215,7 +215,7 @@ export default function MyBookingsScreen({ navigation }) {
                 Linking.openURL(`tel:${phone}`);
               }}
             >
-              <Ionicons name="call" size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+              <Ionicons name="call" size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
               <Text style={styles.callBtnText}>Call Specialist</Text>
             </TouchableOpacity>
 
@@ -230,7 +230,7 @@ export default function MyBookingsScreen({ navigation }) {
                 });
               }}
             >
-              <Ionicons name="chatbubbles" size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+              <Ionicons name="chatbubbles" size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
               <Text style={styles.chatBtnText}>Live Chat</Text>
             </TouchableOpacity>
           </View>
@@ -239,7 +239,7 @@ export default function MyBookingsScreen({ navigation }) {
         {/* Footer Link */}
         <View style={styles.cardFooter}>
           <Text style={styles.footerLinkText}>View Order Details & Status</Text>
-          <Ionicons name="chevron-forward" size={14} color={Colors.primary} />
+          <Ionicons name="chevron-forward" size={13} color={Colors.primary} />
         </View>
       </TouchableOpacity>
     );
@@ -332,182 +332,189 @@ export default function MyBookingsScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flex: 1
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 12
   },
   headerTitle: {
     fontSize: 22,
-    fontWeight: "800",
+    fontWeight: "800"
   },
   countBadge: {
     backgroundColor: "#FFF0F4",
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 12,
+    borderRadius: 12
   },
   countBadgeText: {
     fontSize: 12,
     fontWeight: "700",
-    color: Colors.primary || "#9C1344",
+    color: Colors.primary || "#9C1344"
   },
   tabScrollWrap: {
-    marginBottom: 12,
+    marginBottom: 10
   },
   tabsContainer: {
     paddingHorizontal: 16,
-    gap: 8,
+    gap: 8
   },
   tabChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: "#E5E7EB"
   },
   tabChipActive: {
     backgroundColor: Colors.primary || "#9C1344",
-    borderColor: Colors.primary || "#9C1344",
+    borderColor: Colors.primary || "#9C1344"
   },
   tabChipText: {
-    fontSize: 13,
-    fontWeight: "600",
+    fontSize: 12.5,
+    fontWeight: "600"
   },
   tabChipTextActive: {
     color: "#FFFFFF",
-    fontWeight: "700",
+    fontWeight: "700"
   },
   centerContainer: {
     flex: 1,
     justifyContent: "center",
-    alignItems: "center",
+    alignItems: "center"
   },
   listContent: {
     paddingHorizontal: 16,
-    paddingBottom: 180,
+    paddingBottom: 180
   },
-
   card: {
     borderRadius: 18,
-    padding: 16,
-    marginBottom: 14,
+    padding: 14,
+    marginBottom: 12,
     borderWidth: 1,
     elevation: 2,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 4,
+    overflow: "hidden"
   },
   cardTopRow: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "center"
   },
   artistAvatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 14,
+    width: 52,
+    height: 52,
+    borderRadius: 12,
+    flexShrink: 0
   },
   cardHeaderInfo: {
     flex: 1,
-    marginLeft: 12,
+    marginLeft: 10
   },
   titleStatusRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    gap: 6
   },
   bookingTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "700",
     flex: 1,
-    marginRight: 8,
+    flexShrink: 1
   },
   statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 6,
+    flexShrink: 0
   },
   statusText: {
-    fontSize: 11,
-    fontWeight: "700",
+    fontSize: 10.5,
+    fontWeight: "700"
   },
   codeRow: {
-    marginTop: 4,
+    marginTop: 2
   },
   codeTag: {
-    fontSize: 12,
-    fontWeight: "500",
+    fontSize: 11.5,
+    fontWeight: "500"
   },
   cardDivider: {
     height: 1,
-    marginVertical: 12,
+    marginVertical: 10
   },
   detailsRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 10,
+    marginBottom: 8,
+    gap: 6
   },
   detailItem: {
     flexDirection: "row",
     alignItems: "center",
+    flexShrink: 1
   },
   detailText: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: "600",
+    flexShrink: 1
   },
   detailItemEnd: {
     alignItems: "flex-end",
+    flexShrink: 0
   },
   priceLabel: {
-    fontSize: 10,
+    fontSize: 9,
     color: "#9CA3AF",
     textTransform: "uppercase",
-    fontWeight: "700",
+    fontWeight: "700"
   },
   priceValue: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "800",
-    color: Colors.primary || "#9C1344",
+    color: Colors.primary || "#9C1344"
   },
   actionBtnRow: {
     flexDirection: "row",
     gap: 8,
-    marginBottom: 12,
-    marginTop: 4,
+    marginBottom: 10,
+    marginTop: 2
   },
   callBtn: {
     flex: 1,
     flexDirection: "row",
-    height: 38,
+    height: 36,
     backgroundColor: Colors.primary || "#9C1344",
     borderRadius: 10,
     justifyContent: "center",
-    alignItems: "center",
+    alignItems: "center"
   },
   callBtnText: {
     color: "#FFFFFF",
-    fontSize: 12,
-    fontWeight: "700",
+    fontSize: 11.5,
+    fontWeight: "700"
   },
   chatBtn: {
     flex: 1,
     flexDirection: "row",
-    height: 38,
+    height: 36,
     backgroundColor: "#059669",
     borderRadius: 10,
     justifyContent: "center",
-    alignItems: "center",
+    alignItems: "center"
   },
   chatBtnText: {
     color: "#FFFFFF",
-    fontSize: 12,
-    fontWeight: "700",
+    fontSize: 11.5,
+    fontWeight: "700"
   },
   cardFooter: {
     flexDirection: "row",
@@ -515,49 +522,49 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: "#F3F4F6",
+    borderTopColor: "#F3F4F6"
   },
   footerLinkText: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: "700",
-    color: Colors.primary || "#9C1344",
+    color: Colors.primary || "#9C1344"
   },
   emptyContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 32,
+    paddingHorizontal: 32
   },
   emptyIconCircle: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     backgroundColor: "#FFF0F4",
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 14
   },
   emptyTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: "800",
     marginBottom: 6,
-    textAlign: "center",
+    textAlign: "center"
   },
   emptySubtitle: {
-    fontSize: 13,
+    fontSize: 12.5,
     textAlign: "center",
-    lineHeight: 18,
-    marginBottom: 20,
+    lineHeight: 17,
+    marginBottom: 18
   },
   exploreBtn: {
     backgroundColor: Colors.primary || "#9C1344",
-    paddingVertical: 12,
-    paddingHorizontal: 28,
-    borderRadius: 12,
+    paddingVertical: 11,
+    paddingHorizontal: 24,
+    borderRadius: 12
   },
   exploreBtnText: {
     color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "700",
-  },
+    fontSize: 13.5,
+    fontWeight: "700"
+  }
 });

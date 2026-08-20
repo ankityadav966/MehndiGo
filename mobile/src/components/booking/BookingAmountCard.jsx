@@ -18,8 +18,10 @@ export default function BookingAmountCard({ booking }) {
     <View style={styles.card}>
       <View style={styles.headerRow}>
         <View style={styles.titleWithIcon}>
-          <Ionicons name="receipt-outline" size={16} color="#701DDB" style={{ marginRight: 6 }} />
-          <Text style={styles.titleText}>Payment Summary</Text>
+          <View style={styles.iconBox}>
+            <Ionicons name="receipt" size={13} color="#701DDB" />
+          </View>
+          <Text style={styles.titleText} numberOfLines={1}>Payment Summary</Text>
         </View>
 
         <View
@@ -28,13 +30,20 @@ export default function BookingAmountCard({ booking }) {
             isFullyPaid ? styles.statusPillPaid : styles.statusPillPending
           ]}
         >
+          <View
+            style={[
+              styles.statusDot,
+              { backgroundColor: isFullyPaid ? "#059669" : "#D97706" }
+            ]}
+          />
           <Text
             style={[
               styles.statusPillText,
               isFullyPaid ? styles.statusPillTextPaid : styles.statusPillTextPending
             ]}
+            numberOfLines={1}
           >
-            {isFullyPaid ? "FULLY PAID" : paymentStatus === "PARTIAL" ? "10% ADVANCE PAID" : "PAYMENT PENDING"}
+            {isFullyPaid ? "FULLY PAID" : paymentStatus === "PARTIAL" ? "10% ADVANCE PAID" : "PENDING"}
           </Text>
         </View>
       </View>
@@ -43,26 +52,29 @@ export default function BookingAmountCard({ booking }) {
 
       {/* Line Items */}
       <View style={styles.row}>
-        <Text style={styles.label}>Service Amount</Text>
-        <Text style={styles.value}>₹{totalAmount + discountAmount - travelCharge}</Text>
+        <Text style={styles.label} numberOfLines={1}>Service Charge</Text>
+        <Text style={styles.value}>₹{(totalAmount + discountAmount - travelCharge).toLocaleString("en-IN")}</Text>
       </View>
 
       {discountAmount > 0 && (
         <View style={styles.row}>
           <View style={styles.discountLabelRow}>
-            <Ionicons name="pricetag" size={12} color="#059669" style={{ marginRight: 4 }} />
-            <Text style={styles.discountLabel}>
-              Coupon Discount {booking.coupon_code ? `(${booking.coupon_code})` : ""}
+            <Ionicons name="pricetag" size={11} color="#059669" style={{ marginRight: 4 }} />
+            <Text style={styles.discountLabel} numberOfLines={1}>
+              Coupon {booking.coupon_code ? `(${booking.coupon_code})` : "Discount"}
             </Text>
           </View>
-          <Text style={styles.discountValue}>- ₹{discountAmount}</Text>
+          <Text style={styles.discountValue}>- ₹{discountAmount.toLocaleString("en-IN")}</Text>
         </View>
       )}
 
       {travelCharge > 0 && (
         <View style={styles.row}>
-          <Text style={styles.label}>Travel Allowance</Text>
-          <Text style={styles.value}>+ ₹{travelCharge}</Text>
+          <View style={styles.travelRow}>
+            <Ionicons name="car-outline" size={12} color="#701DDB" style={{ marginRight: 4 }} />
+            <Text style={styles.label} numberOfLines={1}>Travel Allowance</Text>
+          </View>
+          <Text style={styles.value}>+ ₹{travelCharge.toLocaleString("en-IN")}</Text>
         </View>
       )}
 
@@ -71,22 +83,22 @@ export default function BookingAmountCard({ booking }) {
       {/* Advance Paid Deposit */}
       <View style={styles.row}>
         <View style={styles.advanceRow}>
-          <Text style={styles.labelBold}>10% Advance Deposit</Text>
+          <Text style={styles.labelBold} numberOfLines={1}>10% Advance</Text>
           <View style={styles.escrowBadge}>
-            <Ionicons name="shield-checkmark" size={10} color="#059669" />
-            <Text style={styles.escrowBadgeText}>Escrow Protected</Text>
+            <Ionicons name="shield-checkmark" size={9} color="#059669" />
+            <Text style={styles.escrowBadgeText}>Escrow</Text>
           </View>
         </View>
-        <Text style={[styles.valueBold, { color: "#059669" }]}>
-          ₹{advanceAmount} {paymentStatus !== "PENDING" ? "(Paid)" : "(Due)"}
+        <Text style={[styles.valueBold, { color: "#059669" }]} numberOfLines={1}>
+          ₹{advanceAmount.toLocaleString("en-IN")} {paymentStatus !== "PENDING" ? "(Paid)" : "(Due)"}
         </Text>
       </View>
 
       {/* Remaining Amount */}
       <View style={styles.row}>
-        <Text style={styles.labelBold}>Remaining Balance</Text>
-        <Text style={[styles.valueBold, { color: remainingAmount > 0 ? "#DC2626" : "#059669" }]}>
-          ₹{remainingAmount} {isFullyPaid ? "(Settled)" : "(Pay After Service)"}
+        <Text style={styles.labelBold} numberOfLines={1}>Remaining Balance</Text>
+        <Text style={[styles.valueBold, { color: remainingAmount > 0 ? "#DC2626" : "#059669" }]} numberOfLines={1}>
+          ₹{remainingAmount.toLocaleString("en-IN")} {isFullyPaid ? "(Settled)" : "(Pay at End)"}
         </Text>
       </View>
 
@@ -94,8 +106,11 @@ export default function BookingAmountCard({ booking }) {
 
       {/* Final Total */}
       <View style={styles.totalRow}>
-        <Text style={styles.totalLabel}>Total Booking Amount</Text>
-        <Text style={styles.totalValue}>₹{totalAmount}</Text>
+        <Text style={styles.totalLabel} numberOfLines={1}>Total Amount</Text>
+        <View style={styles.totalValueContainer}>
+          <Text style={styles.totalCurrency}>₹</Text>
+          <Text style={styles.totalValue}>{totalAmount.toLocaleString("en-IN")}</Text>
+        </View>
       </View>
     </View>
   );
@@ -104,8 +119,8 @@ export default function BookingAmountCard({ booking }) {
 const styles = StyleSheet.create({
   card: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 18,
+    padding: 14,
     marginHorizontal: 16,
     marginTop: 12,
     borderWidth: 1,
@@ -114,40 +129,66 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
     shadowRadius: 6,
-    elevation: 1
+    elevation: 2,
+    overflow: "hidden"
   },
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center"
+    alignItems: "center",
+    gap: 6
   },
   titleWithIcon: {
     flexDirection: "row",
-    alignItems: "center"
+    alignItems: "center",
+    flexShrink: 1,
+    flex: 1
+  },
+  iconBox: {
+    width: 24,
+    height: 24,
+    borderRadius: 7,
+    backgroundColor: "#F5F3FF",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 6,
+    borderWidth: 1,
+    borderColor: "#DDD6FE",
+    flexShrink: 0
   },
   titleText: {
-    fontSize: 13,
-    fontWeight: "700",
+    fontSize: 11.5,
+    fontWeight: "800",
     color: "#6B7280",
     textTransform: "uppercase",
-    letterSpacing: 0.5
+    letterSpacing: 0.5,
+    flexShrink: 1
   },
   statusPill: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 7,
+    paddingVertical: 3.5,
+    borderRadius: 7,
+    borderWidth: 1,
+    gap: 4,
+    flexShrink: 0
+  },
+  statusDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5
   },
   statusPillPaid: {
-    backgroundColor: "#D1FAE5",
+    backgroundColor: "#ECFDF5",
     borderColor: "#A7F3D0"
   },
   statusPillPending: {
-    backgroundColor: "#FEF3C7",
+    backgroundColor: "#FFFBEB",
     borderColor: "#FDE68A"
   },
   statusPillText: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: "800",
     letterSpacing: 0.3
   },
@@ -160,69 +201,91 @@ const styles = StyleSheet.create({
   divider: {
     height: 1,
     backgroundColor: "#F3F4F6",
-    marginVertical: 12
+    marginVertical: 10
   },
   dividerLight: {
     height: 1,
     backgroundColor: "#F9FAFB",
-    marginVertical: 8
+    marginVertical: 6
   },
   row: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 8
+    marginBottom: 6,
+    gap: 8
   },
   label: {
-    fontSize: 13,
-    color: "#6B7280"
+    fontSize: 12,
+    color: "#6B7280",
+    fontWeight: "500",
+    flex: 1,
+    flexShrink: 1
   },
   value: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#212121"
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#1F2937",
+    flexShrink: 0
   },
   discountLabelRow: {
     flexDirection: "row",
-    alignItems: "center"
+    alignItems: "center",
+    flex: 1,
+    flexShrink: 1
   },
   discountLabel: {
-    fontSize: 13,
+    fontSize: 12,
     color: "#059669",
-    fontWeight: "600"
+    fontWeight: "700",
+    flexShrink: 1
   },
   discountValue: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#059669"
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#059669",
+    flexShrink: 0
+  },
+  travelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    flexShrink: 1
   },
   advanceRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6
+    gap: 5,
+    flex: 1,
+    flexShrink: 1
   },
   escrowBadge: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#ECFDF5",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    gap: 2
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+    borderRadius: 5,
+    gap: 2,
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+    flexShrink: 0
   },
   escrowBadgeText: {
-    fontSize: 9,
-    fontWeight: "700",
+    fontSize: 8.5,
+    fontWeight: "800",
     color: "#059669"
   },
   labelBold: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#212121"
+    fontSize: 12.5,
+    fontWeight: "800",
+    color: "#1F2937",
+    flexShrink: 1
   },
   valueBold: {
-    fontSize: 13,
-    fontWeight: "800"
+    fontSize: 12.5,
+    fontWeight: "800",
+    flexShrink: 0
   },
   totalRow: {
     flexDirection: "row",
@@ -230,9 +293,21 @@ const styles = StyleSheet.create({
     alignItems: "center"
   },
   totalLabel: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: "800",
-    color: "#212121"
+    color: "#1F2937",
+    flexShrink: 1
+  },
+  totalValueContainer: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    flexShrink: 0
+  },
+  totalCurrency: {
+    fontSize: 13.5,
+    fontWeight: "800",
+    color: "#E91E63",
+    marginRight: 2
   },
   totalValue: {
     fontSize: 18,

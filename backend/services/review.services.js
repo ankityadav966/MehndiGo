@@ -5,14 +5,18 @@ class ReviewService {
   async recalculateArtistRating(artistId) {
     const reviews = await db.Review.findAll({ where: { artist_id: artistId } });
     const count = reviews.length;
-    const avg = count > 0 ? reviews.reduce((sum, r) => sum + r.rating, 0) / count : 4.8;
+    const avg = count > 0 ? parseFloat((reviews.reduce((sum, r) => sum + Number(r.rating || 0), 0) / count).toFixed(1)) : 0.0;
 
     const artist = await db.ArtistProfile.findByPk(artistId);
     if (artist) {
-      await artist.update({
-        avg_rating: avg.toFixed(1),
+      const updatePayload = {
+        avg_rating: avg,
         total_reviews: count
-      });
+      };
+      if (artist.rating !== undefined) {
+        updatePayload.rating = avg;
+      }
+      await artist.update(updatePayload);
     }
   }
 
@@ -60,35 +64,46 @@ class ReviewService {
   async createReview(userId, data) {
     const { booking_id, rating, comment, design_quality, punctuality, professionalism, video_url, video_thumbnail, photos } = data;
 
+    // Validate rating range
+    const numRating = Number(rating);
+    if (!rating || isNaN(numRating) || numRating < 1 || numRating > 5) {
+      throw new AppError("Rating must be a valid number between 1 and 5.", 400);
+    }
+
     // Validate booking
     const booking = await db.Booking.findByPk(booking_id);
     if (!booking) throw new AppError("Booking not found", 404);
 
-    // Validate user identity or customer role
+    // Validate user identity: only customer who booked can review
     if (Number(booking.user_id) !== Number(userId)) {
-      console.log(`[REVIEW AUTH] booking.user_id=${booking.user_id}, req.user.id=${userId}`);
+      throw new AppError("You are not authorized to review this booking.", 403);
     }
 
-    const isCompleted = ["COMPLETED", "COMPLETED_CLOSED", "AWAITING_CASH_CONFIRMATION", "ARTIST_ARRIVED", "SERVICE_STARTED", "ACCEPTED", "CONFIRMED"].includes(booking.booking_status) ||
-                        ["COMPLETED", "COMPLETED_CLOSED", "AWAITING_CASH_CONFIRMATION", "ARTIST_ARRIVED", "SERVICE_STARTED", "ACCEPTED", "CONFIRMED"].includes(booking.detailed_status);
+    const isCompleted = ["COMPLETED", "COMPLETED_CLOSED"].includes(booking.booking_status) ||
+                        ["COMPLETED", "COMPLETED_CLOSED"].includes(booking.detailed_status);
     if (!isCompleted) {
-      throw new AppError("Only completed or active bookings can be reviewed.", 400);
+      throw new AppError("Only completed bookings can be reviewed.", 400);
     }
-
 
     // Check duplicate
     const existing = await db.Review.findOne({ where: { booking_id } });
     if (existing) throw new AppError("This booking has already been reviewed.", 400);
 
+    const parseSubRating = (val) => {
+      if (val === undefined || val === null || val === "") return null;
+      const n = Number(val);
+      return (!isNaN(n) && n >= 1 && n <= 5) ? n : null;
+    };
+
     const review = await db.Review.create({
       booking_id,
       user_id: userId,
       artist_id: booking.artist_id,
-      rating: Number(rating),
-      comment: comment || "",
-      design_quality_rating: design_quality ? Number(design_quality) : null,
-      punctuality_rating: punctuality ? Number(punctuality) : null,
-      professionalism_rating: professionalism ? Number(professionalism) : null,
+      rating: Math.round(numRating),
+      comment: typeof comment === "string" ? comment.trim() : "",
+      design_quality_rating: parseSubRating(design_quality),
+      punctuality_rating: parseSubRating(punctuality),
+      professionalism_rating: parseSubRating(professionalism),
       video_url: video_url || null,
       video_thumbnail: video_thumbnail || null,
       photos: Array.isArray(photos) ? photos : (photos ? [photos] : []),
@@ -158,9 +173,16 @@ class ReviewService {
       throw new AppError("Reviews can only be modified within 24 hours of submission.", 400);
     }
 
+    if (data.rating !== undefined) {
+      const numRating = Number(data.rating);
+      if (isNaN(numRating) || numRating < 1 || numRating > 5) {
+        throw new AppError("Rating must be a valid number between 1 and 5.", 400);
+      }
+    }
+
     await review.update({
-      rating: data.rating !== undefined ? Number(data.rating) : review.rating,
-      comment: data.comment !== undefined ? data.comment : review.comment,
+      rating: data.rating !== undefined ? Math.round(Number(data.rating)) : review.rating,
+      comment: data.comment !== undefined ? (typeof data.comment === "string" ? data.comment.trim() : review.comment) : review.comment,
       design_quality_rating: data.design_quality !== undefined ? Number(data.design_quality) : review.design_quality_rating,
       punctuality_rating: data.punctuality !== undefined ? Number(data.punctuality) : review.punctuality_rating,
       professionalism_rating: data.professionalism !== undefined ? Number(data.professionalism) : review.professionalism_rating
@@ -187,6 +209,9 @@ class ReviewService {
   }
 
   async addReply(userId, reviewId, replyText) {
+    if (!replyText || typeof replyText !== "string" || replyText.trim().length === 0) {
+      throw new AppError("Reply text cannot be empty", 400);
+    }
     const review = await db.Review.findByPk(reviewId);
     if (!review) throw new AppError("Review not found", 404);
 
@@ -195,10 +220,17 @@ class ReviewService {
       throw new AppError("Unauthorized to reply to this review", 403);
     }
 
+    const trimmed = replyText.trim();
+    const existingReply = await db.ReviewReply.findOne({ where: { review_id: reviewId, artist_id: artist.id } });
+    if (existingReply) {
+      await existingReply.update({ reply_text: trimmed });
+      return existingReply;
+    }
+
     return await db.ReviewReply.create({
       review_id: reviewId,
       artist_id: artist.id,
-      reply_text: replyText
+      reply_text: trimmed
     });
   }
 
@@ -239,54 +271,14 @@ class ReviewService {
     return await review.reload();
   }
 
-  async seedDummyReviewsIfEmpty(artist) {
-    const reviews = await db.Review.findAll({ where: { artist_id: artist.id } });
-    if (!reviews || reviews.length === 0) {
-      const users = await db.User.findAll({ limit: 5 });
-      const clientIds = users.filter(u => u.role !== "ARTIST" && u.role !== "ADMIN").map(u => u.id);
-      
-      const id1 = clientIds[0] || 2;
-      const id2 = clientIds[1] || 3;
-      const id3 = clientIds[2] || 4;
-
-      await db.Review.bulkCreate([
-        {
-          artist_id: artist.id,
-          user_id: id1,
-          rating: 5,
-          comment: "Absolutely stunning bridal mehndi! She was very professional, patient and creative.",
-          createdAt: new Date(Date.now() - 3600000 * 24 * 3)
-        },
-        {
-          artist_id: artist.id,
-          user_id: id2,
-          rating: 4,
-          comment: "Beautiful intricate design work and gorgeous dark henna color. Excellent service!",
-          createdAt: new Date(Date.now() - 3600000 * 24 * 7)
-        },
-        {
-          artist_id: artist.id,
-          user_id: id3,
-          rating: 5,
-          comment: "Very punctual, friendly and polite. The designs were modern and clean. Will book again!",
-          createdAt: new Date(Date.now() - 3600000 * 24 * 10)
-        }
-      ]);
-
-      await this.recalculateArtistRating(artist.id);
-    }
-  }
-
   async getArtistReviews(userId) {
     const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
     if (!artist) throw new AppError("Artist profile not found", 404);
 
-    await this.seedDummyReviewsIfEmpty(artist);
-
     return await db.Review.findAll({
       where: { artist_id: artist.id },
       include: [
-        { model: db.User, as: "user", attributes: ["name"] },
+        { model: db.User, as: "user", attributes: ["name", "profile_image"] },
         { model: db.ReviewReply, as: "replies" }
       ],
       order: [["createdAt", "DESC"]]
@@ -297,11 +289,9 @@ class ReviewService {
     const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
     if (!artist) throw new AppError("Artist profile not found", 404);
 
-    await this.seedDummyReviewsIfEmpty(artist);
-
     const reviews = await db.Review.findAll({ where: { artist_id: artist.id } });
     const total = reviews.length;
-    const avg = total > 0 ? reviews.reduce((sum, r) => sum + r.rating, 0) / total : 4.8;
+    const avg = total > 0 ? (reviews.reduce((sum, r) => sum + r.rating, 0) / total).toFixed(1) : "0.0";
 
     const counts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
     reviews.forEach((r) => {
@@ -310,9 +300,48 @@ class ReviewService {
 
     return {
       totalReviews: total,
-      averageRating: avg.toFixed(1),
+      averageRating: avg,
       breakdown: counts
     };
+  }
+
+  async getMyReviews(userId) {
+    if (!userId) {
+      throw new AppError("User ID is required", 400);
+    }
+    return await db.Review.findAll({
+      where: { user_id: userId },
+      include: [
+        {
+          model: db.ArtistProfile,
+          as: "artist",
+          include: [
+            {
+              model: db.User,
+              as: "user",
+              attributes: ["id", "name", "profile_image", "phone", "gender"]
+            }
+          ]
+        },
+        {
+          model: db.Booking,
+          as: "booking",
+          include: [
+            {
+              model: db.Service,
+              as: "service",
+              required: false
+            }
+          ]
+        },
+        {
+          model: db.ReviewReply,
+          as: "replies",
+          required: false
+        }
+      ],
+      order: [["createdAt", "DESC"]]
+    });
   }
 }
 

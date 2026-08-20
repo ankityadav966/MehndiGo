@@ -93,19 +93,23 @@ export default function PaymentScreen({ route, navigation }) {
     const targetBookingId = activeBookingId || bookingId;
 
     try {
+      if (!data?.razorpay_order_id || !data?.razorpay_payment_id || !data?.razorpay_signature) {
+        throw new Error("Missing authentic Razorpay payment signature details.");
+      }
+
       const verifyData = {
         bookingId: targetBookingId,
-        razorpay_order_id: data?.razorpay_order_id || activeSession?.order_id || orderId,
-        razorpay_payment_id: data?.razorpay_payment_id || `pay_${Date.now()}`,
-        razorpay_signature: data?.razorpay_signature || "verified_signature",
+        razorpay_order_id: data.razorpay_order_id || activeSession?.order_id || orderId,
+        razorpay_payment_id: data.razorpay_payment_id,
+        razorpay_signature: data.razorpay_signature,
         isSettlement: Boolean(isSettlement)
       };
 
       console.log("[PAYMENT_SCREEN] Verifying payment with backend:", JSON.stringify(verifyData, null, 2));
-      try {
-        await verifyPaymentSignature(verifyData);
-      } catch (apiErr) {
-        console.warn("[PAYMENT_SCREEN] Verification API call warning:", apiErr.message);
+      const verifyResult = await verifyPaymentSignature(verifyData);
+
+      if (!verifyResult || (verifyResult.success === false && !verifyResult.already_processed)) {
+        throw new Error(verifyResult?.message || "Payment verification failed on backend.");
       }
 
       setLoading(false);
@@ -143,8 +147,7 @@ export default function PaymentScreen({ route, navigation }) {
       setLoading(false);
       setProcessingModalVisible(false);
       console.error("[PAYMENT_SCREEN] Verification error:", verifyErr.message);
-      Alert.alert("Verification Notice", "We are validating your transaction. Check your booking details.");
-      navigation.navigate("BookingDetails", { bookingId: targetBookingId });
+      Alert.alert("Payment Verification Notice", verifyErr.message || "We could not verify your payment. If amount was deducted, it will automatically update shortly.");
     }
   };
 
@@ -161,34 +164,6 @@ export default function PaymentScreen({ route, navigation }) {
     setRazorpayModalVisible(false);
     setProcessingModalVisible(false);
     setLoading(false);
-  };
-
-  // FULLY VERIFIED TEST PAYMENT FOR DEVELOPMENT / SIMULATORS
-  const handleSimulateTestPayment = async () => {
-    const targetBookingId = activeBookingId || bookingId;
-    if (!targetBookingId) {
-      Alert.alert("Error", "No active booking found for test payment.");
-      return;
-    }
-
-    if (loading) return;
-    setLoading(true);
-    setProcessingModalVisible(true);
-    try {
-      const testPaymentData = {
-        razorpay_order_id: orderId || `order_test_${Date.now()}`,
-        razorpay_payment_id: `pay_test_${Date.now()}`,
-        razorpay_signature: "test_verified_signature"
-      };
-
-      await handlePaymentSuccess(testPaymentData, {
-        order_id: testPaymentData.razorpay_order_id
-      });
-    } catch (e) {
-      setLoading(false);
-      setProcessingModalVisible(false);
-      Alert.alert("Test Payment Error", e.message);
-    }
   };
 
   // CASH PAYMENT SELECTION
@@ -462,18 +437,6 @@ export default function PaymentScreen({ route, navigation }) {
               Your advance payment is held safely in escrow and released to the artist only after service completion.
             </Text>
           </View>
-        </View>
-
-        {/* 5. Developer Test Simulator Button (Discreet) */}
-        <View style={styles.devContainer}>
-          <TouchableOpacity
-            style={styles.devTestBtn}
-            onPress={handleSimulateTestPayment}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="flash-outline" size={14} color="#6B7280" />
-            <Text style={styles.devTestText}>Simulate Verified Payment (Preview)</Text>
-          </TouchableOpacity>
         </View>
 
         <View style={{ height: 100 }} />
@@ -769,24 +732,6 @@ const styles = StyleSheet.create({
     color: "#047857",
     marginTop: 2,
     lineHeight: 15
-  },
-  devContainer: {
-    marginTop: 20,
-    alignItems: "center"
-  },
-  devTestBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: "#F3F4F6"
-  },
-  devTestText: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: "#6B7280"
   },
   bottomBar: {
     position: "absolute",

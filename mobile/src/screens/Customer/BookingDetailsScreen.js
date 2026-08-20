@@ -8,7 +8,9 @@ import {
   Modal,
   Text,
   TextInput,
-  TouchableOpacity
+  TouchableOpacity,
+  KeyboardAvoidingView,
+  Platform
 } from "react-native";
 import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -329,156 +331,162 @@ export default function BookingDetailsScreen({ route, navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* 1. Header with Status Pill */}
-      <BookingStatusHeader
-        bookingCode={booking?.booking_code || booking?.booking_number || booking?.id}
-        status={rawStatus}
-        onBack={() => navigation.goBack()}
-        onSupport={() => setDisputeModalVisible(true)}
-      />
-
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#E91E63" />}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        {/* 2. Step Progression Timeline */}
-        <BookingTimeline status={rawStatus} isCancelled={isCancelled} />
-
-        {/* 3. Live Tracking Card (Only when ARTIST_ON_THE_WAY) */}
-        {isOnTheWay && (
-          <LiveTrackingCard
-            artistCoords={artistCoords}
-            customerCoords={customerCoords}
-            distanceText={distanceText}
-            etaText={etaText}
-            statusText="Artist is driving to your location"
-            onExpand={() => navigation.navigate("LiveTracking", { bookingId: booking.id })}
-          />
-        )}
-
-        {/* 4. Check-In OTP Card (Only before check-in is verified) */}
-        {(isArrived || isAccepted) && !isCheckInVerified && booking?.checkin_otp && (
-          <OtpVerificationCard
-            otpCode={booking.checkin_otp}
-            isArtist={false}
-            otpType="CHECKIN"
-          />
-        )}
-
-        {/* 4b. Check-Out Completion PIN Card (When Checkout is active) */}
-        {isCheckout && booking?.checkout_otp && (
-          <OtpVerificationCard
-            otpCode={booking.checkout_otp}
-            isArtist={false}
-            otpType="CHECKOUT"
-          />
-        )}
-
-        {/* 5. During Service Active Dashboard */}
-        {isServiceActive && !isCheckout && (
-          <ServiceProgressCard
-            startTime={booking?.service_started_at || booking?.service_start_time || booking?.checked_in_at || booking?.updated_at || booking?.updatedAt}
-            isArtist={false}
-            serviceName={booking?.service_name || booking?.package_name || "Mehndi Service"}
-            estimatedDurationMinutes={booking?.duration_minutes || 60}
-          />
-        )}
-
-        {/* 6. Checkout / Remaining Payment Card */}
-        {(isCheckout || (isCompleted && booking?.remaining_amount > 0 && booking?.payment_status !== "PAID")) && (
-          <CheckoutCard
-            booking={booking}
-            isArtist={false}
-            onPayOnline={handlePayRemainingOnline}
-            onPayCash={handlePayRemainingCash}
-          />
-        )}
-
-        {/* 7. Quick Chat & Call Banner */}
-        {!isCancelled && !isCompleted && (
-          <BookingChatCard
-            otherPartyName={booking?.artist_name || booking?.artist?.user?.name || "Mehndi Artist"}
-            phone={booking?.artist_phone || booking?.artist?.user?.phone}
-            onOpenChat={() => navigation.navigate("ChatRoom", {
-              bookingId: booking.id,
-              receiverId: booking.artist_id || booking.artist?.id,
-              receiverName: booking?.artist_name || booking?.artist?.user?.name || "Mehndi Artist",
-              receiverImage: booking?.artist_image || booking?.artist?.user?.profile_image
-            })}
-          />
-        )}
-
-        {/* 8. Booking Summary Card (Artist, Service, Date/Time, Coverage) */}
-        <BookingSummaryCard
-          booking={booking}
-          isArtistView={false}
-          onViewProfile={() => {
-            if (booking?.artist_id || booking?.artist?.id) {
-              navigation.navigate("ArtistProfile", { artistId: booking.artist_id || booking.artist?.id });
-            }
-          }}
+        {/* 1. Header with Status Pill */}
+        <BookingStatusHeader
+          bookingCode={booking?.booking_code || booking?.booking_number || booking?.id}
+          status={rawStatus}
+          onBack={() => navigation.goBack()}
+          onSupport={() => setDisputeModalVisible(true)}
         />
 
-        {/* 9. Location Details Card */}
-        <BookingLocationCard
-          address={booking?.address}
-          landmark={booking?.landmark}
-          city={booking?.city}
-          pincode={booking?.pincode}
-          latitude={booking?.latitude}
-          longitude={booking?.longitude}
-        />
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#E91E63" />}
+        >
+          {/* 2. Step Progression Timeline */}
+          <BookingTimeline status={rawStatus} isCancelled={isCancelled} />
 
-        {/* 10. Financial Amount Breakdown */}
-        <BookingAmountCard booking={booking} />
-
-        {/* 11. Completed State Actions: Invoice & Review */}
-        {isCompleted && (
-          <View style={styles.completedActionsContainer}>
-            <TouchableOpacity
-              style={styles.invoiceBtn}
-              onPress={() => setInvoiceVisible(true)}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="document-text-outline" size={18} color="#701DDB" style={{ marginRight: 6 }} />
-              <Text style={styles.invoiceBtnText}>View Official Invoice</Text>
-            </TouchableOpacity>
-
-            <ReviewCard
-              artistName={booking?.artist_name || booking?.artist?.user?.name || "Artist"}
-              onSubmitReview={handleSubmitReview}
-              loading={reviewSubmitting}
-              existingReview={booking?.review}
+          {/* 3. Live Tracking Card (Only when ARTIST_ON_THE_WAY) */}
+          {isOnTheWay && (
+            <LiveTrackingCard
+              artistCoords={artistCoords}
+              customerCoords={customerCoords}
+              distanceText={distanceText}
+              etaText={etaText}
+              statusText="Artist is driving to your location"
+              onExpand={() => navigation.navigate("LiveTracking", { bookingId: booking.id })}
             />
-          </View>
-        )}
+          )}
 
-        {/* 12. Pre-Service Customer Actions (Reschedule / Cancel) */}
-        {(isPending || isAccepted) && (
-          <View style={styles.preServiceActionRow}>
-            <TouchableOpacity
-              style={styles.rescheduleBtn}
-              onPress={() => setRescheduleModalVisible(true)}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="calendar-outline" size={16} color="#701DDB" />
-              <Text style={styles.rescheduleBtnText}>Reschedule</Text>
-            </TouchableOpacity>
+          {/* 4. Check-In OTP Card (Only when artist has legitimately arrived) */}
+          {isArrived && !isCheckInVerified && (booking?.checkin_otp || booking?.check_in_otp) && (
+            <OtpVerificationCard
+              otpCode={booking.checkin_otp || booking.check_in_otp}
+              isArtist={false}
+              otpType="CHECKIN"
+            />
+          )}
 
-            <TouchableOpacity
-              style={styles.cancelBtn}
-              onPress={() => setCancelModalVisible(true)}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="close-circle-outline" size={16} color="#DC2626" />
-              <Text style={styles.cancelBtnText}>Cancel Booking</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+          {/* 4b. Check-Out Completion PIN Card (When Checkout is active) */}
+          {isCheckout && (booking?.checkout_otp || booking?.check_out_otp) && (
+            <OtpVerificationCard
+              otpCode={booking.checkout_otp || booking.check_out_otp}
+              isArtist={false}
+              otpType="CHECKOUT"
+            />
+          )}
 
-        <View style={{ height: 40 }} />
-      </ScrollView>
+          {/* 5. During Service Active Dashboard */}
+          {isServiceActive && !isCheckout && (
+            <ServiceProgressCard
+              startTime={booking?.service_started_at || booking?.check_in_time || booking?.checked_in_at || booking?.service_start_time}
+              isArtist={false}
+              serviceName={booking?.service_name || booking?.package_name || "Mehndi Service"}
+              estimatedDurationMinutes={booking?.duration_minutes || 60}
+            />
+          )}
+
+          {/* 6. Checkout / Remaining Payment Card */}
+          {(isCheckout || (isCompleted && booking?.remaining_amount > 0 && booking?.payment_status !== "PAID")) && (
+            <CheckoutCard
+              booking={booking}
+              isArtist={false}
+              onPayOnline={handlePayRemainingOnline}
+              onPayCash={handlePayRemainingCash}
+            />
+          )}
+
+          {/* 7. Quick Chat & Call Banner */}
+          {!isCancelled && !isCompleted && (
+            <BookingChatCard
+              otherPartyName={booking?.artist_name || booking?.artist?.user?.name || "Mehndi Artist"}
+              phone={booking?.artist_phone || booking?.artist?.user?.phone}
+              onOpenChat={() => navigation.navigate("ChatRoom", {
+                bookingId: booking.id,
+                receiverId: booking.artist_id || booking.artist?.id,
+                receiverName: booking?.artist_name || booking?.artist?.user?.name || "Mehndi Artist",
+                receiverImage: booking?.artist_image || booking?.artist?.user?.profile_image
+              })}
+            />
+          )}
+
+          {/* 8. Booking Summary Card (Artist, Service, Date/Time, Coverage) */}
+          <BookingSummaryCard
+            booking={booking}
+            isArtistView={false}
+            onViewProfile={() => {
+              if (booking?.artist_id || booking?.artist?.id) {
+                navigation.navigate("ArtistProfile", { artistId: booking.artist_id || booking.artist?.id });
+              }
+            }}
+          />
+
+          {/* 9. Location Details Card */}
+          <BookingLocationCard
+            address={booking?.address}
+            landmark={booking?.landmark}
+            city={booking?.city}
+            pincode={booking?.pincode}
+            latitude={booking?.latitude}
+            longitude={booking?.longitude}
+          />
+
+          {/* 10. Financial Amount Breakdown */}
+          <BookingAmountCard booking={booking} />
+
+          {/* 11. Completed State Actions: Invoice & Review */}
+          {isCompleted && (
+            <View style={styles.completedActionsContainer}>
+              <TouchableOpacity
+                style={styles.invoiceBtn}
+                onPress={() => setInvoiceVisible(true)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="document-text-outline" size={17} color="#701DDB" style={{ marginRight: 6 }} />
+                <Text style={styles.invoiceBtnText}>View Official Invoice</Text>
+              </TouchableOpacity>
+
+              <ReviewCard
+                artistName={booking?.artist_name || booking?.artist?.user?.name || "Artist"}
+                onSubmitReview={handleSubmitReview}
+                loading={reviewSubmitting}
+                existingReview={booking?.review}
+              />
+            </View>
+          )}
+
+          {/* 12. Pre-Service Customer Actions (Reschedule / Cancel) */}
+          {(isPending || isAccepted) && (
+            <View style={styles.preServiceActionRow}>
+              <TouchableOpacity
+                style={styles.rescheduleBtn}
+                onPress={() => setRescheduleModalVisible(true)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="calendar-outline" size={15} color="#701DDB" />
+                <Text style={styles.rescheduleBtnText}>Reschedule</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => setCancelModalVisible(true)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="close-circle-outline" size={15} color="#DC2626" />
+                <Text style={styles.cancelBtnText}>Cancel Booking</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          <View style={{ height: 40 }} />
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* Invoice Modal */}
       <InvoiceCard
@@ -489,7 +497,10 @@ export default function BookingDetailsScreen({ route, navigation }) {
 
       {/* Cancel Booking Modal */}
       <Modal visible={cancelModalVisible} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
           <View style={styles.modalBox}>
             <Text style={styles.modalTitle}>Cancel Booking?</Text>
             <Text style={styles.modalDesc}>
@@ -528,12 +539,15 @@ export default function BookingDetailsScreen({ route, navigation }) {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Reschedule Modal */}
       <Modal visible={rescheduleModalVisible} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
           <View style={styles.modalBoxLarge}>
             <Text style={styles.modalTitle}>Reschedule Appointment</Text>
             <Text style={styles.modalDesc}>Select a new date and time slot for your appointment.</Text>
@@ -574,12 +588,15 @@ export default function BookingDetailsScreen({ route, navigation }) {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Dispute Modal */}
       <Modal visible={disputeModalVisible} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
           <View style={styles.modalBox}>
             <Text style={styles.modalTitle}>Report an Issue / Dispute</Text>
             <Text style={styles.modalDesc}>Let us know if there is an issue with your artist or appointment.</Text>
@@ -616,7 +633,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
@@ -663,7 +680,7 @@ const styles = StyleSheet.create({
   },
   preServiceActionRow: {
     flexDirection: "row",
-    gap: 12,
+    gap: 10,
     marginHorizontal: 16,
     marginTop: 14
   },
@@ -673,9 +690,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#F3E8FF",
-    height: 46,
+    height: 44,
     borderRadius: 12,
-    gap: 6
+    gap: 4
   },
   rescheduleBtnText: {
     fontSize: 13,
@@ -688,9 +705,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#FEE2E2",
-    height: 46,
+    height: 44,
     borderRadius: 12,
-    gap: 6
+    gap: 4
   },
   cancelBtnText: {
     fontSize: 13,
@@ -744,7 +761,7 @@ const styles = StyleSheet.create({
   },
   modalCancelBtn: {
     flex: 1,
-    height: 46,
+    height: 44,
     borderRadius: 12,
     backgroundColor: "#F3F4F6",
     justifyContent: "center",
@@ -757,7 +774,7 @@ const styles = StyleSheet.create({
   },
   modalConfirmCancelBtn: {
     flex: 1,
-    height: 46,
+    height: 44,
     borderRadius: 12,
     backgroundColor: "#DC2626",
     justifyContent: "center",
@@ -770,7 +787,7 @@ const styles = StyleSheet.create({
   },
   modalConfirmRescheduleBtn: {
     flex: 1,
-    height: 46,
+    height: 44,
     borderRadius: 12,
     backgroundColor: "#E91E63",
     justifyContent: "center",
@@ -783,7 +800,7 @@ const styles = StyleSheet.create({
   },
   modalDisputeBtn: {
     flex: 1,
-    height: 46,
+    height: 44,
     borderRadius: 12,
     backgroundColor: "#701DDB",
     justifyContent: "center",

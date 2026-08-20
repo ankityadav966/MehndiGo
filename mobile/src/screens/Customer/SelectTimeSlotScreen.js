@@ -28,68 +28,47 @@ export default function SelectTimeSlotScreen({ route, navigation }) {
     const loadSlots = async () => {
       try {
         const rawData = await fetchArtistAvailability(artistId);
-        const slotsList = Array.isArray(rawData) ? rawData : (rawData?.slots || rawData?.data || []);
-
-        // Filter slots matching target date
-        let daySlots = (slotsList || []).filter((slot) => {
-          const sDate = slot.date || (slot.start_time ? moment(slot.start_time).format("YYYY-MM-DD") : null);
-          return sDate === targetDate;
-        });
+        const slotsList = Array.isArray(rawData)
+          ? rawData
+          : (rawData?.smart_slots || rawData?.slots || rawData?.data || []);
 
         const isToday = moment(targetDate).isSame(moment(), "day");
         const now = moment();
-        // Buffer: 30 minutes to allow artist preparation and travel
         const bufferMinutes = 30;
 
         const parseSlotMoment = (timeStr, dateStr) => {
           if (!timeStr) return null;
-          // Try parsing formatted string like "09:00 AM" or ISO timestamp
-          const m = moment(`${dateStr} ${timeStr}`, ["YYYY-MM-DD hh:mm A", "YYYY-MM-DD h:mm A", "YYYY-MM-DD HH:mm:ss", "YYYY-MM-DD HH:mm"]);
+          const m = moment(`${dateStr} ${timeStr}`, [
+            "YYYY-MM-DD hh:mm A",
+            "YYYY-MM-DD h:mm A",
+            "YYYY-MM-DD HH:mm:ss",
+            "YYYY-MM-DD HH:mm"
+          ]);
           return m.isValid() ? m : null;
         };
 
-        // Standard 6 dynamic slots throughout the day if none from backend or to supplement
-        const standardTimes = [
-          "08:00 AM",
-          "10:30 AM",
-          "01:00 PM",
-          "03:30 PM",
-          "06:00 PM",
-          "08:30 PM"
-        ];
-
-        if (!daySlots || daySlots.length === 0) {
-          daySlots = standardTimes.map((t, idx) => {
-            const slotMoment = parseSlotMoment(t, targetDate);
-            const isPast = isToday && slotMoment && slotMoment.clone().subtract(bufferMinutes, "minutes").isBefore(now);
-            return {
-              id: `def_${targetDate}_${idx}`,
-              artist_id: artistId,
-              date: targetDate,
-              time_slot: t,
-              slot_time: t,
-              is_available: !isPast,
-              status: isPast ? "past" : "available"
-            };
-          });
-        } else {
-          // Process slots returned from artist schedule / backend
-          daySlots = daySlots.map((slot, idx) => {
-            const timeLabel = slot.time_slot || slot.slot_time || (slot.start_time ? moment(slot.start_time).format("hh:mm A") : "10:00 AM");
+        // Filter and process only real slots returned by the backend
+        let daySlots = (slotsList || [])
+          .filter((slot) => {
+            const sDate = slot.date || (slot.start_time ? moment(slot.start_time).format("YYYY-MM-DD") : null);
+            return !sDate || sDate === targetDate;
+          })
+          .map((slot, idx) => {
+            const timeLabel = slot.label || slot.time_slot || slot.slot_time || (slot.start_time ? moment(slot.start_time).format("hh:mm A") : "10:00 AM");
             const slotMoment = parseSlotMoment(timeLabel, targetDate) || (slot.start_time ? moment(slot.start_time) : null);
             const isPast = isToday && slotMoment && slotMoment.clone().subtract(bufferMinutes, "minutes").isBefore(now);
             const isBooked = slot.is_booked || slot.status === "booked";
+            const backendAvailable = slot.is_available !== false;
 
             return {
               ...slot,
               id: slot.id || `slot_${targetDate}_${idx}`,
               time_slot: timeLabel,
               slot_time: timeLabel,
-              is_available: !isPast && !isBooked,
-              status: isBooked ? "booked" : (isPast ? "past" : "available")
+              is_available: backendAvailable && !isPast && !isBooked,
+              status: isBooked ? "booked" : (isPast ? "past" : (backendAvailable ? "available" : "unavailable"))
             };
           });
-        }
 
         setAvailableSlots(daySlots);
 
@@ -179,7 +158,20 @@ export default function SelectTimeSlotScreen({ route, navigation }) {
             Select exactly 1 time slot for your mehndi session:
           </Text>
 
-          {isToday && availableSlots.length > 0 && !availableSlots.some(s => s.is_available) ? (
+          {availableSlots.length === 0 ? (
+            <View style={styles.noSlotsCard}>
+              <Ionicons name="calendar-outline" size={28} color={Colors.primary} />
+              <Text style={styles.noSlotsTitle}>No slots available for this date</Text>
+              <Text style={styles.noSlotsSub}>The artist is currently unavailable, on leave, or has no booking slots for this date.</Text>
+              <TouchableOpacity
+                style={styles.pickTomorrowBtn}
+                onPress={() => navigation.goBack()}
+              >
+                <Ionicons name="arrow-back-circle" size={18} color={Colors.white} style={{ marginRight: 6 }} />
+                <Text style={styles.pickTomorrowBtnText}>Select Another Date</Text>
+              </TouchableOpacity>
+            </View>
+          ) : isToday && !availableSlots.some(s => s.is_available) ? (
             <View style={styles.noSlotsCard}>
               <Ionicons name="time-outline" size={28} color={Colors.primary} />
               <Text style={styles.noSlotsTitle}>No slots remaining today</Text>

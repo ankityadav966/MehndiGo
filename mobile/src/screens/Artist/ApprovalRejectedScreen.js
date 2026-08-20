@@ -1,14 +1,13 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import Colors from "../../constants/Colors";
+import { useArtistOnboarding } from "../../context/ArtistOnboardingContext";
+import { useAuth } from "../../context/AuthContext";
 
 export default function ApprovalRejectedScreen({ navigation }) {
-  const reasons = [
-    "Uploaded documents are unclear or blurry",
-    "Missing required information on documents",
-    "Aadhaar and PAN details do not match",
-    "Profile photo does not meet guidelines",
-  ];
+  const { rejectionReason } = useArtistOnboarding();
+  const { logout } = useAuth();
 
   return (
     <SafeAreaView style={styles.container}>
@@ -19,51 +18,44 @@ export default function ApprovalRejectedScreen({ navigation }) {
 
         <Text style={styles.title}>Application Rejected</Text>
         <Text style={styles.subtitle}>
-          Your artist application was not approved because document verification failed.
+          Your artist application was not approved during administrative verification.
         </Text>
 
         <View style={styles.reasonsCard}>
           <Text style={styles.reasonsTitle}>Reason for rejection:</Text>
-          {reasons.map((reason, index) => (
-            <View key={index} style={styles.reasonRow}>
-              <Ionicons name="close-circle" size={16} color="#EF4444" />
-              <Text style={styles.reasonText}>{reason}</Text>
-            </View>
-          ))}
+          <View style={styles.reasonRow}>
+            <Ionicons name="alert-circle" size={20} color="#EF4444" style={{ marginTop: 2 }} />
+            <Text style={styles.reasonText}>
+              {rejectionReason || "Uploaded documents were unclear or did not match registered details. Please re-submit with clear identity documents."}
+            </Text>
+          </View>
         </View>
 
         <Text style={styles.hint}>
-          Please reupload clear and valid documents for re-verification.
+          Please update and re-upload your verification documents. Once resubmitted, your profile will be re-evaluated for approval.
         </Text>
       </View>
 
       <View style={styles.footer}>
         <TouchableOpacity
           style={styles.primaryButton}
-          onPress={() => navigation.navigate("ReuploadDocuments")}
+          onPress={() => navigation.navigate("PersonalDetails")}
         >
-          <Text style={styles.primaryButtonText}>Reupload Documents</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.secondaryButton}
-          onPress={() => navigation.navigate("Support")}
-        >
-          <Text style={styles.secondaryButtonText}>Contact Support</Text>
+          <Text style={styles.primaryButtonText}>Update & Resubmit Profile</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.outlineButton}
-          onPress={() => navigation.navigate("Home")}
+          onPress={logout}
         >
-          <Text style={styles.outlineButtonText}>Back to Home</Text>
+          <Text style={styles.outlineButtonText}>Log Out</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
 }
 
-const PRIMARY = "#F7146B";
+const PRIMARY = "#FF4D6D";
 
 const styles = StyleSheet.create({
   container: {
@@ -88,12 +80,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: "700",
-    color: "#111",
+    color: "#111827",
     textAlign: "center",
   },
   subtitle: {
     fontSize: 14,
-    color: "#777",
+    color: "#6B7280",
     textAlign: "center",
     marginTop: 8,
     lineHeight: 22,
@@ -101,89 +93,72 @@ const styles = StyleSheet.create({
   },
   reasonsCard: {
     width: "100%",
-    backgroundColor: "#FFF",
-    borderRadius: 20,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
     padding: 20,
-    marginTop: 28,
-    elevation: 1,
+    marginTop: 24,
+    borderWidth: 1,
+    borderColor: "#FEE2E2",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.02,
-    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   reasonsTitle: {
     fontSize: 15,
     fontWeight: "700",
-    color: "#111",
-    marginBottom: 14,
+    color: "#991B1B",
+    marginBottom: 10,
   },
   reasonRow: {
     flexDirection: "row",
     alignItems: "flex-start",
-    marginBottom: 10,
   },
   reasonText: {
     fontSize: 14,
-    color: "#555",
+    color: "#374151",
     marginLeft: 10,
     flex: 1,
-    lineHeight: 20,
+    lineHeight: 22,
+    fontWeight: "500",
   },
   hint: {
     fontSize: 13,
-    color: "#999",
+    color: "#6B7280",
     textAlign: "center",
     marginTop: 20,
-    paddingHorizontal: 20,
+    paddingHorizontal: 15,
     lineHeight: 20,
   },
   footer: {
-    padding: 16,
-    gap: 10,
+    padding: 20,
+    gap: 12,
     backgroundColor: "#FFF8FA",
   },
   primaryButton: {
-    height: 56,
+    height: 52,
     backgroundColor: PRIMARY,
-    borderRadius: 16,
+    borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
-    elevation: 1,
-    shadowColor: PRIMARY,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.02,
-    shadowRadius: 2,
   },
   primaryButtonText: {
-    color: "#FFF",
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  secondaryButton: {
-    height: 56,
-    backgroundColor: "#FFF",
-    borderRadius: 16,
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1.5,
-    borderColor: PRIMARY,
-  },
-  secondaryButtonText: {
-    color: PRIMARY,
-    fontSize: 16,
+    color: "#FFFFFF",
+    fontSize: 15,
     fontWeight: "700",
   },
   outlineButton: {
-    height: 56,
-    borderRadius: 16,
+    height: 48,
+    borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
-    borderWidth: 1.5,
-    borderColor: "#CCC",
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
   },
   outlineButtonText: {
-    color: "#666",
-    fontSize: 16,
+    color: "#4B5563",
+    fontSize: 14,
     fontWeight: "600",
   },
 });

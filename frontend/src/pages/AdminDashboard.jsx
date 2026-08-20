@@ -1,6 +1,15 @@
 import React, { useState, useEffect } from "react";
 import { adminService } from "../services/api";
 import { Check, X, ShieldAlert, Users, Award, ShieldCheck, Eye, Calendar, DollarSign, MessageSquare, Bell, Send, Tag, Gift, TrendingUp, Plus, Trash, Grid, Star, LifeBuoy, HelpCircle, UserCheck, MessageCircle, AlertCircle, Clock, CheckCircle2, RefreshCw, Filter, Search, Phone, Mail, Image as ImageIcon } from "lucide-react";
+import {
+  formatAdminDate,
+  formatAdminDateTime,
+  formatAdminTime,
+  formatRelativeTime,
+  formatDateForInput,
+  isDateExpired,
+  getSafeTimestamp,
+} from "../utils/dateFormatter";
 
 const AdminDashboard = ({ showToast }) => {
   const [users, setUsers] = useState([]);
@@ -181,7 +190,7 @@ const AdminDashboard = ({ showToast }) => {
                 rMap.set(key, nr);
               }
             });
-            const merged = Array.from(rMap.values()).sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+            const merged = Array.from(rMap.values()).sort((a, b) => getSafeTimestamp(a.created_at || a.createdAt) - getSafeTimestamp(b.created_at || b.createdAt));
             return { ...prev, replies: merged };
           });
         }
@@ -205,27 +214,21 @@ const AdminDashboard = ({ showToast }) => {
 
       // Fetch tab-specific data
       if (activeTab === "pending") {
-        if (pendingArtists.length > 0) return;
         const pendingRes = await adminService.getPendingArtists();
         setPendingArtists(pendingRes.data || []);
       } else if (activeTab === "users") {
-        if (users.length > 0) return;
         const usersRes = await adminService.getUsers();
         setUsers(usersRes.data?.rows || usersRes.data || []);
       } else if (activeTab === "artists") {
-        if (artists.length > 0) return;
         const artistsRes = await adminService.getArtists();
         setArtists(artistsRes.data || []);
       } else if (activeTab === "bookings") {
-        if (bookings.length > 0) return;
         const bookingsRes = await adminService.getBookings();
         setBookings(bookingsRes.data || []);
       } else if (activeTab === "ledger") {
-        if (payments.length > 0) return;
         const paymentsRes = await adminService.getPayments();
         setPayments(paymentsRes.data || []);
       } else if (activeTab === "chats") {
-        if (chats.length > 0) return;
         const chatsRes = await adminService.getChats();
         setChats(chatsRes.data || []);
       } else if (activeTab === "reviews") {
@@ -1046,8 +1049,8 @@ const AdminDashboard = ({ showToast }) => {
                               <td style={{ padding: "0.75rem 0.5rem" }}>{b.user?.name}</td>
                               <td style={{ padding: "0.75rem 0.5rem", fontWeight: 600 }}>₹{b.total_price}</td>
                               <td style={{ padding: "0.75rem 0.5rem" }}>
-                                <span className={`badge badge-${b.booking_status.toLowerCase()}`}>
-                                  {b.booking_status}
+                                <span className={`badge badge-${(b.booking_status || "PENDING").toLowerCase()}`}>
+                                  {b.booking_status || "PENDING"}
                                 </span>
                               </td>
                             </tr>
@@ -1083,7 +1086,7 @@ const AdminDashboard = ({ showToast }) => {
                             <td style={{ padding: "0.75rem 0.5rem" }}>{tx.booking?.artist?.user?.name || "N/A"}</td>
                             <td style={{ padding: "0.75rem 0.5rem", color: "var(--success-color)", fontWeight: 700 }}>₹{tx.amount}</td>
                             <td style={{ padding: "0.75rem 0.5rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>
-                              {new Date(tx.createdAt).toLocaleString()}
+                              {formatAdminDateTime(tx.created_at || tx.createdAt || tx)}
                             </td>
                           </tr>
                         ))}
@@ -1103,50 +1106,61 @@ const AdminDashboard = ({ showToast }) => {
                 </p>
 
                 {pendingArtists.length === 0 ? (
-                  <div className="glass-panel" style={{ padding: "4rem", textAlign: "center", color: "var(--text-secondary)" }}>
+                  <div className="glass-panel" style={{ padding: "3rem 2rem", textAlign: "center", color: "var(--text-secondary)" }}>
                     <ShieldCheck style={{ width: "48px", height: "48px", color: "var(--success-color)", margin: "0 auto 1rem" }} />
-                    <h3>All Clear!</h3>
-                    <p style={{ marginTop: "0.25rem" }}>There are no pending verification requests at this time.</p>
+                    <h3 style={{ color: "var(--text-primary)" }}>All Artist Requests Processed!</h3>
+                    <p style={{ marginTop: "0.5rem", marginBottom: "1.5rem" }}>
+                      There are no new unverified artist requests in the queue. All registered artists are currently verified and active.
+                    </p>
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => setActiveTab("artists")}
+                      style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", margin: "0 auto" }}
+                    >
+                      <Award style={{ width: "16px" }} /> View All {stats.totalArtists || "Registered"} Artists Directory
+                    </button>
                   </div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
                     {pendingArtists.map((artist) => (
-                      <div key={artist.id} className="glass-panel" style={{ padding: "2rem" }}>
+                      <div key={artist.id || artist.user_id} className="glass-panel" style={{ padding: "2rem" }}>
                         <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "1rem", marginBottom: "1rem" }}>
                           <div>
-                            <h3 style={{ fontWeight: 700 }}>{artist.user?.name}</h3>
+                            <h3 style={{ fontWeight: 700 }}>{artist.full_name || artist.user?.name || artist.name || "Artist"}</h3>
                             <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>
-                              Email: {artist.user?.email || "N/A"}
+                              Email: {artist.email || artist.user?.email || "N/A"} | Phone: {artist.phone || artist.user?.phone || "N/A"}
                             </p>
                             <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>
-                              Experience: {artist.experience_years} Years
+                              Experience: {artist.experience_years || 0} Years | Starting Price: ₹{artist.starting_price || 0}
                             </p>
                             <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>
-                              Address: {artist.location}, {artist.city}, {artist.state} ({artist.pincode})
+                              Location: {artist.city || artist.locality || "N/A"} {artist.state ? `, ${artist.state}` : ""}
                             </p>
                           </div>
 
                           <div style={{ display: "flex", gap: "0.5rem", alignSelf: "flex-start" }}>
-                            <button className="btn btn-primary" onClick={() => handleApprove(artist.id)}>
+                            <button className="btn btn-primary" onClick={() => handleApprove(artist.id || artist.user_id)}>
                               <Check style={{ width: "16px" }} /> Approve Verification
                             </button>
-                            <button className="btn btn-danger" onClick={() => setRejectId(artist.id)}>
+                            <button className="btn btn-danger" onClick={() => setRejectId(artist.id || artist.user_id)}>
                               <X style={{ width: "16px" }} /> Reject Profile
                             </button>
                           </div>
                         </div>
 
-                        <div style={{ background: "var(--bg-primary)", padding: "1rem", borderRadius: "10px", marginBottom: "1.5rem" }}>
-                          <span style={{ fontWeight: 600, fontSize: "0.85rem", color: "var(--text-secondary)" }}>Professional Bio:</span>
-                          <p style={{ marginTop: "0.25rem", fontSize: "0.95rem" }}>{artist.bio}</p>
-                        </div>
+                        {artist.bio && (
+                          <div style={{ background: "var(--bg-primary)", padding: "1rem", borderRadius: "10px", marginBottom: "1.5rem" }}>
+                            <span style={{ fontWeight: 600, fontSize: "0.85rem", color: "var(--text-secondary)" }}>Professional Bio:</span>
+                            <p style={{ marginTop: "0.25rem", fontSize: "0.95rem" }}>{artist.bio}</p>
+                          </div>
+                        )}
 
                         <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
                           <div>
                             <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "0.5rem" }}>
                               Aadhaar Front Copy
                             </div>
-                            <button className="btn btn-secondary" onClick={() => setViewDoc(artist.aadhaar_front)}>
+                            <button className="btn btn-secondary" onClick={() => setViewDoc(artist.aadhaar_front || artist.profile_image)}>
                               <Eye style={{ width: "16px" }} /> View Aadhaar Front
                             </button>
                           </div>
@@ -1155,7 +1169,7 @@ const AdminDashboard = ({ showToast }) => {
                             <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "0.5rem" }}>
                               Aadhaar Back Copy
                             </div>
-                            <button className="btn btn-secondary" onClick={() => setViewDoc(artist.aadhaar_back)}>
+                            <button className="btn btn-secondary" onClick={() => setViewDoc(artist.aadhaar_back || artist.profile_image)}>
                               <Eye style={{ width: "16px" }} /> View Aadhaar Back
                             </button>
                           </div>
@@ -1164,7 +1178,7 @@ const AdminDashboard = ({ showToast }) => {
                             <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "0.5rem" }}>
                               Selfie Verification
                             </div>
-                            <button className="btn btn-secondary" onClick={() => setViewDoc(artist.selfie_image)}>
+                            <button className="btn btn-secondary" onClick={() => setViewDoc(artist.selfie_image || artist.profile_image)}>
                               <Eye style={{ width: "16px" }} /> View Selfie Image
                             </button>
                           </div>
@@ -1186,21 +1200,21 @@ const AdminDashboard = ({ showToast }) => {
                       <tr style={{ borderBottom: "2px solid var(--border-color)" }}>
                         <th style={{ padding: "1rem" }}>User ID</th>
                         <th style={{ padding: "1rem" }}>Name</th>
-
                         <th style={{ padding: "1rem" }}>Email</th>
-                        <th style={{ padding: "1rem" }}>Verified</th>
+                        <th style={{ padding: "1rem" }}>Phone</th>
+                        <th style={{ padding: "1rem" }}>Role</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {users.map((u) => (
+                      {(users || []).map((u) => (
                         <tr key={u.id} style={{ borderBottom: "1px solid var(--border-color)" }}>
                           <td style={{ padding: "1rem" }}>#{u.id}</td>
-                          <td style={{ padding: "1rem", fontWeight: 600 }}>{u.name}</td>
-
+                          <td style={{ padding: "1rem", fontWeight: 600 }}>{u.full_name || u.name || "Customer"}</td>
                           <td style={{ padding: "1rem" }}>{u.email || "N/A"}</td>
+                          <td style={{ padding: "1rem" }}>{u.phone || "N/A"}</td>
                           <td style={{ padding: "1rem" }}>
-                            <span className={`badge ${u.is_verified ? "badge-success" : "badge-secondary"}`}>
-                              {u.is_verified ? "Yes" : "No"}
+                            <span className="badge badge-primary">
+                              {String(u.role || "USER").toUpperCase()}
                             </span>
                           </td>
                         </tr>
@@ -1214,34 +1228,70 @@ const AdminDashboard = ({ showToast }) => {
             {/* Tab 3: Artist Directory */}
             {activeTab === "artists" && (
               <div>
-                <h1 style={{ fontSize: "2rem", fontWeight: 800, marginBottom: "2rem" }}>Artist Directory</h1>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+                  <div>
+                    <h1 style={{ fontSize: "2rem", fontWeight: 800 }}>Artist Directory</h1>
+                    <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem" }}>
+                      Manage all registered mehndi artists, view profiles, and update status.
+                    </p>
+                  </div>
+                  <span className="badge badge-primary" style={{ fontSize: "0.9rem", padding: "0.4rem 0.8rem" }}>
+                    Total: {artists.length} Artists
+                  </span>
+                </div>
                 <div className="glass-panel" style={{ padding: "1.5rem", overflowX: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
                     <thead>
                       <tr style={{ borderBottom: "2px solid var(--border-color)" }}>
                         <th style={{ padding: "1rem" }}>Profile ID</th>
-                        <th style={{ padding: "1rem" }}>Name</th>
+                        <th style={{ padding: "1rem" }}>Artist Name</th>
+                        <th style={{ padding: "1rem" }}>Contact</th>
                         <th style={{ padding: "1rem" }}>Experience</th>
                         <th style={{ padding: "1rem" }}>Location</th>
                         <th style={{ padding: "1rem" }}>Rating</th>
-                        <th style={{ padding: "1rem" }}>Verification</th>
+                        <th style={{ padding: "1rem" }}>Status</th>
+                        <th style={{ padding: "1rem" }}>Action</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {artists.map((a) => (
-                        <tr key={a.id} style={{ borderBottom: "1px solid var(--border-color)" }}>
-                          <td style={{ padding: "1rem" }}>#{a.id}</td>
-                          <td style={{ padding: "1rem", fontWeight: 600 }}>{a.user?.name || "N/A"}</td>
-                          <td style={{ padding: "1rem" }}>{a.experience_years} Years</td>
-                          <td style={{ padding: "1rem" }}>{a.city}, {a.state}</td>
-                          <td style={{ padding: "1rem", fontWeight: 700, color: "var(--accent-color)" }}>★ {a.avg_rating || "New"}</td>
-                          <td style={{ padding: "1rem" }}>
-                            <span className={`badge badge-${a.verification_status.toLowerCase()}`}>
-                              {a.verification_status}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
+                      {(artists || []).map((a) => {
+                        const statusStr = String(a.status || a.verification_status || "approved").toUpperCase();
+                        return (
+                          <tr key={a.id || a.user_id} style={{ borderBottom: "1px solid var(--border-color)" }}>
+                            <td style={{ padding: "1rem", fontWeight: 700 }}>#{a.id || a.user_id}</td>
+                            <td style={{ padding: "1rem", fontWeight: 600 }}>
+                              {a.full_name || a.user?.name || a.name || "Artist"}
+                            </td>
+                            <td style={{ padding: "1rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+                              <div>{a.email || a.user?.email || "N/A"}</div>
+                              <div>{a.phone || a.user?.phone || ""}</div>
+                            </td>
+                            <td style={{ padding: "1rem" }}>{a.experience_years || 0} Years</td>
+                            <td style={{ padding: "1rem" }}>{a.city || a.locality || "Jaipur"}{a.state ? `, ${a.state}` : ""}</td>
+                            <td style={{ padding: "1rem", fontWeight: 700, color: "var(--accent-color)" }}>★ {a.rating || a.avg_rating || "4.8"}</td>
+                            <td style={{ padding: "1rem" }}>
+                              <span className={`badge badge-${statusStr.toLowerCase()}`}>
+                                {statusStr}
+                              </span>
+                            </td>
+                            <td style={{ padding: "1rem" }}>
+                              {statusStr === "PENDING" ? (
+                                <button className="btn btn-primary" style={{ padding: "0.3rem 0.6rem", fontSize: "0.8rem" }} onClick={() => handleApprove(a.id || a.user_id)}>
+                                  <Check style={{ width: "14px" }} /> Approve
+                                </button>
+                              ) : statusStr === "APPROVED" ? (
+                                <button className="btn btn-danger" style={{ padding: "0.3rem 0.6rem", fontSize: "0.8rem" }} onClick={() => setRejectId(a.id || a.user_id)}>
+                                  <X style={{ width: "14px" }} /> Suspend
+                                </button>
+                              ) : (
+                                <button className="btn btn-primary" style={{ padding: "0.3rem 0.6rem", fontSize: "0.8rem" }} onClick={() => handleApprove(a.id || a.user_id)}>
+                                  <Check style={{ width: "14px" }} /> Re-Approve
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -1265,20 +1315,20 @@ const AdminDashboard = ({ showToast }) => {
                       </tr>
                     </thead>
                     <tbody>
-                      {bookings.map((b) => (
+                      {(bookings || []).map((b) => (
                         <tr key={b.id} style={{ borderBottom: "1px solid var(--border-color)" }}>
                           <td style={{ padding: "1rem", fontWeight: 600 }}>{b.booking_code}</td>
                           <td style={{ padding: "1rem" }}>{b.user?.name}</td>
                           <td style={{ padding: "1rem" }}>{b.artist?.user?.name || `Artist #${b.artist_id}`}</td>
                           <td style={{ padding: "1rem", color: "var(--accent-color)", fontWeight: 700 }}>₹{b.total_price}</td>
                           <td style={{ padding: "1rem" }}>
-                            <span className={`badge badge-${b.booking_status.toLowerCase()}`}>
-                              {b.booking_status}
+                            <span className={`badge badge-${(b.booking_status || "PENDING").toLowerCase()}`}>
+                              {b.booking_status || "PENDING"}
                             </span>
                           </td>
                           <td style={{ padding: "1rem" }}>
-                            <span className={`badge badge-${b.payment_status.toLowerCase()}`}>
-                              {b.payment_status}
+                            <span className={`badge badge-${(b.payment_status || "PENDING").toLowerCase()}`}>
+                              {b.payment_status || "PENDING"}
                             </span>
                           </td>
                         </tr>
@@ -1326,7 +1376,7 @@ const AdminDashboard = ({ showToast }) => {
                     <tbody>
                       {payments.map((p) => (
                         <tr key={p.id} style={{ borderBottom: "1px solid var(--border-color)" }}>
-                          <td style={{ padding: "1rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>{p.cashfree_payment_id || p.transaction_id || `TXN-${p.id}`}</td>
+                          <td style={{ padding: "1rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>{p.razorpay_payment_id || p.transaction_id || `TXN-${p.id}`}</td>
                           <td style={{ padding: "1rem", fontWeight: 600 }}>{p.booking?.booking_code}</td>
                           <td style={{ padding: "1rem" }}>{p.booking?.user?.name || "Client"}</td>
                           <td style={{ padding: "1rem" }}>{p.booking?.artist?.user?.name || "Artist"}</td>
@@ -1337,7 +1387,7 @@ const AdminDashboard = ({ showToast }) => {
                               {p.status}
                             </span>
                           </td>
-                          <td style={{ padding: "1rem", fontSize: "0.85rem" }}>{p.paid_at ? new Date(p.paid_at).toLocaleString() : new Date(p.createdAt).toLocaleString()}</td>
+                          <td style={{ padding: "1rem", fontSize: "0.85rem" }}>{formatAdminDateTime(p.paid_at || p.created_at || p.createdAt || p)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1375,7 +1425,7 @@ const AdminDashboard = ({ showToast }) => {
                               {c.is_read ? "Read" : "Sent"}
                             </span>
                           </td>
-                          <td style={{ padding: "1rem", fontSize: "0.85rem" }}>{new Date(c.createdAt).toLocaleString()}</td>
+                          <td style={{ padding: "1rem", fontSize: "0.85rem" }}>{formatAdminDateTime(c.created_at || c.createdAt || c.timestamp || c)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1485,7 +1535,7 @@ const AdminDashboard = ({ showToast }) => {
                               </span>
                             </td>
                             <td style={{ padding: "1rem", fontSize: "0.85rem" }}>
-                              {r.created_at ? new Date(r.created_at).toLocaleString() : "Recently"}
+                              {formatAdminDateTime(r.created_at || r.createdAt || r)}
                             </td>
                             <td style={{ padding: "1rem", textAlign: "center" }}>
                               <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center" }}>
@@ -1574,7 +1624,7 @@ const AdminDashboard = ({ showToast }) => {
                             </div>
                             <p style={{ fontSize: "0.9rem", marginTop: "0.4rem", color: "var(--text-secondary)" }}>{n.message}</p>
                             <div style={{ fontSize: "0.75rem", textAlign: "right", marginTop: "0.4rem", color: "var(--text-secondary)" }}>
-                              {new Date(n.createdAt).toLocaleString()}
+                              {formatAdminDateTime(n.created_at || n.createdAt || n)}
                             </div>
                           </div>
                         ))}
@@ -1645,7 +1695,7 @@ const AdminDashboard = ({ showToast }) => {
 
                       <div className="form-group">
                         <label className="form-label">Expiry Date</label>
-                        <input className="form-control" type="date" value={couponFormData.expires_at ? couponFormData.expires_at.split("T")[0] : ""} onChange={(e) => setCouponFormData({ ...couponFormData, expires_at: e.target.value })} required />
+                        <input className="form-control" type="date" value={formatDateForInput(couponFormData.expires_at)} onChange={(e) => setCouponFormData({ ...couponFormData, expires_at: e.target.value })} required />
                       </div>
 
                       <div className="form-group" style={{ gridColumn: "span 2", display: "flex", gap: "2rem", alignItems: "center" }}>
@@ -1696,10 +1746,10 @@ const AdminDashboard = ({ showToast }) => {
                             <td>{coupon.discount_type === "PERCENTAGE" ? `${coupon.discount_percentage || coupon.discount_value}%` : `₹${coupon.discount_value}`}</td>
                             <td>₹{coupon.min_booking_value}</td>
                             <td>{coupon.used_count || 0}</td>
-                            <td>{new Date(coupon.expires_at).toLocaleDateString()}</td>
+                            <td>{formatAdminDate(coupon.expires_at || coupon.expiresAt)}</td>
                             <td>
-                              <span className={`badge ${coupon.is_active && new Date(coupon.expires_at) > new Date() ? "badge-success" : "badge-danger"}`}>
-                                {coupon.is_active && new Date(coupon.expires_at) > new Date() ? "Active" : "Expired / Inactive"}
+                              <span className={`badge ${coupon.is_active && !isDateExpired(coupon.expires_at || coupon.expiresAt) ? "badge-success" : "badge-danger"}`}>
+                                {coupon.is_active && !isDateExpired(coupon.expires_at || coupon.expiresAt) ? "Active" : "Expired / Inactive"}
                               </span>
                             </td>
                             <td>
@@ -1970,12 +2020,12 @@ const AdminDashboard = ({ showToast }) => {
 
                   <div style={{ display: "flex", gap: "0.5rem" }}>
                     <button className="btn btn-secondary" onClick={() => {
-                      const today = new Date().toISOString().split("T")[0];
+                      const today = formatDateForInput(new Date());
                       setAnalyticsFilters({ ...analyticsFilters, startDate: today, endDate: today });
                     }}>Today</button>
                     <button className="btn btn-secondary" onClick={() => {
-                      const end = new Date().toISOString().split("T")[0];
-                      const start = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+                      const end = formatDateForInput(new Date());
+                      const start = formatDateForInput(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
                       setAnalyticsFilters({ ...analyticsFilters, startDate: start, endDate: end });
                     }}>Last 7 Days</button>
                     <button className="btn btn-secondary" onClick={() => {
@@ -2170,7 +2220,7 @@ const AdminDashboard = ({ showToast }) => {
                               t.booking?.final_amount || 0,
                               t.amount || 0,
                               t.status || "SUCCESS",
-                              new Date(t.createdAt).toLocaleString()
+                              formatAdminDateTime(t.created_at || t.createdAt || t)
                             ].map(val => `"${val}"`).join(",")).join("\n");
                           const encodedUri = encodeURI(csvContent);
                           const link = document.createElement("a");
@@ -2323,7 +2373,7 @@ const AdminDashboard = ({ showToast }) => {
                                 </span>
                               </td>
                               <td style={{ padding: "1rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>
-                                {new Date(t.createdAt).toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                                {formatAdminDateTime(t.created_at || t.createdAt || t)}
                               </td>
                               <td style={{ padding: "1rem" }}>
                                 <button
@@ -2443,7 +2493,7 @@ const AdminDashboard = ({ showToast }) => {
                           </div>
                           <div style={{ gridColumn: "span 2" }}>
                             <span style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Creation Date & Time</span>
-                            <div style={{ fontWeight: 600, marginTop: "2px" }}>{new Date(selectedWalletTx.createdAt).toLocaleString()}</div>
+                            <div style={{ fontWeight: 600, marginTop: "2px" }}>{formatAdminDateTime(selectedWalletTx.created_at || selectedWalletTx.createdAt || selectedWalletTx)}</div>
                           </div>
                         </div>
 
@@ -2852,8 +2902,8 @@ const AdminDashboard = ({ showToast }) => {
 
                               {/* Date */}
                               <td style={{ padding: "0.75rem", fontSize: "0.8rem", color: "var(--text-secondary)" }}>
-                                {new Date(t.created_at).toLocaleDateString()}
-                                <div style={{ fontSize: "0.7rem" }}>{new Date(t.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+                                {formatAdminDate(t.created_at || t.createdAt || t)}
+                                <div style={{ fontSize: "0.7rem" }}>{formatAdminTime(t.created_at || t.createdAt || t)}</div>
                               </td>
 
                               {/* Action */}
@@ -2930,7 +2980,7 @@ const AdminDashboard = ({ showToast }) => {
                               Category: <strong>{selectedTicket.category}</strong>
                             </span>
                             <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>
-                              Date: <strong>{new Date(selectedTicket.created_at).toLocaleString()}</strong>
+                              Date: <strong>{formatAdminDateTime(selectedTicket.created_at || selectedTicket.createdAt || selectedTicket)}</strong>
                             </span>
                           </div>
                         </div>
@@ -3025,7 +3075,7 @@ const AdminDashboard = ({ showToast }) => {
                                       {r.sender_name || (isAdmin ? "Admin Desk" : selectedTicket.user_name)}
                                     </strong>
                                     <span style={{ color: "var(--text-secondary)" }}>
-                                      {new Date(r.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                      {formatAdminTime(r.created_at || r.createdAt || r)}
                                     </span>
                                   </div>
                                   <div style={{ fontSize: "0.85rem", lineHeight: "1.4" }}>{r.message}</div>

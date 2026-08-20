@@ -130,8 +130,18 @@ async function uploadReviewMedia(req, res) {
   }
 }
 
+async function getMyReviews(req, res) {
+  try {
+    const response = await ReviewService.getMyReviews(req.user.id);
+    return res.status(200).json(SuccessResponse("My reviews fetched successfully", response));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
 module.exports = {
   getReviews,
+  getMyReviews,
   getReviewById,
   createReview,
   updateReview,

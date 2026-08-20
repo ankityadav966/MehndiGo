@@ -18,6 +18,14 @@ module.exports = (
         }
       );
 
+      ArtistProfile.belongsTo(
+        models.User,
+        {
+          foreignKey: "reviewed_by",
+          as: "reviewer",
+        }
+      );
+
       ArtistProfile.hasMany(
         models.Service,
         {
@@ -140,6 +148,7 @@ module.exports = (
       aadhaar_number: {
         type: DataTypes.STRING,
         allowNull: true,
+        unique: true,
       },
       cover_image: {
         type: DataTypes.STRING,
@@ -260,6 +269,19 @@ module.exports = (
       },
       pan_number: {
         type: DataTypes.STRING,
+        allowNull: true,
+        unique: true,
+      },
+      reviewed_by: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+      },
+      approved_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+      rejected_at: {
+        type: DataTypes.DATE,
         allowNull: true,
       },
       bank_account_number: {

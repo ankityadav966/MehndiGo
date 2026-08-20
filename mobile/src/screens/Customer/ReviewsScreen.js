@@ -14,6 +14,22 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import { getCustomerReviews } from "../../services/customer";
+import { getNormalizedUrl } from "../../services/api";
+
+const resolveImage = (uri) => {
+  if (!uri || typeof uri !== "string") return null;
+  const trimmed = uri.trim();
+  if (
+    trimmed.startsWith("http://") ||
+    trimmed.startsWith("https://") ||
+    trimmed.startsWith("file://") ||
+    trimmed.startsWith("content://") ||
+    trimmed.startsWith("data:")
+  ) {
+    return trimmed;
+  }
+  return getNormalizedUrl(trimmed);
+};
 
 export default function ReviewsScreen({ navigation }) {
   const [reviews, setReviews] = useState([]);
@@ -77,20 +93,23 @@ export default function ReviewsScreen({ navigation }) {
     </View>
   );
 
-  const resolveImage = (url) => {
-    if (!url) return null;
-    if (url.startsWith("http") || url.startsWith("file://")) return url;
-    return `https://api.mehndigo.in${url.startsWith("/") ? "" : "/"}${url}`;
-  };
-
   const renderReview = ({ item }) => {
     const artistName = item.artist?.user?.name || item.artist_name || "Artist Profile";
     const initial = artistName[0]?.toUpperCase() || "A";
     const photos = Array.isArray(item.photos) ? item.photos : (typeof item.photos === 'string' ? JSON.parse(item.photos || "[]") : []);
+    const artistId = item.artist_id || item.artist?.id;
 
     return (
       <View style={styles.reviewCard}>
-        <View style={styles.reviewHeader}>
+        <TouchableOpacity 
+          style={styles.reviewHeader}
+          activeOpacity={0.7}
+          onPress={() => {
+            if (artistId) {
+              navigation.navigate("ArtistProfile", { artistId });
+            }
+          }}
+        >
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>{initial}</Text>
           </View>
@@ -110,7 +129,7 @@ export default function ReviewsScreen({ navigation }) {
               />
             ))}
           </View>
-        </View>
+        </TouchableOpacity>
         <Text style={styles.reviewText}>{item.comment || "No comment provided."}</Text>
 
         {/* Render Media */}
@@ -118,10 +137,16 @@ export default function ReviewsScreen({ navigation }) {
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12 }}>
             {item.video_url && (
               <View style={{ marginRight: 8, position: "relative" }}>
-                <Image 
-                  source={{ uri: resolveImage(item.video_thumbnail) || "https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=300" }} 
-                  style={{ width: 100, height: 100, borderRadius: 8, backgroundColor: "#f0f0f0" }} 
-                />
+                {item.video_thumbnail ? (
+                  <Image 
+                    source={{ uri: resolveImage(item.video_thumbnail) }} 
+                    style={{ width: 100, height: 100, borderRadius: 8, backgroundColor: "#f0f0f0" }} 
+                  />
+                ) : (
+                  <View style={{ width: 100, height: 100, borderRadius: 8, backgroundColor: "#1e1e1e", justifyContent: "center", alignItems: "center" }}>
+                    <Ionicons name="videocam" size={28} color="#ffffff" />
+                  </View>
+                )}
                 <View style={{ position: "absolute", top: "50%", left: "50%", marginLeft: -12, marginTop: -12, backgroundColor: "rgba(0,0,0,0.6)", borderRadius: 12, padding: 4 }}>
                   <Ionicons name="play" size={16} color="#fff" />
                 </View>
@@ -167,6 +192,15 @@ export default function ReviewsScreen({ navigation }) {
         }
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
+        ListEmptyComponent={
+          !loading && (
+            <View style={styles.emptyContainer}>
+              <Ionicons name="star-outline" size={48} color={Colors.border} />
+              <Text style={styles.emptyTitle}>No Reviews Yet</Text>
+              <Text style={styles.emptySubtitle}>You have not submitted any reviews for your bookings yet.</Text>
+            </View>
+          )
+        }
         ListHeaderComponent={
           <>
             <View style={styles.summaryCard}>
@@ -218,5 +252,8 @@ const styles = StyleSheet.create({
   reviewerName: { fontSize: 13, fontWeight: "700", color: Colors.text },
   reviewDate: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
   reviewStars: { flexDirection: "row", gap: 1 },
-  reviewText: { fontSize: 13, color: Colors.textSecondary, lineHeight: 20, marginTop: 10 }
+  reviewText: { fontSize: 13, color: Colors.textSecondary, lineHeight: 20, marginTop: 10 },
+  emptyContainer: { alignItems: "center", justifyContent: "center", paddingVertical: 40, paddingHorizontal: 20 },
+  emptyTitle: { fontSize: 16, fontWeight: "700", color: Colors.text, marginTop: 12 },
+  emptySubtitle: { fontSize: 13, color: Colors.textSecondary, textAlign: "center", marginTop: 4 }
 });

@@ -17,6 +17,22 @@ export async function getArtistDetails() {
   return data?.data || data;
 }
 
+export async function getArtistVerificationStatus() {
+  const data = await apiRequest("GET", "/api/v1/mehndigo/artist/artistdetails", null, true);
+  const profile = data?.data || data;
+  const rawStatus = profile?.verification_status || profile?.status || "PENDING";
+  const canonicalStatus = String(rawStatus).toUpperCase();
+  return {
+    status: canonicalStatus,
+    verification_status: canonicalStatus,
+    is_approved: canonicalStatus === "APPROVED",
+    is_rejected: canonicalStatus === "REJECTED",
+    is_pending: canonicalStatus === "PENDING",
+    rejection_reason: profile?.rejection_reason || null,
+    profile
+  };
+}
+
 export async function createArtistProfile(profileData) {
   const formData = new FormData();
 
@@ -320,12 +336,22 @@ export async function createPortfolioItem(itemData, onProgress) {
 }
 
 export async function updatePortfolioItem(id, updateData) {
-  const data = await apiRequest("PUT", `/api/v1/mehndigo/artist/portfolio/${id}`, updateData, true);
+  const data = await apiRequest("PUT", `/artist/portfolio/${id}`, updateData, true);
   return data?.data || data;
 }
 
 export async function deletePortfolioItem(id) {
-  const data = await apiRequest("DELETE", `/api/v1/mehndigo/artist/portfolio/${id}`, null, true);
+  const data = await apiRequest("DELETE", `/artist/portfolio/${id}`, null, true);
+  return data?.data || data;
+}
+
+export async function reorderPortfolioItems(items) {
+  const data = await apiRequest("PUT", "/artist/portfolio/reorder", { items }, true);
+  return data?.data || data;
+}
+
+export async function setArtistCoverImage(coverData) {
+  const data = await apiRequest("PUT", "/artist/profile/cover", coverData, true);
   return data?.data || data;
 }
 
@@ -489,5 +515,40 @@ export async function getCustomerServices() {
 
 export async function getCustomerServiceDetail(id) {
   const res = await apiRequest("GET", `/customer/service/${id}`, null, true);
+  return res?.data || res;
+}
+
+export async function getArtistAvailability() {
+  const res = await apiRequest("GET", "/artist/availability", null, true);
+  return res?.data || res;
+}
+
+export async function updateArtistAvailability(data) {
+  const res = await apiRequest("PUT", "/artist/availability", data, true);
+  return res?.data || res;
+}
+
+export async function addBlockedDate(date) {
+  const res = await apiRequest("POST", "/artist/availability/blocked-dates", { date }, true);
+  return res?.data || res;
+}
+
+export async function removeBlockedDate(date) {
+  const res = await apiRequest("DELETE", "/artist/availability/blocked-dates", { date }, true);
+  return res?.data || res;
+}
+
+export async function createServicePackage(serviceId, packageData) {
+  const res = await apiRequest("POST", `/artist/services/${serviceId}/packages`, packageData, true);
+  return res?.data || res;
+}
+
+export async function updateServicePackage(packageId, packageData) {
+  const res = await apiRequest("PUT", `/artist/packages/${packageId}`, packageData, true);
+  return res?.data || res;
+}
+
+export async function deleteServicePackage(packageId) {
+  const res = await apiRequest("DELETE", `/artist/packages/${packageId}`, null, true);
   return res?.data || res;
 }

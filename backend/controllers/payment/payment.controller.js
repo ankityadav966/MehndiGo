@@ -5,7 +5,7 @@ async function createSession(req, res) {
   try {
     const { bookingId, amount } = req.body;
     const response = await PaymentService.createSession(bookingId, req.user.id, amount);
-    return res.status(200).json(SuccessResponse("Cashfree payment session created successfully", response));
+    return res.status(200).json(SuccessResponse("Payment session created successfully", response));
   } catch (error) {
     return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
   }
@@ -46,7 +46,7 @@ async function getPaymentHistory(req, res) {
 
 async function getPaymentById(req, res) {
   try {
-    const response = await PaymentService.getPaymentById(req.params.id);
+    const response = await PaymentService.getPaymentById(req.params.id, req.user.id, req.user.role);
     return res.status(200).json(SuccessResponse("Payment details fetched", response));
   } catch (error) {
     return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
@@ -74,7 +74,7 @@ async function getRefundHistory(req, res) {
 
 async function getInvoiceByBooking(req, res) {
   try {
-    const response = await PaymentService.getInvoiceByBooking(req.params.bookingId);
+    const response = await PaymentService.getInvoiceByBooking(req.params.bookingId, req.user.id, req.user.role);
     return res.status(200).json(SuccessResponse("Invoice fetched successfully", response));
   } catch (error) {
     return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
@@ -257,13 +257,40 @@ async function payWithWallet(req, res) {
 
 async function renderCheckoutPage(req, res) {
   try {
-    const { orderId, amount, bookingId, redirect, paymentSessionId } = req.query;
-    const env = process.env.CASHFREE_ENV === "PRODUCTION" ? "api" : "sandbox";
-    const sessionId = paymentSessionId || orderId;
-    const cfUrl = `https://${env}.cashfree.com/pg/view/checkout?session_id=${sessionId}`;
-    return res.redirect(cfUrl);
+    const { orderId, amount, bookingId, keyId } = req.query;
+    const rzpKey = keyId || process.env.RAZORPAY_KEY_ID || "";
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <title>MehndiGo Secure Payment</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+</head>
+<body style="display:flex;justify-content:center;align-items:center;height:100vh;font-family:sans-serif;background:#fff5f5;">
+  <div style="text-align:center;padding:24px;background:#fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.1);">
+    <h2>Opening Razorpay Checkout...</h2>
+    <p>Please complete payment to confirm your booking.</p>
+  </div>
+  <script>
+    var options = {
+      key: "${rzpKey}",
+      amount: ${Number(amount || 0)},
+      currency: "INR",
+      name: "MehndiGo",
+      description: "Booking Payment #${bookingId || ''}",
+      order_id: "${orderId || ''}",
+      handler: function(response) {
+        window.location.href = "/payment/success?order_id=" + response.razorpay_order_id + "&payment_id=" + response.razorpay_payment_id;
+      }
+    };
+    var rzp = new Razorpay(options);
+    rzp.open();
+  </script>
+</body>
+</html>`;
+    return res.status(200).send(html);
   } catch (error) {
-    return res.status(500).send("Error redirecting to Cashfree checkout");
+    return res.status(500).send("Error rendering Razorpay checkout");
   }
 }
 

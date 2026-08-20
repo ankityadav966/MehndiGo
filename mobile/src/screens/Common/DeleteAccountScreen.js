@@ -1,5 +1,5 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { useState } from "react";
+import React, { useState } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -7,14 +7,48 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  ActivityIndicator
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import Alert from "../../utils/Alert";
+import { deleteAccount } from "../../services/customer";
+import { useAuth } from "../../context/AuthContext";
 
 export default function DeleteAccountScreen({ navigation }) {
+  const { logout } = useAuth();
   const [confirmText, setConfirmText] = useState("");
   const [understood, setUnderstood] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const isValid = confirmText === "DELETE" && understood;
+
+  const handleDeleteAccount = async () => {
+    if (!isValid || loading) return;
+    Alert.alert(
+      "Confirm Account Deletion",
+      "Are you absolutely certain you want to permanently delete your account and all associated booking and wallet data?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Yes, Delete",
+          style: "destructive",
+          onPress: async () => {
+            setLoading(true);
+            try {
+              await deleteAccount({ confirmation: confirmText });
+              Alert.alert("Account Deleted", "Your account has been deleted.", [
+                { text: "OK", onPress: () => logout() }
+              ]);
+            } catch (err) {
+              const errMsg = err.response?.data?.message || err.message || "Failed to delete account.";
+              Alert.alert("Error", errMsg);
+              setLoading(false);
+            }
+          }
+        }
+      ]
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -71,11 +105,15 @@ export default function DeleteAccountScreen({ navigation }) {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.deleteButton, !isValid && styles.deleteButtonDisabled]}
-          disabled={!isValid}
-          onPress={() => {}}
+          style={[styles.deleteButton, (!isValid || loading) && styles.deleteButtonDisabled]}
+          disabled={!isValid || loading}
+          onPress={handleDeleteAccount}
         >
-          <Text style={styles.deleteButtonText}>Delete My Account</Text>
+          {loading ? (
+            <ActivityIndicator color="#FFFFFF" size="small" />
+          ) : (
+            <Text style={styles.deleteButtonText}>Delete My Account</Text>
+          )}
         </TouchableOpacity>
 
         <TouchableOpacity

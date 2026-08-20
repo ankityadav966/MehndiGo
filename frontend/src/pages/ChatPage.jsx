@@ -4,6 +4,7 @@ import { io } from "socket.io-client";
 import { useAuth } from "../context/AuthContext";
 import { chatService, adminService, artistService } from "../services/api";
 import { Send, User, MessageSquare } from "lucide-react";
+import { formatAdminTime } from "../utils/dateFormatter";
 
 const ChatPage = ({ showToast }) => {
   const { user, token } = useAuth();
@@ -319,7 +320,7 @@ const ChatPage = ({ showToast }) => {
                 ) : (
                   messages.map((msg) => {
                     const isSentByMe = msg.sender_id === user.id;
-                    const date = new Date(msg.createdAt || msg.created_at);
+                    const dateVal = msg.createdAt || msg.created_at || msg.timestamp;
                     return (
                       <div
                         key={msg.id || Math.random()}
@@ -327,7 +328,7 @@ const ChatPage = ({ showToast }) => {
                       >
                         <div>{msg.message}</div>
                         <div style={{ fontSize: "0.7rem", textAlign: "right", marginTop: "0.25rem", opacity: 0.8, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "0.25rem" }}>
-                          <span>{date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                          <span>{formatAdminTime(dateVal)}</span>
                           {isSentByMe && (
                             <span style={{ color: msg.is_read ? "#00b894" : "inherit", fontWeight: 700 }}>
                               {msg.is_read ? "✓✓" : "✓"}

@@ -17,7 +17,17 @@ function getStepIndex(status) {
   if (s === "CONFIRMED" || s === "ARTIST_ACCEPTED" || s === "ACCEPTED") return 1;
   if (s === "ARTIST_ON_THE_WAY" || s === "ON_THE_WAY") return 2;
   if (s === "ARTIST_ARRIVED" || s === "ARRIVED") return 3;
-  if (s === "IN_PROGRESS" || s === "SERVICE_IN_PROGRESS" || s === "SERVICE_STARTED" || s === "CUSTOMER_VERIFIED" || s === "CHECKOUT" || s === "PAYMENT_REQUIRED" || s === "PAYMENT_COMPLETED") return 4;
+  if (
+    s === "IN_PROGRESS" ||
+    s === "SERVICE_IN_PROGRESS" ||
+    s === "SERVICE_STARTED" ||
+    s === "CUSTOMER_VERIFIED" ||
+    s === "CHECKOUT" ||
+    s === "PAYMENT_REQUIRED" ||
+    s === "PAYMENT_COMPLETED"
+  ) {
+    return 4;
+  }
   if (s === "COMPLETED" || s === "COMPLETED_CLOSED") return 5;
   if (s === "CANCELLED" || s === "REJECTED") return -1;
   return 0;
@@ -29,10 +39,14 @@ export default function BookingTimeline({ status, isCancelled = false }) {
   if (isCancelled || String(status).toUpperCase() === "CANCELLED") {
     return (
       <View style={styles.cancelledContainer}>
-        <Ionicons name="close-circle" size={24} color="#EF4444" />
+        <View style={styles.cancelledIconBox}>
+          <Ionicons name="close-circle" size={22} color="#DC2626" />
+        </View>
         <View style={styles.cancelledTextContainer}>
           <Text style={styles.cancelledTitle}>Booking Cancelled</Text>
-          <Text style={styles.cancelledDesc}>This booking has been cancelled and refunds processed where applicable.</Text>
+          <Text style={styles.cancelledDesc}>
+            This booking has been cancelled. Any applicable refunds or slot releases have been processed.
+          </Text>
         </View>
       </View>
     );
@@ -40,9 +54,23 @@ export default function BookingTimeline({ status, isCancelled = false }) {
 
   return (
     <View style={styles.card}>
-      <Text style={styles.sectionTitle}>Booking Progress</Text>
-      
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.timelineRow}>
+      <View style={styles.headerRow}>
+        <View style={styles.titleWithIcon}>
+          <Ionicons name="git-commit-outline" size={14} color="#E91E63" style={{ marginRight: 6 }} />
+          <Text style={styles.sectionTitle} numberOfLines={1}>Service Timeline</Text>
+        </View>
+        <View style={styles.stepCounterBadge}>
+          <Text style={styles.stepCounterText}>
+            Step {Math.min(activeIndex + 1, STEPS.length)} of {STEPS.length}
+          </Text>
+        </View>
+      </View>
+
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.timelineRow}
+      >
         {STEPS.map((step, idx) => {
           const isDone = idx < activeIndex;
           const isCurrent = idx === activeIndex;
@@ -60,14 +88,15 @@ export default function BookingTimeline({ status, isCancelled = false }) {
                   ]}
                 >
                   {isDone ? (
-                    <Ionicons name="checkmark" size={14} color="#FFFFFF" />
+                    <Ionicons name="checkmark-sharp" size={14} color="#FFFFFF" />
                   ) : (
                     <Ionicons
                       name={step.icon}
-                      size={14}
+                      size={13}
                       color={isCurrent ? "#FFFFFF" : "#9CA3AF"}
                     />
                   )}
+                  {isCurrent && <View style={styles.currentPulseRing} />}
                 </View>
 
                 <Text
@@ -84,12 +113,14 @@ export default function BookingTimeline({ status, isCancelled = false }) {
               </View>
 
               {idx < STEPS.length - 1 && (
-                <View
-                  style={[
-                    styles.connectorLine,
-                    idx < activeIndex ? styles.connectorLineDone : styles.connectorLinePending
-                  ]}
-                />
+                <View style={styles.connectorContainer}>
+                  <View
+                    style={[
+                      styles.connectorLine,
+                      idx < activeIndex ? styles.connectorLineDone : styles.connectorLinePending
+                    ]}
+                  />
+                </View>
               )}
             </React.Fragment>
           );
@@ -102,8 +133,8 @@ export default function BookingTimeline({ status, isCancelled = false }) {
 const styles = StyleSheet.create({
   card: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 18,
+    padding: 14,
     marginHorizontal: 16,
     marginTop: 12,
     borderWidth: 1,
@@ -112,24 +143,54 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
     shadowRadius: 6,
-    elevation: 1
+    elevation: 2,
+    overflow: "hidden"
+  },
+  headerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+    gap: 8
+  },
+  titleWithIcon: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    flexShrink: 1
   },
   sectionTitle: {
-    fontSize: 13,
-    fontWeight: "700",
+    fontSize: 11.5,
+    fontWeight: "800",
     color: "#6B7280",
     textTransform: "uppercase",
     letterSpacing: 0.5,
-    marginBottom: 14
+    flexShrink: 1
+  },
+  stepCounterBadge: {
+    backgroundColor: "#FFF8FA",
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: "#FCE7F3",
+    flexShrink: 0
+  },
+  stepCounterText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#E91E63"
   },
   timelineRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 4
+    paddingVertical: 4,
+    paddingHorizontal: 2,
+    paddingRight: 20
   },
   stepItem: {
     alignItems: "center",
-    minWidth: 70
+    minWidth: 68
   },
   stepCircle: {
     width: 32,
@@ -137,30 +198,46 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 6
+    marginBottom: 5,
+    position: "relative"
   },
   stepCircleDone: {
-    backgroundColor: "#059669"
+    backgroundColor: "#059669",
+    shadowColor: "#059669",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 2
   },
   stepCircleCurrent: {
     backgroundColor: "#E91E63",
     shadowColor: "#E91E63",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.35,
-    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
     elevation: 3
   },
+  currentPulseRing: {
+    position: "absolute",
+    top: -3,
+    left: -3,
+    right: -3,
+    bottom: -3,
+    borderRadius: 19,
+    borderWidth: 1.5,
+    borderColor: "rgba(233, 30, 99, 0.35)"
+  },
   stepCirclePending: {
-    backgroundColor: "#F3F4F6",
-    borderWidth: 1,
+    backgroundColor: "#F9FAFB",
+    borderWidth: 1.5,
     borderColor: "#E5E7EB"
   },
   stepLabel: {
-    fontSize: 11,
+    fontSize: 10.5,
     textAlign: "center"
   },
   stepLabelDone: {
-    fontWeight: "600",
+    fontWeight: "700",
     color: "#059669"
   },
   stepLabelCurrent: {
@@ -171,10 +248,17 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     color: "#9CA3AF"
   },
+  connectorContainer: {
+    width: 20,
+    height: 32,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16
+  },
   connectorLine: {
     height: 2,
-    width: 24,
-    marginBottom: 18
+    width: "100%",
+    borderRadius: 1
   },
   connectorLineDone: {
     backgroundColor: "#059669"
@@ -186,25 +270,35 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#FEF2F2",
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 18,
+    padding: 14,
     marginHorizontal: 16,
     marginTop: 12,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: "#FECACA"
   },
+  cancelledIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#FEE2E2",
+    justifyContent: "center",
+    alignItems: "center",
+    flexShrink: 0
+  },
   cancelledTextContainer: {
-    marginLeft: 12,
+    marginLeft: 10,
     flex: 1
   },
   cancelledTitle: {
-    fontSize: 14,
-    fontWeight: "700",
+    fontSize: 13.5,
+    fontWeight: "800",
     color: "#DC2626"
   },
   cancelledDesc: {
-    fontSize: 12,
+    fontSize: 11,
     color: "#991B1B",
-    marginTop: 2
+    marginTop: 2,
+    lineHeight: 15
   }
 });

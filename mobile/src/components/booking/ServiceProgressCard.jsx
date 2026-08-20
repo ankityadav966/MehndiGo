@@ -34,41 +34,82 @@ export default function ServiceProgressCard({
     <View style={styles.card}>
       <View style={styles.headerRow}>
         <View style={styles.livePulseBadge}>
-          <View style={styles.pulseDot} />
-          <Text style={styles.pulseText}>SERVICE IN PROGRESS</Text>
+          <View style={styles.pulseDotOuter}>
+            <View style={styles.pulseDotInner} />
+          </View>
+          <Text style={styles.pulseText}>IN PROGRESS</Text>
         </View>
 
-        <Text style={styles.estimatedText}>
-          Est. ~{estimatedDurationMinutes} mins
+        <View style={styles.estBadge}>
+          <Ionicons name="hourglass-outline" size={10} color="#6B7280" style={{ marginRight: 3 }} />
+          <Text style={styles.estimatedText} numberOfLines={1}>
+            Est. ~{estimatedDurationMinutes} mins
+          </Text>
+        </View>
+      </View>
+
+      {/* Service Name Banner */}
+      <View style={styles.serviceNameRow}>
+        <Ionicons name="sparkles" size={14} color="#E91E63" style={{ marginRight: 6 }} />
+        <Text style={styles.serviceNameText} numberOfLines={1} ellipsizeMode="tail">
+          {serviceName}
         </Text>
       </View>
 
       {/* Large Elapsed Timer */}
       <View style={styles.timerContainer}>
         <Text style={styles.timerValue}>{formattedTimer}</Text>
-        <Text style={styles.timerLabel}>Elapsed Service Duration</Text>
+        <View style={styles.timerLabelRow}>
+          <View style={styles.activeTimerDot} />
+          <Text style={styles.timerLabel} numberOfLines={1}>Elapsed Duration</Text>
+        </View>
       </View>
 
-      {/* Progress Stages */}
+      {/* Service Milestone Progress Stages */}
       <View style={styles.stagesContainer}>
+        <Text style={styles.stagesHeader}>Application Stages</Text>
+
         <View style={styles.stageItem}>
-          <Ionicons name="checkmark-circle" size={14} color="#059669" />
-          <Text style={styles.stageTextDone}>Preparation & Cleansing</Text>
+          <View style={[styles.stageIconBox, styles.stageIconBoxDone]}>
+            <Ionicons name="checkmark" size={12} color="#059669" />
+          </View>
+          <View style={styles.stageTextCol}>
+            <Text style={styles.stageTextDone} numberOfLines={1}>Preparation & Skin Cleansing</Text>
+            <Text style={styles.stageSubtextDone} numberOfLines={1}>Completed</Text>
+          </View>
         </View>
+
         <View style={styles.stageItem}>
-          <Ionicons name="ellipse" size={12} color="#E91E63" />
-          <Text style={styles.stageTextActive}>Intricate Henna Application</Text>
+          <View style={[styles.stageIconBox, styles.stageIconBoxActive]}>
+            <Ionicons name="brush" size={11} color="#E91E63" />
+          </View>
+          <View style={styles.stageTextCol}>
+            <Text style={styles.stageTextActive} numberOfLines={1}>Intricate Henna Design Application</Text>
+            <Text style={styles.stageSubtextActive} numberOfLines={1}>In Progress Now</Text>
+          </View>
         </View>
+
         <View style={styles.stageItem}>
-          <Ionicons name="ellipse-outline" size={12} color="#9CA3AF" />
-          <Text style={styles.stageTextPending}>Drying & Sealing Mist</Text>
+          <View style={[styles.stageIconBox, styles.stageIconBoxPending]}>
+            <Ionicons name="sparkles-outline" size={11} color="#9CA3AF" />
+          </View>
+          <View style={styles.stageTextCol}>
+            <Text style={styles.stageTextPending} numberOfLines={1}>Drying, Sealing Mist & Aftercare</Text>
+            <Text style={styles.stageSubtextPending} numberOfLines={1}>Upcoming</Text>
+          </View>
         </View>
       </View>
 
       {isArtist && onCheckout && (
-        <TouchableOpacity style={styles.checkoutBtn} onPress={onCheckout} activeOpacity={0.8}>
-          <Ionicons name="checkmark-done" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-          <Text style={styles.checkoutBtnText}>Complete Service & Checkout</Text>
+        <TouchableOpacity
+          style={styles.checkoutBtn}
+          onPress={onCheckout}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="checkmark-done-circle" size={19} color="#FFFFFF" style={{ marginRight: 6 }} />
+          <Text style={styles.checkoutBtnText} numberOfLines={1} ellipsizeMode="tail">
+            Complete Service & Checkout
+          </Text>
         </TouchableOpacity>
       )}
     </View>
@@ -78,94 +119,186 @@ export default function ServiceProgressCard({
 const styles = StyleSheet.create({
   card: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 18,
+    padding: 14,
     marginHorizontal: 16,
     marginTop: 12,
     borderWidth: 1.5,
     borderColor: "#FCE7F3",
     shadowColor: "#E91E63",
-    shadowOffset: { width: 0, height: 3 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
     shadowRadius: 8,
-    elevation: 2
+    elevation: 3,
+    overflow: "hidden"
   },
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 12
+    marginBottom: 8,
+    gap: 6
   },
   livePulseBadge: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FCE7F3",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    gap: 5
+    backgroundColor: "#FFF8FA",
+    paddingHorizontal: 7,
+    paddingVertical: 3.5,
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: "#FCE7F3",
+    gap: 4,
+    flexShrink: 0
   },
-  pulseDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+  pulseDotOuter: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "rgba(233, 30, 99, 0.2)",
+    justifyContent: "center",
+    alignItems: "center"
+  },
+  pulseDotInner: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
     backgroundColor: "#E91E63"
   },
   pulseText: {
-    fontSize: 10,
-    fontWeight: "800",
+    fontSize: 9.5,
+    fontWeight: "900",
     color: "#E91E63",
     letterSpacing: 0.5
   },
+  estBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F9FAFB",
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    flexShrink: 1
+  },
   estimatedText: {
-    fontSize: 11,
+    fontSize: 10.5,
     color: "#6B7280",
-    fontWeight: "600"
+    fontWeight: "700"
+  },
+  serviceNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: 3
+  },
+  serviceNameText: {
+    fontSize: 14.5,
+    fontWeight: "800",
+    color: "#1F2937",
+    flex: 1
   },
   timerContainer: {
     alignItems: "center",
-    paddingVertical: 10,
+    paddingVertical: 12,
     backgroundColor: "#FFF8FA",
     borderRadius: 14,
-    borderWidth: 1,
+    borderWidth: 1.2,
     borderColor: "#FCE7F3",
-    marginBottom: 14
+    marginVertical: 10
   },
   timerValue: {
-    fontSize: 32,
+    fontSize: 34,
     fontWeight: "900",
     color: "#E91E63",
     fontVariant: ["tabular-nums"],
-    letterSpacing: 1
+    letterSpacing: 1.5
+  },
+  timerLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 3,
+    gap: 4
+  },
+  activeTimerDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: "#059669"
   },
   timerLabel: {
-    fontSize: 11,
+    fontSize: 10.5,
     color: "#6B7280",
-    fontWeight: "600",
-    marginTop: 2
+    fontWeight: "600"
   },
   stagesContainer: {
-    gap: 8,
-    paddingHorizontal: 4,
-    marginBottom: 4
+    backgroundColor: "#F9FAFB",
+    borderRadius: 14,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+    gap: 8
+  },
+  stagesHeader: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#9CA3AF",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 1
   },
   stageItem: {
     flexDirection: "row",
+    alignItems: "center"
+  },
+  stageIconBox: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    justifyContent: "center",
     alignItems: "center",
-    gap: 8
+    marginRight: 8,
+    flexShrink: 0
+  },
+  stageIconBoxDone: {
+    backgroundColor: "#D1FAE5"
+  },
+  stageIconBoxActive: {
+    backgroundColor: "#FCE7F3"
+  },
+  stageIconBoxPending: {
+    backgroundColor: "#E5E7EB"
+  },
+  stageTextCol: {
+    flex: 1
   },
   stageTextDone: {
-    fontSize: 12,
+    fontSize: 11.5,
+    color: "#065F46",
+    fontWeight: "700"
+  },
+  stageSubtextDone: {
+    fontSize: 9.5,
     color: "#059669",
     fontWeight: "600"
   },
   stageTextActive: {
-    fontSize: 12,
+    fontSize: 11.5,
+    color: "#831843",
+    fontWeight: "800"
+  },
+  stageSubtextActive: {
+    fontSize: 9.5,
     color: "#E91E63",
     fontWeight: "700"
   },
   stageTextPending: {
-    fontSize: 12,
+    fontSize: 11.5,
+    color: "#6B7280",
+    fontWeight: "500"
+  },
+  stageSubtextPending: {
+    fontSize: 9.5,
     color: "#9CA3AF",
     fontWeight: "500"
   },
@@ -175,8 +308,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: "#E91E63",
     height: 48,
-    borderRadius: 12,
-    marginTop: 14,
+    borderRadius: 14,
+    marginTop: 12,
+    paddingHorizontal: 12,
     shadowColor: "#E91E63",
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.3,
@@ -184,8 +318,10 @@ const styles = StyleSheet.create({
     elevation: 3
   },
   checkoutBtnText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#FFFFFF"
+    fontSize: 13.5,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    letterSpacing: 0.2,
+    flexShrink: 1
   }
 });

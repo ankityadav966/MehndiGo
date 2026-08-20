@@ -27,18 +27,7 @@ export default function TransactionDetailsScreen({ route, navigation }) {
       setTransaction(data);
     } catch (err) {
       console.log("Failed to fetch transaction details:", err.message);
-      // Fallback fallback data for standalone view tests
-      setTransaction({
-        id: paymentId,
-        razorpay_order_id: `ord_${Math.random().toString(36).substring(2, 10)}`,
-        status: "SUCCESS",
-        amount: 2850,
-        createdAt: new Date().toISOString(),
-        booking: {
-          booking_code: "BK-284918",
-          service: { specialization_name: "Bridal Traditional Mehndi" }
-        }
-      });
+      setTransaction(null);
     } finally {
       setLoading(false);
     }
@@ -70,6 +59,28 @@ export default function TransactionDetailsScreen({ route, navigation }) {
       <View style={styles.centerContainer}>
         <ActivityIndicator size="large" color={Colors.primary} />
       </View>
+    );
+  }
+
+  if (!transaction) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+            <Ionicons name="chevron-back" size={22} color={Colors.text} />
+          </TouchableOpacity>
+          <Text style={styles.title}>Receipt Details</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        <View style={[styles.centerContainer, { padding: 24 }]}>
+          <Ionicons name="receipt-outline" size={48} color={Colors.textSecondary} />
+          <Text style={{ fontSize: 16, fontWeight: "600", color: Colors.text, marginTop: 16 }}>Transaction Not Found</Text>
+          <Text style={{ fontSize: 13, color: Colors.textSecondary, textAlign: "center", marginTop: 8 }}>The requested transaction record could not be retrieved from the database.</Text>
+          <View style={{ marginTop: 24, width: "100%" }}>
+            <CustomButton title="Retry" onPress={fetchDetails} />
+          </View>
+        </View>
+      </SafeAreaView>
     );
   }
 

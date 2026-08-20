@@ -28,8 +28,10 @@ import {
   unlikePortfolio,
   commentPortfolio,
   getPortfolioComments,
-  addViewToPortfolio
+  addViewToPortfolio,
+  sharePortfolio
 } from "../../services/customer";
+import { createArtistDeepLink } from "../../services/deepLink";
 
 const { height: WINDOW_HEIGHT, width: WINDOW_WIDTH } = Dimensions.get("window");
 
@@ -141,9 +143,12 @@ const ReelItem = ({
 
   const handleShare = async () => {
     try {
+      const artId = item.artist_id || item.artistProfileId;
+      const shareUrl = artId ? createArtistDeepLink(artId) : (videoUri || item.video_url || "https://mehendigoo.com");
       await Share.share({
-        message: `Check out this stunning Mehndi design by ${item.artist_name || "Mehndi Artist"} on MehndiGo!`,
-        url: videoUri || item.video_url
+        message: `Check out this stunning Mehndi design by ${item.artist_name || "Mehndi Artist"} on MehndiGo!\n\nView Artist: ${shareUrl}`,
+        title: `Mehndi Design by ${item.artist_name || "Artist"}`,
+        url: shareUrl
       });
     } catch (error) {
       console.log("Error sharing reel:", error);

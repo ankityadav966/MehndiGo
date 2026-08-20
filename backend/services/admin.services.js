@@ -179,14 +179,42 @@ class AdminService {
     };
   }
 
-  async approveArtist(id) {
+  async approveArtist(id, adminId = null) {
     const artist = await ArtistProfileRepositor.getArtistById(id);
     if (!artist) {
       throw new AppError("Artist not found", 404);
     }
+    const previousStatus = artist.verification_status;
     await ArtistProfileRepositor.update(id, {
       verification_status: "APPROVED",
+      is_available: true,
+      reviewed_by: adminId || null,
+      approved_at: new Date(),
+      rejection_reason: null,
     });
+
+    if (artist.user_id) {
+      await db.User.update({ is_verified: true, is_active: true }, { where: { id: artist.user_id } });
+    }
+
+    if (db.AuditLog && adminId) {
+      try {
+        await db.AuditLog.create({
+          admin_id: adminId,
+          action: "KYC_APPROVAL",
+          details: JSON.stringify({
+            artist_id: id,
+            artist_user_id: artist.user_id,
+            previous_status: previousStatus,
+            new_status: "APPROVED",
+            timestamp: new Date()
+          })
+        });
+      } catch (auditErr) {
+        console.error("[AuditLog Error] Failed to log KYC approval:", auditErr.message);
+      }
+    }
+
     await NotificationRepositor.createNotification({
       user_id: artist.user_id,
       title: "Profile Approved! 🎉",
@@ -214,15 +242,39 @@ class AdminService {
     return true;
   }
 
-  async rejectArtist(id, reason) {
+  async rejectArtist(id, reason, adminId = null) {
     const artist = await ArtistProfileRepositor.getArtistById(id);
     if (!artist) {
       throw new AppError("Artist not found", 404);
     }
+    const previousStatus = artist.verification_status;
     await ArtistProfileRepositor.update(id, {
       verification_status: "REJECTED",
+      is_available: false,
+      reviewed_by: adminId || null,
+      rejected_at: new Date(),
       rejection_reason: reason,
     });
+
+    if (db.AuditLog && adminId) {
+      try {
+        await db.AuditLog.create({
+          admin_id: adminId,
+          action: "KYC_REJECTION",
+          details: JSON.stringify({
+            artist_id: id,
+            artist_user_id: artist.user_id,
+            previous_status: previousStatus,
+            new_status: "REJECTED",
+            rejection_reason: reason,
+            timestamp: new Date()
+          })
+        });
+      } catch (auditErr) {
+        console.error("[AuditLog Error] Failed to log KYC rejection:", auditErr.message);
+      }
+    }
+
     await NotificationRepositor.createNotification({
       user_id: artist.user_id,
       title: "Profile Rejected",
@@ -239,6 +291,99 @@ class AdminService {
         type: "PROFILE"
       });
     } catch (e) {}
+    return true;
+  }
+
+  async suspendArtist(id, reason = "Suspended by Administrator", adminId = null) {
+    const artist = await ArtistProfileRepositor.getArtistById(id);
+    if (!artist) {
+      throw new AppError("Artist not found", 404);
+    }
+    const previousStatus = artist.verification_status;
+    await ArtistProfileRepositor.update(id, {
+      verification_status: "REJECTED",
+      is_available: false,
+      rejection_reason: reason
+    });
+
+    // Deactivate user account if user exists
+    if (artist.user_id) {
+      await db.User.update({ is_active: false }, { where: { id: artist.user_id } });
+    }
+
+    if (db.AuditLog && adminId) {
+      try {
+        await db.AuditLog.create({
+          admin_id: adminId,
+          action: "ARTIST_SUSPENSION",
+          details: JSON.stringify({
+            artist_id: id,
+            artist_user_id: artist.user_id,
+            previous_status: previousStatus,
+            new_status: "SUSPENDED",
+            reason,
+            timestamp: new Date()
+          })
+        });
+      } catch (auditErr) {
+        console.error("[AuditLog Error] Failed to log artist suspension:", auditErr.message);
+      }
+    }
+
+    await NotificationRepositor.createNotification({
+      user_id: artist.user_id,
+      title: "Account Suspended ⚠️",
+      message: `Your artist account has been suspended. Reason: ${reason}. Please contact support.`,
+      type: "PROFILE",
+      is_read: false
+    });
+
+    return true;
+  }
+
+  async reactivateArtist(id, adminId = null) {
+    const artist = await ArtistProfileRepositor.getArtistById(id);
+    if (!artist) {
+      throw new AppError("Artist not found", 404);
+    }
+    const previousStatus = artist.verification_status;
+    await ArtistProfileRepositor.update(id, {
+      verification_status: "APPROVED",
+      is_available: true,
+      rejection_reason: null
+    });
+
+    // Reactivate user account if user exists
+    if (artist.user_id) {
+      await db.User.update({ is_active: true }, { where: { id: artist.user_id } });
+    }
+
+    if (db.AuditLog && adminId) {
+      try {
+        await db.AuditLog.create({
+          admin_id: adminId,
+          action: "ARTIST_REACTIVATION",
+          details: JSON.stringify({
+            artist_id: id,
+            artist_user_id: artist.user_id,
+            previous_status: previousStatus,
+            new_status: "APPROVED",
+            timestamp: new Date()
+          })
+        });
+      } catch (auditErr) {
+        console.error("[AuditLog Error] Failed to log artist reactivation:", auditErr.message);
+      }
+    }
+
+    await NotificationRepositor.createNotification({
+      user_id: artist.user_id,
+      title: "Account Reactivated 🎉",
+      message: "Your artist account has been reactivated! You can now accept customer bookings.",
+      type: "PROFILE",
+      is_read: false
+    });
+
     return true;
   }
 
@@ -375,122 +520,6 @@ class AdminService {
     });
   }
 
-  async getAllWithdrawals() {
-    return await db.WithdrawRequest.findAll({
-      include: [
-        {
-          model: db.ArtistProfile,
-          as: "artist",
-          include: [{ model: db.User, as: "user", attributes: ["name", "profile_image", "email", "phone"] }]
-        }
-      ],
-      order: [["createdAt", "DESC"]]
-    });
-  }
-
-  async approveWithdrawal(requestId) {
-    const request = await db.WithdrawRequest.findByPk(requestId);
-    if (!request) {
-      throw new AppError("Withdraw request not found", 404);
-    }
-    if (request.status !== "PENDING") {
-      throw new AppError("Only PENDING withdraw requests can be approved", 400);
-    }
-
-    await request.update({ status: "APPROVED" });
-
-    // Update WalletTransaction status to SUCCESS
-    const artist = await db.ArtistProfile.findByPk(request.artist_id);
-    if (artist) {
-      const wallet = await db.Wallet.findOne({ where: { user_id: artist.user_id } });
-      if (wallet) {
-        const tx = await db.WalletTransaction.findOne({
-          where: {
-            wallet_id: wallet.id,
-            description: `Withdraw request ID: WR-${requestId}`,
-            status: "PENDING"
-          }
-        });
-        if (tx) {
-          await tx.update({ status: "SUCCESS" });
-        }
-      }
-
-      // Notify artist
-      try {
-        await db.Notification.create({
-          user_id: artist.user_id,
-          title: "Withdrawal Approved! 💸",
-          message: `Your withdrawal of ₹${request.amount} was approved and processed successfully.`,
-          type: "WALLET"
-        });
-      } catch (err) {
-        console.error("Error creating withdrawal notification:", err.message);
-      }
-    }
-
-    return request;
-  }
-
-  async rejectWithdrawal(requestId, reason) {
-    const request = await db.WithdrawRequest.findByPk(requestId);
-    if (!request) {
-      throw new AppError("Withdraw request not found", 404);
-    }
-    if (request.status !== "PENDING") {
-      throw new AppError("Only PENDING withdraw requests can be rejected", 400);
-    }
-
-    await request.update({
-      status: "REJECTED",
-      rejection_reason: reason || "Rejected by administrator"
-    });
-
-    const artist = await db.ArtistProfile.findByPk(request.artist_id);
-    if (artist) {
-      const wallet = await db.Wallet.findOne({ where: { user_id: artist.user_id } });
-      if (wallet) {
-        // Refund the amount to the artist's wallet
-        const newBalance = wallet.balance + request.amount;
-        await wallet.update({ balance: newBalance });
-
-        // Update the original pending transaction to FAILED
-        const originalTx = await db.WalletTransaction.findOne({
-          where: {
-            wallet_id: wallet.id,
-            description: `Withdraw request ID: WR-${requestId}`,
-            status: "PENDING"
-          }
-        });
-        if (originalTx) {
-          await originalTx.update({ status: "FAILED" });
-        }
-
-        // Create a new REFUND transaction log to trace the restoration of funds
-        await db.WalletTransaction.create({
-          wallet_id: wallet.id,
-          transaction_type: "RECHARGE",
-          amount: request.amount,
-          status: "SUCCESS",
-          description: `Restored funds for rejected withdrawal request WR-${requestId}`
-        });
-      }
-
-      // Notify artist
-      try {
-        await db.Notification.create({
-          user_id: artist.user_id,
-          title: "Withdrawal Rejected ❌",
-          message: `Your withdrawal request of ₹${request.amount} was rejected. Reason: ${reason || "Check details."}. Funds have been restored.`,
-          type: "WALLET"
-        });
-      } catch (err) {
-        console.error("Error creating rejection notification:", err.message);
-      }
-    }
-
-    return request;
-  }
 
   async getWalletSummary() {
     const adminUser = await db.User.findOne({ where: { role: "ADMIN" } });
@@ -716,6 +745,376 @@ class AdminService {
     }
 
     return tx;
+  }
+
+  async getAllWithdrawals() {
+    const requests = await db.WithdrawRequest.findAll({
+      include: [
+        {
+          model: db.ArtistProfile,
+          as: "artist",
+          include: [
+            {
+              model: db.User,
+              as: "user",
+              attributes: ["id", "name", "phone", "email", "profile_image"]
+            }
+          ]
+        }
+      ],
+      order: [["createdAt", "DESC"]]
+    });
+
+    const enriched = await Promise.all(
+      requests.map(async (req) => {
+        const item = req.toJSON();
+        if (item.artist && item.artist.user_id) {
+          const bank = await db.BankAccount.findOne({ where: { user_id: item.artist.user_id } });
+          if (bank) {
+            item.bank_account = {
+              account_holder_name: bank.account_holder_name,
+              bank_name: bank.bank_name,
+              ifsc_code: bank.ifsc_code,
+              account_number: bank.account_number,
+              upi_id: bank.upi_id
+            };
+          }
+        }
+        return item;
+      })
+    );
+
+    return enriched;
+  }
+
+  async approveWithdrawal(requestId) {
+    const t = await db.sequelize.transaction();
+    try {
+      const request = await db.WithdrawRequest.findByPk(requestId, {
+        include: [{ model: db.ArtistProfile, as: "artist" }],
+        transaction: t,
+        lock: t.LOCK.UPDATE
+      });
+
+      if (!request) {
+        throw new AppError("Withdrawal request not found", 404);
+      }
+
+      if (request.status !== "PENDING") {
+        throw new AppError(`Cannot approve request. It is already in '${request.status}' status.`, 400);
+      }
+
+      const artist = request.artist;
+      if (!artist) {
+        throw new AppError("Associated artist profile not found", 404);
+      }
+
+      const wallet = await db.Wallet.findOne({
+        where: { user_id: artist.user_id },
+        transaction: t,
+        lock: t.LOCK.UPDATE
+      });
+
+      if (!wallet) {
+        throw new AppError("Artist wallet not found", 404);
+      }
+
+      // Finalize withdrawal: clear held pending balance and increment total_withdrawals
+      const newPending = Math.max(0, Number(wallet.pending_balance || 0) - Number(request.amount));
+      const newTotalWithdrawals = Number(wallet.total_withdrawals || 0) + Number(request.amount);
+
+      await wallet.update({
+        pending_balance: newPending,
+        total_withdrawals: newTotalWithdrawals
+      }, { transaction: t });
+
+      await request.update({
+        status: "COMPLETED",
+        rejection_reason: null
+      }, { transaction: t });
+
+      // Update existing pending transaction or create a completed transaction
+      const existingTx = await db.WalletTransaction.findOne({
+        where: {
+          wallet_id: wallet.id,
+          transaction_type: "WITHDRAWAL",
+          status: "PENDING"
+        },
+        transaction: t
+      });
+
+      if (existingTx) {
+        await existingTx.update({
+          status: "SUCCESS",
+          description: `Withdrawal of ₹${request.amount} approved and settled to bank account`
+        }, { transaction: t });
+      } else {
+        await db.WalletTransaction.create({
+          wallet_id: wallet.id,
+          transaction_type: "WITHDRAWAL",
+          amount: request.amount,
+          status: "SUCCESS",
+          description: `Withdrawal of ₹${request.amount} approved and settled to bank account`
+        }, { transaction: t });
+      }
+
+      const ledgerService = require("./ledger.services");
+      await ledgerService.recordEntry({
+        userId: artist.user_id,
+        walletId: wallet.id,
+        entryType: "DEBIT",
+        amount: Number(request.amount),
+        balanceAfter: Number(wallet.available_balance !== undefined ? wallet.available_balance : wallet.balance),
+        referenceId: `WITHDRAW-APPROVE-${request.id}`,
+        description: `Withdrawal request WR-${request.id} approved & funds settled`
+      }, t);
+
+      await t.commit();
+
+      // Notify Artist
+      try {
+        await db.Notification.create({
+          user_id: artist.user_id,
+          title: "Withdrawal Approved! 💸",
+          message: `Your withdrawal request of ₹${request.amount} has been approved and processed to your bank account.`,
+          type: "SYSTEM"
+        });
+      } catch (notifErr) {
+        console.error("Error creating withdrawal approval notification:", notifErr.message);
+      }
+
+      return request;
+    } catch (error) {
+      await t.rollback();
+      throw error;
+    }
+  }
+
+  async rejectWithdrawal(requestId, reason = "Rejected by Admin") {
+    const t = await db.sequelize.transaction();
+    try {
+      const request = await db.WithdrawRequest.findByPk(requestId, {
+        include: [{ model: db.ArtistProfile, as: "artist" }],
+        transaction: t,
+        lock: t.LOCK.UPDATE
+      });
+
+      if (!request) {
+        throw new AppError("Withdrawal request not found", 404);
+      }
+
+      if (request.status !== "PENDING") {
+        throw new AppError(`Cannot reject request. It is already in '${request.status}' status.`, 400);
+      }
+
+      const artist = request.artist;
+      if (!artist) {
+        throw new AppError("Associated artist profile not found", 404);
+      }
+
+      const wallet = await db.Wallet.findOne({
+        where: { user_id: artist.user_id },
+        transaction: t,
+        lock: t.LOCK.UPDATE
+      });
+
+      if (!wallet) {
+        throw new AppError("Artist wallet not found", 404);
+      }
+
+      // Release held funds back to available balance
+      const newAvail = Number(wallet.available_balance !== undefined ? wallet.available_balance : wallet.balance) + Number(request.amount);
+      const newPending = Math.max(0, Number(wallet.pending_balance || 0) - Number(request.amount));
+
+      await wallet.update({
+        balance: newAvail,
+        available_balance: newAvail,
+        pending_balance: newPending
+      }, { transaction: t });
+
+      await request.update({
+        status: "REJECTED",
+        rejection_reason: reason || "Rejected by Administrator"
+      }, { transaction: t });
+
+      const existingTx = await db.WalletTransaction.findOne({
+        where: {
+          wallet_id: wallet.id,
+          transaction_type: "WITHDRAWAL",
+          status: "PENDING"
+        },
+        transaction: t
+      });
+
+      if (existingTx) {
+        await existingTx.update({
+          status: "FAILED",
+          description: `Withdrawal WR-${request.id} rejected: ${reason || 'Admin rejection'}. Funds restored.`
+        }, { transaction: t });
+      }
+
+      const ledgerService = require("./ledger.services");
+      await ledgerService.recordEntry({
+        userId: artist.user_id,
+        walletId: wallet.id,
+        entryType: "RELEASE",
+        amount: Number(request.amount),
+        balanceAfter: newAvail,
+        referenceId: `WITHDRAW-REJECT-${request.id}`,
+        description: `Held funds released back due to rejection of withdrawal WR-${request.id}: ${reason || 'Admin rejection'}`
+      }, t);
+
+      await t.commit();
+
+      // Notify Artist
+      try {
+        await db.Notification.create({
+          user_id: artist.user_id,
+          title: "Withdrawal Request Rejected ❌",
+          message: `Your withdrawal request of ₹${request.amount} was rejected. Reason: ${reason || "Verification error"}. Held funds have been returned to your wallet.`,
+          type: "SYSTEM"
+        });
+      } catch (notifErr) {
+        console.error("Error creating withdrawal rejection notification:", notifErr.message);
+      }
+
+      return request;
+    } catch (error) {
+      await t.rollback();
+      throw error;
+    }
+  }
+
+  // --- REVIEW MODERATION ---
+  async getReviews(status = "ALL") {
+    const where = {};
+    if (status === "APPROVED" || status === "VERIFIED") {
+      where.is_verified = true;
+    } else if (status === "REJECTED" || status === "UNVERIFIED") {
+      where.is_verified = false;
+    }
+
+    return await db.Review.findAll({
+      where,
+      include: [
+        { model: db.User, as: "user", attributes: ["id", "name", "email", "phone", "profile_image"] },
+        {
+          model: db.ArtistProfile,
+          as: "artist",
+          include: [{ model: db.User, as: "user", attributes: ["id", "name", "email", "phone"] }]
+        },
+        { model: db.Booking, as: "booking", attributes: ["id", "booking_code", "total_price", "booking_status"] },
+        { model: db.ReviewReply, as: "replies" }
+      ],
+      order: [["createdAt", "DESC"]]
+    });
+  }
+
+  async approveReview(reviewId) {
+    const review = await db.Review.findByPk(reviewId);
+    if (!review) throw new AppError("Review not found", 404);
+
+    await review.update({ is_verified: true });
+
+    const reviewService = require("./review.services");
+    await reviewService.recalculateArtistRating(review.artist_id);
+
+    return review;
+  }
+
+  async rejectReview(reviewId, reason = "Rejected by Moderator") {
+    const review = await db.Review.findByPk(reviewId);
+    if (!review) throw new AppError("Review not found", 404);
+
+    await review.update({ is_verified: false });
+
+    const reviewService = require("./review.services");
+    await reviewService.recalculateArtistRating(review.artist_id);
+
+    return review;
+  }
+
+  // --- SUPPORT TICKETS ---
+  async getSupportTickets(params = {}) {
+    const where = {};
+    if (params.status && params.status !== "ALL") {
+      where.status = params.status;
+    }
+    if (params.category) {
+      where.category = params.category;
+    }
+
+    return await db.SupportTicket.findAll({
+      where,
+      include: [
+        { model: db.User, as: "user", attributes: ["id", "name", "email", "phone", "profile_image", "role"] }
+      ],
+      order: [["createdAt", "DESC"]]
+    });
+  }
+
+  async getSupportTicketDetails(id) {
+    const ticket = await db.SupportTicket.findByPk(id, {
+      include: [
+        { model: db.User, as: "user", attributes: ["id", "name", "email", "phone", "profile_image", "role"] }
+      ]
+    });
+    if (!ticket) throw new AppError("Support ticket not found", 404);
+    return ticket;
+  }
+
+  async updateTicketStatus(id, status) {
+    const ticket = await db.SupportTicket.findByPk(id);
+    if (!ticket) throw new AppError("Support ticket not found", 404);
+
+    await ticket.update({ status });
+    return ticket;
+  }
+
+  async replySupportTicket(id, message, status, adminUserId) {
+    const ticket = await db.SupportTicket.findByPk(id);
+    if (!ticket) throw new AppError("Support ticket not found", 404);
+
+    const admin = await db.User.findByPk(adminUserId);
+    let repliesList = [];
+    try {
+      repliesList = ticket.replies ? (typeof ticket.replies === "string" ? JSON.parse(ticket.replies) : ticket.replies) : [];
+    } catch (_) {
+      repliesList = [];
+    }
+
+    repliesList.push({
+      sender_id: adminUserId,
+      sender_name: admin ? admin.name : "Admin Support",
+      sender_role: "ADMIN",
+      message,
+      created_at: new Date().toISOString()
+    });
+
+    const newStatus = status || ticket.status || "OPEN";
+    await ticket.update({
+      replies: JSON.stringify(repliesList),
+      status: newStatus
+    });
+
+    // Notify ticket owner
+    try {
+      await db.Notification.create({
+        user_id: ticket.user_id,
+        title: `Support Ticket #${ticket.id} Updated 💬`,
+        message: `Admin replied: "${message.substring(0, 100)}${message.length > 100 ? '...' : ''}"`,
+        type: "SYSTEM",
+        data: {
+          type: "support",
+          event: "ticket_reply",
+          ticketId: ticket.id
+        }
+      });
+    } catch (notifErr) {
+      console.error("Error creating ticket reply notification:", notifErr.message);
+    }
+
+    return ticket;
   }
 }
 

@@ -92,9 +92,11 @@ export default function WishlistScreen({ navigation }) {
     if (wishlist.length === 0) return;
     try {
       const names = wishlist.map((a) => a.user?.name || a.name || "Mehndi Specialist").join(", ");
+      const shareUrl = "https://mehendigoo.com";
       await Share.share({
-        message: `Check out my favorite MehndiGo artists collection: ${names}\n\nBook top home mehendi specialists on MehndiGo!`,
+        message: `Check out my favorite MehndiGo artists collection: ${names}\n\nBook top home mehendi specialists on MehndiGo! ${shareUrl}`,
         title: "My Favorite Mehndi Artists Collection",
+        url: shareUrl
       });
     } catch (e) {
       console.log("Share wishlist error:", e.message);

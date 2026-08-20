@@ -22,7 +22,7 @@ router.put("/leads/accept", authenticate, ArtistController.acceptLead);
 router.put("/leads/reject", authenticate, ArtistController.rejectLead);
 router.put("/leads/view", authenticate, ArtistController.viewLead);
 
-// Services Management
+// Services & Packages Management
 router.get("/services", authenticate, ArtistController.getServices);
 router.get("/services/:id", authenticate, ArtistController.getServiceById);
 router.post("/services", authenticate, ArtistController.createService);
@@ -31,6 +31,30 @@ router.put("/services/:id", authenticate, ArtistController.updateService);
 router.delete("/services/:id", authenticate, ArtistController.deleteService);
 router.post("/services/media", authenticate, ArtistController.postServiceMedia);
 router.delete("/services/media", authenticate, ArtistController.deleteServiceMedia);
+
+// Standalone Package Management
+router.post("/services/:serviceId/packages", authenticate, ArtistController.createPackage);
+router.put("/packages/:id", authenticate, ArtistController.updatePackage);
+router.delete("/packages/:id", authenticate, ArtistController.deletePackage);
+
+// Availability, Working Schedule & Blocked Dates
+router.get("/availability", authenticate, ArtistController.getAvailability);
+router.put("/availability", authenticate, ArtistController.updateAvailability);
+router.post("/availability/blocked-dates", authenticate, ArtistController.addBlockedDate);
+router.delete("/availability/blocked-dates", authenticate, ArtistController.removeBlockedDate);
+
+const upload = require("../middleware/upload.middleware");
+
+// Portfolio Management
+router.get("/portfolio", authenticate, ArtistController.getMyPortfolio);
+router.get("/portfolio/upload-signature", authenticate, ArtistController.getUploadSignature);
+router.get("/portfolio/:id", authenticate, ArtistController.getPortfolioById);
+router.post("/portfolio", authenticate, upload.single("portfolio_image"), ArtistController.createPortfolio);
+router.put("/portfolio/reorder", authenticate, ArtistController.reorderPortfolio);
+router.put("/profile/cover", authenticate, ArtistController.setCoverImage);
+router.put("/portfolio/:id", authenticate, ArtistController.updatePortfolio);
+router.delete("/portfolio/:id", authenticate, ArtistController.deletePortfolio);
+router.post("/portfolio/upload", authenticate, upload.array("media", 10), ArtistController.uploadPortfolioMedia);
 
 const ReviewController = require("../controllers/review/review.controller");
 
@@ -41,5 +65,13 @@ router.get("/reviews/analytics", authenticate, ReviewController.getArtistReviews
 // Artist Live Tracking Location Update
 const TrackingController = require("../controllers/tracking/tracking.controller");
 router.post("/location/update", authenticate, TrackingController.updateLocation);
+
+// Artist Support Tickets & Disputes
+const CustomerController = require("../controllers/customer/customer.controller");
+router.post("/support/ticket", authenticate, CustomerController.createSupportTicket);
+router.get("/support/tickets", authenticate, CustomerController.getSupportTickets);
+router.get("/support/tickets/:id", authenticate, CustomerController.getSupportTicketDetails);
+router.post("/support/tickets/:id/reply", authenticate, CustomerController.replySupportTicket);
+router.put("/support/tickets/:id/close", authenticate, CustomerController.closeSupportTicket);
 
 module.exports = router;

@@ -1,29 +1,9 @@
 const db = require("../models");
 const { Op } = require("sequelize");
+const AppError = require("../utils/errors/app.error");
 const ArtistProfileRepository = require("../repositories/artistProfile.repository");
 
 const repo = new ArtistProfileRepository();
-
-const categoriesList = [
-  { id: "1", name: "Bridal Mehndi", slug: "bridal", icon: "flower-outline", image: "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=300&q=80" },
-  { id: "2", name: "Arabic Mehndi", slug: "arabic", icon: "brush-outline", image: "https://images.unsplash.com/photo-1601054790522-d08317b75567?auto=format&fit=crop&w=300&q=80" },
-  { id: "3", name: "Royal Bridal Mehndi", slug: "royal-bridal", icon: "ribbon-outline", image: "https://images.unsplash.com/photo-1590012357675-bc55909793fb?auto=format&fit=crop&w=300&q=80" },
-  { id: "4", name: "Traditional Mehndi", slug: "traditional", icon: "cut-outline", image: "https://images.unsplash.com/photo-1601054790740-975949514f7b?auto=format&fit=crop&w=300&q=80" },
-  { id: "5", name: "Floral Mehndi", slug: "floral", icon: "rose-outline", image: "https://images.unsplash.com/photo-1601054791559-0a67ab92b6a2?auto=format&fit=crop&w=300&q=80" },
-  { id: "6", name: "Minimal Mehndi", slug: "minimal", icon: "remove-outline", image: "https://images.unsplash.com/photo-1601054791572-c510255b77ea?auto=format&fit=crop&w=300&q=80" },
-  { id: "7", name: "Modern Mehndi", slug: "modern", icon: "sparkles-outline", image: "https://images.unsplash.com/photo-1601054791585-fb4050d24bf5?auto=format&fit=crop&w=300&q=80" },
-  { id: "8", name: "Finger Mehndi", slug: "finger", icon: "hand-left-outline", image: "https://images.unsplash.com/photo-1601054791599-23efbf1c65d6?auto=format&fit=crop&w=300&q=80" },
-  { id: "9", name: "Full Hand Mehndi", slug: "full-hand", icon: "body-outline", image: "https://images.unsplash.com/photo-1601054791612-4029237c1d76?auto=format&fit=crop&w=300&q=80" },
-  { id: "10", name: "Back Hand Mehndi", slug: "back-hand", icon: "hand-right-outline", image: "https://images.unsplash.com/photo-1601054791637-27b233a73c91?auto=format&fit=crop&w=300&q=80" },
-  { id: "11", name: "Leg Mehndi", slug: "leg", icon: "foot-outline", image: "https://images.unsplash.com/photo-1601054791646-9d324b172a1e?auto=format&fit=crop&w=300&q=80" },
-  { id: "12", name: "Engagement Mehndi", slug: "engagement", icon: "heart-outline", image: "https://images.unsplash.com/photo-1601054791653-52467fd89886?auto=format&fit=crop&w=300&q=80" },
-  { name: "Wedding Mehndi", slug: "wedding", icon: "gift-outline", image: "https://images.unsplash.com/photo-1601054791657-3a13917d0961?auto=format&fit=crop&w=300&q=80" },
-  { name: "Karwa Chauth Mehndi", slug: "karwa-chauth", icon: "moon-outline", image: "https://images.unsplash.com/photo-1601054791672-0051e8e50b1d?auto=format&fit=crop&w=300&q=80" },
-  { name: "Eid Mehndi", slug: "eid", icon: "star-half-outline", image: "https://images.unsplash.com/photo-1601054791689-53e970a2fe89?auto=format&fit=crop&w=300&q=80" },
-  { name: "Festival Mehndi", slug: "festival", icon: "sunny-outline", image: "https://images.unsplash.com/photo-1601054791696-6e54ee0d55e9?auto=format&fit=crop&w=300&q=80" },
-  { name: "Kids Mehndi", slug: "kids", icon: "happy-outline", image: "https://images.unsplash.com/photo-1601054791702-8d76db7bd84b?auto=format&fit=crop&w=300&q=80" },
-  { name: "Groom Mehndi", slug: "groom", icon: "person-outline", image: "https://images.unsplash.com/photo-1601054791712-4091a135546d?auto=format&fit=crop&w=300&q=80" }
-];
 
 const offersList = [
   { id: "1", title: "Bridal Mehndi Ceremony", description: "Get flat 20% off on all bridal bookings this season. Code: BRIDAL20", code: "BRIDAL20", discount: "20%", banner: "https://images.unsplash.com/photo-1582192732961-2364f55b1a3d?auto=format&fit=crop&w=800&q=80" },
@@ -54,7 +34,6 @@ class CustomerService {
     } catch (e) { /* ignore redis error */ }
 
     try {
-      const db = require("../models");
       const list = await db.Category.findAll({
         where: { status: "ACTIVE" },
         order: [["sort_order", "ASC"]]
@@ -66,10 +45,11 @@ class CustomerService {
         } catch (e) { /* ignore */ }
         return list;
       }
+      return [];
     } catch (err) {
       console.log("Error fetching dynamic categories from DB:", err.message);
+      return [];
     }
-    return categoriesList;
   }
 
   async getOffers() {
@@ -191,11 +171,21 @@ class CustomerService {
   async searchArtists(query, filters = {}, sort = "nearest", lat = null, lng = null, page = 1, limit = 15) {
     const offset = (Number(page) - 1) * Number(limit);
     let where = {
-      verification_status: { [Op.ne]: "REJECTED" }
+      verification_status: "APPROVED"
     };
 
-    if (filters.category) {
-      const rawCategory = filters.category.trim();
+    let categoryFilter = filters.category;
+    if (!categoryFilter && (filters.categoryId || filters.category_id)) {
+      try {
+        const catRecord = await db.Category.findByPk(filters.categoryId || filters.category_id);
+        if (catRecord) {
+          categoryFilter = catRecord.name;
+        }
+      } catch (_) {}
+    }
+
+    if (categoryFilter) {
+      const rawCategory = categoryFilter.trim();
       const cleanCategory = rawCategory
         .toLowerCase()
         .replace(/\s+mehendi/gi, "")
@@ -263,21 +253,26 @@ class CustomerService {
     }
 
     if (query) {
-      const searchPattern = `%${query}%`;
+      const isPostgres = db.sequelize.getDialect() === "postgres";
+      const likeOp = isPostgres ? Op.iLike : Op.like;
+      const likeKw = isPostgres ? "ILIKE" : "LIKE";
+      const trimmedQuery = query.trim();
+      const searchPattern = `%${trimmedQuery}%`;
+      const safePattern = `%${trimmedQuery.replace(/'/g, "''")}%`;
       where[Op.or] = [
-        { bio: { [Op.iLike || Op.like]: searchPattern } },
-        { city: { [Op.iLike || Op.like]: searchPattern } },
-        { state: { [Op.iLike || Op.like]: searchPattern } },
-        { pincode: { [Op.iLike || Op.like]: searchPattern } },
+        { bio: { [likeOp]: searchPattern } },
+        { city: { [likeOp]: searchPattern } },
+        { state: { [likeOp]: searchPattern } },
+        { pincode: { [likeOp]: searchPattern } },
         db.sequelize.literal(`EXISTS (
-          SELECT 1 FROM "Users" AS u 
-          WHERE u.id = "ArtistProfile".user_id 
-          AND u.name ILIKE '${searchPattern}'
+          SELECT 1 FROM ${isPostgres ? '"Users"' : 'Users'} AS u 
+          WHERE u.id = ${isPostgres ? '"ArtistProfile"' : 'ArtistProfile'}.user_id 
+          AND u.name ${likeKw} '${safePattern}'
         )`),
         db.sequelize.literal(`EXISTS (
-          SELECT 1 FROM "Services" AS s 
-          WHERE s.artist_id = "ArtistProfile".id 
-          AND (s.specialization_name ILIKE '${searchPattern}' OR s.category ILIKE '${searchPattern}')
+          SELECT 1 FROM ${isPostgres ? '"Services"' : 'Services'} AS s 
+          WHERE s.artist_id = ${isPostgres ? '"ArtistProfile"' : 'ArtistProfile'}.id 
+          AND (s.specialization_name ${likeKw} '${safePattern}' OR s.category ${likeKw} '${safePattern}')
         )`)
       ];
     }
@@ -325,6 +320,7 @@ class CustomerService {
     const artists = await db.ArtistProfile.findAndCountAll({
       where,
       attributes,
+      distinct: true,
       include: [
         {
           model: db.User,
@@ -402,15 +398,44 @@ class CustomerService {
   }
 
   async getArtistServices(artistId) {
+    if (!artistId || isNaN(Number(artistId))) {
+      throw new AppError("Valid artist ID is required", 400);
+    }
+    const artist = await db.ArtistProfile.findByPk(Number(artistId));
+    if (!artist) {
+      throw new AppError("Artist not found", 404);
+    }
+
     const services = await db.Service.findAll({
-      where: { artist_id: artistId, is_active: true }
+      where: { artist_id: Number(artistId), is_active: true },
+      order: [["id", "ASC"]]
     });
     return services;
   }
 
   async getArtistPortfolio(artistId) {
+    const artist = await db.ArtistProfile.findOne({
+      where: {
+        [db.Sequelize.Op.or]: [
+          { id: Number(artistId) },
+          { user_id: Number(artistId) }
+        ]
+      }
+    });
+
+    if (!artist || artist.verification_status !== "APPROVED") {
+      return [];
+    }
+
     const portfolio = await db.Portfolio.findAll({
-      where: { artist_id: artistId }
+      where: {
+        artist_id: { [db.Sequelize.Op.in]: [artist.id, artist.user_id] },
+        visibility: true
+      },
+      order: [
+        ["display_order", "ASC"],
+        ["createdAt", "DESC"]
+      ]
     });
     return portfolio;
   }
@@ -442,22 +467,56 @@ class CustomerService {
     };
   }
 
+  async getReviews(userId) {
+    const reviews = await db.Review.findAll({
+      where: { user_id: userId },
+      include: [
+        {
+          model: db.ArtistProfile,
+          as: "artist",
+          include: [
+            {
+              model: db.User,
+              as: "user",
+              attributes: ["id", "name", "profile_image"]
+            }
+          ]
+        },
+        {
+          model: db.Booking,
+          as: "booking",
+          attributes: ["id", "booking_code", "booking_date", "booking_status", "total_amount"]
+        },
+        {
+          model: db.ReviewReply,
+          as: "replies"
+        }
+      ],
+      order: [["createdAt", "DESC"]]
+    });
+    return reviews;
+  }
+
   async getArtistAvailability(artistId, query = {}) {
+    if (!artistId || isNaN(Number(artistId))) {
+      throw new AppError("Valid artist ID is required", 400);
+    }
+
+    const artist = await db.ArtistProfile.findByPk(Number(artistId));
+    if (!artist) {
+      throw new AppError("Artist not found", 404);
+    }
+
     const slots = await db.AvailabilitySlot.findAll({
-      where: { artist_id: artistId },
+      where: { artist_id: Number(artistId) },
       order: [["start_time", "ASC"]]
     });
-
-    const artist = await db.ArtistProfile.findByPk(artistId);
-    if (!artist) {
-      return slots;
-    }
 
     const { date, selected_art_id, group_size = 1, latitude, longitude } = query;
     const bookingService = require("./booking.services");
 
     const targetDate = date ? String(date).substring(0, 10) : new Date().toISOString().substring(0, 10);
-    const dayOfWeek = new Date(targetDate).toLocaleDateString("en-US", { weekday: "long" }).toUpperCase();
+    const dayOfWeek = new Date(targetDate + "T12:00:00.000Z").toLocaleDateString("en-US", { weekday: "long" }).toUpperCase();
 
     const workingDays = Array.isArray(artist.working_days) ? artist.working_days : ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
     const leaveDates = Array.isArray(artist.leave_dates) ? artist.leave_dates : [];
@@ -476,13 +535,18 @@ class CustomerService {
     const totalDesignDuration = artDuration * Math.max(1, Number(group_size || 1));
 
     // Travel calculation from previous booking on that day
-    const travelInfo = await bookingService.calculateTravelAndSequence(
-      artistId,
-      targetDate,
-      null,
-      latitude,
-      longitude
-    );
+    let travelInfo = { distanceKm: 0, durationMins: 0, originType: "HOME_BASE", originAddress: "" };
+    try {
+      travelInfo = await bookingService.calculateTravelAndSequence(
+        artistId,
+        targetDate,
+        null,
+        latitude,
+        longitude
+      );
+    } catch (tErr) {
+      // Fallback travel info
+    }
 
     // Build standard time slots with feasibility
     const timeTemplates = [
@@ -491,27 +555,55 @@ class CustomerService {
       { label: "06:00 PM", startTimeStr: `${targetDate}T18:00:00.000Z`, endTimeStr: `${targetDate}T21:00:00.000Z` }
     ];
 
-    const startOfDay = new Date(`${targetDate}T00:00:00.000Z`);
-    const endOfDay = new Date(`${targetDate}T23:59:59.999Z`);
-
     const existingBookings = await db.Booking.findAll({
       where: {
-        artist_id: artistId,
-        booking_status: { [Op.ne]: "CANCELLED" },
-        createdAt: { [Op.between]: [startOfDay, endOfDay] }
+        artist_id: Number(artistId),
+        booking_status: { [Op.notIn]: ["CANCELLED", "REFUNDED"] }
       },
       include: [{ model: db.AvailabilitySlot, as: "slot", required: false }]
     });
 
+    const bookingsOnDate = existingBookings.filter((b) => {
+      if (b.slot?.start_time) {
+        const slotDate = new Date(b.slot.start_time).toISOString().substring(0, 10);
+        if (slotDate === targetDate) return true;
+      }
+      if (b.reschedule_date) {
+        const resDate = new Date(b.reschedule_date).toISOString().substring(0, 10);
+        if (resDate === targetDate) return true;
+      }
+      if (b.notes && b.notes.includes(targetDate)) return true;
+      return false;
+    });
+
+    const isApproved = artist.verification_status === "APPROVED";
+    const isMasterAvailable = artist.is_available !== false;
+    const workStart = artist.working_start_time || "09:00";
+    const workEnd = artist.working_end_time || "20:00";
+    const breakStart = artist.break_start_time;
+    const breakEnd = artist.break_end_time;
+
     const smartSlots = timeTemplates.map((t) => {
       const slotStartTime = new Date(t.startTimeStr);
-      const isBooked = existingBookings.some((b) => {
+      const isBooked = bookingsOnDate.some((b) => {
         if (b.slot?.start_time && new Date(b.slot.start_time).getTime() === slotStartTime.getTime()) return true;
         if (b.notes && b.notes.includes(t.label)) return true;
         return false;
       });
 
-      const isFeasible = isWorkingDay && !isLeave && !isBooked;
+      // Extract HH:mm for the template slot
+      const timeStr = t.label.includes("10:00") ? "10:00" : t.label.includes("02:00") ? "14:00" : "18:00";
+      const slotEndStr = t.label.includes("10:00") ? "13:00" : t.label.includes("02:00") ? "17:00" : "21:00";
+
+      const withinWorkingHours = timeStr >= workStart && slotEndStr <= workEnd;
+      let overlapsBreak = false;
+      if (breakStart && breakEnd) {
+        if (timeStr < breakEnd && slotEndStr > breakStart) {
+          overlapsBreak = true;
+        }
+      }
+
+      const isFeasible = isApproved && isMasterAvailable && isWorkingDay && !isLeave && !isBooked && withinWorkingHours && !overlapsBreak;
 
       return {
         label: t.label,
@@ -519,19 +611,19 @@ class CustomerService {
         end_time: t.endTimeStr,
         is_available: isFeasible,
         is_booked: isBooked,
-        travel_distance_km: travelInfo.distanceKm,
-        travel_duration_mins: travelInfo.durationMins,
-        travel_origin_type: travelInfo.originType,
-        travel_origin_address: travelInfo.originAddress,
+        travel_distance_km: travelInfo.distanceKm || 0,
+        travel_duration_mins: travelInfo.durationMins || 0,
+        travel_origin_type: travelInfo.originType || "HOME_BASE",
+        travel_origin_address: travelInfo.originAddress || "",
         design_duration_mins: totalDesignDuration,
         prep_buffer_mins: 15,
         cooldown_buffer_mins: 20,
-        total_block_mins: travelInfo.durationMins + totalDesignDuration + 15 + 20
+        total_block_mins: (travelInfo.durationMins || 0) + totalDesignDuration + 15 + 20
       };
     });
 
     return {
-      artist_id: artistId,
+      artist_id: Number(artistId),
       date: targetDate,
       is_working_day: isWorkingDay,
       is_on_leave: isLeave,
@@ -637,11 +729,14 @@ class CustomerService {
     matchingServices.forEach((s) => suggestions.push({ type: "service", text: s.specialization_name }));
     matchingCities.forEach((c) => suggestions.push({ type: "city", text: c.city }));
 
-    categoriesList.forEach((cat) => {
-      if (cat.name.toLowerCase().includes(query.toLowerCase())) {
-        suggestions.push({ type: "category", text: cat.name });
-      }
-    });
+    try {
+      const activeCats = await this.getCategories();
+      (activeCats || []).forEach((cat) => {
+        if (cat.name && cat.name.toLowerCase().includes(query.toLowerCase())) {
+          suggestions.push({ type: "category", text: cat.name, id: cat.id });
+        }
+      });
+    } catch (_) {}
 
     return suggestions.slice(0, 10);
   }
@@ -706,15 +801,18 @@ class CustomerService {
   }
 
   async getFilterMetadata() {
-    const minMaxPrice = await db.Service.findOne({
-      attributes: [
-        [db.sequelize.fn("MIN", db.sequelize.col("minimum_price")), "minPrice"],
-        [db.sequelize.fn("MAX", db.sequelize.col("minimum_price")), "maxPrice"]
-      ]
-    });
+    const [minMaxPrice, categories] = await Promise.all([
+      db.Service.findOne({
+        attributes: [
+          [db.sequelize.fn("MIN", db.sequelize.col("minimum_price")), "minPrice"],
+          [db.sequelize.fn("MAX", db.sequelize.col("minimum_price")), "maxPrice"]
+        ]
+      }),
+      this.getCategories()
+    ]);
 
     return {
-      categories: categoriesList,
+      categories: categories || [],
       priceRange: {
         min: minMaxPrice?.dataValues?.minPrice || 500,
         max: minMaxPrice?.dataValues?.maxPrice || 10000
@@ -725,20 +823,44 @@ class CustomerService {
   }
 
   async addFavorite(userId, artistId) {
-    const favorite = await db.Favorite.findOrCreate({
+    if (!artistId) {
+      throw new AppError("Artist ID is required", 400);
+    }
+
+    let targetArtistId = Number(artistId);
+    let artist = await db.ArtistProfile.findByPk(targetArtistId);
+    if (!artist) {
+      const byUser = await db.ArtistProfile.findOne({ where: { user_id: targetArtistId } });
+      if (!byUser) {
+        throw new AppError("Artist profile not found", 404);
+      }
+      targetArtistId = byUser.id;
+    }
+
+    const [favorite] = await db.Favorite.findOrCreate({
       where: {
         user_id: userId,
-        artist_id: artistId
+        artist_id: targetArtistId
       }
     });
-    return favorite[0];
+    return favorite;
   }
 
   async removeFavorite(userId, artistId) {
+    if (!artistId) {
+      throw new AppError("Artist ID is required", 400);
+    }
+
+    const targetArtistIds = [Number(artistId)];
+    const byUser = await db.ArtistProfile.findOne({ where: { user_id: Number(artistId) } });
+    if (byUser) {
+      targetArtistIds.push(byUser.id);
+    }
+
     await db.Favorite.destroy({
       where: {
         user_id: userId,
-        artist_id: artistId
+        artist_id: { [db.Sequelize.Op.in]: targetArtistIds }
       }
     });
     return true;
@@ -768,7 +890,15 @@ class CustomerService {
       order: [["createdAt", "DESC"]]
     });
 
-    return favorites.map((f) => f.artist).filter(Boolean);
+    return favorites
+      .map((f) => {
+        if (!f.artist) return null;
+        const a = f.artist.toJSON ? f.artist.toJSON() : { ...f.artist };
+        a.is_favorite = true;
+        a.favorite_id = f.id;
+        return a;
+      })
+      .filter(Boolean);
   }
 
   async getHomeDashboard(lat, lng, userId) {
@@ -891,9 +1021,10 @@ class CustomerService {
         ]
       });
 
-      // AI Recommendation scoring heuristic
+      // Genuine recommendation scoring based on verified artist performance
       const scored = allArtists.map((artist) => {
-        let score = (artist.avg_rating || 4.5) * 2.0;
+        const rating = Number(artist.avg_rating || 0);
+        let score = rating * 2.0;
         if (artist.experience_years >= 5) score += 1.5;
         if (artist.total_bookings >= 20) score += 2.0;
         return { artist, score };
@@ -902,7 +1033,7 @@ class CustomerService {
       scored.sort((a, b) => b.score - a.score);
       return scored.slice(0, 8).map((s) => s.artist);
     } catch (e) {
-      console.log("Error generating AI recommendations:", e.message);
+      console.log("Error generating recommendations:", e.message);
       return [];
     }
   }
@@ -931,12 +1062,12 @@ class CustomerService {
       if (b.artist && !uniqueArtistsMap.has(b.artist.id)) {
         uniqueArtistsMap.set(b.artist.id, {
           id: b.artist.id,
-          name: b.artist.user?.name,
-          profile_image: b.artist.user?.profile_image,
-          specialization_name: b.service?.specialization_name || "Specialist",
+          name: b.artist.user?.name || "Mehndi Specialist",
+          profile_image: b.artist.user?.profile_image || null,
+          specialization_name: b.service?.specialization_name || "Mehndi Specialist",
           booking_date: b.createdAt,
-          avg_rating: b.artist.avg_rating || "4.8",
-          city: b.artist.user?.city || "Jaipur"
+          avg_rating: b.artist.avg_rating ? Number(b.artist.avg_rating) : null,
+          city: b.artist.user?.city || b.artist.city || null
         });
       }
     });
@@ -947,27 +1078,28 @@ class CustomerService {
   // Portfolio & Gallery Management
   async getPortfolios(query = "", filters = {}, page = 1, limit = 10) {
     const offset = (Number(page) - 1) * Number(limit);
+    const likeOp = db.sequelize?.options?.dialect === "postgres" ? Op.iLike : Op.like;
     const where = {
       visibility: true
     };
 
     if (filters.category) {
-      where.category = { [Op.iLike || Op.like]: `%${filters.category}%` };
+      where.category = { [likeOp]: `%${filters.category}%` };
     }
 
     if (filters.occasion) {
-      where.occasion = { [Op.iLike || Op.like]: `%${filters.occasion}%` };
+      where.occasion = { [likeOp]: `%${filters.occasion}%` };
     }
 
     if (query) {
       const searchPattern = `%${query}%`;
       where[Op.or] = [
-        { title: { [Op.iLike || Op.like]: searchPattern } },
-        { caption: { [Op.iLike || Op.like]: searchPattern } },
-        { description: { [Op.iLike || Op.like]: searchPattern } },
-        { tags: { [Op.iLike || Op.like]: searchPattern } },
-        { category: { [Op.iLike || Op.like]: searchPattern } },
-        { occasion: { [Op.iLike || Op.like]: searchPattern } }
+        { title: { [likeOp]: searchPattern } },
+        { caption: { [likeOp]: searchPattern } },
+        { description: { [likeOp]: searchPattern } },
+        { tags: { [likeOp]: searchPattern } },
+        { category: { [likeOp]: searchPattern } },
+        { occasion: { [likeOp]: searchPattern } }
       ];
     }
 
@@ -991,6 +1123,8 @@ class CustomerService {
         {
           model: db.ArtistProfile,
           as: "artist",
+          where: { verification_status: "APPROVED" },
+          required: true,
           include: [
             {
               model: db.User,
@@ -1229,9 +1363,30 @@ class CustomerService {
 
   async getProfile(userId) {
     const user = await db.User.findByPk(userId, {
-      attributes: ["id", "name", "phone", "email", "profile_image", "createdAt"]
+      attributes: [
+        "id",
+        "name",
+        "phone",
+        "email",
+        "profile_image",
+        "gender",
+        "city",
+        "state",
+        "pincode",
+        "current_level",
+        "current_xp",
+        "lifetime_xp",
+        "ambassador_tier",
+        "ambassador_score",
+        "is_verified",
+        "createdAt",
+        "updatedAt"
+      ]
     });
-    if (!user) throw new Error("User not found");
+    if (!user) {
+      const AppError = require("../utils/errors/app.error");
+      throw new AppError("User not found", 404);
+    }
     return user;
   }
 
@@ -1241,13 +1396,21 @@ class CustomerService {
     if (!user) throw new AppError("User not found", 404);
 
     const updates = {};
-    if (data.name && data.name.trim()) updates.name = data.name.trim();
+    if (data.name && String(data.name).trim()) updates.name = String(data.name).trim();
 
-    const newAvatar = data.profile_image || data.profileImage;
+    const newAvatar = data.profile_image || data.profileImage || data.avatar;
     if (newAvatar) updates.profile_image = newAvatar;
 
-    if (data.email && data.email.trim() && data.email.trim().toLowerCase() !== user.email) {
-      const cleanEmail = data.email.trim().toLowerCase();
+    if (data.gender && ["MALE", "FEMALE", "OTHER"].includes(String(data.gender).toUpperCase())) {
+      updates.gender = String(data.gender).toUpperCase();
+    }
+
+    if (data.city !== undefined && data.city !== null) updates.city = String(data.city).trim();
+    if (data.state !== undefined && data.state !== null) updates.state = String(data.state).trim();
+    if (data.pincode !== undefined && data.pincode !== null) updates.pincode = String(data.pincode).trim();
+
+    if (data.email && String(data.email).trim() && String(data.email).trim().toLowerCase() !== user.email) {
+      const cleanEmail = String(data.email).trim().toLowerCase();
       const existingEmail = await db.User.findOne({ where: { email: cleanEmail } });
       if (existingEmail && Number(existingEmail.id) !== Number(userId)) {
         throw new AppError("This email address is already registered with another account.", 400);
@@ -1270,7 +1433,7 @@ class CustomerService {
       await user.update(updates);
     }
 
-    return user;
+    return await this.getProfile(userId);
   }
 
   async getWishlist(userId) {
@@ -1332,6 +1495,7 @@ class CustomerService {
     const {
       name,
       label,
+      address,
       addressLine1,
       address_line_1,
       fullAddress,
@@ -1357,7 +1521,7 @@ class CustomerService {
     }
 
     const addrName = label || name || "Home";
-    const line1 = fullAddress || addressLine1 || address_line_1 || "Address";
+    const line1 = address || fullAddress || addressLine1 || address_line_1 || "Address";
     const line2 = landmark || houseFlat || house_flat || addressLine2 || address_line_2 || "";
     const addrCity = city || "Jaipur";
     const addrState = state || "Rajasthan";
@@ -1366,27 +1530,24 @@ class CustomerService {
     return await db.Address.create({
       user_id: userId,
       name: addrName,
-      label: addrName,
       address_line_1: line1,
       address_line_2: line2 || null,
-      house_flat: houseFlat || house_flat || line2 || null,
-      landmark: landmark || null,
       city: addrCity,
       state: addrState,
       pincode: addrPincode,
-      latitude: latitude ? parseFloat(latitude) : null,
-      longitude: longitude ? parseFloat(longitude) : null,
       is_default: markDefault,
     });
   }
 
   async updateAddress(userId, addressId, data) {
+    const AppError = require("../utils/errors/app.error");
     const address = await db.Address.findOne({ where: { id: addressId, user_id: userId } });
-    if (!address) throw new Error("Address not found");
+    if (!address) throw new AppError("Address not found", 404);
 
     const {
       name,
       label,
+      address: addrInput,
       addressLine1,
       address_line_1,
       fullAddress,
@@ -1398,8 +1559,6 @@ class CustomerService {
       city,
       state,
       pincode,
-      latitude,
-      longitude,
       isDefault,
       is_default,
     } = data;
@@ -1413,19 +1572,17 @@ class CustomerService {
     const updates = {};
     if (label || name) {
       updates.name = label || name;
-      updates.label = label || name;
     }
-    if (fullAddress || addressLine1 || address_line_1) updates.address_line_1 = fullAddress || addressLine1 || address_line_1;
-    if (landmark || houseFlat || house_flat || addressLine2 || address_line_2) {
-      updates.address_line_2 = landmark || houseFlat || house_flat || addressLine2 || address_line_2;
-      updates.house_flat = houseFlat || house_flat || null;
-      updates.landmark = landmark || null;
+    const resolvedLine1 = addrInput || fullAddress || addressLine1 || address_line_1;
+    if (resolvedLine1) updates.address_line_1 = resolvedLine1;
+
+    const resolvedLine2 = landmark || houseFlat || house_flat || addressLine2 || address_line_2;
+    if (resolvedLine2 !== undefined) {
+      updates.address_line_2 = resolvedLine2 || null;
     }
     if (city) updates.city = city;
     if (state) updates.state = state;
     if (pincode) updates.pincode = pincode;
-    if (latitude) updates.latitude = parseFloat(latitude);
-    if (longitude) updates.longitude = parseFloat(longitude);
     if (markDefault !== undefined) updates.is_default = !!markDefault;
 
     await address.update(updates);
@@ -1433,11 +1590,12 @@ class CustomerService {
   }
 
   async setDefaultAddress(userId, addressId) {
-    await db.Address.update({ is_default: false }, { where: { user_id: userId } });
+    const AppError = require("../utils/errors/app.error");
     const address = await db.Address.findOne({ where: { id: addressId, user_id: userId } });
-    if (address) {
-      await address.update({ is_default: true });
-    }
+    if (!address) throw new AppError("Address not found", 404);
+
+    await db.Address.update({ is_default: false }, { where: { user_id: userId } });
+    await address.update({ is_default: true });
     return address;
   }
 
@@ -1475,11 +1633,13 @@ class CustomerService {
         {
           model: db.ArtistProfile,
           as: "artist",
+          where: { verification_status: "APPROVED" },
+          required: true,
           include: [
             {
               model: db.User,
               as: "user",
-              attributes: ["id", "name", "profile_image", "email", "phone"]
+              attributes: ["id", "name", "profile_image"]
             }
           ]
         }

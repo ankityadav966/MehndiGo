@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { io } from "socket.io-client";
 import { Calendar, Clock, CreditCard, MessageSquare, Plus, Save, Settings, User, FileText } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { formatAdminDate, formatAdminTime } from "../utils/dateFormatter";
 
 const UserDashboard = ({ showToast }) => {
   const { logout, user } = useAuth();
@@ -72,10 +73,10 @@ const UserDashboard = ({ showToast }) => {
     }
   };
 
-  // Redirect checkout handler for Cashfree
+  // Standard checkout handler for Razorpay
   const handlePayment = async (booking) => {
     try {
-      showToast("Redirecting to secure Cashfree gateway...", "info");
+      showToast("Redirecting to secure Razorpay gateway...", "info");
       const orderRes = await artistService.createOrder(booking.id);
       const orderData = orderRes.data || orderRes;
       const { order_id, amount, currency } = orderData;
@@ -204,7 +205,7 @@ const UserDashboard = ({ showToast }) => {
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
                 {bookings.map((booking) => {
-                  const start = new Date(booking.slot?.start_time);
+                  const startTimeVal = booking.slot?.start_time || booking.booking_date || booking.created_at;
                   return (
                     <div key={booking.id} className="glass-panel" style={{ padding: "1.5rem", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "1rem" }}>
                       <div>
@@ -217,10 +218,10 @@ const UserDashboard = ({ showToast }) => {
                             <User style={{ width: "14px" }} /> Artist: {booking.artist?.user?.name || "Assigning..."}
                           </span>
                           <span style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
-                            <Calendar style={{ width: "14px" }} /> {start.toLocaleDateString()}
+                            <Calendar style={{ width: "14px" }} /> {formatAdminDate(startTimeVal)}
                           </span>
                           <span style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
-                            <Clock style={{ width: "14px" }} /> {start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                            <Clock style={{ width: "14px" }} /> {formatAdminTime(startTimeVal)}
                           </span>
                         </div>
                         <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "0.4rem" }}>

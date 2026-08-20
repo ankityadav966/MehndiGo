@@ -1,6 +1,7 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
+  ActivityIndicator,
   ScrollView,
   StyleSheet,
   Switch,
@@ -11,35 +12,88 @@ import {
 } from "react-native";
 import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { getArtistAvailability, updateArtistAvailability } from "../../services/artist";
 
-const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const DAYS = [
+  { key: "MONDAY", label: "Monday" },
+  { key: "TUESDAY", label: "Tuesday" },
+  { key: "WEDNESDAY", label: "Wednesday" },
+  { key: "THURSDAY", label: "Thursday" },
+  { key: "FRIDAY", label: "Friday" },
+  { key: "SATURDAY", label: "Saturday" },
+  { key: "SUNDAY", label: "Sunday" }
+];
 
 export default function AvailabilityCalendarScreen({ navigation }) {
-  const [availability, setAvailability] = useState(
-    DAYS.map((day) => ({
-      day,
-      enabled: day !== "Sunday",
-      startTime: day === "Sunday" ? "" : "09:00",
-      endTime: day === "Sunday" ? "" : "18:00",
-    }))
-  );
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [isAvailable, setIsAvailable] = useState(true);
+  const [startTime, setStartTime] = useState("09:00");
+  const [endTime, setEndTime] = useState("20:00");
+  const [breakStart, setBreakStart] = useState("14:00");
+  const [breakEnd, setBreakEnd] = useState("15:00");
+  const [selectedDays, setSelectedDays] = useState(["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"]);
 
-  const toggleDay = (index) => {
-    const updated = [...availability];
-    updated[index] = { ...updated[index], enabled: !updated[index].enabled };
-    setAvailability(updated);
+  useEffect(() => {
+    async function loadSchedule() {
+      try {
+        const data = await getArtistAvailability();
+        if (data) {
+          setIsAvailable(data.is_available !== false);
+          if (data.working_start_time) setStartTime(data.working_start_time);
+          if (data.working_end_time) setEndTime(data.working_end_time);
+          if (data.break_start_time) setBreakStart(data.break_start_time);
+          if (data.break_end_time) setBreakEnd(data.break_end_time);
+          if (Array.isArray(data.working_days)) setSelectedDays(data.working_days);
+        }
+      } catch (err) {
+        console.log("Failed to load availability:", err.message);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadSchedule();
+  }, []);
+
+  const toggleDay = (dayKey) => {
+    if (selectedDays.includes(dayKey)) {
+      setSelectedDays(selectedDays.filter((d) => d !== dayKey));
+    } else {
+      setSelectedDays([...selectedDays, dayKey]);
+    }
   };
 
-  const updateTime = (index, field, value) => {
-    const updated = [...availability];
-    updated[index] = { ...updated[index], [field]: value };
-    setAvailability(updated);
+  const handleSave = async () => {
+    if (selectedDays.length === 0) {
+      Alert.alert("Error", "Please select at least one working day.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await updateArtistAvailability({
+        is_available: isAvailable,
+        working_days: selectedDays,
+        working_start_time: startTime,
+        working_end_time: endTime,
+        break_start_time: breakStart,
+        break_end_time: breakEnd
+      });
+      Alert.alert("Saved 🎉", "Your availability and working schedule have been updated successfully.");
+      navigation.goBack();
+    } catch (err) {
+      Alert.alert("Error", err.message || "Failed to update availability.");
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleSave = () => {
-    Alert.alert("Saved", "Your availability has been updated successfully.");
-    navigation.goBack();
-  };
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.container, { justifyContent: "center", alignItems: "center" }]}>
+        <ActivityIndicator size="large" color={PRIMARY} />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -56,60 +110,121 @@ export default function AvailabilityCalendarScreen({ navigation }) {
         </View>
 
         <Text style={styles.subtitle}>
-          Set your weekly working hours. Customers can only book during available slots.
+          Set your weekly working hours, break periods, and working days.
         </Text>
 
-        {availability.map((item, index) => (
-          <View key={item.day} style={[styles.dayCard, !item.enabled && styles.dayCardDisabled]}>
-            <View style={styles.dayHeader}>
-              <View style={styles.dayInfo}>
-                <Text style={[styles.dayName, !item.enabled && styles.dayNameDisabled]}>
-                  {item.day}
-                </Text>
-                {item.enabled && (
-                  <View style={styles.activeDot} />
-                )}
-              </View>
-              <Switch
-                value={item.enabled}
-                onValueChange={() => toggleDay(index)}
-                trackColor={{ false: "#E0E0E0", true: "#FCCFDF" }}
-                thumbColor={item.enabled ? PRIMARY : "#CCC"}
+        {/* Master Availability Toggle */}
+        <View style={styles.dayCard}>
+          <View style={styles.dayHeader}>
+            <View>
+              <Text style={styles.dayName}>Accepting New Bookings</Text>
+              <Text style={{ fontSize: 12, color: "#888", marginTop: 2 }}>
+                {isAvailable ? "You are currently visible and bookable" : "You are currently marked as unavailable"}
+              </Text>
+            </View>
+            <Switch
+              value={isAvailable}
+              onValueChange={setIsAvailable}
+              trackColor={{ false: "#E0E0E0", true: "#FCCFDF" }}
+              thumbColor={isAvailable ? PRIMARY : "#CCC"}
+            />
+          </View>
+        </View>
+
+        {/* Working Hours Card */}
+        <View style={styles.dayCard}>
+          <Text style={styles.dayName}>Working Hours</Text>
+          <View style={styles.timeRow}>
+            <View style={styles.timeField}>
+              <Text style={styles.timeLabel}>Start Time (HH:mm)</Text>
+              <TextInput
+                placeholder="09:00"
+                placeholderTextColor="#999"
+                value={startTime}
+                onChangeText={setStartTime}
+                style={styles.timeInput}
               />
             </View>
-
-            {item.enabled && (
-              <View style={styles.timeRow}>
-                <View style={styles.timeField}>
-                  <Text style={styles.timeLabel}>Start Time</Text>
-                  <TextInput
-                    placeholder="09:00"
-                    placeholderTextColor="#999"
-                    value={item.startTime}
-                    onChangeText={(val) => updateTime(index, "startTime", val)}
-                    style={styles.timeInput}
-                  />
-                </View>
-                <Text style={styles.timeSeparator}>to</Text>
-                <View style={styles.timeField}>
-                  <Text style={styles.timeLabel}>End Time</Text>
-                  <TextInput
-                    placeholder="18:00"
-                    placeholderTextColor="#999"
-                    value={item.endTime}
-                    onChangeText={(val) => updateTime(index, "endTime", val)}
-                    style={styles.timeInput}
-                  />
-                </View>
-              </View>
-            )}
+            <Text style={styles.timeSeparator}>to</Text>
+            <View style={styles.timeField}>
+              <Text style={styles.timeLabel}>End Time (HH:mm)</Text>
+              <TextInput
+                placeholder="20:00"
+                placeholderTextColor="#999"
+                value={endTime}
+                onChangeText={setEndTime}
+                style={styles.timeInput}
+              />
+            </View>
           </View>
-        ))}
+        </View>
+
+        {/* Break Hours Card */}
+        <View style={styles.dayCard}>
+          <Text style={styles.dayName}>Daily Break Time</Text>
+          <View style={styles.timeRow}>
+            <View style={styles.timeField}>
+              <Text style={styles.timeLabel}>Break Start (HH:mm)</Text>
+              <TextInput
+                placeholder="14:00"
+                placeholderTextColor="#999"
+                value={breakStart}
+                onChangeText={setBreakStart}
+                style={styles.timeInput}
+              />
+            </View>
+            <Text style={styles.timeSeparator}>to</Text>
+            <View style={styles.timeField}>
+              <Text style={styles.timeLabel}>Break End (HH:mm)</Text>
+              <TextInput
+                placeholder="15:00"
+                placeholderTextColor="#999"
+                value={breakEnd}
+                onChangeText={setBreakEnd}
+                style={styles.timeInput}
+              />
+            </View>
+          </View>
+        </View>
+
+        {/* Working Days */}
+        <Text style={[styles.subtitle, { marginTop: 10, fontWeight: "700", color: "#333" }]}>
+          Working Days
+        </Text>
+        {DAYS.map((item) => {
+          const isEnabled = selectedDays.includes(item.key);
+          return (
+            <View key={item.key} style={[styles.dayCard, !isEnabled && styles.dayCardDisabled]}>
+              <View style={styles.dayHeader}>
+                <View style={styles.dayInfo}>
+                  <Text style={[styles.dayName, !isEnabled && styles.dayNameDisabled]}>
+                    {item.label}
+                  </Text>
+                  {isEnabled && <View style={styles.activeDot} />}
+                </View>
+                <Switch
+                  value={isEnabled}
+                  onValueChange={() => toggleDay(item.key)}
+                  trackColor={{ false: "#E0E0E0", true: "#FCCFDF" }}
+                  thumbColor={isEnabled ? PRIMARY : "#CCC"}
+                />
+              </View>
+            </View>
+          );
+        })}
       </ScrollView>
 
       <View style={styles.footer}>
-        <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-          <Text style={styles.saveButtonText}>Save Availability</Text>
+        <TouchableOpacity
+          style={[styles.saveButton, saving && { opacity: 0.7 }]}
+          onPress={handleSave}
+          disabled={saving}
+        >
+          {saving ? (
+            <ActivityIndicator size="small" color="#FFF" />
+          ) : (
+            <Text style={styles.saveButtonText}>Save Availability</Text>
+          )}
         </TouchableOpacity>
       </View>
     </SafeAreaView>

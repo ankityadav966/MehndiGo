@@ -824,7 +824,7 @@ export default function ChatRoomScreen({ route, navigation }) {
   const userTyping = typingUsers[bookingId]?.has(receiverId);
 
   return (
-    <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
+    <SafeAreaView style={styles.container} edges={["top"]}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
@@ -871,11 +871,11 @@ export default function ChatRoomScreen({ route, navigation }) {
         </View>
       )}
 
-      {/* Messages Board */}
+      {/* Messages Board with KeyboardAvoidingView */}
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : null}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 64 : 0}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 10 : 0}
       >
         {loading ? (
           <View style={styles.centerSpinner}>
@@ -1104,7 +1104,10 @@ export default function ChatRoomScreen({ route, navigation }) {
         animationType="slide"
         onRequestClose={() => setReportModalVisible(false)}
       >
-        <View style={styles.modalContainer}>
+        <KeyboardAvoidingView
+          style={styles.modalContainer}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
           <View style={styles.reportModalBox}>
             <Text style={styles.reportTitle}>File Abuse Report</Text>
             <Text style={styles.reportSubtitle}>
@@ -1133,7 +1136,7 @@ export default function ChatRoomScreen({ route, navigation }) {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );

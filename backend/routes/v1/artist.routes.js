@@ -65,6 +65,8 @@ router.get("/portfolio", authenticate, ArtistController.getMyPortfolio);
 router.get("/portfolio/upload-signature", authenticate, ArtistController.getUploadSignature);
 router.get("/portfolio/:id", authenticate, ArtistController.getPortfolioById);
 router.post("/portfolio", authenticate, upload.single("portfolio_image"), ArtistController.uploadPortfolioImage);
+router.put("/portfolio/reorder", authenticate, ArtistController.reorderPortfolio);
+router.put("/profile/cover", authenticate, ArtistController.setCoverImage);
 router.put("/portfolio/:id", authenticate, ArtistController.updatePortfolio);
 router.delete("/portfolio/:id", authenticate, ArtistController.deletePortfolio);
 router.post("/portfolio/upload", authenticate, upload.array("media", 10), ArtistController.uploadPortfolioMedia);

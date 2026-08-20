@@ -156,13 +156,14 @@ async getUserBookings(user_id) {
 
   async getArtistBookings(artist_id) {
     const { Op } = require("sequelize");
+    const targetArtistId = Array.isArray(artist_id) ? { [Op.in]: artist_id } : artist_id;
     return await db.Booking.findAll({
       where: {
-        artist_id,
+        artist_id: targetArtistId,
         [Op.or]: [
-          { payment_status: { [Op.in]: ["PAID", "ADVANCE_PAID", "PARTIAL", "COMPLETED", "paid", "advance_paid", "completed"] } },
+          { payment_status: { [Op.in]: ["PAID", "ADVANCE_PAID", "PARTIAL", "COMPLETED", "paid", "advance_paid", "completed", "REFUNDED", "refunded"] } },
           { advance_paid: { [Op.gt]: 0 } },
-          { booking_status: { [Op.in]: ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ON_THE_WAY", "ARRIVED", "SERVICE_STARTED", "COMPLETED"] } }
+          { booking_status: { [Op.in]: ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ON_THE_WAY", "ARRIVED", "SERVICE_STARTED", "COMPLETED", "CANCELLED", "PENDING"] } }
         ],
         booking_status: { [Op.notIn]: ["PENDING_PAYMENT", "pending_payment", "DRAFT", "draft"] }
       },
@@ -185,6 +186,11 @@ async getUserBookings(user_id) {
           model: db.AvailabilitySlot,
           as: "slot",
         },
+        {
+          model: db.BookingStatusHistory,
+          as: "status_history",
+          required: false
+        }
       ],
       order: [
         ["createdAt", "DESC"],

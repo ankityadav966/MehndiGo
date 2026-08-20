@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import OptimizedImage from "../OptimizedImage";
 import Colors from "../../constants/Colors";
+import { resolveImage } from "../../utils/imageHelper";
 
 const HomeHeader = ({
   user,
@@ -13,12 +14,14 @@ const HomeHeader = ({
   setLocationModalVisible,
   navigation
 }) => {
+  const avatarUrl = resolveImage(user?.profile_image) || `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || "Customer")}&background=F3E8FF&color=7C3AED`;
+
   return (
     <View style={styles.welcomeHeader}>
       <View style={styles.userInfo}>
         <TouchableOpacity onPress={() => navigation.navigate("Profile")} activeOpacity={0.8}>
           <OptimizedImage
-            source={{ uri: user?.profile_image || "https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=150" }}
+            source={{ uri: avatarUrl }}
             style={styles.avatar}
           />
         </TouchableOpacity>
@@ -30,7 +33,7 @@ const HomeHeader = ({
             <Text style={[styles.locationText, { color: currentSecTextColor, maxWidth: 180 }]} numberOfLines={1}>
               {activeAddressState?.label
                 ? `${activeAddressState.label}: ${activeAddressState.fullAddress}`
-                : activeAddressState?.fullAddress || user?.city || "Jaipur, Rajasthan"}
+                : activeAddressState?.fullAddress || user?.city || "Select Location"}
             </Text>
             <Ionicons name="chevron-down" size={12} color={currentSecTextColor} style={{ marginLeft: 4 }} />
           </TouchableOpacity>

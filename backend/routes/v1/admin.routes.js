@@ -36,6 +36,18 @@ router.patch(
   authorize("ADMIN"),
   AdminController.rejectArtist,
 );
+router.patch(
+  "/artist/:id/suspend",
+  authenticate,
+  authorize("ADMIN"),
+  AdminController.suspendArtist,
+);
+router.patch(
+  "/artist/:id/reactivate",
+  authenticate,
+  authorize("ADMIN"),
+  AdminController.reactivateArtist,
+);
 
 // Coupons Management
 const CouponController = require("../../controllers/coupon/coupon.controller");
@@ -62,5 +74,16 @@ router.get("/wallet/summary", authenticate, authorize("ADMIN"), AdminController.
 router.get("/wallet/commission-history", authenticate, authorize("ADMIN"), AdminController.getCommissionHistory);
 router.get("/wallet/dashboard-summary", authenticate, authorize("ADMIN"), AdminController.getDashboardSummary);
 router.get("/wallet/transaction/:id", authenticate, authorize("ADMIN"), AdminController.getWalletTransactionDetails);
+
+// Review Moderation
+router.get("/reviews", authenticate, authorize("ADMIN"), AdminController.getReviews);
+router.patch("/review/:id/approve", authenticate, authorize("ADMIN"), AdminController.approveReview);
+router.patch("/review/:id/reject", authenticate, authorize("ADMIN"), AdminController.rejectReview);
+
+// Support Tickets & Disputes
+router.get("/support/tickets", authenticate, authorize("ADMIN"), AdminController.getSupportTickets);
+router.get("/support/tickets/:id", authenticate, authorize("ADMIN"), AdminController.getSupportTicketDetails);
+router.put("/support/tickets/:id/status", authenticate, authorize("ADMIN"), AdminController.updateTicketStatus);
+router.post("/support/tickets/:id/reply", authenticate, authorize("ADMIN"), AdminController.replySupportTicket);
 
 module.exports = router;

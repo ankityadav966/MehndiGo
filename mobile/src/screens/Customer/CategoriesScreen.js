@@ -205,11 +205,18 @@ export default function CategoriesScreen({ navigation }) {
       <FlatList
         data={categories}
         renderItem={renderItem}
-        keyExtractor={(item) => item.id.toString()}
+        keyExtractor={(item) => String(item.id)}
         numColumns={2}
-        columnWrapperStyle={{
+        columnWrapperStyle={categories.length > 0 ? {
           justifyContent: "space-between",
-        }}
+        } : null}
+        ListEmptyComponent={
+          <View style={[styles.centerContainer, { paddingTop: 60 }]}>
+            <Ionicons name="flower-outline" size={56} color={Colors.textTertiary} />
+            <Text style={styles.emptyTitle}>No Categories Available</Text>
+            <Text style={styles.emptySub}>Please check back later for active Mehndi styles.</Text>
+          </View>
+        }
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[Colors.primary]} />
         }
@@ -217,7 +224,8 @@ export default function CategoriesScreen({ navigation }) {
         contentContainerStyle={{
           paddingBottom: 30,
           paddingHorizontal: 20,
-          paddingTop: 10
+          paddingTop: 10,
+          flexGrow: 1
         }}
       />
     </SafeAreaView>
@@ -310,5 +318,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.white,
     fontWeight: "700"
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: Colors.text,
+    marginTop: 16,
+    textAlign: "center"
+  },
+  emptySub: {
+    fontSize: 13,
+    color: Colors.textTertiary,
+    marginTop: 6,
+    textAlign: "center"
   }
 });

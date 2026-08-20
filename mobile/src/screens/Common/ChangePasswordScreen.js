@@ -1,5 +1,5 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { useState } from "react";
+import React, { useState } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -7,8 +7,13 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import Alert from "../../utils/Alert";
+import { changePassword } from "../../services/customer";
 
 export default function ChangePasswordScreen({ navigation }) {
   const [currentPassword, setCurrentPassword] = useState("");
@@ -17,6 +22,7 @@ export default function ChangePasswordScreen({ navigation }) {
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const requirements = [
     { label: "At least 8 characters", met: newPassword.length >= 8 },
@@ -42,109 +48,135 @@ export default function ChangePasswordScreen({ navigation }) {
     newPassword === confirmPassword &&
     requirements.every((r) => r.met);
 
+  const handleChangePassword = async () => {
+    if (!isValid || loading) return;
+    setLoading(true);
+    try {
+      await changePassword({ currentPassword, newPassword });
+      Alert.alert("Success", "Password updated successfully!", [
+        { text: "OK", onPress: () => navigation.goBack() }
+      ]);
+    } catch (err) {
+      const errMsg = err.response?.data?.message || err.message || "Failed to update password.";
+      Alert.alert("Error", errMsg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color="#1D1D1D" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Change Password</Text>
-        <View style={{ width: 24 }} />
-      </View>
-
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContainer}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <View style={styles.card}>
-          <Text style={styles.label}>Current Password</Text>
-          <View style={styles.inputContainer}>
-            <TextInput
-              value={currentPassword}
-              onChangeText={setCurrentPassword}
-              placeholder="Enter current password"
-              placeholderTextColor="#9E9E9E"
-              secureTextEntry={!showCurrent}
-              style={styles.input}
-            />
-            <TouchableOpacity onPress={() => setShowCurrent(!showCurrent)}>
-              <Ionicons
-                name={showCurrent ? "eye-off-outline" : "eye-outline"}
-                size={20}
-                color="#9E9E9E"
-              />
-            </TouchableOpacity>
-          </View>
-
-          <Text style={styles.label}>New Password</Text>
-          <View style={styles.inputContainer}>
-            <TextInput
-              value={newPassword}
-              onChangeText={setNewPassword}
-              placeholder="Enter new password"
-              placeholderTextColor="#9E9E9E"
-              secureTextEntry={!showNew}
-              style={styles.input}
-            />
-            <TouchableOpacity onPress={() => setShowNew(!showNew)}>
-              <Ionicons
-                name={showNew ? "eye-off-outline" : "eye-outline"}
-                size={20}
-                color="#9E9E9E"
-              />
-            </TouchableOpacity>
-          </View>
-
-          <Text style={styles.label}>Confirm New Password</Text>
-          <View style={styles.inputContainer}>
-            <TextInput
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              placeholder="Re-enter new password"
-              placeholderTextColor="#9E9E9E"
-              secureTextEntry={!showConfirm}
-              style={styles.input}
-            />
-            <TouchableOpacity onPress={() => setShowConfirm(!showConfirm)}>
-              <Ionicons
-                name={showConfirm ? "eye-off-outline" : "eye-outline"}
-                size={20}
-                color="#9E9E9E"
-              />
-            </TouchableOpacity>
-          </View>
-
-          {newPassword.length > 0 && (
-            <View style={styles.requirements}>
-              {requirements.map((req, index) => (
-                <View key={index} style={styles.requirementRow}>
-                  <Ionicons
-                    name={req.met ? "checkmark-circle" : "ellipse-outline"}
-                    size={16}
-                    color={req.met ? "#22C55E" : "#D9D9D9"}
-                  />
-                  <Text
-                    style={[
-                      styles.requirementText,
-                      req.met && styles.requirementMet,
-                    ]}
-                  >
-                    {req.label}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          )}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <Ionicons name="arrow-back" size={24} color="#1D1D1D" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Change Password</Text>
+          <View style={{ width: 24 }} />
         </View>
 
-        <TouchableOpacity
-          style={[styles.button, !isValid && styles.buttonDisabled]}
-          disabled={!isValid}
-          onPress={() => {}}
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContainer}
+          keyboardShouldPersistTaps="handled"
         >
-          <Text style={styles.buttonText}>Change Password</Text>
-        </TouchableOpacity>
-      </ScrollView>
+          <View style={styles.card}>
+            <Text style={styles.label}>Current Password</Text>
+            <View style={styles.inputContainer}>
+              <TextInput
+                value={currentPassword}
+                onChangeText={setCurrentPassword}
+                placeholder="Enter current password"
+                placeholderTextColor="#9E9E9E"
+                secureTextEntry={!showCurrent}
+                style={styles.input}
+              />
+              <TouchableOpacity onPress={() => setShowCurrent(!showCurrent)}>
+                <Ionicons
+                  name={showCurrent ? "eye-off-outline" : "eye-outline"}
+                  size={20}
+                  color="#9E9E9E"
+                />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.label}>New Password</Text>
+            <View style={styles.inputContainer}>
+              <TextInput
+                value={newPassword}
+                onChangeText={setNewPassword}
+                placeholder="Enter new password"
+                placeholderTextColor="#9E9E9E"
+                secureTextEntry={!showNew}
+                style={styles.input}
+              />
+              <TouchableOpacity onPress={() => setShowNew(!showNew)}>
+                <Ionicons
+                  name={showNew ? "eye-off-outline" : "eye-outline"}
+                  size={20}
+                  color="#9E9E9E"
+                />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.label}>Confirm New Password</Text>
+            <View style={styles.inputContainer}>
+              <TextInput
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                placeholder="Re-enter new password"
+                placeholderTextColor="#9E9E9E"
+                secureTextEntry={!showConfirm}
+                style={styles.input}
+              />
+              <TouchableOpacity onPress={() => setShowConfirm(!showConfirm)}>
+                <Ionicons
+                  name={showConfirm ? "eye-off-outline" : "eye-outline"}
+                  size={20}
+                  color="#9E9E9E"
+                />
+              </TouchableOpacity>
+            </View>
+
+            {newPassword.length > 0 && (
+              <View style={styles.requirements}>
+                {requirements.map((req, index) => (
+                  <View key={index} style={styles.requirementRow}>
+                    <Ionicons
+                      name={req.met ? "checkmark-circle" : "ellipse-outline"}
+                      size={16}
+                      color={req.met ? "#22C55E" : "#D9D9D9"}
+                    />
+                    <Text
+                      style={[
+                        styles.requirementText,
+                        req.met && styles.requirementMet,
+                      ]}
+                    >
+                      {req.label}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+
+          <TouchableOpacity
+            style={[styles.button, (!isValid || loading) && styles.buttonDisabled]}
+            disabled={!isValid || loading}
+            onPress={handleChangePassword}
+          >
+            {loading ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <Text style={styles.buttonText}>Change Password</Text>
+            )}
+          </TouchableOpacity>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

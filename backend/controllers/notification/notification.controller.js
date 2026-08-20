@@ -217,17 +217,6 @@ async function sendSystemNotification(req, res) {
   }
 }
 
-// Admin debug endpoint to retrieve raw push tokens for a user (should be removed after testing)
-async function debugGetTokens(req, res) {
-  try {
-    const { userId } = req.params;
-    const tokens = await db.NotificationToken.findAll({ where: { user_id: userId } });
-    return res.status(200).json(SuccessResponse('Debug tokens fetched', tokens));
-  } catch (error) {
-    return res.status(500).json(ErrorResponse(error.message, error));
-  }
-}
-
 // 9. POST /notification/broadcast (Admin bulk utility)
 async function sendBroadcast(req, res) {
   try {
@@ -336,6 +325,5 @@ module.exports = {
   sendSystemNotification,
   sendBroadcast,
   scheduleNotification,
-  sendTestPush,
-  debugGetTokens
+  sendTestPush
 };

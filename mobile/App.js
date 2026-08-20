@@ -103,19 +103,24 @@ export default function App() {
     const handleDeepLink = async (url) => {
       if (!url) return;
       try {
-        const Linking = require("expo-linking");
-        const parsed = Linking.parse(url);
-        
-        let referralCode = parsed.queryParams?.ref || parsed.queryParams?.referralCode;
-        
-        if (!referralCode && parsed.path && parsed.path.includes("invite/")) {
-          referralCode = parsed.path.split("invite/")[1];
-        }
-
-        if (referralCode) {
-          const AsyncStorage = require("@react-native-async-storage/async-storage").default;
-          await AsyncStorage.setItem("pendingReferralCode", referralCode);
-          console.log("[DeepLink] Stored pending referral code:", referralCode);
+        const { handleDeepLinkNavigation, resolveDeepLink, setPendingDeepLink } = require("./src/services/deepLink");
+        if (navigationRef.isReady()) {
+          const { secureStorage } = require("./src/utils/storage");
+          const token = await secureStorage.getAccessToken();
+          const role = await secureStorage.getUserRole();
+          await handleDeepLinkNavigation(url, navigationRef, !!token, role || "CUSTOMER");
+        } else {
+          // If navigation container is not ready yet, parse and store pending state safely
+          const resolved = resolveDeepLink(url);
+          if (resolved.isValid) {
+            if (resolved.referralCode) {
+              const AsyncStorage = require("@react-native-async-storage/async-storage").default;
+              await AsyncStorage.setItem("pendingReferralCode", resolved.referralCode);
+            }
+            if (resolved.requiresAuth) {
+              await setPendingDeepLink(resolved);
+            }
+          }
         }
       } catch (err) {
         console.log("[DeepLink] Error handling url:", err.message);
@@ -125,14 +130,14 @@ export default function App() {
     const checkInitialUrl = async () => {
       const Linking = require("expo-linking");
       const url = await Linking.getInitialURL();
-      handleDeepLink(url);
+      if (url) handleDeepLink(url);
     };
 
     checkInitialUrl();
 
     const Linking = require("expo-linking");
     const subscription = Linking.addEventListener("url", (event) => {
-      handleDeepLink(event.url);
+      if (event?.url) handleDeepLink(event.url);
     });
 
     return () => {

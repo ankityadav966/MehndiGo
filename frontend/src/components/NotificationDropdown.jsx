@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { Bell } from "lucide-react";
 import { io } from "socket.io-client";
 import { useAuth } from "../context/AuthContext";
+import { formatRelativeTime } from "../utils/dateFormatter";
 // For simplicity, using authService for notifications or a unified notification endpoint
 // But since the API requires role-based endpoints, we might just rely on socket.io events
 // and store them in state for this dropdown.
@@ -150,7 +151,7 @@ const NotificationDropdown = ({ showToast }) => {
                   <h5 style={{ margin: "0 0 0.25rem 0", fontSize: "0.9rem", fontWeight: 700 }}>{n.title}</h5>
                   <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--text-secondary)" }}>{n.message}</p>
                   <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "0.4rem", display: "block" }}>
-                    {new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {formatRelativeTime(n.created_at || n.createdAt)}
                   </span>
                 </div>
               ))}

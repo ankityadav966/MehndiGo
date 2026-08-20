@@ -8,8 +8,7 @@ export function useGoogleAuth() {
     request: null,
     response: null,
     promptAsync: async () => {
-      const mockIdToken = "mock-google-id-token-" + Date.now();
-      return { type: "success", params: { id_token: mockIdToken } };
+      throw new Error("Google Sign-In is not configured for this environment.");
     },
   };
 }
@@ -62,13 +61,16 @@ export async function registerUser(userData) {
 }
 
 export async function verifyOtp(email, otp) {
-  const data = await apiRequest("POST", "/api/v1/mehndigo/user/verify-otp", { email, otp });
+  const data = await apiRequest("POST", "/api/v1/mehndigo/user/verify-otp", {
+    email: email ? String(email).trim().toLowerCase() : undefined,
+    otp: String(otp).trim(),
+  });
   await persistAuthData(data);
   return data;
 }
 
 export function sanitizePhone(phone) {
-  if (!phone) return phone;
+  if (!phone) return "";
   let cleaned = String(phone).trim();
   if (cleaned.startsWith("+91")) {
     cleaned = cleaned.substring(3);
@@ -88,104 +90,84 @@ const maskEmail = (emailStr) => {
 };
 
 export async function sendOtp(emailOrPhone, emailParam, phone, role) {
-  let targetEmail = "";
+  let email = "";
+  let cleanPhone = "";
+
   if (typeof emailOrPhone === "string" && emailOrPhone.includes("@")) {
-    targetEmail = emailOrPhone.trim().toLowerCase();
-  } else if (emailParam && String(emailParam).trim().length > 0) {
-    targetEmail = String(emailParam).trim().toLowerCase();
-  } else {
-    const sanitized = sanitizePhone(phone);
-    targetEmail = sanitized ? `${sanitized}@gmail.com` : "user@mehndigo.com";
+    email = emailOrPhone.trim().toLowerCase();
+  } else if (emailParam && String(emailParam).trim().includes("@")) {
+    email = String(emailParam).trim().toLowerCase();
+  } else if (typeof emailOrPhone === "string" && emailOrPhone.trim().length > 0) {
+    cleanPhone = sanitizePhone(emailOrPhone);
+  } else if (phone) {
+    cleanPhone = sanitizePhone(phone);
   }
 
   const endpoint = "/api/v1/mehndigo/user/send-otp";
-  console.log("[OTP] API BASE URL:", BASE_URL);
-  console.log("[OTP] REQUEST ENDPOINT:", endpoint);
-  console.log("[OTP] EMAIL MASKED:", maskEmail(targetEmail));
+  const payload = {};
+  if (email) payload.email = email;
+  if (cleanPhone) payload.phone = cleanPhone;
+  if (role) payload.role = role === "CUSTOMER" ? "USER" : role;
 
-  try {
-    const data = await apiRequest("POST", endpoint, {
-      email: targetEmail,
-    });
-    console.log("[OTP] RESPONSE STATUS: 200");
-    console.log("[OTP] RESPONSE MESSAGE:", data?.message || "OTP Sent Successfully");
-    return data;
-  } catch (err) {
-    console.log("[OTP] RESPONSE STATUS:", err?.response?.status || 500);
-    console.log("[OTP] RESPONSE MESSAGE:", err?.response?.data?.message || err.message);
-    throw err;
-  }
+  console.log("[OTP] REQUEST ENDPOINT:", endpoint, "TARGET:", email ? maskEmail(email) : cleanPhone);
+  const data = await apiRequest("POST", endpoint, payload);
+  return data;
 }
 
 export async function registerSendOtp(name, email, phone, role) {
-  const sanitized = sanitizePhone(phone);
-  const targetEmail = (email && String(email).trim().length > 0)
-    ? String(email).trim().toLowerCase()
-    : (sanitized ? `${sanitized}@gmail.com` : "user@mehndigo.com");
-
+  const cleanPhone = sanitizePhone(phone);
+  const trimmedEmail = email ? String(email).trim().toLowerCase() : "";
   const endpoint = "/api/v1/mehndigo/user/register-send-otp";
-  console.log("[OTP] API BASE URL:", BASE_URL);
-  console.log("[OTP] REQUEST ENDPOINT:", endpoint);
-  console.log("[OTP] EMAIL MASKED:", maskEmail(targetEmail));
 
-  try {
-    const data = await apiRequest("POST", endpoint, {
-      name: name || "User",
-      email: targetEmail,
-      phone: sanitized || phone || null,
-      role: role === "CUSTOMER" ? "USER" : role,
-    });
-    console.log("[OTP] RESPONSE STATUS: 200");
-    console.log("[OTP] RESPONSE MESSAGE:", data?.message || "Registration OTP Sent Successfully");
-    return data;
-  } catch (err) {
-    console.log("[OTP] RESPONSE STATUS:", err?.response?.status || 500);
-    console.log("[OTP] RESPONSE MESSAGE:", err?.response?.data?.message || err.message);
-    throw err;
-  }
+  const payload = {
+    name: name ? String(name).trim() : "User",
+    email: trimmedEmail || undefined,
+    phone: cleanPhone || undefined,
+    role: role === "CUSTOMER" ? "USER" : (role || "USER"),
+  };
+
+  console.log("[OTP] REGISTER REQUEST:", endpoint, "EMAIL:", maskEmail(trimmedEmail));
+  const data = await apiRequest("POST", endpoint, payload);
+  return data;
 }
 
 export async function registerVerifyOtp(email, otp, name, phone, role) {
-  console.log("Verifying register OTP:", { email, otp, name, phone, role });
+  const cleanPhone = sanitizePhone(phone);
+  const trimmedEmail = email ? String(email).trim().toLowerCase() : "";
   const data = await apiRequest("POST", "/api/v1/mehndigo/user/register-verify-otp", {
-    email,
-    otp,
-    name,
-    phone,
-    role,
+    email: trimmedEmail || undefined,
+    phone: cleanPhone || undefined,
+    otp: String(otp).trim(),
+    name: name ? String(name).trim() : undefined,
+    role: role === "CUSTOMER" ? "USER" : role,
   });
   return persistAuthData(data);
 }
 
 export async function verifyUserOtp(phoneOrEmail, otp, role, name, email, referralCode = "") {
-  let isPhone = false;
-  let phone = "";
+  let cleanPhone = "";
   let userEmail = "";
-  if (typeof phoneOrEmail === "string" && (phoneOrEmail.includes("@") || !phoneOrEmail)) {
-    userEmail = phoneOrEmail || email || "";
-  } else {
-    isPhone = true;
-    phone = sanitizePhone(phoneOrEmail);
-    userEmail = email || "";
+  if (typeof phoneOrEmail === "string" && phoneOrEmail.includes("@")) {
+    userEmail = phoneOrEmail.trim().toLowerCase();
+  } else if (phoneOrEmail) {
+    cleanPhone = sanitizePhone(phoneOrEmail);
+  }
+  if (email && email.includes("@")) {
+    userEmail = email.trim().toLowerCase();
   }
 
   const payload = {
-    otp,
-    role: role === "CUSTOMER" ? "USER" : role,
-    name: name || "",
-    email: userEmail,
-    referralCode,
+    otp: String(otp).trim(),
+    role: role === "CUSTOMER" ? "USER" : (role || "USER"),
+    referralCode: referralCode || undefined,
   };
-  if (isPhone && phone) {
-    payload.phone = phone;
-  } else {
-    payload.email = userEmail;
-  }
+  if (name) payload.name = name;
+  if (userEmail) payload.email = userEmail;
+  if (cleanPhone) payload.phone = cleanPhone;
 
   const data = await apiRequest("POST", "/api/v1/mehndigo/user/verify-otp", payload);
   return persistAuthData(data);
 }
-
 
 export async function registerUserV1(userData) {
   if (userData && userData.phone) {
@@ -209,9 +191,8 @@ export async function loginWithPhone(phone, role) {
 
 export async function loginWithEmail(email, role) {
   const data = await apiRequest("POST", "/api/v1/mehndigo/user/login", {
-    email,
+    email: email ? String(email).trim().toLowerCase() : "",
     role: role === "CUSTOMER" ? "USER" : role,
-
   });
   return persistAuthData(data);
 }
@@ -225,16 +206,20 @@ export async function refreshAccessToken() {
   });
 
   const payload = extractPayload(data);
-  if (payload.accessToken) {
-    await secureStorage.setAccessToken(payload.accessToken);
+  const token = extractToken(payload);
+  if (token) {
+    await secureStorage.setAccessToken(token);
   }
   if (payload.refreshToken) {
     await secureStorage.setRefreshToken(payload.refreshToken);
   }
-  return payload.accessToken;
+  return token;
 }
 
 export async function signOut() {
+  try {
+    await apiRequest("POST", "/auth/logout").catch(() => {});
+  } catch (_) {}
   try {
     await removeNotificationToken();
   } catch (_) {}

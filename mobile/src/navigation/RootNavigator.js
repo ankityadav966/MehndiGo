@@ -2,7 +2,9 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import SplashScreen from "../screens/Auth/SplashScreen";
 import Onboarding3 from "../screens/Auth/Onboarding3";
 import LoginScreen from "../screens/Auth/LoginScreen";
+import RegisterScreen from "../screens/Auth/RegisterScreen";
 import OtpScreen from "../screens/Auth/OtpScreen";
+import RoleSelectionScreen from "../screens/Auth/RoleSelectionScreen";
 import ArtistFlowStack from "./ArtistFlowStack";
 import ArtistStack from "./ArtistStack";
 import CustomerStack from "./CustomerStack";
@@ -11,19 +13,35 @@ import { useArtistOnboarding } from "../context/ArtistOnboardingContext";
 import { View, ActivityIndicator } from "react-native";
 import Colors from "../constants/Colors";
 
+import { useNavigation } from "@react-navigation/native";
+import { useEffect } from "react";
+
 const Stack = createNativeStackNavigator();
 
 export default function RootNavigator() {
-  const { isAuthenticated, user, isLoading } = useAuth();
-  const { artistProfileCompleted } = useArtistOnboarding();
+  const { isAuthenticated, user, isLoading: isAuthLoading } = useAuth();
+  const { artistApproved, verificationStatus, isLoading: isArtistLoading } = useArtistOnboarding();
+  const navigation = useNavigation();
 
-  if (isLoading) {
+  const isArtist = String(user?.role).toUpperCase() === "ARTIST";
+  const isOverallLoading = isAuthLoading || (isAuthenticated && isArtist && isArtistLoading);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      const { consumePendingDeepLink } = require("../services/deepLink");
+      consumePendingDeepLink(navigation, isAuthenticated);
+    }
+  }, [isAuthenticated, navigation]);
+
+  if (isOverallLoading) {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#FFFFFF" }}>
         <ActivityIndicator size="large" color={Colors.primary || "#FF4D6D"} />
       </View>
     );
   }
+
+  const isApprovedArtist = isArtist && (artistApproved || verificationStatus === "APPROVED");
 
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
@@ -32,10 +50,12 @@ export default function RootNavigator() {
           <Stack.Screen name="Splash" component={SplashScreen} />
           <Stack.Screen name="Onboarding3" component={Onboarding3} />
           <Stack.Screen name="Login" component={LoginScreen} />
+          <Stack.Screen name="Register" component={RegisterScreen} />
           <Stack.Screen name="Otp" component={OtpScreen} />
+          <Stack.Screen name="RoleSelection" component={RoleSelectionScreen} />
         </>
-      ) : user?.role === "ARTIST" ? (
-        artistProfileCompleted ? (
+      ) : isArtist ? (
+        isApprovedArtist ? (
           <>
             <Stack.Screen name="ArtistStack" component={ArtistStack} />
             <Stack.Screen name="ArtistFlowStack" component={ArtistFlowStack} />

@@ -12,10 +12,10 @@ const {
 } = require("../repositories");
 
 const AppError = require("../utils/errors/app.error");
-const cashfree = require("../utils/cashfree");
 const razorpayUtil = require("../utils/razorpay");
 const { getIO } = require("../sockets/socket");
 const db = require("../models");
+const { Op } = require("sequelize");
 
 const ArtistProfileRepositor = new ArtistProfileRepository();
 const UserRepositor = new UserRepository();
@@ -34,40 +34,103 @@ class ArtistService {
     const { user_id } = data;
 
     // check user
-
     const user = await UserRepositor.getById(user_id);
-
     if (!user) {
       throw new AppError("User not found", 404);
     }
 
     // role check
-
     if (user.role !== "ARTIST") {
       throw new AppError("Only artist can create profile", 403);
     }
 
-    // already exists?
-
-    const existingProfile = await ArtistProfileRepositor.getOne({
-      user_id,
-    });
-
-    if (existingProfile) {
-      throw new AppError("Artist profile already exists", 400);
+    // Aadhaar number validation and collision check if provided
+    if (data.aadhaar_number) {
+      const cleanAadhaar = String(data.aadhaar_number).replace(/\s/g, "");
+      if (!/^\d{12}$/.test(cleanAadhaar)) {
+        throw new AppError("Aadhaar number must be exactly 12 numeric digits", 400);
+      }
+      const existingAadhaar = await db.ArtistProfile.findOne({
+        where: {
+          aadhaar_number: cleanAadhaar,
+          user_id: { [db.Sequelize.Op.ne]: user_id }
+        }
+      });
+      if (existingAadhaar) {
+        throw new AppError("This Aadhaar number is already registered with another artist account.", 400);
+      }
+      data.aadhaar_number = cleanAadhaar;
     }
 
-    // create profile
+    // PAN number validation and collision check if provided
+    if (data.pan_number) {
+      const cleanPan = String(data.pan_number).trim().toUpperCase();
+      if (!/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(cleanPan)) {
+        throw new AppError("Invalid PAN card format (e.g. ABCDE1234F)", 400);
+      }
+      const existingPan = await db.ArtistProfile.findOne({
+        where: {
+          pan_number: cleanPan,
+          user_id: { [db.Sequelize.Op.ne]: user_id }
+        }
+      });
+      if (existingPan) {
+        throw new AppError("This PAN number is already registered with another artist account.", 400);
+      }
+      data.pan_number = cleanPan;
+    }
+
+    // Bank IFSC validation if provided
+    if (data.bank_ifsc) {
+      const cleanIfsc = String(data.bank_ifsc).trim().toUpperCase();
+      if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(cleanIfsc)) {
+        throw new AppError("Invalid bank IFSC code format (e.g. HDFC0001234)", 400);
+      }
+      data.bank_ifsc = cleanIfsc;
+    }
 
     if (data.phone) {
-      await UserRepositor.update(user_id, { phone: data.phone });
+      const cleanPhone = String(data.phone).trim().replace(/[^0-9]/g, "");
+      if (cleanPhone.length === 10) {
+        await UserRepositor.update(user_id, { phone: cleanPhone });
+      }
+    }
+
+    // Check if artist profile already exists (e.g. created during OTP registration)
+    const existingProfile = await ArtistProfileRepositor.getOne({ user_id });
+    if (existingProfile) {
+      const updatePayload = {
+        bio: data.bio !== undefined ? data.bio : existingProfile.bio,
+        experience_years: data.experience_years !== undefined ? Number(data.experience_years) : existingProfile.experience_years,
+        home_service: data.home_service !== undefined ? Boolean(data.home_service) : existingProfile.home_service,
+        salon_service: data.salon_service !== undefined ? Boolean(data.salon_service) : existingProfile.salon_service,
+        location: data.location !== undefined ? data.location : existingProfile.location,
+        city: data.city !== undefined ? data.city : existingProfile.city,
+        state: data.state !== undefined ? data.state : existingProfile.state,
+        pincode: data.pincode !== undefined ? data.pincode : existingProfile.pincode,
+        latitude: data.latitude || existingProfile.latitude || 26.9124,
+        longitude: data.longitude || existingProfile.longitude || 75.7873,
+        aadhaar_front: data.aadhaar_front !== undefined ? data.aadhaar_front : existingProfile.aadhaar_front,
+        aadhaar_back: data.aadhaar_back !== undefined ? data.aadhaar_back : existingProfile.aadhaar_back,
+        aadhaar_number: data.aadhaar_number !== undefined ? data.aadhaar_number : existingProfile.aadhaar_number,
+        pan_number: data.pan_number !== undefined ? data.pan_number : existingProfile.pan_number,
+        selfie_image: data.selfie_image !== undefined ? data.selfie_image : existingProfile.selfie_image,
+        verification_status: "PENDING",
+        is_available: false,
+        rejection_reason: null,
+      };
+
+      await ArtistProfileRepositor.update(existingProfile.id, updatePayload);
+      return await this.getArtistDetails(user_id);
     }
 
     const profile = await ArtistProfileRepositor.createProfile({
       ...data,
-      verification_status: "APPROVED",
+      verification_status: "PENDING",
+      is_available: false,
+      rejection_reason: null,
       latitude: data.latitude || 26.9124,
-      longitude: data.longitude || 75.7873
+      longitude: data.longitude || 75.7873,
     });
 
     return profile;
@@ -108,6 +171,46 @@ class ArtistService {
       intro_video_thumbnail: data.intro_video_thumbnail !== undefined ? data.intro_video_thumbnail : artist.intro_video_thumbnail,
       portfolio_video_thumbnail: data.portfolio_video_thumbnail !== undefined ? data.portfolio_video_thumbnail : artist.portfolio_video_thumbnail,
     };
+
+    // If KYC identity fields are being re-uploaded, transition back to PENDING
+    if (data.aadhaar_front || data.aadhaar_back || data.aadhaar_number || data.pan_number) {
+      if (data.aadhaar_front) allowedUpdates.aadhaar_front = data.aadhaar_front;
+      if (data.aadhaar_back) allowedUpdates.aadhaar_back = data.aadhaar_back;
+      if (data.aadhaar_number) {
+        const cleanAadhaar = String(data.aadhaar_number).replace(/\s/g, "");
+        if (!/^\d{12}$/.test(cleanAadhaar)) {
+          throw new AppError("Aadhaar number must be exactly 12 numeric digits", 400);
+        }
+        const existingAadhaar = await db.ArtistProfile.findOne({
+          where: {
+            aadhaar_number: cleanAadhaar,
+            user_id: { [db.Sequelize.Op.ne]: userId }
+          }
+        });
+        if (existingAadhaar) {
+          throw new AppError("This Aadhaar number is already registered with another artist account.", 400);
+        }
+        allowedUpdates.aadhaar_number = cleanAadhaar;
+      }
+      if (data.pan_number) {
+        const cleanPan = String(data.pan_number).trim().toUpperCase();
+        if (!/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(cleanPan)) {
+          throw new AppError("Invalid PAN card format (e.g. ABCDE1234F)", 400);
+        }
+        const existingPan = await db.ArtistProfile.findOne({
+          where: {
+            pan_number: cleanPan,
+            user_id: { [db.Sequelize.Op.ne]: userId }
+          }
+        });
+        if (existingPan) {
+          throw new AppError("This PAN number is already registered with another artist account.", 400);
+        }
+        allowedUpdates.pan_number = cleanPan;
+      }
+      allowedUpdates.verification_status = "PENDING";
+      allowedUpdates.rejection_reason = null;
+    }
     
     await ArtistProfileRepositor.update(artist.id, allowedUpdates);
 
@@ -119,69 +222,69 @@ class ArtistService {
       console.error("[Milestones Trigger] Error evaluating milestones on profile update:", err.message);
     }
 
-    return await ArtistProfileRepositor.getArtistDetails(userId);
+    return await this.getArtistDetails(userId);
   }
 
   async getArtistDetails(id) {
-    let artist = await ArtistProfileRepositor.getArtistDetails(id);
+    const artist = await ArtistProfileRepositor.getArtistDetails(id);
 
     if (!artist) {
-      await db.ArtistProfile.create({
-        user_id: id,
-        bio: "Creative Mehndi Artist",
-        experience_years: 5,
-        home_service: true,
-        salon_service: false,
-        verification_status: "APPROVED"
-      });
-      artist = await ArtistProfileRepositor.getArtistDetails(id);
+      throw new AppError("Artist profile not found", 404);
     }
 
-    if (!artist) {
-      throw new AppError("Artist not found", 404);
+    const reviews = artist.reviews || [];
+    const average_rating =
+      reviews.length > 0
+        ? Number(
+            (
+              reviews.reduce(
+                (sum, item) => sum + item.rating,
+                0
+              ) / reviews.length
+            ).toFixed(1)
+          )
+        : 0;
+
+    const artistData = artist.toJSON();
+
+    delete artistData.avg_rating;
+    delete artistData.total_reviews;
+
+    // Mask sensitive fields for artist own view
+    if (artistData.aadhaar_number) {
+      const clean = String(artistData.aadhaar_number).replace(/\s/g, "");
+      artistData.aadhaar_number = clean.length >= 4 ? "•••• •••• " + clean.slice(-4) : "••••";
+    }
+    if (artistData.bank_account_number && artistData.bank_account_number.length > 4) {
+      artistData.bank_account_number = "••••••" + String(artistData.bank_account_number).slice(-4);
     }
 
-  const reviews =
-    artist.reviews || [];
+    const isProfileComplete = Boolean(
+      artistData.bio &&
+      artistData.bio.trim() !== "" &&
+      artistData.experience_years !== null &&
+      artistData.city &&
+      artistData.pincode &&
+      artistData.aadhaar_front &&
+      artistData.aadhaar_back
+    );
 
-  const average_rating =
-    reviews.length > 0
-      ? Number(
-          (
-            reviews.reduce(
-              (sum, item) =>
-                sum + item.rating,
-              0
-            ) / reviews.length
-          ).toFixed(1)
-        )
-      : 0;
-
-  const artistData =
-    artist.toJSON();
-
-  delete artistData.avg_rating;
-  delete artistData.total_reviews;
-
-  return {
-    ...artistData,
-
-    average_rating,
-
-    review_count:
-      reviews.length,
-  };
-}
+    return {
+      ...artistData,
+      average_rating,
+      review_count: reviews.length,
+      isProfileComplete,
+    };
+  }
 
   async getArtistDetailsById(id) {
     const artist = await UserRepositor.getArtistDetails(id);
 
-    if (!artist) {
-      throw new AppError("Artist not found", 404);
+    if (!artist || artist.verification_status !== "APPROVED") {
+      throw new AppError("Artist profile is not available or pending verification", 404);
     }
 
     const reviews = artist.reviews || [];
-
     const average_rating =
       reviews.length > 0
         ? Number(
@@ -196,6 +299,16 @@ class ArtistService {
     delete artistData.avg_rating;
     delete artistData.total_reviews;
 
+    // NEVER expose sensitive KYC & financial details on public/customer endpoints
+    delete artistData.aadhaar_front;
+    delete artistData.aadhaar_back;
+    delete artistData.aadhaar_number;
+    delete artistData.pan_number;
+    delete artistData.bank_account_number;
+    delete artistData.bank_ifsc;
+    delete artistData.bank_account_holder;
+    delete artistData.selfie_image;
+
     return {
       ...artistData,
       average_rating,
@@ -204,75 +317,20 @@ class ArtistService {
   }
 
   async createService(data) {
-    const {
-      artist_id,
-
-      specialization_name,
-
-      minimum_price,
-
-      category,
-    } = data;
-
-    const artist = await ArtistProfileRepositor.getOne({
-      user_id: artist_id,
-    });
-
-    if (!artist) {
-      throw new AppError("Artist profile not found", 404);
-    }
-
-    if (!specialization_name) {
-      throw new AppError("Specialization name required", 400);
-    }
-
-    if (!category) {
-      throw new AppError("Category required", 400);
-    }
-
-    if (!minimum_price) {
-      throw new AppError("Minimum price required", 400);
-    }
-
-    const service = await ServiceRepositor.createService({
-      ...data,
-
-      artist_id: artist.id,
-    });
-
-    return service;
+    const userId = data.artist_id;
+    return await this.createNewService(userId, data);
   }
 
   async getMyServices(artist_id) {
-    const artist = await ArtistProfileRepositor.getOne({ user_id: artist_id });
-    if (!artist) {
-      throw new AppError("Artist profile not found", 404);
-    }
-    return await ServiceRepositor.getArtistServices(artist.id);
+    return await this.getServicesList(artist_id);
   }
+
   async updateService(id, data, artist_id) {
-    const artist = await ArtistProfileRepositor.getOne({ user_id: artist_id });
-    const service = await ServiceRepositor.getById(id);
-    if (!service) {
-      throw new AppError("Service not found", 404);
-    }
-    if (service.artist_id !== artist.id) {
-      throw new AppError("Unauthorized", 403);
-    }
-    await ServiceRepositor.update(id, data);
-    return await ServiceRepositor.getById(id);
+    return await this.updateServiceDetails(id, artist_id, data);
   }
+
   async deleteService(id, artist_id) {
-    const artist = await ArtistProfileRepositor.getOne({ user_id: artist_id });
-    const service = await ServiceRepositor.getById(id);
-    if (!service) {
-      throw new AppError("Service not found", 404);
-    }
-    if (service.artist_id !== artist.id) {
-      throw new AppError("Unauthorized", 403);
-    }
-    await ServiceRepositor.delete(id);
-    return true;
+    return await this.deleteServiceItem(id, artist_id);
   }
 
   async createSlot(data) {
@@ -284,6 +342,10 @@ class ArtistService {
 
     if (!artist) {
       throw new AppError("Artist profile not found", 404);
+    }
+
+    if (artist.verification_status !== "APPROVED") {
+      throw new AppError("Only approved artists can create availability slots", 403);
     }
 
     if (!artist.is_available) {
@@ -370,40 +432,7 @@ class ArtistService {
     return true;
   }
 
-  async createPortfolio(data) {
-    const { artist_id, image_url } = data;
-    const artist = await ArtistProfileRepositor.getOne({ user_id: artist_id });
-    if (!artist) {
-      throw new AppError("Artist profile not found", 404);
-    }
-    if (!image_url) {
-      throw new AppError("Image URL required", 400);
-    }
-    const portfolio = await PortfolioRepositor.createPortfolio({
-      ...data,
-      artist_id: artist.id,
-    });
-    return portfolio;
-  }
-  async getMyPortfolio(artist_id) {
-    const artist = await ArtistProfileRepositor.getOne({ user_id: artist_id });
-    if (!artist) {
-      throw new AppError("Artist profile not found", 404);
-    }
-    return await PortfolioRepositor.getArtistPortfolio(artist.id);
-  }
-  async deletePortfolio(id, artist_id) {
-    const artist = await ArtistProfileRepositor.getOne({ user_id: artist_id });
-    const portfolio = await PortfolioRepositor.getById(id);
-    if (!portfolio) {
-      throw new AppError("Portfolio not found", 404);
-    }
-    if (portfolio.artist_id !== artist.id) {
-      throw new AppError("Unauthorized", 403);
-    }
-    await PortfolioRepositor.delete(id);
-    return true;
-  }
+
 
   // Booking management
 
@@ -647,7 +676,7 @@ async getArtistBookings(user_id) {
 
   return await BookingRepositor
     .getArtistBookings(
-      artist.id
+      [artist.id, user_id]
     );
 }
 async updateBookingStatus(
@@ -819,7 +848,7 @@ async updateBookingStatus(
     if (booking_id) {
       await PaymentRepositor.create({
         booking_id,
-        cashfree_order_id: order.order_id,
+        razorpay_order_id: order.order_id,
         transaction_id: order.order_id,
         amount: Math.round(amountPaise / 100),
         payment_method: "ONLINE",
@@ -842,13 +871,12 @@ async updateBookingStatus(
       booking_id,
       razorpay_order_id,
       razorpay_payment_id,
-      razorpay_signature,
-      cashfree_order_id
+      razorpay_signature
     } = data;
 
-    const orderId = razorpay_order_id || cashfree_order_id;
-    const paymentId = razorpay_payment_id;
-    const signature = razorpay_signature;
+    const orderId = razorpay_order_id || data.order_id;
+    const paymentId = razorpay_payment_id || data.payment_id;
+    const signature = razorpay_signature || data.signature;
 
     if (!orderId || !paymentId || !signature) {
       throw new AppError("Missing payment verification parameters (razorpay_order_id, razorpay_payment_id, razorpay_signature)", 400);
@@ -880,7 +908,7 @@ async updateBookingStatus(
       const payment = payments[0];
       if (payment) {
         await PaymentRepositor.update(payment.id, {
-          cashfree_payment_id: paymentId,
+          razorpay_payment_id: paymentId,
           transaction_id: paymentId,
           status: "SUCCESS",
           paid_at: new Date()
@@ -1152,40 +1180,134 @@ async createReview(data) {
   }
 
   // Portfolio Management
-  async createPortfolio(data) {
-    const artist = await ArtistProfileRepositor.getOne({ user_id: data.artist_id });
+  async createPortfolio(userIdOrData, maybeData) {
+    let userId;
+    let data;
+    if (typeof userIdOrData === "object") {
+      data = userIdOrData;
+      userId = data.artist_id || data.user_id;
+    } else {
+      userId = userIdOrData;
+      data = maybeData || {};
+    }
+
+    const artist = await db.ArtistProfile.findOne({
+      where: {
+        [db.Sequelize.Op.or]: [
+          { user_id: userId },
+          { id: userId }
+        ]
+      }
+    });
+
     if (!artist) {
       throw new AppError("Artist profile not found", 404);
     }
-    
+
+    const imageUrl = data.image_url || null;
+    const videoUrl = data.video_url || null;
+
+    if (!imageUrl && !videoUrl) {
+      throw new AppError("Portfolio media file is required (image_url or video_url)", 400);
+    }
+
+    // Validate Price if provided
+    if (data.price !== undefined && data.price !== null && data.price !== "") {
+      const p = Number(data.price);
+      if (!Number.isFinite(p) || p < 0) {
+        throw new AppError("Portfolio price must be a non-negative number", 400);
+      }
+    }
+
+    // Validate Duration if provided
+    if (data.duration_minutes !== undefined && data.duration_minutes !== null && data.duration_minutes !== "") {
+      const d = Number(data.duration_minutes);
+      if (!Number.isFinite(d) || d < 15 || d > 720) {
+        throw new AppError("Portfolio duration must be between 15 and 720 minutes", 400);
+      }
+    }
+
+    // Validate Art Tier if provided
+    if (data.art_tier && !["STANDARD", "PREMIUM", "BRIDAL_EXCLUSIVE"].includes(data.art_tier)) {
+      throw new AppError("Invalid art tier. Allowed: STANDARD, PREMIUM, BRIDAL_EXCLUSIVE", 400);
+    }
+
+    // Validate Complexity Level if provided
+    if (data.complexity_level && !["SIMPLE", "MEDIUM", "INTRICATE", "MASTERPIECE"].includes(data.complexity_level)) {
+      throw new AppError("Invalid complexity level. Allowed: SIMPLE, MEDIUM, INTRICATE, MASTERPIECE", 400);
+    }
+
+    // Idempotent duplicate check (prevent accidental duplicate records from retried uploads)
+    const existing = await db.Portfolio.findOne({
+      where: {
+        artist_id: { [db.Sequelize.Op.in]: [artist.id, artist.user_id] },
+        image_url: imageUrl || videoUrl
+      }
+    });
+    if (existing) {
+      return existing;
+    }
+
     const portfolioData = {
       artist_id: artist.id,
-      image_url: data.image_url,
-      video_url: data.video_url || null,
-      title: data.title || null,
-      caption: data.caption || null,
-      description: data.description || null,
-      category: data.category || null,
-      occasion: data.occasion || null,
-      tags: data.tags || null,
-      location: data.location || null,
-      visibility: data.visibility !== undefined ? data.visibility : true,
-      display_order: data.display_order !== undefined ? Number(data.display_order) : 0
+      image_url: imageUrl || videoUrl,
+      video_url: videoUrl,
+      title: data.title ? String(data.title).trim() : null,
+      caption: data.caption ? String(data.caption).trim() : null,
+      description: data.description ? String(data.description).trim() : null,
+      category: data.category ? String(data.category).trim() : null,
+      occasion: data.occasion ? String(data.occasion).trim() : null,
+      tags: data.tags ? String(data.tags).trim() : null,
+      location: data.location ? String(data.location).trim() : null,
+      visibility: data.visibility !== undefined ? (data.visibility === true || data.visibility === "true") : true,
+      display_order: data.display_order !== undefined ? Number(data.display_order) : 0,
+      art_tier: data.art_tier || "STANDARD",
+      price: data.price ? Number(data.price) : null,
+      duration_minutes: data.duration_minutes ? Number(data.duration_minutes) : 60,
+      complexity_level: data.complexity_level || "MEDIUM"
     };
 
-    return await PortfolioRepositor.createPortfolio(portfolioData);
+    const created = await PortfolioRepositor.createPortfolio(portfolioData);
+
+    // If set as cover or featured image, update artist profile cover_image
+    if (data.is_cover === true || data.is_featured === true) {
+      await artist.update({ cover_image: imageUrl || videoUrl });
+    }
+
+    return created;
   }
 
   async getMyPortfolio(userId) {
-    const artist = await ArtistProfileRepositor.getOne({ user_id: userId });
+    const artist = await db.ArtistProfile.findOne({
+      where: {
+        [db.Sequelize.Op.or]: [
+          { user_id: userId },
+          { id: userId }
+        ]
+      }
+    });
     if (!artist) {
       throw new AppError("Artist profile not found", 404);
     }
-    return await PortfolioRepositor.getArtistPortfolio(artist.id);
+    return await PortfolioRepositor.getArtistPortfolio([artist.id, artist.user_id]);
   }
 
   async getPortfolioById(id) {
-    const item = await PortfolioRepositor.getById(id);
+    const item = await db.Portfolio.findByPk(id, {
+      include: [
+        {
+          model: db.ArtistProfile,
+          as: "artist",
+          include: [
+            {
+              model: db.User,
+              as: "user",
+              attributes: ["id", "name", "profile_image"]
+            }
+          ]
+        }
+      ]
+    });
     if (!item) {
       throw new AppError("Portfolio item not found", 404);
     }
@@ -1193,70 +1315,206 @@ async createReview(data) {
   }
 
   async updatePortfolio(id, userId, data) {
-    const artist = await ArtistProfileRepositor.getOne({ user_id: userId });
+    const artist = await db.ArtistProfile.findOne({
+      where: {
+        [db.Sequelize.Op.or]: [
+          { user_id: userId },
+          { id: userId }
+        ]
+      }
+    });
     if (!artist) {
       throw new AppError("Artist profile not found", 404);
     }
-    const item = await PortfolioRepositor.getById(id);
+    const item = await db.Portfolio.findByPk(id);
     if (!item) {
       throw new AppError("Portfolio item not found", 404);
     }
-    if (item.artist_id !== artist.id) {
+    if (item.artist_id !== artist.id && item.artist_id !== artist.user_id && item.artist_id !== Number(userId)) {
       throw new AppError("Unauthorized access to portfolio", 403);
     }
 
     const updates = {};
-    if (data.title !== undefined) updates.title = data.title;
-    if (data.caption !== undefined) updates.caption = data.caption;
-    if (data.description !== undefined) updates.description = data.description;
-    if (data.category !== undefined) updates.category = data.category;
-    if (data.occasion !== undefined) updates.occasion = data.occasion;
-    if (data.tags !== undefined) updates.tags = data.tags;
-    if (data.location !== undefined) updates.location = data.location;
-    if (data.visibility !== undefined) updates.visibility = data.visibility;
+    if (data.title !== undefined) updates.title = data.title ? String(data.title).trim() : null;
+    if (data.caption !== undefined) updates.caption = data.caption ? String(data.caption).trim() : null;
+    if (data.description !== undefined) updates.description = data.description ? String(data.description).trim() : null;
+    if (data.category !== undefined) updates.category = data.category ? String(data.category).trim() : null;
+    if (data.occasion !== undefined) updates.occasion = data.occasion ? String(data.occasion).trim() : null;
+    if (data.tags !== undefined) updates.tags = data.tags ? String(data.tags).trim() : null;
+    if (data.location !== undefined) updates.location = data.location ? String(data.location).trim() : null;
+    if (data.visibility !== undefined) updates.visibility = (data.visibility === true || data.visibility === "true");
     if (data.display_order !== undefined) updates.display_order = Number(data.display_order);
+    if (data.image_url !== undefined) updates.image_url = data.image_url;
+    if (data.video_url !== undefined) updates.video_url = data.video_url;
 
-    await PortfolioRepositor.update(id, updates);
-    return await PortfolioRepositor.getById(id);
+    if (data.price !== undefined) {
+      const p = data.price ? Number(data.price) : null;
+      if (p !== null && (!Number.isFinite(p) || p < 0)) {
+        throw new AppError("Portfolio price must be a non-negative number", 400);
+      }
+      updates.price = p;
+    }
+
+    if (data.duration_minutes !== undefined) {
+      const d = Number(data.duration_minutes);
+      if (!Number.isFinite(d) || d < 15 || d > 720) {
+        throw new AppError("Portfolio duration must be between 15 and 720 minutes", 400);
+      }
+      updates.duration_minutes = d;
+    }
+
+    if (data.art_tier !== undefined) {
+      if (!["STANDARD", "PREMIUM", "BRIDAL_EXCLUSIVE"].includes(data.art_tier)) {
+        throw new AppError("Invalid art tier. Allowed: STANDARD, PREMIUM, BRIDAL_EXCLUSIVE", 400);
+      }
+      updates.art_tier = data.art_tier;
+    }
+
+    if (data.complexity_level !== undefined) {
+      if (!["SIMPLE", "MEDIUM", "INTRICATE", "MASTERPIECE"].includes(data.complexity_level)) {
+        throw new AppError("Invalid complexity level. Allowed: SIMPLE, MEDIUM, INTRICATE, MASTERPIECE", 400);
+      }
+      updates.complexity_level = data.complexity_level;
+    }
+
+    await item.update(updates);
+
+    if (data.is_cover === true) {
+      await artist.update({ cover_image: item.image_url || data.image_url });
+    }
+
+    return await db.Portfolio.findByPk(id, {
+      include: [
+        {
+          model: db.ArtistProfile,
+          as: "artist"
+        }
+      ]
+    });
   }
 
   async deletePortfolio(id, userId) {
-    const artist = await ArtistProfileRepositor.getOne({ user_id: userId });
+    const artist = await db.ArtistProfile.findOne({
+      where: {
+        [db.Sequelize.Op.or]: [
+          { user_id: userId },
+          { id: userId }
+        ]
+      }
+    });
     if (!artist) {
       throw new AppError("Artist profile not found", 404);
     }
-    const item = await PortfolioRepositor.getById(id);
+    const item = await db.Portfolio.findByPk(id);
     if (!item) {
       throw new AppError("Portfolio item not found", 404);
     }
-    if (item.artist_id !== artist.id) {
+    if (item.artist_id !== artist.id && item.artist_id !== artist.user_id && item.artist_id !== Number(userId)) {
       throw new AppError("Unauthorized access to portfolio", 403);
     }
-    await PortfolioRepositor.delete(id);
+
+    // If deleted item was the active cover image, promote next available item or clear
+    if (artist.cover_image && (artist.cover_image === item.image_url || artist.cover_image.includes(item.image_url))) {
+      const nextItem = await db.Portfolio.findOne({
+        where: {
+          artist_id: { [db.Sequelize.Op.in]: [artist.id, artist.user_id] },
+          id: { [db.Sequelize.Op.ne]: id },
+          visibility: true
+        },
+        order: [
+          ["display_order", "ASC"],
+          ["createdAt", "DESC"]
+        ]
+      });
+      await artist.update({ cover_image: nextItem ? nextItem.image_url : null });
+    }
+
+    // Clean up dependent reactions
+    await db.PortfolioLike.destroy({ where: { portfolio_id: id } }).catch(() => {});
+    await db.PortfolioSave.destroy({ where: { portfolio_id: id } }).catch(() => {});
+    await db.PortfolioComment.destroy({ where: { portfolio_id: id } }).catch(() => {});
+
+    await item.destroy();
     return true;
   }
 
+  async reorderPortfolio(userId, items) {
+    const artist = await db.ArtistProfile.findOne({
+      where: {
+        [db.Sequelize.Op.or]: [
+          { user_id: userId },
+          { id: userId }
+        ]
+      }
+    });
+    if (!artist) {
+      throw new AppError("Artist profile not found", 404);
+    }
+    if (!Array.isArray(items)) {
+      throw new AppError("Items array required for reordering", 400);
+    }
+
+    const artistIds = [artist.id, artist.user_id, Number(userId)];
+
+    for (let i = 0; i < items.length; i++) {
+      const entry = items[i];
+      const itemId = typeof entry === "object" ? entry.id : entry;
+      const order = typeof entry === "object" && entry.display_order !== undefined ? Number(entry.display_order) : i;
+
+      const item = await db.Portfolio.findByPk(itemId);
+      if (!item) {
+        throw new AppError(`Portfolio item #${itemId} not found`, 404);
+      }
+      if (!artistIds.includes(item.artist_id)) {
+        throw new AppError("Unauthorized: cannot reorder another artist's portfolio items", 403);
+      }
+      await item.update({ display_order: order });
+    }
+
+    return await PortfolioRepositor.getArtistPortfolio([artist.id, artist.user_id]);
+  }
+
+  async setCoverImage(userId, data) {
+    const artist = await db.ArtistProfile.findOne({
+      where: {
+        [db.Sequelize.Op.or]: [
+          { user_id: userId },
+          { id: userId }
+        ]
+      }
+    });
+    if (!artist) {
+      throw new AppError("Artist profile not found", 404);
+    }
+
+    let targetUrl = data?.image_url;
+    if (data?.portfolio_id) {
+      const item = await db.Portfolio.findByPk(data.portfolio_id);
+      if (!item) {
+        throw new AppError("Portfolio item not found", 404);
+      }
+      const artistIds = [artist.id, artist.user_id, Number(userId)];
+      if (!artistIds.includes(item.artist_id)) {
+        throw new AppError("Unauthorized: cannot select another artist's portfolio item as cover", 403);
+      }
+      targetUrl = item.image_url;
+    }
+
+    if (!targetUrl) {
+      throw new AppError("Valid cover image URL or portfolio_id required", 400);
+    }
+
+    await artist.update({ cover_image: targetUrl });
+    return artist;
+  }
+
   async getDashboard(userId) {
-    let artist = await db.ArtistProfile.findOne({
+    const artist = await db.ArtistProfile.findOne({
       where: { user_id: userId },
       include: [{ model: db.User, as: "user", attributes: ["name", "profile_image"] }]
     });
     if (!artist) {
-      await db.ArtistProfile.create({
-        user_id: userId,
-        bio: "Creative Mehndi Artist",
-        experience_years: 5,
-        home_service: true,
-        salon_service: false,
-        verification_status: "APPROVED"
-      });
-      artist = await db.ArtistProfile.findOne({
-        where: { user_id: userId },
-        include: [{ model: db.User, as: "user", attributes: ["name", "profile_image"] }]
-      });
-    }
-    if (!artist) {
-      throw new AppError("Artist profile not found", 404);
+      throw new AppError("Artist profile not found. Please complete your onboarding first.", 404);
     }
 
     const artistIds = [artist.id, Number(userId)];
@@ -1390,18 +1648,37 @@ async createReview(data) {
     const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
     if (!artist) throw new AppError("Artist profile not found", 404);
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-    const todayVal = await db.Booking.sum("total_price", { where: { artist_id: artist.id, booking_status: "COMPLETED", createdAt: { [db.Sequelize.Op.gte]: today } } });
-    const lifetimeVal = await db.Booking.sum("total_price", { where: { artist_id: artist.id, booking_status: "COMPLETED" } });
+    const todayVal = await db.Booking.sum("total_price", {
+      where: { artist_id: artist.id, booking_status: "COMPLETED", createdAt: { [db.Sequelize.Op.gte]: today } }
+    });
+    const weeklyVal = await db.Booking.sum("total_price", {
+      where: { artist_id: artist.id, booking_status: "COMPLETED", createdAt: { [db.Sequelize.Op.gte]: sevenDaysAgo } }
+    });
+    const monthlyVal = await db.Booking.sum("total_price", {
+      where: { artist_id: artist.id, booking_status: "COMPLETED", createdAt: { [db.Sequelize.Op.gte]: thirtyDaysAgo } }
+    });
+    const lifetimeVal = await db.Booking.sum("total_price", {
+      where: { artist_id: artist.id, booking_status: "COMPLETED" }
+    });
+
+    let commissionDeducted = 0;
+    if (db.OutstandingCommission) {
+      commissionDeducted = (await db.OutstandingCommission.sum("commission_amount", {
+        where: { artist_id: artist.id, status: "PAID" }
+      })) || 0;
+    }
 
     return {
       today: todayVal || 0,
-      weekly: Math.round((lifetimeVal || 0) * 0.25),
-      monthly: Math.round((lifetimeVal || 0) * 0.65),
+      weekly: weeklyVal || 0,
+      monthly: monthlyVal || 0,
       lifetime: lifetimeVal || 0,
-      commissionDeducted: Math.round((lifetimeVal || 0) * 0.15)
+      commissionDeducted: commissionDeducted || 0
     };
   }
 
@@ -1412,21 +1689,29 @@ async createReview(data) {
     const total = await db.Booking.count({ where: { artist_id: artist.id } });
     const completed = await db.Booking.count({ where: { artist_id: artist.id, booking_status: "COMPLETED" } });
 
+    const uniqueCustomers = await db.Booking.count({
+      where: { artist_id: artist.id },
+      distinct: true,
+      col: "user_id"
+    });
+    const repeatBookings = Math.max(0, total - uniqueCustomers);
+    const customerRetention = total > 1 && uniqueCustomers > 0 ? Math.min(100, Math.round((repeatBookings / total) * 100)) : 0;
+
     return {
       totalBookings: total,
       completedBookings: completed,
-      conversionRate: total > 0 ? Math.round((completed / total) * 100) : 100,
-      profileViews: artist.total_bookings * 4 + 20,
-      customerRetention: 85
+      conversionRate: total > 0 ? Math.round((completed / total) * 100) : 0,
+      profileViews: artist.total_bookings || 0,
+      customerRetention
     };
   }
 
   async getWalletDetails(userId) {
     let wallet = await db.Wallet.findOne({ where: { user_id: userId } });
     if (!wallet) {
-      wallet = await db.Wallet.create({ user_id: userId, balance: 10500 });
+      wallet = await db.Wallet.create({ user_id: userId, balance: 0, pending_balance: 0, lifetime_earnings: 0 });
     }
-    let history = await db.WalletTransaction.findAll({
+    const history = await db.WalletTransaction.findAll({
       where: { wallet_id: wallet.id },
       include: [
         {
@@ -1446,55 +1731,6 @@ async createReview(data) {
       order: [["createdAt", "DESC"]]
     });
 
-    if (!history || history.length === 0) {
-      await wallet.update({ balance: 10500 });
-      await db.WalletTransaction.bulkCreate([
-        {
-          wallet_id: wallet.id,
-          transaction_type: "PAYMENT",
-          amount: 3500,
-          status: "SUCCESS",
-          description: "Payment from Ananya Sharma (#BC-887652)",
-          createdAt: new Date(Date.now() - 3600000 * 2)
-        },
-        {
-          wallet_id: wallet.id,
-          transaction_type: "PAYMENT",
-          amount: 2500,
-          status: "SUCCESS",
-          description: "Payment from Ritika Patel (#BC-192834)",
-          createdAt: new Date(Date.now() - 3600000 * 24)
-        },
-        {
-          wallet_id: wallet.id,
-          transaction_type: "PAYMENT",
-          amount: 4500,
-          status: "SUCCESS",
-          description: "Payment from Neha Gupta (#BC-239487)",
-          createdAt: new Date(Date.now() - 3600000 * 48)
-        }
-      ]);
-      history = await db.WalletTransaction.findAll({
-        where: { wallet_id: wallet.id },
-        include: [
-          {
-            model: db.Booking,
-            as: "booking",
-            required: false,
-            include: [
-              {
-                model: db.User,
-                as: "user",
-                required: false,
-                attributes: ["name", "profile_image"]
-              }
-            ]
-          }
-        ],
-        order: [["createdAt", "DESC"]]
-      });
-    }
-
     const transactions = (history || []).map((tx) => {
       const txData = tx.toJSON();
       if (txData.booking && txData.booking.user) {
@@ -1504,8 +1740,10 @@ async createReview(data) {
     });
 
     return {
-      balance: wallet.balance,
-      transactions: transactions
+      balance: wallet.balance || 0,
+      pendingBalance: wallet.pending_balance || 0,
+      lifetimeEarnings: wallet.lifetime_earnings || 0,
+      transactions
     };
   }
 
@@ -1626,57 +1864,173 @@ async createReview(data) {
     return service;
   }
 
+  async validateCategory(categoryName) {
+    if (!categoryName || typeof categoryName !== "string") {
+      throw new AppError("Category name is required", 400);
+    }
+    const trimmed = categoryName.trim();
+    const isPostgres = db.sequelize.getDialect() === "postgres";
+    const likeOp = isPostgres ? Op.iLike : Op.like;
+
+    const cat = await db.Category.findOne({
+      where: {
+        [Op.or]: [
+          { name: { [likeOp]: trimmed } },
+          { slug: { [likeOp]: trimmed.toLowerCase().replace(/[^a-z0-9]+/g, "-") } }
+        ]
+      }
+    });
+
+    if (cat) {
+      if (cat.status === "INACTIVE") {
+        throw new AppError(`Selected category '${cat.name}' is currently inactive`, 400);
+      }
+      return cat.name;
+    }
+    return trimmed;
+  }
+
+  validatePricingAndDuration(data) {
+    const minPrice = Number(data.minimum_price);
+    if (!Number.isFinite(minPrice) || minPrice <= 0) {
+      throw new AppError("Minimum price must be a valid positive amount", 400);
+    }
+
+    if (data.maximum_price !== undefined && data.maximum_price !== null) {
+      const maxPrice = Number(data.maximum_price);
+      if (!Number.isFinite(maxPrice) || maxPrice < minPrice) {
+        throw new AppError("Maximum price must be greater than or equal to minimum price", 400);
+      }
+    }
+
+    if (data.offer_price !== undefined && data.offer_price !== null) {
+      const offerPrice = Number(data.offer_price);
+      if (!Number.isFinite(offerPrice) || offerPrice <= 0 || offerPrice > minPrice) {
+        throw new AppError("Offer price must be greater than 0 and less than or equal to minimum price", 400);
+      }
+    }
+
+    const duration = Number(data.duration_minutes || 60);
+    if (!Number.isInteger(duration) || duration < 15 || duration > 720) {
+      throw new AppError("Service duration must be between 15 and 720 minutes", 400);
+    }
+
+    if (data.travel_charges !== undefined && data.travel_charges !== null) {
+      const travel = Number(data.travel_charges);
+      if (!Number.isFinite(travel) || travel < 0) {
+        throw new AppError("Travel charges must be a non-negative amount", 400);
+      }
+    }
+
+    if (data.advance_payment_percentage !== undefined && data.advance_payment_percentage !== null) {
+      const advance = Number(data.advance_payment_percentage);
+      if (!Number.isFinite(advance) || advance < 0 || advance > 100) {
+        throw new AppError("Advance payment percentage must be between 0 and 100", 400);
+      }
+    }
+  }
+
   async createNewService(userId, data) {
     const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
     if (!artist) throw new AppError("Artist profile not found", 404);
+    if (artist.verification_status !== "APPROVED") {
+      throw new AppError("Only approved artists can create services", 403);
+    }
 
-    const service = await db.Service.create({
-      artist_id: artist.id,
-      specialization_name: data.specialization_name,
-      category: data.category,
-      description: data.description || "",
-      minimum_price: Number(data.minimum_price),
-      maximum_price: data.maximum_price ? Number(data.maximum_price) : null,
-      duration_minutes: Number(data.duration_minutes || 60),
-      service_image: data.service_image || null,
-      is_home_service: data.is_home_service !== undefined ? data.is_home_service : true,
-      is_salon_service: data.is_salon_service !== undefined ? data.is_salon_service : false,
-      offer_price: data.offer_price ? Number(data.offer_price) : null,
-      travel_charges: data.travel_charges ? Number(data.travel_charges) : 0,
-      minimum_booking_amount: data.minimum_booking_amount ? Number(data.minimum_booking_amount) : 0,
-      advance_payment_percentage: data.advance_payment_percentage ? Number(data.advance_payment_percentage) : 0,
-      tags: data.tags || ""
+    if (!data.specialization_name || !data.specialization_name.trim()) {
+      throw new AppError("Specialization name is required", 400);
+    }
+
+    const canonicalCategory = await this.validateCategory(data.category);
+    this.validatePricingAndDuration(data);
+
+    // Duplicate service protection
+    const existingService = await db.Service.findOne({
+      where: {
+        artist_id: artist.id,
+        specialization_name: data.specialization_name.trim(),
+        is_active: true
+      }
     });
-
-    if (data.packages && Array.isArray(data.packages)) {
-      for (const p of data.packages) {
-        await db.ServicePackage.create({
-          service_id: service.id,
-          package_name: p.package_name,
-          package_price: Number(p.package_price),
-          included_designs: p.included_designs || "",
-          duration: Number(p.duration || 60),
-          number_of_hands: Number(p.number_of_hands || 0),
-          number_of_feet: Number(p.number_of_feet || 0),
-          home_visit: p.home_visit !== undefined ? p.home_visit : true,
-          touch_up_included: p.touch_up_included !== undefined ? p.touch_up_included : false,
-          aftercare_included: p.aftercare_included !== undefined ? p.aftercare_included : false
-        });
-      }
+    if (existingService) {
+      throw new AppError("A service with this specialization name already exists in your profile", 400);
     }
 
-    if (data.addons && Array.isArray(data.addons)) {
-      for (const a of data.addons) {
-        await db.ServiceAddon.create({
-          service_id: service.id,
-          addon_name: a.addon_name,
-          addon_price: Number(a.addon_price),
-          description: a.description || ""
-        });
-      }
-    }
+    const t = await db.sequelize.transaction();
+    try {
+      const service = await db.Service.create({
+        artist_id: artist.id,
+        specialization_name: data.specialization_name.trim(),
+        category: canonicalCategory,
+        description: data.description ? String(data.description).trim() : "",
+        minimum_price: Number(data.minimum_price),
+        maximum_price: data.maximum_price ? Number(data.maximum_price) : null,
+        duration_minutes: Number(data.duration_minutes || 60),
+        service_image: data.service_image || null,
+        is_home_service: data.is_home_service !== undefined ? Boolean(data.is_home_service) : true,
+        is_salon_service: data.is_salon_service !== undefined ? Boolean(data.is_salon_service) : false,
+        is_active: true,
+        offer_price: data.offer_price ? Number(data.offer_price) : null,
+        travel_charges: data.travel_charges ? Number(data.travel_charges) : 0,
+        minimum_booking_amount: data.minimum_booking_amount ? Number(data.minimum_booking_amount) : 0,
+        advance_payment_percentage: data.advance_payment_percentage ? Number(data.advance_payment_percentage) : 0,
+        tags: data.tags || ""
+      }, { transaction: t });
 
-    return await this.getServiceDetails(service.id);
+      if (data.packages && Array.isArray(data.packages)) {
+        const seenPackages = new Set();
+        for (const p of data.packages) {
+          const pkgName = String(p.package_name || "").trim();
+          if (!pkgName) throw new AppError("Package name cannot be empty", 400);
+          if (seenPackages.has(pkgName.toLowerCase())) {
+            throw new AppError(`Duplicate package name '${pkgName}' in service creation`, 400);
+          }
+          seenPackages.add(pkgName.toLowerCase());
+
+          const pkgPrice = Number(p.package_price);
+          if (!Number.isFinite(pkgPrice) || pkgPrice <= 0) {
+            throw new AppError(`Package '${pkgName}' price must be a valid positive number`, 400);
+          }
+
+          await db.ServicePackage.create({
+            service_id: service.id,
+            package_name: pkgName,
+            package_price: pkgPrice,
+            included_designs: p.included_designs || "",
+            duration: Number(p.duration || 60),
+            number_of_hands: Number(p.number_of_hands || 0),
+            number_of_feet: Number(p.number_of_feet || 0),
+            home_visit: p.home_visit !== undefined ? p.home_visit : true,
+            touch_up_included: p.touch_up_included !== undefined ? p.touch_up_included : false,
+            aftercare_included: p.aftercare_included !== undefined ? p.aftercare_included : false
+          }, { transaction: t });
+        }
+      }
+
+      if (data.addons && Array.isArray(data.addons)) {
+        for (const a of data.addons) {
+          const addonName = String(a.addon_name || "").trim();
+          if (!addonName) continue;
+          const addonPrice = Number(a.addon_price);
+          if (!Number.isFinite(addonPrice) || addonPrice <= 0) {
+            throw new AppError(`Addon '${addonName}' price must be a valid positive number`, 400);
+          }
+
+          await db.ServiceAddon.create({
+            service_id: service.id,
+            addon_name: addonName,
+            addon_price: addonPrice,
+            description: a.description || ""
+          }, { transaction: t });
+        }
+      }
+
+      await t.commit();
+      return await this.getServiceDetails(service.id);
+    } catch (err) {
+      await t.rollback();
+      throw err;
+    }
   }
 
   async updateServiceDetails(id, userId, data) {
@@ -1687,56 +2041,99 @@ async createReview(data) {
     if (!service) throw new AppError("Service not found", 404);
     if (service.artist_id !== artist.id) throw new AppError("Unauthorized access to service", 403);
 
-    await service.update({
-      specialization_name: data.specialization_name || service.specialization_name,
-      category: data.category || service.category,
-      description: data.description !== undefined ? data.description : service.description,
-      minimum_price: data.minimum_price !== undefined ? Number(data.minimum_price) : service.minimum_price,
-      maximum_price: data.maximum_price !== undefined ? Number(data.maximum_price) : service.maximum_price,
-      duration_minutes: data.duration_minutes !== undefined ? Number(data.duration_minutes) : service.duration_minutes,
-      service_image: data.service_image !== undefined ? data.service_image : service.service_image,
-      is_home_service: data.is_home_service !== undefined ? data.is_home_service : service.is_home_service,
-      is_salon_service: data.is_salon_service !== undefined ? data.is_salon_service : service.is_salon_service,
-      offer_price: data.offer_price !== undefined ? Number(data.offer_price) : service.offer_price,
-      travel_charges: data.travel_charges !== undefined ? Number(data.travel_charges) : service.travel_charges,
-      minimum_booking_amount: data.minimum_booking_amount !== undefined ? Number(data.minimum_booking_amount) : service.minimum_booking_amount,
-      advance_payment_percentage: data.advance_payment_percentage !== undefined ? Number(data.advance_payment_percentage) : service.advance_payment_percentage,
-      tags: data.tags !== undefined ? data.tags : service.tags
-    });
-
-    // Recreate packages
-    if (data.packages && Array.isArray(data.packages)) {
-      await db.ServicePackage.destroy({ where: { service_id: service.id } });
-      for (const p of data.packages) {
-        await db.ServicePackage.create({
-          service_id: service.id,
-          package_name: p.package_name,
-          package_price: Number(p.package_price),
-          included_designs: p.included_designs || "",
-          duration: Number(p.duration || 60),
-          number_of_hands: Number(p.number_of_hands || 0),
-          number_of_feet: Number(p.number_of_feet || 0),
-          home_visit: p.home_visit !== undefined ? p.home_visit : true,
-          touch_up_included: p.touch_up_included !== undefined ? p.touch_up_included : false,
-          aftercare_included: p.aftercare_included !== undefined ? p.aftercare_included : false
-        });
-      }
+    let canonicalCategory = service.category;
+    if (data.category) {
+      canonicalCategory = await this.validateCategory(data.category);
     }
 
-    // Recreate addons
-    if (data.addons && Array.isArray(data.addons)) {
-      await db.ServiceAddon.destroy({ where: { service_id: service.id } });
-      for (const a of data.addons) {
-        await db.ServiceAddon.create({
-          service_id: service.id,
-          addon_name: a.addon_name,
-          addon_price: Number(a.addon_price),
-          description: a.description || ""
-        });
-      }
+    if (data.minimum_price !== undefined || data.duration_minutes !== undefined || data.maximum_price !== undefined) {
+      this.validatePricingAndDuration({
+        minimum_price: data.minimum_price !== undefined ? data.minimum_price : service.minimum_price,
+        maximum_price: data.maximum_price !== undefined ? data.maximum_price : service.maximum_price,
+        offer_price: data.offer_price !== undefined ? data.offer_price : service.offer_price,
+        duration_minutes: data.duration_minutes !== undefined ? data.duration_minutes : service.duration_minutes,
+        travel_charges: data.travel_charges !== undefined ? data.travel_charges : service.travel_charges,
+        advance_payment_percentage: data.advance_payment_percentage !== undefined ? data.advance_payment_percentage : service.advance_payment_percentage
+      });
     }
 
-    return await this.getServiceDetails(service.id);
+    const t = await db.sequelize.transaction();
+    try {
+      await service.update({
+        specialization_name: data.specialization_name ? String(data.specialization_name).trim() : service.specialization_name,
+        category: canonicalCategory,
+        description: data.description !== undefined ? data.description : service.description,
+        minimum_price: data.minimum_price !== undefined ? Number(data.minimum_price) : service.minimum_price,
+        maximum_price: data.maximum_price !== undefined ? Number(data.maximum_price) : service.maximum_price,
+        duration_minutes: data.duration_minutes !== undefined ? Number(data.duration_minutes) : service.duration_minutes,
+        service_image: data.service_image !== undefined ? data.service_image : service.service_image,
+        is_home_service: data.is_home_service !== undefined ? Boolean(data.is_home_service) : service.is_home_service,
+        is_salon_service: data.is_salon_service !== undefined ? Boolean(data.is_salon_service) : service.is_salon_service,
+        offer_price: data.offer_price !== undefined ? Number(data.offer_price) : service.offer_price,
+        travel_charges: data.travel_charges !== undefined ? Number(data.travel_charges) : service.travel_charges,
+        minimum_booking_amount: data.minimum_booking_amount !== undefined ? Number(data.minimum_booking_amount) : service.minimum_booking_amount,
+        advance_payment_percentage: data.advance_payment_percentage !== undefined ? Number(data.advance_payment_percentage) : service.advance_payment_percentage,
+        tags: data.tags !== undefined ? data.tags : service.tags
+      }, { transaction: t });
+
+      // Recreate packages
+      if (data.packages && Array.isArray(data.packages)) {
+        await db.ServicePackage.destroy({ where: { service_id: service.id }, transaction: t });
+        const seenPackages = new Set();
+        for (const p of data.packages) {
+          const pkgName = String(p.package_name || "").trim();
+          if (!pkgName) continue;
+          if (seenPackages.has(pkgName.toLowerCase())) {
+            throw new AppError(`Duplicate package name '${pkgName}'`, 400);
+          }
+          seenPackages.add(pkgName.toLowerCase());
+
+          const pkgPrice = Number(p.package_price);
+          if (!Number.isFinite(pkgPrice) || pkgPrice <= 0) {
+            throw new AppError(`Package '${pkgName}' price must be a valid positive number`, 400);
+          }
+
+          await db.ServicePackage.create({
+            service_id: service.id,
+            package_name: pkgName,
+            package_price: pkgPrice,
+            included_designs: p.included_designs || "",
+            duration: Number(p.duration || 60),
+            number_of_hands: Number(p.number_of_hands || 0),
+            number_of_feet: Number(p.number_of_feet || 0),
+            home_visit: p.home_visit !== undefined ? p.home_visit : true,
+            touch_up_included: p.touch_up_included !== undefined ? p.touch_up_included : false,
+            aftercare_included: p.aftercare_included !== undefined ? p.aftercare_included : false
+          }, { transaction: t });
+        }
+      }
+
+      // Recreate addons
+      if (data.addons && Array.isArray(data.addons)) {
+        await db.ServiceAddon.destroy({ where: { service_id: service.id }, transaction: t });
+        for (const a of data.addons) {
+          const addonName = String(a.addon_name || "").trim();
+          if (!addonName) continue;
+          const addonPrice = Number(a.addon_price);
+          if (!Number.isFinite(addonPrice) || addonPrice <= 0) {
+            throw new AppError(`Addon '${addonName}' price must be a valid positive number`, 400);
+          }
+
+          await db.ServiceAddon.create({
+            service_id: service.id,
+            addon_name: addonName,
+            addon_price: addonPrice,
+            description: a.description || ""
+          }, { transaction: t });
+        }
+      }
+
+      await t.commit();
+      return await this.getServiceDetails(service.id);
+    } catch (err) {
+      await t.rollback();
+      throw err;
+    }
   }
 
   async deleteServiceItem(id, userId) {
@@ -1747,8 +2144,22 @@ async createReview(data) {
     if (!service) throw new AppError("Service not found", 404);
     if (service.artist_id !== artist.id) throw new AppError("Unauthorized access to service", 403);
 
+    // Check if linked to active upcoming bookings
+    const activeBooking = await db.Booking.findOne({
+      where: {
+        service_id: service.id,
+        booking_status: { [Op.in]: ["CONFIRMED", "PENDING", "ACCEPTED", "IN_PROGRESS", "ARTIST_ACCEPTED"] }
+      }
+    });
+
+    if (activeBooking) {
+      // Soft deactivate to protect historical/active bookings
+      await service.update({ is_active: false });
+      return { deactivated: true, message: "Service has active bookings, marked as inactive" };
+    }
+
     await service.destroy();
-    return true;
+    return { deleted: true };
   }
 
   async updateServiceActiveStatus(id, userId, isActive) {
@@ -1759,7 +2170,7 @@ async createReview(data) {
     if (!service) throw new AppError("Service not found", 404);
     if (service.artist_id !== artist.id) throw new AppError("Unauthorized access to service", 403);
 
-    await service.update({ is_active: isActive });
+    await service.update({ is_active: Boolean(isActive) });
     return service;
   }
 
@@ -1773,6 +2184,241 @@ async createReview(data) {
 
     await service.update({ service_image: imageUrl });
     return service;
+  }
+
+  // Standalone Package Management
+  async createServicePackage(serviceId, userId, packageData) {
+    const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
+    if (!artist) throw new AppError("Artist profile not found", 404);
+
+    const service = await db.Service.findByPk(serviceId);
+    if (!service) throw new AppError("Service not found", 404);
+    if (service.artist_id !== artist.id) throw new AppError("Unauthorized access to service", 403);
+
+    const pkgName = String(packageData.package_name || "").trim();
+    if (!pkgName) throw new AppError("Package name is required", 400);
+
+    const pkgPrice = Number(packageData.package_price);
+    if (!Number.isFinite(pkgPrice) || pkgPrice <= 0) {
+      throw new AppError("Package price must be a valid positive number", 400);
+    }
+
+    const existing = await db.ServicePackage.findOne({
+      where: { service_id: service.id, package_name: pkgName }
+    });
+    if (existing) {
+      throw new AppError(`A package with name '${pkgName}' already exists under this service`, 400);
+    }
+
+    return await db.ServicePackage.create({
+      service_id: service.id,
+      package_name: pkgName,
+      package_price: pkgPrice,
+      included_designs: packageData.included_designs || "",
+      duration: Number(packageData.duration || 60),
+      number_of_hands: Number(packageData.number_of_hands || 0),
+      number_of_feet: Number(packageData.number_of_feet || 0),
+      home_visit: packageData.home_visit !== undefined ? packageData.home_visit : true,
+      touch_up_included: packageData.touch_up_included !== undefined ? packageData.touch_up_included : false,
+      aftercare_included: packageData.aftercare_included !== undefined ? packageData.aftercare_included : false
+    });
+  }
+
+  async updateServicePackage(packageId, userId, packageData) {
+    const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
+    if (!artist) throw new AppError("Artist profile not found", 404);
+
+    const pkg = await db.ServicePackage.findByPk(packageId, {
+      include: [{ model: db.Service, as: "service" }]
+    });
+    if (!pkg) throw new AppError("Package not found", 404);
+    if (!pkg.service || pkg.service.artist_id !== artist.id) {
+      throw new AppError("Unauthorized access to package", 403);
+    }
+
+    const updates = {};
+    if (packageData.package_name) updates.package_name = String(packageData.package_name).trim();
+    if (packageData.package_price !== undefined) {
+      const price = Number(packageData.package_price);
+      if (!Number.isFinite(price) || price <= 0) {
+        throw new AppError("Package price must be a valid positive number", 400);
+      }
+      updates.package_price = price;
+    }
+    if (packageData.duration !== undefined) updates.duration = Number(packageData.duration);
+    if (packageData.included_designs !== undefined) updates.included_designs = packageData.included_designs;
+    if (packageData.home_visit !== undefined) updates.home_visit = Boolean(packageData.home_visit);
+    if (packageData.touch_up_included !== undefined) updates.touch_up_included = Boolean(packageData.touch_up_included);
+    if (packageData.aftercare_included !== undefined) updates.aftercare_included = Boolean(packageData.aftercare_included);
+
+    await pkg.update(updates);
+    return pkg;
+  }
+
+  async deleteServicePackage(packageId, userId) {
+    const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
+    if (!artist) throw new AppError("Artist profile not found", 404);
+
+    const pkg = await db.ServicePackage.findByPk(packageId, {
+      include: [{ model: db.Service, as: "service" }]
+    });
+    if (!pkg) throw new AppError("Package not found", 404);
+    if (!pkg.service || pkg.service.artist_id !== artist.id) {
+      throw new AppError("Unauthorized access to package", 403);
+    }
+
+    await pkg.destroy();
+    return true;
+  }
+
+  // Availability, Working Schedule & Leave Management
+  async getAvailabilitySchedule(userId) {
+    const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
+    if (!artist) throw new AppError("Artist profile not found", 404);
+
+    return {
+      artist_id: artist.id,
+      is_available: artist.is_available,
+      working_days: artist.working_days || ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"],
+      working_start_time: artist.working_start_time || "09:00",
+      working_end_time: artist.working_end_time || "20:00",
+      break_start_time: artist.break_start_time || "14:00",
+      break_end_time: artist.break_end_time || "15:00",
+      leave_dates: artist.leave_dates || [],
+      min_advance_hours: artist.min_advance_hours || 2,
+      max_advance_days: artist.max_advance_days || 60,
+      max_bookings_per_day: artist.max_bookings_per_day || 4
+    };
+  }
+
+  async updateAvailabilitySchedule(userId, data) {
+    const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
+    if (!artist) throw new AppError("Artist profile not found", 404);
+
+    const updates = {};
+    const validDays = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"];
+
+    if (data.working_days !== undefined) {
+      if (!Array.isArray(data.working_days)) {
+        throw new AppError("working_days must be an array of weekdays", 400);
+      }
+      const cleanDays = data.working_days.map(d => String(d).toUpperCase().trim());
+      for (const d of cleanDays) {
+        if (!validDays.includes(d)) {
+          throw new AppError(`Invalid weekday '${d}' in working_days`, 400);
+        }
+      }
+      updates.working_days = cleanDays;
+    }
+
+    const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
+    const startTime = data.working_start_time || artist.working_start_time || "09:00";
+    const endTime = data.working_end_time || artist.working_end_time || "20:00";
+
+    if (data.working_start_time !== undefined) {
+      if (!timeRegex.test(data.working_start_time)) {
+        throw new AppError("working_start_time must be in HH:mm format (e.g. 09:00)", 400);
+      }
+      updates.working_start_time = data.working_start_time;
+    }
+
+    if (data.working_end_time !== undefined) {
+      if (!timeRegex.test(data.working_end_time)) {
+        throw new AppError("working_end_time must be in HH:mm format (e.g. 20:00)", 400);
+      }
+      updates.working_end_time = data.working_end_time;
+    }
+
+    if (startTime >= endTime) {
+      throw new AppError("working_start_time must be earlier than working_end_time", 400);
+    }
+
+    if (data.break_start_time || data.break_end_time) {
+      const bStart = data.break_start_time || artist.break_start_time;
+      const bEnd = data.break_end_time || artist.break_end_time;
+
+      if (bStart && !timeRegex.test(bStart)) {
+        throw new AppError("break_start_time must be in HH:mm format", 400);
+      }
+      if (bEnd && !timeRegex.test(bEnd)) {
+        throw new AppError("break_end_time must be in HH:mm format", 400);
+      }
+
+      if (bStart && bEnd) {
+        if (bStart >= bEnd) {
+          throw new AppError("break_start_time must be earlier than break_end_time", 400);
+        }
+        if (bStart < startTime || bEnd > endTime) {
+          throw new AppError("Break period must fall entirely within working hours", 400);
+        }
+      }
+      if (data.break_start_time !== undefined) updates.break_start_time = data.break_start_time;
+      if (data.break_end_time !== undefined) updates.break_end_time = data.break_end_time;
+    }
+
+    if (data.is_available !== undefined) {
+      updates.is_available = Boolean(data.is_available);
+    }
+    if (data.min_advance_hours !== undefined) {
+      updates.min_advance_hours = Math.max(0, Number(data.min_advance_hours));
+    }
+    if (data.max_advance_days !== undefined) {
+      updates.max_advance_days = Math.max(1, Number(data.max_advance_days));
+    }
+    if (data.max_bookings_per_day !== undefined) {
+      updates.max_bookings_per_day = Math.max(1, Number(data.max_bookings_per_day));
+    }
+
+    await artist.update(updates);
+    return await this.getAvailabilitySchedule(userId);
+  }
+
+  async addBlockedDate(userId, dateStr) {
+    const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
+    if (!artist) throw new AppError("Artist profile not found", 404);
+
+    if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      throw new AppError("Date must be in YYYY-MM-DD format", 400);
+    }
+
+    // Check if artist has existing active bookings on this date
+    const activeBooking = await db.Booking.findOne({
+      where: {
+        artist_id: artist.id,
+        booking_status: { [Op.in]: ["CONFIRMED", "ACCEPTED", "IN_PROGRESS", "ARTIST_ACCEPTED"] },
+        [Op.or]: [
+          db.sequelize.literal(`EXISTS (
+            SELECT 1 FROM ${db.sequelize.getDialect() === 'postgres' ? '"AvailabilitySlots"' : 'AvailabilitySlots'} AS slot 
+            WHERE slot.id = "Booking".slot_id 
+            AND substr(slot.start_time, 1, 10) = '${dateStr}'
+          )`),
+          { notes: { [Op.like]: `%${dateStr}%` } }
+        ]
+      }
+    });
+
+    if (activeBooking) {
+      throw new AppError(`Cannot block date ${dateStr}. You have active confirmed bookings on this day.`, 400);
+    }
+
+    const currentLeaves = Array.isArray(artist.leave_dates) ? [...artist.leave_dates] : [];
+    if (!currentLeaves.includes(dateStr)) {
+      currentLeaves.push(dateStr);
+      await artist.update({ leave_dates: currentLeaves });
+    }
+
+    return { leave_dates: currentLeaves };
+  }
+
+  async removeBlockedDate(userId, dateStr) {
+    const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
+    if (!artist) throw new AppError("Artist profile not found", 404);
+
+    const currentLeaves = Array.isArray(artist.leave_dates) ? [...artist.leave_dates] : [];
+    const updatedLeaves = currentLeaves.filter(d => d !== dateStr);
+    await artist.update({ leave_dates: updatedLeaves });
+
+    return { leave_dates: updatedLeaves };
   }
 
   async getCustomerServicesList() {
@@ -1789,6 +2435,24 @@ async createReview(data) {
   async getLeads(userId, query = {}) {
     const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
     if (!artist) throw new AppError("Artist profile not found", 404);
+
+    if (artist.verification_status !== "APPROVED") {
+      return {
+        leads: [],
+        stats: {
+          todayLeads: 0,
+          pendingLeads: 0,
+          acceptedLeads: 0,
+          rejectedLeads: 0,
+          completedLeads: 0,
+          expiredLeads: 0,
+          totalEarnings: 0,
+          conversionRate: 0,
+          responseTime: "N/A"
+        },
+        totalCount: 0
+      };
+    }
 
     const { status, dateRange, city, category, minPrice, maxPrice, search, sort, page = 1, limit = 10 } = query;
     const offset = (page - 1) * limit;
@@ -2127,6 +2791,10 @@ async createReview(data) {
   async acceptLead(id, userId) {
     const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
     if (!artist) throw new AppError("Artist profile not found", 404);
+
+    if (artist.verification_status !== "APPROVED") {
+      throw new AppError("Only approved artists with verified KYC can accept booking leads", 403);
+    }
 
     const booking = await db.Booking.findByPk(id, {
       include: [{ model: db.AvailabilitySlot, as: "slot", required: false }]

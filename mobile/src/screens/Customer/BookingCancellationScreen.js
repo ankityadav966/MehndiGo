@@ -1,12 +1,14 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { useState } from "react";
+import React, { useState } from "react";
 import {
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
+  KeyboardAvoidingView,
+  Platform
 } from "react-native";
 import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -37,77 +39,83 @@ export default function BookingCancellationScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color="#1D1D1D" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Cancel Booking</Text>
-        <View style={{ width: 24 }} />
-      </View>
-
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContainer}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <View style={styles.card}>
-          <Text style={styles.bookingIdLabel}>Booking ID</Text>
-          <Text style={styles.bookingId}>#MG202600123</Text>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <Ionicons name="arrow-back" size={24} color="#1D1D1D" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Cancel Booking</Text>
+          <View style={{ width: 24 }} />
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Reason for Cancellation</Text>
-
-          {REASONS.map((reason) => (
-            <TouchableOpacity
-              key={reason}
-              style={styles.radioRow}
-              onPress={() => setSelectedReason(reason)}
-            >
-              <View
-                style={[
-                  styles.radioOuter,
-                  selectedReason === reason && styles.radioOuterSelected,
-                ]}
-              >
-                {selectedReason === reason && (
-                  <View style={styles.radioInner} />
-                )}
-              </View>
-              <Text style={styles.radioLabel}>{reason}</Text>
-            </TouchableOpacity>
-          ))}
-
-          {selectedReason === "Other" && (
-            <TextInput
-              value={otherReason}
-              onChangeText={setOtherReason}
-              placeholder="Please specify your reason"
-              placeholderTextColor="#9E9E9E"
-              style={styles.textInput}
-            />
-          )}
-        </View>
-
-        <TouchableOpacity
-          style={styles.checkboxRow}
-          onPress={() => setConfirmed(!confirmed)}
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContainer}
+          keyboardShouldPersistTaps="handled"
         >
-          <View
-            style={[styles.checkbox, confirmed && styles.checkboxChecked]}
-          >
-            {confirmed && (
-              <Ionicons name="checkmark" size={14} color="#FFFFFF" />
+          <View style={styles.card}>
+            <Text style={styles.bookingIdLabel}>Booking ID</Text>
+            <Text style={styles.bookingId}>#MG202600123</Text>
+          </View>
+
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Reason for Cancellation</Text>
+
+            {REASONS.map((reason) => (
+              <TouchableOpacity
+                key={reason}
+                style={styles.radioRow}
+                onPress={() => setSelectedReason(reason)}
+              >
+                <View
+                  style={[
+                    styles.radioOuter,
+                    selectedReason === reason && styles.radioOuterSelected,
+                  ]}
+                >
+                  {selectedReason === reason && (
+                    <View style={styles.radioInner} />
+                  )}
+                </View>
+                <Text style={styles.radioLabel}>{reason}</Text>
+              </TouchableOpacity>
+            ))}
+
+            {selectedReason === "Other" && (
+              <TextInput
+                value={otherReason}
+                onChangeText={setOtherReason}
+                placeholder="Please specify your reason"
+                placeholderTextColor="#9E9E9E"
+                style={styles.textInput}
+              />
             )}
           </View>
-          <Text style={styles.checkboxLabel}>
-            I understand that refund will be processed within 5-7 business days
-          </Text>
-        </TouchableOpacity>
 
-        <TouchableOpacity style={styles.cancelButton} onPress={handleCancel}>
-          <Text style={styles.cancelButtonText}>Cancel Booking</Text>
-        </TouchableOpacity>
-      </ScrollView>
+          <TouchableOpacity
+            style={styles.checkboxRow}
+            onPress={() => setConfirmed(!confirmed)}
+          >
+            <View
+              style={[styles.checkbox, confirmed && styles.checkboxChecked]}
+            >
+              {confirmed && (
+                <Ionicons name="checkmark" size={14} color="#FFFFFF" />
+              )}
+            </View>
+            <Text style={styles.checkboxLabel}>
+              I understand that refund will be processed within 5-7 business days
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.cancelButton} onPress={handleCancel}>
+            <Text style={styles.cancelButtonText}>Cancel Booking</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

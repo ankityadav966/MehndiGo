@@ -18,10 +18,9 @@ function OptimizedImage({
   resizeMode = "cover",
   contentFit,
   fallbackUri = DEFAULT_PLACEHOLDER,
-  priority = "medium",
+  priority = "normal",
   ...props
 }) {
-  const [loading, setLoading] = useState(false);
   const [useRawOriginal, setUseRawOriginal] = useState(false);
   const [hasError, setHasError] = useState(false);
 
@@ -34,7 +33,22 @@ function OptimizedImage({
     rawUri = getThumbnailUrl(rawUri, width, height);
   }
 
-  const imageSource = typeof source === "number" ? source : { uri: rawUri };
+  // Normalize priority for expo-image: 'low' | 'normal' | 'high'
+  const normalizedPriority =
+    priority === "medium"
+      ? "normal"
+      : priority === "high" || priority === "low" || priority === "normal"
+      ? priority
+      : "normal";
+
+  const imageSource =
+    typeof source === "number"
+      ? source
+      : {
+          uri: rawUri,
+          priority: normalizedPriority,
+        };
+
   const fitMode = contentFit || resizeMode || "cover";
 
   return (
@@ -46,13 +60,7 @@ function OptimizedImage({
         contentFit={fitMode}
         cachePolicy="memory-disk"
         transition={150}
-        onLoadStart={() => {
-          if (!hasError) setLoading(true);
-        }}
-        onLoad={() => setLoading(false)}
-        onLoadEnd={() => setLoading(false)}
         onError={() => {
-          setLoading(false);
           if (!useRawOriginal && initialUri && typeof initialUri === "string" && initialUri.includes("cloudinary.com")) {
             setUseRawOriginal(true);
           } else {
@@ -60,11 +68,6 @@ function OptimizedImage({
           }
         }}
       />
-      {loading && !hasError && (
-        <View style={[StyleSheet.absoluteFill, styles.loadingOverlay]}>
-          <ActivityIndicator size="small" color={Colors.primary} />
-        </View>
-      )}
     </View>
   );
 }
@@ -77,12 +80,7 @@ const styles = StyleSheet.create({
   imageFix: {
     width: "100%",
     height: "100%",
-  },
-  loadingOverlay: {
-    backgroundColor: "rgba(243, 244, 246, 0.6)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
+  }
 });
 
 export default React.memo(OptimizedImage);

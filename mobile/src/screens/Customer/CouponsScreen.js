@@ -7,6 +7,8 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  KeyboardAvoidingView,
+  Platform
 } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -135,55 +137,61 @@ export default function CouponsScreen({ route, navigation }) {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Ionicons name="chevron-back" size={22} color={Colors.text || "#1D1D1D"} />
-        </TouchableOpacity>
-        <Text style={styles.title}>Coupons & Offers</Text>
-        <View style={{ width: 40 }} />
-      </View>
-
-      {/* Auto Apply Best Banner */}
-      <View style={styles.autoApplyCard}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.autoTitle}>Save Max on Your Booking</Text>
-          <Text style={styles.autoSub}>Auto-detect best available promo discount</Text>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+            <Ionicons name="chevron-back" size={22} color={Colors.text || "#1D1D1D"} />
+          </TouchableOpacity>
+          <Text style={styles.title}>Coupons & Offers</Text>
+          <View style={{ width: 40 }} />
         </View>
-        <TouchableOpacity style={styles.autoBtn} onPress={handleAutoApplyBest}>
-          <Ionicons name="sparkles" size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
-          <Text style={styles.autoBtnText}>Auto-Apply</Text>
-        </TouchableOpacity>
-      </View>
 
-      {/* Custom Promo Code Input */}
-      <View style={styles.couponInputCard}>
-        <TextInput
-          value={couponCode}
-          onChangeText={setCouponCode}
-          placeholder="Enter Custom Promo Code"
-          placeholderTextColor={Colors.textTertiary || "#94A3B8"}
-          autoCapitalize="characters"
-          style={styles.input}
-        />
-        <TouchableOpacity style={styles.inputApplyBtn} onPress={handleApplyCode}>
-          <Text style={styles.inputApplyText}>Apply</Text>
-        </TouchableOpacity>
-      </View>
-
-      <FlatList
-        data={coupons}
-        renderItem={renderCoupon}
-        keyExtractor={(item) => (item.id || item.code).toString()}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 40 }}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Ionicons name="gift-outline" size={48} color={Colors.textTertiary || "#94A3B8"} />
-            <Text style={styles.emptyText}>No available coupons at the moment.</Text>
+        {/* Auto Apply Best Banner */}
+        <View style={styles.autoApplyCard}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.autoTitle}>Save Max on Your Booking</Text>
+            <Text style={styles.autoSub}>Auto-detect best available promo discount</Text>
           </View>
-        }
-      />
+          <TouchableOpacity style={styles.autoBtn} onPress={handleAutoApplyBest}>
+            <Ionicons name="sparkles" size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
+            <Text style={styles.autoBtnText}>Auto-Apply</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Custom Promo Code Input */}
+        <View style={styles.couponInputCard}>
+          <TextInput
+            value={couponCode}
+            onChangeText={setCouponCode}
+            placeholder="Enter Custom Promo Code"
+            placeholderTextColor={Colors.textTertiary || "#94A3B8"}
+            autoCapitalize="characters"
+            style={styles.input}
+          />
+          <TouchableOpacity style={styles.inputApplyBtn} onPress={handleApplyCode}>
+            <Text style={styles.inputApplyText}>Apply</Text>
+          </TouchableOpacity>
+        </View>
+
+        <FlatList
+          data={coupons}
+          renderItem={renderCoupon}
+          keyExtractor={(item) => (item.id || item.code).toString()}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: 40 }}
+          keyboardShouldPersistTaps="handled"
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Ionicons name="gift-outline" size={48} color={Colors.textTertiary || "#94A3B8"} />
+              <Text style={styles.emptyText}>No available coupons at the moment.</Text>
+            </View>
+          }
+        />
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

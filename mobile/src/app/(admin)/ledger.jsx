@@ -39,7 +39,7 @@ export default function AdminLedger() {
   const renderPayment = ({ item }) => (
     <View style={[styles.glassPanel, { marginBottom: 12 }]}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-        <Text style={{ fontSize: 12, color: colors.textSecondary }}>TXN: {item.cashfree_payment_id || item.transaction_id || `TXN-${item.id}`}</Text>
+        <Text style={{ fontSize: 12, color: colors.textSecondary }}>TXN: {item.razorpay_payment_id || item.transaction_id || `TXN-${item.id}`}</Text>
         <Text style={{ fontSize: 16, fontWeight: '700', color: colors.success }}>₹{item.amount}</Text>
       </View>
       <View style={{ marginBottom: 12 }}>

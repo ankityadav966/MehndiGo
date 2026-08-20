@@ -143,25 +143,29 @@ class ArtistProfileRepository extends CrudRepository {
       ["total_bookings", "DESC"]
     ];
     let where = {
-      verification_status: { [Op.ne]: "REJECTED" },
+      verification_status: "APPROVED",
     };
 
     if (search) {
+      const isPostgres = db.sequelize.getDialect() === "postgres";
+      const likeOp = isPostgres ? Op.iLike : Op.like;
+      const likeKw = isPostgres ? "ILIKE" : "LIKE";
       const searchPattern = `%${search}%`;
+      const safePattern = `%${String(search).replace(/'/g, "''")}%`;
       where[Op.or] = [
-        { bio: { [Op.iLike]: searchPattern } },
-        { city: { [Op.iLike]: searchPattern } },
-        { state: { [Op.iLike]: searchPattern } },
-        { pincode: { [Op.iLike]: searchPattern } },
+        { bio: { [likeOp]: searchPattern } },
+        { city: { [likeOp]: searchPattern } },
+        { state: { [likeOp]: searchPattern } },
+        { pincode: { [likeOp]: searchPattern } },
         db.sequelize.literal(`EXISTS (
-          SELECT 1 FROM "Users" AS u 
-          WHERE u.id = "ArtistProfile".user_id 
-          AND u.name ILIKE '${searchPattern}'
+          SELECT 1 FROM ${isPostgres ? '"Users"' : 'Users'} AS u 
+          WHERE u.id = ${isPostgres ? '"ArtistProfile"' : 'ArtistProfile'}.user_id 
+          AND u.name ${likeKw} '${safePattern}'
         )`),
         db.sequelize.literal(`EXISTS (
-          SELECT 1 FROM "Services" AS s 
-          WHERE s.artist_id = "ArtistProfile".id 
-          AND (s.specialization_name ILIKE '${searchPattern}' OR s.category ILIKE '${searchPattern}')
+          SELECT 1 FROM ${isPostgres ? '"Services"' : 'Services'} AS s 
+          WHERE s.artist_id = ${isPostgres ? '"ArtistProfile"' : 'ArtistProfile'}.id 
+          AND (s.specialization_name ${likeKw} '${safePattern}' OR s.category ${likeKw} '${safePattern}')
         )`)
       ];
     }

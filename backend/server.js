@@ -44,7 +44,8 @@ app.use(express.json({
 }));
 const path = require("path");
 app.use(express.urlencoded({ limit: "220mb", extended: true }));
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+const { secureUploadsHandler } = require("./middleware/secureUploads.middleware");
+app.use("/uploads", secureUploadsHandler);
 app.use(checkBlockedIP);
 app.use(sanitizeInputs);
 app.use("/auth", require("./routes/auth.routes"));
@@ -193,6 +194,9 @@ const db = require("./models");
     await db.sequelize.query('ALTER TABLE "artist_profiles" ADD COLUMN IF NOT EXISTS bank_account_holder VARCHAR(255);');
     await db.sequelize.query('ALTER TABLE "artist_profiles" ADD COLUMN IF NOT EXISTS cancellation_count_30d INTEGER DEFAULT 0;');
     await db.sequelize.query('ALTER TABLE "artist_profiles" ADD COLUMN IF NOT EXISTS on_time_arrival_rate DOUBLE PRECISION DEFAULT 100.0;');
+    await db.sequelize.query('ALTER TABLE "artist_profiles" ADD COLUMN IF NOT EXISTS reviewed_by INTEGER;');
+    await db.sequelize.query('ALTER TABLE "artist_profiles" ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP WITH TIME ZONE;');
+    await db.sequelize.query('ALTER TABLE "artist_profiles" ADD COLUMN IF NOT EXISTS rejected_at TIMESTAMP WITH TIME ZONE;');
 
     await db.sequelize.query('ALTER TABLE "ArtistScores" ADD COLUMN IF NOT EXISTS reliability_score DOUBLE PRECISION DEFAULT 100.0;');
     await db.sequelize.query('ALTER TABLE "ArtistScores" ADD COLUMN IF NOT EXISTS acceptance_rate DOUBLE PRECISION DEFAULT 100.0;');

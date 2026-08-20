@@ -1,7 +1,6 @@
 import React from "react";
 import { StyleSheet, Text, View, Image, TouchableOpacity } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import Colors from "../../constants/Colors";
 import moment from "moment";
 
 export default function BookingSummaryCard({
@@ -26,45 +25,55 @@ export default function BookingSummaryCard({
 
   const serviceTitle = booking?.service_name || booking?.service?.specialization_name || booking?.specialization_name || "Bridal Mehndi Service";
   const rawDate = booking?.selected_date || booking?.booking_date || booking?.date;
-  const formattedDate = rawDate ? moment(rawDate).format("ddd, DD MMMM YYYY") : "Scheduled Date";
+  const formattedDate = rawDate ? moment(rawDate).format("DD MMM YYYY") : "Scheduled Date";
   const timeSlot = booking?.time_slot || booking?.slot_time || booking?.time || "10:00 AM - 11:00 AM";
 
   const groupSize = booking?.group_size || 1;
   const coverage = booking?.service_coverage || "BOTH_HANDS";
-  const coverageLabel = coverage === "BOTH_HANDS" ? "Both Hands" : coverage === "FEET" ? "Feet Only" : coverage === "FULL_BRIDAL" ? "Full Bridal (Hands & Feet)" : "One Hand";
+  const coverageLabel =
+    coverage === "BOTH_HANDS"
+      ? "Both Hands"
+      : coverage === "FEET"
+      ? "Feet Only"
+      : coverage === "FULL_BRIDAL"
+      ? "Full Bridal"
+      : "One Hand";
 
   return (
     <View style={styles.card}>
       {/* Party Profile Header */}
       <View style={styles.partyHeader}>
-        <Image source={{ uri: otherPartyImage }} style={styles.avatar} />
-        
+        <View style={styles.avatarWrapper}>
+          <Image source={{ uri: otherPartyImage }} style={styles.avatar} />
+          <View style={styles.verifiedMiniBadge}>
+            <Ionicons name="checkmark-circle" size={13} color="#059669" />
+          </View>
+        </View>
+
         <View style={styles.partyInfo}>
           <View style={styles.nameRow}>
-            <Text style={styles.partyName} numberOfLines={1}>
+            <Text style={styles.partyName} numberOfLines={1} ellipsizeMode="tail">
               {otherPartyName}
             </Text>
-            <View style={styles.verifiedBadge}>
-              <Ionicons name="checkmark-circle" size={14} color="#059669" />
+            <View style={styles.roleTag}>
+              <Text style={styles.roleTagText}>{isArtistView ? "Client" : "Pro Artist"}</Text>
             </View>
           </View>
 
-          <Text style={styles.roleSubtext}>
-            {isArtistView ? "Customer" : "Verified Artist"}
-          </Text>
-
           {otherPartyPhone ? (
             <View style={styles.phoneRow}>
-              <Ionicons name="call-outline" size={12} color="#6B7280" />
+              <Ionicons name="call" size={11} color="#E91E63" />
               <Text style={styles.phoneText}>+91 {otherPartyPhone}</Text>
             </View>
-          ) : null}
+          ) : (
+            <Text style={styles.roleSubtext}>Verified MehndiGo User</Text>
+          )}
         </View>
 
         {!isArtistView && onViewProfile && (
-          <TouchableOpacity style={styles.profileBtn} onPress={onViewProfile} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.profileBtn} onPress={onViewProfile} activeOpacity={0.75}>
             <Text style={styles.profileBtnText}>Profile</Text>
-            <Ionicons name="chevron-forward" size={14} color="#E91E63" />
+            <Ionicons name="chevron-forward" size={13} color="#E91E63" />
           </TouchableOpacity>
         )}
       </View>
@@ -74,40 +83,60 @@ export default function BookingSummaryCard({
       {/* Service & Schedule Details */}
       <View style={styles.serviceSection}>
         <View style={styles.serviceTitleRow}>
-          <Ionicons name="sparkles" size={16} color="#E91E63" style={{ marginRight: 6 }} />
-          <Text style={styles.serviceTitleText}>{serviceTitle}</Text>
+          <View style={styles.sparkleBox}>
+            <Ionicons name="sparkles" size={13} color="#E91E63" />
+          </View>
+          <Text style={styles.serviceTitleText} numberOfLines={1} ellipsizeMode="tail">
+            {serviceTitle}
+          </Text>
         </View>
 
         <View style={styles.metaGrid}>
           <View style={styles.metaItem}>
-            <Ionicons name="calendar-outline" size={15} color="#701DDB" />
+            <View style={[styles.metaIconBox, { backgroundColor: "#F5F3FF" }]}>
+              <Ionicons name="calendar" size={13} color="#701DDB" />
+            </View>
             <View style={styles.metaTextContainer}>
               <Text style={styles.metaLabel}>Date</Text>
-              <Text style={styles.metaValue}>{formattedDate}</Text>
+              <Text style={styles.metaValue} numberOfLines={1} ellipsizeMode="tail">
+                {formattedDate}
+              </Text>
             </View>
           </View>
 
           <View style={styles.metaItem}>
-            <Ionicons name="time-outline" size={15} color="#701DDB" />
+            <View style={[styles.metaIconBox, { backgroundColor: "#F5F3FF" }]}>
+              <Ionicons name="time" size={13} color="#701DDB" />
+            </View>
             <View style={styles.metaTextContainer}>
-              <Text style={styles.metaLabel}>Time Slot</Text>
-              <Text style={styles.metaValue}>{timeSlot}</Text>
+              <Text style={styles.metaLabel}>Slot Window</Text>
+              <Text style={styles.metaValue} numberOfLines={1} ellipsizeMode="tail">
+                {timeSlot}
+              </Text>
             </View>
           </View>
 
           <View style={styles.metaItem}>
-            <Ionicons name="people-outline" size={15} color="#E91E63" />
+            <View style={[styles.metaIconBox, { backgroundColor: "#FFF8FA" }]}>
+              <Ionicons name="people" size={13} color="#E91E63" />
+            </View>
             <View style={styles.metaTextContainer}>
               <Text style={styles.metaLabel}>Group Size</Text>
-              <Text style={styles.metaValue}>{groupSize} {groupSize === 1 ? "Person" : "People"}</Text>
+              <Text style={styles.metaValue} numberOfLines={1} ellipsizeMode="tail">
+                {groupSize} {groupSize === 1 ? "Person" : "People"}
+              </Text>
             </View>
           </View>
 
           <View style={styles.metaItem}>
-            <Ionicons name="hand-left-outline" size={15} color="#E91E63" />
+            <View style={[styles.metaIconBox, { backgroundColor: "#FFF8FA" }]}>
+              <Ionicons name="hand-left" size={13} color="#E91E63" />
+            </View>
             <View style={styles.metaTextContainer}>
               <Text style={styles.metaLabel}>Coverage</Text>
-              <Text style={styles.metaValue}>{coverageLabel}</Text>
+              <Text style={styles.metaValue} numberOfLines={1} ellipsizeMode="tail">
+                {coverageLabel}
+              </Text>
             </View>
           </View>
         </View>
@@ -119,8 +148,8 @@ export default function BookingSummaryCard({
 const styles = StyleSheet.create({
   card: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 18,
+    padding: 14,
     marginHorizontal: 16,
     marginTop: 12,
     borderWidth: 1,
@@ -129,11 +158,16 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
     shadowRadius: 6,
-    elevation: 1
+    elevation: 2,
+    overflow: "hidden"
   },
   partyHeader: {
     flexDirection: "row",
     alignItems: "center"
+  },
+  avatarWrapper: {
+    position: "relative",
+    flexShrink: 0
   },
   avatar: {
     width: 48,
@@ -143,27 +177,52 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: "#FCE7F3"
   },
+  verifiedMiniBadge: {
+    position: "absolute",
+    bottom: -2,
+    right: -2,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 8,
+    width: 16,
+    height: 16,
+    justifyContent: "center",
+    alignItems: "center"
+  },
   partyInfo: {
     flex: 1,
-    marginLeft: 12
+    marginLeft: 10,
+    justifyContent: "center"
   },
   nameRow: {
     flexDirection: "row",
-    alignItems: "center"
+    alignItems: "center",
+    gap: 6,
+    flexWrap: "nowrap"
   },
   partyName: {
     fontSize: 15,
-    fontWeight: "700",
-    color: "#212121",
-    maxWidth: "80%"
+    fontWeight: "800",
+    color: "#1F2937",
+    flexShrink: 1
   },
-  verifiedBadge: {
-    marginLeft: 4
+  roleTag: {
+    backgroundColor: "#ECFDF5",
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+    flexShrink: 0
+  },
+  roleTagText: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#059669"
   },
   roleSubtext: {
-    fontSize: 12,
+    fontSize: 11,
     color: "#6B7280",
-    marginTop: 1
+    marginTop: 2
   },
   phoneRow: {
     flexDirection: "row",
@@ -173,69 +232,95 @@ const styles = StyleSheet.create({
   },
   phoneText: {
     fontSize: 11,
-    color: "#6B7280",
-    fontWeight: "500"
+    color: "#4B5563",
+    fontWeight: "600"
   },
   profileBtn: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FCE7F3",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 10,
-    gap: 2
+    backgroundColor: "#FFF8FA",
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#FCE7F3",
+    gap: 2,
+    flexShrink: 0
   },
   profileBtnText: {
-    fontSize: 12,
-    fontWeight: "700",
+    fontSize: 11.5,
+    fontWeight: "800",
     color: "#E91E63"
   },
   divider: {
     height: 1,
     backgroundColor: "#F3F4F6",
-    marginVertical: 14
+    marginVertical: 12
   },
   serviceSection: {},
   serviceTitleRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 12
+    marginBottom: 10
+  },
+  sparkleBox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    backgroundColor: "#FFF8FA",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: "#FCE7F3",
+    flexShrink: 0
   },
   serviceTitleText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#212121"
+    fontSize: 13.5,
+    fontWeight: "800",
+    color: "#1F2937",
+    flex: 1
   },
   metaGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    rowGap: 12,
-    columnGap: 12
+    justifyContent: "space-between",
+    rowGap: 8
   },
   metaItem: {
     flexDirection: "row",
     alignItems: "center",
-    width: "48%",
+    width: "48.5%",
     backgroundColor: "#F9FAFB",
-    padding: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 7,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: "#F3F4F6"
   },
+  metaIconBox: {
+    width: 26,
+    height: 26,
+    borderRadius: 7,
+    justifyContent: "center",
+    alignItems: "center",
+    flexShrink: 0
+  },
   metaTextContainer: {
-    marginLeft: 8,
+    marginLeft: 6,
     flex: 1
   },
   metaLabel: {
-    fontSize: 10,
-    color: "#6B7280",
+    fontSize: 9,
+    color: "#9CA3AF",
     textTransform: "uppercase",
-    fontWeight: "600"
+    fontWeight: "700",
+    letterSpacing: 0.3
   },
   metaValue: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#212121",
+    fontSize: 11.5,
+    fontWeight: "800",
+    color: "#1F2937",
     marginTop: 1
   }
 });

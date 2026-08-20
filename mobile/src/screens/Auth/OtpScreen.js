@@ -21,7 +21,7 @@ export default function OtpScreen({ navigation, route }) {
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const inputRefs = useRef([]);
   const { dispatch } = useAuth();
-  const { setArtistProfileCompleted } = useArtistOnboarding();
+  const { setArtistProfileCompleted, refreshArtistProfile } = useArtistOnboarding();
   const [timer, setTimer] = useState(30);
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
@@ -146,27 +146,12 @@ export default function OtpScreen({ navigation, route }) {
       console.log("[ROLE TRACE 6] Role saved in secureStorage:", userRole);
 
       if (userRole === "ARTIST") {
-        let profileCompleted = false;
         try {
-          const { getArtistDetails } = require("../../services/artist");
-          const profile = await getArtistDetails();
-          if (profile) {
-            profileCompleted = true;
-            await secureStorage.setArtistProfileCompleted(true);
-            await secureStorage.setArtistOnboardingDone(true);
-            setArtistProfileCompleted(true);
-          } else {
-            setArtistProfileCompleted(false);
+          if (typeof refreshArtistProfile === "function") {
+            await refreshArtistProfile();
           }
         } catch (e) {
-          console.log("Failed to fetch artist details on login:", e.message);
-          const localCompleted = await secureStorage.getArtistProfileCompleted();
-          if (localCompleted) {
-            profileCompleted = true;
-            setArtistProfileCompleted(true);
-          } else {
-            setArtistProfileCompleted(false);
-          }
+          console.log("Failed to refresh artist details on login:", e.message);
         }
       }
 

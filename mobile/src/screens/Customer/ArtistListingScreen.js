@@ -29,6 +29,7 @@ import {
 import { getNormalizedUrl } from "../../services/api";
 import { getThumbnailUrl } from "../../utils/cloudinary";
 import { getActiveAddress } from "../../utils/locationManager";
+import { createArtistDeepLink } from "../../services/deepLink";
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -65,19 +66,21 @@ export default function ArtistListingScreen({ route, navigation }) {
 
   // Favorites state
   const [favoriteArtistIds, setFavoriteArtistIds] = useState([]);
+  const [currentLocationLabel, setCurrentLocationLabel] = useState("All Locations");
+  const reqSeqRef = React.useRef(0);
 
-  // Mock Coordinates (Jaipur)
-  const MOCK_LAT = 26.9124;
-  const MOCK_LNG = 75.7873;
-
-  // Load filter options and user favorites
+  // Load filter options, user favorites and active location
   const loadInitialMetadata = async () => {
     try {
-      const [meta, favs] = await Promise.all([
+      const [meta, favs, activeAddr] = await Promise.all([
         getFilterMetadata(),
-        getFavorites()
+        getFavorites(),
+        getActiveAddress()
       ]);
       setCategories(meta?.categories || []);
+      if (activeAddr?.label || activeAddr?.city || activeAddr?.fullAddress) {
+        setCurrentLocationLabel(activeAddr.label ? `${activeAddr.label} (${activeAddr.city || ""})` : (activeAddr.city || activeAddr.fullAddress));
+      }
       const allFavIds = [];
       (favs || []).forEach((artist) => {
         if (artist.id) allFavIds.push(artist.id);
@@ -116,8 +119,10 @@ export default function ArtistListingScreen({ route, navigation }) {
     return filters;
   };
 
-  // Main fetch query list — accepts explicit params to avoid stale closure
+  // Main fetch query list — with race-condition / stale-response cancellation
   const fetchArtistsList = async (pageNum = 1, isRefresh = false, overrideSort = null) => {
+    const reqId = ++reqSeqRef.current;
+
     if (pageNum === 1) {
       if (!isRefresh) setLoading(true);
     } else {
@@ -130,6 +135,10 @@ export default function ArtistListingScreen({ route, navigation }) {
       const lng = activeAddr?.longitude || null;
       const filters = getActiveFilters();
       const response = await searchArtists(query, filters, sort, lat, lng, pageNum, 15);
+
+      // Discard response if a newer request was dispatched
+      if (reqId !== reqSeqRef.current) return;
+
       const rows = Array.isArray(response) ? response : (response?.rows || response?.data || []);
       const total = Array.isArray(response) ? response.length : (response?.count || rows.length);
 
@@ -143,11 +152,15 @@ export default function ArtistListingScreen({ route, navigation }) {
       setHasMore(hasMoreData);
       setPage(pageNum);
     } catch (err) {
-      console.log("Failed to load artists listing:", err.message);
+      if (reqId === reqSeqRef.current) {
+        console.log("Failed to load artists listing:", err.message);
+      }
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
-      setRefreshing(false);
+      if (reqId === reqSeqRef.current) {
+        setLoading(false);
+        setLoadingMore(false);
+        setRefreshing(false);
+      }
     }
   };
 
@@ -200,7 +213,6 @@ export default function ArtistListingScreen({ route, navigation }) {
 
   const applyFilters = () => {
     setFilterModalVisible(false);
-    // Use setTimeout to ensure state is committed before fetch
     setTimeout(() => fetchArtistsList(1), 50);
   };
 
@@ -238,10 +250,14 @@ export default function ArtistListingScreen({ route, navigation }) {
   // Native Share profile content trigger
   const handleShareProfile = async (artist) => {
     try {
-      const minPrice = artist.services?.[0]?.minimum_price || 1500;
+      const artistId = artist.id || artist.user_id || artist.artist_id;
+      const artistName = artist.name || artist.full_name || artist.user?.name || "Mehndi Artist";
+      const minPrice = artist.starting_price || artist.services?.[0]?.minimum_price || 500;
+      const shareUrl = createArtistDeepLink(artistId);
       await Share.share({
-        title: `Check out ${artist.user?.name || "this Mehndi Artist"}`,
-        message: `Book ${artist.user?.name || "this Mehndi Artist"} on MehandiGo! Starting price ₹${minPrice}, experience: ${artist.experience_years} years, rated ⭐${Number(artist.avg_rating || 0).toFixed(1)} stars. Download the app today!`
+        title: `${artistName} on MehndiGo`,
+        message: `Book ${artistName} on MehndiGo! Starting at ₹${minPrice}, ${artist.experience_years ? `${artist.experience_years} years experience, ` : ""}⭐ ${Number(artist.avg_rating || artist.rating || 0).toFixed(1)} rating.\n\nView Profile: ${shareUrl}`,
+        url: shareUrl
       });
     } catch (e) {
       console.log("Failed to share profile:", e.message);
@@ -261,7 +277,7 @@ export default function ArtistListingScreen({ route, navigation }) {
     const artistId = item.id || item.user_id || item.artist_id;
     const isFav = favoriteArtistIds.includes(item.id) || favoriteArtistIds.includes(item.user_id) || favoriteArtistIds.includes(item.artist_id) || favoriteArtistIds.includes(artistId);
     const minPrice = item.starting_price || item.startingPrice || item.price || item.services?.[0]?.minimum_price || item.services?.[0]?.price;
-    const distanceVal = item.distance ? `${Number(item.distance).toFixed(1)} km` : "Nearby";
+    const distanceVal = item.distance ? `${Number(item.distance).toFixed(1)} km` : null;
     const categoryName = item.services?.[0]?.category || item.categories || "General Mehndi";
     const artistName = item.name || item.full_name || item.user?.name || "Mehndi Artist";
     const rawImage = item.profile_image || item.profileImage || item.avatar || item.user?.profile_image || (Array.isArray(item.portfolio_images) && item.portfolio_images[0]?.url) || (Array.isArray(item.portfolio) && item.portfolio[0]?.url);
@@ -316,20 +332,22 @@ export default function ArtistListingScreen({ route, navigation }) {
               </Text>
             </View>
             <Text style={styles.bulletText}>•</Text>
-            <Text style={styles.statsText}>{item.experience_years || 2} Yrs Exp</Text>
+            <Text style={styles.statsText}>{item.experience_years ? `${item.experience_years} Yrs Exp` : "Fresh Artist"}</Text>
             <Text style={styles.bulletText}>•</Text>
-            <Text style={styles.statsText}>{categoryName}</Text>
+            <Text style={styles.statsText} numberOfLines={1}>{categoryName}</Text>
           </View>
 
-          <Text style={styles.location} numberOfLines={1}>📍 {item.city || "Jaipur"} ({distanceVal})</Text>
+          <Text style={styles.location} numberOfLines={1}>
+            📍 {item.city ? `${item.city}${distanceVal ? ` (${distanceVal})` : ""}` : (distanceVal ? `${distanceVal} away` : "Location not set")}
+          </Text>
 
           <View style={styles.perfRow}>
-            <Text style={styles.perfText}>⚡ {item.response_time || "15 mins"} response</Text>
-            <Text style={styles.perfText}>💼 {item.total_bookings || 10} Bookings</Text>
+            <Text style={styles.perfText}>⚡ {item.response_time || "Quick response"}</Text>
+            <Text style={styles.perfText}>💼 {item.total_bookings !== undefined ? `${item.total_bookings} Bookings` : "Available for bookings"}</Text>
           </View>
 
           <View style={styles.footerRow}>
-            <Text style={styles.price}>₹{minPrice}+</Text>
+            <Text style={styles.price}>{minPrice ? `₹${minPrice}+` : "Price on Profile"}</Text>
             <View style={styles.availableTodayBadge}>
               <View style={styles.activeDot} />
               <Text style={styles.availableTodayText}>Available Today</Text>
@@ -339,13 +357,13 @@ export default function ArtistListingScreen({ route, navigation }) {
           <View style={styles.actionRow}>
             <TouchableOpacity
               style={styles.viewProfileBtn}
-              onPress={() => navigation.navigate("ArtistProfile", { artistId: item.id })}
+              onPress={() => navigation.navigate("ArtistProfile", { artistId: artistId })}
             >
               <Text style={styles.viewProfileBtnText}>View Profile</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.quickBookBtn}
-              onPress={() => navigation.navigate("SelectService", { artistId: item.id })}
+              onPress={() => navigation.navigate("SelectService", { artistId: artistId })}
             >
               <Text style={styles.quickBookBtnText}>Quick Book</Text>
             </TouchableOpacity>
@@ -366,7 +384,7 @@ export default function ArtistListingScreen({ route, navigation }) {
           <Text style={styles.headerTitle} numberOfLines={1}>
             {query ? `"${query}"` : selectedCategory || "Mehndi Artists"}
           </Text>
-          <Text style={styles.locationSubtitle}>📍 Jaipur, Rajasthan</Text>
+          <Text style={styles.locationSubtitle}>📍 {currentLocationLabel}</Text>
         </View>
         
         <View style={{ width: 36 }} />
@@ -1022,7 +1040,7 @@ const styles = StyleSheet.create({
   nameRow: { flexDirection: "row", alignItems: "center", flex: 1 },
   name: { fontSize: 15, fontWeight: "700", color: Colors.text, flex: 1 },
   shareButton: { padding: 4 },
-  subHeaderStats: { flexDirection: "row", alignItems: "center", marginTop: 2 },
+  subHeaderStats: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", marginTop: 2 },
   ratingBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -1033,7 +1051,7 @@ const styles = StyleSheet.create({
   },
   ratingBadgeText: { fontSize: 11, fontWeight: "700", color: "#FFB800", marginLeft: 2 },
   bulletText: { fontSize: 11, color: Colors.textTertiary, marginHorizontal: 4 },
-  statsText: { fontSize: 11, color: Colors.textSecondary },
+  statsText: { fontSize: 11, color: Colors.textSecondary, flexShrink: 1 },
   location: { fontSize: 11, color: Colors.textSecondary, marginTop: 4 },
   perfRow: { flexDirection: "row", alignItems: "center", marginTop: 4 },
   perfText: { fontSize: 10, fontWeight: "600", color: Colors.textSecondary, marginRight: 10 },

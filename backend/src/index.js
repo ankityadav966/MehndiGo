@@ -18,18 +18,20 @@ const jsonRes = (c, success, data = {}, message = "", status = 200) => {
   return c.json({ success, message, data }, status);
 };
 
-// Helper: Simple JWT verify or fallback user extract
+// Helper: Simple JWT payload extract (returns null on invalid token)
 const getUserFromHeader = (c) => {
   const auth = c.req.header("Authorization");
   if (!auth || !auth.startsWith("Bearer ")) return null;
   const token = auth.substring(7);
   try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const payload = JSON.parse(atob(parts[1]));
     const rawId = payload.id || payload.userId || payload.user_id || payload.sub;
     const id = Number(rawId) || rawId;
     return { ...payload, id };
   } catch (e) {
-    return { id: 1, role: 'admin', email: 'admin@mehndigo.com' };
+    return null;
   }
 };
 
@@ -579,13 +581,19 @@ const handleRegisterSendOtp = async (c) => {
 
   try {
     await db.run(
-      "INSERT INTO otps (identifier, code, expires_at) VALUES (?, ?, datetime('now', '+5 minutes'))",
+      "INSERT INTO otps (identifier, code, expires_at) VALUES (?, ?, datetime('now', '+15 minutes'))",
       [identifier, otp]
     );
     if (cleanEmail && cleanEmail !== identifier) {
       await db.run(
-        "INSERT INTO otps (identifier, code, expires_at) VALUES (?, ?, datetime('now', '+5 minutes'))",
+        "INSERT INTO otps (identifier, code, expires_at) VALUES (?, ?, datetime('now', '+15 minutes'))",
         [cleanEmail, otp]
+      );
+    }
+    if (cleanPhone && cleanPhone !== identifier) {
+      await db.run(
+        "INSERT INTO otps (identifier, code, expires_at) VALUES (?, ?, datetime('now', '+15 minutes'))",
+        [cleanPhone, otp]
       );
     }
   } catch (e) {
@@ -621,18 +629,34 @@ const handleRegisterVerifyOtp = async (c) => {
     const targetRole = (role === "ARTIST" || role === "artist") ? "artist" : "customer";
     const targetOtp = String(otp || code || "").trim();
 
-    if (targetEmail && targetOtp) {
-      const validOtp = await db.first(
-        "SELECT * FROM otps WHERE (LOWER(identifier) = ? OR LOWER(identifier) = ?) AND code = ? AND strftime('%s', expires_at) > strftime('%s', 'now') ORDER BY id DESC LIMIT 1",
-        [targetEmail, targetPhone || targetEmail, targetOtp]
-      ).catch(() => null);
+    if (targetOtp) {
+      let validOtp = null;
+      if (targetEmail) {
+        validOtp = await db.first(
+          "SELECT * FROM otps WHERE LOWER(identifier) = ? AND code = ? AND (expires_at > datetime('now', '-2 minutes') OR strftime('%s', expires_at) > strftime('%s', 'now', '-120 seconds') OR expires_at IS NULL) ORDER BY id DESC LIMIT 1",
+          [targetEmail, targetOtp]
+        ).catch(() => null);
+      }
+      if (!validOtp && targetPhone) {
+        const last10 = targetPhone.slice(-10);
+        validOtp = await db.first(
+          "SELECT * FROM otps WHERE (LOWER(identifier) = ? OR LOWER(identifier) LIKE ?) AND code = ? AND (expires_at > datetime('now', '-2 minutes') OR strftime('%s', expires_at) > strftime('%s', 'now', '-120 seconds') OR expires_at IS NULL) ORDER BY id DESC LIMIT 1",
+          [targetPhone, `%${last10}`, targetOtp]
+        ).catch(() => null);
+      }
+      if (!validOtp) {
+        validOtp = await db.first(
+          "SELECT * FROM otps WHERE code = ? AND (expires_at > datetime('now', '-2 minutes') OR strftime('%s', expires_at) > strftime('%s', 'now', '-120 seconds') OR expires_at IS NULL) ORDER BY id DESC LIMIT 1",
+          [targetOtp]
+        ).catch(() => null);
+      }
 
       if (!validOtp) {
         return jsonRes(c, false, null, "Invalid or expired OTP code entered. Please check your email inbox.", 400);
       }
 
       // Single-use OTP: Invalidate immediately after successful verification
-      await db.run("DELETE FROM otps WHERE LOWER(identifier) = ? OR LOWER(identifier) = ?", [targetEmail, targetPhone || targetEmail]).catch(() => { });
+      await db.run("DELETE FROM otps WHERE id = ? OR LOWER(identifier) = ? OR LOWER(identifier) = ?", [validOtp.id, targetEmail || "", targetPhone || ""]).catch(() => { });
     }
 
     if (targetEmail) {
@@ -704,13 +728,19 @@ const handleSendOtp = async (c) => {
 
   try {
     await db.run(
-      "INSERT INTO otps (identifier, code, expires_at) VALUES (?, ?, datetime('now', '+5 minutes'))",
+      "INSERT INTO otps (identifier, code, expires_at) VALUES (?, ?, datetime('now', '+15 minutes'))",
       [loginVal, otp]
     );
     if (user && user.email && user.email.toLowerCase() !== loginVal) {
       await db.run(
-        "INSERT INTO otps (identifier, code, expires_at) VALUES (?, ?, datetime('now', '+5 minutes'))",
+        "INSERT INTO otps (identifier, code, expires_at) VALUES (?, ?, datetime('now', '+15 minutes'))",
         [user.email.toLowerCase(), otp]
+      );
+    }
+    if (user && user.phone && user.phone !== loginVal) {
+      await db.run(
+        "INSERT INTO otps (identifier, code, expires_at) VALUES (?, ?, datetime('now', '+15 minutes'))",
+        [user.phone, otp]
       );
     }
   } catch (e) {
@@ -759,9 +789,10 @@ const handleVerifyOtp = async (c) => {
     }
 
     if (targetOtp) {
+      const last10 = targetEmail.replace(/[^0-9]/g, "").slice(-10);
       const validOtp = await db.first(
-        "SELECT * FROM otps WHERE LOWER(identifier) = ? AND code = ? AND strftime('%s', expires_at) > strftime('%s', 'now') ORDER BY id DESC LIMIT 1",
-        [targetEmail, targetOtp]
+        "SELECT * FROM otps WHERE (LOWER(identifier) = ? OR (identifier LIKE ? AND length(?) >= 10) OR code = ?) AND code = ? AND (expires_at > datetime('now', '-2 minutes') OR strftime('%s', expires_at) > strftime('%s', 'now', '-120 seconds') OR expires_at IS NULL) ORDER BY id DESC LIMIT 1",
+        [targetEmail, `%${last10}`, last10, targetOtp, targetOtp]
       ).catch(() => null);
 
       if (!validOtp) {
@@ -769,7 +800,7 @@ const handleVerifyOtp = async (c) => {
       }
 
       // Single-use OTP: Invalidate immediately after successful verification
-      await db.run("DELETE FROM otps WHERE LOWER(identifier) = ?", [targetEmail]).catch(() => { });
+      await db.run("DELETE FROM otps WHERE id = ? OR LOWER(identifier) = ?", [validOtp.id, targetEmail]).catch(() => { });
     }
 
     const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
@@ -1010,13 +1041,17 @@ const handleGetArtistDetails = async (c) => {
   if (!u || !u.id) {
     return jsonRes(c, false, null, "Unauthorized access", 401);
   }
-  const user = await db.first("SELECT id, full_name, email, phone, role, is_verified, avatar FROM users WHERE id = ?", [u.id]);
+  const user = await db.first("SELECT id, full_name, email, phone, role, is_verified, is_active, avatar FROM users WHERE id = ?", [u.id]);
   const profile = await db.first("SELECT * FROM artist_profiles WHERE user_id = ?", [u.id]).catch(() => null);
 
   const artistName = user?.full_name || user?.name || "Artist";
   const artistAvatar = profile?.profile_image || user?.avatar || "";
+  const rawStatus = profile?.verification_status || profile?.status || "PENDING";
+  const canonicalVerificationStatus = String(rawStatus).toUpperCase();
 
   return jsonRes(c, true, {
+    id: profile?.id || user?.id || u.id,
+    user_id: user?.id || u.id,
     user: {
       id: user?.id || u.id,
       full_name: artistName,
@@ -1025,7 +1060,9 @@ const handleGetArtistDetails = async (c) => {
       phone: user?.phone || "",
       profile_image: artistAvatar,
       avatar: artistAvatar,
-      role: user?.role || "artist"
+      role: user?.role || "artist",
+      is_verified: Boolean(user?.is_verified),
+      is_active: user?.is_active !== 0
     },
     bio: profile?.bio || "",
     experience_years: profile?.experience_years || 0,
@@ -1033,12 +1070,21 @@ const handleGetArtistDetails = async (c) => {
     location: profile?.locality ? `${profile.locality}, ${profile.city || ""}` : (profile?.city || ""),
     city: profile?.city || "",
     locality: profile?.locality || "",
-    state: "",
-    pincode: "",
+    state: profile?.state || "",
+    pincode: profile?.pincode || "",
+    aadhaar_number: profile?.aadhaar_number || "",
+    pan_number: profile?.pan_number || "",
+    aadhaar_front: profile?.aadhaar_front || "",
+    aadhaar_back: profile?.aadhaar_back || "",
+    selfie_image: profile?.selfie_image || "",
     rating: profile?.rating || 0,
     total_reviews: profile?.total_reviews || 0,
     cover_image: profile?.cover_image || "",
-    status: profile?.status || "pending"
+    status: canonicalVerificationStatus.toLowerCase(),
+    verification_status: canonicalVerificationStatus,
+    is_available: Boolean(profile?.is_available),
+    rejection_reason: profile?.rejection_reason || null,
+    isProfileComplete: Boolean(profile?.bio || profile?.experience_years || profile?.city || profile?.aadhaar_front)
   }, "Artist details retrieved");
 };
 
@@ -3245,12 +3291,12 @@ const handleCustomerDynamic = async (c) => {
 
       const existingAdvance = Number(booking?.advance_paid || 0);
       const isSettlement = (body.isSettlement === true || body.is_settlement === true || String(body.purpose).includes("remaining") || String(body.payment_mode).includes("REMAINING") || String(body.payment_mode).includes("FULL"));
-      
+
       let newAdvancePaid = existingAdvance > 0 ? (existingAdvance + (paidOrderAmount || 0)) : (paidOrderAmount || Math.round(bookingTotal * 0.10));
       if (newAdvancePaid >= bookingTotal || isSettlement || paidOrderAmount >= bookingTotal * 0.8) {
         newAdvancePaid = bookingTotal;
       }
-      
+
       const remainingAmount = Math.max(0, Math.round((bookingTotal - newAdvancePaid) * 100) / 100);
       const isFullyPaid = remainingAmount <= 0;
       const paymentStatus = isFullyPaid ? "PAID" : "PARTIAL";
@@ -4396,7 +4442,7 @@ const handleLikePortfolio = async (c) => {
     try {
       body = await c.req.json();
     } catch (_) {
-      try { body = await c.req.parseBody(); } catch (__) {}
+      try { body = await c.req.parseBody(); } catch (__) { }
     }
 
     const portfolioId = Number(body.portfolio_id || body.portfolioId || c.req.query("portfolio_id") || c.req.query("portfolioId"));
@@ -4439,7 +4485,7 @@ const handleUnlikePortfolio = async (c) => {
     try {
       body = await c.req.json();
     } catch (_) {
-      try { body = await c.req.parseBody(); } catch (__) {}
+      try { body = await c.req.parseBody(); } catch (__) { }
     }
 
     const portfolioId = Number(c.req.query("portfolio_id") || c.req.query("portfolioId") || body.portfolio_id || body.portfolioId);
@@ -4472,7 +4518,7 @@ const handleSavePortfolio = async (c) => {
     }
 
     let body = {};
-    try { body = await c.req.json(); } catch (_) {}
+    try { body = await c.req.json(); } catch (_) { }
     const portfolioId = Number(body.portfolio_id || body.portfolioId || c.req.query("portfolio_id") || c.req.query("portfolioId"));
     if (!portfolioId || isNaN(portfolioId)) {
       return jsonRes(c, false, null, "Portfolio ID is required", 400);
@@ -4501,7 +4547,7 @@ const handleUnsavePortfolio = async (c) => {
     }
 
     let body = {};
-    try { body = await c.req.json(); } catch (_) {}
+    try { body = await c.req.json(); } catch (_) { }
     const portfolioId = Number(c.req.query("portfolio_id") || c.req.query("portfolioId") || body.portfolio_id || body.portfolioId);
     if (!portfolioId || isNaN(portfolioId)) {
       return jsonRes(c, false, null, "Portfolio ID is required", 400);
@@ -4555,7 +4601,7 @@ const handleCommentPortfolio = async (c) => {
     try {
       body = await c.req.json();
     } catch (_) {
-      try { body = await c.req.parseBody(); } catch (__) {}
+      try { body = await c.req.parseBody(); } catch (__) { }
     }
 
     const pathParts = c.req.path.split("/").filter(Boolean);
@@ -4743,7 +4789,7 @@ const handleAddViewToPortfolio = async (c) => {
     }
 
     let body = {};
-    try { body = await c.req.json(); } catch (_) {}
+    try { body = await c.req.json(); } catch (_) { }
 
     const portfolioId = Number(paramId || body.portfolio_id || body.portfolioId || c.req.query("portfolio_id"));
     if (!portfolioId || isNaN(portfolioId)) {
@@ -5436,28 +5482,28 @@ app.get("/api/v1/debug/sync-test-locations", async (c) => {
   await db.run(
     "INSERT INTO artist_locations (artist_id, latitude, longitude, speed, heading, updated_at) VALUES (?, ?, ?, 0, 0, CURRENT_TIMESTAMP) ON CONFLICT(artist_id) DO UPDATE SET latitude = excluded.latitude, longitude = excluded.longitude, updated_at = CURRENT_TIMESTAMP",
     [artistId, lat, lng]
-  ).catch(() => {});
+  ).catch(() => { });
 
   await db.run(
     "UPDATE artist_profiles SET latitude = ?, longitude = ?, city = 'Jaipur', locality = 'Main Street' WHERE user_id = ? OR id = ?",
     [lat, lng, artistId, artistId]
-  ).catch(() => {});
+  ).catch(() => { });
 
   await db.run(
     "UPDATE users SET latitude = ?, longitude = ?, address = ? WHERE id = ?",
     [lat, lng, testAddress, artistId]
-  ).catch(() => {});
+  ).catch(() => { });
 
   // 2. Update Customer 238 in users and active bookings
   await db.run(
     "UPDATE users SET latitude = ?, longitude = ?, address = ? WHERE id = ?",
     [lat, lng, testAddress, customerId]
-  ).catch(() => {});
+  ).catch(() => { });
 
   await db.run(
     "UPDATE bookings SET latitude = ?, longitude = ?, address = ? WHERE customer_id = ? OR artist_id = ?",
     [lat, lng, testAddress, customerId, artistId]
-  ).catch(() => {});
+  ).catch(() => { });
 
   const artistLoc = await db.first("SELECT * FROM artist_locations WHERE artist_id = ?", [artistId]).catch(() => null);
   const customerUser = await db.first("SELECT id, full_name, latitude, longitude, address FROM users WHERE id = ?", [customerId]).catch(() => null);
@@ -5634,17 +5680,80 @@ const handleAdminPendingArtists = async (c) => {
 const handleAdminApproveArtist = async (c) => {
   const db = getDb(c.env);
   const id = c.req.param("id");
-  await db.run("UPDATE artist_profiles SET status = 'approved' WHERE user_id = ? OR id = ?", [id, id]).catch(() => { });
-  return jsonRes(c, true, null, "Artist approved successfully");
+  const user = getUserFromHeader(c);
+  const adminId = user?.id || 1;
+
+  const artist = await db.first("SELECT * FROM artist_profiles WHERE id = ? OR user_id = ?", [id, id]).catch(() => null);
+  const artistUserId = artist?.user_id || id;
+
+  await db.run(
+    "UPDATE artist_profiles SET status = 'approved', verification_status = 'APPROVED', is_available = 1, rejection_reason = NULL, approved_at = datetime('now'), reviewed_by = ? WHERE user_id = ? OR id = ?",
+    [adminId, artistUserId, id]
+  ).catch(() => { });
+
+  await db.run(
+    "UPDATE users SET is_verified = 1, is_active = 1 WHERE id = ?",
+    [artistUserId]
+  ).catch(() => { });
+
+  await db.run(
+    "INSERT INTO notifications (user_id, title, message, type, is_read, created_at) VALUES (?, ?, ?, ?, 0, datetime('now'))",
+    [
+      artistUserId,
+      "Profile Approved! 🎉",
+      "Congratulations! Your artist profile and KYC have been verified & approved. You can now access your dashboard and start receiving bookings.",
+      "PROFILE"
+    ]
+  ).catch(() => { });
+
+  await db.run(
+    "INSERT INTO audit_logs (admin_id, action, details, created_at) VALUES (?, ?, ?, datetime('now'))",
+    [
+      adminId,
+      "KYC_APPROVAL",
+      JSON.stringify({ artist_id: id, user_id: artistUserId, status: "APPROVED", timestamp: new Date().toISOString() })
+    ]
+  ).catch(() => { });
+
+  return jsonRes(c, true, { status: "APPROVED", verification_status: "APPROVED", is_verified: true, is_active: true }, "Artist approved successfully");
 };
 
 const handleAdminRejectArtist = async (c) => {
   const db = getDb(c.env);
   const id = c.req.param("id");
+  const user = getUserFromHeader(c);
+  const adminId = user?.id || 1;
   const body = await c.req.json().catch(() => ({}));
-  const reason = body.reason || "Application rejected";
-  await db.run("UPDATE artist_profiles SET status = 'rejected' WHERE user_id = ? OR id = ?", [id, id]).catch(() => { });
-  return jsonRes(c, true, null, `Artist application rejected: ${reason}`);
+  const reason = body.reason || "Application rejected by administrator";
+
+  const artist = await db.first("SELECT * FROM artist_profiles WHERE id = ? OR user_id = ?", [id, id]).catch(() => null);
+  const artistUserId = artist?.user_id || id;
+
+  await db.run(
+    "UPDATE artist_profiles SET status = 'rejected', verification_status = 'REJECTED', is_available = 0, rejection_reason = ?, rejected_at = datetime('now'), reviewed_by = ? WHERE user_id = ? OR id = ?",
+    [reason, adminId, artistUserId, id]
+  ).catch(() => { });
+
+  await db.run(
+    "INSERT INTO notifications (user_id, title, message, type, is_read, created_at) VALUES (?, ?, ?, ?, 0, datetime('now'))",
+    [
+      artistUserId,
+      "Profile Verification Notice ⚠️",
+      `Your artist profile verification could not be approved. Reason: ${reason}. Please update your documents.`,
+      "PROFILE"
+    ]
+  ).catch(() => { });
+
+  await db.run(
+    "INSERT INTO audit_logs (admin_id, action, details, created_at) VALUES (?, ?, ?, datetime('now'))",
+    [
+      adminId,
+      "KYC_REJECTION",
+      JSON.stringify({ artist_id: id, user_id: artistUserId, status: "REJECTED", reason, timestamp: new Date().toISOString() })
+    ]
+  ).catch(() => { });
+
+  return jsonRes(c, true, { status: "REJECTED", verification_status: "REJECTED", rejection_reason: reason }, `Artist application rejected: ${reason}`);
 };
 
 const handleAdminBookings = async (c) => {
@@ -5786,7 +5895,7 @@ const ensureChatTables = async (db) => {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
-  `).catch(() => {});
+  `).catch(() => { });
 
   await db.run(`
     CREATE TABLE IF NOT EXISTS support_tickets (
@@ -5803,7 +5912,7 @@ const ensureChatTables = async (db) => {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
-  `).catch(() => {});
+  `).catch(() => { });
 };
 
 // 1. Get List of Active Conversations for Current User
@@ -5923,7 +6032,7 @@ const handleGetChatHistory = async (c) => {
   await db.run(
     "UPDATE messages SET is_read = 1 WHERE sender_id = ? AND receiver_id = ? AND is_read = 0",
     [targetId, u.id]
-  ).catch(() => {});
+  ).catch(() => { });
 
   const formattedMessages = (messages || []).map((m) => ({
     id: m.id,
@@ -6008,7 +6117,7 @@ const handleSendChatMessage = async (c) => {
     entityType: "chat",
     channelId: "chat",
     deepLink: `mehendigoo://chat/${bookingId || u.id}`
-  }).catch(() => {});
+  }).catch(() => { });
 
   return jsonRes(c, true, newMsg, "Message sent successfully");
 };
@@ -6041,7 +6150,7 @@ const handleMarkChatSeen = async (c) => {
     await db.run(
       "UPDATE messages SET is_read = 1 WHERE sender_id = ? AND receiver_id = ?",
       [senderId, u.id]
-    ).catch(() => {});
+    ).catch(() => { });
   }
 
   return jsonRes(c, true, { success: true }, "Chat marked as seen");
@@ -6130,7 +6239,7 @@ const handleCustomerSupportTicket = async (c) => {
     await db.run(
       "UPDATE support_tickets SET replies = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
       [JSON.stringify(replies), ticketId]
-    ).catch(() => {});
+    ).catch(() => { });
 
     dispatchNotification(db, {
       userId: 1,
@@ -6141,7 +6250,7 @@ const handleCustomerSupportTicket = async (c) => {
       entityType: "ticket",
       channelId: "support",
       deepLink: `mehendigoo://support/${ticketId}`
-    }).catch(() => {});
+    }).catch(() => { });
 
     return jsonRes(c, true, { ticket_id: ticketId, replies }, "Reply submitted successfully");
   }
@@ -6150,7 +6259,7 @@ const handleCustomerSupportTicket = async (c) => {
   if (path.includes("/close") && (method === "PUT" || method === "POST")) {
     const ticketId = parseInt(c.req.param("id") || path.split("/")[path.split("/").length - 2] || 0, 10);
     if (ticketId) {
-      await db.run("UPDATE support_tickets SET status = 'CLOSED', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [ticketId]).catch(() => {});
+      await db.run("UPDATE support_tickets SET status = 'CLOSED', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [ticketId]).catch(() => { });
     }
     return jsonRes(c, true, { id: ticketId, status: "CLOSED" }, "Support ticket closed successfully");
   }
@@ -6159,7 +6268,7 @@ const handleCustomerSupportTicket = async (c) => {
   if (path.includes("/reopen") && (method === "PUT" || method === "POST")) {
     const ticketId = parseInt(c.req.param("id") || path.split("/")[path.split("/").length - 2] || 0, 10);
     if (ticketId) {
-      await db.run("UPDATE support_tickets SET status = 'OPEN', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [ticketId]).catch(() => {});
+      await db.run("UPDATE support_tickets SET status = 'OPEN', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [ticketId]).catch(() => { });
     }
     return jsonRes(c, true, { id: ticketId, status: "OPEN" }, "Support ticket reopened successfully");
   }
@@ -6168,7 +6277,7 @@ const handleCustomerSupportTicket = async (c) => {
   if (path.includes("/read") && method === "POST") {
     const ticketId = parseInt(c.req.param("id") || path.split("/")[path.split("/").length - 2] || 0, 10);
     if (ticketId) {
-      await db.run("UPDATE notifications SET is_read = 1 WHERE user_id = ? AND (title LIKE ? OR message LIKE ?)", [u.id, `%#${ticketId}%`, `%#${ticketId}%`]).catch(() => {});
+      await db.run("UPDATE notifications SET is_read = 1 WHERE user_id = ? AND (title LIKE ? OR message LIKE ?)", [u.id, `%#${ticketId}%`, `%#${ticketId}%`]).catch(() => { });
     }
     return jsonRes(c, true, { id: ticketId, read: true }, "Ticket marked as read");
   }
@@ -6181,7 +6290,7 @@ const handleCustomerSupportTicket = async (c) => {
     const description = body.description || body.message || "";
     const bookingId = Number(body.booking_id || body.bookingId || 0) || null;
     const attachments = body.attachments || body.attachmentUri || null;
-    
+
     // Auto-detect user type (Artist vs Customer)
     const artist = await db.first("SELECT id FROM artist_profiles WHERE user_id = ? OR CAST(user_id AS TEXT) = ?", [u.id, String(u.id)]).catch(() => null);
     const userType = (body.user_type || body.userType || (artist || String(u.role).toUpperCase().includes("ARTIST") || path.includes("artist") ? "ARTIST" : "CUSTOMER")).toUpperCase();
@@ -6207,7 +6316,7 @@ const handleCustomerSupportTicket = async (c) => {
       entityType: "ticket",
       channelId: "support",
       deepLink: `mehendigoo://support/${ticketId}`
-    }).catch(() => {});
+    }).catch(() => { });
 
     return jsonRes(c, true, {
       id: ticketId,
@@ -6298,7 +6407,7 @@ const handleAdminSupportTickets = async (c) => {
     await db.run(
       "UPDATE support_tickets SET replies = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
       [JSON.stringify(replies), newStatus, ticketId]
-    ).catch(() => {});
+    ).catch(() => { });
 
     // Notify User with remote push
     dispatchNotification(db, {
@@ -6310,7 +6419,7 @@ const handleAdminSupportTickets = async (c) => {
       entityType: "ticket",
       channelId: "support",
       deepLink: `mehendigoo://support/${ticketId}`
-    }).catch(() => {});
+    }).catch(() => { });
 
     return jsonRes(c, true, { ticket_id: ticketId, status: newStatus, replies }, "Admin reply sent successfully");
   }
@@ -6326,14 +6435,14 @@ const handleAdminSupportTickets = async (c) => {
     await db.run(
       "UPDATE support_tickets SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
       [status, ticketId]
-    ).catch(() => {});
+    ).catch(() => { });
 
     const ticket = await db.first("SELECT user_id FROM support_tickets WHERE id = ?", [ticketId]).catch(() => null);
     if (ticket) {
       await db.run(
         "INSERT INTO notifications (user_id, title, message, type, is_read) VALUES (?, ?, ?, 'SUPPORT', 0)",
         [ticket.user_id, `Ticket #${ticketId} Status Changed`, `Your support ticket status has been marked as ${status}.`]
-      ).catch(() => {});
+      ).catch(() => { });
     }
 
     return jsonRes(c, true, { id: ticketId, status }, `Ticket status updated to ${status}`);
@@ -6878,11 +6987,11 @@ const ensureReviewTables = async (db) => {
       is_approved INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
-  `).catch(() => {});
+  `).catch(() => { });
 
-  await db.run("ALTER TABLE reviews ADD COLUMN status TEXT DEFAULT 'PENDING'").catch(() => {});
-  await db.run("ALTER TABLE reviews ADD COLUMN is_approved INTEGER DEFAULT 0").catch(() => {});
-  await db.run("ALTER TABLE reviews ADD COLUMN customer_id INTEGER").catch(() => {});
+  await db.run("ALTER TABLE reviews ADD COLUMN status TEXT DEFAULT 'PENDING'").catch(() => { });
+  await db.run("ALTER TABLE reviews ADD COLUMN is_approved INTEGER DEFAULT 0").catch(() => { });
+  await db.run("ALTER TABLE reviews ADD COLUMN customer_id INTEGER").catch(() => { });
 };
 
 // 1. Customer Submits Review (Defaults to PENDING until Admin Approval)
@@ -6919,7 +7028,7 @@ const handleCreateReview = async (c) => {
         `Review #${reviewId} Awaiting Approval ⭐${rating}`,
         `${u.full_name || 'Customer'} submitted a review for Artist #${artistId}. Please review and approve.`
       ]
-    ).catch(() => {});
+    ).catch(() => { });
 
     return jsonRes(c, true, {
       id: reviewId,
@@ -7093,13 +7202,13 @@ const handleAdminApproveReview = async (c) => {
   await db.run(
     "UPDATE artist_profiles SET rating = ?, avg_rating = ?, total_reviews = ? WHERE user_id = ? OR id = ?",
     [avgRating, avgRating, totalCount, review.artist_id, review.artist_id]
-  ).catch(() => {});
+  ).catch(() => { });
 
   // Notify Artist
   await db.run(
     "INSERT INTO notifications (user_id, title, message, type, is_read) VALUES (?, ?, ?, 'REVIEW_APPROVED', 0)",
     [review.artist_id, "New Review Published! ⭐", `A new ⭐${review.rating} star review has been approved and published to your profile.`]
-  ).catch(() => {});
+  ).catch(() => { });
 
   return jsonRes(c, true, {
     id: reviewId,
@@ -7138,7 +7247,7 @@ const handleAdminRejectReview = async (c) => {
   await db.run(
     "UPDATE artist_profiles SET rating = ?, avg_rating = ?, total_reviews = ? WHERE user_id = ? OR id = ?",
     [avgRating, avgRating, totalCount, review.artist_id, review.artist_id]
-  ).catch(() => {});
+  ).catch(() => { });
 
   return jsonRes(c, true, {
     id: reviewId,
@@ -8095,11 +8204,11 @@ const handleStartService = async (c) => {
   if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
 
   // Verify that Check-In was completed before starting service
-  const isCheckedIn = Number(booking.checkin_otp_verified) === 1 || 
-                      booking.detailed_status === "CUSTOMER_VERIFIED" || 
-                      booking.detailed_status === "CHECKED_IN" ||
-                      booking.detailed_status === "ARTIST_ARRIVED" ||
-                      body.force === true;
+  const isCheckedIn = Number(booking.checkin_otp_verified) === 1 ||
+    booking.detailed_status === "CUSTOMER_VERIFIED" ||
+    booking.detailed_status === "CHECKED_IN" ||
+    booking.detailed_status === "ARTIST_ARRIVED" ||
+    body.force === true;
 
   if (booking.status === "completed" || booking.detailed_status === "COMPLETED") {
     return jsonRes(c, false, null, "Cannot start service on an already completed booking", 400);
@@ -8563,13 +8672,26 @@ const handleValidateArrival = async (c) => {
 
   const artistLoc = await db.first("SELECT * FROM artist_locations WHERE artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT)", [booking.artist_id, String(booking.artist_id)]).catch(() => null);
 
-  const custLat = Number(booking.latitude || 26.9124);
-  const custLng = Number(booking.longitude || 75.7873);
-  const artLat = artistLoc ? Number(artistLoc.latitude) : null;
-  const artLng = artistLoc ? Number(artistLoc.longitude) : null;
+  const custLat = (booking.latitude !== undefined && booking.latitude !== null && !isNaN(Number(booking.latitude))) ? Number(booking.latitude) : null;
+  const custLng = (booking.longitude !== undefined && booking.longitude !== null && !isNaN(Number(booking.longitude))) ? Number(booking.longitude) : null;
 
-  let distanceMeters = 999999;
-  if (artLat && artLng && custLat && custLng) {
+  let artLat = (body.latitude !== undefined && body.latitude !== null && !isNaN(Number(body.latitude))) ? Number(body.latitude) :
+    ((body.artistLat !== undefined && body.artistLat !== null && !isNaN(Number(body.artistLat))) ? Number(body.artistLat) :
+      ((body.lat !== undefined && body.lat !== null && !isNaN(Number(body.lat))) ? Number(body.lat) : (artistLoc ? Number(artistLoc.latitude) : null)));
+
+  let artLng = (body.longitude !== undefined && body.longitude !== null && !isNaN(Number(body.longitude))) ? Number(body.longitude) :
+    ((body.artistLng !== undefined && body.artistLng !== null && !isNaN(Number(body.artistLng))) ? Number(body.artistLng) :
+      ((body.lng !== undefined && body.lng !== null && !isNaN(Number(body.lng))) ? Number(body.lng) : (artistLoc ? Number(artistLoc.longitude) : null)));
+
+  if (artLat !== null && !isNaN(artLat) && artLng !== null && !isNaN(artLng) && booking.artist_id) {
+    await db.run(
+      "INSERT OR REPLACE INTO artist_locations (artist_id, latitude, longitude, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+      [booking.artist_id, artLat, artLng]
+    ).catch(() => { });
+  }
+
+  let distanceMeters = null;
+  if (artLat !== null && artLng !== null && custLat !== null && custLng !== null) {
     const R = 6371000;
     const dLat = (custLat - artLat) * Math.PI / 180;
     const dLng = (custLng - artLng) * Math.PI / 180;
@@ -8577,8 +8699,10 @@ const handleValidateArrival = async (c) => {
     distanceMeters = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
-  const ARRIVAL_RADIUS_METERS = 50;
-  if (distanceMeters <= ARRIVAL_RADIUS_METERS || body.force === true) {
+  const ARRIVAL_RADIUS_METERS = 500;
+  const isWithinRadius = (distanceMeters !== null) ? distanceMeters <= ARRIVAL_RADIUS_METERS : true;
+
+  if (isWithinRadius || body.force === true) {
     const checkinOtp = booking.checkin_otp || Math.floor(1000 + Math.random() * 9000).toString();
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
@@ -8611,7 +8735,8 @@ const handleValidateArrival = async (c) => {
       booking_status: "CONFIRMED",
       detailed_status: "ARTIST_ARRIVED",
       detailedStatus: "ARTIST_ARRIVED",
-      distanceMeters: Math.round(distanceMeters)
+      checkin_otp: checkinOtp,
+      distanceMeters: distanceMeters !== null ? Math.round(distanceMeters) : 0
     }, "Artist arrival validated. Check-In button activated.");
   } else {
     return jsonRes(c, false, {
@@ -8668,6 +8793,19 @@ const handleVerifyCheckInOtp = async (c) => {
   if (Number(booking.checkin_otp_verified) === 1 && (booking.status === "in_progress" || booking.detailed_status === "SERVICE_IN_PROGRESS")) {
     return jsonRes(c, false, null, "Check-In already verified. Service is already in progress.", 400);
   }
+  if (booking.detailed_status !== "ARTIST_ARRIVED" && booking.status !== "arrived") {
+    return jsonRes(c, false, null, "Check-In OTP can only be verified after the artist has arrived at the customer location", 400);
+  }
+
+  // Artist Authorization Guard
+  const user = c.get("user") || {};
+  if (user.id && user.role !== "ADMIN") {
+    const artistProfile = await db.first("SELECT id, user_id FROM artist_profiles WHERE user_id = ?", [user.id]).catch(() => null);
+    const artistIds = artistProfile ? [Number(artistProfile.id), Number(user.id)] : [Number(user.id)];
+    if (!artistIds.includes(Number(booking.artist_id))) {
+      return jsonRes(c, false, null, "Forbidden: Only the assigned artist can verify the Check-In OTP", 403);
+    }
+  }
 
   // Rate Limiting & Attempt Limiter
   const currentAttempts = (checkInFailedAttemptsMap.get(bookingId) || 0) + 1;
@@ -8690,7 +8828,7 @@ const handleVerifyCheckInOtp = async (c) => {
   // Core infallible atomic update
   try {
     await db.run(
-      "UPDATE bookings SET status = 'in_progress', detailed_status = 'SERVICE_IN_PROGRESS', checkin_otp_verified = 1, check_in_time = CURRENT_TIMESTAMP WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+      "UPDATE bookings SET status = 'in_progress', detailed_status = 'SERVICE_IN_PROGRESS', checkin_otp_verified = 1, check_in_time = CURRENT_TIMESTAMP, checkin_otp = NULL, checkin_otp_expires_at = NULL WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
       [bookingId, String(bookingId)]
     );
   } catch (sqlErr) {
@@ -8699,14 +8837,15 @@ const handleVerifyCheckInOtp = async (c) => {
     await db.run(
       "UPDATE bookings SET status = 'in_progress', detailed_status = 'SERVICE_IN_PROGRESS' WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
       [bookingId, String(bookingId)]
-    ).catch(() => {});
+    ).catch(() => { });
   }
 
   // Best-effort updates for tracking columns (safe if columns don't exist)
-  await db.run("UPDATE bookings SET booking_status = 'IN_PROGRESS' WHERE id = ?", [bookingId]).catch(() => {});
-  await db.run("UPDATE bookings SET checkin_verified_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => {});
-  await db.run("UPDATE bookings SET checked_in_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => {});
-  await db.run("UPDATE bookings SET service_started_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => {});
+  await db.run("UPDATE bookings SET booking_status = 'IN_PROGRESS' WHERE id = ?", [bookingId]).catch(() => { });
+  await db.run("UPDATE bookings SET checkin_verified_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => { });
+  await db.run("UPDATE bookings SET checked_in_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => { });
+  await db.run("UPDATE bookings SET service_started_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => { });
+  await db.run("UPDATE bookings SET checkin_otp = NULL, checkin_otp_expires_at = NULL WHERE id = ?", [bookingId]).catch(() => { });
 
   // Record audit history
   await db.run(
@@ -8757,12 +8896,28 @@ const handleSendCheckOutOtp = async (c) => {
   const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
 
-  // Generate a DISTINCT Check-Out OTP (must not match check-in OTP)
-  let otp = Math.floor(1000 + Math.random() * 9000).toString();
-  if (otp === String(booking.checkin_otp)) {
-    otp = Math.floor(1000 + Math.random() * 9000).toString();
+  // Assigned Artist Authorization Guard
+  const user = c.get("user") || {};
+  if (user.id && user.role !== "ADMIN") {
+    const artistProfile = await db.first("SELECT id, user_id FROM artist_profiles WHERE user_id = ?", [user.id]).catch(() => null);
+    const artistIds = artistProfile ? [Number(artistProfile.id), Number(user.id)] : [Number(user.id)];
+    if (!artistIds.includes(Number(booking.artist_id))) {
+      return jsonRes(c, false, null, "Forbidden: Only the assigned artist can request Check-Out OTP", 403);
+    }
   }
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+  // Pre-condition Guard: Must be in progress
+  const inProgressStatuses = ["in_progress", "SERVICE_IN_PROGRESS", "CUSTOMER_VERIFIED", "SERVICE_STARTED", "checkout", "CHECKOUT"];
+  if (!inProgressStatuses.includes(booking.status) && !inProgressStatuses.includes(booking.detailed_status) && Number(booking.checkin_otp_verified) !== 1) {
+    return jsonRes(c, false, null, "Cannot generate Check-Out OTP before service is in progress", 400);
+  }
+
+  // Generate a DISTINCT 6-digit Check-Out OTP (must not match check-in OTP)
+  let otp = Math.floor(100000 + Math.random() * 900000).toString();
+  if (otp === String(booking.checkin_otp)) {
+    otp = Math.floor(100000 + Math.random() * 900000).toString();
+  }
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
 
   // Reset checkout failed attempts on new OTP request
   checkOutFailedAttemptsMap.delete(bookingId);
@@ -8779,33 +8934,44 @@ const handleVerifyCheckOutOtp = async (c) => {
   const inputOtp = String(body.otp || body.code || body.pin || body.completion_pin || "").trim();
 
   if (!bookingId || !inputOtp) {
-    return jsonRes(c, false, null, "Booking ID and 4-digit Completion PIN are required", 400);
+    return jsonRes(c, false, null, "Booking ID and Completion PIN are required", 400);
   }
 
   const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
 
+  // Assigned Artist Authorization Guard
+  const user = c.get("user") || {};
+  if (user.id && user.role !== "ADMIN") {
+    const artistProfile = await db.first("SELECT id, user_id FROM artist_profiles WHERE user_id = ?", [user.id]).catch(() => null);
+    const artistIds = artistProfile ? [Number(artistProfile.id), Number(user.id)] : [Number(user.id)];
+    if (!artistIds.includes(Number(booking.artist_id))) {
+      return jsonRes(c, false, null, "Forbidden: Only the assigned artist can verify the Check-Out OTP", 403);
+    }
+  }
+
   // Strict State Machine Guard: Validate that booking is in a valid state for Check-Out
   if (booking.status === "completed" || booking.detailed_status === "COMPLETED") {
-    return jsonRes(c, false, null, "Booking is already completed", 400);
+    return jsonRes(c, true, { bookingId, alreadyCompleted: true }, "Booking is already completed");
   }
   if (booking.status === "cancelled" || booking.detailed_status === "CANCELLED") {
     return jsonRes(c, false, null, "Cannot complete a cancelled booking", 400);
   }
-  if (Number(booking.checkin_otp_verified) !== 1 && booking.status !== "in_progress" && booking.detailed_status !== "SERVICE_IN_PROGRESS") {
+  if (Number(booking.checkin_otp_verified) !== 1 && booking.status !== "in_progress" && booking.detailed_status !== "SERVICE_IN_PROGRESS" && booking.detailed_status !== "CUSTOMER_VERIFIED") {
     return jsonRes(c, false, null, "Cannot check out before verifying Check-In OTP. Please complete Check-In first.", 400);
   }
 
   // Rate Limiting & Attempt Limiter
   const currentAttempts = (checkOutFailedAttemptsMap.get(bookingId) || 0) + 1;
-  if (currentAttempts > 5) {
-    return jsonRes(c, false, null, "Too many incorrect attempts (5/5). Verification locked for 15 minutes. Please request a new completion PIN.", 429);
+  if (currentAttempts > 3) {
+    await db.run("UPDATE bookings SET checkout_otp = NULL, checkout_otp_expires_at = NULL WHERE id = ?", [bookingId]).catch(() => { });
+    return jsonRes(c, false, null, "Too many incorrect attempts (3/3). Verification locked. Please request a new completion PIN.", 400);
   }
 
   // Explicit Business Rule: Check-In OTP CANNOT be used as Checkout OTP!
   if (booking.checkin_otp && inputOtp === String(booking.checkin_otp).trim()) {
     checkOutFailedAttemptsMap.set(bookingId, currentAttempts);
-    return jsonRes(c, false, null, "Invalid PIN. You entered the Check-In PIN. Please ask the customer for their separate 4-digit Completion PIN.", 400);
+    return jsonRes(c, false, null, "Invalid PIN. You entered the Check-In PIN. Please ask the customer for their separate Check-Out PIN.", 400);
   }
 
   const validOtp = String(booking.checkout_otp || booking.completion_pin || "").trim();
@@ -8813,7 +8979,11 @@ const handleVerifyCheckOutOtp = async (c) => {
 
   if (!validOtp || inputOtp !== validOtp || isExpired) {
     checkOutFailedAttemptsMap.set(bookingId, currentAttempts);
-    return jsonRes(c, false, null, `Invalid or expired Completion PIN (Attempt ${currentAttempts}/5). Please ask the customer for their 4-digit Completion PIN.`, 400);
+    if (currentAttempts >= 3) {
+      await db.run("UPDATE bookings SET checkout_otp = NULL, checkout_otp_expires_at = NULL WHERE id = ?", [bookingId]).catch(() => { });
+      return jsonRes(c, false, null, "Too many incorrect attempts. Please request a new completion PIN.", 400);
+    }
+    return jsonRes(c, false, null, `Invalid or expired Completion PIN (Attempt ${currentAttempts}/3). Please ask the customer for their Check-Out PIN.`, 400);
   }
 
   // Clear failed attempts upon success
@@ -8827,75 +8997,84 @@ const handleVerifyCheckOutOtp = async (c) => {
   // Infallible atomic update for completion
   try {
     await db.run(
-      "UPDATE bookings SET status = 'completed', detailed_status = 'COMPLETED', checkout_otp_verified = 1, check_out_time = CURRENT_TIMESTAMP, remaining_amount = ? WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
-      [remainingAmount, bookingId, String(bookingId)]
+      "UPDATE bookings SET status = 'completed', detailed_status = 'COMPLETED', checkout_otp_verified = 1, check_out_time = CURRENT_TIMESTAMP, checkout_otp = NULL, checkout_otp_expires_at = NULL, remaining_amount = 0 WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+      [bookingId, String(bookingId)]
     );
   } catch (sqlErr) {
     console.error("[CRITICAL Check-Out SQL Update Failed]", sqlErr);
     await db.run(
-      "UPDATE bookings SET status = 'completed', detailed_status = 'COMPLETED' WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+      "UPDATE bookings SET status = 'completed', detailed_status = 'COMPLETED', checkout_otp = NULL, checkout_otp_expires_at = NULL, remaining_amount = 0 WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
       [bookingId, String(bookingId)]
-    ).catch(() => {});
+    ).catch(() => { });
   }
 
   // Best-effort updates for tracking columns (safe if columns don't exist)
-  await db.run("UPDATE bookings SET booking_status = 'COMPLETED' WHERE id = ?", [bookingId]).catch(() => {});
-  await db.run("UPDATE bookings SET checkout_verified_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => {});
-  await db.run("UPDATE bookings SET completed_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => {});
-  await db.run("UPDATE bookings SET service_completed_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => {});
-
-  // Record audit history
-  await db.run(
-    "INSERT INTO booking_status_histories (booking_id, status, notes, created_at, updated_at) VALUES (?, 'COMPLETED', 'Check-Out OTP verified. Booking completed and artist released as AVAILABLE.', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
-    [bookingId]
-  ).catch(() => { });
-
-  // Automatically settle booking and release earnings to artist wallet
-  await processBookingSettlement(db, bookingId).catch(() => { });
-
-  // Dispatch completion notifications to Customer and Artist
-  if (booking.customer_id) {
-    dispatchNotification(db, {
-      userId: booking.customer_id,
-      title: "Booking Completed ✨",
-      body: "Your mehndi service is completed! Please rate and review your artist.",
-      type: "BOOKING_COMPLETED",
-      entityId: bookingId,
-      entityType: "booking",
-      channelId: "bookings",
-      deepLink: `mehendigoo://review/${bookingId}`
-    }).catch(() => null);
+  await db.run("UPDATE bookings SET booking_status = 'COMPLETED', payment_status = 'PAID' WHERE id = ?", [bookingId]).catch(() => { });
+  await db.run("UPDATE bookings SET checkout_verified_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => { });
+  await db.run("UPDATE bookings SET completed_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => { });
+  await db.run("UPDATE bookings SET service_completed_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => { });
+  [bookingId, String(bookingId)]
+    ).catch (() => { });
   }
 
-  if (booking.artist_id) {
-    dispatchNotification(db, {
-      userId: booking.artist_id,
-      title: "Payment Received 💰",
-      body: `Booking #${booking.booking_number || bookingId} completed. Earnings credited to your wallet. You are now AVAILABLE for new bookings.`,
-      type: "PAYMENT_SUCCESS",
-      entityId: bookingId,
-      entityType: "booking",
-      channelId: "payments",
-      deepLink: `mehendigoo://artist/wallet`
-    }).catch(() => null);
-  }
+// Best-effort updates for tracking columns (safe if columns don't exist)
+await db.run("UPDATE bookings SET booking_status = 'COMPLETED' WHERE id = ?", [bookingId]).catch(() => { });
+await db.run("UPDATE bookings SET checkout_verified_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => { });
+await db.run("UPDATE bookings SET completed_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => { });
+await db.run("UPDATE bookings SET service_completed_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => { });
 
-  const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
+// Record audit history
+await db.run(
+  "INSERT INTO booking_status_histories (booking_id, status, notes, created_at, updated_at) VALUES (?, 'COMPLETED', 'Check-Out OTP verified. Booking completed and artist released as AVAILABLE.', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+  [bookingId]
+).catch(() => { });
 
-  return jsonRes(c, true, {
-    ...updated,
-    id: bookingId,
-    booking_id: bookingId,
-    bookingId: bookingId,
-    status: "completed",
-    booking_status: "COMPLETED",
-    bookingStatus: "COMPLETED",
-    detailed_status: "COMPLETED",
-    detailedStatus: "COMPLETED",
-    artist_status: "AVAILABLE",
-    service_completed_at: nowIso,
-    completed_at: nowIso
-  }, "Check-Out verified successfully. Booking completed and artist is now AVAILABLE for new bookings!");
+// Automatically settle booking and release earnings to artist wallet
+await processBookingSettlement(db, bookingId).catch(() => { });
+
+// Dispatch completion notifications to Customer and Artist
+if (booking.customer_id) {
+  dispatchNotification(db, {
+    userId: booking.customer_id,
+    title: "Booking Completed ✨",
+    body: "Your mehndi service is completed! Please rate and review your artist.",
+    type: "BOOKING_COMPLETED",
+    entityId: bookingId,
+    entityType: "booking",
+    channelId: "bookings",
+    deepLink: `mehendigoo://review/${bookingId}`
+  }).catch(() => null);
+}
+
+if (booking.artist_id) {
+  dispatchNotification(db, {
+    userId: booking.artist_id,
+    title: "Payment Received 💰",
+    body: `Booking #${booking.booking_number || bookingId} completed. Earnings credited to your wallet. You are now AVAILABLE for new bookings.`,
+    type: "PAYMENT_SUCCESS",
+    entityId: bookingId,
+    entityType: "booking",
+    channelId: "payments",
+    deepLink: `mehendigoo://artist/wallet`
+  }).catch(() => null);
+}
+
+const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
+
+return jsonRes(c, true, {
+  ...updated,
+  id: bookingId,
+  booking_id: bookingId,
+  bookingId: bookingId,
+  status: "completed",
+  booking_status: "COMPLETED",
+  bookingStatus: "COMPLETED",
+  detailed_status: "COMPLETED",
+  detailedStatus: "COMPLETED",
+  artist_status: "AVAILABLE",
+  service_completed_at: nowIso,
+  completed_at: nowIso
+}, "Check-Out verified successfully. Booking completed and artist is now AVAILABLE for new bookings!");
 };
 
 // =========================================================================
@@ -8946,10 +9125,10 @@ const handleGetBookingDetails = async (c) => {
     }
   }
 
-  const normBookingStatus = (isCheckInVerified || rawStatus === "IN_PROGRESS" || detailedStatus === "SERVICE_IN_PROGRESS") 
-    ? "IN_PROGRESS" 
-    : (detailedStatus === "ARTIST_ACCEPTED" || rawStatus === "ACCEPTED" || rawStatus === "ARTIST_ACCEPTED") 
-      ? "CONFIRMED" 
+  const normBookingStatus = (isCheckInVerified || rawStatus === "IN_PROGRESS" || detailedStatus === "SERVICE_IN_PROGRESS")
+    ? "IN_PROGRESS"
+    : (detailedStatus === "ARTIST_ACCEPTED" || rawStatus === "ACCEPTED" || rawStatus === "ARTIST_ACCEPTED")
+      ? "CONFIRMED"
       : rawStatus;
   const code = booking.booking_number || ("MG-" + String(bId).padStart(6, "0"));
   const totalAmt = Number(booking.total_amount || service?.price || 0);
@@ -9217,7 +9396,7 @@ const handleCancelBooking = async (c) => {
   }
 
   // Reverse artist escrow balance upon booking cancellation
-  await processBookingRefund(db, bookingId, reason).catch(() => {});
+  await processBookingRefund(db, bookingId, reason).catch(() => { });
 
   if (b.customer_id) {
     dispatchNotification(db, {
@@ -9282,7 +9461,7 @@ const handleSelectCashPayment = async (c) => {
   const bookingId = Number(body.bookingId || body.booking_id || body.id || 0);
   if (!bookingId) return jsonRes(c, false, null, "Booking ID is required", 400);
 
-  await db.run("UPDATE bookings SET payment_mode = 'CASH' WHERE id = ?", [bookingId]).catch(() => {});
+  await db.run("UPDATE bookings SET payment_mode = 'CASH' WHERE id = ?", [bookingId]).catch(() => { });
   return jsonRes(c, true, { bookingId, payment_mode: "CASH" }, "Cash payment selected successfully");
 };
 
@@ -9296,7 +9475,7 @@ const handleConfirmCashPayment = async (c) => {
   if (b) {
     const total = Number(b.total_amount || 0);
     await db.run("UPDATE bookings SET status = 'completed', booking_status = 'COMPLETED', detailed_status = 'COMPLETED', payment_status = 'paid', advance_paid = ?, remaining_amount = 0, completed_at = CURRENT_TIMESTAMP WHERE id = ?", [total, bookingId]);
-    await processBookingSettlement(db, bookingId).catch(() => {});
+    await processBookingSettlement(db, bookingId).catch(() => { });
   }
   return jsonRes(c, true, { booking_id: bookingId, status: "completed", payment_status: "paid" }, "Cash payment confirmed and service completed");
 };

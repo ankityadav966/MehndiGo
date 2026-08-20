@@ -44,13 +44,14 @@ import {
   removeArtistFavorite,
   getFavorites
 } from "../../services/customer";
+import { createArtistDeepLink } from "../../services/deepLink";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 import { useFocusEffect } from "@react-navigation/native";
 
 export default function ArtistProfileScreen({ route, navigation }) {
-  const artistId = route.params?.artistId || route.params?.id || route.params?.artist_id || 1;
+  const artistId = route.params?.artistId || route.params?.id || route.params?.artist_id;
 
   // Data states
   const [profile, setProfile] = useState(null);
@@ -76,13 +77,17 @@ export default function ArtistProfileScreen({ route, navigation }) {
 
   // Load profile sub-resources
   const loadProfileDetails = React.useCallback(async () => {
+    if (!artistId) {
+      setError("Artist ID is required");
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
-    console.log("[ArtistProfileScreen Debug] Starting loadProfileDetails. Param artistId:", artistId);
     try {
       const prof = await fetchArtistProfile(artistId);
       if (!prof) {
-        console.log("[ArtistProfileScreen Debug] prof is null/undefined!");
         setError("Artist profile not found");
         setLoading(false);
         return;
@@ -180,10 +185,13 @@ export default function ArtistProfileScreen({ route, navigation }) {
   // Share profile triggers
   const handleShareProfile = async () => {
     try {
+      const artistName = profile.user?.name || profile.business_name || "Mehndi Artist";
       const minPrice = services?.[0]?.minimum_price || 1500;
+      const shareUrl = createArtistDeepLink(artistId);
       await Share.share({
-        title: `Check out ${profile.user?.name || "Mehndi Artist"}`,
-        message: `Book ${profile.user?.name || "this Mehndi Artist"} on MehandiGo! Starting price: ₹${minPrice}, experience: ${profile.experience_years} years, rating: ⭐${Number(profile.avg_rating || 0).toFixed(1)} stars. Download MehandiGo!`
+        title: `${artistName} on MehndiGo`,
+        message: `Book ${artistName} on MehndiGo! Starting at ₹${minPrice}, ${profile.experience_years ? `${profile.experience_years} years experience, ` : ""}⭐ ${Number(profile.avg_rating || 0).toFixed(1)} rating.\n\nView Profile: ${shareUrl}`,
+        url: shareUrl
       });
     } catch (e) {
       console.log("Failed to share profile:", e.message);
@@ -218,11 +226,14 @@ export default function ArtistProfileScreen({ route, navigation }) {
 
   // Directs map search to Google Maps Launcher
   const handleOpenGoogleMaps = () => {
-    const lat = profile.latitude || 26.9124;
-    const lng = profile.longitude || 75.7873;
-    const label = encodeURIComponent(profile.user?.name || "Mehndi Artist");
-    const url = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
-    Linking.openURL(url);
+    if (profile?.latitude && profile?.longitude) {
+      const url = `https://www.google.com/maps/search/?api=1&query=${profile.latitude},${profile.longitude}`;
+      Linking.openURL(url);
+    } else {
+      const label = encodeURIComponent(`${profile?.city || ""} ${profile?.user?.name || "Mehndi Artist"}`.trim());
+      const url = `https://www.google.com/maps/search/?api=1&query=${label}`;
+      Linking.openURL(url);
+    }
   };
 
   // Chat action triggers
@@ -395,11 +406,13 @@ export default function ArtistProfileScreen({ route, navigation }) {
             <Text style={styles.titleText}>Professional Mehndi Stylist</Text>
             
             <View style={styles.detailsRow}>
-              <Text style={styles.detailItem}>🎓 {profile.experience_years} Years Exp</Text>
-              <Text style={styles.detailItem}>⚡ {profile.response_time}</Text>
+              <Text style={styles.detailItem}>{profile.experience_years ? `🎓 ${profile.experience_years} Years Exp` : "🎓 Fresh Artist"}</Text>
+              <Text style={styles.detailItem}>{profile.response_time ? `⚡ ${profile.response_time}` : "⚡ Quick response"}</Text>
             </View>
             <View style={styles.detailsRow}>
-              <Text style={styles.detailItem}>👤 {profile.user?.gender || "Female"}</Text>
+              {profile.user?.gender ? (
+                <Text style={styles.detailItem}>👤 {profile.user.gender}</Text>
+              ) : null}
               <Text style={styles.detailItem}>🗣️ {profile.languages || "Hindi, English"}</Text>
             </View>
           </View>
@@ -415,20 +428,20 @@ export default function ArtistProfileScreen({ route, navigation }) {
           </View>
           <View style={styles.divider} />
           <View style={styles.statBox}>
-            <Text style={styles.statVal}>💼 {profile.total_bookings || 10}</Text>
+            <Text style={styles.statVal}>💼 {profile.total_bookings !== undefined ? profile.total_bookings : 0}</Text>
             <Text style={styles.statLabel}>Bookings</Text>
           </View>
           <View style={styles.divider} />
           <View style={styles.statBox}>
-            <Text style={styles.statVal}>🎂 Since</Text>
-            <Text style={styles.statLabel}>{profile.user?.createdAt ? new Date(profile.user.createdAt).getFullYear() : "2024"}</Text>
+            <Text style={styles.statVal}>🎂 Member</Text>
+            <Text style={styles.statLabel}>{profile.user?.createdAt ? new Date(profile.user.createdAt).getFullYear() : "—"}</Text>
           </View>
         </View>
 
         {/* Section: About bio */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>About Artist</Text>
-          <Text style={styles.bioText}>{profile.bio}</Text>
+          <Text style={styles.bioText}>{profile.bio || "No bio added yet."}</Text>
         </View>
 
         {/* Section: Profile Videos */}
@@ -461,12 +474,18 @@ export default function ArtistProfileScreen({ route, navigation }) {
         {/* Section: Location and Map */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Location</Text>
-          <Text style={styles.locationText}>📍 {profile.city || "Jaipur"}, {profile.state || "Rajasthan"}</Text>
+          <Text style={styles.locationText}>
+            {profile.city ? `📍 ${profile.city}${profile.state ? `, ${profile.state}` : ""}` : "📍 Location not specified"}
+          </Text>
           
-          {/* Map Preview Placeholder card */}
+          {/* Map Preview card */}
           <View style={styles.mapCard}>
             <Ionicons name="map-outline" size={32} color={Colors.primary} />
-            <Text style={styles.mapCardText}>Latitude: {profile.latitude || 26.9124}, Longitude: {profile.longitude || 75.7873}</Text>
+            <Text style={styles.mapCardText}>
+              {profile.latitude && profile.longitude
+                ? `Coordinates: ${Number(profile.latitude).toFixed(4)}, ${Number(profile.longitude).toFixed(4)}`
+                : `Service Area: ${profile.city || "Local City"}`}
+            </Text>
             <TouchableOpacity style={styles.mapsBtn} onPress={handleOpenGoogleMaps}>
               <Ionicons name="navigate" size={16} color={Colors.white} style={{ marginRight: 6 }} />
               <Text style={styles.mapsBtnText}>Open in Google Maps</Text>
@@ -491,7 +510,7 @@ export default function ArtistProfileScreen({ route, navigation }) {
                   )}
                 </View>
                 <View style={styles.servicePriceBlock}>
-                  <Text style={styles.servicePrice}>₹{item.minimum_price || item.price || item.starting_price || item.amount || 1800}</Text>
+                  <Text style={styles.servicePrice}>{item.minimum_price ? `₹${item.minimum_price}` : (item.price ? `₹${item.price}` : "Price on request")}</Text>
                   {item.offer_price && (
                     <Text style={styles.offerPrice}>₹{item.offer_price} Offer</Text>
                   )}
@@ -702,7 +721,7 @@ export default function ArtistProfileScreen({ route, navigation }) {
               <View key={`review-${rev.id || 'idx'}-${index}`} style={styles.reviewCard}>
                 <View style={styles.reviewerHeader}>
                   <Image
-                    source={{ uri: rev.reviewer?.profile_image || rev.user?.profile_image || "https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=150" }}
+                    source={{ uri: resolveImage(rev.reviewer?.profile_image || rev.user?.profile_image) || `https://ui-avatars.com/api/?name=${encodeURIComponent(rev.reviewer?.name || rev.user?.name || "Customer")}&background=F3E8FF&color=7C3AED` }}
                     style={styles.reviewerAvatar}
                   />
                   <View style={{ marginLeft: 10, flex: 1 }}>
@@ -786,23 +805,30 @@ export default function ArtistProfileScreen({ route, navigation }) {
       </ScrollView>
 
       {/* Bottom Sticky Action Button */}
-      <View style={styles.bottomBar}>
-        <View style={styles.bottomPriceCol}>
-          <Text style={styles.bottomPriceLabel}>Starting from</Text>
-          <Text style={styles.bottomPriceVal}>₹{profile.starting_price || 999}</Text>
-        </View>
-        <TouchableOpacity
-          style={styles.bookNowBtn}
-          onPress={() => {
-            navigation.navigate("SelectService", {
-              artistId: profile.id,
-              artist: profile
-            });
-          }}
-        >
-          <Text style={styles.bookNowBtnText}>Book Appointment</Text>
-        </TouchableOpacity>
-      </View>
+      {(() => {
+        const calculatedStartingPrice = profile.starting_price || (services.length > 0 ? Math.min(...services.map(s => Number(s.minimum_price || s.price || 0)).filter(p => p > 0)) : null);
+        return (
+          <View style={styles.bottomBar}>
+            <View style={styles.bottomPriceCol}>
+              <Text style={styles.bottomPriceLabel}>Starting from</Text>
+              <Text style={styles.bottomPriceVal}>
+                {calculatedStartingPrice && calculatedStartingPrice !== Infinity ? `₹${calculatedStartingPrice}` : "Price on request"}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.bookNowBtn}
+              onPress={() => {
+                navigation.navigate("SelectService", {
+                  artistId: profile.id,
+                  artist: profile
+                });
+              }}
+            >
+              <Text style={styles.bookNowBtnText}>Book Appointment</Text>
+            </TouchableOpacity>
+          </View>
+        );
+      })()}
 
       {/* Fullscreen Portfolio zoom Carousel Modal */}
       <Modal

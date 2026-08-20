@@ -1,11 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, FlatList, TouchableOpacity, Platform } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator } from 'react-native';
 import { io } from 'socket.io-client';
 import { useAuth } from '../context/AuthContext';
 import { getGlobalStyles } from '../theme/globalStyles';
 import { Colors } from '../theme/colors';
 import { Bell, Check } from 'lucide-react-native';
 import { SOCKET_URL } from '../services/api';
+import { getNotificationHistory, markNotificationAsRead, markAllNotificationsAsRead } from '../services/notificationApi';
+import { handleNotificationNavigation } from '../services/deepLink';
 
 export default function NotificationsScreen() {
   const { user, theme } = useAuth();
@@ -13,7 +15,26 @@ export default function NotificationsScreen() {
   const colors = Colors[theme];
 
   const [notifications, setNotifications] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [socket, setSocket] = useState(null);
+
+  const fetchNotifications = useCallback(async () => {
+    try {
+      const data = await getNotificationHistory(1, 50);
+      const list = data?.notifications || (Array.isArray(data) ? data : []);
+      setNotifications(list);
+    } catch (err) {
+      console.warn("Failed to load notifications:", err.message);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchNotifications();
+  }, [fetchNotifications]);
 
   useEffect(() => {
     if (user?.id) {
@@ -25,11 +46,13 @@ export default function NotificationsScreen() {
       newSocket.on("new_notification", (data) => {
         setNotifications((prev) => [
           {
-            id: Date.now().toString(),
+            id: data.id || Date.now().toString(),
             title: data.title,
             message: data.message,
+            type: data.type || "SYSTEM",
+            data: data.data || null,
             is_read: false,
-            createdAt: new Date().toISOString(),
+            createdAt: data.createdAt || new Date().toISOString(),
           },
           ...prev,
         ]);
@@ -41,21 +64,48 @@ export default function NotificationsScreen() {
     }
   }, [user]);
 
-  const markAllAsRead = () => {
-    setNotifications((prev) =>
-      prev.map((n) => ({ ...n, is_read: true }))
-    );
+  const handleRefresh = () => {
+    setRefreshing(true);
+    fetchNotifications();
+  };
+
+  const markAllAsRead = async () => {
+    try {
+      await markAllNotificationsAsRead();
+      setNotifications((prev) =>
+        prev.map((n) => ({ ...n, is_read: true }))
+      );
+    } catch (err) {
+      console.warn("Error marking all read:", err.message);
+    }
+  };
+
+  const handleNotificationPress = async (item) => {
+    try {
+      if (!item.is_read) {
+        await markNotificationAsRead(item.id);
+        setNotifications((prev) =>
+          prev.map((n) => (n.id === item.id ? { ...n, is_read: true } : n))
+        );
+      }
+    } catch (err) {
+      console.warn("Error marking notification as read:", err.message);
+    }
   };
 
   const unreadCount = notifications.filter((n) => !n.is_read).length;
 
   const renderNotification = ({ item }) => (
-    <View style={[styles.glassPanel, { 
-      marginBottom: 12, 
-      backgroundColor: item.is_read ? colors.bgSecondary : colors.bgTertiary,
-      borderLeftWidth: item.is_read ? 0 : 4,
-      borderLeftColor: colors.accent 
-    }]}>
+    <TouchableOpacity
+      activeOpacity={0.8}
+      onPress={() => handleNotificationPress(item)}
+      style={[styles.glassPanel, { 
+        marginBottom: 12, 
+        backgroundColor: item.is_read ? colors.bgSecondary : colors.bgTertiary,
+        borderLeftWidth: item.is_read ? 0 : 4,
+        borderLeftColor: colors.accent 
+      }]}
+    >
       <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginBottom: 4 }}>
         {item.title}
       </Text>
@@ -65,8 +115,16 @@ export default function NotificationsScreen() {
       <Text style={{ fontSize: 10, color: colors.textSecondary }}>
         {new Date(item.createdAt).toLocaleString()}
       </Text>
-    </View>
+    </TouchableOpacity>
   );
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={colors.accent} />
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { padding: 16 }]}>
@@ -90,8 +148,11 @@ export default function NotificationsScreen() {
 
       <FlatList
         data={notifications}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => String(item.id)}
         renderItem={renderNotification}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.accent} />
+        }
         ListEmptyComponent={
           <View style={{ alignItems: 'center', marginTop: 60 }}>
             <Bell size={64} color={colors.textSecondary} style={{ marginBottom: 16, opacity: 0.5 }} />

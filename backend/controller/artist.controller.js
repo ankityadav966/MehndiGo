@@ -222,6 +222,29 @@ async function deletePortfolio(req, res) {
   }
 }
 
+async function reorderPortfolio(req, res) {
+  try {
+    const items = req.body.items || req.body;
+    const response = await ArtistService.reorderPortfolio(req.user.id, items);
+    return res.status(200).json(SuccessResponse("Portfolio display order updated", response));
+  } catch (error) {
+    return res
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
+  }
+}
+
+async function setCoverImage(req, res) {
+  try {
+    const response = await ArtistService.setCoverImage(req.user.id, req.body);
+    return res.status(200).json(SuccessResponse("Cover image updated", response));
+  } catch (error) {
+    return res
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
+  }
+}
+
 // Booking management
 async function createBooking(req, res) {
   try {
@@ -502,6 +525,8 @@ module.exports = {
   getPortfolioById,
   updatePortfolio,
   deletePortfolio,
+  reorderPortfolio,
+  setCoverImage,
   getUploadSignature,
   uploadPortfolioImage,
   uploadPortfolioMedia,

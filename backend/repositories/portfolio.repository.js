@@ -69,52 +69,30 @@ class PortfolioRepository
 
 
 
-  async getArtistPortfolio(
-    artist_id
-  ) {
-
-    return await db
-      .Portfolio
-      .findAll({
-
-        where: {
-          artist_id,
-          title: { [db.Sequelize.Op.ne]: null }
-        },
-
-        include: [
-
-          {
-            model:
-              db.ArtistProfile,
-
-            as: "artist",
-
-            include: [
-
-              {
-                model:
-                  db.User,
-
-                as: "user",
-
-                attributes: [
-
-                  "id",
-
-                  "name",
-
-                  "phone",
-                ],
-              },
-            ],
-          },
-        ],
-
-        order: [
-          ["createdAt", "DESC"],
-        ],
-      });
+  async getArtistPortfolio(artist_id) {
+    const artistIds = Array.isArray(artist_id) ? artist_id : [artist_id];
+    return await db.Portfolio.findAll({
+      where: {
+        artist_id: { [db.Sequelize.Op.in]: artistIds }
+      },
+      include: [
+        {
+          model: db.ArtistProfile,
+          as: "artist",
+          include: [
+            {
+              model: db.User,
+              as: "user",
+              attributes: ["id", "name", "phone", "role"]
+            }
+          ]
+        }
+      ],
+      order: [
+        ["display_order", "ASC"],
+        ["createdAt", "DESC"]
+      ]
+    });
   }
 }
 

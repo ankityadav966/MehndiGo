@@ -7,28 +7,22 @@ class NotificationService {
    */
   async sendToUser(userId, title, body, data = {}) {
     try {
-      // 1. Create database notification record
+      const allowedTypes = ["BOOKING", "PAYMENT", "SYSTEM", "PROMOTION", "CHAT"];
+      let normalizedType = "SYSTEM";
+      if (data.type && allowedTypes.includes(String(data.type).toUpperCase())) {
+        normalizedType = String(data.type).toUpperCase();
+      }
+
+      // 1. Create database notification record (afterCreate hook dispatches push & socket)
       const notif = await db.Notification.create({
         user_id: userId,
         title,
         message: body,
-        type: data.type || "INFO",
-        metadata: data,
+        type: normalizedType,
+        data: data,
         is_read: false
       });
 
-      // 2. Fetch active push tokens
-      const tokenRecords = await db.NotificationToken.findAll({
-        where: { user_id: userId }
-      });
-
-      if (tokenRecords.length > 0) {
-        const tokens = tokenRecords.map(t => t.token);
-        await pushService.sendPushNotification(tokens, title, body, {
-          ...data,
-          notificationId: notif.id
-        });
-      }
       return notif;
     } catch (err) {
       console.error(`Failed to send notification to user ${userId}:`, err.message);
