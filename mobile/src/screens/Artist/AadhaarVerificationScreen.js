@@ -1,14 +1,15 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as ImagePicker from "expo-image-picker";
 import { useState } from "react";
-import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Image, StyleSheet, Text, TextInput, TouchableOpacity, View, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import CustomButton from "../../components/CustomButton";
 import { useArtistOnboarding } from "../../context/ArtistOnboardingContext";
 
 export default function AadhaarVerificationScreen({ navigation }) {
-  const { aadhaarFiles, updateAadhaarFiles } = useArtistOnboarding();
+  const { aadhaarFiles, updateAadhaarFiles, artistDetails, updateArtistDetails } = useArtistOnboarding();
+  const [aadhaarNumber, setAadhaarNumber] = useState(artistDetails?.aadhaarNumber || "");
   const [error, setError] = useState("");
 
   const pickImage = async (side) => {
@@ -29,69 +30,104 @@ export default function AadhaarVerificationScreen({ navigation }) {
     }
   };
 
-  const openCamera = async (side) => {
+  const handleValidateAndContinue = () => {
     setError("");
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) {
-      setError("Camera permission is required to capture Aadhaar image");
+    const cleanNumber = String(aadhaarNumber || "").replace(/[^0-9]/g, "");
+
+    if (!cleanNumber) {
+      const msg = "Please enter your 12-digit Aadhaar Number";
+      setError(msg);
+      if (global.showToast) global.showToast(msg, "warning");
       return;
     }
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['images'],
-      quality: 0.8,
-      allowsEditing: true,
-      aspect: [4, 3],
-    });
-    if (!result.canceled) {
-      updateAadhaarFiles({ [side]: result.assets[0].uri });
-    }
-  };
 
-  const handleUpload = (side) => {
-    pickImage(side);
+    if (cleanNumber.length !== 12) {
+      const msg = "Aadhaar number must be exactly 12 numeric digits";
+      setError(msg);
+      if (global.showToast) global.showToast(msg, "warning");
+      return;
+    }
+
+    if (!aadhaarFiles?.front) {
+      const msg = "Please upload Aadhaar card Front photo";
+      setError(msg);
+      if (global.showToast) global.showToast(msg, "warning");
+      return;
+    }
+
+    if (!aadhaarFiles?.back) {
+      const msg = "Please upload Aadhaar card Back photo";
+      setError(msg);
+      if (global.showToast) global.showToast(msg, "warning");
+      return;
+    }
+
+    updateArtistDetails({ aadhaarNumber: cleanNumber });
+    navigation.navigate("ReviewSubmit");
   };
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
-        <Text style={styles.heading}>Verify your Aadhaar</Text>
-        <Text style={styles.subHeading}>Upload clear photo of your Aadhaar card</Text>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <View style={styles.container}>
+          <Text style={styles.heading}>Verify your Aadhaar</Text>
+          <Text style={styles.subHeading}>Provide your 12-digit Aadhaar number and clear photos for identity verification.</Text>
 
-        <View style={styles.section}>
-          <Text style={styles.label}>Front Side</Text>
-          <TouchableOpacity activeOpacity={0.8} style={styles.uploadBox} onPress={() => handleUpload("front")}>
-            {aadhaarFiles?.front ? (
-              <Image source={{ uri: aadhaarFiles.front }} style={styles.uploadedImage} />
-            ) : (
-              <>
-                <Ionicons name="cloud-upload-outline" size={42} color={Colors.primary} />
-                <Text style={styles.uploadTitle}>Upload Front Side</Text>
-                <Text style={styles.uploadDescription}>Tap here to upload Aadhaar front image</Text>
-              </>
-            )}
-          </TouchableOpacity>
+          {/* Aadhaar Number Input */}
+          <View style={styles.section}>
+            <Text style={styles.label}>12-Digit Aadhaar Number <Text style={styles.reqStar}>*</Text></Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. 5412 8963 2145"
+              placeholderTextColor={Colors.placeholder || "#999"}
+              keyboardType="numeric"
+              maxLength={12}
+              value={aadhaarNumber}
+              onChangeText={(text) => {
+                setAadhaarNumber(text.replace(/[^0-9]/g, ""));
+                setError("");
+              }}
+            />
+          </View>
+
+          {/* Front Side Upload */}
+          <View style={styles.section}>
+            <Text style={styles.label}>Aadhaar Front Photo <Text style={styles.reqStar}>*</Text></Text>
+            <TouchableOpacity activeOpacity={0.8} style={styles.uploadBox} onPress={() => pickImage("front")}>
+              {aadhaarFiles?.front ? (
+                <Image source={{ uri: aadhaarFiles.front }} style={styles.uploadedImage} />
+              ) : (
+                <>
+                  <Ionicons name="cloud-upload-outline" size={38} color={Colors.primary} />
+                  <Text style={styles.uploadTitle}>Upload Front Side</Text>
+                  <Text style={styles.uploadDescription}>Tap here to upload front image</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Back Side Upload */}
+          <View style={styles.section}>
+            <Text style={styles.label}>Aadhaar Back Photo <Text style={styles.reqStar}>*</Text></Text>
+            <TouchableOpacity activeOpacity={0.8} style={styles.uploadBox} onPress={() => pickImage("back")}>
+              {aadhaarFiles?.back ? (
+                <Image source={{ uri: aadhaarFiles.back }} style={styles.uploadedImage} />
+              ) : (
+                <>
+                  <Ionicons name="cloud-upload-outline" size={38} color={Colors.primary} />
+                  <Text style={styles.uploadTitle}>Upload Back Side</Text>
+                  <Text style={styles.uploadDescription}>Tap here to upload back image</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
         </View>
-
-        <View style={styles.section}>
-          <Text style={styles.label}>Back Side</Text>
-          <TouchableOpacity activeOpacity={0.8} style={styles.uploadBox} onPress={() => handleUpload("back")}>
-            {aadhaarFiles?.back ? (
-              <Image source={{ uri: aadhaarFiles.back }} style={styles.uploadedImage} />
-            ) : (
-              <>
-                <Ionicons name="cloud-upload-outline" size={42} color={Colors.primary} />
-                <Text style={styles.uploadTitle}>Upload Back Side</Text>
-                <Text style={styles.uploadDescription}>Tap here to upload Aadhaar back image</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
-
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
-      </View>
+      </ScrollView>
 
       <View style={styles.footer}>
-        <CustomButton title="Continue" onPress={() => navigation.navigate("ReviewSubmit")} />
+        <CustomButton title="Continue" onPress={handleValidateAndContinue} />
       </View>
     </SafeAreaView>
   );
@@ -99,15 +135,28 @@ export default function AadhaarVerificationScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: Colors.white },
+  scrollContent: { paddingBottom: 20 },
   container: { flex: 1, paddingHorizontal: 20, paddingTop: 15 },
-  heading: { fontSize: 24, fontWeight: "700", color: Colors.text, marginBottom: 6 },
-  subHeading: { fontSize: 14, color: Colors.textSecondary, marginBottom: 25 },
-  section: { marginBottom: 20 },
+  heading: { fontSize: 22, fontWeight: "700", color: Colors.text, marginBottom: 6 },
+  subHeading: { fontSize: 13, color: Colors.textSecondary, marginBottom: 20, lineHeight: 18 },
+  section: { marginBottom: 18 },
   label: { fontSize: 14, fontWeight: "600", color: Colors.text, marginBottom: 8 },
-  uploadBox: { height: 180, borderWidth: 1.5, borderStyle: "dashed", borderColor: Colors.primary, borderRadius: 16, backgroundColor: Colors.primaryLight + "30", justifyContent: "center", alignItems: "center", paddingHorizontal: 20, overflow: "hidden" },
-  uploadTitle: { marginTop: 12, fontSize: 15, fontWeight: "600", color: Colors.text },
-  uploadDescription: { marginTop: 5, fontSize: 12, color: Colors.textSecondary, textAlign: "center" },
+  reqStar: { color: Colors.error || "#FF3B30" },
+  input: {
+    height: 50,
+    borderWidth: 1,
+    borderColor: Colors.border || "#E0E0E0",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    color: Colors.text,
+    backgroundColor: Colors.inputBackground || "#FAFAFA",
+    letterSpacing: 2,
+  },
+  uploadBox: { height: 150, borderWidth: 1.5, borderStyle: "dashed", borderColor: Colors.primary, borderRadius: 16, backgroundColor: Colors.primaryLight + "30", justifyContent: "center", alignItems: "center", paddingHorizontal: 20, overflow: "hidden" },
+  uploadTitle: { marginTop: 8, fontSize: 14, fontWeight: "600", color: Colors.text },
+  uploadDescription: { marginTop: 4, fontSize: 12, color: Colors.textSecondary, textAlign: "center" },
   uploadedImage: { width: "100%", height: "100%", borderRadius: 16 },
   errorText: { color: Colors.error || "#FF3B30", fontSize: 12, textAlign: "center", marginTop: 8 },
-  footer: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 20, backgroundColor: Colors.white },
+  footer: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 20, backgroundColor: Colors.white, borderTopWidth: 1, borderTopColor: "#F0F0F0" },
 });

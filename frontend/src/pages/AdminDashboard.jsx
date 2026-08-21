@@ -1276,9 +1276,14 @@ const AdminDashboard = ({ showToast }) => {
                             </td>
                             <td style={{ padding: "1rem" }}>
                               {statusStr === "PENDING" ? (
-                                <button className="btn btn-primary" style={{ padding: "0.3rem 0.6rem", fontSize: "0.8rem" }} onClick={() => handleApprove(a.id || a.user_id)}>
-                                  <Check style={{ width: "14px" }} /> Approve
-                                </button>
+                                <div style={{ display: "flex", gap: "0.4rem" }}>
+                                  <button className="btn btn-primary" style={{ padding: "0.3rem 0.6rem", fontSize: "0.8rem" }} onClick={() => handleApprove(a.id || a.user_id)}>
+                                    <Check style={{ width: "14px" }} /> Approve
+                                  </button>
+                                  <button className="btn btn-danger" style={{ padding: "0.3rem 0.6rem", fontSize: "0.8rem" }} onClick={() => setRejectId(a.id || a.user_id)}>
+                                    <X style={{ width: "14px" }} /> Reject
+                                  </button>
+                                </div>
                               ) : statusStr === "APPROVED" ? (
                                 <button className="btn btn-danger" style={{ padding: "0.3rem 0.6rem", fontSize: "0.8rem" }} onClick={() => setRejectId(a.id || a.user_id)}>
                                   <X style={{ width: "14px" }} /> Suspend

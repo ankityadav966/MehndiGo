@@ -13,6 +13,7 @@ export default function PersonalDetailsScreen({ navigation, route }) {
 
   const [bio, setBio] = useState(artistDetails.bio || "");
   const [experienceYears, setExperienceYears] = useState(artistDetails.experienceYears || "");
+  const [startingPrice, setStartingPrice] = useState(artistDetails.startingPrice || "1500");
   const [homeService, setHomeService] = useState(artistDetails.homeService !== false);
   const [salonService, setSalonService] = useState(artistDetails.salonService || false);
   const [city, setCity] = useState(artistDetails.city || "");
@@ -91,6 +92,7 @@ export default function PersonalDetailsScreen({ navigation, route }) {
     updateArtistDetails({
       bio: bio.trim(),
       experienceYears,
+      startingPrice: Number(startingPrice) || 1500,
       homeService,
       salonService,
       city: city.trim(),
@@ -140,6 +142,18 @@ export default function PersonalDetailsScreen({ navigation, route }) {
             onChangeText={(t) => { setExperienceYears(t); setErrors((p) => ({ ...p, experienceYears: "" })); }}
           />
           {errors.experienceYears ? <Text style={styles.errorText}>{errors.experienceYears}</Text> : null}
+        </View>
+
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Starting Service Price (₹)</Text>
+          <TextInput
+            style={[styles.input, errors.startingPrice ? styles.inputError : null]}
+            value={String(startingPrice || "")}
+            placeholderTextColor={Colors.placeholder}
+            placeholder="e.g. 1500"
+            keyboardType="numeric"
+            onChangeText={(t) => { setStartingPrice(t.replace(/[^0-9]/g, "")); setErrors((p) => ({ ...p, startingPrice: "" })); }}
+          />
         </View>
 
         <View style={styles.formGroup}>

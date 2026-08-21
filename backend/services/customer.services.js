@@ -357,7 +357,16 @@ class CustomerService {
   }
 
   async getArtistById(artistId) {
-    const artist = await db.ArtistProfile.findByPk(artistId, {
+    if (!artistId || isNaN(Number(artistId))) {
+      return null;
+    }
+    const artist = await db.ArtistProfile.findOne({
+      where: {
+        [db.Sequelize.Op.or]: [
+          { id: Number(artistId) },
+          { user_id: Number(artistId) }
+        ]
+      },
       include: [
         {
           model: db.User,
@@ -392,22 +401,39 @@ class CustomerService {
     if (!artist) return null;
 
     const data = artist.toJSON();
+    delete data.aadhaar_number;
+    delete data.aadhaar_front;
+    delete data.aadhaar_back;
+    delete data.pan_number;
+    delete data.bank_account_number;
+    delete data.selfie_image;
+
     data.response_time = artist.id % 2 === 0 ? "15 mins" : "within 2 hours";
-    data.languages = "Hindi, English, Rajasthani";
+    data.languages = data.languages || "Hindi, English, Rajasthani";
     return data;
   }
 
   async getArtistServices(artistId) {
     if (!artistId || isNaN(Number(artistId))) {
-      throw new AppError("Valid artist ID is required", 400);
+      return [];
     }
-    const artist = await db.ArtistProfile.findByPk(Number(artistId));
+    const artist = await db.ArtistProfile.findOne({
+      where: {
+        [db.Sequelize.Op.or]: [
+          { id: Number(artistId) },
+          { user_id: Number(artistId) }
+        ]
+      }
+    });
     if (!artist) {
-      throw new AppError("Artist not found", 404);
+      return [];
     }
 
     const services = await db.Service.findAll({
-      where: { artist_id: Number(artistId), is_active: true },
+      where: {
+        artist_id: { [db.Sequelize.Op.in]: [artist.id, artist.user_id] },
+        is_active: true
+      },
       order: [["id", "ASC"]]
     });
     return services;

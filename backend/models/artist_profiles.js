@@ -90,6 +90,12 @@ module.exports = (
         defaultValue: false,
       },
 
+      starting_price: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        defaultValue: 1500,
+      },
+
       avg_rating: {
         type: DataTypes.FLOAT,
         allowNull: false,

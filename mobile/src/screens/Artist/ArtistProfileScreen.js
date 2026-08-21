@@ -450,9 +450,11 @@ export default function ArtistProfileScreen({ navigation }) {
                 source={
                   profile?.user?.profile_image
                     ? { uri: resolveImage(profile.user.profile_image) }
-                    : user?.profile_image || user?.avatar
-                      ? { uri: resolveImage(user.profile_image || user.avatar) }
-                      : require("../../assets/images/Henna.jpg")
+                    : (profile?.selfie_image
+                      ? { uri: resolveImage(profile.selfie_image) }
+                      : (user?.profile_image || user?.avatar
+                        ? { uri: resolveImage(user.profile_image || user.avatar) }
+                        : require("../../assets/images/Henna.jpg")))
                 }
                 style={styles.avatar}
               />
@@ -460,10 +462,20 @@ export default function ArtistProfileScreen({ navigation }) {
 
             <View style={styles.profileMainInfo}>
               <Text style={styles.name}>
-                {profile?.name || user?.name || "Mehendi Artist"}
+                {profile?.user?.name || profile?.name || user?.name || "Mehendi Artist"}
               </Text>
-              {profile?.email || user?.email ? (
-                <Text style={styles.email}>{profile?.email || user?.email}</Text>
+              {profile?.user?.email || profile?.email || user?.email ? (
+                <Text style={styles.email}>{profile?.user?.email || profile?.email || user?.email}</Text>
+              ) : null}
+              {profile?.city || profile?.location ? (
+                <Text style={{ fontSize: 12, color: Colors.textSecondary, marginTop: 2 }} numberOfLines={1}>
+                  📍 {profile?.city ? `${profile.city}${profile?.state ? `, ${profile.state}` : ''}` : profile?.location}
+                </Text>
+              ) : null}
+              {profile?.starting_price ? (
+                <Text style={{ fontSize: 13, color: Colors.primary, fontWeight: "700", marginTop: 3 }}>
+                  Starts at ₹{profile.starting_price}
+                </Text>
               ) : null}
               {profile?.rating ? (
                 <View style={styles.ratingRow}>
@@ -551,6 +563,93 @@ export default function ArtistProfileScreen({ navigation }) {
               <Ionicons name="add" size={18} color={Colors.white} />
               <Text style={styles.addPortfolioText}>Add Portfolio</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Professional Details & Services Card */}
+        <View style={styles.detailsCard}>
+          <View style={styles.cardHeaderRow}>
+            <Text style={styles.cardSectionTitle}>Professional Details & KYC</Text>
+            <TouchableOpacity onPress={() => navigation.navigate("EditProfile")}>
+              <Text style={styles.cardActionText}>Edit</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Service Badges & Pricing */}
+          <View style={styles.badgeRow}>
+            {profile?.starting_price ? (
+              <View style={[styles.infoBadge, { backgroundColor: "#FFF0F0", borderColor: "#FFD0D0" }]}>
+                <Ionicons name="pricetag" size={13} color={Colors.primary} />
+                <Text style={[styles.infoBadgeText, { color: Colors.primary, fontWeight: "700" }]}>
+                  Starts at ₹{profile.starting_price}
+                </Text>
+              </View>
+            ) : null}
+
+            {profile?.home_service !== false ? (
+              <View style={[styles.infoBadge, { backgroundColor: "#E6F4EA", borderColor: "#CEEAD6" }]}>
+                <Ionicons name="home" size={13} color={Colors.success} />
+                <Text style={[styles.infoBadgeText, { color: Colors.success }]}>Home Service</Text>
+              </View>
+            ) : null}
+
+            {profile?.salon_service ? (
+              <View style={[styles.infoBadge, { backgroundColor: "#E8F0FE", borderColor: "#D2E3FC" }]}>
+                <Ionicons name="business" size={13} color="#1A73E8" />
+                <Text style={[styles.infoBadgeText, { color: "#1A73E8" }]}>Studio / Salon</Text>
+              </View>
+            ) : null}
+
+            <View style={[styles.infoBadge, { backgroundColor: profile?.is_available !== false ? "#E6F4EA" : "#FEF3C7", borderColor: profile?.is_available !== false ? "#CEEAD6" : "#FDE68A" }]}>
+              <View style={[styles.statusDot, { backgroundColor: profile?.is_available !== false ? Colors.success : Colors.warning }]} />
+              <Text style={[styles.infoBadgeText, { color: profile?.is_available !== false ? Colors.success : "#B45309" }]}>
+                {profile?.is_available !== false ? "Accepting Bookings" : "Unavailable"}
+              </Text>
+            </View>
+          </View>
+
+          {/* Detailed Location & Address */}
+          <View style={styles.detailItemRow}>
+            <Ionicons name="location-outline" size={18} color={Colors.textSecondary} style={styles.detailIcon} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.detailLabel}>Studio Location & Address</Text>
+              <Text style={styles.detailValue}>
+                {profile?.location || profile?.locality
+                  ? `${profile.location || profile.locality}${profile?.city ? `, ${profile.city}` : ''}${profile?.state ? `, ${profile.state}` : ''}${profile?.pincode ? ` - ${profile.pincode}` : ''}`
+                  : (profile?.city ? `${profile.city}${profile?.state ? `, ${profile.state}` : ''}${profile?.pincode ? ` - ${profile.pincode}` : ''}` : "Location not specified")}
+              </Text>
+            </View>
+          </View>
+
+          {/* Languages Spoken */}
+          {profile?.languages ? (
+            <View style={styles.detailItemRow}>
+              <Ionicons name="language-outline" size={18} color={Colors.textSecondary} style={styles.detailIcon} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.detailLabel}>Languages Spoken</Text>
+                <Text style={styles.detailValue}>{profile.languages}</Text>
+              </View>
+            </View>
+          ) : null}
+
+          {/* Verified KYC Identity Box */}
+          <View style={styles.kycSectionBox}>
+            <View style={styles.kycLeft}>
+              <View style={styles.kycShieldCircle}>
+                <Ionicons name="shield-checkmark" size={18} color={Colors.success} />
+              </View>
+              <View>
+                <Text style={styles.kycTitle}>Government ID (Aadhaar KYC)</Text>
+                <Text style={styles.kycMaskedNumber}>
+                  {profile?.aadhaar_number || "•••• •••• Verified"}
+                </Text>
+              </View>
+            </View>
+            <View style={[styles.kycBadgePill, { backgroundColor: profile?.verification_status === "APPROVED" ? "#E6F4EA" : "#FEF3C7" }]}>
+              <Text style={[styles.kycBadgeText, { color: profile?.verification_status === "APPROVED" ? Colors.success : "#B45309" }]}>
+                {profile?.verification_status || "PENDING"}
+              </Text>
+            </View>
           </View>
         </View>
 
@@ -1084,5 +1183,126 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginTop: 4,
     textAlign: "center",
+  },
+  detailsCard: {
+    backgroundColor: Colors.white,
+    borderRadius: 16,
+    padding: 16,
+    marginHorizontal: 16,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    shadowColor: Colors.shadow,
+    shadowOpacity: 0.03,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
+  },
+  cardHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  cardSectionTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: Colors.text,
+  },
+  cardActionText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: Colors.primary,
+  },
+  badgeRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 14,
+  },
+  infoBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  infoBadgeText: {
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  statusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+  detailItemRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border + "60",
+  },
+  detailIcon: {
+    marginTop: 2,
+  },
+  detailLabel: {
+    fontSize: 11,
+    fontWeight: "500",
+    color: Colors.textSecondary,
+  },
+  detailValue: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: Colors.text,
+    marginTop: 2,
+  },
+  kycSectionBox: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "#F8FAFC",
+    padding: 12,
+    borderRadius: 12,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: Colors.border + "80",
+  },
+  kycLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  kycShieldCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#E6F4EA",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  kycTitle: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: Colors.textSecondary,
+  },
+  kycMaskedNumber: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: Colors.text,
+    marginTop: 1,
+  },
+  kycBadgePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  kycBadgeText: {
+    fontSize: 10,
+    fontWeight: "700",
+    textTransform: "uppercase",
   },
 });

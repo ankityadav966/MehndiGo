@@ -93,16 +93,31 @@ class AuthService {
     if (!name || !String(name).trim()) {
       throw new AppError("Full Name is required", 400);
     }
+    if (!email || !String(email).trim()) {
+      throw new AppError("Email Address is required", 400);
+    }
 
-    const targetEmail = String(email).trim().toLowerCase();
-    const user = await UserRepositor.getOne({ email: targetEmail });
+    const trimmedEmail = String(email).trim().toLowerCase();
+    const cleanPhone = sanitizePhone(phone);
+    const trimmedName = String(name).trim();
+    const normalizedRole = (String(role).toUpperCase() === "ARTIST") ? "ARTIST" : "USER";
+
+    // Check if email already registered and verified
+    const existingUser = await UserRepositor.getOne({ email: trimmedEmail });
+    if (existingUser && existingUser.is_verified) {
+      throw new AppError("Email address is already registered. Please log in.", 400);
+    }
+
     const otp = String(data.otp || data.code || Math.floor(100000 + Math.random() * 900000)).trim();
 
     // Rate Limit check
     const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
     const recentOtpsCount = await db.Otp.count({
       where: {
-        [Op.or]: [{ email: trimmedEmail }, { phone: cleanPhone }],
+        [Op.or]: [
+          { email: trimmedEmail },
+          ...(cleanPhone ? [{ phone: cleanPhone }] : [])
+        ],
         createdAt: { [Op.gte]: tenMinutesAgo }
       }
     });
@@ -111,25 +126,34 @@ class AuthService {
       throw new AppError("Too many OTP requests. Please try again after 10 minutes.", 429);
     }
 
-    // Save OTP to database (even if user is new, so verifyOtp can verify it)
+    // Store registration payload in OTP record
+    const registrationPayload = JSON.stringify({
+      name: trimmedName,
+      email: trimmedEmail,
+      phone: cleanPhone,
+      role: normalizedRole,
+      password: password ? hashPassword(password) : null
+    });
+
     await OtpRepositor.create({
-      user_id: user ? user.id : null,
-      phone: user ? user.phone : null,
-      email: targetEmail,
+      user_id: existingUser ? existingUser.id : null,
+      phone: cleanPhone,
+      email: trimmedEmail,
       otp,
+      registration_payload: registrationPayload,
       expires_at: new Date(Date.now() + 5 * 60 * 1000), // 5 min expiry
       verified: false
     });
 
-    console.log(`[AUTH SERVICE] Sending OTP ${otp} to recipient ${targetEmail}...`);
+    console.log(`[AUTH SERVICE] Sending Registration OTP ${otp} to recipient ${trimmedEmail}...`);
 
-    // Send via SMTP using Gmail App Password credentials
-    await sendOtpEmail(targetEmail, otp, user ? (user.name || "Mehndi User") : "Mehndi User");
+    await sendOtpEmail(trimmedEmail, otp, trimmedName);
 
     return {
-      exists: !!user,
-      email: targetEmail,
-      role: user ? user.role : "USER",
+      exists: !!existingUser,
+      email: trimmedEmail,
+      phone: cleanPhone,
+      role: normalizedRole,
       otp,
     };
   }
@@ -251,7 +275,8 @@ class AuthService {
             experience_years: 1,
             home_service: true,
             salon_service: false,
-            verification_status: "PENDING"
+            verification_status: "PENDING",
+            is_available: false
           },
           transaction: t
         });
@@ -447,6 +472,19 @@ class AuthService {
         is_verified: true,
         last_login_at: new Date()
       });
+      if (user.role === "ARTIST") {
+        await db.ArtistProfile.findOrCreate({
+          where: { user_id: user.id },
+          defaults: {
+            bio: "",
+            experience_years: 1,
+            home_service: true,
+            salon_service: false,
+            verification_status: "PENDING",
+            is_available: false
+          }
+        });
+      }
     } else {
       const isNewDay = !user.last_login_at || new Date(user.last_login_at).toDateString() !== new Date().toDateString();
       if (isNewDay) {
@@ -547,7 +585,8 @@ class AuthService {
             experience_years: 1,
             home_service: true,
             salon_service: false,
-            verification_status: "PENDING"
+            verification_status: "PENDING",
+            is_available: false
           },
           transaction: t
         });

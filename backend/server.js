@@ -49,6 +49,7 @@ app.use("/uploads", secureUploadsHandler);
 app.use(checkBlockedIP);
 app.use(sanitizeInputs);
 app.use("/auth", require("./routes/auth.routes"));
+app.use("/admin", require("./routes/v1/admin.routes"));
 app.use("/analytics", require("./routes/analytics.routes"));
 app.use("/security", require("./routes/security.routes"));
 app.use("/customer", require("./routes/customer.routes"));

@@ -96,12 +96,18 @@ class ArtistService {
       }
     }
 
+    if (data.selfie_image || data.profile_image || data.avatar) {
+      const profileImg = data.selfie_image || data.profile_image || data.avatar;
+      await UserRepositor.update(user_id, { profile_image: profileImg, avatar: profileImg });
+    }
+
     // Check if artist profile already exists (e.g. created during OTP registration)
     const existingProfile = await ArtistProfileRepositor.getOne({ user_id });
     if (existingProfile) {
       const updatePayload = {
         bio: data.bio !== undefined ? data.bio : existingProfile.bio,
         experience_years: data.experience_years !== undefined ? Number(data.experience_years) : existingProfile.experience_years,
+        starting_price: data.starting_price !== undefined ? Number(data.starting_price) : (existingProfile.starting_price || 1500),
         home_service: data.home_service !== undefined ? Boolean(data.home_service) : existingProfile.home_service,
         salon_service: data.salon_service !== undefined ? Boolean(data.salon_service) : existingProfile.salon_service,
         location: data.location !== undefined ? data.location : existingProfile.location,
@@ -121,17 +127,57 @@ class ArtistService {
       };
 
       await ArtistProfileRepositor.update(existingProfile.id, updatePayload);
+
+      // Auto-create initial base service if artist has no services yet
+      try {
+        const existingServices = await ServiceRepositor.getAll({ artist_id: user_id });
+        if (!existingServices || existingServices.length === 0) {
+          await ServiceRepositor.create({
+            artist_id: user_id,
+            specialization_name: "Bridal & Party Mehndi",
+            category: "Bridal Mehndi",
+            description: data.bio || "Custom handcrafted mehndi design service",
+            minimum_price: Number(data.starting_price) || 1500,
+            maximum_price: (Number(data.starting_price) || 1500) * 3,
+            duration_minutes: 120,
+            is_home_service: Boolean(data.home_service !== false),
+            is_salon_service: Boolean(data.salon_service),
+            is_active: true,
+          });
+        }
+      } catch (svcErr) {
+        console.warn("[createArtistProfile] Initial service auto-creation notice:", svcErr.message);
+      }
+
       return await this.getArtistDetails(user_id);
     }
 
     const profile = await ArtistProfileRepositor.createProfile({
       ...data,
+      starting_price: Number(data.starting_price) || 1500,
       verification_status: "PENDING",
       is_available: false,
       rejection_reason: null,
       latitude: data.latitude || 26.9124,
       longitude: data.longitude || 75.7873,
     });
+
+    try {
+      await ServiceRepositor.create({
+        artist_id: user_id,
+        specialization_name: "Bridal & Party Mehndi",
+        category: "Bridal Mehndi",
+        description: data.bio || "Custom handcrafted mehndi design service",
+        minimum_price: Number(data.starting_price) || 1500,
+        maximum_price: (Number(data.starting_price) || 1500) * 3,
+        duration_minutes: 120,
+        is_home_service: Boolean(data.home_service !== false),
+        is_salon_service: Boolean(data.salon_service),
+        is_active: true,
+      });
+    } catch (svcErr) {
+      console.warn("[createArtistProfile] Initial service creation notice:", svcErr.message);
+    }
 
     return profile;
   }
@@ -146,12 +192,29 @@ class ArtistService {
       throw new AppError("Artist profile not found", 404);
     }
     
-    // Update User table if name or profileImage is passed
+    // Update User table if name, email, phone, or avatar is passed
     const userUpdates = {};
     if (data.name !== undefined) userUpdates.name = data.name;
-    if (data.profileImage !== undefined) userUpdates.profile_image = data.profileImage;
-    if (data.profile_image !== undefined) userUpdates.profile_image = data.profile_image;
+    if (data.fullName !== undefined) userUpdates.name = data.fullName;
+    if (data.full_name !== undefined) userUpdates.name = data.full_name;
+    if (data.email !== undefined) userUpdates.email = data.email;
     if (data.phone !== undefined) userUpdates.phone = data.phone;
+    if (data.profileImage !== undefined) {
+      userUpdates.profile_image = data.profileImage;
+      userUpdates.avatar = data.profileImage;
+    }
+    if (data.profile_image !== undefined) {
+      userUpdates.profile_image = data.profile_image;
+      userUpdates.avatar = data.profile_image;
+    }
+    if (data.selfie_image !== undefined) {
+      userUpdates.profile_image = data.selfie_image;
+      userUpdates.avatar = data.selfie_image;
+    }
+    if (data.avatar !== undefined) {
+      userUpdates.profile_image = data.avatar;
+      userUpdates.avatar = data.avatar;
+    }
     
     if (Object.keys(userUpdates).length > 0) {
       await UserRepositor.update(userId, userUpdates);
@@ -159,7 +222,12 @@ class ArtistService {
 
     const allowedUpdates = {
       bio: data.bio !== undefined ? data.bio : artist.bio,
-      experience_years: data.experience_years !== undefined ? Number(data.experience_years) : artist.experience_years,
+      experience_years: data.experience_years !== undefined ? Number(data.experience_years) : (data.experience !== undefined ? Number(data.experience) : artist.experience_years),
+      starting_price: data.starting_price !== undefined ? Number(data.starting_price) : (data.startingPrice !== undefined ? Number(data.startingPrice) : artist.starting_price),
+      home_service: data.home_service !== undefined ? Boolean(data.home_service) : (data.homeService !== undefined ? Boolean(data.homeService) : artist.home_service),
+      salon_service: data.salon_service !== undefined ? Boolean(data.salon_service) : (data.salonService !== undefined ? Boolean(data.salonService) : artist.salon_service),
+      is_available: data.is_available !== undefined ? Boolean(data.is_available) : (data.isAvailable !== undefined ? Boolean(data.isAvailable) : artist.is_available),
+      selfie_image: data.selfie_image !== undefined ? data.selfie_image : (data.profile_image !== undefined ? data.profile_image : (data.profileImage !== undefined ? data.profileImage : artist.selfie_image)),
       location: data.location !== undefined ? data.location : artist.location,
       city: data.city !== undefined ? data.city : artist.city,
       state: data.state !== undefined ? data.state : artist.state,
@@ -171,6 +239,19 @@ class ArtistService {
       intro_video_thumbnail: data.intro_video_thumbnail !== undefined ? data.intro_video_thumbnail : artist.intro_video_thumbnail,
       portfolio_video_thumbnail: data.portfolio_video_thumbnail !== undefined ? data.portfolio_video_thumbnail : artist.portfolio_video_thumbnail,
     };
+
+    // If starting price is updated, also update or create base service
+    if (data.starting_price || data.startingPrice) {
+      try {
+        const newPrice = Number(data.starting_price || data.startingPrice);
+        const services = await ServiceRepositor.getAll({ artist_id: userId });
+        if (services && services.length > 0) {
+          await ServiceRepositor.update(services[0].id, { minimum_price: newPrice });
+        }
+      } catch (svcUpdateErr) {
+        console.warn("[updateArtistProfile] Base service price sync notice:", svcUpdateErr.message);
+      }
+    }
 
     // If KYC identity fields are being re-uploaded, transition back to PENDING
     if (data.aadhaar_front || data.aadhaar_back || data.aadhaar_number || data.pan_number) {
@@ -1517,6 +1598,13 @@ async createReview(data) {
       throw new AppError("Artist profile not found. Please complete your onboarding first.", 404);
     }
 
+    if (artist.verification_status !== "APPROVED") {
+      const errorMsg = artist.verification_status === "REJECTED"
+        ? (artist.rejection_reason ? `Your artist application has been rejected by the admin. Reason: ${artist.rejection_reason}` : "Your artist application has been rejected by the admin.")
+        : "Your artist account is pending admin approval. You will be able to access your dashboard after approval.";
+      throw new AppError(errorMsg, 403);
+    }
+
     const artistIds = [artist.id, Number(userId)];
 
     const today = new Date();
@@ -1594,7 +1682,7 @@ async createReview(data) {
       include: [
         { model: db.User, as: "user", attributes: ["id", "name", "phone", "email", "profile_image"] },
         { model: db.Service, as: "service", attributes: ["id", "specialization_name", "category"] },
-        { model: db.AvailabilitySlot, as: "slot", attributes: ["id", "start_time", "end_time", "date"] },
+        { model: db.AvailabilitySlot, as: "slot", attributes: ["id", "start_time", "end_time"] },
         { model: db.Payment, as: "payments", attributes: ["payment_method", "status"] }
       ]
     });
