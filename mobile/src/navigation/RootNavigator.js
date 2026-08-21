@@ -43,6 +43,16 @@ export default function RootNavigator() {
 
   const isApprovedArtist = isArtist && (artistApproved || verificationStatus === "APPROVED") && user?.is_active !== false;
 
+  const targetStack = !isAuthenticated
+    ? "AuthStack"
+    : isArtist
+    ? isApprovedArtist
+      ? "ArtistStack"
+      : "ArtistFlowStack"
+    : "CustomerStack";
+
+  console.log(`[ARTIST_APPROVAL_DEBUG] ROOT_NAV_STATE -> isAuthenticated: ${isAuthenticated} | isArtist: ${isArtist} | isArtistLoading: ${isArtistLoading} | isAuthLoading: ${isAuthLoading} | artistApproved: ${artistApproved} | verificationStatus: ${verificationStatus} | is_active: ${user?.is_active} | isApprovedArtist: ${isApprovedArtist} | TARGET_ROUTE: ${targetStack}`);
+
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       {!isAuthenticated ? (

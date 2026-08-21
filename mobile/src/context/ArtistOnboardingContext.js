@@ -46,7 +46,7 @@ const defaultArtistDetails = {
 };
 
 export function ArtistOnboardingProvider({ children }) {
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, dispatch: authDispatch } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [verificationStatus, setVerificationStatus] = useState("NOT_SUBMITTED"); // NOT_SUBMITTED, PENDING, APPROVED, REJECTED
   const [rejectionReason, setRejectionReason] = useState(null);
@@ -84,11 +84,12 @@ export function ArtistOnboardingProvider({ children }) {
   const refreshArtistProfile = useCallback(async (silent = false) => {
     if (!isAuthenticated || String(user?.role).toUpperCase() !== "ARTIST") {
       if (!silent) setIsLoading(false);
-      return;
+      return null;
     }
 
     try {
       if (!silent) setIsLoading(true);
+      console.log(`[ARTIST_APPROVAL_DEBUG] BEFORE refreshArtistProfile -> artistApproved: ${artistApproved} | verificationStatus: ${verificationStatus}`);
       const res = await getArtistDetails();
       const profile = res?.data || res;
 
@@ -101,6 +102,16 @@ export function ArtistOnboardingProvider({ children }) {
         );
         const reason = profile.rejection_reason || null;
         const isApproved = status === "APPROVED";
+
+        console.log(`[ARTIST_APPROVAL_DEBUG] USER_ID: ${user?.id || profile.user_id || profile.id}`);
+        console.log(`[ARTIST_APPROVAL_DEBUG] ROLE: ${user?.role || profile.user?.role}`);
+        console.log(`[ARTIST_APPROVAL_DEBUG] ARTIST_PROFILE_ID: ${profile.id || profile.user_id}`);
+        console.log(`[ARTIST_APPROVAL_DEBUG] API_STATUS: ${profile.status}`);
+        console.log(`[ARTIST_APPROVAL_DEBUG] VERIFICATION_STATUS: ${status}`);
+        console.log(`[ARTIST_APPROVAL_DEBUG] IS_VERIFIED: ${profile.user?.is_verified ?? user?.is_verified}`);
+        console.log(`[ARTIST_APPROVAL_DEBUG] IS_ACTIVE: ${profile.user?.is_active ?? user?.is_active}`);
+        console.log(`[ARTIST_APPROVAL_DEBUG] ONBOARDING_COMPLETE: ${complete}`);
+        console.log(`[ARTIST_APPROVAL_DEBUG] ARTIST_APPROVED_CONTEXT: ${isApproved}`);
 
         setVerificationStatus(status);
         setRejectionReason(reason);
@@ -137,13 +148,20 @@ export function ArtistOnboardingProvider({ children }) {
           setProfilePhoto(profile.selfie_image || profile.user?.profile_image || profile.user?.avatar);
         }
 
+        if (profile.user && authDispatch) {
+          authDispatch({ type: "UPDATE_USER", payload: profile.user });
+          await secureStorage.setUserData({ ...(user || {}), ...profile.user });
+        }
+
         // Cache flag locally for instant render on restart
         await secureStorage.setArtistProfileCompleted(complete || status === "PENDING" || isApproved);
+        return { verificationStatus: status, isApproved, profile };
       } else {
         setVerificationStatus("NOT_SUBMITTED");
         setIsProfileComplete(false);
         setArtistApproved(false);
         setArtistProfileCompleted(false);
+        return { verificationStatus: "NOT_SUBMITTED", isApproved: false, profile: null };
       }
     } catch (err) {
       console.warn("[ArtistOnboardingContext] Error fetching canonical profile:", err.message);
@@ -152,6 +170,7 @@ export function ArtistOnboardingProvider({ children }) {
       if (cachedCompleted) {
         setArtistProfileCompleted(true);
       }
+      return null;
     } finally {
       if (!silent) setIsLoading(false);
     }

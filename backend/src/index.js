@@ -5586,15 +5586,7 @@ app.get("/api/v1/mehndigo/artist/getallservicesdata", async (c) => {
 });
 
 app.get("/api/v1/mehndigo/artist/artistdetails", async (c) => {
-  const db = getDb(c.env);
-  const u = getUserFromHeader(c) || { id: 2 };
-  const artist = await db.first(`
-    SELECT u.id, u.full_name, u.email, u.phone, ap.bio, ap.experience_years, ap.starting_price, ap.city, ap.rating, ap.total_reviews
-    FROM users u
-    LEFT JOIN artist_profiles ap ON u.id = ap.user_id
-    WHERE u.id = ?
-  `, [u.id]);
-  return jsonRes(c, true, artist || {});
+  return handleGetArtistDetails(c);
 });
 
 // Create Booking
@@ -5686,10 +5678,19 @@ const handleAdminApproveArtist = async (c) => {
   const artist = await db.first("SELECT * FROM artist_profiles WHERE id = ? OR user_id = ?", [id, id]).catch(() => null);
   const artistUserId = artist?.user_id || id;
 
-  await db.run(
-    "UPDATE artist_profiles SET status = 'approved', verification_status = 'APPROVED', is_available = 1, rejection_reason = NULL, approved_at = datetime('now'), reviewed_by = ? WHERE user_id = ? OR id = ?",
-    [adminId, artistUserId, id]
-  ).catch(() => { });
+  console.log(`[ARTIST_APPROVAL_DEBUG] handleAdminApproveArtist called for target ID: ${id}, resolved user_id: ${artistUserId}`);
+
+  if (artist) {
+    await db.run(
+      "UPDATE artist_profiles SET status = 'approved', verification_status = 'APPROVED', is_available = 1, rejection_reason = NULL, approved_at = datetime('now'), reviewed_by = ? WHERE user_id = ? OR id = ?",
+      [adminId, artistUserId, id]
+    ).catch(() => { });
+  } else {
+    await db.run(
+      "INSERT INTO artist_profiles (user_id, status, verification_status, is_available, rejection_reason, approved_at, reviewed_by) VALUES (?, 'approved', 'APPROVED', 1, NULL, datetime('now'), ?)",
+      [artistUserId, adminId]
+    ).catch(() => { });
+  }
 
   await db.run(
     "UPDATE users SET is_verified = 1, is_active = 1 WHERE id = ?",
@@ -5729,10 +5730,19 @@ const handleAdminRejectArtist = async (c) => {
   const artist = await db.first("SELECT * FROM artist_profiles WHERE id = ? OR user_id = ?", [id, id]).catch(() => null);
   const artistUserId = artist?.user_id || id;
 
-  await db.run(
-    "UPDATE artist_profiles SET status = 'rejected', verification_status = 'REJECTED', is_available = 0, rejection_reason = ?, rejected_at = datetime('now'), reviewed_by = ? WHERE user_id = ? OR id = ?",
-    [reason, adminId, artistUserId, id]
-  ).catch(() => { });
+  console.log(`[ARTIST_APPROVAL_DEBUG] handleAdminRejectArtist called for target ID: ${id}, resolved user_id: ${artistUserId}, reason: ${reason}`);
+
+  if (artist) {
+    await db.run(
+      "UPDATE artist_profiles SET status = 'rejected', verification_status = 'REJECTED', is_available = 0, rejection_reason = ?, rejected_at = datetime('now'), reviewed_by = ? WHERE user_id = ? OR id = ?",
+      [reason, adminId, artistUserId, id]
+    ).catch(() => { });
+  } else {
+    await db.run(
+      "INSERT INTO artist_profiles (user_id, status, verification_status, is_available, rejection_reason, rejected_at, reviewed_by) VALUES (?, 'rejected', 'REJECTED', 0, ?, datetime('now'), ?)",
+      [artistUserId, reason, adminId]
+    ).catch(() => { });
+  }
 
   await db.run(
     "INSERT INTO notifications (user_id, title, message, type, is_read, created_at) VALUES (?, ?, ?, ?, 0, datetime('now'))",
@@ -9013,15 +9023,6 @@ const handleVerifyCheckOutOtp = async (c) => {
   await db.run("UPDATE bookings SET checkout_verified_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => { });
   await db.run("UPDATE bookings SET completed_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => { });
   await db.run("UPDATE bookings SET service_completed_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => { });
-  [bookingId, String(bookingId)]
-    ).catch (() => { });
-  }
-
-// Best-effort updates for tracking columns (safe if columns don't exist)
-await db.run("UPDATE bookings SET booking_status = 'COMPLETED' WHERE id = ?", [bookingId]).catch(() => { });
-await db.run("UPDATE bookings SET checkout_verified_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => { });
-await db.run("UPDATE bookings SET completed_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => { });
-await db.run("UPDATE bookings SET service_completed_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => { });
 
 // Record audit history
 await db.run(
