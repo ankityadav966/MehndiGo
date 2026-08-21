@@ -1252,6 +1252,29 @@ const handleUpdateProfile = async (c) => {
   return handleGetProfile(c);
 };
 
+const resolveFileValue = async (val) => {
+  if (val === null || val === undefined) return null;
+  if (typeof val === "string") return val;
+  if (typeof val === "object" && typeof val.arrayBuffer === "function") {
+    try {
+      const buffer = await val.arrayBuffer();
+      if (!buffer || buffer.byteLength === 0) return null;
+      const bytes = new Uint8Array(buffer);
+      let binary = "";
+      for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      const base64 = btoa(binary);
+      const mime = val.type || "image/jpeg";
+      return `data:${mime};base64,${base64}`;
+    } catch (e) {
+      console.warn("Error converting file to base64:", e.message);
+      return null;
+    }
+  }
+  return null;
+};
+
 const handleUpdateArtistProfile = async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
@@ -1271,7 +1294,8 @@ const handleUpdateArtistProfile = async (c) => {
   const name = body.full_name || body.fullName || body.name;
   const email = body.email;
   const phone = body.phone;
-  const avatar = body.profile_image || body.profileImage || body.avatar || body.selfie_image;
+  const rawAvatar = body.profile_image || body.profileImage || body.avatar || body.selfie_image;
+  const avatar = await resolveFileValue(rawAvatar);
 
   if (name || email || phone || avatar) {
     await db.run(
@@ -1291,9 +1315,12 @@ const handleUpdateArtistProfile = async (c) => {
   const state = body.state;
   const pincode = body.pincode;
   const languages = body.languages;
-  const coverImage = body.cover_image || body.coverImage;
-  const aadhaarFront = body.aadhaar_front || body.aadhaarFront;
-  const aadhaarBack = body.aadhaar_back || body.aadhaarBack;
+  const rawCover = body.cover_image || body.coverImage;
+  const coverImage = await resolveFileValue(rawCover);
+  const rawFront = body.aadhaar_front || body.aadhaarFront;
+  const aadhaarFront = await resolveFileValue(rawFront);
+  const rawBack = body.aadhaar_back || body.aadhaarBack;
+  const aadhaarBack = await resolveFileValue(rawBack);
   const latitude = body.latitude;
   const longitude = body.longitude;
 

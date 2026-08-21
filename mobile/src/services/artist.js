@@ -34,8 +34,6 @@ export async function getArtistVerificationStatus() {
 }
 
 export async function createArtistProfile(profileData) {
-  const formData = new FormData();
-
   const isLocalUri = (val) => {
     if (!val) return false;
     if (typeof val === "string") {
@@ -44,7 +42,6 @@ export async function createArtistProfile(profileData) {
         val.startsWith("content://") ||
         val.startsWith("ph://") ||
         val.startsWith("assets-library://") ||
-        val.startsWith("data:") ||
         val.startsWith("/")
       );
     }
@@ -59,52 +56,51 @@ export async function createArtistProfile(profileData) {
     if (typeof val === "string") uri = val;
     else if (typeof val === "object" && val !== null) uri = val.uri;
 
-    if (uri.startsWith("/")) {
+    if (uri && uri.startsWith("/")) {
       return `file://${uri}`;
     }
     return uri;
   };
 
-  for (const [key, value] of Object.entries(profileData)) {
-    if (value === null || value === undefined) continue;
+  const payload = { ...profileData };
 
-    if (isLocalUri(value)) {
-      const uri = getSafeUri(value);
-      const blob = await getUploadBlob(uri, "image/jpeg");
-      formData.append(key, blob, `${key}_${Date.now()}.jpg`);
-    } else if (typeof value === "object") {
-      formData.append(key, JSON.stringify(value));
-    } else {
-      formData.append(key, String(value));
+  // Upload local images to secure Cloudinary storage if present
+  const imageKeys = ["aadhaar_front", "aadhaar_back", "selfie_image", "profile_image", "cover_image"];
+  for (const key of imageKeys) {
+    const val = payload[key];
+    if (val && isLocalUri(val)) {
+      try {
+        const uri = getSafeUri(val);
+        const uploadResult = await uploadPortfolioMedia([{ uri }]);
+        if (uploadResult && uploadResult.length > 0 && uploadResult[0].url) {
+          payload[key] = uploadResult[0].url;
+        }
+      } catch (uploadErr) {
+        console.warn(`[createArtistProfile] Media upload fallback for ${key}:`, uploadErr.message);
+      }
     }
   }
 
-  const token = await secureStorage.getAccessToken();
-  console.log("createArtistProfile FormData parts:", formData._parts);
-  const url = getNormalizedUrl("/api/v1/mehndigo/artist/profile");
-  console.log(`[API REQUEST] POST (fetch) -> ${url}`);
-  const response = await fetch(url, {
-    method: "POST",
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: formData,
-  });
-
-  let data;
-  const contentType = response.headers.get("content-type") || "";
-  if (contentType.includes("application/json")) {
-    data = await response.json();
-  } else {
-    const text = await response.text();
-    try { data = JSON.parse(text); } catch { data = { message: text }; }
+  // Normalize aliases
+  if (payload.fullName && !payload.name) payload.name = payload.fullName;
+  if (payload.experienceYears !== undefined && payload.experience_years === undefined) {
+    payload.experience_years = Number(payload.experienceYears);
+  }
+  if (payload.startingPrice !== undefined && payload.starting_price === undefined) {
+    payload.starting_price = Number(payload.startingPrice);
+  }
+  if (payload.homeService !== undefined && payload.home_service === undefined) {
+    payload.home_service = Boolean(payload.homeService);
+  }
+  if (payload.salonService !== undefined && payload.salon_service === undefined) {
+    payload.salon_service = Boolean(payload.salonService);
+  }
+  if (payload.aadhaarNumber && !payload.aadhaar_number) {
+    payload.aadhaar_number = payload.aadhaarNumber;
   }
 
-  if (!response.ok) {
-    const err = new Error(data?.message || data?.error || response.statusText || "Something went wrong");
-    err.response = { data, status: response.status, statusText: response.statusText };
-    throw err;
-  }
-
-  return data?.data || data;
+  const res = await apiRequest("POST", "/api/v1/mehndigo/artist/profile", payload, true);
+  return res?.data || res;
 }
 
 // Portfolio Management Methods

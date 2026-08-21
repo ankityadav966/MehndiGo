@@ -90,14 +90,24 @@ export function ArtistOnboardingProvider({ children }) {
         const status = String(rawStatus).toUpperCase();
         const hasAadhaar = Boolean(profile.aadhaar_front || profile.aadhaar_number);
         const hasBio = Boolean(profile.bio && String(profile.bio).trim().length > 0);
+        const isApproved = status === "APPROVED" || profile.status === "approved" || profile.user?.is_verified === 1 || profile.user?.is_verified === true;
         const complete = Boolean(
+          isApproved ||
           profile.isProfileComplete ||
           (hasBio && hasAadhaar)
         );
         const reason = profile.rejection_reason || null;
-        const isApproved = status === "APPROVED";
 
-        const effectiveStatus = complete ? status : "NOT_SUBMITTED";
+        let effectiveStatus = "NOT_SUBMITTED";
+        if (isApproved) {
+          effectiveStatus = "APPROVED";
+        } else if (status === "REJECTED") {
+          effectiveStatus = "REJECTED";
+        } else if (status === "PENDING" && complete) {
+          effectiveStatus = "PENDING";
+        } else {
+          effectiveStatus = "NOT_SUBMITTED";
+        }
 
         console.log(`[ARTIST_APPROVAL_DEBUG] USER_ID: ${user?.id || profile.user_id || profile.id}`);
         console.log(`[ARTIST_APPROVAL_DEBUG] ROLE: ${user?.role || profile.user?.role}`);
