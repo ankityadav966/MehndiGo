@@ -167,35 +167,8 @@ export default function ArtistDashboardScreen({ navigation }) {
       setDashboard(data);
     } catch (err) {
       console.log("Failed to load artist dashboard details:", err.message);
-      // Fallback
-      setDashboard({
-        artist: {
-          name: user?.name || "Sonu Ma'am",
-          profile_image: user?.profile_image || "https://picsum.photos/200",
-          verification_status: "APPROVED",
-          avg_rating: "4.8",
-          total_reviews: 24,
-          experience_years: 5
-        },
-        todayBookings: 2,
-        todayEarnings: 4500,
-        pendingRequests: 3,
-        walletBalance: 12500,
-        bookingCounts: {
-          PENDING: 3,
-          UPCOMING: 4,
-          ACCEPTED: 5,
-          ONGOING: 1,
-          COMPLETED: 18,
-          AWAITING_SETTLEMENT: 2,
-          PENDING_CASH_APPROVAL: 1,
-          CANCELLED: 2
-        },
-        recentBookings: [
-          { id: 1, booking_code: "BK-591602", user: { name: "Ananya Sharma" }, service: { specialization_name: "Bridal Traditional Mehndi" }, booking_status: "CONFIRMED", total_price: 3500, final_amount: 3500, createdAt: new Date().toISOString() },
-          { id: 2, booking_code: "BK-302198", user: { name: "Ritika Patel" }, service: { specialization_name: "Arabic Intricate Mehndi" }, booking_status: "PENDING", total_price: 1500, final_amount: 1500, createdAt: new Date().toISOString() }
-        ]
-      });
+      Alert.alert("Error", "Something went wrong loading your dashboard. Please retry.");
+      setDashboard(null);
     } finally {
       setLoading(false);
       setRefreshing(false);

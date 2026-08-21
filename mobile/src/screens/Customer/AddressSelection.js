@@ -81,6 +81,15 @@ export default function AddressSelection({ route, navigation }) {
     setCity(addr.city || "Jaipur");
     setStateName(addr.state || "Rajasthan");
     setPincode(addr.pincode || "");
+    
+    // Set coordinates if they exist from the database
+    if (addr.latitude !== undefined && addr.latitude !== null) {
+      setLatitude(parseFloat(addr.latitude));
+    }
+    if (addr.longitude !== undefined && addr.longitude !== null) {
+      setLongitude(parseFloat(addr.longitude));
+    }
+    
     setFullAddressText([addr.address_line_1, addr.address_line_2, addr.city, addr.state, addr.pincode].filter(Boolean).join(", "));
   };
 

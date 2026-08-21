@@ -15,24 +15,11 @@ export default function ApprovalPendingScreen({ navigation }) {
   const pollingRef = useRef(null);
   const hasNavigatedRef = useRef(false);
 
-  // Transition handler when approved or rejected
+  // Transition handler when rejected
   useEffect(() => {
     if (hasNavigatedRef.current) return;
 
-    if (artistApproved || verificationStatus === "APPROVED") {
-      hasNavigatedRef.current = true;
-      if (pollingRef.current) clearInterval(pollingRef.current);
-      try {
-        navigation.reset({
-          index: 0,
-          routes: [{ name: "ArtistStack" }],
-        });
-      } catch (_) {
-        try {
-          navigation.navigate("ArtistStack");
-        } catch (_) {}
-      }
-    } else if (verificationStatus === "REJECTED") {
+    if (verificationStatus === "REJECTED") {
       hasNavigatedRef.current = true;
       if (pollingRef.current) clearInterval(pollingRef.current);
       try {
@@ -41,7 +28,7 @@ export default function ApprovalPendingScreen({ navigation }) {
         navigation.navigate("ApprovalRejected");
       }
     }
-  }, [artistApproved, verificationStatus, navigation]);
+  }, [verificationStatus, navigation]);
 
   const handleCheckStatus = async (silent = false) => {
     if (!silent) {

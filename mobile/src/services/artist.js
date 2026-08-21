@@ -13,12 +13,12 @@ async function getUploadBlob(uri, mimeType) {
 }
 
 export async function getArtistDetails() {
-  const data = await apiRequest("GET", "/api/v1/mehndigo/artist/artistdetails", null, true);
+  const data = await apiRequest("GET", `/api/v1/mehndigo/artist/artistdetails?_t=${Date.now()}`, null, true);
   return data?.data || data;
 }
 
 export async function getArtistVerificationStatus() {
-  const data = await apiRequest("GET", "/api/v1/mehndigo/artist/artistdetails", null, true);
+  const data = await apiRequest("GET", `/api/v1/mehndigo/artist/artistdetails?_t=${Date.now()}`, null, true);
   const profile = data?.data || data;
   const rawStatus = profile?.verification_status || profile?.status || "PENDING";
   const canonicalStatus = String(rawStatus).toUpperCase();

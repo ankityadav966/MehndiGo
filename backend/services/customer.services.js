@@ -1536,6 +1536,8 @@ class CustomerService {
       state: addrState,
       pincode: addrPincode,
       is_default: markDefault,
+      latitude: latitude !== undefined ? latitude : null,
+      longitude: longitude !== undefined ? longitude : null,
     });
   }
 
@@ -1559,6 +1561,8 @@ class CustomerService {
       city,
       state,
       pincode,
+      latitude,
+      longitude,
       isDefault,
       is_default,
     } = data;
@@ -1583,6 +1587,8 @@ class CustomerService {
     if (city) updates.city = city;
     if (state) updates.state = state;
     if (pincode) updates.pincode = pincode;
+    if (latitude !== undefined) updates.latitude = latitude;
+    if (longitude !== undefined) updates.longitude = longitude;
     if (markDefault !== undefined) updates.is_default = !!markDefault;
 
     await address.update(updates);

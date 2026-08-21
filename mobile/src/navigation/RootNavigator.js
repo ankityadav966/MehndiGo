@@ -5,7 +5,6 @@ import LoginScreen from "../screens/Auth/LoginScreen";
 import RegisterScreen from "../screens/Auth/RegisterScreen";
 import RoleSelectionScreen from "../screens/Auth/RoleSelectionScreen";
 import OtpScreen from "../screens/Auth/OtpScreen";
-import RoleSelectionScreen from "../screens/Auth/RoleSelectionScreen";
 import ArtistFlowStack from "./ArtistFlowStack";
 import ArtistStack from "./ArtistStack";
 import CustomerStack from "./CustomerStack";
@@ -42,7 +41,7 @@ export default function RootNavigator() {
     );
   }
 
-  const isApprovedArtist = isArtist && (artistApproved || verificationStatus === "APPROVED");
+  const isApprovedArtist = isArtist && (artistApproved || verificationStatus === "APPROVED") && user?.is_active !== false;
 
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
@@ -54,19 +53,12 @@ export default function RootNavigator() {
           <Stack.Screen name="Register" component={RegisterScreen} />
           <Stack.Screen name="RoleSelection" component={RoleSelectionScreen} />
           <Stack.Screen name="Otp" component={OtpScreen} />
-          <Stack.Screen name="RoleSelection" component={RoleSelectionScreen} />
         </>
       ) : isArtist ? (
         isApprovedArtist ? (
-          <>
-            <Stack.Screen name="ArtistStack" component={ArtistStack} />
-            <Stack.Screen name="ArtistFlowStack" component={ArtistFlowStack} />
-          </>
+          <Stack.Screen name="ArtistStack" component={ArtistStack} />
         ) : (
-          <>
-            <Stack.Screen name="ArtistFlowStack" component={ArtistFlowStack} />
-            <Stack.Screen name="ArtistStack" component={ArtistStack} />
-          </>
+          <Stack.Screen name="ArtistFlowStack" component={ArtistFlowStack} />
         )
       ) : (
         <Stack.Screen name="CustomerStack" component={CustomerStack} />

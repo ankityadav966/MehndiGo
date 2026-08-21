@@ -194,7 +194,7 @@ class AdminService {
     });
 
     if (artist.user_id) {
-      await db.User.update({ is_verified: true, is_active: true }, { where: { id: artist.user_id } });
+      await db.User.update({ is_verified: true }, { where: { id: artist.user_id } });
     }
 
     if (db.AuditLog && adminId) {
