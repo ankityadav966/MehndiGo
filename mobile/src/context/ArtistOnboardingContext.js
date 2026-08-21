@@ -10,20 +10,12 @@ export function determineArtistInitialRoute({ verificationStatus, isProfileCompl
   if (status === "REJECTED") {
     return "ApprovalRejected";
   }
-  if (status === "PENDING") {
+  // Only route to ApprovalPending if profile is actually complete & submitted
+  if (status === "PENDING" && isProfileComplete) {
     return "ApprovalPending";
   }
-  // Incomplete / unsubmitted registration step resolution
-  if (!artistDetails?.bio || !artistDetails?.city) {
-    return "PersonalDetails";
-  }
-  if (!profilePhoto) {
-    return "ProfilePhoto";
-  }
-  if (!aadhaarFiles?.front) {
-    return "AadhaarVerification";
-  }
-  return "ReviewSubmit";
+  // Unsubmitted / fresh artist onboarding starts at BecomeArtist ("Join Now as Artist")
+  return "BecomeArtist";
 }
 
 const defaultArtistDetails = {
@@ -46,7 +38,7 @@ const defaultArtistDetails = {
 };
 
 export function ArtistOnboardingProvider({ children }) {
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, dispatch: authDispatch } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [verificationStatus, setVerificationStatus] = useState("NOT_SUBMITTED"); // NOT_SUBMITTED, PENDING, APPROVED, REJECTED
   const [rejectionReason, setRejectionReason] = useState(null);
@@ -84,29 +76,45 @@ export function ArtistOnboardingProvider({ children }) {
   const refreshArtistProfile = useCallback(async (silent = false) => {
     if (!isAuthenticated || String(user?.role).toUpperCase() !== "ARTIST") {
       if (!silent) setIsLoading(false);
-      return;
+      return null;
     }
 
     try {
       if (!silent) setIsLoading(true);
+      console.log(`[ARTIST_APPROVAL_DEBUG] BEFORE refreshArtistProfile -> artistApproved: ${artistApproved} | verificationStatus: ${verificationStatus}`);
       const res = await getArtistDetails();
       const profile = res?.data || res;
 
       if (profile && (profile.id || profile.user_id || profile.user?.id)) {
-        const rawStatus = profile.verification_status || profile.status || "PENDING";
+        const rawStatus = profile.verification_status || profile.status || "NOT_SUBMITTED";
         const status = String(rawStatus).toUpperCase();
+        const hasAadhaar = Boolean(profile.aadhaar_front || profile.aadhaar_number);
+        const hasBio = Boolean(profile.bio && String(profile.bio).trim().length > 0);
         const complete = Boolean(
           profile.isProfileComplete ||
-          (profile.bio && (profile.city || profile.location) && (profile.aadhaar_front || profile.aadhaar_number))
+          (hasBio && hasAadhaar)
         );
         const reason = profile.rejection_reason || null;
         const isApproved = status === "APPROVED";
 
-        setVerificationStatus(status);
+        const effectiveStatus = complete ? status : "NOT_SUBMITTED";
+
+        console.log(`[ARTIST_APPROVAL_DEBUG] USER_ID: ${user?.id || profile.user_id || profile.id}`);
+        console.log(`[ARTIST_APPROVAL_DEBUG] ROLE: ${user?.role || profile.user?.role}`);
+        console.log(`[ARTIST_APPROVAL_DEBUG] ARTIST_PROFILE_ID: ${profile.id || profile.user_id}`);
+        console.log(`[ARTIST_APPROVAL_DEBUG] API_STATUS: ${profile.status}`);
+        console.log(`[ARTIST_APPROVAL_DEBUG] VERIFICATION_STATUS: ${status}`);
+        console.log(`[ARTIST_APPROVAL_DEBUG] EFFECTIVE_STATUS: ${effectiveStatus}`);
+        console.log(`[ARTIST_APPROVAL_DEBUG] IS_VERIFIED: ${profile.user?.is_verified ?? user?.is_verified}`);
+        console.log(`[ARTIST_APPROVAL_DEBUG] IS_ACTIVE: ${profile.user?.is_active ?? user?.is_active}`);
+        console.log(`[ARTIST_APPROVAL_DEBUG] ONBOARDING_COMPLETE: ${complete}`);
+        console.log(`[ARTIST_APPROVAL_DEBUG] ARTIST_APPROVED_CONTEXT: ${isApproved}`);
+
+        setVerificationStatus(effectiveStatus);
         setRejectionReason(reason);
         setIsProfileComplete(complete);
         setArtistApproved(isApproved);
-        setArtistProfileCompleted(complete || status === "PENDING" || isApproved || status === "REJECTED");
+        setArtistProfileCompleted(complete);
 
         setArtistDetails((prev) => ({
           ...prev,
@@ -137,13 +145,28 @@ export function ArtistOnboardingProvider({ children }) {
           setProfilePhoto(profile.selfie_image || profile.user?.profile_image || profile.user?.avatar);
         }
 
+        if (profile.user && authDispatch) {
+          const userChanged = !user ||
+            user.name !== profile.user.name ||
+            user.email !== profile.user.email ||
+            user.is_verified !== profile.user.is_verified ||
+            user.is_active !== profile.user.is_active;
+
+          if (userChanged) {
+            authDispatch({ type: "UPDATE_USER", payload: profile.user });
+            await secureStorage.setUserData({ ...(user || {}), ...profile.user });
+          }
+        }
+
         // Cache flag locally for instant render on restart
-        await secureStorage.setArtistProfileCompleted(complete || status === "PENDING" || isApproved);
+        await secureStorage.setArtistProfileCompleted(complete);
+        return { verificationStatus: effectiveStatus, isApproved, profile };
       } else {
         setVerificationStatus("NOT_SUBMITTED");
         setIsProfileComplete(false);
         setArtistApproved(false);
         setArtistProfileCompleted(false);
+        return { verificationStatus: "NOT_SUBMITTED", isApproved: false, profile: null };
       }
     } catch (err) {
       console.warn("[ArtistOnboardingContext] Error fetching canonical profile:", err.message);
@@ -152,16 +175,17 @@ export function ArtistOnboardingProvider({ children }) {
       if (cachedCompleted) {
         setArtistProfileCompleted(true);
       }
+      return null;
     } finally {
       if (!silent) setIsLoading(false);
     }
-  }, [isAuthenticated, user]);
+  }, [isAuthenticated, user?.id, user?.role]);
 
   useEffect(() => {
     if (isAuthenticated && String(user?.role).toUpperCase() === "ARTIST") {
-      refreshArtistProfile();
+      refreshArtistProfile(true);
     }
-  }, [isAuthenticated, user, refreshArtistProfile]);
+  }, [isAuthenticated, user?.id, user?.role, refreshArtistProfile]);
 
   const updateArtistDetails = (details) => {
     setArtistDetails((prev) => ({ ...prev, ...details }));

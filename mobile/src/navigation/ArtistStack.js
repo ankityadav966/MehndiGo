@@ -43,6 +43,7 @@ import ChatRoomScreen from "../screens/Common/ChatRoomScreen";
 const Stack = createNativeStackNavigator();
 
 export default function ArtistStack() {
+  console.log("[ARTIST_APPROVAL_DEBUG] [ARTIST_NAV_DEBUG] mounting ArtistStack -> initialScreen: ArtistTabs (Dashboard)");
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="ArtistTabs" component={BottomTab} initialParams={{ role: "artist" }} />

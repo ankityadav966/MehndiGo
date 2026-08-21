@@ -26,6 +26,7 @@ export default function ReviewSubmitScreen({ navigation }) {
       await createArtistProfile({
         bio: artistDetails.bio,
         experience_years: Number(artistDetails.experienceYears),
+        starting_price: Number(artistDetails.startingPrice) || 1500,
         home_service: artistDetails.homeService,
         salon_service: artistDetails.salonService,
         city: artistDetails.city,
@@ -34,6 +35,7 @@ export default function ReviewSubmitScreen({ navigation }) {
         pincode: artistDetails.pincode,
         latitude: artistDetails.latitude || "26.912434",
         longitude: artistDetails.longitude || "75.787270",
+        aadhaar_number: artistDetails.aadhaarNumber,
         aadhaar_front: aadhaarFiles?.front,
         aadhaar_back: aadhaarFiles?.back,
         selfie_image: profilePhoto,

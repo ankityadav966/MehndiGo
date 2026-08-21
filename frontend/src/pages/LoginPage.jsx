@@ -39,37 +39,11 @@ const LoginPage = ({ showToast }) => {
     setLoading(true);
     const cleanEmail = email.trim().toLowerCase();
 
-    // Direct Admin Support
+    // Admin redirection to dedicated Admin panel login
     if (cleanEmail === "admin@mehndigo.com" || cleanEmail.includes("admin")) {
-      try {
-        const adminRes = await authService.adminVerifyOtp({ email: cleanEmail, otp: "123456" });
-        const token = adminRes?.data?.token || adminRes?.token || "demo_admin_jwt_token_2026";
-        const user = adminRes?.data?.user || adminRes?.user || {
-          id: 1,
-          full_name: "Super Administrator",
-          email: cleanEmail,
-          role: "ADMIN",
-          is_verified: 1
-        };
-        loginSuccess(token, user);
-        showToast("Welcome back, Administrator!", "success");
-        navigate("/admin");
-        return;
-      } catch (_) {
-        const fallbackUser = {
-          id: 1,
-          full_name: "Super Administrator",
-          email: cleanEmail,
-          role: "ADMIN",
-          is_verified: 1
-        };
-        loginSuccess("demo_admin_jwt_token_2026", fallbackUser);
-        showToast("Welcome, Administrator!", "success");
-        navigate("/admin");
-        return;
-      } finally {
-        setLoading(false);
-      }
+      navigate("/secret-admin-login");
+      setLoading(false);
+      return;
     }
 
     try {

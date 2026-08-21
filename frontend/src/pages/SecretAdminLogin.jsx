@@ -27,14 +27,12 @@ const SecretAdminLogin = ({ showToast }) => {
     setLoading(true);
     try {
       const res = await authService.adminSendOtp({ email: cleanEmail, password: cleanPass });
-      const receivedOtp = res?.data?.otp || res?.otp || "123456";
-      setOtp(receivedOtp);
-      showToast(`Admin OTP generated: ${receivedOtp}`, "success");
+      const receivedOtp = res?.data?.otp || res?.otp;
+      if (receivedOtp) setOtp(receivedOtp);
+      showToast(`Admin OTP code sent to ${cleanEmail}`, "success");
       setStep(2);
     } catch (err) {
-      showToast("Admin verification notice: " + (err.message || "Using demo access"), "warning");
-      setOtp("123456");
-      setStep(2);
+      showToast(err.message || "Invalid Admin credentials", "danger");
     } finally {
       setLoading(false);
     }
@@ -43,41 +41,26 @@ const SecretAdminLogin = ({ showToast }) => {
   const handleVerifyAdminOtp = async (e) => {
     if (e) e.preventDefault();
     const cleanEmail = String(email || "admin@mehndigo.com").trim().toLowerCase();
-    const cleanOtp = String(otp || "123456").trim();
+    const cleanOtp = String(otp || "").trim();
 
     if (!cleanOtp) {
-      showToast("OTP is required", "warning");
+      showToast("Security OTP is required", "warning");
       return;
     }
 
     setLoading(true);
     try {
       const res = await authService.adminVerifyOtp({ email: cleanEmail, otp: cleanOtp });
-      const token = res?.data?.token || res?.token || "demo_admin_jwt_token_2026";
-      const user = res?.data?.user || res?.user || {
-        id: 1,
-        full_name: "Super Administrator",
-        email: cleanEmail,
-        role: "ADMIN",
-        is_verified: 1
-      };
+      const data = res?.data || res;
+      if (!data?.token || !data?.user) {
+        throw new Error("Invalid admin credentials or token not issued");
+      }
 
-      loginSuccess(token, user);
+      loginSuccess(data.token, data.user);
       showToast("Welcome, Administrator!", "success");
       navigate("/admin");
     } catch (e) {
-      console.warn("Direct admin fallback triggered:", e.message);
-      // Resilient fallback for immediate admin access
-      const fallbackUser = {
-        id: 1,
-        full_name: "Super Administrator",
-        email: cleanEmail,
-        role: "ADMIN",
-        is_verified: 1
-      };
-      loginSuccess("demo_admin_jwt_token_2026", fallbackUser);
-      showToast("Welcome, Administrator!", "success");
-      navigate("/admin");
+      showToast(e.message || "Failed to verify admin security OTP", "danger");
     } finally {
       setLoading(false);
     }

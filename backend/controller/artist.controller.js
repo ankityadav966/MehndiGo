@@ -7,35 +7,23 @@ async function createPortfolio(req, res) {
   try {
     const data = {
       user_id: req.user.id,
-
       bio: req.body.bio,
-
       experience_years: req.body.experience_years,
-
-      home_service: req.body.home_service === "true",
-
-      salon_service: req.body.salon_service === "true",
-
+      starting_price: req.body.starting_price || req.body.startingPrice || req.body.min_service_price || null,
+      home_service: req.body.home_service === "true" || req.body.home_service === true,
+      salon_service: req.body.salon_service === "true" || req.body.salon_service === true,
       location: req.body.location,
-
       city: req.body.city,
-
       state: req.body.state,
-
       pincode: req.body.pincode,
-
       latitude: req.body.latitude,
-
       longitude: req.body.longitude,
-
       last_location_update: new Date(),
-
-      aadhaar_front: req.files?.aadhaar_front?.[0]?.path || null,
-
-      aadhaar_back: req.files?.aadhaar_back?.[0]?.path || null,
- 
-      selfie_image: req.files?.selfie_image?.[0]?.path || null,
-
+      aadhaar_number: req.body.aadhaar_number || req.body.aadhaarNumber || null,
+      pan_number: req.body.pan_number || req.body.panNumber || null,
+      aadhaar_front: req.files?.aadhaar_front?.[0]?.path || req.body.aadhaar_front || null,
+      aadhaar_back: req.files?.aadhaar_back?.[0]?.path || req.body.aadhaar_back || null,
+      selfie_image: req.files?.selfie_image?.[0]?.path || req.body.selfie_image || req.body.profile_image || req.body.profileImage || null,
       phone: req.body.phone,
     };
 

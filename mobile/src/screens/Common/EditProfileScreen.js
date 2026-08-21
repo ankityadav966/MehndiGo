@@ -11,7 +11,8 @@ import {
   View,
   ActivityIndicator,
   KeyboardAvoidingView,
-  Platform
+  Platform,
+  Switch
 } from "react-native";
 import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -27,7 +28,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export default function EditProfileScreen({ navigation }) {
   const { user, dispatch } = useAuth();
-  const isArtist = user?.role === "ARTIST";
+  const isArtist = String(user?.role || "").toUpperCase() === "ARTIST";
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -41,31 +42,48 @@ export default function EditProfileScreen({ navigation }) {
   const [state, setState] = useState("");
   const [pincode, setPincode] = useState("");
 
-  // Artist Fields
+  // Artist Specific Fields
   const [bio, setBio] = useState("");
   const [experience, setExperience] = useState("");
+  const [startingPrice, setStartingPrice] = useState("1500");
   const [location, setLocation] = useState("");
   const [languages, setLanguages] = useState("");
+  const [homeService, setHomeService] = useState(true);
+  const [salonService, setSalonService] = useState(false);
+  const [isAvailable, setIsAvailable] = useState(true);
+  const [aadhaarNumber, setAadhaarNumber] = useState("");
+  const [verificationStatus, setVerificationStatus] = useState("PENDING");
   const [instagramHandle, setInstagramHandle] = useState("");
   const [facebookHandle, setFacebookHandle] = useState("");
-
 
   const loadProfileData = useCallback(async () => {
     setLoading(true);
     try {
       if (isArtist) {
         const data = await getArtistDetails();
-        setFullName(data.user?.name || "");
-        setEmail(data.user?.email || "");
-        setPhone(data.user?.phone || "");
-        setAvatarUri(resolveImage(data.user?.profile_image));
+        const artistUser = data.user || user || {};
+        setFullName(artistUser.name || artistUser.full_name || "");
+        setEmail(artistUser.email || "");
+        setPhone(artistUser.phone || "");
+        
+        const photo = artistUser.profile_image || artistUser.avatar || data.selfie_image;
+        if (photo) {
+          setAvatarUri(resolveImage(photo));
+        }
+
         setBio(data.bio || "");
-        setExperience(data.experience_years ? String(data.experience_years) : "");
+        setExperience(data.experience_years !== undefined && data.experience_years !== null ? String(data.experience_years) : "");
+        setStartingPrice(data.starting_price ? String(data.starting_price) : "1500");
         setLocation(data.location || "");
         setCity(data.city || "");
         setState(data.state || "");
         setPincode(data.pincode || "");
-        setLanguages(data.languages || "");
+        setLanguages(data.languages || "English, Hindi");
+        setHomeService(data.home_service !== undefined ? Boolean(data.home_service) : true);
+        setSalonService(Boolean(data.salon_service));
+        setIsAvailable(data.is_available !== undefined ? Boolean(data.is_available) : true);
+        setAadhaarNumber(data.aadhaar_number || "");
+        setVerificationStatus(data.verification_status || data.status || "PENDING");
 
         if (user?.id) {
           const insta = await AsyncStorage.getItem(`@mehndigo_insta_${user.id}`);
@@ -75,13 +93,15 @@ export default function EditProfileScreen({ navigation }) {
         }
       } else {
         const data = await getCustomerProfile();
-        setFullName(data.name || "");
+        setFullName(data.name || data.full_name || "");
         setEmail(data.email || "");
         setPhone(data.phone || "");
         setCity(data.city || "");
         setState(data.state || "");
         setPincode(data.pincode || "");
-        setAvatarUri(resolveImage(data.profile_image));
+        if (data.profile_image || data.avatar) {
+          setAvatarUri(resolveImage(data.profile_image || data.avatar));
+        }
       }
     } catch (err) {
       console.log("Failed to load profile data:", err);
@@ -89,13 +109,10 @@ export default function EditProfileScreen({ navigation }) {
     } finally {
       setLoading(false);
     }
-  }, [isArtist]);
+  }, [isArtist, user]);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      loadProfileData();
-    }, 0);
-    return () => clearTimeout(timer);
+    loadProfileData();
   }, [loadProfileData]);
 
   const handlePickImage = async () => {
@@ -114,7 +131,6 @@ export default function EditProfileScreen({ navigation }) {
 
     if (!result.canceled && result.assets && result.assets.length > 0) {
       const uri = result.assets[0].uri;
-      console.log('[PICKED PROFILE IMAGE]', uri);
       setAvatarUri(uri);
     }
   };
@@ -146,6 +162,10 @@ export default function EditProfileScreen({ navigation }) {
         Alert.alert("Validation Error", "Experience must be a positive number");
         return;
       }
+      if (startingPrice.trim() !== "" && (isNaN(Number(startingPrice)) || Number(startingPrice) <= 0)) {
+        Alert.alert("Validation Error", "Starting price must be a valid positive amount");
+        return;
+      }
       if (pincode.trim() !== "" && (pincode.trim().length !== 6 || isNaN(Number(pincode)))) {
         Alert.alert("Validation Error", "Pincode must be a 6-digit number");
         return;
@@ -155,47 +175,47 @@ export default function EditProfileScreen({ navigation }) {
     setSaving(true);
     try {
       let uploadedUrl = null;
-      // If photo was changed (local file scheme)
+      // If photo was changed (local file URI)
       if (avatarUri && (avatarUri.startsWith("file://") || avatarUri.startsWith("content://") || avatarUri.startsWith("ph://") || avatarUri.startsWith("assets-library://") || avatarUri.startsWith("/"))) {
         console.log('[CLOUDINARY UPLOAD START]');
         const uploadResult = await uploadPortfolioMedia([{ uri: avatarUri }]);
-        console.log('[CLOUDINARY UPLOAD RESPONSE]', uploadResult);
         if (uploadResult && uploadResult.length > 0) {
           uploadedUrl = uploadResult[0].url;
-          console.log('[CLOUDINARY SECURE URL]', uploadedUrl);
         }
       }
 
       const finalAvatar = uploadedUrl || avatarUri;
 
       if (isArtist) {
-        console.log('[ARTIST PROFILE UPDATE PAYLOAD]', {
+        const payload = {
           name: fullName.trim(),
+          fullName: fullName.trim(),
+          full_name: fullName.trim(),
           profile_image: finalAvatar,
+          profileImage: finalAvatar,
           avatar: finalAvatar,
+          selfie_image: finalAvatar,
           bio: bio.trim(),
           experience_years: experience.trim() ? Number(experience) : undefined,
+          experience: experience.trim() ? Number(experience) : undefined,
+          starting_price: startingPrice.trim() ? Number(startingPrice) : 1500,
+          startingPrice: startingPrice.trim() ? Number(startingPrice) : 1500,
+          home_service: homeService,
+          homeService: homeService,
+          salon_service: salonService,
+          salonService: salonService,
+          is_available: isAvailable,
+          isAvailable: isAvailable,
           location: location.trim(),
           city: city.trim(),
           state: state.trim(),
           pincode: pincode.trim() || undefined,
           languages: languages.trim(),
           phone: cleanPhone,
-        });
-        const updateResponse = await updateArtistProfileDetails({
-          name: fullName.trim(),
-          profile_image: finalAvatar,
-          avatar: finalAvatar,
-          bio: bio.trim(),
-          experience_years: experience.trim() ? Number(experience) : undefined,
-          location: location.trim(),
-          city: city.trim(),
-          state: state.trim(),
-          pincode: pincode.trim() || undefined,
-          languages: languages.trim(),
-          phone: cleanPhone,
-        });
-        console.log('[ARTIST PROFILE UPDATE RESPONSE]', updateResponse);
+          email: email.trim(),
+        };
+
+        await updateArtistProfileDetails(payload);
 
         if (user?.id) {
           const cleanInsta = instagramHandle.trim().replace("@", "");
@@ -228,8 +248,9 @@ export default function EditProfileScreen({ navigation }) {
       const updatedUser = {
         ...currentStored,
         name: fullName.trim(),
+        full_name: fullName.trim(),
         profile_image: finalAvatar,
-        avatar: finalAvatar, // Sync avatar key
+        avatar: finalAvatar,
         email: email.trim(),
         phone: cleanPhone,
         city: city.trim(),
@@ -249,6 +270,15 @@ export default function EditProfileScreen({ navigation }) {
       setSaving(false);
     }
   };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.centerContainer}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+        <Text style={styles.loadingText}>Loading profile details...</Text>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -290,6 +320,28 @@ export default function EditProfileScreen({ navigation }) {
 
           {/* Form Card */}
           <View style={styles.formCard}>
+            {/* Verification Status Banner for Artists */}
+            {isArtist && (
+              <View style={[
+                styles.statusBanner,
+                verificationStatus === "APPROVED" ? styles.statusApproved : (verificationStatus === "REJECTED" ? styles.statusRejected : styles.statusPending)
+              ]}>
+                <Ionicons
+                  name={verificationStatus === "APPROVED" ? "checkmark-circle" : (verificationStatus === "REJECTED" ? "close-circle" : "time")}
+                  size={20}
+                  color={verificationStatus === "APPROVED" ? "#16A34A" : (verificationStatus === "REJECTED" ? "#DC2626" : "#D97706")}
+                />
+                <View style={{ marginLeft: 10, flex: 1 }}>
+                  <Text style={styles.statusTitle}>KYC Verification: {verificationStatus}</Text>
+                  <Text style={styles.statusSubtitle}>
+                    {verificationStatus === "APPROVED" ? "Your profile is verified and visible to clients." : (verificationStatus === "REJECTED" ? "Application rejected. Please check details." : "Application under admin review.")}
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            <Text style={styles.sectionHeader}>Personal Information</Text>
+
             <Text style={styles.label}>Full Name</Text>
             <View style={styles.inputContainer}>
               <Ionicons
@@ -319,6 +371,7 @@ export default function EditProfileScreen({ navigation }) {
                 placeholder="Enter Email"
                 placeholderTextColor={Colors.textTertiary}
                 keyboardType="email-address"
+                autoCapitalize="none"
                 style={styles.input}
               />
             </View>
@@ -340,6 +393,8 @@ export default function EditProfileScreen({ navigation }) {
                 style={styles.input}
               />
             </View>
+
+            <Text style={styles.sectionHeader}>Location Details</Text>
 
             <Text style={styles.label}>City</Text>
             <View style={styles.inputContainer}>
@@ -393,8 +448,10 @@ export default function EditProfileScreen({ navigation }) {
 
             {isArtist && (
               <>
+                <Text style={styles.sectionHeader}>Professional & Service Info</Text>
+
                 <Text style={styles.label}>Bio</Text>
-                <View style={[styles.inputContainer, { height: 80, alignItems: "flex-start", paddingTop: 10 }]}>
+                <View style={[styles.inputContainer, { height: 84, alignItems: "flex-start", paddingTop: 10 }]}>
                   <Ionicons
                     name="document-text-outline"
                     size={20}
@@ -404,11 +461,11 @@ export default function EditProfileScreen({ navigation }) {
                   <TextInput
                     value={bio}
                     onChangeText={setBio}
-                    placeholder="Tell clients about yourself..."
+                    placeholder="Tell clients about your mehndi style and background..."
                     placeholderTextColor={Colors.textTertiary}
                     multiline
                     numberOfLines={3}
-                    style={[styles.input, { height: 60, textAlignVertical: "top" }]}
+                    style={[styles.input, { height: 64, textAlignVertical: "top" }]}
                   />
                 </View>
 
@@ -422,14 +479,31 @@ export default function EditProfileScreen({ navigation }) {
                   <TextInput
                     value={experience}
                     onChangeText={setExperience}
-                    placeholder="Years of experience"
+                    placeholder="Years of experience (e.g. 5)"
                     placeholderTextColor={Colors.textTertiary}
                     keyboardType="numeric"
                     style={styles.input}
                   />
                 </View>
 
-                <Text style={styles.label}>Studio / Workshop Location</Text>
+                <Text style={styles.label}>Starting Service Price (₹)</Text>
+                <View style={styles.inputContainer}>
+                  <Ionicons
+                    name="cash-outline"
+                    size={20}
+                    color={Colors.primary}
+                  />
+                  <TextInput
+                    value={startingPrice}
+                    onChangeText={setStartingPrice}
+                    placeholder="Starting Price (e.g. 1500)"
+                    placeholderTextColor={Colors.textTertiary}
+                    keyboardType="numeric"
+                    style={styles.input}
+                  />
+                </View>
+
+                <Text style={styles.label}>Studio / Workshop Address</Text>
                 <View style={styles.inputContainer}>
                   <Ionicons
                     name="location-outline"
@@ -439,13 +513,13 @@ export default function EditProfileScreen({ navigation }) {
                   <TextInput
                     value={location}
                     onChangeText={setLocation}
-                    placeholder="Full Studio Address"
+                    placeholder="Full Studio Address or Area"
                     placeholderTextColor={Colors.textTertiary}
                     style={styles.input}
                   />
                 </View>
 
-                <Text style={styles.label}>Languages (e.g. English, Hindi)</Text>
+                <Text style={styles.label}>Languages Spoken</Text>
                 <View style={styles.inputContainer}>
                   <Ionicons
                     name="language-outline"
@@ -455,13 +529,78 @@ export default function EditProfileScreen({ navigation }) {
                   <TextInput
                     value={languages}
                     onChangeText={setLanguages}
-                    placeholder="Languages spoken"
+                    placeholder="e.g. Hindi, English, Rajasthani"
                     placeholderTextColor={Colors.textTertiary}
                     style={styles.input}
                   />
                 </View>
 
-                <Text style={styles.label}>Instagram Username / Handle</Text>
+                {/* Service Types & Availability Switches */}
+                <Text style={styles.sectionHeader}>Service Types & Availability</Text>
+
+                <View style={styles.switchRow}>
+                  <View style={styles.switchLabelContainer}>
+                    <Ionicons name="home-outline" size={20} color={Colors.textSecondary} />
+                    <View style={{ marginLeft: 10 }}>
+                      <Text style={styles.switchTitle}>Home Service</Text>
+                      <Text style={styles.switchSubtitle}>Travel to client's location for bookings</Text>
+                    </View>
+                  </View>
+                  <Switch
+                    value={homeService}
+                    onValueChange={setHomeService}
+                    trackColor={{ false: Colors.border, true: Colors.primary }}
+                    thumbColor={Colors.white}
+                  />
+                </View>
+
+                <View style={styles.switchRow}>
+                  <View style={styles.switchLabelContainer}>
+                    <Ionicons name="business-outline" size={20} color={Colors.textSecondary} />
+                    <View style={{ marginLeft: 10 }}>
+                      <Text style={styles.switchTitle}>Salon / Studio Service</Text>
+                      <Text style={styles.switchSubtitle}>Host clients at your studio/salon</Text>
+                    </View>
+                  </View>
+                  <Switch
+                    value={salonService}
+                    onValueChange={setSalonService}
+                    trackColor={{ false: Colors.border, true: Colors.primary }}
+                    thumbColor={Colors.white}
+                  />
+                </View>
+
+                <View style={styles.switchRow}>
+                  <View style={styles.switchLabelContainer}>
+                    <Ionicons name="radio-button-on" size={20} color={isAvailable ? "#16A34A" : Colors.textTertiary} />
+                    <View style={{ marginLeft: 10 }}>
+                      <Text style={styles.switchTitle}>Accepting New Bookings</Text>
+                      <Text style={styles.switchSubtitle}>Turn off if temporarily unavailable</Text>
+                    </View>
+                  </View>
+                  <Switch
+                    value={isAvailable}
+                    onValueChange={setIsAvailable}
+                    trackColor={{ false: Colors.border, true: "#16A34A" }}
+                    thumbColor={Colors.white}
+                  />
+                </View>
+
+                {/* Secure KYC Identity Badge */}
+                {aadhaarNumber ? (
+                  <View style={styles.kycCard}>
+                    <View style={styles.kycHeader}>
+                      <Ionicons name="shield-checkmark" size={22} color={Colors.primary} />
+                      <Text style={styles.kycTitle}>Verified Aadhaar Identity</Text>
+                    </View>
+                    <Text style={styles.kycNumber}>{aadhaarNumber}</Text>
+                    <Text style={styles.kycNote}>Government ID securely stored. Masked for your privacy.</Text>
+                  </View>
+                ) : null}
+
+                <Text style={styles.sectionHeader}>Social Handles</Text>
+
+                <Text style={styles.label}>Instagram Handle</Text>
                 <View style={styles.inputContainer}>
                   <Ionicons
                     name="logo-instagram"
@@ -478,7 +617,7 @@ export default function EditProfileScreen({ navigation }) {
                   />
                 </View>
 
-                <Text style={styles.label}>Facebook Handle / Profile URL</Text>
+                <Text style={styles.label}>Facebook Handle</Text>
                 <View style={styles.inputContainer}>
                   <Ionicons
                     name="logo-facebook"
@@ -563,6 +702,28 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 8,
   },
+  sectionHeader: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: Colors.primary,
+    marginTop: 20,
+    marginBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+    paddingBottom: 6,
+  },
+  statusBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  statusApproved: { backgroundColor: "#DCFCE7", borderWidth: 1, borderColor: "#86EFAC" },
+  statusPending: { backgroundColor: "#FEF3C7", borderWidth: 1, borderColor: "#FCD34D" },
+  statusRejected: { backgroundColor: "#FEE2E2", borderWidth: 1, borderColor: "#FCA5A5" },
+  statusTitle: { fontSize: 14, fontWeight: "700", color: Colors.text },
+  statusSubtitle: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
   label: {
     fontSize: 14,
     fontWeight: "600",
@@ -580,9 +741,53 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     height: 54,
   },
-  disabledInput: {
-    backgroundColor: Colors.border + "40",
-  },
   input: { flex: 1, marginLeft: 10, fontSize: 15, color: Colors.text },
+  switchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border + "50",
+  },
+  switchLabelContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    paddingRight: 10,
+  },
+  switchTitle: { fontSize: 14, fontWeight: "600", color: Colors.text },
+  switchSubtitle: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  kycCard: {
+    backgroundColor: Colors.primaryLight + "15",
+    borderWidth: 1,
+    borderColor: Colors.primaryLight,
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  kycHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  kycTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: Colors.primary,
+    marginLeft: 8,
+  },
+  kycNumber: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: Colors.text,
+    letterSpacing: 2,
+    marginVertical: 4,
+  },
+  kycNote: {
+    fontSize: 11,
+    color: Colors.textTertiary,
+  },
   footer: { paddingHorizontal: 16, paddingTop: 25 },
 });

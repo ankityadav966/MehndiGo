@@ -157,6 +157,8 @@ export default function ArtistDashboardScreen({ navigation }) {
   const { socket } = useSocket();
   const { unreadCount } = useNotifications();
 
+  console.log(`[ARTIST_APPROVAL_DEBUG] CURRENT_ROUTE: ArtistDashboardScreen | USER_ID: ${user?.id} | ROLE: ${user?.role}`);
+
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);

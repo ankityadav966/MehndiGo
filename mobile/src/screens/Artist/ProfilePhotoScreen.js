@@ -76,8 +76,16 @@ export default function ProfilePhotoScreen({ navigation }) {
 
       <View style={styles.footer}>
         <CustomButton
-          title={contextPhoto ? "Continue" : "Skip for now"}
-          onPress={() => navigation.navigate("AadhaarVerification")}
+          title="Continue"
+          onPress={() => {
+            if (!contextPhoto) {
+              setError("Please capture or upload a professional profile photo to continue.");
+              if (global.showToast) global.showToast("Profile photo is required", "warning");
+              return;
+            }
+            setError("");
+            navigation.navigate("AadhaarVerification");
+          }}
         />
       </View>
     </SafeAreaView>

@@ -31,13 +31,14 @@ export default function ArtistFlowStack({ route }) {
     profilePhoto,
   });
 
+  console.log(`[ARTIST_APPROVAL_DEBUG] [ARTIST_NAV_DEBUG] mounting ArtistFlowStack -> initialRoute: ${initialRouteName} | verificationStatus: ${verificationStatus}`);
+
   return (
     <Stack.Navigator
       initialRouteName={initialRouteName}
       screenOptions={{ headerShown: false }}
     >
-      <Stack.Screen name="ApprovalPending" component={ApprovalPendingScreen} />
-      <Stack.Screen name="ApprovalRejected" component={ApprovalRejectedScreen} />
+      <Stack.Screen name="BecomeArtist" component={BecomeArtistScreen} />
       <Stack.Screen name="PersonalDetails" component={PersonalDetailsScreen} />
       <Stack.Screen name="ProfilePhoto" component={ProfilePhotoScreen} />
       <Stack.Screen
@@ -45,7 +46,8 @@ export default function ArtistFlowStack({ route }) {
         component={AadhaarVerificationScreen}
       />
       <Stack.Screen name="ReviewSubmit" component={ReviewSubmitScreen} />
-      <Stack.Screen name="BecomeArtist" component={BecomeArtistScreen} />
+      <Stack.Screen name="ApprovalPending" component={ApprovalPendingScreen} />
+      <Stack.Screen name="ApprovalRejected" component={ApprovalRejectedScreen} />
       <Stack.Screen name="KYCVerification" component={KYCVerificationScreen} />
       <Stack.Screen name="Kyc" component={KycScreen} />
       <Stack.Screen name="PANVerification" component={PANVerificationScreen} />

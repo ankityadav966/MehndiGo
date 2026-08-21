@@ -137,16 +137,38 @@ export default function CustomerProfileScreen({ navigation }) {
               </View>
             )}
           </View>
-          <Text style={[styles.contactDetails, { color: currentSecTextColor }]}>{profile.phone || "No Mobile"}{profile.email ? ` • ${profile.email}` : ""}</Text>
+          <Text style={[styles.contactDetails, { color: currentSecTextColor }]}>
+            {profile.phone || "No Mobile"}{profile.email ? ` • ${profile.email}` : ""}
+          </Text>
+
+          {(profile.city || profile.address) ? (
+            <Text style={[styles.contactDetails, { color: currentSecTextColor, marginTop: 4 }]}>
+              📍 {profile.city ? `${profile.city}${profile.state ? `, ${profile.state}` : ''}${profile.pincode ? ` - ${profile.pincode}` : ''}` : profile.address}
+            </Text>
+          ) : null}
 
           {/* Profile Completion percentage bar */}
           <View style={styles.progressBarWrap}>
             <View style={styles.progressBarHeader}>
               <Text style={[styles.progressLabel, { color: currentSecTextColor }]}>Profile Completion</Text>
-              <Text style={styles.progressVal}>{profile.profileCompletion}%</Text>
+              <Text style={styles.progressVal}>
+                {profile.profileCompletion || (
+                  (profile.name ? 25 : 0) +
+                  (profile.phone ? 25 : 0) +
+                  (profile.email ? 25 : 0) +
+                  (profile.profile_image || profile.avatar ? 25 : 0) || 75
+                )}%
+              </Text>
             </View>
             <View style={[styles.progressBarBg, { backgroundColor: currentBorderColor }]}>
-              <View style={[styles.progressBarFill, { width: `${profile.profileCompletion}%` }]} />
+              <View style={[styles.progressBarFill, {
+                width: `${profile.profileCompletion || (
+                  (profile.name ? 25 : 0) +
+                  (profile.phone ? 25 : 0) +
+                  (profile.email ? 25 : 0) +
+                  (profile.profile_image || profile.avatar ? 25 : 0) || 75
+                )}%`
+              }]} />
             </View>
           </View>
         </View>

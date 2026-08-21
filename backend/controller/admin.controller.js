@@ -95,7 +95,7 @@ async function reactivateArtist(req, res) {
 
 async function getAllArtists(req, res) {
   try {
-    const response = await AdminService.getAllArtists();
+    const response = await AdminService.getAllArtists(req.query);
     return res.status(200).json(SuccessResponse("Artists fetched", response));
   } catch (error) {
     return res.status(500).json(ErrorResponse(error.message, error));

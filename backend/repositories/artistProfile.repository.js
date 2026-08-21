@@ -128,9 +128,16 @@ class ArtistProfileRepository extends CrudRepository {
     });
   }
   async getArtistById(id) {
-    return await db.ArtistProfile.findByPk(id, {
+    let profile = await db.ArtistProfile.findByPk(id, {
       include: [{ model: db.User, as: "user" }],
     });
+    if (!profile) {
+      profile = await db.ArtistProfile.findOne({
+        where: { user_id: id },
+        include: [{ model: db.User, as: "user" }],
+      });
+    }
+    return profile;
   }
   async getArtists({ latitude, longitude, radius, search, sort, page = 1, limit = 10 }) {
     const offset = (page - 1) * limit;

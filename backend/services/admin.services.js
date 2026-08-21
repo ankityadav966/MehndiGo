@@ -18,8 +18,13 @@ class AdminService {
     return await UserRepositor.getAll({ role: "USER" });
   }
 
-  async getAllArtists() {
+  async getAllArtists(query = {}) {
+    const where = {};
+    if (query && query.status) {
+      where.verification_status = String(query.status).toUpperCase();
+    }
     return await db.ArtistProfile.findAll({
+      where,
       include: [
         {
           model: db.User,
@@ -185,7 +190,7 @@ class AdminService {
       throw new AppError("Artist not found", 404);
     }
     const previousStatus = artist.verification_status;
-    await ArtistProfileRepositor.update(id, {
+    await ArtistProfileRepositor.update(artist.id, {
       verification_status: "APPROVED",
       is_available: true,
       reviewed_by: adminId || null,
@@ -203,7 +208,7 @@ class AdminService {
           admin_id: adminId,
           action: "KYC_APPROVAL",
           details: JSON.stringify({
-            artist_id: id,
+            artist_id: artist.id,
             artist_user_id: artist.user_id,
             previous_status: previousStatus,
             new_status: "APPROVED",
@@ -248,7 +253,7 @@ class AdminService {
       throw new AppError("Artist not found", 404);
     }
     const previousStatus = artist.verification_status;
-    await ArtistProfileRepositor.update(id, {
+    await ArtistProfileRepositor.update(artist.id, {
       verification_status: "REJECTED",
       is_available: false,
       reviewed_by: adminId || null,
@@ -262,7 +267,7 @@ class AdminService {
           admin_id: adminId,
           action: "KYC_REJECTION",
           details: JSON.stringify({
-            artist_id: id,
+            artist_id: artist.id,
             artist_user_id: artist.user_id,
             previous_status: previousStatus,
             new_status: "REJECTED",
@@ -300,7 +305,7 @@ class AdminService {
       throw new AppError("Artist not found", 404);
     }
     const previousStatus = artist.verification_status;
-    await ArtistProfileRepositor.update(id, {
+    await ArtistProfileRepositor.update(artist.id, {
       verification_status: "REJECTED",
       is_available: false,
       rejection_reason: reason
@@ -317,7 +322,7 @@ class AdminService {
           admin_id: adminId,
           action: "ARTIST_SUSPENSION",
           details: JSON.stringify({
-            artist_id: id,
+            artist_id: artist.id,
             artist_user_id: artist.user_id,
             previous_status: previousStatus,
             new_status: "SUSPENDED",
@@ -347,7 +352,7 @@ class AdminService {
       throw new AppError("Artist not found", 404);
     }
     const previousStatus = artist.verification_status;
-    await ArtistProfileRepositor.update(id, {
+    await ArtistProfileRepositor.update(artist.id, {
       verification_status: "APPROVED",
       is_available: true,
       rejection_reason: null

@@ -36,6 +36,7 @@ router.post(
   ArtistController.createPortfolio,
 );
 router.put("/profile", authenticate, ArtistController.updateProfile);
+router.get("/profile", authenticate, ArtistController.getArtistDetails);
 
 router.get("/all",authenticate, ArtistController.getArtists);
 router.get("/artistdetails", authenticate,ArtistController.getArtistDetails);
