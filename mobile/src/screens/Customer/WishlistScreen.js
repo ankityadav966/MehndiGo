@@ -18,26 +18,7 @@ import Alert from "../../utils/Alert";
 import { getCustomerWishlist, removeArtistFavorite } from "../../services/customer";
 import CustomButton from "../../components/CustomButton";
 
-function WishlistArtistImage({ uri, fallbackUri, style }) {
-  const [imgSrc, setImgSrc] = useState(uri);
-
-  useEffect(() => {
-    setImgSrc(uri);
-  }, [uri]);
-
-  return (
-    <Image
-      source={{ uri: imgSrc || fallbackUri }}
-      style={style}
-      resizeMode="cover"
-      onError={() => {
-        if (imgSrc !== fallbackUri) {
-          setImgSrc(fallbackUri);
-        }
-      }}
-    />
-  );
-}
+import OptimizedImage from "../../components/OptimizedImage";
 
 export default function WishlistScreen({ navigation }) {
   const [wishlist, setWishlist] = useState([]);
@@ -160,11 +141,11 @@ export default function WishlistScreen({ navigation }) {
         <TouchableOpacity
           activeOpacity={0.9}
           style={styles.cardHeaderRow}
-          onPress={() => navigation.navigate("ArtistProfile", { artistId: artist.id })}
+          onPress={() => navigation.navigate("ArtistProfile", { artistId: artist.id, artist })}
         >
           <View style={styles.imageWrap}>
-            <WishlistArtistImage
-              uri={artistImage}
+            <OptimizedImage
+              source={{ uri: artistImage }}
               fallbackUri={avatarFallback}
               style={styles.artistImage}
             />
@@ -271,14 +252,14 @@ export default function WishlistScreen({ navigation }) {
         <View style={styles.cardActionsRow}>
           <TouchableOpacity
             style={styles.outlineBtn}
-            onPress={() => navigation.navigate("ArtistProfile", { artistId: artist.id })}
+            onPress={() => navigation.navigate("ArtistProfile", { artistId: artist.id, artist })}
           >
             <Text style={styles.outlineBtnText}>View Full Profile</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.primaryBookBtn}
-            onPress={() => navigation.navigate("ArtistProfile", { artistId: artist.id })}
+            onPress={() => navigation.navigate("ArtistProfile", { artistId: artist.id, artist })}
           >
             <Text style={styles.primaryBookBtnText}>Book Artist Now</Text>
             <Ionicons name="arrow-forward" size={14} color="#FFFFFF" style={{ marginLeft: 4 }} />

@@ -28,9 +28,19 @@ export default function SelectDateScreen({ route, navigation }) {
       return;
     }
 
-    const checkRestrictions = async () => {
+    const loadData = async () => {
       try {
-        const check = await checkRestrictedBooking();
+        const [check, slots] = await Promise.all([
+          checkRestrictedBooking().catch((err) => {
+            console.log("Failed to check booking restrictions:", err.message);
+            return { hasRestricted: false };
+          }),
+          fetchArtistAvailability(artistId).catch((err) => {
+            console.log("Failed to load availability for calendar:", err.message);
+            return [];
+          })
+        ]);
+
         if (check?.hasRestricted) {
           Alert.alert(
             "Pending Booking Payment",
@@ -58,33 +68,20 @@ export default function SelectDateScreen({ route, navigation }) {
             ],
             { cancelable: false }
           );
-          return false;
+          return;
         }
-        return true;
-      } catch (err) {
-        console.log("Failed to check booking restrictions:", err.message);
-        return true;
-      }
-    };
 
-    const loadArtistAvailability = async () => {
-      const isAllowed = await checkRestrictions();
-      if (!isAllowed) return;
-
-      try {
-        const slots = await fetchArtistAvailability(artistId);
         const dates = (slots || [])
           .filter(slot => !slot.is_booked)
           .map(slot => moment(slot.start_time).format("YYYY-MM-DD"));
-        // Keep unique dates
         setAvailabilityDates([...new Set(dates)]);
       } catch (err) {
-        console.log("Failed to load availability for calendar:", err.message);
+        console.log("Error loading date selection:", err.message);
       } finally {
         setLoading(false);
       }
     };
-    loadArtistAvailability();
+    loadData();
   }, [artistId, serviceId]);
 
   const [isNavigating, setIsNavigating] = useState(false);

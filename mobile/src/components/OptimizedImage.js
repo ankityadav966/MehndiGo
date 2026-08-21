@@ -1,14 +1,12 @@
-import React, { useState } from "react";
-import { View, StyleSheet, ActivityIndicator } from "react-native";
+import React, { useState, useMemo } from "react";
 import { Image as ExpoImage } from "expo-image";
 import { getThumbnailUrl } from "../utils/cloudinary";
-import Colors from "../constants/Colors";
 
 const DEFAULT_PLACEHOLDER = "https://ui-avatars.com/api/?name=MehndiGo&background=F3E8FF&color=7C3AED";
 
 /**
  * High-performance hardware-accelerated Image Component using expo-image (Glide/SDWebImage)
- * with dynamic Cloudinary thumbnailing, memory-disk cache policy, and placeholder fallback.
+ * with dynamic Cloudinary thumbnailing, memory-disk cache policy, recyclingKey, and zero-flicker rendering.
  */
 function OptimizedImage({
   source,
@@ -25,8 +23,8 @@ function OptimizedImage({
   const [hasError, setHasError] = useState(false);
 
   const initialUri = typeof source === "object" && source?.uri ? source.uri : typeof source === "string" ? source : null;
+  
   let rawUri = initialUri;
-
   if (hasError || !rawUri) {
     rawUri = fallbackUri;
   } else if (!useRawOriginal && typeof rawUri === "string" && rawUri.includes("cloudinary.com")) {
@@ -41,46 +39,35 @@ function OptimizedImage({
       ? priority
       : "normal";
 
-  const imageSource =
-    typeof source === "number"
-      ? source
-      : {
-          uri: rawUri,
-          priority: normalizedPriority,
-        };
+  const imageSource = useMemo(() => {
+    if (typeof source === "number") return source;
+    return {
+      uri: rawUri || fallbackUri,
+      priority: normalizedPriority,
+    };
+  }, [source, rawUri, fallbackUri, normalizedPriority]);
 
   const fitMode = contentFit || resizeMode || "cover";
+  const stableKey = typeof source === "number" ? String(source) : (rawUri || fallbackUri);
 
   return (
-    <View style={[styles.container, style]}>
-      <ExpoImage
-        {...props}
-        source={imageSource}
-        style={[style, styles.imageFix]}
-        contentFit={fitMode}
-        cachePolicy="memory-disk"
-        transition={150}
-        onError={() => {
-          if (!useRawOriginal && initialUri && typeof initialUri === "string" && initialUri.includes("cloudinary.com")) {
-            setUseRawOriginal(true);
-          } else {
-            setHasError(true);
-          }
-        }}
-      />
-    </View>
+    <ExpoImage
+      {...props}
+      source={imageSource}
+      style={style}
+      contentFit={fitMode}
+      cachePolicy="memory-disk"
+      transition={0}
+      recyclingKey={stableKey}
+      onError={() => {
+        if (!useRawOriginal && initialUri && typeof initialUri === "string" && initialUri.includes("cloudinary.com")) {
+          setUseRawOriginal(true);
+        } else {
+          setHasError(true);
+        }
+      }}
+    />
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    overflow: "hidden",
-    backgroundColor: "#F3F4F6",
-  },
-  imageFix: {
-    width: "100%",
-    height: "100%",
-  }
-});
 
 export default React.memo(OptimizedImage);

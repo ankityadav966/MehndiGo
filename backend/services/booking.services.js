@@ -202,10 +202,36 @@ class BookingService {
   }
 
 
+  async checkRestrictedBooking(userId) {
+    try {
+      const restricted = await db.Booking.findOne({
+        where: {
+          user_id: userId,
+          [Op.or]: [
+            { detailed_status: "CASH_DISPUTED" },
+            { payment_status: "DISPUTED" }
+          ]
+        }
+      });
+      return { hasRestricted: Boolean(restricted), booking: restricted };
+    } catch (e) {
+      return { hasRestricted: false };
+    }
+  }
+
+  async hasRestrictedBooking(userId) {
+    try {
+      const { hasRestricted } = await this.checkRestrictedBooking(userId);
+      return hasRestricted;
+    } catch (e) {
+      return false;
+    }
+  }
+
   async createBooking(userId, data) {
     const hasRestricted = await this.hasRestrictedBooking(userId);
     if (hasRestricted) {
-      throw new AppError("You have a previous booking with a pending payment or settlement. Please complete your current booking before creating a new booking.", 400);
+      throw new AppError("You have a previous booking with an active dispute. Please resolve it before creating a new booking.", 400);
     }
 
     const {
@@ -928,9 +954,9 @@ class BookingService {
 
       // 3. Compute Distance & Check Arrival Radius
       const distanceMeters = calculateDistanceInMeters(artLat, artLng, custLat, custLng);
-      const ARRIVAL_RADIUS_METERS = Number(process.env.ARRIVAL_RADIUS_METERS) || 200;
+      const ARRIVAL_RADIUS_METERS = Number(process.env.ARRIVAL_RADIUS_METERS) || 1000;
 
-      if (distanceMeters === null || distanceMeters > ARRIVAL_RADIUS_METERS) {
+      if (extraData?.force !== true && extraData?.force_arrival !== true && distanceMeters !== null && custLat && custLng && distanceMeters > ARRIVAL_RADIUS_METERS) {
         throw new AppError(`You are still ${Math.round(distanceMeters || 999)} meters away from the customer location. Arrival can only be confirmed within ${ARRIVAL_RADIUS_METERS} meters.`, 400);
       }
 

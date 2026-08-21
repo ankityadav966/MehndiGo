@@ -13,11 +13,12 @@ import Colors from "../../constants/Colors";
 import { fetchArtistServices } from "../../services/customer";
 
 export default function SelectService({ route, navigation }) {
-  const { artistId, selectedDate, selectedTimeSlot, selectedArt } = route.params || {};
+  const { artistId, selectedDate, selectedTimeSlot, selectedArt, services: initialServices } = route.params || {};
 
-  const [services, setServices] = useState([]);
-  const [selectedServiceId, setSelectedServiceId] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const hasInitial = Array.isArray(initialServices) && initialServices.length > 0;
+  const [services, setServices] = useState(hasInitial ? initialServices : []);
+  const [selectedServiceId, setSelectedServiceId] = useState(hasInitial ? initialServices[0].id : null);
+  const [loading, setLoading] = useState(!hasInitial);
 
   useEffect(() => {
     if (!artistId) {
@@ -29,19 +30,22 @@ export default function SelectService({ route, navigation }) {
     const loadServices = async () => {
       try {
         const data = await fetchArtistServices(artistId);
-        setServices(data || []);
-        if (data && data.length > 0) {
-          setSelectedServiceId(data[0].id);
+        const list = data || [];
+        setServices(list);
+        if (list.length > 0) {
+          setSelectedServiceId((prev) => prev || list[0].id);
         }
       } catch (err) {
-        Alert.alert("Error", "Failed to fetch artist services.");
+        if (!hasInitial) {
+          Alert.alert("Error", "Failed to fetch artist services.");
+        }
       } finally {
         setLoading(false);
       }
     };
 
     loadServices();
-  }, [artistId]);
+  }, [artistId, hasInitial]);
 
   const handleContinue = () => {
     if (!selectedServiceId) {

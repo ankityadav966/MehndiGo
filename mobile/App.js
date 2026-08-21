@@ -90,13 +90,8 @@ export default function App() {
   const [fontsLoaded, fontError] = useFonts({
     Poppins: Poppins_400Regular,
   });
-  const [fontTimeout, setFontTimeout] = useState(false);
-
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setFontTimeout(true);
-    }, 1500);
-    return () => clearTimeout(timer);
+    // Artificial delay removed for faster startup
   }, []);
 
   useEffect(() => {
@@ -145,14 +140,11 @@ export default function App() {
     };
   }, []);
 
-  const isReady = fontsLoaded || fontError || fontTimeout;
+  const isReady = fontsLoaded || fontError;
 
   const onLayoutRootView = useCallback(async () => {
-    if (isReady) {
-      try {
-        await SplashScreen.hideAsync();
-      } catch (e) {}
-    }
+    // We let RootNavigator handle hiding the splash screen once auth state is loaded
+    // to prevent a white screen flash.
   }, [isReady]);
 
   if (!isReady) {

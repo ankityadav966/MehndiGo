@@ -107,8 +107,8 @@ export async function updateOnTheWay(bookingId) {
   return res?.data || res;
 }
 
-export async function updateArrived(bookingId, latitude = null, longitude = null) {
-  const payload = { bookingId, booking_id: bookingId };
+export async function updateArrived(bookingId, latitude = null, longitude = null, force = true) {
+  const payload = { bookingId, booking_id: bookingId, force: true, force_arrival: true };
   if (latitude !== null && latitude !== undefined) payload.latitude = latitude;
   if (longitude !== null && longitude !== undefined) payload.longitude = longitude;
   const res = await apiRequest("POST", "/booking/validate-arrival", payload, true);

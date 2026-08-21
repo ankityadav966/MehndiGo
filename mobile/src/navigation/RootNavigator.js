@@ -24,21 +24,20 @@ export default function RootNavigator() {
   const navigation = useNavigation();
 
   const isArtist = String(user?.role).toUpperCase() === "ARTIST";
-  const isOverallLoading = isAuthLoading || (isAuthenticated && isArtist && isArtistLoading);
+  const isOverallLoading = isAuthLoading;
 
   useEffect(() => {
-    if (isAuthenticated) {
-      const { consumePendingDeepLink } = require("../services/deepLink");
-      consumePendingDeepLink(navigation, isAuthenticated);
-    }
-  }, [isAuthenticated, navigation]);
+    const hideSplash = async () => {
+      try {
+        const ExpoSplash = require("expo-splash-screen");
+        await ExpoSplash.hideAsync();
+      } catch (e) {}
+    };
+    hideSplash();
+  }, [isOverallLoading]);
 
   if (isOverallLoading) {
-    return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#FFFFFF" }}>
-        <ActivityIndicator size="large" color={Colors.primary || "#FF4D6D"} />
-      </View>
-    );
+    return null;
   }
 
   const isApprovedArtist = isArtist && (artistApproved || verificationStatus === "APPROVED") && user?.is_active !== false;
