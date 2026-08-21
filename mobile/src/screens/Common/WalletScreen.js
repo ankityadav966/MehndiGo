@@ -22,7 +22,7 @@ import { createPaymentSession } from "../../services/payment";
 import RazorpayCheckoutModal from "../../components/RazorpayCheckoutModal";
 import { openRazorpayCheckout } from "../../services/razorpayHelper";
 import apiRequest from "../../services/api";
-import moment from "moment";
+import { formatDateTime, formatRelativeTime } from "../../utils/date";
 
 export default function WalletScreen({ navigation }) {
   const [balance, setBalance] = useState(0);
@@ -232,7 +232,7 @@ export default function WalletScreen({ navigation }) {
             {item.description || item.title || (isCredit ? "Wallet Top-up" : "Booking Payment")}
           </Text>
           <Text style={styles.txDate}>
-            {moment(item.created_at || item.createdAt || new Date()).format("DD MMM YYYY, hh:mm A")}
+            {formatDateTime(item.created_at || item.createdAt || item.date || item.timestamp)}
           </Text>
         </View>
 
@@ -477,7 +477,7 @@ export default function WalletScreen({ navigation }) {
                 <View style={styles.detailRow}>
                   <Text style={styles.detailKey}>Date & Time</Text>
                   <Text style={styles.detailVal}>
-                    {moment(selectedTx.created_at || selectedTx.createdAt).format("DD MMMM YYYY, hh:mm A")}
+                    {formatDateTime(selectedTx.created_at || selectedTx.createdAt || selectedTx.date || selectedTx.timestamp)}
                   </Text>
                 </View>
 

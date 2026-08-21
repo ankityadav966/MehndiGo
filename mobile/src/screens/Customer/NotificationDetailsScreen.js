@@ -13,6 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import { markNotificationAsRead } from "../../services/notificationApi";
 import { handleNotificationNavigation } from "../../services/deepLink";
+import { formatDateTime } from "../../utils/date";
 
 const NOTIF_ICONS = {
   booking: "calendar-check-outline",
@@ -133,13 +134,7 @@ export default function NotificationDetailsScreen({ route, navigation }) {
 
           <Text style={styles.title}>{notification.title}</Text>
           <Text style={styles.timestamp}>
-            {new Date(notification.createdAt).toLocaleString("en-IN", {
-              day: "numeric",
-              month: "short",
-              year: "numeric",
-              hour: "2-digit",
-              minute: "2-digit"
-            })}
+            {formatDateTime(notification.createdAt || notification.created_at || notification.timestamp)}
           </Text>
 
           <View style={styles.divider} />

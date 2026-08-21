@@ -7,6 +7,7 @@ import Colors from "../../constants/Colors";
 import CustomButton from "../../components/CustomButton";
 import moment from "moment";
 import { fetchArtistAvailability } from "../../services/customer";
+import { formatServiceDate } from "../../utils/date";
 
 export default function SelectTimeSlotScreen({ route, navigation }) {
   const { artistId, serviceId, selectedDate: paramDate, selectedArt } = route.params || {};
@@ -150,7 +151,7 @@ export default function SelectTimeSlotScreen({ route, navigation }) {
           <View style={styles.dateHeaderCard}>
             <Ionicons name="calendar" size={20} color={Colors.primary} />
             <Text style={styles.dateHeaderText}>
-              {moment(targetDate).format("dddd, DD MMMM YYYY")}
+              {formatServiceDate(targetDate)}
             </Text>
           </View>
 

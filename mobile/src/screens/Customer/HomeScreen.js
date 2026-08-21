@@ -27,6 +27,7 @@ import PaymentModal from "../../components/customer/PaymentModal";
 import HomeHeader from "../../components/customer/HomeHeader";
 import { useAuth } from "../../context/AuthContext";
 import { useNotifications } from "../../context/NotificationContext";
+import { formatServiceDate, formatTime } from "../../utils/date";
 
 import {
   getHomeDashboard,
@@ -83,17 +84,9 @@ export default function HomeScreen({ navigation }) {
 
   const getModalBookingDate = (b) => {
     if (!b) return "";
-    const raw = b.booking_date || b.date || b.event_date || b.selected_date || b.reschedule_date || b.slot?.date || b.slot?.start_time || b.created_at || b.createdAt;
+    const raw = b.booking_date || b.date || b.event_date || b.selected_date || b.reschedule_date || b.slot?.date || b.slot?.start_time;
     if (!raw) return "";
-    try {
-      const d = new Date(raw);
-      if (!isNaN(d.getTime())) {
-        return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
-      }
-      return String(raw);
-    } catch (e) {
-      return String(raw);
-    }
+    return formatServiceDate(raw);
   };
 
   const getModalBookingTime = (b) => {
@@ -105,8 +98,8 @@ export default function HomeScreen({ navigation }) {
     if (b.reschedule_time) return b.reschedule_time;
     if (b.slot?.start_time && b.slot?.end_time) {
       try {
-        const st = new Date(b.slot.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        const et = new Date(b.slot.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const st = formatTime(b.slot.start_time);
+        const et = formatTime(b.slot.end_time);
         return `${st} - ${et}`;
       } catch (e) {
         return String(b.slot.start_time);
@@ -668,7 +661,7 @@ export default function HomeScreen({ navigation }) {
 
   // Render recently booked artist card
   const renderRecentlyBookedItem = ({ item }) => {
-    const formattedDate = item.booking_date ? new Date(item.booking_date).toLocaleDateString() : "Recently";
+    const formattedDate = item.booking_date ? formatServiceDate(item.booking_date) : "Recently";
     const artistName = item.name || item.full_name || item.user?.name || "Mehndi Specialist";
     const avatarUrl = resolveImage(item.profile_image) || `https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=F3E8FF&color=7C3AED`;
 

@@ -1,7 +1,7 @@
 import React from "react";
 import { StyleSheet, Text, View, Image, TouchableOpacity } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import moment from "moment";
+import { formatServiceDate } from "../../utils/date";
 
 export default function BookingSummaryCard({
   booking,
@@ -24,8 +24,8 @@ export default function BookingSummaryCard({
     : booking?.artist_phone || booking?.artist?.user?.phone;
 
   const serviceTitle = booking?.service_name || booking?.service?.specialization_name || booking?.specialization_name || "Bridal Mehndi Service";
-  const rawDate = booking?.selected_date || booking?.booking_date || booking?.date;
-  const formattedDate = rawDate ? moment(rawDate).format("DD MMM YYYY") : "Scheduled Date";
+  const rawDate = booking?.selected_date || booking?.booking_date || booking?.date || booking?.event_date;
+  const formattedDate = rawDate ? formatServiceDate(rawDate) : "Scheduled Date";
   const timeSlot = booking?.time_slot || booking?.slot_time || booking?.time || "10:00 AM - 11:00 AM";
 
   const groupSize = booking?.group_size || 1;

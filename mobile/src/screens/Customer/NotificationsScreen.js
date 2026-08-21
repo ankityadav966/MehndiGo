@@ -18,6 +18,7 @@ import {
   markAllNotificationsAsRead
 } from "../../services/notificationApi";
 import { handleNotificationNavigation } from "../../services/deepLink";
+import { formatRelativeTime } from "../../utils/date";
 
 export default function NotificationsScreen({ navigation }) {
   const [notifications, setNotifications] = useState([]);
@@ -102,7 +103,7 @@ export default function NotificationsScreen({ navigation }) {
             {isUnread && <View style={styles.dot} />}
           </View>
           <Text style={styles.subtitle}>{item.message}</Text>
-          <Text style={styles.time}>{new Date(item.createdAt).toLocaleString()}</Text>
+          <Text style={styles.time}>{formatRelativeTime(item.createdAt || item.created_at || item.timestamp)}</Text>
         </View>
       </TouchableOpacity>
     );

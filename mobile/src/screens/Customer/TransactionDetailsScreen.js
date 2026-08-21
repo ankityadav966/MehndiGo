@@ -14,6 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import CustomButton from "../../components/CustomButton";
 import { getTransactionDetails, getInvoiceDetails } from "../../services/payment";
+import { formatDate, formatTime } from "../../utils/date";
 
 export default function TransactionDetailsScreen({ route, navigation }) {
   const { paymentId } = route.params || { paymentId: 1 };
@@ -84,9 +85,10 @@ export default function TransactionDetailsScreen({ route, navigation }) {
     );
   }
 
-  const isSuccess = transaction?.status === "SUCCESS";
-  const dateStr = transaction?.createdAt ? new Date(transaction.createdAt).toDateString() : "Today";
-  const timeStr = transaction?.createdAt ? new Date(transaction.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Just Now";
+  const isSuccess = transaction?.status === "SUCCESS" || transaction?.status === "completed";
+  const txTime = transaction?.createdAt || transaction?.created_at || transaction?.paid_at || transaction?.timestamp;
+  const dateStr = formatDate(txTime, { fallback: "Today" });
+  const timeStr = formatTime(txTime, { fallback: "Just Now" });
 
   return (
     <SafeAreaView style={styles.container}>

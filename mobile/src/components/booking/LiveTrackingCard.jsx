@@ -6,15 +6,24 @@ import LeafletMapView from "../LeafletMapView";
 export default function LiveTrackingCard({
   artistCoords,
   customerCoords,
+  origin,
+  destination,
+  originLabel,
+  destLabel,
+  mode = "customer_to_artist",
   distanceText,
   etaText,
   statusText = "Artist is traveling to your location",
   onExpand,
+  onRouteUpdate,
   height = 200
 }) {
+  const orig = origin || (mode === "artist_to_customer" ? artistCoords : customerCoords);
+  const dest = destination || (mode === "artist_to_customer" ? customerCoords : artistCoords);
+
   const hasCoords =
-    (customerCoords && customerCoords.lat && customerCoords.lng) ||
-    (artistCoords && artistCoords.lat && artistCoords.lng);
+    (orig && (orig.lat || orig.latitude) && (orig.lng || orig.longitude)) ||
+    (dest && (dest.lat || dest.latitude) && (dest.lng || dest.longitude));
 
   return (
     <View style={styles.card}>
@@ -60,6 +69,12 @@ export default function LiveTrackingCard({
           <LeafletMapView
             customerCoords={customerCoords}
             artistCoords={artistCoords}
+            origin={orig}
+            destination={dest}
+            originLabel={originLabel}
+            destLabel={destLabel}
+            mode={mode}
+            onRouteUpdate={onRouteUpdate}
             style={styles.map}
           />
         ) : (

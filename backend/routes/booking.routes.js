@@ -55,8 +55,10 @@ router.post("/verify-payment", authenticate, BookingController.verifyPayment);
 // Document download
 router.get("/invoice", authenticate, BookingController.getInvoice);
 
-// Live Tracking Location Query
+// Live Tracking & Directions Routes
 const TrackingController = require("../controllers/tracking/tracking.controller");
+router.get("/route", TrackingController.getDirectionsRoute);
+router.get("/directions", TrackingController.getDirectionsRoute);
 router.get("/:bookingId/live-location", authenticate, TrackingController.getArtistLocation);
 router.get("/:bookingId/location", authenticate, TrackingController.getArtistLocation);
 

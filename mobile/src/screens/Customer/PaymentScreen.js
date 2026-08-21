@@ -473,8 +473,12 @@ export default function PaymentScreen({ route, navigation }) {
         <View style={styles.processingOverlay}>
           <View style={styles.processingBox}>
             <ActivityIndicator size="large" color="#E91E63" />
-            <Text style={styles.processingTitle}>Processing Payment</Text>
-            <Text style={styles.processingSub}>Connecting with Razorpay secure gateway...</Text>
+            <Text style={styles.processingTitle}>
+              {orderId ? "Confirming Payment ✨" : "Processing Payment"}
+            </Text>
+            <Text style={styles.processingSub}>
+              {orderId ? "Verifying 100% secure transaction with server..." : "Connecting with Razorpay secure gateway..."}
+            </Text>
             <Text style={styles.processingNote}>Please do not close or navigate back.</Text>
           </View>
         </View>
