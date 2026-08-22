@@ -41,34 +41,34 @@ export default function RootNavigator() {
     );
   }
 
-  const isApprovedArtist = isArtist && (artistApproved || verificationStatus === "APPROVED") && user?.is_active !== false;
+  const isFirstTimeOnboarding = isArtist && user?.isFirstTimeArtistSignup === true && verificationStatus !== "APPROVED";
 
   const targetStack = !isAuthenticated
-    ? "AuthStack"
+    ? "Login"
     : isArtist
-    ? isApprovedArtist
-      ? "ArtistStack"
-      : "ArtistFlowStack"
+    ? isFirstTimeOnboarding
+      ? "ArtistFlowStack"
+      : "ArtistStack"
     : "CustomerStack";
 
-  console.log(`[ARTIST_APPROVAL_DEBUG] ROOT_NAV_STATE -> isAuthenticated: ${isAuthenticated} | isArtist: ${isArtist} | isArtistLoading: ${isArtistLoading} | isAuthLoading: ${isAuthLoading} | artistApproved: ${artistApproved} | verificationStatus: ${verificationStatus} | is_active: ${user?.is_active} | isApprovedArtist: ${isApprovedArtist} | TARGET_ROUTE: ${targetStack}`);
+  console.log(`[ARTIST_APPROVAL_DEBUG] ROOT_NAV_STATE -> isAuthenticated: ${isAuthenticated} | isArtist: ${isArtist} | isArtistLoading: ${isArtistLoading} | isAuthLoading: ${isAuthLoading} | isFirstTimeOnboarding: ${isFirstTimeOnboarding} | TARGET_ROUTE: ${targetStack}`);
 
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName={!isAuthenticated ? "Login" : undefined}>
       {!isAuthenticated ? (
         <>
-          <Stack.Screen name="Splash" component={SplashScreen} />
-          <Stack.Screen name="Onboarding3" component={Onboarding3} />
           <Stack.Screen name="Login" component={LoginScreen} />
           <Stack.Screen name="Register" component={RegisterScreen} />
           <Stack.Screen name="RoleSelection" component={RoleSelectionScreen} />
           <Stack.Screen name="Otp" component={OtpScreen} />
+          <Stack.Screen name="Splash" component={SplashScreen} />
+          <Stack.Screen name="Onboarding3" component={Onboarding3} />
         </>
       ) : isArtist ? (
-        isApprovedArtist ? (
-          <Stack.Screen name="ArtistStack" component={ArtistStack} />
-        ) : (
+        isFirstTimeOnboarding ? (
           <Stack.Screen name="ArtistFlowStack" component={ArtistFlowStack} />
+        ) : (
+          <Stack.Screen name="ArtistStack" component={ArtistStack} />
         )
       ) : (
         <Stack.Screen name="CustomerStack" component={CustomerStack} />

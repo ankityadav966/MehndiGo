@@ -143,11 +143,12 @@ export default function OtpScreen({ navigation, route }) {
       const rawRole = data.user?.role || role || "";
       const userRole = (String(rawRole).toUpperCase() === "ARTIST") ? "ARTIST" : "USER";
 
+      const isFirstTimeArtist = Boolean(isRegistering && userRole === "ARTIST");
       await secureStorage.setUserRole(userRole);
       if (data.user) {
-        await secureStorage.setUserData({ ...data.user, role: userRole });
+        await secureStorage.setUserData({ ...data.user, role: userRole, isFirstTimeArtistSignup: isFirstTimeArtist });
       }
-      console.log("[ROLE TRACE 6] Role saved in secureStorage:", userRole);
+      console.log("[ROLE TRACE 6] Role saved in secureStorage:", userRole, "| isFirstTimeArtist:", isFirstTimeArtist);
 
       if (userRole === "ARTIST") {
         try {
@@ -163,7 +164,7 @@ export default function OtpScreen({ navigation, route }) {
       dispatch({
         type: "LOGIN",
         payload: {
-          user: data.user ? { ...data.user, role: userRole } : { role: userRole },
+          user: data.user ? { ...data.user, role: userRole, isFirstTimeArtistSignup: isFirstTimeArtist } : { role: userRole, isFirstTimeArtistSignup: isFirstTimeArtist },
           token: token || data.token,
           role: userRole,
         },

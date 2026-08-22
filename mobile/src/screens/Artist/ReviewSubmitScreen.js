@@ -44,6 +44,10 @@ export default function ReviewSubmitScreen({ navigation }) {
 
       await secureStorage.setArtistProfileCompleted(true);
       await secureStorage.setArtistOnboardingDone(true);
+      const currentUser = await secureStorage.getUserData();
+      if (currentUser) {
+        await secureStorage.setUserData({ ...currentUser, isFirstTimeArtistSignup: false });
+      }
       await submitArtistProfile();
       navigation.reset({
         index: 0,
@@ -53,6 +57,10 @@ export default function ReviewSubmitScreen({ navigation }) {
       if (err.message && err.message.includes("already exists")) {
         await secureStorage.setArtistProfileCompleted(true);
         await secureStorage.setArtistOnboardingDone(true);
+        const currentUser = await secureStorage.getUserData();
+        if (currentUser) {
+          await secureStorage.setUserData({ ...currentUser, isFirstTimeArtistSignup: false });
+        }
         await submitArtistProfile();
         navigation.reset({
           index: 0,
