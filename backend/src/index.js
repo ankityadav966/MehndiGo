@@ -694,7 +694,7 @@ const handleRegisterVerifyOtp = async (c) => {
       await db.run(
         "INSERT INTO artist_profiles (user_id, bio, city, status, verification_status, is_available) VALUES (?, ?, ?, 'pending', 'PENDING', 0)",
         [newUserId, "", "Jaipur"]
-      ).catch(() => {});
+      ).catch(() => { });
     }
 
     const user = { id: newUserId, full_name: targetName, email: targetEmail, phone: targetPhone, role: targetRole, is_verified: 1 };
@@ -1338,7 +1338,7 @@ const handleUpdateArtistProfile = async (c) => {
   } catch (e) {
     try {
       body = await c.req.parseBody();
-    } catch (_) {}
+    } catch (_) { }
   }
 
   const name = body.full_name || body.fullName || body.name;
@@ -2491,7 +2491,7 @@ const handleRejectWithdrawal = async (c) => {
   await db.run(
     "INSERT INTO notifications (user_id, title, message, type, is_read) VALUES (?, ?, ?, 'PAYOUT_REVERSED', 0)",
     [userId, "Withdrawal Refunded", `Your withdrawal request of ₹${amount.toFixed(2)} could not be processed and has been safely refunded back to your available wallet balance. Reason: ${reason}`]
-  ).catch(() => {});
+  ).catch(() => { });
 
   return jsonRes(c, true, {
     withdrawal_id: targetId,
@@ -2529,13 +2529,13 @@ const handleApproveWithdrawal = async (c) => {
   await db.run(
     "UPDATE wallet_transactions SET status = 'completed' WHERE reference_id = ? OR (user_id = ? AND type = 'debit' AND amount = ? AND status = 'pending')",
     [withdrawal.reference_id, withdrawal.user_id, withdrawal.amount]
-  ).catch(() => {});
+  ).catch(() => { });
 
   // Send in-app notification to artist
   await db.run(
     "INSERT INTO notifications (user_id, title, message, type, is_read) VALUES (?, ?, ?, 'PAYOUT_SUCCESS', 0)",
     [withdrawal.user_id, "Payout Completed! 🎉", `Your payout of ₹${Number(withdrawal.amount).toFixed(2)} has been successfully transferred to your bank account. (Ref: ${payoutRef})`]
-  ).catch(() => {});
+  ).catch(() => { });
 
   return jsonRes(c, true, {
     id: targetId,
@@ -2959,7 +2959,6 @@ const handleNearbyArtists = async (c) => {
 
   const offset = (page - 1) * limit;
   const paginated = filtered.slice(offset, offset + limit);
-
   return jsonRes(c, true, {
     count: filtered.length,
     rows: paginated,
@@ -2967,26 +2966,86 @@ const handleNearbyArtists = async (c) => {
   }, "Nearby artists retrieved");
 };
 
-const SEED_ARTISTS = [];
-
 let globalFavoritesMemory = [];
 
 const enrichArtistRecords = async (db, artistsList) => {
   if (!Array.isArray(artistsList) || artistsList.length === 0) return [];
 
+  // Collect all distinct IDs
+  const idSet = new Set();
+  artistsList.forEach(art => {
+    if (art.user_id) idSet.add(art.user_id);
+    if (art.id) idSet.add(art.id);
+    if (art.artist_profile_id) idSet.add(art.artist_profile_id);
+  });
+  const idList = Array.from(idSet);
+  if (idList.length === 0) return artistsList;
+
+  const placeholders = idList.map(() => "?").join(",");
+
+  // Run all 3 batch queries concurrently in parallel
+  const [servicesRows, portfoliosRows, reviewRows] = await Promise.all([
+    db.all(
+      `SELECT artist_id, id, title, specialization_name, price, minimum_price, duration, category 
+       FROM services 
+       WHERE artist_id IN (${placeholders})`,
+      idList
+    ).catch(() => []),
+    db.all(
+      `SELECT artist_id, image_url 
+       FROM artist_portfolios 
+       WHERE artist_id IN (${placeholders}) AND image_url IS NOT NULL AND image_url != ''
+       ORDER BY id ASC`,
+      idList
+    ).catch(() => []),
+    db.all(
+      `SELECT artist_id, AVG(rating) as avg_val, COUNT(*) as rev_count 
+       FROM reviews 
+       WHERE artist_id IN (${placeholders}) AND (status = 'APPROVED' OR is_approved = 1)
+       GROUP BY artist_id`,
+      idList
+    ).catch(() => [])
+  ]);
+
+  // Group by artist_id in memory for instant O(1) lookup
+  const servicesByArtist = new Map();
+  (servicesRows || []).forEach(s => {
+    const key = String(s.artist_id);
+    if (!servicesByArtist.has(key)) servicesByArtist.set(key, []);
+    servicesByArtist.get(key).push({
+      ...s,
+      specialization_name: s.specialization_name || s.title || "Henna Service",
+      title: s.title || s.specialization_name || "Henna Service",
+      minimum_price: Number(s.minimum_price || s.price || 1800),
+      price: Number(s.price || s.minimum_price || 1800)
+    });
+  });
+
+  const portfoliosByArtist = new Map();
+  (portfoliosRows || []).forEach(p => {
+    const key = String(p.artist_id);
+    if (!portfoliosByArtist.has(key)) portfoliosByArtist.set(key, []);
+    portfoliosByArtist.get(key).push({ url: p.image_url });
+  });
+
+  const reviewsByArtist = new Map();
+  (reviewRows || []).forEach(r => {
+    const key = String(r.artist_id);
+    reviewsByArtist.set(key, {
+      avg_val: Number(r.avg_val || 0),
+      rev_count: Number(r.rev_count || 0)
+    });
+  });
+
   for (const art of artistsList) {
     const artistUserId = art.user_id || art.id;
     const profileId = art.artist_profile_id || art.id;
+    const key1 = String(artistUserId);
+    const key2 = String(profileId);
 
-    // 1. Resolve Profile Image
-    if (!art.profile_image || art.profile_image.includes("unsplash")) {
-      const portImg = await db.first(
-        "SELECT image_url FROM artist_portfolios WHERE (artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT) OR artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT)) AND image_url IS NOT NULL AND image_url != '' ORDER BY id ASC LIMIT 1",
-        [artistUserId, String(artistUserId), profileId, String(profileId)]
-      ).catch(() => null);
-      if (portImg?.image_url) {
-        art.profile_image = portImg.image_url;
-      }
+    const artistPortfolios = portfoliosByArtist.get(key1) || portfoliosByArtist.get(key2) || [];
+    if ((!art.profile_image || art.profile_image.includes("unsplash")) && artistPortfolios.length > 0) {
+      art.profile_image = artistPortfolios[0].url;
     }
     art.profileImage = art.profile_image;
     art.avatar = art.profile_image;
@@ -2999,44 +3058,23 @@ const enrichArtistRecords = async (db, artistsList) => {
       email: art.email || ""
     };
 
-    // 2. Resolve Services
-    const services = await db.all(
-      "SELECT id, title, specialization_name, price, minimum_price, duration, category FROM services WHERE (artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT) OR artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT))",
-      [artistUserId, String(artistUserId), profileId, String(profileId)]
-    ).catch(() => []);
+    const artistServices = servicesByArtist.get(key1) || servicesByArtist.get(key2) || [];
+    art.services = artistServices;
 
-    art.services = (services || []).map(s => ({
-      ...s,
-      specialization_name: s.specialization_name || s.title || "Henna Service",
-      title: s.title || s.specialization_name || "Henna Service",
-      minimum_price: Number(s.minimum_price || s.price || 1800),
-      price: Number(s.price || s.minimum_price || 1800)
-    }));
-
-    // 3. Resolve Starting Price
     let minP = Number(art.starting_price || 0);
-    if (!minP && art.services.length > 0) {
-      const prices = art.services.map(s => Number(s.price || s.minimum_price || 0)).filter(p => p > 0);
+    if (!minP && artistServices.length > 0) {
+      const prices = artistServices.map(s => Number(s.price || s.minimum_price || 0)).filter(p => p > 0);
       if (prices.length > 0) minP = Math.min(...prices);
     }
     art.starting_price = minP || 500;
     art.startingPrice = art.starting_price;
     art.price = art.starting_price;
 
-    // 4. Resolve Portfolio Images
-    const portfolios = await db.all(
-      "SELECT image_url FROM artist_portfolios WHERE (artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT) OR artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT)) AND image_url IS NOT NULL AND image_url != '' ORDER BY id ASC LIMIT 6",
-      [artistUserId, String(artistUserId), profileId, String(profileId)]
-    ).catch(() => []);
-    art.portfolio_images = portfolios.map(p => ({ url: p.image_url }));
-    // 5. Accurate Real Reviews & Rating Calculation from DB (Only Admin Approved Reviews)
-    const reviewStats = await db.first(
-      "SELECT AVG(rating) as avg_val, COUNT(*) as rev_count FROM reviews WHERE (artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT) OR artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT)) AND (status = 'APPROVED' OR is_approved = 1)",
-      [artistUserId, String(artistUserId), profileId, String(profileId)]
-    ).catch(() => null);
+    art.portfolio_images = artistPortfolios.slice(0, 6);
 
-    const dbReviewsCount = Number(reviewStats?.rev_count || 0);
-    const dbAvgRating = dbReviewsCount > 0 ? Number(Number(reviewStats.avg_val).toFixed(1)) : (art.rating ? Number(art.rating) : (art.avg_rating ? Number(art.avg_rating) : 0));
+    const rev = reviewsByArtist.get(key1) || reviewsByArtist.get(key2) || null;
+    const dbReviewsCount = rev ? rev.rev_count : 0;
+    const dbAvgRating = dbReviewsCount > 0 ? Number(rev.avg_val.toFixed(1)) : (art.rating ? Number(art.rating) : (art.avg_rating ? Number(art.avg_rating) : 0));
 
     art.rating = dbAvgRating;
     art.avg_rating = dbAvgRating;
@@ -3052,16 +3090,7 @@ const enrichArtistRecords = async (db, artistsList) => {
 
 const handleHomeDashboard = async (c) => {
   const db = getDb(c.env);
-  const categories = await db.all("SELECT * FROM categories WHERE is_active = 1 ORDER BY id ASC").catch(() => []);
-
-  const banners = await db.all(`
-    SELECT * FROM banners
-    WHERE (is_active = 1 OR is_active = 'true')
-    ORDER BY id DESC
-  `).catch((err) => {
-    console.error("[HOME DASHBOARD BANNERS SQL ERROR]:", err);
-    return [];
-  });
+  const u = getUserFromHeader(c);
 
   // Dynamic Date-Based Indian Festival Banner Fallbacks
   const getDynamicFestivalBanners = () => {
@@ -3093,6 +3122,49 @@ const handleHomeDashboard = async (c) => {
     }));
   };
 
+  // Run all independent queries in parallel for instant sub-100ms dashboard load
+  const [categories, banners, featuredArtists, popularArtists, artists, unreadRow] = await Promise.all([
+    db.all("SELECT * FROM categories WHERE is_active = 1 ORDER BY id ASC").catch(() => []),
+    db.all("SELECT * FROM banners WHERE (is_active = 1 OR is_active = 'true') ORDER BY id DESC").catch(() => []),
+    db.all(`
+      SELECT u.id as id, u.id as user_id, COALESCE(NULLIF(u.full_name, ''), 'Mehndi Artist') as name,
+             COALESCE(NULLIF(u.full_name, ''), 'Mehndi Artist') as full_name, u.email, u.phone,
+             ap.bio, ap.experience_years, ap.starting_price, ap.city, ap.locality, ap.rating, ap.total_reviews, ap.status, ap.profile_image,
+             ap.is_featured, ap.featured_priority
+      FROM users u
+      LEFT JOIN artist_profiles ap ON (u.id = ap.user_id OR CAST(u.id AS TEXT) = CAST(ap.user_id AS TEXT))
+      WHERE (LOWER(u.role) = 'artist')
+        AND (ap.status = 'APPROVED' OR ap.status = 'approved' OR ap.status IS NULL)
+      ORDER BY (CASE WHEN ap.is_featured = 1 THEN 0 ELSE 1 END) ASC, COALESCE(ap.featured_priority, 99) ASC, ap.rating DESC, u.id DESC
+      LIMIT 10
+    `).catch(() => []),
+    db.all(`
+      SELECT u.id as id, u.id as user_id, COALESCE(NULLIF(u.full_name, ''), 'Mehndi Artist') as name,
+             COALESCE(NULLIF(u.full_name, ''), 'Mehndi Artist') as full_name, u.email, u.phone,
+             ap.bio, ap.experience_years, ap.starting_price, ap.city, ap.locality, ap.rating, ap.total_reviews, ap.status, ap.profile_image,
+             COUNT(CASE WHEN b.status = 'COMPLETED' OR b.status = 'completed' THEN 1 END) as completed_bookings_count
+      FROM users u
+      LEFT JOIN artist_profiles ap ON (u.id = ap.user_id OR CAST(u.id AS TEXT) = CAST(ap.user_id AS TEXT))
+      LEFT JOIN bookings b ON (u.id = b.artist_id OR ap.id = b.artist_id OR CAST(u.id AS TEXT) = CAST(b.artist_id AS TEXT))
+      WHERE (LOWER(u.role) = 'artist')
+        AND (ap.status = 'APPROVED' OR ap.status = 'approved' OR ap.status IS NULL)
+      GROUP BY u.id
+      ORDER BY completed_bookings_count DESC, COALESCE(ap.rating, 0) DESC, COALESCE(ap.total_reviews, 0) DESC, u.id DESC
+      LIMIT 10
+    `).catch(() => []),
+    db.all(`
+      SELECT u.id as id, u.id as user_id, COALESCE(NULLIF(u.full_name, ''), 'Mehndi Artist') as name,
+             COALESCE(NULLIF(u.full_name, ''), 'Mehndi Artist') as full_name, u.email, u.phone,
+             ap.bio, ap.experience_years, ap.starting_price, ap.city, ap.locality, ap.rating, ap.total_reviews, ap.status, ap.profile_image
+      FROM users u
+      LEFT JOIN artist_profiles ap ON (u.id = ap.user_id OR CAST(u.id AS TEXT) = CAST(ap.user_id AS TEXT))
+      WHERE (LOWER(u.role) = 'artist')
+      ORDER BY COALESCE(ap.rating, 0) DESC, u.id DESC
+      LIMIT 10
+    `).catch(() => []),
+    (u && u.id) ? db.first("SELECT COUNT(*) as count FROM notifications WHERE (user_id = ? OR CAST(user_id AS TEXT) = ?) AND (is_read = 0 OR is_read = 'false' OR is_read IS NULL)", [u.id, String(u.id)]).catch(() => ({ count: 0 })) : Promise.resolve({ count: 0 })
+  ]);
+
   const mappedBanners = (banners && banners.length > 0)
     ? banners.map((b) => ({
       id: b.id,
@@ -3111,58 +3183,14 @@ const handleHomeDashboard = async (c) => {
     }))
     : getDynamicFestivalBanners();
 
-  const featuredArtists = await db.all(`
-    SELECT u.id as id, u.id as user_id, COALESCE(NULLIF(u.full_name, ''), 'Mehndi Artist') as name,
-           COALESCE(NULLIF(u.full_name, ''), 'Mehndi Artist') as full_name, u.email, u.phone,
-           ap.bio, ap.experience_years, ap.starting_price, ap.city, ap.locality, ap.rating, ap.total_reviews, ap.status, ap.profile_image,
-           ap.is_featured, ap.featured_priority
-    FROM users u
-    LEFT JOIN artist_profiles ap ON (u.id = ap.user_id OR CAST(u.id AS TEXT) = CAST(ap.user_id AS TEXT))
-    WHERE (LOWER(u.role) = 'artist')
-      AND (ap.status = 'APPROVED' OR ap.status = 'approved' OR ap.status IS NULL)
-    ORDER BY (CASE WHEN ap.is_featured = 1 THEN 0 ELSE 1 END) ASC, COALESCE(ap.featured_priority, 99) ASC, ap.rating DESC, u.id DESC
-    LIMIT 10
-  `).catch(() => []);
+  // Parallel enrichment
+  await Promise.all([
+    enrichArtistRecords(db, featuredArtists),
+    enrichArtistRecords(db, popularArtists),
+    enrichArtistRecords(db, artists)
+  ]);
 
-  const popularArtists = await db.all(`
-    SELECT u.id as id, u.id as user_id, COALESCE(NULLIF(u.full_name, ''), 'Mehndi Artist') as name,
-           COALESCE(NULLIF(u.full_name, ''), 'Mehndi Artist') as full_name, u.email, u.phone,
-           ap.bio, ap.experience_years, ap.starting_price, ap.city, ap.locality, ap.rating, ap.total_reviews, ap.status, ap.profile_image,
-           COUNT(CASE WHEN b.status = 'COMPLETED' OR b.status = 'completed' THEN 1 END) as completed_bookings_count
-    FROM users u
-    LEFT JOIN artist_profiles ap ON (u.id = ap.user_id OR CAST(u.id AS TEXT) = CAST(ap.user_id AS TEXT))
-    LEFT JOIN bookings b ON (u.id = b.artist_id OR ap.id = b.artist_id OR CAST(u.id AS TEXT) = CAST(b.artist_id AS TEXT))
-    WHERE (LOWER(u.role) = 'artist')
-      AND (ap.status = 'APPROVED' OR ap.status = 'approved' OR ap.status IS NULL)
-    GROUP BY u.id
-    ORDER BY completed_bookings_count DESC, COALESCE(ap.rating, 0) DESC, COALESCE(ap.total_reviews, 0) DESC, u.id DESC
-    LIMIT 10
-  `).catch(() => []);
-
-  const artists = await db.all(`
-    SELECT u.id as id, u.id as user_id, COALESCE(NULLIF(u.full_name, ''), 'Mehndi Artist') as name,
-           COALESCE(NULLIF(u.full_name, ''), 'Mehndi Artist') as full_name, u.email, u.phone,
-           ap.bio, ap.experience_years, ap.starting_price, ap.city, ap.locality, ap.rating, ap.total_reviews, ap.status, ap.profile_image
-    FROM users u
-    LEFT JOIN artist_profiles ap ON (u.id = ap.user_id OR CAST(u.id AS TEXT) = CAST(ap.user_id AS TEXT))
-    WHERE (LOWER(u.role) = 'artist')
-    ORDER BY COALESCE(ap.rating, 0) DESC, u.id DESC
-    LIMIT 10
-  `).catch(() => []);
-
-  await enrichArtistRecords(db, featuredArtists);
-  await enrichArtistRecords(db, popularArtists);
-  await enrichArtistRecords(db, artists);
-
-  const u = getUserFromHeader(c);
-  let unreadCount = 0;
-  if (u && u.id) {
-    const unreadRow = await db.first(
-      "SELECT COUNT(*) as count FROM notifications WHERE (user_id = ? OR CAST(user_id AS TEXT) = ?) AND (is_read = 0 OR is_read = 'false' OR is_read IS NULL)",
-      [u.id, String(u.id)]
-    ).catch(() => ({ count: 0 }));
-    unreadCount = unreadRow?.count || 0;
-  }
+  const unreadCount = unreadRow?.count || 0;
 
   return jsonRes(c, true, {
     banners: mappedBanners || [],
@@ -3176,8 +3204,144 @@ const handleHomeDashboard = async (c) => {
   }, "Home dashboard loaded");
 };
 
+const handleGetArtistAvailability = async (c) => {
+  const db = getDb(c.env);
+  const u = getUserFromHeader(c);
+  const artistIdParam = c.req.param("id") || c.req.param("artistId") || c.req.query("artistId") || c.req.query("id");
+
+  let artist = null;
+  if (artistIdParam) {
+    artist = await db.first("SELECT * FROM artist_profiles WHERE id = ? OR user_id = ? OR CAST(id AS TEXT) = ? OR CAST(user_id AS TEXT) = ?", [artistIdParam, artistIdParam, String(artistIdParam), String(artistIdParam)]).catch(() => null);
+  } else if (u && u.id) {
+    artist = await db.first("SELECT * FROM artist_profiles WHERE user_id = ? OR id = ? OR CAST(user_id AS TEXT) = ? OR CAST(id AS TEXT) = ?", [u.id, u.id, String(u.id), String(u.id)]).catch(() => null);
+  }
+
+  if (!artist) {
+    return jsonRes(c, false, null, "Artist profile not found", 404);
+  }
+
+  let workingDays = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"];
+  if (artist.working_days) {
+    if (Array.isArray(artist.working_days)) {
+      workingDays = artist.working_days;
+    } else if (typeof artist.working_days === "string") {
+      try {
+        const parsed = JSON.parse(artist.working_days);
+        if (Array.isArray(parsed) && parsed.length > 0) workingDays = parsed;
+      } catch (e) {
+        if (artist.working_days.trim()) {
+          workingDays = artist.working_days.split(",").map(s => s.trim().toUpperCase()).filter(Boolean);
+        }
+      }
+    }
+  }
+
+  let leaveDates = [];
+  if (artist.leave_dates) {
+    if (Array.isArray(artist.leave_dates)) {
+      leaveDates = artist.leave_dates;
+    } else if (typeof artist.leave_dates === "string") {
+      try {
+        const parsed = JSON.parse(artist.leave_dates);
+        if (Array.isArray(parsed)) leaveDates = parsed;
+      } catch (e) { }
+    }
+  }
+
+  const isAvail = (artist.is_available === 1 || artist.is_available === true || artist.is_available === "1" || artist.is_available === "true" || artist.is_available === undefined || artist.is_available === null);
+
+  return jsonRes(c, true, {
+    artist_id: artist.id,
+    user_id: artist.user_id,
+    is_available: isAvail,
+    working_days: workingDays,
+    working_start_time: artist.working_start_time || "09:00",
+    working_end_time: artist.working_end_time || "20:00",
+    break_start_time: artist.break_start_time || "14:00",
+    break_end_time: artist.break_end_time || "15:00",
+    leave_dates: leaveDates,
+    min_advance_hours: Number(artist.min_advance_hours || 2),
+    max_advance_days: Number(artist.max_advance_days || 60),
+    max_bookings_per_day: Number(artist.max_bookings_per_day || 4)
+  }, "Artist availability schedule retrieved successfully");
+};
+
+const handleUpdateArtistAvailability = async (c) => {
+  const db = getDb(c.env);
+  const u = getUserFromHeader(c);
+  if (!u || !u.id) {
+    return jsonRes(c, false, null, "Unauthorized access", 401);
+  }
+
+  let body = {};
+  try {
+    body = await c.req.json();
+  } catch (e) {
+    body = await c.req.parseBody().catch(() => ({}));
+  }
+
+  const artist = await db.first("SELECT id, user_id, working_days, is_available, working_start_time, working_end_time, break_start_time, break_end_time FROM artist_profiles WHERE user_id = ? OR id = ? OR CAST(user_id AS TEXT) = ? OR CAST(id AS TEXT) = ?", [u.id, u.id, String(u.id), String(u.id)]).catch(() => null);
+  if (!artist) {
+    return jsonRes(c, false, null, "Artist profile not found", 404);
+  }
+
+  const isAvailVal = body.is_available !== undefined ? (body.is_available ? 1 : 0) : (artist.is_available !== undefined ? (artist.is_available ? 1 : 0) : 1);
+  
+  let workingDaysJson = null;
+  if (body.working_days !== undefined) {
+    if (Array.isArray(body.working_days)) {
+      const clean = body.working_days.map(d => String(d).toUpperCase().trim());
+      workingDaysJson = JSON.stringify(clean);
+    } else if (typeof body.working_days === "string") {
+      workingDaysJson = body.working_days.startsWith("[") ? body.working_days : JSON.stringify(body.working_days.split(",").map(d => d.trim().toUpperCase()));
+    }
+  }
+
+  const startTime = body.working_start_time || body.startTime || artist.working_start_time || "09:00";
+  // Defensively ensure columns exist in artist_profiles
+  await db.run("ALTER TABLE artist_profiles ADD COLUMN working_days TEXT").catch(() => {});
+  await db.run("ALTER TABLE artist_profiles ADD COLUMN working_start_time TEXT").catch(() => {});
+  await db.run("ALTER TABLE artist_profiles ADD COLUMN working_end_time TEXT").catch(() => {});
+  await db.run("ALTER TABLE artist_profiles ADD COLUMN break_start_time TEXT").catch(() => {});
+  await db.run("ALTER TABLE artist_profiles ADD COLUMN break_end_time TEXT").catch(() => {});
+
+  const updateWorkingDays = workingDaysJson !== null ? workingDaysJson : (artist.working_days || null);
+
+  // Update artist_profiles
+  try {
+    await db.run(
+      `UPDATE artist_profiles SET 
+         is_available = ?,
+         working_days = ?,
+         working_start_time = ?,
+         working_end_time = ?,
+         break_start_time = ?,
+         break_end_time = ?
+       WHERE id = ? OR user_id = ?`,
+      [isAvailVal, updateWorkingDays, startTime, endTime, breakStart, breakEnd, artist.id, artist.user_id]
+    );
+  } catch (err) {
+    await db.run(
+      `UPDATE artist_profiles SET is_available = ? WHERE id = ? OR user_id = ?`,
+      [isAvailVal, artist.id, artist.user_id]
+    ).catch(() => {});
+  }
+
+  return handleGetArtistAvailability(c);
+};
+
 ["/customer/home", "/customer/dashboard", "/api/v1/customer/home", "/api/v1/customer/dashboard", "/api/v1/mehndigo/customer/home", "/api/v1/mehndigo/customer/dashboard"].forEach(p => {
   app.get(p, handleHomeDashboard);
+});
+
+["/artist/availability", "/api/v1/artist/availability", "/api/v1/mehndigo/artist/availability"].forEach(p => {
+  app.get(p, handleGetArtistAvailability);
+  app.put(p, handleUpdateArtistAvailability);
+  app.post(p, handleUpdateArtistAvailability);
+});
+
+["/customer/artist/:id/availability", "/api/v1/customer/artist/:id/availability", "/customer/artist/:artistId/availability", "/api/v1/customer/artist/:artistId/availability"].forEach(p => {
+  app.get(p, handleGetArtistAvailability);
 });
 
 const getCategories = async (c) => {
@@ -3889,7 +4053,7 @@ const handleCustomerDynamic = async (c) => {
                 "UPDATE bookings SET payment_status = 'PARTIAL', status = 'confirmed', detailed_status = 'CONFIRMED', advance_paid = ?, remaining_amount = ? WHERE id = ?",
                 [advance, remaining, booking.id]
               );
-              await db.run("UPDATE payments SET status = 'completed', razorpay_payment_id = ? WHERE id = ?", [paymentId, payRec.id]).catch(() => {});
+              await db.run("UPDATE payments SET status = 'completed', razorpay_payment_id = ? WHERE id = ?", [paymentId, payRec.id]).catch(() => { });
               await processBookingEscrow(db, booking.id, paymentId, advance);
             }
           }
@@ -9749,58 +9913,58 @@ const handleVerifyCheckOutOtp = async (c) => {
   await db.run("UPDATE bookings SET completed_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => { });
   await db.run("UPDATE bookings SET service_completed_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => { });
 
-// Record audit history
-await db.run(
-  "INSERT INTO booking_status_histories (booking_id, status, notes, created_at, updated_at) VALUES (?, 'COMPLETED', 'Check-Out OTP verified. Booking completed and artist released as AVAILABLE.', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
-  [bookingId]
-).catch(() => { });
+  // Record audit history
+  await db.run(
+    "INSERT INTO booking_status_histories (booking_id, status, notes, created_at, updated_at) VALUES (?, 'COMPLETED', 'Check-Out OTP verified. Booking completed and artist released as AVAILABLE.', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+    [bookingId]
+  ).catch(() => { });
 
-// Automatically settle booking and release earnings to artist wallet
-await processBookingSettlement(db, bookingId).catch(() => { });
+  // Automatically settle booking and release earnings to artist wallet
+  await processBookingSettlement(db, bookingId).catch(() => { });
 
-// Dispatch completion notifications to Customer and Artist
-if (booking.customer_id) {
-  dispatchNotification(db, {
-    userId: booking.customer_id,
-    title: "Booking Completed ✨",
-    body: "Your mehndi service is completed! Please rate and review your artist.",
-    type: "BOOKING_COMPLETED",
-    entityId: bookingId,
-    entityType: "booking",
-    channelId: "bookings",
-    deepLink: `mehendigoo://review/${bookingId}`
-  }).catch(() => null);
-}
+  // Dispatch completion notifications to Customer and Artist
+  if (booking.customer_id) {
+    dispatchNotification(db, {
+      userId: booking.customer_id,
+      title: "Booking Completed ✨",
+      body: "Your mehndi service is completed! Please rate and review your artist.",
+      type: "BOOKING_COMPLETED",
+      entityId: bookingId,
+      entityType: "booking",
+      channelId: "bookings",
+      deepLink: `mehendigoo://review/${bookingId}`
+    }).catch(() => null);
+  }
 
-if (booking.artist_id) {
-  dispatchNotification(db, {
-    userId: booking.artist_id,
-    title: "Payment Received 💰",
-    body: `Booking #${booking.booking_number || bookingId} completed. Earnings credited to your wallet. You are now AVAILABLE for new bookings.`,
-    type: "PAYMENT_SUCCESS",
-    entityId: bookingId,
-    entityType: "booking",
-    channelId: "payments",
-    deepLink: `mehendigoo://artist/wallet`
-  }).catch(() => null);
-}
+  if (booking.artist_id) {
+    dispatchNotification(db, {
+      userId: booking.artist_id,
+      title: "Payment Received 💰",
+      body: `Booking #${booking.booking_number || bookingId} completed. Earnings credited to your wallet. You are now AVAILABLE for new bookings.`,
+      type: "PAYMENT_SUCCESS",
+      entityId: bookingId,
+      entityType: "booking",
+      channelId: "payments",
+      deepLink: `mehendigoo://artist/wallet`
+    }).catch(() => null);
+  }
 
-const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
+  const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
 
-return jsonRes(c, true, {
-  ...updated,
-  id: bookingId,
-  booking_id: bookingId,
-  bookingId: bookingId,
-  status: "completed",
-  booking_status: "COMPLETED",
-  bookingStatus: "COMPLETED",
-  detailed_status: "COMPLETED",
-  detailedStatus: "COMPLETED",
-  artist_status: "AVAILABLE",
-  service_completed_at: nowIso,
-  completed_at: nowIso
-}, "Check-Out verified successfully. Booking completed and artist is now AVAILABLE for new bookings!");
+  return jsonRes(c, true, {
+    ...updated,
+    id: bookingId,
+    booking_id: bookingId,
+    bookingId: bookingId,
+    status: "completed",
+    booking_status: "COMPLETED",
+    bookingStatus: "COMPLETED",
+    detailed_status: "COMPLETED",
+    detailedStatus: "COMPLETED",
+    artist_status: "AVAILABLE",
+    service_completed_at: nowIso,
+    completed_at: nowIso
+  }, "Check-Out verified successfully. Booking completed and artist is now AVAILABLE for new bookings!");
 };
 
 // =========================================================================
@@ -10263,9 +10427,12 @@ addRoute("get", "/artist/details", handleGetArtistDetails);
 addRoute("get", "/artist/artistdetails", handleGetArtistDetails);
 addRoute("get", "/artist/profile", handleGetArtistDetails);
 addRoute("put", "/artist/profile", handleUpdateArtistProfile);
-addRoute("post", "/artist/profile", handleUpdateArtistProfile);
-addRoute("put", "/artist/artistdetails", handleUpdateArtistProfile);
 addRoute("get", "/artist/dashboard", handleGetArtistDashboard);
+addRoute("get", "/artist/availability", handleGetArtistAvailability);
+addRoute("put", "/artist/availability", handleUpdateArtistAvailability);
+addRoute("post", "/artist/availability", handleUpdateArtistAvailability);
+addRoute("get", "/customer/artist/:id/availability", handleGetArtistAvailability);
+addRoute("get", "/customer/artist/:artistId/availability", handleGetArtistAvailability);
 
 addRoute("get", "/booking/details/:id", handleGetBookingDetails);
 addRoute("get", "/booking/details", handleGetBookingDetails);

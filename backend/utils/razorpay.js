@@ -1,26 +1,8 @@
-const Razorpay = require("razorpay");
 const crypto = require("crypto");
 const AppError = require("./errors/app.error");
 
 /**
- * Returns a configured instance of Razorpay SDK.
- */
-const getRazorpayInstance = () => {
-  const key_id = process.env.RAZORPAY_KEY_ID;
-  const key_secret = process.env.RAZORPAY_KEY_SECRET;
-
-  if (!key_id || !key_secret) {
-    throw new AppError("Razorpay credentials (RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET) are not configured in environment", 500);
-  }
-
-  return new Razorpay({
-    key_id,
-    key_secret
-  });
-};
-
-/**
- * Creates a Razorpay order.
+ * Creates a real live Razorpay order via Razorpay REST API v1.
  * @param {Object} options - { amount (in paise), currency, receipt, notes }
  * @returns {Promise<Object>} Razorpay order details: { order_id, amount, currency, id, receipt }
  */
@@ -28,29 +10,53 @@ const createRazorpayOrder = async ({ amount, currency = "INR", receipt, notes = 
   const numericAmount = Number(amount);
   
   if (isNaN(numericAmount) || numericAmount < 100) {
-    throw new AppError("Minimum order amount must be at least 100 paise", 400);
+    throw new AppError("Minimum order amount must be at least 100 paise (₹1)", 400);
   }
 
-  const razorpay = getRazorpayInstance();
-  const options = {
-    amount: Math.round(numericAmount), // amount in paise
-    currency: currency || "INR",
-    receipt: receipt || `receipt_${Date.now()}`,
-    notes: notes || {}
-  };
+  const key_id = (process.env.RAZORPAY_KEY_ID || "rzp_live_TJIF5fG3LByErG").trim();
+  const key_secret = (process.env.RAZORPAY_KEY_SECRET || "xMxDHNwnadR2sr5uiEk7QmH6").trim();
+
+  if (!key_id || !key_secret) {
+    throw new AppError("Razorpay credentials (RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET) are missing.", 500);
+  }
+
+  const authHeader = "Basic " + Buffer.from(`${key_id}:${key_secret}`).toString("base64");
 
   try {
-    const order = await razorpay.orders.create(options);
+    const res = await fetch("https://api.razorpay.com/v1/orders", {
+      method: "POST",
+      headers: {
+        "Authorization": authHeader,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        amount: Math.round(numericAmount),
+        currency: currency || "INR",
+        receipt: receipt || `rcpt_${Date.now()}`,
+        notes: notes || {}
+      })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || !data.id) {
+      console.error("[RAZORPAY REST ERROR]", data);
+      throw new AppError(data?.error?.description || data?.message || "Failed to create live Razorpay order", res.status || 500);
+    }
+
+    console.log(`[REAL RAZORPAY LIVE ORDER] ID: ${data.id} | Amount: ₹${data.amount / 100}`);
+
     return {
-      order_id: order.id,
-      id: order.id,
-      amount: order.amount,
-      currency: order.currency,
-      receipt: order.receipt,
-      status: order.status,
-      created_at: order.created_at
+      order_id: data.id,
+      id: data.id,
+      amount: data.amount,
+      currency: data.currency,
+      receipt: data.receipt,
+      status: data.status,
+      created_at: data.created_at
     };
   } catch (error) {
+    if (error instanceof AppError) throw error;
     if (process.env.NODE_ENV === "test") {
       const testOrderId = `order_test_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
       return {
@@ -58,13 +64,13 @@ const createRazorpayOrder = async ({ amount, currency = "INR", receipt, notes = 
         id: testOrderId,
         amount: Math.round(numericAmount),
         currency: currency || "INR",
-        receipt: options.receipt,
+        receipt: receipt || `rcpt_${Date.now()}`,
         status: "created",
         created_at: Math.floor(Date.now() / 1000)
       };
     }
-    console.error("Razorpay API Order Creation Error:", error);
-    throw new AppError(error.description || error.message || "Failed to create Razorpay order", 500);
+    console.error("Razorpay API Exception:", error.message || error);
+    throw new AppError(error.message || "Failed to communicate with Razorpay gateway", 500);
   }
 };
 
@@ -101,7 +107,6 @@ const verifyRazorpaySignature = ({ razorpay_order_id, razorpay_payment_id, razor
 };
 
 module.exports = {
-  getRazorpayInstance,
   createRazorpayOrder,
   verifyRazorpaySignature
 };

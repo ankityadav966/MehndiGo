@@ -6,7 +6,8 @@ import {
   TouchableOpacity,
   View,
   ActivityIndicator,
-  Platform
+  Platform,
+  Linking
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Alert from "../utils/Alert";
@@ -39,12 +40,15 @@ export default function RazorpayCheckoutModal({
     prefill: {
       name: options.prefill?.name || "Customer",
       email: options.prefill?.email || "customer@mehndigo.com",
-      contact: options.prefill?.contact || "9829011001"
+      contact: options.prefill?.contact || "9829011001",
+      method: options.prefill?.method || "upi"
     },
     notes: options.notes || {},
     theme: {
-      color: options.theme?.color || options.themeColor || "#E91E63"
+      color: options.theme?.color || options.themeColor || "#5f259f"
     },
+    upi: options.upi || { flow: "intent" },
+    method: options.method || "upi",
     isTestMode: (options.key || options.key_id || options.keyId || "").startsWith("rzp_test_")
   };
 
@@ -196,6 +200,48 @@ export default function RazorpayCheckoutModal({
     }
   };
 
+  const handleShouldStartLoadWithRequest = (request) => {
+    const { url } = request;
+    if (!url) return true;
+
+    // Check for native UPI / PhonePe / GPay / Paytm scheme or Android Intent
+    if (
+      url.startsWith("upi://") ||
+      url.startsWith("phonepe://") ||
+      url.startsWith("paytmmp://") ||
+      url.startsWith("gpay://") ||
+      url.startsWith("tez://") ||
+      url.startsWith("intent://")
+    ) {
+      let targetUrl = url;
+
+      // If Android intent URL, parse data URI or convert to upi://
+      if (url.startsWith("intent://")) {
+        const dataMatch = url.match(/data=([^;]+)/);
+        if (dataMatch && dataMatch[1]) {
+          try {
+            targetUrl = decodeURIComponent(dataMatch[1]);
+          } catch (e) {
+            targetUrl = dataMatch[1];
+          }
+        } else {
+          const rawPayload = url.replace(/^intent:\/\//, "");
+          const cleanQuery = rawPayload.split("#Intent")[0];
+          targetUrl = `upi://${cleanQuery}`;
+        }
+      }
+
+      console.log("[RAZORPAY_MODAL] Launching native UPI / PhonePe app:", targetUrl);
+
+      Linking.openURL(targetUrl).catch((err) => {
+        console.warn("[RAZORPAY_MODAL] Could not open external app url:", err.message);
+      });
+
+      return false;
+    }
+    return true;
+  };
+
   return (
     <Modal
       visible={visible}
@@ -237,15 +283,18 @@ export default function RazorpayCheckoutModal({
             onMessage={handleMessage}
             onLoadStart={() => setWebViewLoading(true)}
             onLoadEnd={() => setWebViewLoading(false)}
+            onShouldStartLoadWithRequest={handleShouldStartLoadWithRequest}
             javaScriptEnabled={true}
             domStorageEnabled={true}
             mixedContentMode="always"
             allowFileAccess={true}
             allowUniversalAccessFromFileURLs={true}
-            setSupportMultipleWindows={true}
+            setSupportMultipleWindows={false}
             javaScriptCanOpenWindowsAutomatically={true}
             style={styles.webView}
             scalesPageToFit={Platform.OS === "android"}
+            onError={(e) => console.log("WebView error suppressed:", e.nativeEvent.description)}
+            onHttpError={(e) => console.log("WebView HTTP error suppressed:", e.nativeEvent.statusCode)}
           />
 
           {webViewLoading && (

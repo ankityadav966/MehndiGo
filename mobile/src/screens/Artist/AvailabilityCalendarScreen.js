@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { getArtistAvailability, updateArtistAvailability } from "../../services/artist";
@@ -32,19 +33,61 @@ export default function AvailabilityCalendarScreen({ navigation }) {
   const [endTime, setEndTime] = useState("20:00");
   const [breakStart, setBreakStart] = useState("14:00");
   const [breakEnd, setBreakEnd] = useState("15:00");
-  const [selectedDays, setSelectedDays] = useState(["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"]);
+  const [selectedDays, setSelectedDays] = useState(["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"]);
 
   useEffect(() => {
     async function loadSchedule() {
       try {
+        // Load cached schedule immediately for 0ms restore
+        const localCache = await AsyncStorage.getItem("@mehndigo_artist_availability");
+        if (localCache) {
+          try {
+            const parsed = JSON.parse(localCache);
+            if (parsed) {
+              if (parsed.is_available !== undefined) setIsAvailable(Boolean(parsed.is_available));
+              if (parsed.working_start_time) setStartTime(parsed.working_start_time);
+              if (parsed.working_end_time) setEndTime(parsed.working_end_time);
+              if (parsed.break_start_time) setBreakStart(parsed.break_start_time);
+              if (parsed.break_end_time) setBreakEnd(parsed.break_end_time);
+              if (Array.isArray(parsed.working_days) && parsed.working_days.length > 0) {
+                setSelectedDays(parsed.working_days);
+              }
+              setLoading(false);
+            }
+          } catch (e) {}
+        }
+
         const data = await getArtistAvailability();
         if (data) {
-          setIsAvailable(data.is_available !== false);
+          setIsAvailable(data.is_available !== false && data.is_available !== 0 && data.is_available !== "0");
           if (data.working_start_time) setStartTime(data.working_start_time);
           if (data.working_end_time) setEndTime(data.working_end_time);
           if (data.break_start_time) setBreakStart(data.break_start_time);
           if (data.break_end_time) setBreakEnd(data.break_end_time);
-          if (Array.isArray(data.working_days)) setSelectedDays(data.working_days);
+          
+          let parsedDays = null;
+          if (Array.isArray(data.working_days)) {
+            parsedDays = data.working_days;
+          } else if (typeof data.working_days === "string" && data.working_days.trim()) {
+            try {
+              const j = JSON.parse(data.working_days);
+              if (Array.isArray(j)) parsedDays = j;
+            } catch (e) {
+              parsedDays = data.working_days.split(",").map(d => d.trim().toUpperCase());
+            }
+          }
+          if (parsedDays && Array.isArray(parsedDays) && parsedDays.length > 0) {
+            const canonical = parsedDays.map(d => String(d).toUpperCase().trim());
+            setSelectedDays(canonical);
+            AsyncStorage.setItem("@mehndigo_artist_availability", JSON.stringify({
+              is_available: data.is_available,
+              working_days: canonical,
+              working_start_time: data.working_start_time || startTime,
+              working_end_time: data.working_end_time || endTime,
+              break_start_time: data.break_start_time || breakStart,
+              break_end_time: data.break_end_time || breakEnd
+            })).catch(() => {});
+          }
         }
       } catch (err) {
         if (__DEV__) console.log("Failed to load availability:", err.message);
@@ -56,10 +99,11 @@ export default function AvailabilityCalendarScreen({ navigation }) {
   }, []);
 
   const toggleDay = (dayKey) => {
-    if (selectedDays.includes(dayKey)) {
-      setSelectedDays(selectedDays.filter((d) => d !== dayKey));
+    const canonicalKey = String(dayKey).toUpperCase().trim();
+    if (selectedDays.includes(canonicalKey)) {
+      setSelectedDays(selectedDays.filter((d) => d !== canonicalKey));
     } else {
-      setSelectedDays([...selectedDays, dayKey]);
+      setSelectedDays([...selectedDays, canonicalKey]);
     }
   };
 
@@ -69,15 +113,17 @@ export default function AvailabilityCalendarScreen({ navigation }) {
       return;
     }
     setSaving(true);
+    const schedulePayload = {
+      is_available: isAvailable,
+      working_days: selectedDays,
+      working_start_time: startTime,
+      working_end_time: endTime,
+      break_start_time: breakStart,
+      break_end_time: breakEnd
+    };
     try {
-      await updateArtistAvailability({
-        is_available: isAvailable,
-        working_days: selectedDays,
-        working_start_time: startTime,
-        working_end_time: endTime,
-        break_start_time: breakStart,
-        break_end_time: breakEnd
-      });
+      await AsyncStorage.setItem("@mehndigo_artist_availability", JSON.stringify(schedulePayload));
+      await updateArtistAvailability(schedulePayload);
       Alert.alert("Saved 🎉", "Your availability and working schedule have been updated successfully.");
       navigation.goBack();
     } catch (err) {

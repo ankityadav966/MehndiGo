@@ -1,5 +1,6 @@
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import React, { useState, useEffect } from "react";
 import {
   Image,
   ScrollView,
@@ -56,17 +57,22 @@ export default function ArtistProfileScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
   const artistId = route.params?.artistId || route.params?.id || route.params?.artist_id;
 
+  const initialArtist = route.params?.artist || null;
+
   // Data states
-  const [profile, setProfile] = useState(null);
-  const [services, setServices] = useState([]);
-  const [portfolio, setPortfolio] = useState([]);
-  const [reviewsData, setReviewsData] = useState({ reviews: [], distribution: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 } });
+  const [profile, setProfile] = useState(initialArtist);
+  const [services, setServices] = useState(initialArtist?.services || []);
+  const [portfolio, setPortfolio] = useState(initialArtist?.portfolio || []);
+  const [reviewsData, setReviewsData] = useState({
+    reviews: initialArtist?.reviews || [],
+    distribution: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 }
+  });
   const [availability, setAvailability] = useState([]);
   const [similar, setSimilar] = useState([]);
   const [isFav, setIsFav] = useState(false);
 
   // Layout states
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialArtist);
   const [error, setError] = useState(null);
   const [activeCoverIndex, setActiveCoverIndex] = useState(0);
 
@@ -78,7 +84,9 @@ export default function ArtistProfileScreen({ route, navigation }) {
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedTimeSlot, setSelectedTimeSlot] = useState(null);
 
-  // Load profile sub-resources
+  const isFetchingRef = useRef(false);
+
+  // Load profile sub-resources with instant cache & parallel fetching
   const loadProfileDetails = React.useCallback(async () => {
     if (!artistId) {
       setError("Artist ID is required");
@@ -86,25 +94,64 @@ export default function ArtistProfileScreen({ route, navigation }) {
       return;
     }
 
-    setLoading(true);
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+
     setError(null);
+
+    // 1. Instant Cache Layer
+    const cacheKey = `@cached_artist_${artistId}`;
     try {
-      const prof = await fetchArtistProfile(artistId);
+      const cached = await AsyncStorage.getItem(cacheKey);
+      if (cached) {
+        const cachedData = JSON.parse(cached);
+        if (cachedData.profile) setProfile(cachedData.profile);
+        if (cachedData.services) setServices(cachedData.services);
+        if (cachedData.portfolio) setPortfolio(cachedData.portfolio);
+        if (cachedData.reviewsData) setReviewsData(cachedData.reviewsData);
+        if (cachedData.availability) setAvailability(cachedData.availability);
+        setLoading(false); // Instant render!
+      }
+    } catch (e) {
+      console.log("Artist cache read error:", e.message);
+    }
+
+    try {
+      // 2. Fetch primary profile, availability, and favorites in PARALLEL
+      const [profResult, availResult, favsResult] = await Promise.allSettled([
+        fetchArtistProfile(artistId),
+        fetchArtistAvailability(artistId),
+        getFavorites()
+      ]);
+
+      const prof = profResult.status === "fulfilled" ? profResult.value : null;
       if (!prof) {
         setError("Artist profile not found");
-        setLoading(false);
         return;
       }
 
-      if (__DEV__) console.log("[ArtistProfileScreen Debug] prof received:", prof.name || prof.full_name);
       setProfile(prof);
 
-      // Extract services, portfolio, reviews, availability if returned inside prof or fetch fallback
-      const servs = (prof.services && prof.services.length > 0) ? prof.services : await fetchArtistServices(artistId).catch(() => []);
-      const port = (prof.portfolio && prof.portfolio.length > 0) ? prof.portfolio : await fetchArtistPortfolio(artistId).catch(() => []);
-      const revs = (prof.reviews && prof.reviews.length > 0) ? prof.reviews : await fetchArtistReviews(artistId).catch(() => []);
-      const avail = prof.availability || await fetchArtistAvailability(artistId).catch(() => []);
-      const favs = await getFavorites().catch(() => []);
+      // Extract services, portfolio, reviews (fetch in parallel only if missing)
+      let servs = (prof.services && prof.services.length > 0) ? prof.services : null;
+      let port = (prof.portfolio && prof.portfolio.length > 0) ? prof.portfolio : null;
+      let revs = (prof.reviews && prof.reviews.length > 0) ? prof.reviews : null;
+
+      if (!servs || !port || !revs) {
+        const [extraServs, extraPort, extraRevs] = await Promise.all([
+          !servs ? fetchArtistServices(artistId).catch(() => []) : Promise.resolve(servs),
+          !port ? fetchArtistPortfolio(artistId).catch(() => []) : Promise.resolve(port),
+          !revs ? fetchArtistReviews(artistId).catch(() => []) : Promise.resolve(revs),
+        ]);
+        servs = extraServs || [];
+        port = extraPort || [];
+        revs = extraRevs || [];
+      }
+
+      const avail = availResult.status === "fulfilled"
+        ? (prof.availability || availResult.value)
+        : (prof.availability || []);
+      const favs = favsResult.status === "fulfilled" ? favsResult.value : [];
 
       setServices(servs || []);
       setPortfolio(Array.isArray(port) ? port : (port?.portfolios || port?.data || []));
@@ -120,12 +167,30 @@ export default function ArtistProfileScreen({ route, navigation }) {
         prof.avg_rating = Number((sumRating / reviewsList.length).toFixed(1));
         prof.total_reviews = reviewsList.length;
       }
-      setReviewsData({
+      const calculatedReviewsData = {
         reviews: reviewsList,
         distribution: reviewsDist
-      });
-      setAvailability(Array.isArray(avail) ? avail : (avail?.slots || []));
+      };
+      setReviewsData(calculatedReviewsData);
+      const slots = Array.isArray(avail) ? avail : (avail?.slots || []);
+      setAvailability(slots);
       setSimilar([]);
+
+      // 3. Save to local cache for instant future loads
+      try {
+        await AsyncStorage.setItem(
+          cacheKey,
+          JSON.stringify({
+            profile: prof,
+            services: servs || [],
+            portfolio: Array.isArray(port) ? port : (port?.portfolios || port?.data || []),
+            reviewsData: calculatedReviewsData,
+            availability: slots
+          })
+        );
+      } catch (e) {
+        console.log("Artist cache write error:", e.message);
+      }
 
       // Check favorite
       const targetId = prof.id || prof.user_id;
@@ -148,9 +213,9 @@ export default function ArtistProfileScreen({ route, navigation }) {
       setIsFav(isArtistFav);
 
       // Default date select
-      if (avail && avail.length > 0) {
+      if (slots && slots.length > 0) {
         const moment = require("moment");
-        const distinctDates = [...new Set(avail.map((s) => s?.date).filter(Boolean))].filter((date) => {
+        const distinctDates = [...new Set(slots.map((s) => s?.date).filter(Boolean))].filter((date) => {
           return moment(date, ["YYYY-MM-DD", "YYYY-MM-DDTHH:mm:ss.SSSZ", "YYYY-MM-DDTHH:mm:ssZ"]).isValid();
         });
         if (distinctDates.length > 0) {
@@ -162,6 +227,7 @@ export default function ArtistProfileScreen({ route, navigation }) {
       setError("Failed to load artist details. Please try again.");
     } finally {
       setLoading(false);
+      isFetchingRef.current = false;
     }
   }, [artistId]);
 
@@ -297,6 +363,7 @@ export default function ArtistProfileScreen({ route, navigation }) {
   const handleBookNow = () => {
     navigation.navigate("SelectService", {
       artistId: profile.id,
+      services: services || [],
       selectedDate,
       selectedTimeSlot
     });

@@ -39,7 +39,7 @@ const defaultArtistDetails = {
 
 export function ArtistOnboardingProvider({ children }) {
   const { isAuthenticated, user, dispatch: authDispatch } = useAuth();
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [verificationStatus, setVerificationStatus] = useState("NOT_SUBMITTED"); // NOT_SUBMITTED, PENDING, APPROVED, REJECTED
   const [rejectionReason, setRejectionReason] = useState(null);
   const [isProfileComplete, setIsProfileComplete] = useState(false);

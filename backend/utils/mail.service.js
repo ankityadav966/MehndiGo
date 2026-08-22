@@ -27,13 +27,13 @@ const EMAIL_PASS = (process.env.EMAIL_PASS || "kwemkkniwxyohmvm").replace(/\s+/g
 const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
 
 const EMAIL_FROM =
-  process.env.EMAIL_FROM || AZURE_EMAIL_FROM || "MehndiGo <donotreply@mehndigo.in>";
+  process.env.EMAIL_FROM || `MehndiGo <${EMAIL_USER}>`;
 
 const EMAIL_REPLY_TO =
   process.env.EMAIL_REPLY_TO || "support@mehndigo.in";
 
 const EMAIL_PROVIDER =
-  process.env.EMAIL_PROVIDER || "azure";
+  (process.env.EMAIL_PROVIDER || "gmail").toLowerCase().trim();
 
 // Initialize Azure Email Client
 function getAzureEmailClient() {
@@ -292,23 +292,17 @@ function getGmailTransporter() {
 
   if (!gmailTransporter) {
     gmailTransporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 465,
-      secure: true,
-
-      pool: true,
-
-      maxConnections: 3,
-      maxMessages: 50,
-
-      connectionTimeout: 15000,
-      greetingTimeout: 15000,
-      socketTimeout: 20000,
-
+      service: "gmail",
       auth: {
         user: EMAIL_USER,
         pass: EMAIL_PASS,
       },
+      pool: true,
+      maxConnections: 5,
+      maxMessages: 100,
+      connectionTimeout: 8000,
+      greetingTimeout: 8000,
+      socketTimeout: 10000,
     });
   }
 
@@ -348,19 +342,13 @@ async function sendUsingGmail(
     .toString("hex")}@mehndigo.in>`;
 
   const mailOptions = {
-    from: EMAIL_FROM,
+    from: `"MehndiGo" <${EMAIL_USER}>`,
     to,
-
     replyTo: EMAIL_REPLY_TO,
-
     subject,
-
     text,
-
     html,
-
     messageId,
-
     headers: {
       "Auto-Submitted": "auto-generated",
       "X-Auto-Response-Suppress": "All",

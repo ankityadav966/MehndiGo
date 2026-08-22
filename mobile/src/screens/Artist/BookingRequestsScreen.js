@@ -242,21 +242,26 @@ export default function BookingRequestsScreen({ route, navigation }) {
         rawDetailed === "COMPLETED_CLOSED"
       ) {
         status = "COMPLETED";
-      } else if (rawDetailed && rawDetailed !== "PENDING" && rawDetailed !== "CONFIRMED" && rawDetailed !== "VIEWED") {
+      } else if (rawDetailed && rawDetailed !== "PENDING" && rawDetailed !== "CONFIRMED" && rawDetailed !== "VIEWED" && rawDetailed !== "REQUESTED") {
         status = rawDetailed;
       } else {
         status = "PENDING";
       }
 
       if (activeTab === "Pending") {
-        return status === "PENDING";
+        return (
+          status === "PENDING" ||
+          rawStatus === "PENDING" ||
+          rawDetailed === "PENDING" ||
+          rawDetailed === "REQUESTED" ||
+          (!["ARTIST_ACCEPTED", "ACCEPTED", "CANCELLED", "REJECTED", "DECLINED", "COMPLETED"].includes(rawDetailed) && !["ACCEPTED", "CANCELLED", "REJECTED", "COMPLETED"].includes(rawStatus))
+        );
       }
 
       if (activeTab === "Accepted") {
         return [
           "ARTIST_ACCEPTED",
           "ACCEPTED",
-          "CONFIRMED",
           "ARTIST_ON_THE_WAY",
           "ON_THE_WAY",
           "ARTIST_ARRIVED",

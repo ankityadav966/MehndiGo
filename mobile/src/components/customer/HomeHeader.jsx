@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import OptimizedImage from "../OptimizedImage";
@@ -14,7 +14,9 @@ const HomeHeader = ({
   setLocationModalVisible,
   navigation
 }) => {
-  const avatarUrl = resolveImage(user?.profile_image || user?.avatar) || `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || user?.full_name || "Customer")}&background=F3E8FF&color=7C3AED`;
+  const avatarUrl = useMemo(() => {
+    return resolveImage(user?.profile_image) || `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || "Customer")}&background=F3E8FF&color=7C3AED`;
+  }, [user?.profile_image, user?.name]);
 
   return (
     <View style={styles.welcomeHeader}>
@@ -128,4 +130,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default HomeHeader;
+export default React.memo(HomeHeader);

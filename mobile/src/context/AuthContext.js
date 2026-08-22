@@ -81,22 +81,35 @@ export function AuthProvider({ children }) {
     global.logoutHandler = () => {
       dispatch({ type: "LOGOUT" });
     };
+    let isMounted = true;
     async function restoreSession() {
       try {
-        const token = await secureStorage.getAccessToken();
-        const user = await secureStorage.getUserData();
-        const role = await secureStorage.getUserRole();
-        if (token && user) {
-          dispatch({ type: "RESTORE_SESSION", payload: { user, token, role } });
-        } else {
-          dispatch({ type: "RESTORE_SESSION", payload: { user: null, token: null, role: null } });
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Storage timeout")), 1000)
+        );
+        const loadStoragePromise = Promise.all([
+          secureStorage.getAccessToken(),
+          secureStorage.getUserData(),
+          secureStorage.getUserRole(),
+        ]);
+
+        const [token, user, role] = await Promise.race([loadStoragePromise, timeoutPromise]);
+        if (isMounted) {
+          if (token && user) {
+            dispatch({ type: "RESTORE_SESSION", payload: { user, token, role } });
+          } else {
+            dispatch({ type: "RESTORE_SESSION", payload: { user: null, token: null, role: null } });
+          }
         }
       } catch (e) {
-        dispatch({ type: "RESTORE_SESSION", payload: { user: null, token: null, role: null } });
+        if (isMounted) {
+          dispatch({ type: "RESTORE_SESSION", payload: { user: null, token: null, role: null } });
+        }
       }
     }
     restoreSession();
     return () => {
+      isMounted = false;
       global.logoutHandler = null;
     };
   }, []);

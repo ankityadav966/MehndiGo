@@ -1,5 +1,5 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   FlatList,
   Image,
@@ -51,6 +51,190 @@ import { copyAndSaveCoupon } from "../../utils/couponManager";
 import { resolveImage } from "../../utils/imageHelper";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
+
+const resolveImage = (uri) => {
+  if (!uri) return null;
+  if (typeof uri !== "string") return null;
+  if (uri.startsWith("http://") || uri.startsWith("https://") || uri.startsWith("data:")) {
+    return uri;
+  }
+  if (uri.startsWith("/")) {
+    const { BASE_URL } = require("../../services/api");
+    return `${BASE_URL}${uri}`;
+  }
+  return uri;
+};
+
+let memoryCachedDashboard = null;
+let memoryCachedNearby = null;
+
+const PromotionalBannerSlider = React.memo(function PromotionalBannerSlider({ offers, navigation }) {
+  const [activeBannerIndex, setActiveBannerIndex] = useState(0);
+  const [isAutoPlayEnabled, setIsAutoPlayEnabled] = useState(true);
+  const [bannerErrors, setBannerErrors] = useState({});
+  const bannerFlatListRef = useRef(null);
+  const bannerTimerRef = useRef(null);
+
+  const dynamicFestivalBanners = React.useMemo(() => getActiveFestivalOffers(), []);
+  const displayOffers = (offers && offers.length > 0) ? offers : dynamicFestivalBanners;
+
+  useEffect(() => {
+    if (displayOffers.length === 0 || !isAutoPlayEnabled) return;
+
+    if (bannerTimerRef.current) clearInterval(bannerTimerRef.current);
+
+    bannerTimerRef.current = setInterval(() => {
+      setActiveBannerIndex((prevIndex) => {
+        let nextIndex = prevIndex + 1;
+        if (nextIndex >= displayOffers.length) {
+          nextIndex = 0;
+        }
+        if (bannerFlatListRef.current) {
+          try {
+            bannerFlatListRef.current.scrollToIndex({
+              index: nextIndex,
+              animated: true,
+            });
+          } catch (e) {}
+        }
+        return nextIndex;
+      });
+    }, 4000);
+
+    return () => {
+      if (bannerTimerRef.current) clearInterval(bannerTimerRef.current);
+    };
+  }, [isAutoPlayEnabled, displayOffers.length]);
+
+  const getBannerImage = (item) => {
+    if (!item) return null;
+    const imgUrl = item.image_url || item.banner_image || item.image;
+    if (imgUrl && typeof imgUrl === "string") {
+      if (imgUrl.startsWith("http://") || imgUrl.startsWith("https://")) {
+        return { uri: imgUrl };
+      }
+      if (imgUrl.startsWith("/")) {
+        const { BASE_URL } = require("../../services/api");
+        const cleanBase = (BASE_URL || "").replace(/\/api\/v1\/?$/, "");
+        return { uri: `${cleanBase}${imgUrl}` };
+      }
+    }
+    return null;
+  };
+
+  const renderBannerItem = useCallback(({ item }) => {
+    const bannerImg = getBannerImage(item);
+    const hasImageError = !!bannerErrors[item.id];
+
+    const handleBannerPress = () => {
+      if (!item) return;
+      if (item.target_type === "category" && item.target_id) {
+        navigation.navigate("ArtistListing", { categoryId: item.target_id, category: item.title });
+      } else if (item.target_type === "artist" && item.target_id) {
+        navigation.navigate("ArtistProfile", { artistId: item.target_id });
+      } else if (item.target_type === "coupons" || item.cta_link === "Coupons" || item.banner_type === "OFFER") {
+        navigation.navigate("Coupons");
+      } else if (item.cta_link && typeof item.cta_link === "string" && item.cta_link.startsWith("http")) {
+        const { Linking } = require("react-native");
+        Linking.openURL(item.cta_link).catch(() => {});
+      }
+    };
+
+    return (
+      <TouchableOpacity
+        activeOpacity={0.9}
+        style={{ width: SCREEN_WIDTH, height: 150, paddingHorizontal: 16 }}
+        onPress={handleBannerPress}
+      >
+        <View style={styles.bannerSlideInner}>
+          {bannerImg && !hasImageError ? (
+            <OptimizedImage
+              source={bannerImg}
+              onError={() => setBannerErrors((prev) => ({ ...prev, [item.id]: true }))}
+              style={styles.bannerBgImage}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={[styles.bannerBgImage, { backgroundColor: Colors.primary + "20" }]} />
+          )}
+          <View style={styles.bannerOverlay}>
+            <View style={styles.bannerTextContainer}>
+              <Text style={styles.bannerTitle} numberOfLines={1}>{item.title}</Text>
+              {!!(item.subtitle || item.description) && (
+                <Text style={styles.bannerSubTitle} numberOfLines={2}>{item.subtitle || item.description}</Text>
+              )}
+              {!!item.code && (
+                <TouchableOpacity
+                  style={[styles.promoBadge, { flexDirection: "row", alignItems: "center" }]}
+                  activeOpacity={0.8}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    copyAndSaveCoupon(item.code, item.title);
+                  }}
+                >
+                  <Text style={styles.promoBadgeText}>Code: {item.code}</Text>
+                  <Ionicons name="copy-outline" size={12} color="#FFF" style={{ marginLeft: 4 }} />
+                </TouchableOpacity>
+              )}
+            </View>
+            {!!(item.discount || item.discount_text) && (
+              <Text style={styles.bannerDiscountText}>{item.discount || item.discount_text}</Text>
+            )}
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  }, [bannerErrors, navigation]);
+
+  if (!displayOffers || displayOffers.length === 0) return null;
+
+  return (
+    <View style={styles.bannerContainer}>
+      <FlatList
+        ref={bannerFlatListRef}
+        data={displayOffers}
+        keyExtractor={(item, index) => String(item.id || item.user_id || item.artist_id || index)}
+        horizontal
+        pagingEnabled
+        nestedScrollEnabled={true}
+        showsHorizontalScrollIndicator={false}
+        renderItem={renderBannerItem}
+        onScrollBeginDrag={() => {
+          setIsAutoPlayEnabled(false);
+        }}
+        onMomentumScrollEnd={(e) => {
+          const slide = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
+          if (slide !== activeBannerIndex) {
+            setActiveBannerIndex(slide);
+          }
+          setIsAutoPlayEnabled(true);
+        }}
+        getItemLayout={(data, index) => ({
+          length: SCREEN_WIDTH,
+          offset: SCREEN_WIDTH * index,
+          index,
+        })}
+        onScrollToIndexFailed={(info) => {
+          const wait = new Promise((resolve) => setTimeout(resolve, 500));
+          wait.then(() => {
+            bannerFlatListRef.current?.scrollToIndex({ index: info.index, animated: false });
+          });
+        }}
+      />
+      <View style={styles.paginationDots}>
+        {displayOffers.map((_, i) => (
+          <View
+            key={i}
+            style={[
+              styles.dot,
+              activeBannerIndex === i ? styles.activeDotIndicator : null,
+            ]}
+          />
+        ))}
+      </View>
+    </View>
+  );
+});
 
 export default function HomeScreen({ navigation }) {
   const { user, dispatch, isDarkMode } = useAuth();
@@ -117,23 +301,22 @@ export default function HomeScreen({ navigation }) {
   const [smartDetectedData, setSmartDetectedData] = useState(null);
   const [locationActionLoading, setLocationActionLoading] = useState(false);
 
-  // Dashboard Aggregated States
-  const [categories, setCategories] = useState([]);
-
-  const [offers, setOffers] = useState([]);
-  const [featuredArtists, setFeaturedArtists] = useState([]);
-  const [popularArtists, setPopularArtists] = useState([]);
+  // Dashboard Aggregated States (Instant 0ms initial load from memory cache)
+  const [categories, setCategories] = useState(() => memoryCachedDashboard?.categories || []);
+  const [offers, setOffers] = useState(() => memoryCachedDashboard?.offers || memoryCachedDashboard?.banners || []);
+  const [featuredArtists, setFeaturedArtists] = useState(() => memoryCachedDashboard?.featured_artists || memoryCachedDashboard?.featuredArtists || []);
+  const [popularArtists, setPopularArtists] = useState(() => memoryCachedDashboard?.popular_artists || memoryCachedDashboard?.popularArtists || []);
   const [recommendations, setRecommendations] = useState([]);
-  const [recentlyBookedArtists, setRecentlyBookedArtists] = useState([]);
+  const [recentlyBookedArtists, setRecentlyBookedArtists] = useState(() => memoryCachedDashboard?.recently_booked || memoryCachedDashboard?.recentlyBooked || []);
 
-  // Nearby Artists Paginated States
-  const [nearbyArtists, setNearbyArtists] = useState([]);
+  // Nearby Artists Paginated States (Instant 0ms initial load from memory cache)
+  const [nearbyArtists, setNearbyArtists] = useState(() => memoryCachedNearby || []);
   const [nearbyLoading, setNearbyLoading] = useState(false);
   const [nearbyPage, setNearbyPage] = useState(1);
   const [hasMoreNearby, setHasMoreNearby] = useState(true);
 
   // Global Page Loading & Refresh States
-  const [dashboardLoading, setDashboardLoading] = useState(true);
+  const [dashboardLoading, setDashboardLoading] = useState(() => !memoryCachedDashboard);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
 
@@ -145,13 +328,6 @@ export default function HomeScreen({ navigation }) {
   const [imageErrors, setImageErrors] = useState({});
   const lastFavoritesSyncTimeRef = useRef(0);
 
-  // Carousel slider state
-  const [activeBannerIndex, setActiveBannerIndex] = useState(0);
-  const [isAutoPlayEnabled, setIsAutoPlayEnabled] = useState(true);
-  const [bannerErrors, setBannerErrors] = useState({});
-  const bannerFlatListRef = useRef(null);
-  const bannerTimerRef = useRef(null);
-
   // Smart Location Initialization & Background Distance Check
   useEffect(() => {
     const unsubscribe = subscribeActiveAddress((newAddr) => {
@@ -159,12 +335,12 @@ export default function HomeScreen({ navigation }) {
     });
 
     async function initLocation() {
-      const cached = await getActiveAddress();
-      if (cached) {
-        setActiveAddressState(cached);
-      }
-
       try {
+        const cached = await getActiveAddress();
+        if (cached) {
+          setActiveAddressState(cached);
+        }
+
         const addresses = await getCustomerAddresses();
         const list = addresses || [];
         setSavedAddressesList(list);
@@ -182,13 +358,17 @@ export default function HomeScreen({ navigation }) {
           setActiveAddressState(norm);
         }
 
-        // Smart Background Location Check (>35km)
+        // Run smart distance check asynchronously in background without blocking screen render
         if (primary && primary.latitude && primary.longitude) {
-          const checkResult = await checkSmartLocationChange(primary, 35);
-          if (checkResult.isFar && checkResult.geocodedAddress) {
-            setSmartDetectedData(checkResult);
-            setSmartAlertVisible(true);
-          }
+          setTimeout(async () => {
+            try {
+              const checkResult = await checkSmartLocationChange(primary, 35);
+              if (checkResult.isFar && checkResult.geocodedAddress) {
+                setSmartDetectedData(checkResult);
+                setSmartAlertVisible(true);
+              }
+            } catch (e) {}
+          }, 3000);
         }
       } catch (e) {
         if (__DEV__) console.log("Error initializing location in Home:", e.message);
@@ -243,36 +423,67 @@ export default function HomeScreen({ navigation }) {
     setLocationModalVisible(false);
   };
 
+  // Persistent Storage Initializer for Instant 0ms Cold Starts
+  useEffect(() => {
+    async function restoreCachedData() {
+      try {
+        const AsyncStorage = require("@react-native-async-storage/async-storage").default;
+        const raw = await AsyncStorage.getItem("@mehndigo_dashboard_cache");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && !memoryCachedDashboard) {
+            memoryCachedDashboard = parsed;
+            if (parsed.categories?.length) setCategories(parsed.categories);
+            if (parsed.offers?.length || parsed.banners?.length) setOffers(parsed.offers || parsed.banners);
+            if (parsed.featured_artists?.length || parsed.featuredArtists?.length) setFeaturedArtists(parsed.featured_artists || parsed.featuredArtists);
+            if (parsed.popular_artists?.length || parsed.popularArtists?.length) setPopularArtists(parsed.popular_artists || parsed.popularArtists);
+            if (parsed.recently_booked?.length || parsed.recentlyBooked?.length) setRecentlyBookedArtists(parsed.recently_booked || parsed.recentlyBooked);
+            setDashboardLoading(false);
+          }
+        }
+      } catch (e) {}
+    }
+    restoreCachedData();
+  }, []);
+
   // Load consolidated dashboard data
   const loadDashboard = async (isRefresh = false) => {
-    if (!isRefresh) setDashboardLoading(true);
+    if (!isRefresh && !memoryCachedDashboard) setDashboardLoading(true);
     try {
       const lat = activeAddressState?.latitude || null;
       const lng = activeAddressState?.longitude || null;
-      const data = await getHomeDashboard(lat, lng);
-      setCategories(data?.categories || []);
-      setOffers(data?.offers || data?.banners || []);
-      setFeaturedArtists(data?.featured_artists || data?.featuredArtists || []);
-      setPopularArtists(data?.popular_artists || data?.popularArtists || []);
-      setRecentlyBookedArtists(data?.recently_booked || data?.recentlyBooked || []);
-      if (setUnreadCount && (data?.unread_notification_count !== undefined || data?.unread_count !== undefined)) {
-        setUnreadCount(data.unread_notification_count ?? data.unread_count ?? 0);
+
+      // Fetch dashboard and favorites in parallel for ultra-fast startup
+      const [data, favs] = await Promise.all([
+        getHomeDashboard(lat, lng),
+        getFavorites().catch(() => [])
+      ]);
+
+      if (data) {
+        memoryCachedDashboard = data;
+        setCategories(data?.categories || []);
+        setOffers(data?.offers || data?.banners || []);
+        setFeaturedArtists(data?.featured_artists || data?.featuredArtists || []);
+        setPopularArtists(data?.popular_artists || data?.popularArtists || []);
+        setRecentlyBookedArtists(data?.recently_booked || data?.recentlyBooked || []);
+        if (setUnreadCount && (data?.unread_notification_count !== undefined || data?.unread_count !== undefined)) {
+          setUnreadCount(data.unread_notification_count ?? data.unread_count ?? 0);
+        }
+        try {
+          const AsyncStorage = require("@react-native-async-storage/async-storage").default;
+          AsyncStorage.setItem("@mehndigo_dashboard_cache", JSON.stringify(data));
+        } catch (e) {}
       }
 
-      // Load favorites from database
-      try {
-        const favs = await getFavorites();
-        lastFavoritesSyncTimeRef.current = Date.now();
+      if (favs && Array.isArray(favs)) {
         const favMap = {};
-        (favs || []).forEach((artist) => {
+        favs.forEach((artist) => {
           if (artist.id) favMap[artist.id] = true;
           if (artist.user_id) favMap[artist.user_id] = true;
           if (artist.artist_profile_id) favMap[artist.artist_profile_id] = true;
           if (artist.artist_id) favMap[artist.artist_id] = true;
         });
         setFavorites(favMap);
-      } catch (favErr) {
-        if (__DEV__) console.log("Failed to load favorites on dashboard:", favErr.message);
       }
 
       // Check for split payment pending remaining amount (ONLY open modal once on first arrival if not dismissed)
@@ -298,7 +509,6 @@ export default function HomeScreen({ navigation }) {
               specializationName: pending.service?.specialization_name
             });
           }
-
         }
       } catch (dashErr) {
         if (__DEV__) console.log("Pending check notice:", dashErr.message);
@@ -341,6 +551,7 @@ export default function HomeScreen({ navigation }) {
       const total = data?.count || 0;
 
       if (page === 1) {
+        memoryCachedNearby = list;
         setNearbyArtists(list);
       } else {
         setNearbyArtists((prev) => [...prev, ...list]);
@@ -372,13 +583,20 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
+  const lastLoadedCoordsRef = useRef({ lat: undefined, lng: undefined, isFirst: true });
+
   // Initial mount & location update load
   useEffect(() => {
-    const timer = setTimeout(() => {
-      loadDashboard();
-      loadNearby(1);
-    }, 0);
-    return () => clearTimeout(timer);
+    const lat = activeAddressState?.latitude || null;
+    const lng = activeAddressState?.longitude || null;
+
+    if (!lastLoadedCoordsRef.current.isFirst && lastLoadedCoordsRef.current.lat === lat && lastLoadedCoordsRef.current.lng === lng) {
+      return;
+    }
+    lastLoadedCoordsRef.current = { lat, lng, isFirst: false };
+
+    loadDashboard();
+    loadNearby(1);
   }, [activeAddressState?.latitude, activeAddressState?.longitude]);
 
   useFocusEffect(
@@ -437,28 +655,7 @@ export default function HomeScreen({ navigation }) {
     }, [dispatch])
   );
 
-  // Banner Auto-scrolling carousel setup
-  useEffect(() => {
-    if (displayOffers.length === 0 || !isAutoPlayEnabled) return;
 
-    if (bannerTimerRef.current) clearInterval(bannerTimerRef.current);
-
-    bannerTimerRef.current = setInterval(() => {
-      let nextIndex = activeBannerIndex + 1;
-      if (nextIndex >= displayOffers.length) {
-        nextIndex = 0;
-      }
-      setActiveBannerIndex(nextIndex);
-      bannerFlatListRef.current?.scrollToIndex({
-        index: nextIndex,
-        animated: true,
-      });
-    }, 3500);
-
-    return () => {
-      if (bannerTimerRef.current) clearInterval(bannerTimerRef.current);
-    };
-  }, [displayOffers, activeBannerIndex, isAutoPlayEnabled]);
 
   // Toggle favorite
   const toggleFavorite = async (artistId) => {
@@ -549,17 +746,17 @@ export default function HomeScreen({ navigation }) {
   };
 
   // Render a Category card item
-  const renderCategoryItem = ({ item }) => {
+  const renderCategoryItem = useCallback(({ item }) => {
     const hasError = !!imageErrors[item.id];
+    const catSource = hasError ? LOCAL_CATEGORY_IMAGES.custom : getCategoryImage(item);
     return (
       <TouchableOpacity
         style={styles.categoryCard}
         onPress={() => navigation.navigate("ArtistListing", { categoryId: item.id, category: item.name })}
       >
         <View style={[styles.categoryIcon, { overflow: "hidden" }]}>
-          <Image
-            source={hasError ? LOCAL_CATEGORY_IMAGES.custom : getCategoryImage(item)}
-
+          <OptimizedImage
+            source={catSource}
             onError={() => {
               setImageErrors((prev) => ({ ...prev, [item.id]: true }));
             }}
@@ -570,91 +767,10 @@ export default function HomeScreen({ navigation }) {
         <Text style={[styles.categoryText, { color: currentTextColor }]} numberOfLines={1}>{item.name}</Text>
       </TouchableOpacity>
     );
-  };
-
-  const getBannerImage = (item) => {
-    if (!item) return null;
-    const imgUrl = item.image_url || item.banner_image || item.image;
-    if (imgUrl && typeof imgUrl === "string") {
-      if (imgUrl.startsWith("http://") || imgUrl.startsWith("https://")) {
-        return { uri: imgUrl };
-      }
-      if (imgUrl.startsWith("/")) {
-        const { BASE_URL } = require("../../services/api");
-        const cleanBase = (BASE_URL || "").replace(/\/api\/v1\/?$/, "");
-        return { uri: `${cleanBase}${imgUrl}` };
-      }
-    }
-    return null;
-  };
-
-  // Render a banner item
-  const renderBannerItem = ({ item }) => {
-    const bannerImg = getBannerImage(item);
-    const hasImageError = !!bannerErrors[item.id];
-
-    const handleBannerPress = () => {
-      if (!item) return;
-      if (item.target_type === "category" && item.target_id) {
-        navigation.navigate("ArtistListing", { categoryId: item.target_id, category: item.title });
-      } else if (item.target_type === "artist" && item.target_id) {
-        navigation.navigate("ArtistProfile", { artistId: item.target_id });
-      } else if (item.target_type === "coupons" || item.cta_link === "Coupons" || item.banner_type === "OFFER") {
-        navigation.navigate("Coupons");
-      } else if (item.cta_link && typeof item.cta_link === "string" && item.cta_link.startsWith("http")) {
-        const { Linking } = require("react-native");
-        Linking.openURL(item.cta_link).catch(() => {});
-      }
-    };
-
-    return (
-      <TouchableOpacity
-        activeOpacity={0.9}
-        style={{ width: SCREEN_WIDTH, height: 150, paddingHorizontal: 16 }}
-        onPress={handleBannerPress}
-      >
-        <View style={styles.bannerSlideInner}>
-          {bannerImg && !hasImageError ? (
-            <OptimizedImage
-              source={bannerImg}
-              onError={() => setBannerErrors((prev) => ({ ...prev, [item.id]: true }))}
-              style={styles.bannerBgImage}
-              resizeMode="cover"
-            />
-          ) : (
-            <View style={[styles.bannerBgImage, { backgroundColor: Colors.primary + "20" }]} />
-          )}
-          <View style={styles.bannerOverlay}>
-            <View style={styles.bannerTextContainer}>
-              <Text style={styles.bannerTitle} numberOfLines={1}>{item.title}</Text>
-              {!!(item.subtitle || item.description) && (
-                <Text style={styles.bannerSubTitle} numberOfLines={2}>{item.subtitle || item.description}</Text>
-              )}
-              {!!item.code && (
-                <TouchableOpacity
-                  style={[styles.promoBadge, { flexDirection: "row", alignItems: "center" }]}
-                  activeOpacity={0.8}
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    copyAndSaveCoupon(item.code, item.title);
-                  }}
-                >
-                  <Text style={styles.promoBadgeText}>Code: {item.code}</Text>
-                  <Ionicons name="copy-outline" size={12} color="#FFF" style={{ marginLeft: 4 }} />
-                </TouchableOpacity>
-              )}
-            </View>
-            {!!(item.discount || item.discount_text) && (
-              <Text style={styles.bannerDiscountText}>{item.discount || item.discount_text}</Text>
-            )}
-          </View>
-        </View>
-      </TouchableOpacity>
-    );
-  };
+  }, [imageErrors, currentTextColor]);
 
   // Render recently booked artist card
-  const renderRecentlyBookedItem = ({ item }) => {
+  const renderRecentlyBookedItem = useCallback(({ item }) => {
     const formattedDate = item.booking_date ? formatServiceDate(item.booking_date) : "Recently";
     const artistName = item.name || item.full_name || item.user?.name || "Mehndi Specialist";
     const avatarUrl = resolveImage(item.profile_image || item.user?.profile_image || item.avatar || item.selfie_image || item.user?.avatar) || `https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=F3E8FF&color=7C3AED`;
@@ -693,10 +809,10 @@ export default function HomeScreen({ navigation }) {
         </View>
       </TouchableOpacity>
     );
-  };
+  }, [currentCardBg, currentBorderColor, currentTextColor, currentSecTextColor]);
 
   // Render an artist horizontal card (Featured & Popular)
-  const renderHorizontalArtistItem = ({ item }) => {
+  const renderHorizontalArtistItem = useCallback(({ item }) => {
     const artistId = item.id || item.user_id || item.artist_id;
     const isFav = !!favorites[artistId];
     const artistName = item.name || item.full_name || item.user?.name || "Mehndi Artist";
@@ -745,10 +861,10 @@ export default function HomeScreen({ navigation }) {
         </View>
       </TouchableOpacity>
     );
-  };
+  }, [favorites, currentCardBg, currentBorderColor, currentTextColor, currentSecTextColor]);
 
   // Render Nearby Artist Vertical Item
-  const renderNearbyArtistItem = ({ item }) => {
+  const renderNearbyArtistItem = useCallback(({ item }) => {
     const artistId = item.id || item.user_id || item.artist_id;
     const isFav = !!favorites[artistId];
     const artistName = item.name || item.full_name || item.user?.name || "Mehndi Artist";
@@ -814,10 +930,10 @@ export default function HomeScreen({ navigation }) {
         </View>
       </TouchableOpacity>
     );
-  };
+  }, [favorites, currentCardBg, currentBorderColor, currentTextColor, currentSecTextColor]);
 
   // Header sections nested in FlatList for virtual list performance
-  const renderListHeader = () => (
+  const listHeaderComponent = useMemo(() => (
     <View>
       <HomeHeader
         user={user}
@@ -893,52 +1009,7 @@ export default function HomeScreen({ navigation }) {
       )}
 
       {/* 3. Promotional Banner Slider */}
-      {displayOffers.length > 0 && (
-        <View style={styles.bannerContainer}>
-          <FlatList
-            ref={bannerFlatListRef}
-            data={displayOffers}
-            keyExtractor={(item, index) => String(item.id || item.user_id || item.artist_id || index)}
-            horizontal
-            pagingEnabled
-            nestedScrollEnabled={true}
-            showsHorizontalScrollIndicator={false}
-            renderItem={renderBannerItem}
-            onScrollBeginDrag={() => {
-              setIsAutoPlayEnabled(false);
-            }}
-            onMomentumScrollEnd={(e) => {
-              const slide = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
-              if (slide !== activeBannerIndex) {
-                setActiveBannerIndex(slide);
-              }
-              setIsAutoPlayEnabled(true);
-            }}
-            getItemLayout={(data, index) => ({
-              length: SCREEN_WIDTH,
-              offset: SCREEN_WIDTH * index,
-              index,
-            })}
-            onScrollToIndexFailed={(info) => {
-              const wait = new Promise((resolve) => setTimeout(resolve, 500));
-              wait.then(() => {
-                bannerFlatListRef.current?.scrollToIndex({ index: info.index, animated: false });
-              });
-            }}
-          />
-          <View style={styles.paginationDots}>
-            {displayOffers.map((_, i) => (
-              <View
-                key={i}
-                style={[
-                  styles.dot,
-                  activeBannerIndex === i ? styles.activeDotIndicator : null,
-                ]}
-              />
-            ))}
-          </View>
-        </View>
-      )}
+      <PromotionalBannerSlider offers={offers} navigation={navigation} />
 
       {/* 4. Categories Section (Exactly 6 unique categories on HomeScreen) */}
       <View style={styles.sectionHeader}>
@@ -1071,7 +1142,7 @@ export default function HomeScreen({ navigation }) {
         )}
       />
     </View>
-  );
+  ), [user, activeAddressState, unreadCount, currentTextColor, currentSecTextColor, currentCardBg, currentBorderColor, pendingPaymentBooking, offers, unique6Categories, featuredArtists, popularArtists, recentlyBookedArtists, selectedFilter, favorites, renderCategoryItem, renderHorizontalArtistItem, renderRecentlyBookedItem, navigation]);
 
   // Footer for spinner or empty states
   const renderListFooter = () => {
@@ -1131,7 +1202,7 @@ export default function HomeScreen({ navigation }) {
         data={homePreviewNearbyArtists}
         keyExtractor={(item, index) => String(item.id || item.user_id || item.artist_id || index)}
         renderItem={renderNearbyArtistItem}
-        ListHeaderComponent={renderListHeader}
+        ListHeaderComponent={listHeaderComponent}
         ListFooterComponent={renderListFooter}
         initialNumToRender={5}
         maxToRenderPerBatch={10}
