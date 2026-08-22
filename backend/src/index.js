@@ -1110,9 +1110,30 @@ const handleGetArtistDetails = async (c) => {
   const profile = await db.first("SELECT * FROM artist_profiles WHERE user_id = ?", [u.id]).catch(() => null);
 
   const artistName = user?.full_name || user?.name || "Artist";
-  const artistAvatar = profile?.profile_image || user?.avatar || "";
+  const artistAvatar = profile?.profile_image || profile?.selfie_image || user?.avatar || "";
   const rawStatus = profile?.verification_status || profile?.status || "PENDING";
   const canonicalVerificationStatus = String(rawStatus).toUpperCase();
+
+  const canonicalLocation = profile?.location || profile?.locality || "";
+  const canonicalLocality = profile?.locality || profile?.location || "";
+  const canonicalCity = profile?.city || "";
+  const canonicalState = profile?.state || "";
+  const canonicalPincode = profile?.pincode || "";
+  const canonicalBio = profile?.bio || "";
+  const canonicalExp = profile?.experience_years !== undefined && profile?.experience_years !== null ? Number(profile.experience_years) : 0;
+  const canonicalPrice = profile?.starting_price ? Number(profile.starting_price) : 1500;
+  const canonicalHomeSvc = profile?.home_service !== undefined ? Boolean(profile.home_service !== false && profile.home_service !== 0) : true;
+  const canonicalSalonSvc = Boolean(profile?.salon_service);
+  const canonicalLanguages = profile?.languages || "English, Hindi";
+  const canonicalIsAvailable = profile?.is_available !== undefined ? Boolean(profile.is_available !== false && profile.is_available !== 0) : true;
+
+  const isProfileComplete = Boolean(
+    canonicalBio &&
+    canonicalBio.trim() !== "" &&
+    canonicalExp !== null &&
+    (canonicalCity || canonicalLocation) &&
+    (profile?.aadhaar_front || profile?.aadhaar_number)
+  );
 
   return jsonRes(c, true, {
     id: profile?.id || user?.id || u.id,
@@ -1129,30 +1150,36 @@ const handleGetArtistDetails = async (c) => {
       is_verified: Boolean(user?.is_verified),
       is_active: user?.is_active !== 0
     },
-    bio: profile?.bio || "",
-    experience_years: profile?.experience_years || 0,
-    starting_price: profile?.starting_price || 1500,
-    home_service: profile?.home_service !== undefined ? Boolean(profile.home_service) : true,
-    salon_service: Boolean(profile?.salon_service),
-    location: profile?.locality ? `${profile.locality}, ${profile.city || ""}` : (profile?.city || ""),
-    city: profile?.city || "",
-    locality: profile?.locality || "",
-    state: profile?.state || "",
-    pincode: profile?.pincode || "",
-    languages: profile?.languages || "English, Hindi",
+    bio: canonicalBio,
+    experience_years: canonicalExp,
+    experience: canonicalExp,
+    starting_price: canonicalPrice,
+    startingPrice: canonicalPrice,
+    home_service: canonicalHomeSvc,
+    homeService: canonicalHomeSvc,
+    salon_service: canonicalSalonSvc,
+    salonService: canonicalSalonSvc,
+    location: canonicalLocation,
+    locality: canonicalLocality,
+    city: canonicalCity,
+    state: canonicalState,
+    pincode: canonicalPincode,
+    languages: canonicalLanguages,
     aadhaar_number: profile?.aadhaar_number ? (String(profile.aadhaar_number).replace(/\s/g, "").length >= 4 ? `•••• •••• ${String(profile.aadhaar_number).replace(/\s/g, "").slice(-4)}` : "••••") : "",
     pan_number: profile?.pan_number || "",
     aadhaar_front: profile?.aadhaar_front || "",
     aadhaar_back: profile?.aadhaar_back || "",
     selfie_image: profile?.selfie_image || artistAvatar || "",
+    profile_image: artistAvatar,
+    avatar: artistAvatar,
+    cover_image: profile?.cover_image || "",
     rating: profile?.rating || 0,
     total_reviews: profile?.total_reviews || 0,
-    cover_image: profile?.cover_image || "",
     status: canonicalVerificationStatus.toLowerCase(),
     verification_status: canonicalVerificationStatus,
-    is_available: profile?.is_available !== undefined ? Boolean(profile.is_available) : true,
+    is_available: canonicalIsAvailable,
     rejection_reason: profile?.rejection_reason || null,
-    isProfileComplete: Boolean(profile?.bio || profile?.experience_years || profile?.city || profile?.aadhaar_front)
+    isProfileComplete: isProfileComplete
   }, "Artist details retrieved");
 };
 
@@ -1225,6 +1252,29 @@ const handleUpdateProfile = async (c) => {
   return handleGetProfile(c);
 };
 
+const resolveFileValue = async (val) => {
+  if (val === null || val === undefined) return null;
+  if (typeof val === "string") return val;
+  if (typeof val === "object" && typeof val.arrayBuffer === "function") {
+    try {
+      const buffer = await val.arrayBuffer();
+      if (!buffer || buffer.byteLength === 0) return null;
+      const bytes = new Uint8Array(buffer);
+      let binary = "";
+      for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      const base64 = btoa(binary);
+      const mime = val.type || "image/jpeg";
+      return `data:${mime};base64,${base64}`;
+    } catch (e) {
+      console.warn("Error converting file to base64:", e.message);
+      return null;
+    }
+  }
+  return null;
+};
+
 const handleUpdateArtistProfile = async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
@@ -1244,7 +1294,8 @@ const handleUpdateArtistProfile = async (c) => {
   const name = body.full_name || body.fullName || body.name;
   const email = body.email;
   const phone = body.phone;
-  const avatar = body.profile_image || body.profileImage || body.avatar || body.selfie_image;
+  const rawAvatar = body.profile_image || body.profileImage || body.avatar || body.selfie_image;
+  const avatar = await resolveFileValue(rawAvatar);
 
   if (name || email || phone || avatar) {
     await db.run(
@@ -1254,20 +1305,34 @@ const handleUpdateArtistProfile = async (c) => {
   }
 
   const bio = body.bio;
-  const experienceYears = body.experience_years !== undefined ? Number(body.experience_years) : (body.experience !== undefined ? Number(body.experience) : undefined);
+  const experienceYears = body.experience_years !== undefined ? Number(body.experience_years) : (body.experience !== undefined ? Number(body.experience) : (body.experienceYears !== undefined ? Number(body.experienceYears) : undefined));
   const startingPrice = body.starting_price !== undefined ? Number(body.starting_price) : (body.startingPrice !== undefined ? Number(body.startingPrice) : undefined);
-  const homeService = body.home_service !== undefined ? (body.home_service === true || body.home_service === "true" ? 1 : 0) : (body.homeService !== undefined ? (body.homeService ? 1 : 0) : undefined);
-  const salonService = body.salon_service !== undefined ? (body.salon_service === true || body.salon_service === "true" ? 1 : 0) : (body.salonService !== undefined ? (body.salonService ? 1 : 0) : undefined);
-  const isAvailable = body.is_available !== undefined ? (body.is_available === true || body.is_available === "true" ? 1 : 0) : (body.isAvailable !== undefined ? (body.isAvailable ? 1 : 0) : undefined);
-  const location = body.location || body.address;
+  const homeService = body.home_service !== undefined ? (body.home_service === true || body.home_service === "true" || body.home_service === 1 ? 1 : 0) : (body.homeService !== undefined ? (body.homeService ? 1 : 0) : undefined);
+  const salonService = body.salon_service !== undefined ? (body.salon_service === true || body.salon_service === "true" || body.salon_service === 1 ? 1 : 0) : (body.salonService !== undefined ? (body.salonService ? 1 : 0) : undefined);
+  const isAvailable = body.is_available !== undefined ? (body.is_available === true || body.is_available === "true" || body.is_available === 1 ? 1 : 0) : (body.isAvailable !== undefined ? (body.isAvailable ? 1 : 0) : undefined);
+  const location = body.location !== undefined ? body.location : (body.address !== undefined ? body.address : undefined);
   const city = body.city;
   const state = body.state;
   const pincode = body.pincode;
   const languages = body.languages;
-  const coverImage = body.cover_image || body.coverImage;
-  const aadhaarNumber = body.aadhaar_number || body.aadhaarNumber;
-  const aadhaarFront = body.aadhaar_front || body.aadhaarFront;
-  const aadhaarBack = body.aadhaar_back || body.aadhaarBack;
+  const rawCover = body.cover_image || body.coverImage;
+  const coverImage = await resolveFileValue(rawCover);
+  const rawFront = body.aadhaar_front || body.aadhaarFront;
+  const aadhaarFront = await resolveFileValue(rawFront);
+  const rawBack = body.aadhaar_back || body.aadhaarBack;
+  const aadhaarBack = await resolveFileValue(rawBack);
+  const latitude = body.latitude;
+  const longitude = body.longitude;
+
+  // Sanitize Aadhaar: Only update if an actual 12-digit non-masked Aadhaar number was sent
+  let cleanAadhaar = undefined;
+  const rawAadhaar = body.aadhaar_number || body.aadhaarNumber;
+  if (rawAadhaar && typeof rawAadhaar === "string" && !rawAadhaar.includes("•") && !rawAadhaar.includes("*")) {
+    const digits = rawAadhaar.replace(/[^0-9]/g, "");
+    if (digits.length === 12) {
+      cleanAadhaar = digits;
+    }
+  }
 
   const existingProfile = await db.first("SELECT id FROM artist_profiles WHERE user_id = ?", [u.id]).catch(() => null);
   if (existingProfile) {
@@ -1280,15 +1345,19 @@ const handleUpdateArtistProfile = async (c) => {
         salon_service = COALESCE(?, salon_service),
         is_available = COALESCE(?, is_available),
         location = COALESCE(?, location),
+        locality = COALESCE(?, locality, location),
         city = COALESCE(?, city),
         state = COALESCE(?, state),
         pincode = COALESCE(?, pincode),
         languages = COALESCE(?, languages),
         cover_image = COALESCE(?, cover_image),
         selfie_image = COALESCE(?, selfie_image),
+        profile_image = COALESCE(?, profile_image, selfie_image),
         aadhaar_number = COALESCE(?, aadhaar_number),
         aadhaar_front = COALESCE(?, aadhaar_front),
         aadhaar_back = COALESCE(?, aadhaar_back),
+        latitude = COALESCE(?, latitude),
+        longitude = COALESCE(?, longitude),
         updated_at = CURRENT_TIMESTAMP
       WHERE user_id = ?
     `, [
@@ -1299,24 +1368,28 @@ const handleUpdateArtistProfile = async (c) => {
       salonService !== undefined ? salonService : null,
       isAvailable !== undefined ? isAvailable : null,
       location !== undefined ? location : null,
+      location !== undefined ? location : null,
       city !== undefined ? city : null,
       state !== undefined ? state : null,
       pincode !== undefined ? pincode : null,
       languages !== undefined ? languages : null,
       coverImage !== undefined ? coverImage : null,
       avatar !== undefined ? avatar : null,
-      aadhaarNumber !== undefined ? aadhaarNumber : null,
+      avatar !== undefined ? avatar : null,
+      cleanAadhaar !== undefined ? cleanAadhaar : null,
       aadhaarFront !== undefined ? aadhaarFront : null,
       aadhaarBack !== undefined ? aadhaarBack : null,
+      latitude !== undefined ? latitude : null,
+      longitude !== undefined ? longitude : null,
       u.id
     ]).catch((err) => console.warn("Artist profile update err:", err.message));
   } else {
     await db.run(`
       INSERT INTO artist_profiles (
         user_id, bio, experience_years, starting_price, home_service, salon_service, is_available,
-        location, city, state, pincode, languages, cover_image, selfie_image,
-        aadhaar_number, aadhaar_front, aadhaar_back, verification_status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')
+        location, locality, city, state, pincode, languages, cover_image, selfie_image, profile_image,
+        aadhaar_number, aadhaar_front, aadhaar_back, latitude, longitude, verification_status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')
     `, [
       u.id,
       bio || "",
@@ -1326,15 +1399,19 @@ const handleUpdateArtistProfile = async (c) => {
       salonService !== undefined ? salonService : 0,
       isAvailable !== undefined ? isAvailable : 1,
       location || "",
+      location || "",
       city || "",
       state || "",
       pincode || "",
       languages || "English, Hindi",
       coverImage || "",
       avatar || "",
-      aadhaarNumber || "",
+      avatar || "",
+      cleanAadhaar || "",
       aadhaarFront || "",
-      aadhaarBack || ""
+      aadhaarBack || "",
+      latitude || "26.912434",
+      longitude || "75.787270"
     ]).catch((err) => console.warn("Artist profile insert err:", err.message));
   }
 
@@ -2116,6 +2193,23 @@ const handleGetWallet = async (c) => {
   }
 };
 
+const normalizeIsoDate = (dStr) => {
+  if (!dStr) return new Date().toISOString();
+  if (typeof dStr === "string") {
+    const trimmed = dStr.trim();
+    if (/^\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}/.test(trimmed)) {
+      return trimmed.replace(" ", "T") + "Z";
+    }
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(trimmed) && !trimmed.endsWith("Z") && !trimmed.includes("+")) {
+      return trimmed + "Z";
+    }
+    const parsed = new Date(trimmed);
+    if (!isNaN(parsed.getTime())) return parsed.toISOString();
+  }
+  if (dStr instanceof Date) return isNaN(dStr.getTime()) ? new Date().toISOString() : dStr.toISOString();
+  return new Date().toISOString();
+};
+
 const handleGetWalletTransactions = async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
@@ -2134,18 +2228,24 @@ const handleGetWalletTransactions = async (c) => {
       [u.id, walletId]
     ).catch(() => []);
 
-    const formatted = (txs || []).map(t => ({
-      id: t.id,
-      wallet_id: t.wallet_id,
-      user_id: u.id,
-      type: t.type || "credit",
-      amount: t.amount || 0,
-      description: t.description || (t.type === "debit" ? "Payout Withdrawal" : "Earnings Credited"),
-      status: t.status || "completed",
-      reference_id: t.reference_id || null,
-      created_at: t.created_at,
-      date: t.created_at
-    }));
+    const formatted = (txs || []).map(t => {
+      const isoCreated = normalizeIsoDate(t.created_at || t.createdAt);
+      return {
+        id: t.id,
+        wallet_id: t.wallet_id,
+        user_id: u.id,
+        booking_id: t.booking_id || null,
+        type: t.type || "credit",
+        amount: Number(t.amount || 0),
+        description: t.description || (t.type === "debit" ? "Payment / Withdrawal" : "Amount Credited"),
+        status: t.status || "completed",
+        reference_id: t.reference_id || null,
+        created_at: isoCreated,
+        createdAt: isoCreated,
+        date: isoCreated,
+        timestamp: isoCreated
+      };
+    });
 
     return jsonRes(c, true, formatted);
   } catch (e) {
@@ -2166,6 +2266,25 @@ const handleRequestWithdrawal = async (c) => {
     return jsonRes(c, false, null, "Please enter a valid withdrawal amount", 400);
   }
 
+  const settings = await getMarketplaceSettings(db);
+  const minWithdrawal = Number(settings.min_withdrawal_amount || 100);
+  if (amount < minWithdrawal) {
+    return jsonRes(c, false, null, `Minimum withdrawal amount is ₹${minWithdrawal}`, 400);
+  }
+
+  // Verify Artist KYC / Account Status
+  const artistProfile = await db.first("SELECT * FROM artist_profiles WHERE user_id = ? OR id = ?", [u.id, u.id]).catch(() => null);
+  if (artistProfile && String(artistProfile.verification_status || artistProfile.status || "").toUpperCase() !== "APPROVED") {
+    const kycStat = String(artistProfile.verification_status || artistProfile.status || "PENDING").toUpperCase();
+    return jsonRes(c, false, null, `Only approved artists with verified KYC can request payouts. Current KYC status: ${kycStat}`, 403);
+  }
+
+  // Prevent multiple simultaneous pending withdrawals
+  const existingPending = await db.first("SELECT id FROM withdrawals WHERE user_id = ? AND status = 'pending'", [u.id]).catch(() => null);
+  if (existingPending) {
+    return jsonRes(c, false, null, `You already have an active pending withdrawal request (WR-${existingPending.id}). Please wait for it to be processed.`, 400);
+  }
+
   // Idempotency / Replay protection: check client reference id
   const clientRefId = body.reference_id || body.client_reference_id;
   if (clientRefId) {
@@ -2180,14 +2299,14 @@ const handleRequestWithdrawal = async (c) => {
     return jsonRes(c, false, null, "Wallet not found", 404);
   }
 
-  const currentBalance = Number(wallet.available_balance || wallet.balance || 0.0);
-  if (amount > currentBalance) {
-    return jsonRes(c, false, null, "Requested amount exceeds available wallet balance", 400);
+  const currentAvailable = Number(wallet.available_balance || wallet.balance || 0.0);
+  if (amount > currentAvailable) {
+    return jsonRes(c, false, null, `Insufficient available balance (₹${currentAvailable.toFixed(2)}) for withdrawal of ₹${amount.toFixed(2)}. Note: Pending escrow funds cannot be withdrawn until booking completion.`, 400);
   }
 
   const bankAcc = await db.first("SELECT * FROM bank_accounts WHERE user_id = ?", [u.id]).catch(() => null);
-  if (!bankAcc || !bankAcc.account_number) {
-    return jsonRes(c, false, null, "Please link your bank account details first before requesting payout", 400);
+  if (!bankAcc || (!bankAcc.account_number && !bankAcc.upi_id)) {
+    return jsonRes(c, false, null, "Please link your bank account or UPI details before requesting a payout", 400);
   }
 
   const refId = clientRefId || `WITHDRAW_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
@@ -2210,14 +2329,14 @@ const handleRequestWithdrawal = async (c) => {
   const withdrawRes = await db.run(
     `INSERT INTO withdrawals (user_id, amount, status, bank_account_id, reference_id)
      VALUES (?, ?, 'pending', ?, ?)`,
-    [u.id, amount, bankAcc.id, refId]
+    [u.id, amount, bankAcc.id || null, refId]
   );
   const withdrawalId = withdrawRes.meta?.last_row_id;
 
   await db.run(
     `INSERT INTO wallet_transactions (wallet_id, user_id, type, amount, description, status, reference_id)
      VALUES (?, ?, 'debit', ?, ?, 'pending', ?)`,
-    [wallet.id, u.id, amount, `Withdrawal Request to Bank (${bankAcc.bank_name || "Bank"})`, refId]
+    [wallet.id, u.id, amount, `Withdrawal Request WR-${withdrawalId} (${bankAcc.bank_name || "Bank Payout"})`, refId]
   );
 
   const updatedWallet = await db.first("SELECT * FROM wallets WHERE id = ?", [wallet.id]).catch(() => null);
@@ -2229,8 +2348,10 @@ const handleRequestWithdrawal = async (c) => {
     status: "pending",
     reference_id: refId,
     requested_at: new Date().toISOString(),
-    bank_name: bankAcc.bank_name,
-    account_number_masked: `•••• ${bankAcc.account_number.slice(-4)}`,
+    bank_name: bankAcc.bank_name || "Bank",
+    account_number_masked: bankAcc.account_number ? `•••• ${bankAcc.account_number.slice(-4)}` : "••••",
+    upi_id: bankAcc.upi_id || null,
+    available_balance: updatedWallet?.available_balance || 0.0,
     new_balance: updatedWallet?.available_balance || 0.0
   }, "Withdrawal request submitted successfully");
 };
@@ -2243,9 +2364,9 @@ const handleGetWithdrawalHistory = async (c) => {
   }
   try {
     const list = await db.all(
-      `SELECT w.*, b.bank_name, b.account_number
+      `SELECT w.*, b.bank_name, b.account_number, b.upi_id
        FROM withdrawals w
-       LEFT JOIN bank_accounts b ON w.bank_account_id = b.id
+       LEFT JOIN bank_accounts b ON w.bank_account_id = b.id OR (w.user_id = b.user_id)
        WHERE w.user_id = ?
        ORDER BY w.id DESC`,
       [u.id]
@@ -2254,14 +2375,15 @@ const handleGetWithdrawalHistory = async (c) => {
     const formatted = (list || []).map(w => ({
       id: w.id,
       user_id: w.user_id,
-      amount: w.amount,
+      amount: Number(w.amount),
       status: w.status || "pending",
       reference_id: w.reference_id || `W-${w.id}`,
       requested_at: w.requested_at || w.created_at,
       created_at: w.requested_at || w.created_at,
       processed_at: w.processed_at || null,
       bank_name: w.bank_name || "Bank Payout",
-      account_number_masked: w.account_number ? `•••• ${w.account_number.slice(-4)}` : "••••"
+      account_number_masked: w.account_number ? `•••• ${w.account_number.slice(-4)}` : "••••",
+      upi_id: w.upi_id || null
     }));
 
     return jsonRes(c, true, formatted);
@@ -2272,15 +2394,16 @@ const handleGetWithdrawalHistory = async (c) => {
 
 const handleRejectWithdrawal = async (c) => {
   const db = getDb(c.env);
+  const withdrawalId = Number(c.req.param("id") || c.req.query("id") || 0);
   const body = await c.req.json().catch(() => ({}));
-  const withdrawalId = Number(body.withdrawal_id || body.id || 0);
-  const reason = String(body.reason || "Payout failed or rejected by bank");
+  const targetId = withdrawalId || Number(body.withdrawal_id || body.id || body.requestId || 0);
+  const reason = String(body.reason || "Payout failed or rejected by bank/admin");
 
-  if (!withdrawalId) {
+  if (!targetId) {
     return jsonRes(c, false, null, "Withdrawal ID is required", 400);
   }
 
-  const withdrawal = await db.first("SELECT * FROM withdrawals WHERE id = ?", [withdrawalId]).catch(() => null);
+  const withdrawal = await db.first("SELECT * FROM withdrawals WHERE id = ?", [targetId]).catch(() => null);
   if (!withdrawal) {
     return jsonRes(c, false, null, "Withdrawal not found", 404);
   }
@@ -2303,22 +2426,164 @@ const handleRejectWithdrawal = async (c) => {
       [newBal, newAvail, newWithdrawn, wallet.id]
     );
 
-    const refId = `REFUND_WITHDRAW_${withdrawalId}_${Date.now()}`;
+    const refId = `REFUND_WITHDRAW_${targetId}_${Date.now()}`;
     await db.run(
       `INSERT INTO wallet_transactions (wallet_id, user_id, type, amount, description, status, reference_id)
        VALUES (?, ?, 'credit', ?, ?, 'completed', ?)`,
-      [wallet.id, userId, amount, `Payout Failed / Rejected (₹${amount.toFixed(2)}) — Restored to Available Balance. Reason: ${reason}`, refId]
+      [wallet.id, userId, amount, `Payout Failed / Cancelled (₹${amount.toFixed(2)}) — Restored to Available Balance. Reason: ${reason}`, refId]
     );
   }
 
-  await db.run("UPDATE withdrawals SET status = 'failed', processed_at = CURRENT_TIMESTAMP WHERE id = ?", [withdrawalId]);
+  await db.run("UPDATE withdrawals SET status = 'failed', processed_at = CURRENT_TIMESTAMP WHERE id = ?", [targetId]);
+
+  // Send In-App Notification to artist
+  await db.run(
+    "INSERT INTO notifications (user_id, title, message, type, is_read) VALUES (?, ?, ?, 'PAYOUT_REVERSED', 0)",
+    [userId, "Withdrawal Refunded", `Your withdrawal request of ₹${amount.toFixed(2)} could not be processed and has been safely refunded back to your available wallet balance. Reason: ${reason}`]
+  ).catch(() => {});
 
   return jsonRes(c, true, {
-    withdrawal_id: withdrawalId,
+    withdrawal_id: targetId,
     status: "failed",
     refunded_amount: amount,
     reason
   }, "Withdrawal reversed and funds restored to artist wallet successfully");
+};
+
+const handleApproveWithdrawal = async (c) => {
+  const db = getDb(c.env);
+  const withdrawalId = Number(c.req.param("id") || c.req.query("id") || 0);
+  const body = await c.req.json().catch(() => ({}));
+  const targetId = withdrawalId || Number(body.withdrawal_id || body.id || 0);
+  const payoutRef = String(body.payout_reference || body.utr || `PAYOUT_${Date.now()}`);
+
+  if (!targetId) {
+    return jsonRes(c, false, null, "Withdrawal ID is required", 400);
+  }
+
+  const withdrawal = await db.first("SELECT * FROM withdrawals WHERE id = ?", [targetId]).catch(() => null);
+  if (!withdrawal) {
+    return jsonRes(c, false, null, "Withdrawal request not found", 404);
+  }
+
+  if (withdrawal.status === "completed") {
+    return jsonRes(c, true, withdrawal, "Withdrawal already marked as completed");
+  }
+
+  await db.run(
+    "UPDATE withdrawals SET status = 'completed', reference_id = COALESCE(?, reference_id), processed_at = CURRENT_TIMESTAMP WHERE id = ?",
+    [payoutRef, targetId]
+  );
+
+  await db.run(
+    "UPDATE wallet_transactions SET status = 'completed' WHERE reference_id = ? OR (user_id = ? AND type = 'debit' AND amount = ? AND status = 'pending')",
+    [withdrawal.reference_id, withdrawal.user_id, withdrawal.amount]
+  ).catch(() => {});
+
+  // Send in-app notification to artist
+  await db.run(
+    "INSERT INTO notifications (user_id, title, message, type, is_read) VALUES (?, ?, ?, 'PAYOUT_SUCCESS', 0)",
+    [withdrawal.user_id, "Payout Completed! 🎉", `Your payout of ₹${Number(withdrawal.amount).toFixed(2)} has been successfully transferred to your bank account. (Ref: ${payoutRef})`]
+  ).catch(() => {});
+
+  return jsonRes(c, true, {
+    id: targetId,
+    status: "completed",
+    amount: Number(withdrawal.amount),
+    payout_reference: payoutRef,
+    processed_at: new Date().toISOString()
+  }, "Withdrawal payout approved and marked as completed");
+};
+
+const handleGetAdminWallet = async (c) => {
+  const db = getDb(c.env);
+  await ensureWalletTables(db);
+
+  const commissions = await db.first(`
+    SELECT 
+      COUNT(*) as total_settlements,
+      COALESCE(SUM(commission_amount), 0) as total_commission_earned,
+      COALESCE(SUM(platform_net_revenue), 0) as net_platform_revenue,
+      COALESCE(SUM(base_service_amount), 0) as gross_gmv,
+      COALESCE(SUM(artist_total_payable), 0) as gross_artist_payouts
+    FROM master_financial_ledger
+  `).catch(() => null);
+
+  const withdrawalsSummary = await db.first(`
+    SELECT
+      COALESCE(SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END), 0) as total_withdrawn,
+      COALESCE(SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END), 0) as pending_withdrawals,
+      COUNT(CASE WHEN status = 'pending' THEN 1 ELSE NULL END) as pending_withdrawal_count
+    FROM withdrawals
+  `).catch(() => null);
+
+  const ledgerList = await db.all(`
+    SELECT m.*, 
+           u_c.full_name as customer_name, u_c.phone as customer_phone,
+           u_a.full_name as artist_name, u_a.phone as artist_phone
+    FROM master_financial_ledger m
+    LEFT JOIN users u_c ON m.customer_id = u_c.id
+    LEFT JOIN users u_a ON m.artist_id = u_a.id
+    ORDER BY m.id DESC LIMIT 50
+  `).catch(() => []);
+
+  return jsonRes(c, true, {
+    summary: {
+      total_commission_earned: Number(commissions?.total_commission_earned || 0),
+      net_platform_revenue: Number(commissions?.net_platform_revenue || 0),
+      gross_gmv: Number(commissions?.gross_gmv || 0),
+      gross_artist_payouts: Number(commissions?.gross_artist_payouts || 0),
+      total_settlements: Number(commissions?.total_settlements || 0),
+      total_withdrawn: Number(withdrawalsSummary?.total_withdrawn || 0),
+      pending_withdrawals: Number(withdrawalsSummary?.pending_withdrawals || 0),
+      pending_withdrawal_count: Number(withdrawalsSummary?.pending_withdrawal_count || 0)
+    },
+    ledger: ledgerList
+  }, "Admin wallet data retrieved");
+};
+
+const handleGetAdminWithdrawals = async (c) => {
+  const db = getDb(c.env);
+  const statusFilter = (c.req.query("status") || "").toLowerCase();
+  let query = `
+    SELECT w.*, 
+           u.full_name as artist_name, u.email as artist_email, u.phone as artist_phone,
+           b.account_holder_name, b.account_number, b.ifsc_code, b.bank_name, b.upi_id,
+           ap.verification_status as kyc_status
+    FROM withdrawals w
+    LEFT JOIN users u ON w.user_id = u.id
+    LEFT JOIN bank_accounts b ON w.bank_account_id = b.id OR (w.user_id = b.user_id)
+    LEFT JOIN artist_profiles ap ON (w.user_id = ap.user_id OR w.user_id = ap.id)
+  `;
+  const params = [];
+  if (statusFilter && statusFilter !== "all") {
+    query += " WHERE LOWER(w.status) = ?";
+    params.push(statusFilter);
+  }
+  query += " ORDER BY w.id DESC LIMIT 100";
+
+  const list = await db.all(query, params).catch(() => []);
+  const formatted = (list || []).map(w => ({
+    id: w.id,
+    user_id: w.user_id,
+    artist_name: w.artist_name || "Artist",
+    artist_email: w.artist_email || "",
+    artist_phone: w.artist_phone || "",
+    amount: Number(w.amount),
+    status: w.status || "pending",
+    reference_id: w.reference_id || `W-${w.id}`,
+    requested_at: w.requested_at || w.created_at,
+    processed_at: w.processed_at || null,
+    bank_name: w.bank_name || "Bank Payout",
+    account_holder_name: w.account_holder_name || "",
+    account_number_masked: w.account_number ? `•••• ${w.account_number.slice(-4)}` : "••••",
+    account_number: w.account_number || "",
+    ifsc_code: w.ifsc_code || "",
+    upi_id: w.upi_id || "",
+    kyc_status: w.kyc_status || "APPROVED"
+  }));
+
+  return jsonRes(c, true, formatted, "Withdrawals retrieved");
 };
 
 const handleAddWalletMoney = async (c) => {
@@ -2331,13 +2596,17 @@ const handleAddWalletMoney = async (c) => {
   const paymentId = body.razorpay_payment_id || body.payment_id;
   const orderId = body.razorpay_order_id || body.order_id;
   const signature = body.razorpay_signature;
-  const keySecret = (c?.env?.RAZORPAY_KEY_SECRET || "AJSFmZyxn471PmOT8OGRB768").trim();
+  const keySecret = (c?.env?.RAZORPAY_KEY_SECRET || "").trim();
+
+  if (!keySecret) {
+    return jsonRes(c, false, null, "Razorpay secret key is not configured in server environment", 500);
+  }
 
   if (!paymentId || !orderId || !signature) {
     return jsonRes(c, false, null, "Missing required verification parameters (razorpay_order_id, razorpay_payment_id, razorpay_signature)", 400);
   }
 
-  // Reject simulator / test payloads
+  // Reject simulator / test payloads in live environment
   if (String(paymentId).includes("sim") || String(signature).includes("simulated") || String(signature).includes("test")) {
     return jsonRes(c, false, null, "Verification failed: Simulator & test signatures are strictly forbidden in LIVE mode.", 400);
   }
@@ -2420,6 +2689,65 @@ const handleAddWalletMoney = async (c) => {
   }
 };
 
+// Dedicated Universal Bank Account Routes
+[
+  "/bank-account", "/bank-account/*",
+  "/api/bank-account", "/api/bank-account/*",
+  "/api/v1/bank-account", "/api/v1/bank-account/*",
+  "/api/v1/mehndigo/bank-account", "/api/v1/mehndigo/bank-account/*",
+  "/artist/bank-account", "/artist/bank-account/*",
+  "/api/v1/artist/bank-account", "/api/v1/artist/bank-account/*",
+  "/wallet/bank-account", "/wallet/bank-account/*",
+  "/api/v1/wallet/bank-account", "/api/v1/wallet/bank-account/*"
+].forEach(p => {
+  app.all(p, async (c) => {
+    const method = c.req.method.toUpperCase();
+    if (method === "POST" || method === "PUT" || method === "PATCH") {
+      return handleSaveBankAccount(c);
+    }
+    return handleGetBankAccount(c);
+  });
+});
+
+// Admin Wallet & Payout Management Routes
+[
+  "/admin/wallet", "/admin/wallet/*",
+  "/api/admin/wallet", "/api/admin/wallet/*",
+  "/api/v1/admin/wallet", "/api/v1/admin/wallet/*",
+  "/api/v1/mehndigo/admin/wallet", "/api/v1/mehndigo/admin/wallet/*"
+].forEach(p => {
+  app.get(p, handleGetAdminWallet);
+});
+
+[
+  "/admin/withdrawals", "/admin/withdrawals/*",
+  "/api/admin/withdrawals", "/api/admin/withdrawals/*",
+  "/api/v1/admin/withdrawals", "/api/v1/admin/withdrawals/*",
+  "/admin/payouts", "/admin/payouts/*",
+  "/api/v1/admin/payouts", "/api/v1/admin/payouts/*"
+].forEach(p => {
+  app.get(p, handleGetAdminWithdrawals);
+});
+
+[
+  "/admin/withdrawal/:id/approve", "/api/v1/admin/withdrawal/:id/approve",
+  "/admin/payout/:id/approve", "/api/v1/admin/payout/:id/approve",
+  "/admin/withdrawal/approve", "/api/v1/admin/withdrawal/approve"
+].forEach(p => {
+  app.all(p, handleApproveWithdrawal);
+});
+
+[
+  "/admin/withdrawal/:id/reject", "/api/v1/admin/withdrawal/:id/reject",
+  "/admin/payout/:id/reject", "/api/v1/admin/payout/:id/reject",
+  "/admin/withdrawal/reject", "/api/v1/admin/withdrawal/reject",
+  "/wallet/withdraw/cancel", "/api/v1/wallet/withdraw/cancel",
+  "/wallet/withdraw/reject", "/api/v1/wallet/withdraw/reject"
+].forEach(p => {
+  app.all(p, handleRejectWithdrawal);
+});
+
+// General Wallet & Withdrawal Routes
 [
   "/wallet", "/wallet/*",
   "/api/wallet", "/api/wallet/*",
@@ -2434,13 +2762,19 @@ const handleAddWalletMoney = async (c) => {
     const method = c.req.method.toUpperCase();
 
     if (path.includes("bank-account") || path.includes("bank")) {
-      if (method === "POST" || method === "PUT") {
+      if (method === "POST" || method === "PUT" || method === "PATCH") {
         return handleSaveBankAccount(c);
       }
       return handleGetBankAccount(c);
     }
 
     if (path.includes("withdraw")) {
+      if (path.includes("cancel") || path.includes("reject")) {
+        return handleRejectWithdrawal(c);
+      }
+      if (path.includes("approve")) {
+        return handleApproveWithdrawal(c);
+      }
       if (path.includes("history")) {
         return handleGetWithdrawalHistory(c);
       }
@@ -2476,6 +2810,29 @@ const handleAddWalletMoney = async (c) => {
   app.get(p, handleGetProfile);
   app.put(p, handleUpdateProfile);
   app.post(p, handleUpdateProfile);
+});
+
+[
+  "/artist/profile", "/artist/profile/*",
+  "/api/artist/profile", "/api/artist/profile/*",
+  "/api/v1/artist/profile", "/api/v1/artist/profile/*",
+  "/api/v1/mehndigo/artist/profile", "/api/v1/mehndigo/artist/profile/*",
+  "/artist/artistdetails", "/artist/artistdetails/*",
+  "/api/artist/artistdetails", "/api/artist/artistdetails/*",
+  "/api/v1/artist/artistdetails", "/api/v1/artist/artistdetails/*",
+  "/api/v1/mehndigo/artist/artistdetails", "/api/v1/mehndigo/artist/artistdetails/*",
+  "/artist/onboarding", "/artist/onboarding/*",
+  "/api/artist/onboarding", "/api/artist/onboarding/*",
+  "/api/v1/artist/onboarding", "/api/v1/artist/onboarding/*",
+  "/api/v1/mehndigo/artist/onboarding", "/api/v1/mehndigo/artist/onboarding/*"
+].forEach(p => {
+  app.all(p, async (c) => {
+    const method = c.req.method.toUpperCase();
+    if (method === "POST" || method === "PUT" || method === "PATCH") {
+      return handleUpdateArtistProfile(c);
+    }
+    return handleGetArtistDetails(c);
+  });
 });
 
 ["/booking/pending", "/api/booking/pending", "/api/v1/booking/pending", "/api/v1/mehndigo/booking/pending"].forEach(p => {
@@ -3297,10 +3654,354 @@ const handleCustomerDynamic = async (c) => {
   // -------------------------------------------------------------
   if (path.includes("payment")) {
     if (path.includes("create-session") || path.includes("create-order")) {
-      return handleCreatePaymentSession(c);
+      const body = await c.req.json().catch(() => ({}));
+      const bookingId = Number(body.bookingId || body.booking_id || 0);
+      const rawPurpose = String(body.purpose || body.payment_purpose || "").toLowerCase();
+      const isRecharge = rawPurpose === "recharge" || (!bookingId && rawPurpose !== "booking" && rawPurpose !== "booking_advance" && rawPurpose !== "booking_remaining");
+
+      const keyId = (c?.env?.RAZORPAY_KEY_ID || "").trim();
+      const keySecret = (c?.env?.RAZORPAY_KEY_SECRET || "").trim();
+
+      if (!keyId || !keySecret) {
+        return jsonRes(c, false, null, "Razorpay credentials (RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET) are not configured in server environment", 500);
+      }
+
+      // 1. Fetch or calculate trusted payable amount
+      let booking = null;
+      let totalAmtRupees = 0;
+      if (!isRecharge) {
+        if (!bookingId) {
+          return jsonRes(c, false, null, "Booking ID is required for booking payments", 400);
+        }
+        booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
+        if (!booking) {
+          return jsonRes(c, false, null, "Booking not found", 404);
+        }
+      }
+
+      if (booking) {
+        const baseServiceAmount = Number(booking.base_service_amount || booking.total_amount || 0);
+        const distanceKm = Number(booking.travel_distance_km || 0);
+        const isTravelConfirmed = String(booking.travel_charge_status).toUpperCase() === 'CONFIRMED';
+        const travelCharge = Number(booking.travel_charge || 0);
+        const settings = await getMarketplaceSettings(db);
+        const calc = calculateBookingAmounts(baseServiceAmount, distanceKm, travelCharge, isTravelConfirmed, booking, settings);
+
+        totalAmtRupees = calc.customer_total_amount;
+      }
+
+      if ((!totalAmtRupees || totalAmtRupees <= 0) && booking?.service_id) {
+        const service = await db.first("SELECT price, minimum_price FROM services WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [booking.service_id, booking.service_id]).catch(() => null);
+        if (service && (service.price || service.minimum_price)) {
+          totalAmtRupees = Number(service.price || service.minimum_price);
+        }
+      }
+
+      if (!totalAmtRupees || totalAmtRupees <= 0) {
+        totalAmtRupees = 1800; // Trusted fallback service amount in Rupees
+      }
+
+      // Calculate payable amount (STRICTLY 10% Advance for initial booking confirmation)
+      const paymentMode = String(body.payment_mode || body.paymentMethodType || body.mode || "").toUpperCase();
+      let payAmountRupees = 50;
+      if (isRecharge) {
+        payAmountRupees = Math.round(Number(body.amount || 500));
+      } else if (rawPurpose === "booking_remaining" || paymentMode === "REMAINING_PAYMENT" || paymentMode === "REMAINING") {
+        const advancePaid = Number(booking?.advance_paid || Math.round(totalAmtRupees * 0.10));
+        payAmountRupees = Math.max(0, Math.round(totalAmtRupees - advancePaid));
+      } else {
+        // Initial Booking Confirmation: STRICTLY 10% ADVANCE DEPOSIT ONLY
+        payAmountRupees = Math.round(totalAmtRupees * 0.10);
+      }
+
+      const payAmountPaise = Math.round(payAmountRupees * 100);
+
+      if (!payAmountPaise || isNaN(payAmountPaise) || payAmountPaise <= 0) {
+        return jsonRes(c, false, null, "Invalid payable amount calculation", 400);
+      }
+
+      // 2. Create Authentic Razorpay Order via Razorpay LIVE API
+      let orderId = null;
+      try {
+        const authHeader = "Basic " + btoa(`${keyId}:${keySecret}`);
+        const rzpRes = await fetch("https://api.razorpay.com/v1/orders", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": authHeader
+          },
+          body: JSON.stringify({
+            amount: payAmountPaise,
+            currency: "INR",
+            receipt: (isRecharge ? `rec_${Date.now()}` : `bk_${bookingId}_${Date.now()}`).slice(0, 32),
+            notes: {
+              purpose: isRecharge ? "recharge" : "booking_payment",
+              user_id: String(u?.id || ""),
+              booking_id: isRecharge ? "" : String(bookingId)
+            }
+          })
+        });
+        const rzpData = await rzpRes.json().catch(() => null);
+        if (rzpData && rzpData.id) {
+          orderId = rzpData.id;
+        } else {
+          console.error("Razorpay API order creation failed:", JSON.stringify(rzpData));
+          return jsonRes(c, false, null, rzpData?.error?.description || "Failed to create Razorpay order", 400);
+        }
+      } catch (err) {
+        console.error("Razorpay API order creation exception:", err.message);
+        return jsonRes(c, false, null, "Razorpay API order creation failed: " + err.message, 500);
+      }
+
+      if (bookingId && !isRecharge) {
+        await db.run(
+          "INSERT INTO payments (booking_id, razorpay_order_id, amount, currency, status, payment_method) VALUES (?, ?, ?, 'INR', 'created', 'upi')",
+          [bookingId, orderId, payAmountRupees]
+        ).catch(() => { });
+      } else if (isRecharge && u && u.id) {
+        let wallet = await db.first("SELECT id FROM wallets WHERE user_id = ? OR artist_id = ?", [u.id, u.id]).catch(() => null);
+        const walletId = wallet?.id || 0;
+        await db.run(
+          "INSERT INTO wallet_transactions (wallet_id, user_id, type, amount, status, description, reference_id) VALUES (?, ?, 'recharge', ?, 'pending', 'Wallet Top-up Request', ?)",
+          [walletId, u.id, payAmountRupees, orderId]
+        ).catch(() => { });
+      }
+
+      return jsonRes(c, true, {
+        order_id: orderId,
+        orderId: orderId,
+        amount: payAmountPaise,
+        amount_rupees: payAmountRupees,
+        currency: "INR",
+        key: keyId,
+        key_id: keyId,
+        keyId: keyId
+      }, "Payment order created successfully");
     }
+
+    if (path.includes("webhook")) {
+      const rawText = await c.req.text().catch(() => "{}");
+      const signature = c.req.header("x-razorpay-signature") || c.req.header("X-Razorpay-Signature");
+      const webhookSecret = (c?.env?.RAZORPAY_WEBHOOK_SECRET || c?.env?.RAZORPAY_KEY_SECRET || "").trim();
+
+      if (webhookSecret && signature) {
+        let isWebhookValid = false;
+        try {
+          const encoder = new TextEncoder();
+          const secretKeyData = encoder.encode(webhookSecret);
+          const messageData = encoder.encode(rawText);
+
+          const cryptoKey = await crypto.subtle.importKey(
+            "raw",
+            secretKeyData,
+            { name: "HMAC", hash: "SHA-256" },
+            false,
+            ["sign"]
+          );
+
+          const macBuffer = await crypto.subtle.sign("HMAC", cryptoKey, messageData);
+          const macArray = Array.from(new Uint8Array(macBuffer));
+          const expectedSignature = macArray.map(b => b.toString(16).padStart(2, "0")).join("");
+
+          isWebhookValid = (expectedSignature.toLowerCase() === String(signature).toLowerCase());
+        } catch (e) {
+          console.error("[WEBHOOK] Crypto validation error:", e);
+        }
+
+        if (!isWebhookValid) {
+          return jsonRes(c, false, null, "Invalid webhook signature", 400);
+        }
+      }
+
+      let payload = {};
+      try {
+        payload = JSON.parse(rawText);
+      } catch (e) {
+        payload = {};
+      }
+
+      const event = payload?.event;
+      if (event === "payment.captured" || event === "order.paid") {
+        const paymentEntity = payload?.payload?.payment?.entity || {};
+        const orderId = paymentEntity.order_id || payload?.payload?.order?.entity?.id;
+        const paymentId = paymentEntity.id;
+
+        if (orderId) {
+          const payRec = await db.first("SELECT * FROM payments WHERE razorpay_order_id = ? ORDER BY id DESC LIMIT 1", [orderId]).catch(() => null);
+          if (payRec && payRec.booking_id) {
+            const booking = await db.first("SELECT * FROM bookings WHERE id = ?", [payRec.booking_id]).catch(() => null);
+            if (booking && String(booking.payment_status).toUpperCase() === "PENDING") {
+              const total = Number(booking.total_amount || 1800);
+              const advance = Number(payRec.amount || Math.round(total * 0.10));
+              const remaining = Math.max(0, total - advance);
+              await db.run(
+                "UPDATE bookings SET payment_status = 'PARTIAL', status = 'confirmed', detailed_status = 'CONFIRMED', advance_paid = ?, remaining_amount = ? WHERE id = ?",
+                [advance, remaining, booking.id]
+              );
+              await db.run("UPDATE payments SET status = 'completed', razorpay_payment_id = ? WHERE id = ?", [paymentId, payRec.id]).catch(() => {});
+              await processBookingEscrow(db, booking.id, paymentId, advance);
+            }
+          }
+        }
+      }
+      return jsonRes(c, true, { received: true, event }, "Webhook processed");
+    }
+
     if (path.includes("verify")) {
-      return handleVerifyPayment(c);
+      const body = await c.req.json().catch(() => ({}));
+      const bookingId = Number(body.bookingId || body.booking_id || 0);
+      const paymentId = body.razorpay_payment_id || body.payment_id;
+      const orderId = body.razorpay_order_id || body.order_id;
+      const signature = body.razorpay_signature || body.signature;
+      const keySecret = (c?.env?.RAZORPAY_KEY_SECRET || "").trim();
+
+      if (!keySecret) {
+        return jsonRes(c, false, null, "Razorpay secret key is not configured in server environment", 500);
+      }
+
+      if (!bookingId || !paymentId || !orderId || !signature) {
+        return jsonRes(c, false, null, "Missing required verification parameters (bookingId, razorpay_order_id, razorpay_payment_id, razorpay_signature)", 400);
+      }
+
+      // Reject simulator / test payloads in LIVE mode
+      if (String(paymentId).includes("sim") || String(signature).includes("simulated") || String(signature).includes("test")) {
+        return jsonRes(c, false, null, "Verification failed: Simulator & test signatures are strictly forbidden in LIVE mode.", 400);
+      }
+
+      // Web Crypto HMAC-SHA256 signature verification
+      let isValidSignature = false;
+      try {
+        const encoder = new TextEncoder();
+        const secretKeyData = encoder.encode(keySecret);
+        const messageData = encoder.encode(`${orderId}|${paymentId}`);
+
+        const cryptoKey = await crypto.subtle.importKey(
+          "raw",
+          secretKeyData,
+          { name: "HMAC", hash: "SHA-256" },
+          false,
+          ["sign"]
+        );
+
+        const macBuffer = await crypto.subtle.sign("HMAC", cryptoKey, messageData);
+        const macArray = Array.from(new Uint8Array(macBuffer));
+        const expectedSignature = macArray.map(b => b.toString(16).padStart(2, "0")).join("");
+
+        isValidSignature = (expectedSignature.toLowerCase() === String(signature).toLowerCase());
+      } catch (err) {
+        console.error("Crypto verification error:", err);
+      }
+
+      if (!isValidSignature) {
+        return jsonRes(c, false, null, "Razorpay HMAC-SHA256 signature verification failed. Payment rejected.", 400);
+      }
+
+      let booking = await db.first(
+        "SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT) OR booking_number = ? OR CAST(booking_number AS TEXT) = CAST(? AS TEXT)",
+        [bookingId, String(bookingId), String(bookingId), String(bookingId)]
+      ).catch(() => null);
+      if (!booking) {
+        booking = await db.first("SELECT * FROM bookings ORDER BY id DESC LIMIT 1").catch(() => null);
+      }
+      const bookingTotal = Number(booking?.total_amount || booking?.final_amount || 378.00);
+
+      // Check payment order record for actual transaction amount
+      const payRecord = await db.first("SELECT amount FROM payments WHERE razorpay_order_id = ? ORDER BY id DESC LIMIT 1", [orderId]).catch(() => null);
+      const paidOrderAmount = Number(payRecord?.amount || 0);
+
+      const existingAdvance = Number(booking?.advance_paid || 0);
+      const isSettlement = (body.isSettlement === true || body.is_settlement === true || String(body.purpose).includes("remaining") || String(body.payment_mode).includes("REMAINING") || String(body.payment_mode).includes("FULL"));
+
+      let newAdvancePaid = existingAdvance > 0 ? (existingAdvance + (paidOrderAmount || 0)) : (paidOrderAmount || Math.round(bookingTotal * 0.10));
+      if (newAdvancePaid >= bookingTotal || isSettlement || paidOrderAmount >= bookingTotal * 0.8) {
+        newAdvancePaid = bookingTotal;
+      }
+
+      const remainingAmount = Math.max(0, Math.round((bookingTotal - newAdvancePaid) * 100) / 100);
+      const isFullyPaid = remainingAmount <= 0;
+      const paymentStatus = isFullyPaid ? "PAID" : "PARTIAL";
+      const platformCommission = Math.round(bookingTotal * PLATFORM_COMMISSION_RATE * 100) / 100;
+      const artistEarning = Math.round((bookingTotal - platformCommission) * 100) / 100;
+
+      await db.run(
+        "UPDATE bookings SET status = CASE WHEN status = 'completed' THEN 'completed' ELSE 'confirmed' END, payment_status = ?, advance_paid = ?, remaining_amount = ?, detailed_status = CASE WHEN ? = 1 THEN 'PAYMENT_COMPLETED' ELSE 'CONFIRMED' END WHERE id = ?",
+        [paymentStatus, newAdvancePaid, remainingAmount, isFullyPaid ? 1 : 0, bookingId]
+      );
+
+      await db.run(
+        "INSERT INTO payments (booking_id, razorpay_order_id, razorpay_payment_id, amount, currency, status, payment_method) VALUES (?, ?, ?, ?, 'INR', 'completed', 'upi')",
+        [bookingId, orderId, paymentId, paidOrderAmount || newAdvancePaid]
+      ).catch(() => { });
+
+      // Record customer transaction in wallet_transactions (with current ISO timestamp)
+      const customerUserId = booking?.customer_id || booking?.user_id || u?.id;
+      if (customerUserId) {
+        let customerWallet = await db.first("SELECT * FROM wallets WHERE user_id = ?", [customerUserId]).catch(() => null);
+        if (!customerWallet) {
+          await db.run("INSERT INTO wallets (user_id, balance, total_earnings) VALUES (?, 0.0, 0.0)", [customerUserId]).catch(() => null);
+          customerWallet = await db.first("SELECT * FROM wallets WHERE user_id = ?", [customerUserId]).catch(() => null);
+        }
+        const custWalletId = customerWallet?.id || 1;
+        const custTxRef = `PAY_${bookingId}_${paymentId}`;
+        const existingCustTx = await db.first("SELECT id FROM wallet_transactions WHERE reference_id = ?", [custTxRef]).catch(() => null);
+        if (!existingCustTx) {
+          const desc = isFullyPaid
+            ? `Final Settlement for Booking #${booking?.booking_number || bookingId}`
+            : `Advance Payment (10%) for Booking #${booking?.booking_number || bookingId}`;
+          await db.run(
+            "INSERT INTO wallet_transactions (wallet_id, user_id, booking_id, type, amount, description, status, reference_id, created_at) VALUES (?, ?, ?, 'debit', ?, ?, 'completed', ?, datetime('now'))",
+            [custWalletId, customerUserId, bookingId, paidOrderAmount || newAdvancePaid, desc, custTxRef]
+          ).catch(() => null);
+        }
+      }
+
+      if (isFullyPaid) {
+        await processBookingSettlement(db, bookingId);
+      } else {
+        await processBookingEscrow(db, bookingId, paymentId, newAdvancePaid);
+      }
+
+      // DISPATCH NOTIFICATION TO ARTIST (Now that advance payment is verified!)
+      if (booking?.artist_id) {
+        dispatchNotification(db, {
+          userId: booking.artist_id,
+          title: "New Booking Request 🌸",
+          body: `New advance-paid booking #${booking.booking_number || booking.booking_code || bookingId} received for ₹${bookingTotal}!`,
+          type: "BOOKING_CREATED",
+          entityId: bookingId,
+          entityType: "booking",
+          channelId: "bookings",
+          deepLink: `mehendigoo://artist/booking/${bookingId}`
+        }).catch(() => null);
+      }
+
+      // DISPATCH NOTIFICATION TO CUSTOMER
+      if (booking?.customer_id) {
+        dispatchNotification(db, {
+          userId: booking.customer_id,
+          title: "Payment Confirmed ✨",
+          body: `Your booking #${booking.booking_number || booking.booking_code || bookingId} is confirmed and sent to the artist.`,
+          type: "PAYMENT_SUCCESS",
+          entityId: bookingId,
+          entityType: "booking",
+          channelId: "bookings",
+          deepLink: `mehendigoo://booking/${bookingId}`
+        }).catch(() => null);
+      }
+
+      return jsonRes(c, true, {
+        booking_id: bookingId,
+        payment_status: paymentStatus,
+        status: booking?.status === 'completed' ? 'completed' : 'confirmed',
+        advance_paid: newAdvancePaid,
+        remaining_amount: remainingAmount,
+        total_amount: bookingTotal,
+        platform_commission: platformCommission,
+        artist_earning: artistEarning,
+        escrow_status: isFullyPaid ? "SETTLED" : "HELD_IN_ESCROW",
+        available_balance_added: 0,
+        payment_id: paymentId
+      }, "Payment verified successfully");
     }
   }
 
@@ -7176,13 +7877,23 @@ const handleGetNotifications = async (c) => {
       [u.id, String(u.id), limit, offset]
     ).catch(() => []);
 
+    const formattedNotifs = (list || []).map(n => {
+      const isoTime = normalizeIsoDate(n.created_at || n.createdAt);
+      return {
+        ...n,
+        created_at: isoTime,
+        createdAt: isoTime,
+        timestamp: isoTime
+      };
+    });
+
     const unreadRow = await db.first(
       "SELECT COUNT(*) as count FROM notifications WHERE (user_id = ? OR CAST(user_id AS TEXT) = ?) AND (is_read = 0 OR is_read = 'false' OR is_read IS NULL)",
       [u.id, String(u.id)]
     ).catch(() => ({ count: 0 }));
 
     return jsonRes(c, true, {
-      notifications: list || [],
+      notifications: formattedNotifs,
       unreadCount: unreadRow?.count || 0,
       unread_count: unreadRow?.count || 0
     });
@@ -7947,6 +8658,88 @@ const handleGetArtistLocation = async (c) => {
   }, "Artist location retrieved");
 };
 
+const handleGetDirectionsRoute = async (c) => {
+  const originLat = Number(c.req.query("originLat") || c.req.query("origin_lat") || c.req.query("startLat"));
+  const originLng = Number(c.req.query("originLng") || c.req.query("origin_lng") || c.req.query("startLng"));
+  const destLat = Number(c.req.query("destLat") || c.req.query("dest_lat") || c.req.query("endLat"));
+  const destLng = Number(c.req.query("destLng") || c.req.query("dest_lng") || c.req.query("endLng"));
+
+  if (isNaN(originLat) || isNaN(originLng) || isNaN(destLat) || isNaN(destLng)) {
+    return jsonRes(c, false, null, "Valid originLat, originLng, destLat, destLng query parameters are required", 400);
+  }
+
+  const mirrors = [
+    `https://router.project-osrm.org/route/v1/driving/${originLng},${originLat};${destLng},${destLat}?overview=full&geometries=geojson`,
+    `https://routing.openstreetmap.de/routed-car/route/v1/driving/${originLng},${originLat};${destLng},${destLat}?overview=full&geometries=geojson`
+  ];
+
+  let routeData = null;
+
+  for (const url of mirrors) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 4000);
+      const response = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeout);
+
+      if (response.ok) {
+        const json = await response.json();
+        if (json && json.routes && json.routes.length > 0) {
+          const r = json.routes[0];
+          const coordinates = r.geometry.coordinates.map((coord) => [coord[1], coord[0]]); // [lat, lng]
+          const distanceKm = Number((r.distance / 1000).toFixed(2));
+          const durationMins = Math.max(1, Math.round(r.duration / 60));
+
+          routeData = {
+            coordinates,
+            distanceKm,
+            durationMins,
+            distanceText: `${distanceKm} km`,
+            durationText: `${durationMins} mins`,
+            provider: "OSRM"
+          };
+          break;
+        }
+      }
+    } catch (mirrorErr) {
+      console.warn(`[Edge] Routing mirror error (${url}):`, mirrorErr.message);
+    }
+  }
+
+  if (!routeData) {
+    const R = 6371;
+    const dLat = (destLat - originLat) * (Math.PI / 180);
+    const dLon = (destLng - originLng) * (Math.PI / 180);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(originLat * (Math.PI / 180)) * Math.cos(destLat * (Math.PI / 180)) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const directDist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const roadDist = Number((directDist * 1.25).toFixed(2));
+    const durationMins = Math.max(1, Math.ceil((roadDist / 20) * 60));
+
+    const steps = 20;
+    const coordinates = [];
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const lat = originLat + (destLat - originLat) * t;
+      const lng = originLng + (destLng - originLng) * t;
+      coordinates.push([Number(lat.toFixed(6)), Number(lng.toFixed(6))]);
+    }
+
+    routeData = {
+      coordinates,
+      distanceKm: roadDist,
+      durationMins,
+      distanceText: `${roadDist} km`,
+      durationText: `${durationMins} mins`,
+      provider: "INTERPOLATED"
+    };
+  }
+
+  return jsonRes(c, true, routeData, "Directions route calculated successfully");
+};
+
 const handleAcceptBooking = async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
@@ -8530,38 +9323,6 @@ const sendWorkerEmail = async (toEmail, subject, textBody) => {
   return await sendRealOtpEmail(null, toEmail, otp, "Customer");
 };
 
-const handleGetBookingHistory = async (c) => {
-  const db = getDb(c.env);
-  const user = getUserFromHeader(c) || {};
-  const customerId = Number(user.id || 0);
-
-  let bookings = [];
-  if (customerId) {
-    bookings = await db.all("SELECT * FROM bookings WHERE customer_id = ? OR user_id = ? ORDER BY id DESC", [customerId, customerId]).catch(() => []);
-  }
-  if (!bookings || bookings.length === 0) {
-    bookings = await db.all("SELECT * FROM bookings ORDER BY id DESC LIMIT 20").catch(() => []);
-  }
-
-  const formatted = (bookings || []).map((b) => ({
-    ...b,
-    id: b.id,
-    booking_code: b.booking_code || `MG-${b.id}`,
-    status: b.status || "pending",
-    booking_status: b.booking_status || b.status || "PENDING",
-    detailed_status: b.detailed_status || "PENDING",
-    total_amount: Number(b.total_amount || b.final_amount || 500),
-    advance_paid: Number(b.advance_paid || b.advance_amount || 50),
-    remaining_amount: Number(b.remaining_amount !== undefined ? b.remaining_amount : 450),
-    selected_date: b.booking_date || new Date().toISOString().split("T")[0],
-    time_slot: b.time_slot || "02:00 PM",
-    artist_name: "Sonu Sharma (Mehndi Specialist)",
-    service_name: "Bridal Mehndi Service"
-  }));
-
-  return jsonRes(c, true, formatted, "Booking history retrieved successfully");
-};
-
 const handleValidateArrival = async (c) => {
   const db = getDb(c.env);
   const body = await c.req.json().catch(() => ({}));
@@ -8622,10 +9383,10 @@ const handleValidateArrival = async (c) => {
     distanceMeters = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
-  const ARRIVAL_RADIUS_METERS = 1000;
+  const ARRIVAL_RADIUS_METERS = 500;
   const isWithinRadius = (distanceMeters !== null) ? distanceMeters <= ARRIVAL_RADIUS_METERS : true;
 
-  if (isWithinRadius || body.force === true || body.force_arrival === true) {
+  if (isWithinRadius || body.force === true) {
     const checkinOtp = booking.checkin_otp || Math.floor(1000 + Math.random() * 9000).toString();
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
@@ -9480,142 +10241,13 @@ addRoute("put", "/booking/select-cash", handleSelectCashPayment);
 addRoute("post", "/booking/select-cash", handleSelectCashPayment);
 addRoute("put", "/booking/confirm-cash", handleConfirmCashPayment);
 addRoute("post", "/booking/confirm-cash", handleConfirmCashPayment);
-const handleCreatePaymentSession = async (c) => {
-  const db = getDb(c.env);
-  const u = getUserFromHeader(c) || {};
-  const body = await c.req.json().catch(() => ({}));
-  const bookingId = Number(body.bookingId || body.booking_id || 0);
-  const isSettlement = Boolean(body.isSettlement || body.is_settlement || false);
-
-  let totalAmount = Number(body.amount || 500);
-  let booking = null;
-
-  if (bookingId) {
-    booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
-    if (booking) {
-      totalAmount = Number(booking.total_amount || booking.final_amount || totalAmount);
-    }
-  }
-
-  const advancePaid = Math.round(totalAmount * 0.10) || 50;
-  const remainingDue = Math.max(0, totalAmount - advancePaid);
-  const payableNow = isSettlement ? remainingDue : advancePaid;
-  const amountInPaise = Math.round(payableNow * 100);
-
-  const keyId = c.env?.RAZORPAY_KEY_ID || "rzp_live_TSIrGnJIllkt0H";
-  const keySecret = c.env?.RAZORPAY_KEY_SECRET || "AJSFmZyxn471PmOT8OGRB768";
-
-  let orderId = `order_${Date.now()}`;
-  try {
-    const authHeader = "Basic " + btoa(`${keyId}:${keySecret}`);
-    const rzpRes = await fetch("https://api.razorpay.com/v1/orders", {
-      method: "POST",
-      headers: {
-        "Authorization": authHeader,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        amount: amountInPaise,
-        currency: "INR",
-        receipt: `rcpt_${bookingId || Date.now()}`,
-        notes: {
-          booking_id: String(bookingId || ""),
-          customer_id: String(u.id || "")
-        }
-      })
-    });
-    const rzpData = await rzpRes.json();
-    if (rzpData?.id) {
-      orderId = rzpData.id;
-    }
-  } catch (err) {
-    console.error("[PAYMENT_SESSION] Razorpay order exception:", err.message);
-  }
-
-  return jsonRes(c, true, {
-    key_id: keyId,
-    key: keyId,
-    order_id: orderId,
-    orderId: orderId,
-    amount: amountInPaise,
-    currency: "INR",
-    payable_amount: payableNow,
-    booking_id: bookingId
-  }, "Payment session created successfully");
-};
-
-const handleVerifyPayment = async (c) => {
-  const db = getDb(c.env);
-  const u = getUserFromHeader(c) || {};
-  const body = await c.req.json().catch(() => ({}));
-  let bookingId = Number(body.bookingId || body.booking_id || body.id || 0);
-  const razorpayOrderId = body.razorpay_order_id || body.orderId || body.order_id || "";
-  const razorpayPaymentId = body.razorpay_payment_id || body.paymentId || body.payment_id || `pay_${Date.now()}`;
-  const razorpaySignature = body.razorpay_signature || body.signature || "";
-  const isSettlement = Boolean(body.isSettlement || body.is_settlement || false);
-
-  if (!bookingId && u.id) {
-    const pendingB = await db.first(
-      "SELECT id FROM bookings WHERE (customer_id = ? OR CAST(customer_id AS TEXT) = CAST(? AS TEXT)) ORDER BY id DESC LIMIT 1",
-      [u.id, String(u.id)]
-    ).catch(() => null);
-    if (pendingB?.id) {
-      bookingId = pendingB.id;
-    }
-  }
-
-  // Update Booking in DB
-  if (bookingId) {
-    const b = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
-    if (b) {
-      const totalAmt = Number(b.total_amount || b.final_amount || 500);
-      const advancePaid = Math.round(totalAmt * 0.10) || 50;
-      const remainingAmt = Math.max(0, totalAmt - advancePaid);
-
-      if (isSettlement) {
-        await db.run(
-          "UPDATE bookings SET status = 'COMPLETED', booking_status = 'COMPLETED', detailed_status = 'COMPLETED', payment_status = 'PAID', advance_paid = ?, remaining_amount = 0, completed_at = CURRENT_TIMESTAMP WHERE id = ?",
-          [totalAmt, bookingId]
-        ).catch(() => {});
-      } else {
-        await db.run(
-          "UPDATE bookings SET status = 'CONFIRMED', booking_status = 'CONFIRMED', detailed_status = 'ADVANCE_PAID_AWAITING_ARTIST', payment_status = 'PARTIAL', advance_paid = ?, remaining_amount = ? WHERE id = ?",
-          [advancePaid, remainingAmt, bookingId]
-        ).catch(() => {});
-      }
-    }
-  }
-
-  return jsonRes(c, true, {
-    verified: true,
-    booking_id: bookingId,
-    razorpay_order_id: razorpayOrderId,
-    razorpay_payment_id: razorpayPaymentId,
-    status: isSettlement ? "COMPLETED" : "CONFIRMED"
-  }, "Payment verified and booking confirmed successfully");
-};
-
-addRoute("post", "/payment/create-session", handleCreatePaymentSession);
-addRoute("post", "/api/v1/payment/create-session", handleCreatePaymentSession);
-addRoute("post", "/payment/create-order", handleCreatePaymentSession);
-addRoute("post", "/api/v1/payment/create-order", handleCreatePaymentSession);
-
-addRoute("post", "/payment/verify", handleVerifyPayment);
-addRoute("post", "/api/v1/payment/verify", handleVerifyPayment);
+addRoute("put", "/booking/reject-cash", handleRejectCashPayment);
+addRoute("post", "/booking/reject-cash", handleRejectCashPayment);
 
 addRoute("post", "/booking", handleCreateBookingExplicit);
 addRoute("post", "/booking/create", handleCreateBookingExplicit);
 addRoute("post", "/customer/booking", handleCreateBookingExplicit);
 addRoute("post", "/customer/booking/create", handleCreateBookingExplicit);
-
-addRoute("get", "/booking/details/:id", handleGetBookingDetails);
-addRoute("get", "/api/v1/booking/details/:id", handleGetBookingDetails);
-addRoute("get", "/booking/:id", handleGetBookingDetails);
-addRoute("get", "/api/v1/booking/:id", handleGetBookingDetails);
-addRoute("get", "/customer/booking/:id", handleGetBookingDetails);
-addRoute("get", "/booking/history", handleGetBookingHistory);
-addRoute("get", "/api/v1/booking/history", handleGetBookingHistory);
-addRoute("get", "/customer/booking/history", handleGetBookingHistory);
 
 addRoute("post", "/booking/validate-arrival", handleValidateArrival);
 addRoute("post", "/booking/arrived", handleValidateArrival);
@@ -9668,6 +10300,10 @@ addRoute("post", "/api/v1/booking/reject", handleRejectBooking);
 
 addRoute("get", "/booking/:bookingId/location", handleGetArtistLocation);
 addRoute("get", "/api/v1/booking/:bookingId/location", handleGetArtistLocation);
+addRoute("get", "/booking/route", handleGetDirectionsRoute);
+addRoute("get", "/api/v1/booking/route", handleGetDirectionsRoute);
+addRoute("get", "/booking/directions", handleGetDirectionsRoute);
+addRoute("get", "/api/v1/booking/directions", handleGetDirectionsRoute);
 addRoute("post", "/artist/location/update", handleUpdateArtistLocation);
 addRoute("post", "/mehndigo/artist/location/update", handleUpdateArtistLocation);
 addRoute("post", "/api/v1/artist/location/update", handleUpdateArtistLocation);
@@ -9677,8 +10313,6 @@ app.get("/artist/bookings", handleGetArtistBookings);
 addRoute("get", "/artist/bookings", handleGetArtistBookings);
 addRoute("get", "/artist/booking/list", handleGetArtistBookings);
 addRoute("get", "/api/v1/artist/bookings", handleGetArtistBookings);
-addRoute("get", "/artist/dashboard", handleGetArtistDashboard);
-addRoute("get", "/api/v1/artist/dashboard", handleGetArtistDashboard);
 
 addRoute("get", "/category", handleGetCategories);
 addRoute("get", "/categories", handleGetCategories);

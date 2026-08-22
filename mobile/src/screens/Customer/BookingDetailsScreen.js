@@ -52,6 +52,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
   // Live Location & Tracking
   const { socket } = useSocket();
   const [artistCoords, setArtistCoords] = useState(null);
+  const [customerCoords, setCustomerCoords] = useState(null);
   const [distanceText, setDistanceText] = useState("");
   const [etaText, setEtaText] = useState("");
 
@@ -80,6 +81,14 @@ export default function BookingDetailsScreen({ route, navigation }) {
     try {
       const data = await getBookingDetails(bookingId);
       if (data) {
+        if (data.latitude && data.longitude) {
+          setCustomerCoords({
+            lat: Number(data.latitude),
+            lng: Number(data.longitude),
+            latitude: Number(data.latitude),
+            longitude: Number(data.longitude)
+          });
+        }
         setBooking((prev) => {
           const prevVerified = prev && (Number(prev.checkin_otp_verified) === 1 || Number(prev.checkin_verified) === 1 || String(prev.detailed_status).toUpperCase() === "SERVICE_IN_PROGRESS");
           const incomingVerified = Number(data.checkin_otp_verified) === 1 || Number(data.checkin_verified) === 1 || String(data.detailed_status).toUpperCase() === "SERVICE_IN_PROGRESS";
@@ -101,16 +110,18 @@ export default function BookingDetailsScreen({ route, navigation }) {
 
       // If artist is on the way, load live location
       const detailedStatus = String(data?.detailed_status || data?.booking_status || data?.status || "").toUpperCase();
-      if (detailedStatus === "ARTIST_ON_THE_WAY") {
+      if (detailedStatus === "ARTIST_ON_THE_WAY" || detailedStatus === "ON_THE_WAY" || detailedStatus === "CONFIRMED") {
         try {
           const locData = await getArtistLocation(bookingId);
           if (locData && locData.latitude && locData.longitude) {
             setArtistCoords({
               lat: Number(locData.latitude),
-              lng: Number(locData.longitude)
+              lng: Number(locData.longitude),
+              latitude: Number(locData.latitude),
+              longitude: Number(locData.longitude)
             });
-            if (locData.distance_text) setDistanceText(locData.distance_text);
-            if (locData.eta_text) setEtaText(locData.eta_text);
+            if (locData.distance_text || locData.distanceText) setDistanceText(locData.distance_text || locData.distanceText);
+            if (locData.eta_text || locData.etaText) setEtaText(locData.eta_text || locData.etaText);
           }
         } catch (_) {}
       }
@@ -324,10 +335,12 @@ export default function BookingDetailsScreen({ route, navigation }) {
   const isCompleted = rawStatus === "COMPLETED" || rawStatus === "COMPLETED_CLOSED";
   const isCancelled = rawStatus === "CANCELLED" || rawStatus === "REJECTED";
 
-  const customerCoords = booking?.latitude && booking?.longitude ? {
+  const resolvedCustomerCoords = customerCoords || (booking?.latitude && booking?.longitude ? {
     lat: Number(booking.latitude),
-    lng: Number(booking.longitude)
-  } : null;
+    lng: Number(booking.longitude),
+    latitude: Number(booking.latitude),
+    longitude: Number(booking.longitude)
+  } : null);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -356,10 +369,23 @@ export default function BookingDetailsScreen({ route, navigation }) {
           {isOnTheWay && (
             <LiveTrackingCard
               artistCoords={artistCoords}
-              customerCoords={customerCoords}
+              customerCoords={resolvedCustomerCoords}
+              origin={resolvedCustomerCoords}
+              destination={artistCoords}
+              originLabel="Your Location"
+              destLabel={booking?.artist_name || booking?.artist?.user?.name || "Artist Location"}
+              mode="customer_to_artist"
               distanceText={distanceText}
               etaText={etaText}
               statusText="Artist is driving to your location"
+              onRouteUpdate={(dist, dur) => {
+                if (dist !== null && dist !== undefined) {
+                  setDistanceText(`${Number(dist).toFixed(1)} km away`);
+                }
+                if (dur !== null && dur !== undefined) {
+                  setEtaText(`Arriving in ~${Math.round(dur)} mins`);
+                }
+              }}
               onExpand={() => navigation.navigate("LiveTracking", { bookingId: booking.id })}
             />
           )}

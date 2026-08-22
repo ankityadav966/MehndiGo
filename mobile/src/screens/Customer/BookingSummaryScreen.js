@@ -17,6 +17,7 @@ import Colors from "../../constants/Colors";
 import OptimizedImage from "../../components/OptimizedImage";
 import { getPriceDetails, createBooking } from "../../services/booking";
 import { getArtistById } from "../../services/customer";
+import { formatServiceDate } from "../../utils/date";
 
 export default function BookingSummaryScreen({ route, navigation }) {
   const params = route.params || {};
@@ -307,7 +308,7 @@ export default function BookingSummaryScreen({ route, navigation }) {
               <Ionicons name="calendar-outline" size={16} color="#E91E63" />
               <View style={styles.metaTextGroup}>
                 <Text style={styles.metaLabel}>Date</Text>
-                <Text style={styles.metaValue}>{selectedDate || "Today"}</Text>
+                <Text style={styles.metaValue}>{selectedDate ? formatServiceDate(selectedDate) : "Scheduled Date"}</Text>
               </View>
             </View>
 

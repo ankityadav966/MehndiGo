@@ -38,6 +38,8 @@ export default function WithdrawEarningsScreen({ navigation }) {
     upiId: ""
   });
   const [savingBank, setSavingBank] = useState(false);
+  const [pendingBalance, setPendingBalance] = useState(0);
+  const [totalEarnings, setTotalEarnings] = useState(0);
 
   const loadData = useCallback(async () => {
     try {
@@ -45,7 +47,13 @@ export default function WithdrawEarningsScreen({ navigation }) {
         getUserWallet().catch(() => ({ balance: 0 })),
         getBankAccountDetails().catch(() => null)
       ]);
-      setBalance(Number(walletRes?.balance || 0));
+      const avail = Number(walletRes?.available_balance !== undefined ? walletRes.available_balance : (walletRes?.balance || 0));
+      const pending = Number(walletRes?.pending_balance !== undefined ? walletRes.pending_balance : (walletRes?.escrow_balance || walletRes?.pending_settlement || 0));
+      const lifetime = Number(walletRes?.total_earnings || walletRes?.lifetime_earnings || 0);
+
+      setBalance(avail);
+      setPendingBalance(pending);
+      setTotalEarnings(lifetime);
       setBankAccount(bankRes);
       if (bankRes) {
         setBankForm({
@@ -162,7 +170,20 @@ export default function WithdrawEarningsScreen({ navigation }) {
         <View style={styles.balanceCard}>
           <Text style={styles.balanceLabel}>Available for Payout</Text>
           <Text style={styles.balanceAmount}>₹{balance.toLocaleString("en-IN")}</Text>
-          <Text style={styles.balanceSubtitle}>Instant transfer via Razorpay Payouts</Text>
+          
+          <View style={styles.balanceStatsRow}>
+            <View style={styles.statBox}>
+              <Text style={styles.statBoxLabel}>Pending Escrow</Text>
+              <Text style={styles.statBoxValue}>₹{pendingBalance.toLocaleString("en-IN")}</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statBox}>
+              <Text style={styles.statBoxLabel}>Lifetime Earned</Text>
+              <Text style={styles.statBoxValue}>₹{totalEarnings.toLocaleString("en-IN")}</Text>
+            </View>
+          </View>
+
+          <Text style={styles.balanceSubtitle}>• Pending funds release automatically upon booking completion</Text>
         </View>
 
         {/* Enter Amount Section */}
@@ -340,7 +361,20 @@ const styles = StyleSheet.create({
   },
   balanceLabel: { fontSize: 13, color: "rgba(255,255,255,0.85)", fontWeight: "600" },
   balanceAmount: { fontSize: 32, fontWeight: "800", color: "#FFFFFF", marginVertical: 6 },
-  balanceSubtitle: { fontSize: 11, color: "rgba(255,255,255,0.75)" },
+  balanceStatsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginVertical: 10
+  },
+  statBox: { flex: 1, alignItems: "center" },
+  statBoxLabel: { fontSize: 11, color: "rgba(255,255,255,0.75)", fontWeight: "600" },
+  statBoxValue: { fontSize: 15, fontWeight: "800", color: "#FFFFFF", marginTop: 2 },
+  statDivider: { width: 1, height: 24, backgroundColor: "rgba(255,255,255,0.2)" },
+  balanceSubtitle: { fontSize: 11, color: "rgba(255,255,255,0.75)", marginTop: 2 },
 
   section: { marginHorizontal: 16, marginTop: 20 },
   label: { fontSize: 14, fontWeight: "700", color: Colors.text },

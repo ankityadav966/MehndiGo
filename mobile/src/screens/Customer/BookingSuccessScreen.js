@@ -13,7 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import Colors from "../../constants/Colors";
 import { getBookingDetails } from "../../services/booking";
-import moment from "moment";
+import { formatServiceDate } from "../../utils/date";
 
 export default function BookingSuccessScreen({ route, navigation }) {
   const { bookingId, bookingCode: paramCode } = route.params || {};
@@ -48,16 +48,16 @@ export default function BookingSuccessScreen({ route, navigation }) {
     loadData();
   }, [bookingId, scaleAnim]);
 
-  const bookingCode = booking?.booking_code || paramCode || (bookingId ? `MG-${bookingId}` : (route.params?.bookingCode || "MG-CONFIRMED"));
-  const artistName = booking?.artist_name || booking?.artist?.user?.name || route.params?.artistName || "Mehndi Artist";
+  const bookingCode = booking?.booking_code || paramCode || (bookingId ? `MG-${bookingId}` : "MG-CONFIRMED");
+  const artistName = booking?.artist_name || booking?.artist?.user?.name || "Mehndi Artist";
   const artistImage = booking?.artist_image || booking?.artist?.user?.profile_image || "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=200";
-  const serviceName = booking?.service_name || booking?.service?.specialization_name || route.params?.serviceTitle || "Custom Henna Design";
-  const rawDate = booking?.selected_date || booking?.date || route.params?.selectedDate;
-  const formattedDate = rawDate ? moment(rawDate).format("ddd, DD MMMM YYYY") : moment().format("ddd, DD MMMM YYYY");
-  const timeSlot = booking?.time_slot || booking?.slot_time || route.params?.timeLabel || "02:00 PM - 03:00 PM";
-  const totalAmount = Number(booking?.total_amount || booking?.final_amount || route.params?.totalAmount || 500);
-  const advancePaid = Number(booking?.advance_amount || booking?.advance_paid || route.params?.advancePaid || route.params?.advanceAmount || Math.round(totalAmount * 0.10) || 50);
-  const remainingDue = Number(booking?.remaining_amount !== undefined ? booking.remaining_amount : (route.params?.remainingAmount !== undefined ? route.params.remainingAmount : (totalAmount - advancePaid)));
+  const serviceName = booking?.service_name || booking?.service?.specialization_name || "Bridal Mehndi Service";
+  const rawDate = booking?.selected_date || booking?.date || booking?.booking_date || booking?.event_date;
+  const formattedDate = rawDate ? formatServiceDate(rawDate) : "Scheduled Date";
+  const timeSlot = booking?.time_slot || booking?.slot_time || "10:00 AM - 11:00 AM";
+  const totalAmount = Number(booking?.total_amount || booking?.final_amount || 0);
+  const advancePaid = Number(booking?.advance_amount || booking?.advance_paid || Math.round(totalAmount * 0.10));
+  const remainingDue = Number(booking?.remaining_amount !== undefined ? booking.remaining_amount : (totalAmount - advancePaid));
 
   return (
     <SafeAreaView style={styles.container}>

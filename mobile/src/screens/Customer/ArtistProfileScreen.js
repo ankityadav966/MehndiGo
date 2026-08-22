@@ -18,6 +18,7 @@ import {
 import Alert from "../../utils/Alert";
 import Colors from "../../constants/Colors";
 import { getNormalizedUrl } from "../../services/api";
+import { formatDate } from "../../utils/date";
 
 const resolveImage = (uri) => {
   if (!uri || typeof uri !== "string") return "";
@@ -808,7 +809,7 @@ export default function ArtistProfileScreen({ route, navigation }) {
                     </View>
                   </View>
                   <Text style={styles.reviewDate}>
-                    {rev.createdAt ? new Date(rev.createdAt).toLocaleDateString() : ""}
+                    {rev.createdAt || rev.created_at ? formatDate(rev.createdAt || rev.created_at) : ""}
                   </Text>
                 </View>
                 <Text style={styles.reviewContent}>{rev.comment || rev.review_text}</Text>

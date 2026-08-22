@@ -306,6 +306,18 @@ class ArtistService {
     return await this.getArtistDetails(userId);
   }
 
+  async getProfile(userId) {
+    return await this.getArtistDetails(userId);
+  }
+
+  async updateProfileDetails(userId, data) {
+    return await this.updateArtistProfile(userId, data);
+  }
+
+  async getProfileDetails(userId) {
+    return await this.getArtistDetails(userId);
+  }
+
   async getArtistDetails(id) {
     const artist = await ArtistProfileRepositor.getArtistDetails(id);
 

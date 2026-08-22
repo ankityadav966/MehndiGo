@@ -1,13 +1,12 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
-import { Image, StyleSheet, Text, TouchableOpacity, View, Linking } from "react-native";
-import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from "react-native-maps";
+import { StyleSheet, Text, TouchableOpacity, View, Linking, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import * as Location from "expo-location";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import Colors from "../../constants/Colors";
 import { useSocket } from "../../context/SocketContext";
-import { getBookingDetails } from "../../services/booking";
+import { getBookingDetails, getArtistLocation, getDirectionsRoute } from "../../services/booking";
 import OptimizedImage from "../../components/OptimizedImage";
-
 import LeafletMapView from "../../components/LeafletMapView";
 
 export default function LiveTrackingScreen({ route, navigation }) {
@@ -17,46 +16,118 @@ export default function LiveTrackingScreen({ route, navigation }) {
   const [booking, setBooking] = useState(null);
   const [artistCoords, setArtistCoords] = useState(null);
   const [customerCoords, setCustomerCoords] = useState(null);
+  const [routeCoordinates, setRouteCoordinates] = useState(null);
   const [etaText, setEtaText] = useState("Calculating ETA...");
-  const [distanceText, setDistanceText] = useState("Waiting for location");
+  const [distanceText, setDistanceText] = useState("Waiting for GPS");
   const [artistStatus, setArtistStatus] = useState("Waiting for artist live location");
-  const [artistInfo, setArtistInfo] = useState({ name: "Mehndi Artist", phone: "", image: "" });
+  const [artistInfo, setArtistInfo] = useState({ name: "Mehndi Artist", phone: "", image: "", address: "" });
+  const [gpsLoading, setGpsLoading] = useState(true);
 
-  const mapRef = useRef(null);
+  const customerLocationWatcherRef = useRef(null);
 
+  // 1. Acquire Customer's Real-Time Device GPS Location
+  useEffect(() => {
+    let isMounted = true;
+
+    async function startCustomerGps() {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === "granted") {
+          // Instant current fix
+          const current = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced
+          }).catch(() => null);
+
+          if (isMounted && current && current.coords) {
+            setCustomerCoords({
+              lat: current.coords.latitude,
+              lng: current.coords.longitude,
+              latitude: current.coords.latitude,
+              longitude: current.coords.longitude
+            });
+            setGpsLoading(false);
+          }
+
+          // Real-time moving GPS watch
+          customerLocationWatcherRef.current = await Location.watchPositionAsync(
+            {
+              accuracy: Location.Accuracy.High,
+              timeInterval: 4000,
+              distanceInterval: 10
+            },
+            (loc) => {
+              if (!isMounted || !loc || !loc.coords) return;
+              setCustomerCoords({
+                lat: loc.coords.latitude,
+                lng: loc.coords.longitude,
+                latitude: loc.coords.latitude,
+                longitude: loc.coords.longitude
+              });
+              setGpsLoading(false);
+            }
+          );
+        } else {
+          // Permission not granted, fallback to booking coordinates
+          setGpsLoading(false);
+        }
+      } catch (err) {
+        console.warn("[LiveTracking] Customer GPS acquisition:", err.message);
+        setGpsLoading(false);
+      }
+    }
+
+    startCustomerGps();
+
+    return () => {
+      isMounted = false;
+      if (customerLocationWatcherRef.current) {
+        customerLocationWatcherRef.current.remove();
+        customerLocationWatcherRef.current = null;
+      }
+    };
+  }, []);
+
+  // 2. Fetch Booking & Artist Location from Backend
   const loadData = useCallback(async () => {
     if (!bookingId) return;
     try {
       const details = await getBookingDetails(bookingId);
       if (details) {
         setBooking(details);
-        if (details.latitude && details.longitude) {
-          setCustomerCoords({
-            latitude: Number(details.latitude),
-            longitude: Number(details.longitude),
-            lat: Number(details.latitude),
-            lng: Number(details.longitude),
-          });
-        }
+
+        // Fallback for customer coords if device GPS is off
+        setCustomerCoords((prev) => {
+          if (prev && prev.lat) return prev;
+          if (details.latitude && details.longitude) {
+            return {
+              lat: Number(details.latitude),
+              lng: Number(details.longitude),
+              latitude: Number(details.latitude),
+              longitude: Number(details.longitude)
+            };
+          }
+          return prev;
+        });
+
         if (details.artist_name || details.artist?.user?.name) {
           setArtistInfo((prev) => ({
             ...prev,
             name: details.artist_name || details.artist?.user?.name || prev.name,
             phone: details.artist_phone || details.artist?.user?.phone || prev.phone,
             image: details.artist_image || details.artist?.user?.profile_image || prev.image,
+            address: details.artist?.location || details.artist?.city || prev.address
           }));
         }
       }
 
-      const { getArtistLocation } = require("../../services/booking");
       const locData = await getArtistLocation(bookingId);
       if (locData) {
         if (locData.latitude && locData.longitude) {
           setArtistCoords({
-            latitude: Number(locData.latitude),
-            longitude: Number(locData.longitude),
             lat: Number(locData.latitude),
             lng: Number(locData.longitude),
+            latitude: Number(locData.latitude),
+            longitude: Number(locData.longitude)
           });
         }
         if (locData.distance_text || locData.distanceText) {
@@ -65,34 +136,30 @@ export default function LiveTrackingScreen({ route, navigation }) {
         if (locData.eta_text || locData.etaText) {
           setEtaText(locData.eta_text || locData.etaText);
         }
-        if (locData.tracking_status) {
-          setArtistStatus(locData.tracking_status);
+        if (locData.tracking_status || locData.trackingStatus) {
+          setArtistStatus(locData.tracking_status || locData.trackingStatus);
         }
-        if (locData.artist_name) {
+        if (locData.artist_name || locData.artistName) {
           setArtistInfo((prev) => ({
-            name: locData.artist_name || prev.name,
-            phone: locData.artist_phone || prev.phone,
-            image: locData.artist_image || prev.image,
+            ...prev,
+            name: locData.artist_name || locData.artistName || prev.name,
+            phone: locData.artist_phone || locData.artistPhone || prev.phone,
+            image: locData.artist_image || locData.artistImage || prev.image
           }));
         }
       }
     } catch (e) {
-      console.log("Error loading tracking details:", e);
+      console.log("[LiveTracking] Error loading details:", e.message);
     }
   }, [bookingId]);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      loadData();
-    }, 0);
+    loadData();
     const interval = setInterval(loadData, 5000);
-    return () => {
-      clearTimeout(timer);
-      clearInterval(interval);
-    };
+    return () => clearInterval(interval);
   }, [loadData]);
 
-  // Real-time socket GPS position updates
+  // 3. Real-time Socket.IO Live Location Listener
   useEffect(() => {
     if (!socket || !bookingId) return;
 
@@ -101,15 +168,15 @@ export default function LiveTrackingScreen({ route, navigation }) {
     const handleLocationUpdate = (payload) => {
       if (payload && payload.latitude && payload.longitude) {
         const newCoords = {
-          latitude: Number(payload.latitude),
-          longitude: Number(payload.longitude),
           lat: Number(payload.latitude),
           lng: Number(payload.longitude),
+          latitude: Number(payload.latitude),
+          longitude: Number(payload.longitude)
         };
         setArtistCoords(newCoords);
 
         if (payload.etaMins || payload.eta_mins) {
-          setEtaText(`Arriving in ${payload.etaMins || payload.eta_mins} mins`);
+          setEtaText(`Arriving in ~${payload.etaMins || payload.eta_mins} mins`);
         }
         if (payload.distanceKm || payload.distance_km) {
           setDistanceText(`${payload.distanceKm || payload.distance_km} km away`);
@@ -139,7 +206,25 @@ export default function LiveTrackingScreen({ route, navigation }) {
       socket.off("booking-status-updated", handleStatusUpdate);
       socket.off("bookingStatusUpdated", handleStatusUpdate);
     };
-  }, [socket, bookingId, customerCoords]);
+  }, [socket, bookingId]);
+
+  // 4. Calculate Driving Route when Coords are Available
+  useEffect(() => {
+    if (customerCoords?.lat && customerCoords?.lng && artistCoords?.lat && artistCoords?.lng) {
+      getDirectionsRoute(
+        customerCoords.lat,
+        customerCoords.lng,
+        artistCoords.lat,
+        artistCoords.lng
+      ).then((res) => {
+        if (res && res.coordinates && res.coordinates.length > 0) {
+          setRouteCoordinates(res.coordinates);
+          if (res.distanceText) setDistanceText(`${res.distanceText} away`);
+          if (res.durationText) setEtaText(`Arriving in ~${res.durationText}`);
+        }
+      }).catch(() => {});
+    }
+  }, [customerCoords?.lat, customerCoords?.lng, artistCoords?.lat, artistCoords?.lng]);
 
   const handleCallArtist = () => {
     const phone = artistInfo.phone || booking?.artist?.user?.phone || booking?.artist_phone;
@@ -153,12 +238,19 @@ export default function LiveTrackingScreen({ route, navigation }) {
       bookingId,
       receiverId: booking?.artist?.user_id || booking?.artist_id,
       receiverName: artistInfo.name || booking?.artist?.user?.name || booking?.artist_name,
-      receiverImage: artistInfo.image || booking?.artist?.user?.profile_image || booking?.artist_image,
+      receiverImage: artistInfo.image || booking?.artist?.user?.profile_image || booking?.artist_image
     });
   };
 
-  const isCheckInVerified = Number(booking?.checkin_otp_verified) === 1 || Number(booking?.checkin_verified) === 1 || String(booking?.detailed_status || "").toUpperCase() === "SERVICE_IN_PROGRESS" || String(booking?.status || "").toUpperCase() === "IN_PROGRESS";
+  const isCheckInVerified =
+    Number(booking?.checkin_otp_verified) === 1 ||
+    Number(booking?.checkin_verified) === 1 ||
+    String(booking?.detailed_status || "").toUpperCase() === "SERVICE_IN_PROGRESS" ||
+    String(booking?.status || "").toUpperCase() === "IN_PROGRESS";
   const checkinOtp = booking?.checkin_otp;
+
+  const originCoords = customerCoords || (booking?.latitude ? { lat: Number(booking.latitude), lng: Number(booking.longitude) } : null);
+  const destinationCoords = artistCoords || (booking?.artist?.latitude ? { lat: Number(booking.artist.latitude), lng: Number(booking.artist.longitude) } : null);
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -177,14 +269,14 @@ export default function LiveTrackingScreen({ route, navigation }) {
       {/* Map Display */}
       <View style={styles.map}>
         <LeafletMapView
-          customerCoords={{
-            lat: Number(customerCoords?.latitude || booking?.latitude || 26.9124),
-            lng: Number(customerCoords?.longitude || booking?.longitude || 75.7873)
-          }}
-          artistCoords={artistCoords ? {
-            lat: Number(artistCoords.latitude || artistCoords.lat),
-            lng: Number(artistCoords.longitude || artistCoords.lng)
-          } : null}
+          customerCoords={originCoords}
+          artistCoords={destinationCoords}
+          origin={originCoords}
+          destination={destinationCoords}
+          originLabel="Your Live Location"
+          destLabel={artistInfo.name || "Artist Location"}
+          mode="customer_to_artist"
+          routeCoordinates={routeCoordinates}
           onRouteUpdate={(dist, dur) => {
             if (dist !== null && dist !== undefined) {
               setDistanceText(`${Number(dist).toFixed(1)} km away`);
@@ -201,7 +293,12 @@ export default function LiveTrackingScreen({ route, navigation }) {
         {/* Artist Profile Header */}
         <View style={styles.artistRow}>
           <OptimizedImage
-            source={{ uri: artistInfo.image || booking?.artist?.user?.profile_image || "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=500" }}
+            source={{
+              uri:
+                artistInfo.image ||
+                booking?.artist?.user?.profile_image ||
+                "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=500"
+            }}
             style={styles.artistImage}
             width={56}
             height={56}
@@ -209,9 +306,14 @@ export default function LiveTrackingScreen({ route, navigation }) {
           <View style={{ flex: 1 }}>
             <Text style={styles.artistName}>{artistInfo.name || "Mehndi Artist"}</Text>
             <Text style={styles.artistStatus}>{artistStatus ? artistStatus.replace(/_/g, " ") : etaText}</Text>
+            {artistInfo.address ? (
+              <Text style={styles.artistAddress} numberOfLines={1}>
+                📍 {artistInfo.address}
+              </Text>
+            ) : null}
           </View>
           <View style={styles.distanceBadge}>
-            <Ionicons name="location" size={12} color="#059669" />
+            <Ionicons name="navigate" size={12} color="#059669" />
             <Text style={styles.distanceText}>{distanceText}</Text>
           </View>
         </View>
@@ -221,11 +323,13 @@ export default function LiveTrackingScreen({ route, navigation }) {
           <View style={styles.checkinCard}>
             <Text style={styles.checkinLabel}>Doorstep Check-In PIN</Text>
             <View style={styles.pinRow}>
-              {String(checkinOtp).split("").map((d, idx) => (
-                <View key={idx} style={styles.pinBox}>
-                  <Text style={styles.pinDigit}>{d}</Text>
-                </View>
-              ))}
+              {String(checkinOtp)
+                .split("")
+                .map((d, idx) => (
+                  <View key={idx} style={styles.pinBox}>
+                    <Text style={styles.pinDigit}>{d}</Text>
+                  </View>
+                ))}
             </View>
             <Text style={styles.pinHint}>Share this 4-digit PIN with the artist upon arrival.</Text>
           </View>
@@ -276,7 +380,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     borderBottomWidth: 1,
     borderBottomColor: "#E5E7EB",
-    zIndex: 10,
+    zIndex: 10
   },
   backBtn: { padding: 4 },
   topHeaderTitle: { fontSize: 16, fontWeight: "700", color: Colors.text || "#1D1D1D" },
@@ -288,37 +392,17 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#A7F3D0",
+    borderColor: "#A7F3D0"
   },
   liveDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
     backgroundColor: "#059669",
-    marginRight: 4,
+    marginRight: 4
   },
   liveTagText: { color: "#065F46", fontWeight: "700", fontSize: 10 },
   map: { flex: 1 },
-  customerMarkerPin: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "#1D1D1D",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: "#FFFFFF",
-  },
-  artistMarkerPin: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: Colors.primary || "#9C1344",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: "#FFFFFF",
-  },
   bottomCard: {
     position: "absolute",
     bottom: 0,
@@ -330,12 +414,13 @@ const styles = StyleSheet.create({
     padding: 20,
     elevation: 10,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: "#E5E7EB"
   },
   artistRow: { flexDirection: "row", alignItems: "center" },
   artistImage: { borderRadius: 28, marginRight: 12 },
   artistName: { fontSize: 16, fontWeight: "700", color: Colors.text || "#1D1D1D" },
   artistStatus: { fontSize: 13, color: Colors.primary || "#9C1344", fontWeight: "600", marginTop: 2 },
+  artistAddress: { fontSize: 11, color: "#6B7280", marginTop: 1 },
   distanceBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -343,11 +428,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
-    gap: 4,
+    gap: 4
   },
   distanceText: { color: "#065F46", fontWeight: "600", fontSize: 11 },
-  progressContainer: { height: 6, backgroundColor: "#F3F4F6", borderRadius: 20, marginTop: 16, overflow: "hidden" },
-  progressFill: { width: "70%", height: "100%", backgroundColor: Colors.primary || "#9C1344" },
   actionRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 16, gap: 12 },
   actionBtn: {
     flex: 1,
@@ -358,7 +441,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#FFF1F5",
+    backgroundColor: "#FFF1F5"
   },
   actionText: { marginLeft: 6, color: Colors.primary || "#9C1344", fontWeight: "700", fontSize: 13 },
   checkinCard: {
@@ -368,7 +451,7 @@ const styles = StyleSheet.create({
     borderColor: "#FBCFE8",
     padding: 12,
     marginTop: 14,
-    alignItems: "center",
+    alignItems: "center"
   },
   checkinLabel: {
     fontSize: 12,
@@ -376,12 +459,12 @@ const styles = StyleSheet.create({
     color: "#9D174D",
     marginBottom: 6,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 0.5
   },
   pinRow: {
     flexDirection: "row",
     gap: 8,
-    marginVertical: 4,
+    marginVertical: 4
   },
   pinBox: {
     width: 38,
@@ -396,19 +479,26 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
-    elevation: 2,
+    elevation: 2
   },
   pinDigit: {
     fontSize: 20,
     fontWeight: "800",
-    color: "#9D174D",
+    color: "#9D174D"
   },
   pinHint: {
     fontSize: 11,
     color: "#6B7280",
     marginTop: 4,
-    textAlign: "center",
+    textAlign: "center"
   },
-  primaryBtn: { marginTop: 12, height: 48, backgroundColor: Colors.primary || "#9C1344", borderRadius: 12, justifyContent: "center", alignItems: "center" },
-  primaryText: { color: Colors.white, fontWeight: "700", fontSize: 14 },
+  primaryBtn: {
+    marginTop: 12,
+    height: 48,
+    backgroundColor: Colors.primary || "#9C1344",
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center"
+  },
+  primaryText: { color: Colors.white, fontWeight: "700", fontSize: 14 }
 });

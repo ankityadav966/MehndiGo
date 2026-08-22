@@ -16,11 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import { useAuth } from "../../context/AuthContext";
 import { getBookingHistory } from "../../services/booking";
-
-const getMoment = () => {
-  const m = require("moment");
-  return typeof m === "function" ? m : (m.default || m);
-};
+import { formatServiceDate, formatTime } from "../../utils/date";
 
 export default function MyBookingsScreen({ navigation }) {
   const { isDarkMode } = useAuth();
@@ -138,19 +134,12 @@ export default function MyBookingsScreen({ navigation }) {
     return { bg: "#FEF2F2", text: "#DC2626", label: "Cancelled" };
   };
 
-  const formatTime = (timeVal) => {
-    if (!timeVal) return "";
-    const localMoment = getMoment();
-    return localMoment(timeVal, ["YYYY-MM-DD HH:mm:ss", "YYYY-MM-DDTHH:mm:ssZ", "HH:mm:ss", "HH:mm"]).format("hh:mm A");
-  };
-
   const renderBookingCard = ({ item }) => {
     const status = item.detailed_status || item.booking_status || "PENDING";
     const statusConfig = getStatusBadgeConfig(status);
-    const localMoment = getMoment();
 
-    const rawDate = item.booking_date || item.date || item.event_date || item.reschedule_date || item.slot?.date || item.slot?.start_time || item.created_at;
-    let dateStr = rawDate ? localMoment(rawDate).format("DD MMM YYYY") : "Today";
+    const rawDate = item.booking_date || item.date || item.event_date || item.reschedule_date || item.slot?.date || item.slot?.start_time;
+    let dateStr = rawDate ? formatServiceDate(rawDate) : "Scheduled Date";
 
     const rawTime = item.booking_time || item.time || item.time_slot || item.reschedule_time || (item.slot ? `${formatTime(item.slot.start_time)} - ${formatTime(item.slot.end_time)}` : null) || item.slot?.time_label;
     let timeStr = rawTime ? (rawTime.includes("AM") || rawTime.includes("PM") || rawTime.includes("-") ? rawTime : formatTime(rawTime)) : "TBD";

@@ -90,14 +90,24 @@ export function ArtistOnboardingProvider({ children }) {
         const status = String(rawStatus).toUpperCase();
         const hasAadhaar = Boolean(profile.aadhaar_front || profile.aadhaar_number);
         const hasBio = Boolean(profile.bio && String(profile.bio).trim().length > 0);
+        const isApproved = status === "APPROVED" || profile.status === "approved" || profile.user?.is_verified === 1 || profile.user?.is_verified === true;
         const complete = Boolean(
+          isApproved ||
           profile.isProfileComplete ||
           (hasBio && hasAadhaar)
         );
         const reason = profile.rejection_reason || null;
-        const isApproved = status === "APPROVED";
 
-        const effectiveStatus = complete ? status : "NOT_SUBMITTED";
+        let effectiveStatus = "NOT_SUBMITTED";
+        if (isApproved) {
+          effectiveStatus = "APPROVED";
+        } else if (status === "REJECTED") {
+          effectiveStatus = "REJECTED";
+        } else if (status === "PENDING" && complete) {
+          effectiveStatus = "PENDING";
+        } else {
+          effectiveStatus = "NOT_SUBMITTED";
+        }
 
         console.log(`[ARTIST_APPROVAL_DEBUG] USER_ID: ${user?.id || profile.user_id || profile.id}`);
         console.log(`[ARTIST_APPROVAL_DEBUG] ROLE: ${user?.role || profile.user?.role}`);
@@ -125,8 +135,10 @@ export function ArtistOnboardingProvider({ children }) {
           city: profile.city || prev.city,
           state: profile.state || prev.state,
           pincode: profile.pincode || prev.pincode,
-          experienceYears: profile.experience_years ? String(profile.experience_years) : prev.experienceYears,
+          experienceYears: profile.experience_years !== undefined && profile.experience_years !== null ? String(profile.experience_years) : prev.experienceYears,
+          startingPrice: profile.starting_price ? String(profile.starting_price) : (prev.startingPrice || "1500"),
           location: profile.location || profile.locality || prev.location,
+          languages: profile.languages || prev.languages || "English, Hindi",
           homeService: profile.home_service !== undefined ? Boolean(profile.home_service) : prev.homeService,
           salonService: profile.salon_service !== undefined ? Boolean(profile.salon_service) : prev.salonService,
           latitude: profile.latitude ? String(profile.latitude) : prev.latitude,

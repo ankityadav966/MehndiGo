@@ -196,3 +196,20 @@ export async function reportBookingDispute(bookingId, disputeReason, description
   }, true);
   return res?.data || res;
 }
+
+export async function getDirectionsRoute(originLat, originLng, destLat, destLng) {
+  try {
+    const res = await apiRequest(
+      "GET",
+      `/booking/route?originLat=${originLat}&originLng=${originLng}&destLat=${destLat}&destLng=${destLng}`,
+      null,
+      false
+    );
+    return res?.data || res;
+  } catch (err) {
+    console.warn("[getDirectionsRoute] Failed:", err.message);
+    return null;
+  }
+}
+
+

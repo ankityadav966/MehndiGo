@@ -55,6 +55,9 @@ export default function BookingDetailsScreen({ route, navigation }) {
   // Live Location
   const { socket } = useSocket();
   const [artistCoords, setArtistCoords] = useState(null);
+  const [customerCoords, setCustomerCoords] = useState(null);
+  const [distanceText, setDistanceText] = useState("");
+  const [etaText, setEtaText] = useState("");
   const locationWatcherRef = useRef(null);
 
   // Modals & Inputs
@@ -75,6 +78,14 @@ export default function BookingDetailsScreen({ route, navigation }) {
     try {
       const data = await getBookingDetails(bookingId);
       if (data) {
+        if (data.latitude && data.longitude) {
+          setCustomerCoords({
+            lat: Number(data.latitude),
+            lng: Number(data.longitude),
+            latitude: Number(data.latitude),
+            longitude: Number(data.longitude)
+          });
+        }
         setBooking((prev) => {
           const prevVerified =
             prev &&
@@ -450,13 +461,16 @@ export default function BookingDetailsScreen({ route, navigation }) {
   const isCompleted = rawStatus === "COMPLETED" || rawStatus === "COMPLETED_CLOSED";
   const isCancelled = rawStatus === "CANCELLED" || rawStatus === "REJECTED";
 
-  const customerCoords =
-    booking?.latitude && booking?.longitude
+  const resolvedCustomerCoords =
+    customerCoords ||
+    (booking?.latitude && booking?.longitude
       ? {
           lat: Number(booking.latitude),
-          lng: Number(booking.longitude)
+          lng: Number(booking.longitude),
+          latitude: Number(booking.latitude),
+          longitude: Number(booking.longitude)
         }
-      : null;
+      : null);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -567,11 +581,28 @@ export default function BookingDetailsScreen({ route, navigation }) {
             <View>
               <LiveTrackingCard
                 artistCoords={artistCoords}
-                customerCoords={customerCoords}
-                distanceText="Live Transit"
-                etaText="On Route"
-                statusText="Broadcasting real GPS coordinates to client"
-                height={190}
+                customerCoords={resolvedCustomerCoords}
+                origin={artistCoords}
+                destination={resolvedCustomerCoords}
+                originLabel="Your Live GPS (Artist)"
+                destLabel={booking?.user?.name ? `${booking.user.name}'s Location` : "Customer Destination"}
+                mode="artist_to_customer"
+                distanceText={distanceText || "Live Transit"}
+                etaText={etaText || "On Route"}
+                statusText={
+                  booking?.address
+                    ? `Navigating to: ${booking.address}`
+                    : "Broadcasting real GPS coordinates to client"
+                }
+                height={210}
+                onRouteUpdate={(dist, dur) => {
+                  if (dist !== null && dist !== undefined) {
+                    setDistanceText(`${Number(dist).toFixed(1)} km away`);
+                  }
+                  if (dur !== null && dur !== undefined) {
+                    setEtaText(`~${Math.round(dur)} mins`);
+                  }
+                }}
               />
 
               <View style={styles.actionCard}>

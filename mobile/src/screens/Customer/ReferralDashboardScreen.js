@@ -15,6 +15,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import Colors from "../../constants/Colors";
 import { getReferralDashboard, getReferralHistory } from "../../services/referral";
 import { createReferralDeepLink } from "../../services/deepLink";
+import { formatDate } from "../../utils/date";
 
 export default function ReferralDashboardScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
@@ -81,7 +82,7 @@ export default function ReferralDashboardScreen({ navigation }) {
           <View style={{ marginLeft: 12 }}>
             <Text style={styles.friendName}>{item.friendName}</Text>
             <Text style={styles.friendDate}>
-              Joined: {new Date(item.joinedAt).toLocaleDateString()}
+              Joined: {formatDate(item.joinedAt)}
             </Text>
           </View>
         </View>

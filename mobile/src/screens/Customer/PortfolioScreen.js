@@ -45,7 +45,8 @@ const resolveImage = (uri) => {
   return getNormalizedUrl(trimmed);
 };
 
-export default function PortfolioScreen({ navigation }) {
+export default function PortfolioScreen({ navigation, route }) {
+  const { artistId: paramArtistId } = route?.params || {};
   const [query, setQuery] = useState("");
   const [categories, setCategories] = useState(["All"]);
   const [selectedCategory, setSelectedCategory] = useState("All");
@@ -188,7 +189,7 @@ export default function PortfolioScreen({ navigation }) {
   // Share portfolio item trigger
   const handleShareItem = async (item) => {
     try {
-      const artId = artistId || item.artist_id || item.artistProfileId;
+      const artId = paramArtistId || item.artist_id || item.artistProfileId;
       const shareUrl = artId ? createPortfolioDeepLink(artId) : (item.image_url || "https://mehendigoo.com");
       await Share.share({
         title: item.title || "Mehndi design sample",
