@@ -255,6 +255,24 @@ export default function BookingDetailsScreen({ route, navigation }) {
     }
   };
 
+  const handlePayAdvance = () => {
+    if (!booking) return;
+    const totalAmount = Number(booking.total_amount || booking.final_amount || 0);
+    const advanceAmount = Number(booking.advance_amount || booking.advance_paid || Math.round(totalAmount * 0.10));
+    const remainingAmount = Number(booking.remaining_amount !== undefined ? booking.remaining_amount : (totalAmount - advanceAmount));
+
+    navigation.navigate("Payment", {
+      bookingId: booking.id,
+      bookingCode: booking.booking_code,
+      finalAmount: totalAmount,
+      advanceAmount: advanceAmount,
+      remainingAmount: remainingAmount,
+      artistName: booking.artist_name || booking.artist?.user?.name || "Mehndi Specialist",
+      serviceTitle: booking.service_name || booking.package_name || "Bridal Mehndi Service",
+      isSettlement: false
+    });
+  };
+
   const handlePayRemainingOnline = () => {
     if (!booking) return;
     navigation.navigate("Payment", {
@@ -464,7 +482,10 @@ export default function BookingDetailsScreen({ route, navigation }) {
           />
 
           {/* 10. Financial Amount Breakdown */}
-          <BookingAmountCard booking={booking} />
+          <BookingAmountCard
+            booking={booking}
+            onPayAdvance={handlePayAdvance}
+          />
 
           {/* 11. Completed State Actions: Invoice & Review */}
           {isCompleted && (

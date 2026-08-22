@@ -20,6 +20,7 @@ import { useNotifications } from "../../context/NotificationContext";
 import { getArtistDashboardData } from "../../services/artist";
 import { confirmCashPayment, rejectCashPayment, acceptBooking, rejectBooking } from "../../services/booking";
 import Alert from "../../utils/Alert";
+import OptimizedImage from "../../components/OptimizedImage";
 
 // --- Greeting Header Component ---
 function GreetingHeader({ artist, isVerified, unreadCount, onProfilePress, onNotificationPress }) {
@@ -40,7 +41,7 @@ function GreetingHeader({ artist, isVerified, unreadCount, onProfilePress, onNot
     <View style={styles.headerContainer}>
       <View style={styles.headerProfileRow}>
         <Pressable onPress={onProfilePress} style={styles.avatarWrapper}>
-          <Image
+          <OptimizedImage
             source={{ uri: artist.profile_image || "https://picsum.photos/200" }}
             style={styles.avatarImage}
           />
@@ -151,6 +152,8 @@ function DashboardCard({ count, title, description, iconName, accentColor, onPre
   );
 }
 
+let memoryCachedArtistDashboard = null;
+
 // --- Main Screen ---
 export default function ArtistDashboardScreen({ navigation }) {
   const { user } = useAuth();
@@ -159,18 +162,23 @@ export default function ArtistDashboardScreen({ navigation }) {
 
   console.log(`[ARTIST_APPROVAL_DEBUG] CURRENT_ROUTE: ArtistDashboardScreen | USER_ID: ${user?.id} | ROLE: ${user?.role}`);
 
-  const [dashboard, setDashboard] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [dashboard, setDashboard] = useState(() => memoryCachedArtistDashboard);
+  const [loading, setLoading] = useState(() => !memoryCachedArtistDashboard);
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchDashboardDetails = React.useCallback(async () => {
     try {
       const data = await getArtistDashboardData();
-      setDashboard(data);
+      if (data) {
+        memoryCachedArtistDashboard = data;
+        setDashboard(data);
+      }
     } catch (err) {
       console.log("Failed to load artist dashboard details:", err.message);
-      Alert.alert("Error", "Something went wrong loading your dashboard. Please retry.");
-      setDashboard(null);
+      if (!memoryCachedArtistDashboard) {
+        Alert.alert("Error", "Something went wrong loading your dashboard. Please retry.");
+        setDashboard(null);
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);

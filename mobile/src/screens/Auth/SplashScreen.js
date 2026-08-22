@@ -5,8 +5,10 @@ import Colors from "../../constants/Colors";
 
 export default function SplashScreen({ navigation }) {
   useEffect(() => {
-    // Navigate immediately rather than forcing an artificial 1.5s delay
-    navigation.replace("Onboarding3");
+    const timer = setTimeout(() => {
+      navigation.replace("Onboarding3");
+    }, 800);
+    return () => clearTimeout(timer);
   }, [navigation]);
 
   return (

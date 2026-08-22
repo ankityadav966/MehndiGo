@@ -4,9 +4,22 @@ import { getThumbnailUrl } from "../utils/cloudinary";
 
 const DEFAULT_PLACEHOLDER = "https://ui-avatars.com/api/?name=MehndiGo&background=F3E8FF&color=7C3AED";
 
+// Global in-memory cache for frozen source objects to eliminate recreation across renders
+const sourceCache = new Map();
+
+function getCachedSource(uri, priority) {
+  const cacheKey = `${uri}_${priority}`;
+  if (sourceCache.has(cacheKey)) {
+    return sourceCache.get(cacheKey);
+  }
+  const obj = Object.freeze({ uri, priority });
+  sourceCache.set(cacheKey, obj);
+  return obj;
+}
+
 /**
- * High-performance hardware-accelerated Image Component using expo-image (Glide/SDWebImage)
- * with dynamic Cloudinary thumbnailing, memory-disk cache policy, recyclingKey, and zero-flicker rendering.
+ * Zero-Flicker Hardware-Accelerated Image Component using expo-image
+ * Guarantees stable object references and memory-disk caching so parent re-renders never blink images.
  */
 function OptimizedImage({
   source,
@@ -17,12 +30,14 @@ function OptimizedImage({
   contentFit,
   fallbackUri = DEFAULT_PLACEHOLDER,
   priority = "normal",
+  recyclingKey,
   ...props
 }) {
   const [useRawOriginal, setUseRawOriginal] = useState(false);
   const [hasError, setHasError] = useState(false);
 
-  const initialUri = typeof source === "object" && source?.uri ? source.uri : typeof source === "string" ? source : null;
+  const isLocalNumber = typeof source === "number";
+  const initialUri = !isLocalNumber && typeof source === "object" && source?.uri ? source.uri : typeof source === "string" ? source : null;
   
   let rawUri = initialUri;
   if (hasError || !rawUri) {
@@ -39,16 +54,14 @@ function OptimizedImage({
       ? priority
       : "normal";
 
+  // Use string-based memoization so new parent inline objects { uri: ... } don't re-trigger image loads
   const imageSource = useMemo(() => {
-    if (typeof source === "number") return source;
-    return {
-      uri: rawUri || fallbackUri,
-      priority: normalizedPriority,
-    };
-  }, [source, rawUri, fallbackUri, normalizedPriority]);
+    if (isLocalNumber) return source;
+    const finalUri = rawUri || fallbackUri;
+    return getCachedSource(finalUri, normalizedPriority);
+  }, [isLocalNumber, isLocalNumber ? source : null, rawUri, fallbackUri, normalizedPriority]);
 
   const fitMode = contentFit || resizeMode || "cover";
-  const stableKey = typeof source === "number" ? String(source) : (rawUri || fallbackUri);
 
   return (
     <ExpoImage
@@ -58,7 +71,7 @@ function OptimizedImage({
       contentFit={fitMode}
       cachePolicy="memory-disk"
       transition={0}
-      recyclingKey={stableKey}
+      recyclingKey={recyclingKey}
       onError={() => {
         if (!useRawOriginal && initialUri && typeof initialUri === "string" && initialUri.includes("cloudinary.com")) {
           setUseRawOriginal(true);

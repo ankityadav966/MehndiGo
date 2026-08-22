@@ -1,8 +1,8 @@
 import React from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View, TouchableOpacity } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 
-export default function BookingAmountCard({ booking }) {
+export default function BookingAmountCard({ booking, onPayAdvance }) {
   if (!booking) return null;
 
   const totalAmount = Number(booking.total_amount || booking.final_amount || 0);
@@ -11,8 +11,10 @@ export default function BookingAmountCard({ booking }) {
   const travelCharge = Number(booking.travel_charge || 0);
   const discountAmount = Number(booking.discount_amount || booking.coupon_discount || 0);
   const paymentStatus = String(booking.payment_status || "PENDING").toUpperCase();
+  const bookingStatus = String(booking.booking_status || booking.status || "").toUpperCase();
 
   const isFullyPaid = paymentStatus === "PAID" || remainingAmount === 0;
+  const isAdvancePending = !isFullyPaid && (paymentStatus === "PENDING" || paymentStatus === "UNPAID" || !booking.advance_paid) && bookingStatus !== "CANCELLED" && bookingStatus !== "REJECTED";
 
   return (
     <View style={styles.card}>
@@ -94,7 +96,7 @@ export default function BookingAmountCard({ booking }) {
         </Text>
       </View>
 
-      {/* Remaining Amount */}
+      {/* Remaining Balance */}
       <View style={styles.row}>
         <Text style={styles.labelBold} numberOfLines={1}>Remaining Balance</Text>
         <Text style={[styles.valueBold, { color: remainingAmount > 0 ? "#DC2626" : "#059669" }]} numberOfLines={1}>
@@ -112,6 +114,34 @@ export default function BookingAmountCard({ booking }) {
           <Text style={styles.totalValue}>{totalAmount.toLocaleString("en-IN")}</Text>
         </View>
       </View>
+
+      {/* 10% Advance Due Action Button */}
+      {Boolean(onPayAdvance) && isAdvancePending && (
+        <View style={styles.payActionContainer}>
+          <TouchableOpacity
+            style={styles.payAdvanceBtn}
+            onPress={onPayAdvance}
+            activeOpacity={0.88}
+          >
+            <View style={styles.btnContent}>
+              <View style={styles.btnIconBox}>
+                <Ionicons name="card" size={15} color="#FFFFFF" />
+              </View>
+              <Text style={styles.payAdvanceBtnText}>
+                Pay 10% Advance Deposit • ₹{advanceAmount.toLocaleString("en-IN")}
+              </Text>
+            </View>
+            <Ionicons name="arrow-forward" size={17} color="#FFFFFF" />
+          </TouchableOpacity>
+
+          <View style={styles.escrowNoticeRow}>
+            <Ionicons name="shield-checkmark" size={12} color="#059669" style={{ marginRight: 4 }} />
+            <Text style={styles.escrowNoticeText}>
+              100% Protected by MehndiGo Escrow Guarantee
+            </Text>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -313,5 +343,57 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "900",
     color: "#E91E63"
+  },
+  payActionContainer: {
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#F3F4F6"
+  },
+  payAdvanceBtn: {
+    backgroundColor: "#F7146B",
+    borderRadius: 12,
+    paddingVertical: 13,
+    paddingHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    shadowColor: "#F7146B",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3
+  },
+  btnContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    marginRight: 6
+  },
+  btnIconBox: {
+    width: 26,
+    height: 26,
+    borderRadius: 7,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 8
+  },
+  payAdvanceBtnText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    letterSpacing: 0.2
+  },
+  escrowNoticeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 8
+  },
+  escrowNoticeText: {
+    fontSize: 10.5,
+    fontWeight: "600",
+    color: "#059669"
   }
 });
