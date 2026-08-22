@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { StyleSheet, Text, TouchableOpacity, View, Linking, ActivityIndicator } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Location from "expo-location";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import Colors from "../../constants/Colors";
@@ -10,6 +10,7 @@ import OptimizedImage from "../../components/OptimizedImage";
 import LeafletMapView from "../../components/LeafletMapView";
 
 export default function LiveTrackingScreen({ route, navigation }) {
+  const insets = useSafeAreaInsets();
   const bookingId = route.params?.bookingId || route.params?.id;
   const { socket, connected } = useSocket();
 
@@ -149,7 +150,7 @@ export default function LiveTrackingScreen({ route, navigation }) {
         }
       }
     } catch (e) {
-      console.log("[LiveTracking] Error loading details:", e.message);
+      if (__DEV__) console.log("[LiveTracking] Error loading details:", e.message);
     }
   }, [bookingId]);
 
@@ -289,7 +290,7 @@ export default function LiveTrackingScreen({ route, navigation }) {
       </View>
 
       {/* Bottom Floating Info Card */}
-      <View style={styles.bottomCard}>
+      <View style={[styles.bottomCard, { paddingBottom: Math.max(insets.bottom, 20) }]}>
         {/* Artist Profile Header */}
         <View style={styles.artistRow}>
           <OptimizedImage

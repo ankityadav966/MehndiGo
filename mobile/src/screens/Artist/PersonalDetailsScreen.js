@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, KeyboardAvoidingView, Platform } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Location from "expo-location";
 import Colors from "../../constants/Colors";
 import { useArtistOnboarding } from "../../context/ArtistOnboardingContext";
 import { useAuth } from "../../context/AuthContext";
 
 export default function PersonalDetailsScreen({ navigation, route }) {
+  const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { artistDetails, updateArtistDetails } = useArtistOnboarding();
   const { phone: routePhone, name: routeName } = route.params || {};
@@ -244,7 +245,7 @@ export default function PersonalDetailsScreen({ navigation, route }) {
         </View>
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 20) }]}>
         <TouchableOpacity style={styles.button} onPress={handleContinue}>
           <Text style={styles.buttonText}>Continue</Text>
         </TouchableOpacity>

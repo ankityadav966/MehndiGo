@@ -27,7 +27,7 @@ export default function CouponsScreen({ route, navigation }) {
       const data = await getCoupons();
       setCoupons(data || []);
     } catch (err) {
-      console.log("Failed to load coupons:", err.message);
+      if (__DEV__) console.log("Failed to load coupons:", err.message);
     } finally {
       setLoading(false);
     }

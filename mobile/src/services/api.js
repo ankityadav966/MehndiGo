@@ -66,7 +66,9 @@ export function getNormalizedUrl(endpoint) {
 
 async function apiRequest(method, endpoint, body = null, auth = false, customTimeoutMs = 12000) {
   const url = getNormalizedUrl(endpoint);
-  console.log(`[API REQUEST] ${method} -> ${url}`);
+  if (__DEV__) {
+    if (__DEV__) console.log(`[API REQUEST] ${method} -> ${url}`);
+  }
 
   const headers = { "Content-Type": "application/json" };
 

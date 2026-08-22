@@ -14,7 +14,7 @@ const HomeHeader = ({
   setLocationModalVisible,
   navigation
 }) => {
-  const avatarUrl = resolveImage(user?.profile_image) || `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || "Customer")}&background=F3E8FF&color=7C3AED`;
+  const avatarUrl = resolveImage(user?.profile_image || user?.avatar) || `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || user?.full_name || "Customer")}&background=F3E8FF&color=7C3AED`;
 
   return (
     <View style={styles.welcomeHeader}>

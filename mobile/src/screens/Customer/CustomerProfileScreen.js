@@ -16,6 +16,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import Colors from "../../constants/Colors";
 import { useAuth } from "../../context/AuthContext";
 import { getCustomerDashboard, getCustomerProfile } from "../../services/customer";
+import { resolveImage } from "../../utils/imageHelper";
 
 export default function CustomerProfileScreen({ navigation }) {
   const { user, logout, isDarkMode } = useAuth();
@@ -34,7 +35,7 @@ export default function CustomerProfileScreen({ navigation }) {
       if (profile) setProfileData(profile);
       if (dashboard) setDashboardData(dashboard);
     } catch (err) {
-      console.log("Failed to load dashboard metrics:", err.message);
+      if (__DEV__) console.log("Failed to load dashboard metrics:", err.message);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -69,8 +70,10 @@ export default function CustomerProfileScreen({ navigation }) {
 
   const profile = {
     ...(dashboardData?.user || {}),
-    ...(profileData || {})
+    ...(profileData || {}),
+    ...(user || {})
   };
+  const customerAvatar = resolveImage(profile.profile_image || profile.avatar || user?.profile_image || user?.avatar);
   const initials = profile.name ? profile.name.split(" ").map((n) => n[0]).join("").toUpperCase() : "ME";
 
   const quickActions = [
@@ -105,8 +108,8 @@ export default function CustomerProfileScreen({ navigation }) {
         {/* Profile Card Info */}
         <View style={[styles.profileHeader, { backgroundColor: currentCardBg, borderBottomColor: currentBorderColor }]}>
           <View style={styles.photoContainer}>
-            {profile.profile_image ? (
-              <Image source={{ uri: profile.profile_image }} style={styles.avatarCircle} resizeMode="cover" />
+            {customerAvatar ? (
+              <Image source={{ uri: customerAvatar }} style={styles.avatarCircle} resizeMode="cover" />
             ) : (
               <View style={styles.avatarCircle}>
                 <Text style={styles.avatarText}>{initials}</Text>

@@ -1,5 +1,6 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "../constants/Colors";
 
 import DashboardScreen from "../screens/Artist/DashboardScreen";
@@ -90,9 +91,13 @@ const artistRoutes = [
 ];
 
 export default function BottomTab({ route }) {
+  const insets = useSafeAreaInsets();
   const role = route?.params?.role || "customer";
 
   const routes = role === "artist" ? artistRoutes : customerRoutes;
+
+  // Dynamic bottom spacing: floats above 3-button nav (~48px), gesture nav (~16-34px), or 12px fallback
+  const bottomOffset = insets.bottom > 0 ? insets.bottom + 6 : 12;
 
   return (
     <Tab.Navigator
@@ -106,7 +111,7 @@ export default function BottomTab({ route }) {
           position: "absolute",
           left: 16,
           right: 16,
-          bottom: 12,
+          bottom: bottomOffset,
           height: 68,
           borderRadius: 20,
           backgroundColor: Colors.white,

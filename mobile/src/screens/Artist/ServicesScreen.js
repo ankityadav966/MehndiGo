@@ -27,7 +27,7 @@ export default function ServicesScreen({ navigation }) {
       const data = await getArtistServices();
       setServices(data || []);
     } catch (err) {
-      console.log("Failed to load services list:", err.message);
+      if (__DEV__) console.log("Failed to load services list:", err.message);
     } finally {
       setLoading(false);
       setRefreshing(false);

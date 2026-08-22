@@ -179,7 +179,7 @@ export default function AddPortfolioScreen({ navigation }) {
       
       navigation.goBack();
     } catch (err) {
-      console.log("Upload failed:", err.message);
+      if (__DEV__) console.log("Upload failed:", err.message);
       Alert.alert("Error", err.message || "Failed to publish portfolio item.");
     } finally {
       setSubmitting(false);

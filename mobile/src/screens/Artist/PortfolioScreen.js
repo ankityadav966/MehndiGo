@@ -11,11 +11,12 @@ import {
   RefreshControl
 } from "react-native";
 import Alert from "../../utils/Alert";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import { getArtistPortfolio, deletePortfolioItem, updatePortfolioItem } from "../../services/artist";
 
 export default function PortfolioScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
   const [portfolioItems, setPortfolioItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -25,7 +26,7 @@ export default function PortfolioScreen({ navigation }) {
       const data = await getArtistPortfolio();
       setPortfolioItems(data || []);
     } catch (e) {
-      console.log("Failed to load portfolio items:", e.message);
+      if (__DEV__) console.log("Failed to load portfolio items:", e.message);
       Alert.alert("Error", "Could not fetch portfolio items.");
     } finally {
       setLoading(false);
@@ -186,7 +187,7 @@ export default function PortfolioScreen({ navigation }) {
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[Colors.primary]} />
           }
-          contentContainerStyle={styles.listContainer}
+          contentContainerStyle={[styles.listContainer, { paddingBottom: 100 + insets.bottom }]}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Ionicons name="image-outline" size={60} color={Colors.textTertiary} />
@@ -197,7 +198,7 @@ export default function PortfolioScreen({ navigation }) {
         />
       )}
 
-      <TouchableOpacity style={styles.fab} onPress={() => navigation.navigate("AddPortfolio")}>
+      <TouchableOpacity style={[styles.fab, { bottom: Math.max(insets.bottom, 20) + 10 }]} onPress={() => navigation.navigate("AddPortfolio")}>
         <Ionicons name="add" size={28} color={Colors.white} />
       </TouchableOpacity>
     </SafeAreaView>

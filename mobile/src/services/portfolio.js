@@ -16,7 +16,7 @@ async function safeFetch(url, options) {
 export async function createPortfolio(formData) {
   const token = await secureStorage.getAccessToken();
   const url = getNormalizedUrl("/api/v1/mehndigo/artist/service");
-  console.log(`[API REQUEST] POST (fetch) -> ${url}`);
+  if (__DEV__) console.log(`[API REQUEST] POST (fetch) -> ${url}`);
   const response = await safeFetch(url, {
     method: "POST",
     headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -49,7 +49,7 @@ export async function getAllPortfolios() {
 export async function updatePortfolio(id, formData) {
   const token = await secureStorage.getAccessToken();
   const url = getNormalizedUrl(`/api/v1/mehndigo/artist/service/${id}`);
-  console.log(`[API REQUEST] PUT (fetch) -> ${url}`);
+  if (__DEV__) console.log(`[API REQUEST] PUT (fetch) -> ${url}`);
   const response = await safeFetch(url, {
     method: "PUT",
     headers: token ? { Authorization: `Bearer ${token}` } : {},

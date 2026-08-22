@@ -49,7 +49,7 @@ export default function GlobalModal() {
         try {
           await result;
         } catch (err) {
-          console.log("[GlobalModal] Async confirmation error:", err);
+          if (__DEV__) console.log("[GlobalModal] Async confirmation error:", err);
         } finally {
           setOptions((prev) => ({ ...prev, loading: false }));
           setVisible(false);

@@ -3,11 +3,14 @@ import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import Colors from "../../constants/Colors";
 import OptimizedImage from "../OptimizedImage";
+import { resolveImage } from "../../utils/imageHelper";
 
 function ArtistProfileHeader({ profile, isFav, onToggleFavorite, onShare, onBack }) {
   if (!profile) return null;
 
-  const { name, bio, city, state, experience_years, avg_rating, total_reviews, total_bookings, profile_image } = profile;
+  const { name, bio, city, state, experience_years, avg_rating, total_reviews, total_bookings } = profile;
+  const rawImage = profile.profile_image || profile.selfie_image || profile.avatar || profile.user?.profile_image || profile.user?.avatar;
+  const avatarUrl = resolveImage(rawImage) || `https://ui-avatars.com/api/?name=${encodeURIComponent(name || "Artist")}&background=F3E8FF&color=7C3AED`;
 
   return (
     <View style={styles.headerContainer}>
@@ -27,7 +30,7 @@ function ArtistProfileHeader({ profile, isFav, onToggleFavorite, onShare, onBack
 
       <View style={styles.heroRow}>
         <OptimizedImage
-          source={{ uri: profile_image || `https://ui-avatars.com/api/?name=${encodeURIComponent(name || "Artist")}&background=F3E8FF&color=7C3AED` }}
+          source={{ uri: avatarUrl }}
           style={styles.avatar}
           width={100}
           height={100}

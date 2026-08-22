@@ -17,5 +17,5 @@ export const ENV = {
 };
 
 if (__DEV__) {
-  console.log("[Mobile Env Config] Active API Base URL:", API_BASE_URL);
+  if (__DEV__) console.log("[Mobile Env Config] Active API Base URL:", API_BASE_URL);
 }

@@ -40,7 +40,7 @@ export default function RegisterScreen({ navigation, route }) {
           setReferralCode(code);
         }
       } catch (err) {
-        console.log("Error reading referral code:", err.message);
+        if (__DEV__) console.log("Error reading referral code:", err.message);
       }
     };
     checkReferral();
@@ -114,7 +114,7 @@ export default function RegisterScreen({ navigation, route }) {
         referralCode: referralCode || "",
       });
     } catch (e) {
-      console.log("[REGISTER ERROR]:", e);
+      if (__DEV__) console.log("[REGISTER ERROR]:", e);
       const msg = e?.response?.data?.message || e.message || "Failed to process registration. Please try again.";
       const lowerMsg = msg.toLowerCase();
 

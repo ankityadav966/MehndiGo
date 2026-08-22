@@ -51,7 +51,7 @@ export default function RootNavigator() {
       : "ArtistStack"
     : "CustomerStack";
 
-  console.log(`[ARTIST_APPROVAL_DEBUG] ROOT_NAV_STATE -> isAuthenticated: ${isAuthenticated} | isArtist: ${isArtist} | isArtistLoading: ${isArtistLoading} | isAuthLoading: ${isAuthLoading} | isFirstTimeOnboarding: ${isFirstTimeOnboarding} | TARGET_ROUTE: ${targetStack}`);
+  if (__DEV__) console.log(`[ARTIST_APPROVAL_DEBUG] ROOT_NAV_STATE -> isAuthenticated: ${isAuthenticated} | isArtist: ${isArtist} | isArtistLoading: ${isArtistLoading} | isAuthLoading: ${isAuthLoading} | isFirstTimeOnboarding: ${isFirstTimeOnboarding} | TARGET_ROUTE: ${targetStack}`);
 
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName={!isAuthenticated ? "Login" : undefined}>

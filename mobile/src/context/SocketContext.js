@@ -1,8 +1,8 @@
-import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { io } from "socket.io-client";
 import { useAuth } from "./AuthContext";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { SOCKET_URL } from "../services/api";
+import apiRequest, { SOCKET_URL } from "../services/api";
 import { scheduleLocalNotification } from "../services/notification";
 
 const SocketContext = createContext(null);
@@ -41,7 +41,7 @@ export function SocketProvider({ children }) {
           setOfflineQueue(JSON.parse(stored));
         }
       } catch (e) {
-        console.log("Error loading offline message queue", e);
+        if (__DEV__) console.log("Error loading offline message queue", e);
       }
     }
     loadQueue();
@@ -52,7 +52,7 @@ export function SocketProvider({ children }) {
     try {
       await AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
     } catch (e) {
-      console.log("Error saving offline message queue", e);
+      if (__DEV__) console.log("Error saving offline message queue", e);
     }
   };
 
@@ -61,7 +61,7 @@ export function SocketProvider({ children }) {
     const queue = offlineQueueRef.current;
     if (queue.length === 0 || !activeSocket) return;
 
-    console.log(`Flushing offline message queue: ${queue.length} messages`);
+    if (__DEV__) console.log(`Flushing offline message queue: ${queue.length} messages`);
     
     // Process messages sequentially
     queue.forEach((msg) => {
@@ -100,7 +100,7 @@ export function SocketProvider({ children }) {
     });
 
     newSocket.on("connect", () => {
-      console.log("Socket connected:", newSocket.id);
+      if (__DEV__) console.log("Socket connected:", newSocket.id);
       setConnected(true);
       
       // If we previously joined a room, rejoin it
@@ -113,7 +113,7 @@ export function SocketProvider({ children }) {
     });
 
     newSocket.on("disconnect", () => {
-      console.log("Socket disconnected");
+      if (__DEV__) console.log("Socket disconnected");
       setConnected(false);
     });
 
@@ -259,7 +259,6 @@ export function SocketProvider({ children }) {
 
     // Send via REST API to persist in D1
     try {
-      const apiRequest = require("../services/api").default;
       const sentMsg = await apiRequest("POST", "/chat/send", {
         bookingId,
         message: messageText,
@@ -294,7 +293,9 @@ export function SocketProvider({ children }) {
         );
       }
     } catch (err) {
-      console.log("[CHAT] REST send fallback failed:", err.message);
+      if (__DEV__) {
+        if (__DEV__) console.log("[CHAT] REST send fallback notice:", err.message);
+      }
     }
 
     if (connected && socket) {
@@ -317,21 +318,37 @@ export function SocketProvider({ children }) {
     }
   }, [socket, connected]);
 
-  const value = {
-    socket,
-    connected,
-    activeRoom,
-    typingUsers,
-    onlineStatus,
-    lastSeen,
-    messages,
-    setMessages,
-    offlineQueue,
-    joinRoom,
-    leaveRoom,
-    sendChatMessage,
-    emitTyping
-  };
+  const value = useMemo(
+    () => ({
+      socket,
+      connected,
+      activeRoom,
+      typingUsers,
+      onlineStatus,
+      lastSeen,
+      messages,
+      setMessages,
+      offlineQueue,
+      joinRoom,
+      leaveRoom,
+      sendChatMessage,
+      emitTyping
+    }),
+    [
+      socket,
+      connected,
+      activeRoom,
+      typingUsers,
+      onlineStatus,
+      lastSeen,
+      messages,
+      offlineQueue,
+      joinRoom,
+      leaveRoom,
+      sendChatMessage,
+      emitTyping
+    ]
+  );
 
   return <SocketContext.Provider value={value}>{children}</SocketContext.Provider>;
 }

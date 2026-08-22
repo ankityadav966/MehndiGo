@@ -31,7 +31,7 @@ export default function ArtistFlowStack({ route }) {
     profilePhoto,
   });
 
-  console.log(`[ARTIST_APPROVAL_DEBUG] [ARTIST_NAV_DEBUG] mounting ArtistFlowStack -> initialRoute: ${initialRouteName} | verificationStatus: ${verificationStatus}`);
+  if (__DEV__) console.log(`[ARTIST_APPROVAL_DEBUG] [ARTIST_NAV_DEBUG] mounting ArtistFlowStack -> initialRoute: ${initialRouteName} | verificationStatus: ${verificationStatus}`);
 
   return (
     <Stack.Navigator

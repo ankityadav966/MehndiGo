@@ -58,7 +58,7 @@ export default function LoginScreen({ navigation, route }) {
         });
       }
     } catch (e) {
-      console.log("Send OTP Error:", e);
+      if (__DEV__) console.log("Send OTP Error:", e);
       const status = e?.response?.status;
       const msg = e?.response?.data?.message || e?.message || "";
       

@@ -27,7 +27,7 @@ export default function TransactionDetailsScreen({ route, navigation }) {
       const data = await getTransactionDetails(paymentId);
       setTransaction(data);
     } catch (err) {
-      console.log("Failed to fetch transaction details:", err.message);
+      if (__DEV__) console.log("Failed to fetch transaction details:", err.message);
       setTransaction(null);
     } finally {
       setLoading(false);

@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   Image,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -58,7 +59,7 @@ export default function WishlistScreen({ navigation }) {
         : [];
       setWishlist(list);
     } catch (err) {
-      console.log("Failed to fetch customer wishlist:", err.message);
+      if (__DEV__) console.log("Failed to fetch customer wishlist:", err.message);
       setWishlist([]);
     } finally {
       setLoading(false);
@@ -83,7 +84,7 @@ export default function WishlistScreen({ navigation }) {
       setWishlist((prev) => prev.filter((item) => item.id !== artistId));
       await removeArtistFavorite(artistId);
     } catch (err) {
-      console.log("Remove favorite error:", err.message);
+      if (__DEV__) console.log("Remove favorite notice:", err.message);
       fetchWishlist(); // Revert on failure
     }
   };
@@ -99,11 +100,11 @@ export default function WishlistScreen({ navigation }) {
         url: shareUrl
       });
     } catch (e) {
-      console.log("Share wishlist error:", e.message);
+      if (__DEV__) console.log("Share wishlist notice:", e.message);
     }
   };
 
-  const resolveImage = (uri) => {
+  const resolveImage = useCallback((uri) => {
     if (!uri || typeof uri !== "string") return null;
     if (uri.startsWith("http://") || uri.startsWith("https://") || uri.startsWith("data:")) {
       return uri;
@@ -112,9 +113,9 @@ export default function WishlistScreen({ navigation }) {
       return `https://api.mehndigo.in${uri}`;
     }
     return uri;
-  };
+  }, []);
 
-  const renderItem = ({ item }) => {
+  const renderItem = useCallback(({ item }) => {
     const artist = item?.artist || item || {};
     const userObj = artist.user || item?.user || {};
     const artistName = artist.name || artist.full_name || userObj.name || userObj.full_name || "Mehndi Specialist";
@@ -286,7 +287,7 @@ export default function WishlistScreen({ navigation }) {
         </View>
       </View>
     );
-  };
+  }, [navigation, resolveImage]);
 
   if (loading && !refreshing) {
     return (
@@ -326,6 +327,10 @@ export default function WishlistScreen({ navigation }) {
           data={wishlist}
           renderItem={renderItem}
           keyExtractor={(item, index) => (item?.id ? item.id.toString() : index.toString())}
+          initialNumToRender={8}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          removeClippedSubviews={Platform.OS === "android"}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}

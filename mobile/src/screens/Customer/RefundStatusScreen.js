@@ -29,7 +29,7 @@ export default function RefundStatusScreen({ route, navigation }) {
         setRefund(null);
       }
     } catch (err) {
-      console.log("Failed to load refund details:", err.message);
+      if (__DEV__) console.log("Failed to load refund details:", err.message);
     } finally {
       setLoading(false);
     }

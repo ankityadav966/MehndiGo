@@ -76,7 +76,7 @@ export default function PortfolioScreen({ navigation, route }) {
         }
       })
       .catch((err) => {
-        console.log("Failed to load categories for portfolio gallery:", err.message);
+        if (__DEV__) console.log("Failed to load categories for portfolio gallery:", err.message);
       });
     return () => {
       isMounted = false;
@@ -113,7 +113,7 @@ export default function PortfolioScreen({ navigation, route }) {
       setHasMore(portfolioItems.length + rows.length < total);
       setPage(pageNum);
     } catch (e) {
-      console.log("Failed to fetch gallery portfolios:", e.message);
+      if (__DEV__) console.log("Failed to fetch gallery portfolios:", e.message);
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -165,7 +165,7 @@ export default function PortfolioScreen({ navigation, route }) {
         );
       }
     } catch (err) {
-      console.log("Failed to like portfolio:", err.message);
+      if (__DEV__) console.log("Failed to like portfolio:", err.message);
     }
   };
 
@@ -182,7 +182,7 @@ export default function PortfolioScreen({ navigation, route }) {
         Alert.alert("Saved", "Design sample added to your saved bookmarks!");
       }
     } catch (err) {
-      console.log("Failed to save portfolio item:", err.message);
+      if (__DEV__) console.log("Failed to save portfolio item:", err.message);
     }
   };
 
@@ -197,7 +197,7 @@ export default function PortfolioScreen({ navigation, route }) {
         url: shareUrl
       });
     } catch (e) {
-      console.log("Share failed:", e.message);
+      if (__DEV__) console.log("Share failed:", e.message);
     }
   };
 

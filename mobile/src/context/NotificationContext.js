@@ -106,7 +106,7 @@ export function NotificationProvider({ children, navigationRef }) {
           await sendNotificationTokenToServer(token);
         }
       } catch (err) {
-        console.log("[NotificationContext] Push registration notice:", err.message);
+        if (__DEV__) console.log("[NotificationContext] Push registration notice:", err.message);
       }
     };
 

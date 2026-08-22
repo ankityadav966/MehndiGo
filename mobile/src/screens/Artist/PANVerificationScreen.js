@@ -2,12 +2,13 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import * as ImagePicker from "expo-image-picker";
 import { useState } from "react";
 import { Image, StyleSheet, Text, TextInput, TouchableOpacity, View, ScrollView } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import CustomButton from "../../components/CustomButton";
 import { useArtistOnboarding } from "../../context/ArtistOnboardingContext";
 
 export default function PANVerificationScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
   const { panFile, setPanFile, artistDetails, updateArtistDetails } = useArtistOnboarding();
   const [panNumberInput, setPanNumberInput] = useState(artistDetails?.panNumber || "");
   const [error, setError] = useState("");
@@ -88,7 +89,7 @@ export default function PANVerificationScreen({ navigation }) {
         ) : null}
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 20) }]}>
         <CustomButton title="Continue" onPress={handleContinue} />
       </View>
     </SafeAreaView>

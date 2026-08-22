@@ -56,7 +56,7 @@ export default function SavedAddressesScreen({ navigation }) {
         await setActiveAddress(primary);
       }
     } catch (e) {
-      console.log("Error fetching saved addresses:", e.message);
+      if (__DEV__) console.log("Error fetching saved addresses:", e.message);
     } finally {
       setLoading(false);
       setRefreshing(false);

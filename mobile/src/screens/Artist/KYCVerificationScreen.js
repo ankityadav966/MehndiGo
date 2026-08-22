@@ -1,9 +1,10 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 
 export default function KYCVerificationScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
   const steps = ["Personal Details", "Aadhaar Verification", "PAN Verification", "Profile Photo", "Work Samples"];
 
   return (
@@ -41,7 +42,7 @@ export default function KYCVerificationScreen({ navigation }) {
         </View>
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 24) }]}>
         <TouchableOpacity style={styles.continueBtn} onPress={() => navigation.navigate("PersonalDetails")}>
           <Text style={styles.continueText}>Continue</Text>
         </TouchableOpacity>

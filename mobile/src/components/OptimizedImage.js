@@ -1,14 +1,13 @@
-import React, { useState } from "react";
-import { View, StyleSheet, ActivityIndicator } from "react-native";
+import React, { useState, useEffect, useMemo } from "react";
+import { View, StyleSheet } from "react-native";
 import { Image as ExpoImage } from "expo-image";
 import { getThumbnailUrl } from "../utils/cloudinary";
-import Colors from "../constants/Colors";
 
 const DEFAULT_PLACEHOLDER = "https://ui-avatars.com/api/?name=MehndiGo&background=F3E8FF&color=7C3AED";
 
 /**
- * High-performance hardware-accelerated Image Component using expo-image (Glide/SDWebImage)
- * with dynamic Cloudinary thumbnailing, memory-disk cache policy, and placeholder fallback.
+ * High-performance hardware-accelerated Image Component using expo-image
+ * with dynamic Cloudinary thumbnailing, memory-disk cache policy, stable props, and placeholder fallback.
  */
 function OptimizedImage({
   source,
@@ -19,35 +18,52 @@ function OptimizedImage({
   contentFit,
   fallbackUri = DEFAULT_PLACEHOLDER,
   priority = "normal",
+  placeholder,
   ...props
 }) {
   const [useRawOriginal, setUseRawOriginal] = useState(false);
   const [hasError, setHasError] = useState(false);
 
-  const initialUri = typeof source === "object" && source?.uri ? source.uri : typeof source === "string" ? source : null;
-  let rawUri = initialUri;
+  const initialUri = typeof source === "object" && source?.uri
+    ? source.uri
+    : typeof source === "string"
+    ? source
+    : null;
 
-  if (hasError || !rawUri) {
-    rawUri = fallbackUri;
-  } else if (!useRawOriginal && typeof rawUri === "string" && rawUri.includes("cloudinary.com")) {
-    rawUri = getThumbnailUrl(rawUri, width, height);
-  }
+  // Reset error state whenever the underlying URI changes
+  useEffect(() => {
+    setHasError(false);
+    setUseRawOriginal(false);
+  }, [initialUri]);
 
   // Normalize priority for expo-image: 'low' | 'normal' | 'high'
-  const normalizedPriority =
-    priority === "medium"
-      ? "normal"
-      : priority === "high" || priority === "low" || priority === "normal"
-      ? priority
-      : "normal";
+  const normalizedPriority = useMemo(() => {
+    if (priority === "medium") return "normal";
+    if (priority === "high" || priority === "low" || priority === "normal") return priority;
+    return "normal";
+  }, [priority]);
 
-  const imageSource =
-    typeof source === "number"
-      ? source
-      : {
-          uri: rawUri,
-          priority: normalizedPriority,
-        };
+  // Determine computed URI
+  const computedUri = useMemo(() => {
+    if (hasError || !initialUri) {
+      return fallbackUri;
+    }
+    if (!useRawOriginal && typeof initialUri === "string" && initialUri.includes("cloudinary.com")) {
+      return getThumbnailUrl(initialUri, width, height);
+    }
+    return initialUri;
+  }, [hasError, initialUri, fallbackUri, useRawOriginal, width, height]);
+
+  // Memoize stable source object reference to prevent expo-image re-render flicker
+  const imageSource = useMemo(() => {
+    if (typeof source === "number") {
+      return source;
+    }
+    return {
+      uri: computedUri,
+      priority: normalizedPriority,
+    };
+  }, [source, computedUri, normalizedPriority]);
 
   const fitMode = contentFit || resizeMode || "cover";
 
@@ -56,10 +72,11 @@ function OptimizedImage({
       <ExpoImage
         {...props}
         source={imageSource}
-        style={[style, styles.imageFix]}
+        style={styles.imageFix}
         contentFit={fitMode}
         cachePolicy="memory-disk"
-        transition={150}
+        placeholder={placeholder || undefined}
+        transition={0}
         onError={() => {
           if (!useRawOriginal && initialUri && typeof initialUri === "string" && initialUri.includes("cloudinary.com")) {
             setUseRawOriginal(true);

@@ -16,6 +16,7 @@ import {
 } from "react-native";
 import Alert from "../../utils/Alert";
 import Colors from "../../constants/Colors";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getNormalizedUrl } from "../../services/api";
 import { formatDate } from "../../utils/date";
 
@@ -52,6 +53,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get("window");
 import { useFocusEffect } from "@react-navigation/native";
 
 export default function ArtistProfileScreen({ route, navigation }) {
+  const insets = useSafeAreaInsets();
   const artistId = route.params?.artistId || route.params?.id || route.params?.artist_id;
 
   // Data states
@@ -94,7 +96,7 @@ export default function ArtistProfileScreen({ route, navigation }) {
         return;
       }
 
-      console.log("[ArtistProfileScreen Debug] prof received:", prof.name || prof.full_name);
+      if (__DEV__) console.log("[ArtistProfileScreen Debug] prof received:", prof.name || prof.full_name);
       setProfile(prof);
 
       // Extract services, portfolio, reviews, availability if returned inside prof or fetch fallback
@@ -156,7 +158,7 @@ export default function ArtistProfileScreen({ route, navigation }) {
         }
       }
     } catch (e) {
-      console.log("[ArtistProfileScreen Debug] Error loading artist details:", e.message);
+      if (__DEV__) console.log("[ArtistProfileScreen Debug] Error loading artist details:", e.message);
       setError("Failed to load artist details. Please try again.");
     } finally {
       setLoading(false);
@@ -179,7 +181,7 @@ export default function ArtistProfileScreen({ route, navigation }) {
         setIsFav(true);
       }
     } catch (e) {
-      console.log("Failed to toggle favorite:", e.message);
+      if (__DEV__) console.log("Failed to toggle favorite:", e.message);
     }
   };
 
@@ -195,7 +197,7 @@ export default function ArtistProfileScreen({ route, navigation }) {
         url: shareUrl
       });
     } catch (e) {
-      console.log("Failed to share profile:", e.message);
+      if (__DEV__) console.log("Failed to share profile:", e.message);
     }
   };
 
@@ -334,12 +336,12 @@ export default function ArtistProfileScreen({ route, navigation }) {
   const timeSlotsForSelectedDate = availability.filter((slot) => slot?.date === selectedDate);
 
   const artistDisplayName = profile.name || profile.full_name || profile.user?.name || "Mehndi Artist";
-  const artistAvatarUri = resolveImage(profile.profile_image || profile.avatar || profile.user?.profile_image)
+  const artistAvatarUri = resolveImage(profile.profile_image || profile.avatar || profile.user?.profile_image || profile.selfie_image || profile.user?.avatar)
     || `https://ui-avatars.com/api/?name=${encodeURIComponent(artistDisplayName)}&background=F3E8FF&color=7C3AED`;
 
   return (
     <View style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 + insets.bottom }}>
         {/* Cover Carousel */}
         <View style={styles.coverContainer}>
           <ScrollView
@@ -809,7 +811,7 @@ export default function ArtistProfileScreen({ route, navigation }) {
       {(() => {
         const calculatedStartingPrice = profile.starting_price || (services.length > 0 ? Math.min(...services.map(s => Number(s.minimum_price || s.price || 0)).filter(p => p > 0)) : null);
         return (
-          <View style={styles.bottomBar}>
+          <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12), height: 75 + (insets.bottom > 0 ? insets.bottom : 0) }]}>
             <View style={styles.bottomPriceCol}>
               <Text style={styles.bottomPriceLabel}>Starting from</Text>
               <Text style={styles.bottomPriceVal}>

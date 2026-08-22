@@ -126,7 +126,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
         } catch (_) {}
       }
     } catch (err) {
-      console.log("Failed to load booking details:", err.message);
+      if (__DEV__) console.log("Failed to load booking details:", err.message);
     } finally {
       setLoading(false);
       setRefreshing(false);

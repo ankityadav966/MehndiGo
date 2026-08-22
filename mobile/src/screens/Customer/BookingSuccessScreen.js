@@ -39,7 +39,7 @@ export default function BookingSuccessScreen({ route, navigation }) {
         const details = await getBookingDetails(bookingId);
         setBooking(details);
       } catch (err) {
-        console.log("Error loading booking details in BookingSuccessScreen:", err.message);
+        if (__DEV__) console.log("Error loading booking details in BookingSuccessScreen:", err.message);
       } finally {
         setLoading(false);
       }

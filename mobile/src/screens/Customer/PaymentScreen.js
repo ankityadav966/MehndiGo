@@ -9,7 +9,7 @@ import {
   Modal
 } from "react-native";
 import Alert from "../../utils/Alert";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import Colors from "../../constants/Colors";
 import RazorpayCheckoutModal from "../../components/RazorpayCheckoutModal";
@@ -18,6 +18,7 @@ import { getBookingDetails, selectCashPayment } from "../../services/booking";
 import { openRazorpayCheckout } from "../../services/razorpayHelper";
 
 export default function PaymentScreen({ route, navigation }) {
+  const insets = useSafeAreaInsets();
   const {
     bookingId,
     bookingCode,
@@ -51,7 +52,7 @@ export default function PaymentScreen({ route, navigation }) {
       const details = await getBookingDetails(idToFetch);
       setBooking(details);
     } catch (err) {
-      console.log("Failed to fetch booking details in PaymentScreen:", err.message);
+      if (__DEV__) console.log("Failed to fetch booking details in PaymentScreen:", err.message);
     }
   }, [activeBookingId]);
 
@@ -76,7 +77,7 @@ export default function PaymentScreen({ route, navigation }) {
           loadBookingDetails(pendingBooking.id);
         }
       } catch (historyErr) {
-        console.log("Auto-recovery history fetch error:", historyErr.message);
+        if (__DEV__) console.log("Auto-recovery history fetch error:", historyErr.message);
       }
     }
 
@@ -105,7 +106,6 @@ export default function PaymentScreen({ route, navigation }) {
         isSettlement: Boolean(isSettlement)
       };
 
-      console.log("[PAYMENT_SCREEN] Verifying payment with backend:", JSON.stringify(verifyData, null, 2));
       const verifyResult = await verifyPaymentSignature(verifyData);
 
       if (!verifyResult || (verifyResult.success === false && !verifyResult.already_processed)) {
@@ -156,7 +156,7 @@ export default function PaymentScreen({ route, navigation }) {
     setProcessingModalVisible(false);
     setLoading(false);
     const errorMsg = error?.description || error?.message || "Payment cancelled or could not be completed.";
-    console.log("[PAYMENT_SCREEN] Payment failed/cancelled:", errorMsg);
+    if (__DEV__) console.log("[PAYMENT_SCREEN] Payment failed/cancelled:", errorMsg);
     Alert.alert("Payment Incomplete", errorMsg);
   };
 
@@ -443,7 +443,7 @@ export default function PaymentScreen({ route, navigation }) {
       </ScrollView>
 
       {/* 6. Bottom Pay CTA */}
-      <View style={styles.bottomBar}>
+      <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) + 8 }]}>
         <View style={styles.bottomPriceInfo}>
           <Text style={styles.bottomPriceLabel}>Total Payable</Text>
           <Text style={styles.bottomPriceVal}>₹{payableNow}</Text>

@@ -114,7 +114,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
         });
       }
     } catch (err) {
-      console.log("Failed to load artist booking details:", err.message);
+      if (__DEV__) console.log("Failed to load artist booking details:", err.message);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -208,7 +208,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
             }
           );
         } catch (err) {
-          console.log("GPS Location watcher notice:", err.message);
+          if (__DEV__) console.log("GPS Location watcher notice:", err.message);
         }
       })();
 

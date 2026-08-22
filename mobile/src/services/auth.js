@@ -109,7 +109,7 @@ export async function sendOtp(emailOrPhone, emailParam, phone, role) {
   if (cleanPhone) payload.phone = cleanPhone;
   if (role) payload.role = role === "CUSTOMER" ? "USER" : role;
 
-  console.log("[OTP] REQUEST ENDPOINT:", endpoint, "TARGET:", email ? maskEmail(email) : cleanPhone);
+  if (__DEV__) console.log("[OTP] REQUEST ENDPOINT:", endpoint, "TARGET:", email ? maskEmail(email) : cleanPhone);
   const data = await apiRequest("POST", endpoint, payload);
   return data;
 }
@@ -126,7 +126,7 @@ export async function registerSendOtp(name, email, phone, role) {
     role: role === "CUSTOMER" ? "USER" : (role || "USER"),
   };
 
-  console.log("[OTP] REGISTER REQUEST:", endpoint, "EMAIL:", maskEmail(trimmedEmail));
+  if (__DEV__) console.log("[OTP] REGISTER REQUEST:", endpoint, "EMAIL:", maskEmail(trimmedEmail));
   const data = await apiRequest("POST", endpoint, payload);
   return data;
 }

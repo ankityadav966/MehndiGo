@@ -30,7 +30,7 @@ export default function NotificationDetailsScreen({ route, navigation }) {
           await markNotificationAsRead(currentNotif.id);
         }
       } catch (err) {
-        console.log("Error loading notification details:", err.message);
+        if (__DEV__) console.log("Error loading notification details:", err.message);
       } finally {
         setLoading(false);
       }

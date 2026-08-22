@@ -66,7 +66,7 @@ export default function EditProfileScreen({ navigation }) {
         setEmail(artistUser.email || "");
         setPhone(artistUser.phone || "");
         
-        const photo = artistUser.profile_image || artistUser.avatar || data.selfie_image;
+        const photo = data.profile_image || data.selfie_image || data.avatar || artistUser.profile_image || artistUser.avatar || user?.profile_image || user?.avatar;
         if (photo) {
           setAvatarUri(resolveImage(photo));
         }
@@ -104,7 +104,7 @@ export default function EditProfileScreen({ navigation }) {
         }
       }
     } catch (err) {
-      console.log("Failed to load profile data:", err);
+      if (__DEV__) console.log("Failed to load profile data:", err);
       Alert.alert("Error", err.message || "Failed to load profile data.");
     } finally {
       setLoading(false);
@@ -175,16 +175,19 @@ export default function EditProfileScreen({ navigation }) {
     setSaving(true);
     try {
       let uploadedUrl = null;
-      // If photo was changed (local file URI)
-      if (avatarUri && (avatarUri.startsWith("file://") || avatarUri.startsWith("content://") || avatarUri.startsWith("ph://") || avatarUri.startsWith("assets-library://") || avatarUri.startsWith("/"))) {
-        console.log('[CLOUDINARY UPLOAD START]');
+      const isLocalAvatar = avatarUri && (avatarUri.startsWith("file://") || avatarUri.startsWith("content://") || avatarUri.startsWith("ph://") || avatarUri.startsWith("assets-library://") || avatarUri.startsWith("/"));
+      if (isLocalAvatar) {
+        if (__DEV__) console.log('[CLOUDINARY UPLOAD START]');
         const uploadResult = await uploadPortfolioMedia([{ uri: avatarUri }]);
-        if (uploadResult && uploadResult.length > 0) {
+        if (uploadResult && uploadResult.length > 0 && uploadResult[0].url) {
           uploadedUrl = uploadResult[0].url;
+        } else {
+          throw new Error("Failed to upload profile photo to Cloudinary. Please try again.");
         }
       }
 
-      const finalAvatar = uploadedUrl || avatarUri;
+      // If a new photo was uploaded, use uploadedUrl; if unchanged remote URL, use avatarUri; otherwise undefined to preserve DB image
+      const finalAvatar = uploadedUrl ? uploadedUrl : (!isLocalAvatar && avatarUri ? avatarUri : undefined);
 
       if (isArtist) {
         const payload = {
@@ -245,12 +248,13 @@ export default function EditProfileScreen({ navigation }) {
 
       // Sync local auth context and secureStorage
       const currentStored = await secureStorage.getUserData();
+      const resolvedStoredAvatar = finalAvatar || currentStored?.profile_image || currentStored?.avatar || user?.profile_image || user?.avatar || null;
       const updatedUser = {
         ...currentStored,
         name: fullName.trim(),
         full_name: fullName.trim(),
-        profile_image: finalAvatar,
-        avatar: finalAvatar,
+        profile_image: resolvedStoredAvatar,
+        avatar: resolvedStoredAvatar,
         email: email.trim(),
         phone: cleanPhone,
         city: city.trim(),
@@ -263,7 +267,7 @@ export default function EditProfileScreen({ navigation }) {
       Alert.alert("Success", "Profile Updated Successfully");
       navigation.goBack();
     } catch (err) {
-      console.log("Failed to save profile:", err);
+      if (__DEV__) console.log("Failed to save profile:", err);
       const errMsg = err.response?.data?.message || err.message || "Failed to update profile.";
       Alert.alert("Error", errMsg);
     } finally {

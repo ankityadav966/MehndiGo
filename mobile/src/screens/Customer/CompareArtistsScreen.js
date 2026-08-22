@@ -30,7 +30,7 @@ export default function CompareArtistsScreen({ route, navigation }) {
         );
         setArtists(list.filter(Boolean));
       } catch (e) {
-        console.log("Error loading artists to compare:", e);
+        if (__DEV__) console.log("Error loading artists to compare:", e);
       } finally {
         setLoading(false);
       }

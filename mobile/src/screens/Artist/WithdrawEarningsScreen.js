@@ -65,7 +65,7 @@ export default function WithdrawEarningsScreen({ navigation }) {
         });
       }
     } catch (err) {
-      console.log("Error loading payout data:", err.message);
+      if (__DEV__) console.log("Error loading payout data:", err.message);
     } finally {
       setLoading(false);
     }
@@ -117,7 +117,7 @@ export default function WithdrawEarningsScreen({ navigation }) {
     setSubmitting(true);
     try {
       const response = await requestWithdrawal(amt);
-      console.log("[PAYOUT_SUCCESS]", response);
+      if (__DEV__) console.log("[PAYOUT_SUCCESS]", response);
       if (navigation.navigate) {
         navigation.navigate("WithdrawalSuccessScreen", {
           amount: amt,

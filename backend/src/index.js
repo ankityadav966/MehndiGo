@@ -895,52 +895,91 @@ const handleAdminVerifyOtp = async (c) => {
 };
 
 const handleUploadSignature = async (c) => {
+  const u = getUserFromHeader(c);
+  if (!u || !u.id) {
+    return jsonRes(c, false, null, "Unauthorized access", 401);
+  }
+
+  const cloudName = c.env?.CLOUDINARY_CLOUD_NAME || "dair21jov";
+  const apiKey = c.env?.CLOUDINARY_API_KEY || "344422783583887";
+  const apiSecret = c.env?.CLOUDINARY_API_SECRET || "KxOubI4_DlRLsEtkP360SLlwJNg";
+
   const timestamp = Math.floor(Date.now() / 1000);
   const folder = "mehndigo/portfolio";
-  const apiSecret = "KxOubI4_DlRLsEtkP360SLlwJNg";
-  const apiKey = "344422783583887";
-  const cloudName = "dair21jov";
 
-  const strToSign = `folder=${folder}&timestamp=${timestamp}${apiSecret}`;
-  const buf = new TextEncoder().encode(strToSign);
-  const hashBuf = await crypto.subtle.digest("SHA-1", buf);
-  const signature = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, "0")).join("");
+  const toSign = `folder=${folder}&timestamp=${timestamp}${apiSecret}`;
+  const msgUint8 = new TextEncoder().encode(toSign);
+  const hashBuffer = await crypto.subtle.digest("SHA-1", msgUint8);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const signature = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 
   return jsonRes(c, true, {
     signature,
     timestamp,
     folder,
     api_key: apiKey,
-    cloud_name: cloudName
-  }, "Upload signature generated");
+    cloud_name: cloudName,
+  }, "Upload signature generated successfully");
 };
 
 const handleFileUpload = async (c) => {
-  let fileUrl = "";
-  try {
-    const body = await c.req.json().catch(() => ({}));
-    fileUrl = body.url || body.image_url || body.media_url || body.file || body.data;
-  } catch (e) { }
-
-  if (!fileUrl) {
-    try {
-      const formData = await c.req.parseBody().catch(() => ({}));
-      const fileObj = formData.media || formData.file || formData.image;
-      if (typeof fileObj === "string") {
-        fileUrl = fileObj;
-      }
-    } catch (err) { }
+  const u = getUserFromHeader(c);
+  if (!u || !u.id) {
+    return jsonRes(c, false, null, "Unauthorized access", 401);
   }
 
-  const finalUrl = fileUrl || "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=800";
-  return jsonRes(c, true, {
-    url: finalUrl,
-    data: [
-      {
-        url: finalUrl
-      }
-    ]
-  }, "File Uploaded Successfully");
+  const cloudName = c.env?.CLOUDINARY_CLOUD_NAME || "dair21jov";
+  const apiKey = c.env?.CLOUDINARY_API_KEY || "344422783583887";
+  const apiSecret = c.env?.CLOUDINARY_API_SECRET || "KxOubI4_DlRLsEtkP360SLlwJNg";
+
+  let body = {};
+  try {
+    body = await c.req.parseBody();
+  } catch (e) {
+    body = await c.req.json().catch(() => ({}));
+  }
+
+  const file = body.media || body.file || body.image;
+  if (!file) {
+    return jsonRes(c, false, null, "No file provided for upload", 400);
+  }
+
+  const isVideo = body.type === "video" || body.is_video === "true" || body.is_video === true;
+  const resourceType = isVideo ? "video" : "image";
+  const timestamp = Math.floor(Date.now() / 1000);
+  const folder = "mehndigo/portfolio";
+
+  const toSign = `folder=${folder}&timestamp=${timestamp}${apiSecret}`;
+  const msgUint8 = new TextEncoder().encode(toSign);
+  const hashBuffer = await crypto.subtle.digest("SHA-1", msgUint8);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const signature = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("api_key", apiKey);
+  formData.append("timestamp", String(timestamp));
+  formData.append("folder", folder);
+  formData.append("signature", signature);
+
+  const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`, {
+    method: "POST",
+    body: formData,
+  });
+
+  const uploadData = await uploadRes.json().catch(() => ({}));
+  if (!uploadRes.ok || !uploadData.secure_url) {
+    return jsonRes(c, false, null, uploadData.error?.message || "Cloudinary upload failed", uploadRes.status || 500);
+  }
+
+  return jsonRes(c, true, [{
+    url: uploadData.secure_url,
+    secure_url: uploadData.secure_url,
+    public_id: uploadData.public_id,
+    resource_type: uploadData.resource_type || resourceType,
+    format: uploadData.format,
+    bytes: uploadData.bytes,
+  }], "Media uploaded successfully");
 };
 
 // Route Registration Helper
@@ -1211,6 +1250,16 @@ const handleGetProfile = async (c) => {
   });
 };
 
+const sanitizeStorageUrl = (val) => {
+  if (!val || typeof val !== "string") return null;
+  const trimmed = val.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("file://") || trimmed.startsWith("content://") || trimmed.startsWith("ph://") || trimmed.startsWith("blob:") || trimmed.startsWith("assets-library://")) {
+    return null;
+  }
+  return trimmed;
+};
+
 const handleUpdateProfile = async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
@@ -1221,7 +1270,8 @@ const handleUpdateProfile = async (c) => {
   const name = body.full_name || body.name;
   const email = body.email;
   const phone = body.phone;
-  const avatar = body.profile_image || body.avatar;
+  const rawAvatar = body.profile_image || body.avatar;
+  const avatar = sanitizeStorageUrl(rawAvatar);
 
   if (name || email || phone || avatar) {
     await db.run(
@@ -1295,7 +1345,8 @@ const handleUpdateArtistProfile = async (c) => {
   const email = body.email;
   const phone = body.phone;
   const rawAvatar = body.profile_image || body.profileImage || body.avatar || body.selfie_image;
-  const avatar = await resolveFileValue(rawAvatar);
+  const resolvedAvatar = await resolveFileValue(rawAvatar);
+  const avatar = sanitizeStorageUrl(resolvedAvatar);
 
   if (name || email || phone || avatar) {
     await db.run(
@@ -1316,11 +1367,11 @@ const handleUpdateArtistProfile = async (c) => {
   const pincode = body.pincode;
   const languages = body.languages;
   const rawCover = body.cover_image || body.coverImage;
-  const coverImage = await resolveFileValue(rawCover);
+  const coverImage = sanitizeStorageUrl(await resolveFileValue(rawCover));
   const rawFront = body.aadhaar_front || body.aadhaarFront;
-  const aadhaarFront = await resolveFileValue(rawFront);
+  const aadhaarFront = sanitizeStorageUrl(await resolveFileValue(rawFront));
   const rawBack = body.aadhaar_back || body.aadhaarBack;
-  const aadhaarBack = await resolveFileValue(rawBack);
+  const aadhaarBack = sanitizeStorageUrl(await resolveFileValue(rawBack));
   const latitude = body.latitude;
   const longitude = body.longitude;
 

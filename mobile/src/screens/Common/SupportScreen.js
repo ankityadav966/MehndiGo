@@ -62,7 +62,7 @@ export default function SupportScreen({ navigation }) {
       const combined = Array.from(ticketMap.values()).sort((a, b) => b.id - a.id);
       setTickets(combined);
     } catch (err) {
-      console.log("Failed to fetch tickets:", err.message);
+      if (__DEV__) console.log("Failed to fetch tickets:", err.message);
     } finally {
       setLoadingTickets(false);
     }

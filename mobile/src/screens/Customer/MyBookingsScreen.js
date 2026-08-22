@@ -1,5 +1,5 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   FlatList,
   Image,
@@ -10,12 +10,14 @@ import {
   ActivityIndicator,
   RefreshControl,
   StatusBar,
-  Linking
+  Linking,
+  Platform
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import { useAuth } from "../../context/AuthContext";
 import { getBookingHistory } from "../../services/booking";
+import { BASE_URL } from "../../services/api";
 import { formatServiceDate, formatTime } from "../../utils/date";
 
 export default function MyBookingsScreen({ navigation }) {
@@ -52,7 +54,7 @@ export default function MyBookingsScreen({ navigation }) {
     return LOCAL_CATEGORY_IMAGES.custom;
   };
 
-  const resolveBookingImage = (item) => {
+  const resolveBookingImage = useCallback((item) => {
     if (imageErrors[item.id]) {
       return getCategoryFallback(item);
     }
@@ -63,18 +65,17 @@ export default function MyBookingsScreen({ navigation }) {
     if (rawUri.startsWith("http://") || rawUri.startsWith("https://") || rawUri.startsWith("file://")) {
       return { uri: rawUri };
     }
-    const { BASE_URL } = require("../../services/api");
     const cleanBase = (BASE_URL || "").replace(/\/api\/v1\/?$/, "");
     const cleanPath = rawUri.startsWith("/") ? rawUri : `/${rawUri}`;
     return { uri: `${cleanBase}${cleanPath}` };
-  };
+  }, [imageErrors]);
 
   const fetchHistory = useCallback(async () => {
     try {
       const data = await getBookingHistory();
       setBookings(data || []);
     } catch (e) {
-      console.log("Failed to fetch booking history:", e.message);
+      if (__DEV__) console.log("Failed to fetch booking history:", e.message);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -93,7 +94,7 @@ export default function MyBookingsScreen({ navigation }) {
     fetchHistory();
   };
 
-  const getFilteredBookings = () => {
+  const filteredData = useMemo(() => {
     return bookings.filter((item) => {
       const status = String(item.detailed_status || item.booking_status || item.status || "").toUpperCase();
       if (selectedTab === "All") return true;
@@ -107,9 +108,7 @@ export default function MyBookingsScreen({ navigation }) {
         return ["CANCELLED", "REJECTED", "REFUNDED"].includes(status);
       }
     });
-  };
-
-  const filteredData = getFilteredBookings();
+  }, [bookings, selectedTab]);
 
   const getStatusBadgeConfig = (statusStr) => {
     const st = String(statusStr || "").toUpperCase();
@@ -134,7 +133,7 @@ export default function MyBookingsScreen({ navigation }) {
     return { bg: "#FEF2F2", text: "#DC2626", label: "Cancelled" };
   };
 
-  const renderBookingCard = ({ item }) => {
+  const renderBookingCard = useCallback(({ item }) => {
     const status = item.detailed_status || item.booking_status || "PENDING";
     const statusConfig = getStatusBadgeConfig(status);
 
@@ -232,7 +231,7 @@ export default function MyBookingsScreen({ navigation }) {
         </View>
       </TouchableOpacity>
     );
-  };
+  }, [currentCardBg, currentBorderColor, currentTextColor, currentSecTextColor, navigation, resolveBookingImage]);
 
   const filterTabs = ["All", "Pending", "Accepted", "Completed", "Cancelled"];
 
@@ -308,6 +307,10 @@ export default function MyBookingsScreen({ navigation }) {
           data={filteredData}
           keyExtractor={(item) => String(item.id)}
           renderItem={renderBookingCard}
+          initialNumToRender={8}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          removeClippedSubviews={Platform.OS === "android"}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[Colors.primary]} />
           }

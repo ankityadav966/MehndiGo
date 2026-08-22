@@ -459,9 +459,9 @@ export async function setPendingDeepLink(routeObj) {
   if (!routeObj) return;
   try {
     await AsyncStorage.setItem(STORAGE_KEYS.PENDING_DEEP_LINK, JSON.stringify(routeObj));
-    console.log("[DeepLink Gate] Pending deep link preserved:", routeObj.screen);
+    if (__DEV__) console.log("[DeepLink Gate] Pending deep link preserved:", routeObj.screen);
   } catch (err) {
-    console.log("[DeepLink Gate] Error preserving deep link:", err.message);
+    if (__DEV__) console.log("[DeepLink Gate] Error preserving deep link:", err.message);
   }
 }
 
@@ -471,7 +471,7 @@ export async function getPendingDeepLink() {
     if (!raw) return null;
     return JSON.parse(raw);
   } catch (err) {
-    console.log("[DeepLink Gate] Error reading pending deep link:", err.message);
+    if (__DEV__) console.log("[DeepLink Gate] Error reading pending deep link:", err.message);
     return null;
   }
 }
@@ -480,7 +480,7 @@ export async function clearPendingDeepLink() {
   try {
     await AsyncStorage.removeItem(STORAGE_KEYS.PENDING_DEEP_LINK);
   } catch (err) {
-    console.log("[DeepLink Gate] Error clearing pending deep link:", err.message);
+    if (__DEV__) console.log("[DeepLink Gate] Error clearing pending deep link:", err.message);
   }
 }
 
@@ -493,7 +493,7 @@ export async function consumePendingDeepLink(navigation, isAuthenticated) {
     const pending = await getPendingDeepLink();
     if (pending && pending.screen) {
       await clearPendingDeepLink();
-      console.log("[DeepLink Gate] Resuming pending deep link destination:", pending.screen, pending.params);
+      if (__DEV__) console.log("[DeepLink Gate] Resuming pending deep link destination:", pending.screen, pending.params);
       if (pending.params && Object.keys(pending.params).length > 0) {
         navigation.navigate(pending.screen, pending.params);
       } else {
@@ -502,7 +502,7 @@ export async function consumePendingDeepLink(navigation, isAuthenticated) {
       return true;
     }
   } catch (err) {
-    console.log("[DeepLink Gate] Failed to resume pending deep link:", err.message);
+    if (__DEV__) console.log("[DeepLink Gate] Failed to resume pending deep link:", err.message);
   }
   return false;
 }
@@ -521,7 +521,7 @@ export async function handleDeepLinkNavigation(url, navigation, isAuthenticated 
     const resolved = resolveDeepLink(url);
 
     if (!resolved.isValid) {
-      console.log(`[DeepLink Dispatcher] Skipped invalid URL: ${url} (${resolved.error})`);
+      if (__DEV__) console.log(`[DeepLink Dispatcher] Skipped invalid URL: ${url} (${resolved.error})`);
       return;
     }
 
@@ -529,13 +529,13 @@ export async function handleDeepLinkNavigation(url, navigation, isAuthenticated 
     if (resolved.referralCode) {
       try {
         await AsyncStorage.setItem(STORAGE_KEYS.PENDING_REFERRAL_CODE, resolved.referralCode);
-        console.log(`[DeepLink Dispatcher] Captured referral code: ${resolved.referralCode}`);
+        if (__DEV__) console.log(`[DeepLink Dispatcher] Captured referral code: ${resolved.referralCode}`);
       } catch (e) {}
     }
 
     // If resource requires authentication and user is logged out:
     if (resolved.requiresAuth && !isAuthenticated) {
-      console.log(`[DeepLink Dispatcher] Target ${resolved.screen} requires auth. Redirecting to Login.`);
+      if (__DEV__) console.log(`[DeepLink Dispatcher] Target ${resolved.screen} requires auth. Redirecting to Login.`);
       await setPendingDeepLink(resolved);
       navigation.navigate("Login");
       return;
@@ -543,7 +543,7 @@ export async function handleDeepLinkNavigation(url, navigation, isAuthenticated 
 
     // Direct navigation to target
     if (resolved.screen) {
-      console.log(`[DeepLink Dispatcher] Navigating to ${resolved.screen} with params:`, resolved.params);
+      if (__DEV__) console.log(`[DeepLink Dispatcher] Navigating to ${resolved.screen} with params:`, resolved.params);
       if (resolved.params && Object.keys(resolved.params).length > 0) {
         navigation.navigate(resolved.screen, resolved.params);
       } else {

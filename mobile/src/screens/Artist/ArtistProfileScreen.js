@@ -137,7 +137,7 @@ export default function ArtistProfileScreen({ navigation }) {
         }
       }
     } catch (e) {
-      console.log("Could not open link:", e.message);
+      if (__DEV__) console.log("Could not open link:", e.message);
       const webUrl = platform === "instagram" ? `https://instagram.com/${handle}` : (handle.startsWith("http") ? handle : `https://facebook.com/${handle}`);
       Linking.openURL(webUrl).catch(() => Alert.alert("Error", "Could not open link."));
     }
@@ -254,9 +254,13 @@ export default function ArtistProfileScreen({ navigation }) {
           // Update local profile state
           setProfile((prev) => ({
             ...prev,
+            profile_image: uploadedUrl,
+            selfie_image: uploadedUrl,
+            avatar: uploadedUrl,
             user: {
               ...prev?.user,
               profile_image: uploadedUrl,
+              avatar: uploadedUrl,
             },
           }));
 
@@ -264,7 +268,7 @@ export default function ArtistProfileScreen({ navigation }) {
         }
       }
     } catch (err) {
-      console.log("Failed to upload avatar:", err);
+      if (__DEV__) console.log("Failed to upload avatar:", err);
       Alert.alert("Error", err.message || "Failed to upload avatar.");
     } finally {
       setProfileLoading(false);
@@ -277,7 +281,7 @@ export default function ArtistProfileScreen({ navigation }) {
       const servicesData = await getArtistServices().catch(() => []);
       setProfile({ ...data, services: servicesData });
     } catch (err) {
-      console.log("Failed to fetch artist details:", err?.message);
+      if (__DEV__) console.log("Failed to fetch artist details:", err?.message);
     } finally {
       setProfileLoading(false);
     }
@@ -288,7 +292,7 @@ export default function ArtistProfileScreen({ navigation }) {
       const data = await getArtistPortfolio();
       setPortfolioItems(data || []);
     } catch (err) {
-      console.log("Failed to fetch portfolio items:", err?.message);
+      if (__DEV__) console.log("Failed to fetch portfolio items:", err?.message);
     } finally {
       setPortfolioLoading(false);
     }
@@ -303,7 +307,7 @@ export default function ArtistProfileScreen({ navigation }) {
         fetchArtistPortfolioItems(),
       ]);
     } catch (err) {
-      console.log("Failed to refresh profile:", err);
+      if (__DEV__) console.log("Failed to refresh profile:", err);
     } finally {
       setRefreshingState(false);
     }
@@ -349,7 +353,7 @@ export default function ArtistProfileScreen({ navigation }) {
           if (isService) {
             navigation.navigate("ServiceDetails", { id: item.id });
           } else if (isVideo) {
-            console.log("[PORTFOLIO VIDEO URL]", item.video_url);
+            if (__DEV__) console.log("[PORTFOLIO VIDEO URL]", item.video_url);
             navigation.navigate("VideoPlayer", {
               videoUrl: item.video_url,
               title: item.title || "Portfolio Video"
@@ -448,13 +452,11 @@ export default function ArtistProfileScreen({ navigation }) {
             <View style={styles.avatarContainer}>
               <Image
                 source={
-                  profile?.user?.profile_image
-                    ? { uri: resolveImage(profile.user.profile_image) }
-                    : (profile?.selfie_image
-                      ? { uri: resolveImage(profile.selfie_image) }
-                      : (user?.profile_image || user?.avatar
-                        ? { uri: resolveImage(user.profile_image || user.avatar) }
-                        : require("../../assets/images/Henna.jpg")))
+                  (() => {
+                    const raw = profile?.profile_image || profile?.user?.profile_image || profile?.selfie_image || profile?.avatar || user?.profile_image || user?.avatar;
+                    const resolved = resolveImage(raw);
+                    return resolved ? { uri: resolved } : require("../../assets/images/Henna.jpg");
+                  })()
                 }
                 style={styles.avatar}
               />

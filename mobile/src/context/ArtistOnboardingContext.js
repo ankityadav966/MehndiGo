@@ -81,7 +81,7 @@ export function ArtistOnboardingProvider({ children }) {
 
     try {
       if (!silent) setIsLoading(true);
-      console.log(`[ARTIST_APPROVAL_DEBUG] BEFORE refreshArtistProfile -> artistApproved: ${artistApproved} | verificationStatus: ${verificationStatus}`);
+      if (__DEV__) console.log(`[ARTIST_APPROVAL_DEBUG] BEFORE refreshArtistProfile -> artistApproved: ${artistApproved} | verificationStatus: ${verificationStatus}`);
       const res = await getArtistDetails();
       const profile = res?.data || res;
 
@@ -109,16 +109,16 @@ export function ArtistOnboardingProvider({ children }) {
           effectiveStatus = "NOT_SUBMITTED";
         }
 
-        console.log(`[ARTIST_APPROVAL_DEBUG] USER_ID: ${user?.id || profile.user_id || profile.id}`);
-        console.log(`[ARTIST_APPROVAL_DEBUG] ROLE: ${user?.role || profile.user?.role}`);
-        console.log(`[ARTIST_APPROVAL_DEBUG] ARTIST_PROFILE_ID: ${profile.id || profile.user_id}`);
-        console.log(`[ARTIST_APPROVAL_DEBUG] API_STATUS: ${profile.status}`);
-        console.log(`[ARTIST_APPROVAL_DEBUG] VERIFICATION_STATUS: ${status}`);
-        console.log(`[ARTIST_APPROVAL_DEBUG] EFFECTIVE_STATUS: ${effectiveStatus}`);
-        console.log(`[ARTIST_APPROVAL_DEBUG] IS_VERIFIED: ${profile.user?.is_verified ?? user?.is_verified}`);
-        console.log(`[ARTIST_APPROVAL_DEBUG] IS_ACTIVE: ${profile.user?.is_active ?? user?.is_active}`);
-        console.log(`[ARTIST_APPROVAL_DEBUG] ONBOARDING_COMPLETE: ${complete}`);
-        console.log(`[ARTIST_APPROVAL_DEBUG] ARTIST_APPROVED_CONTEXT: ${isApproved}`);
+        if (__DEV__) console.log(`[ARTIST_APPROVAL_DEBUG] USER_ID: ${user?.id || profile.user_id || profile.id}`);
+        if (__DEV__) console.log(`[ARTIST_APPROVAL_DEBUG] ROLE: ${user?.role || profile.user?.role}`);
+        if (__DEV__) console.log(`[ARTIST_APPROVAL_DEBUG] ARTIST_PROFILE_ID: ${profile.id || profile.user_id}`);
+        if (__DEV__) console.log(`[ARTIST_APPROVAL_DEBUG] API_STATUS: ${profile.status}`);
+        if (__DEV__) console.log(`[ARTIST_APPROVAL_DEBUG] VERIFICATION_STATUS: ${status}`);
+        if (__DEV__) console.log(`[ARTIST_APPROVAL_DEBUG] EFFECTIVE_STATUS: ${effectiveStatus}`);
+        if (__DEV__) console.log(`[ARTIST_APPROVAL_DEBUG] IS_VERIFIED: ${profile.user?.is_verified ?? user?.is_verified}`);
+        if (__DEV__) console.log(`[ARTIST_APPROVAL_DEBUG] IS_ACTIVE: ${profile.user?.is_active ?? user?.is_active}`);
+        if (__DEV__) console.log(`[ARTIST_APPROVAL_DEBUG] ONBOARDING_COMPLETE: ${complete}`);
+        if (__DEV__) console.log(`[ARTIST_APPROVAL_DEBUG] ARTIST_APPROVED_CONTEXT: ${isApproved}`);
 
         setVerificationStatus(effectiveStatus);
         setRejectionReason(reason);

@@ -26,7 +26,7 @@ import {
   removeFavorite,
   getFavorites
 } from "../../services/customer";
-import { getNormalizedUrl } from "../../services/api";
+import { resolveImage } from "../../utils/imageHelper";
 import { getThumbnailUrl } from "../../utils/cloudinary";
 import { getActiveAddress } from "../../utils/locationManager";
 import { createArtistDeepLink } from "../../services/deepLink";
@@ -90,7 +90,7 @@ export default function ArtistListingScreen({ route, navigation }) {
       });
       setFavoriteArtistIds(allFavIds);
     } catch (e) {
-      console.log("Failed to load metadata/favorites:", e.message);
+      if (__DEV__) console.log("Failed to load metadata/favorites:", e.message);
     }
   };
 
@@ -153,7 +153,7 @@ export default function ArtistListingScreen({ route, navigation }) {
       setPage(pageNum);
     } catch (err) {
       if (reqId === reqSeqRef.current) {
-        console.log("Failed to load artists listing:", err.message);
+        if (__DEV__) console.log("Failed to load artists listing:", err.message);
       }
     } finally {
       if (reqId === reqSeqRef.current) {
@@ -243,7 +243,7 @@ export default function ArtistListingScreen({ route, navigation }) {
         setFavoriteArtistIds((prev) => [...prev, artistId]);
       }
     } catch (e) {
-      console.log("Failed to toggle favorite:", e.message);
+      if (__DEV__) console.log("Failed to toggle favorite:", e.message);
     }
   };
 
@@ -260,7 +260,7 @@ export default function ArtistListingScreen({ route, navigation }) {
         url: shareUrl
       });
     } catch (e) {
-      console.log("Failed to share profile:", e.message);
+      if (__DEV__) console.log("Failed to share profile:", e.message);
     }
   };
 
@@ -273,15 +273,15 @@ export default function ArtistListingScreen({ route, navigation }) {
   ];
 
   // Render List View Item Card
-  const renderListArtistCard = ({ item }) => {
+  const renderListArtistCard = useCallback(({ item }) => {
     const artistId = item.id || item.user_id || item.artist_id;
+    const artistName = item.name || item.full_name || item.user?.name || "Verified Artist";
     const isFav = favoriteArtistIds.includes(item.id) || favoriteArtistIds.includes(item.user_id) || favoriteArtistIds.includes(item.artist_id) || favoriteArtistIds.includes(artistId);
     const minPrice = item.starting_price || item.startingPrice || item.price || item.services?.[0]?.minimum_price || item.services?.[0]?.price;
     const distanceVal = item.distance ? `${Number(item.distance).toFixed(1)} km` : null;
     const categoryName = item.services?.[0]?.category || item.categories || "General Mehndi";
-    const artistName = item.name || item.full_name || item.user?.name || "Mehndi Artist";
-    const rawImage = item.profile_image || item.profileImage || item.avatar || item.user?.profile_image || (Array.isArray(item.portfolio_images) && item.portfolio_images[0]?.url) || (Array.isArray(item.portfolio) && item.portfolio[0]?.url);
-    const avatarUri = getNormalizedUrl(rawImage) || `https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=F3E8FF&color=7C3AED`;
+    const rawImage = item.profile_image || item.profileImage || item.avatar || item.user?.profile_image || item.selfie_image || item.user?.avatar || (Array.isArray(item.portfolio_images) && item.portfolio_images[0]?.url) || (Array.isArray(item.portfolio) && item.portfolio[0]?.url);
+    const avatarUri = resolveImage(rawImage) || `https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=F3E8FF&color=7C3AED`;
 
     return (
       <TouchableOpacity
@@ -371,7 +371,7 @@ export default function ArtistListingScreen({ route, navigation }) {
         </View>
       </TouchableOpacity>
     );
-  };
+  }, [favoriteArtistIds, navigation]);
 
   return (
     <View style={styles.container}>
@@ -581,7 +581,7 @@ export default function ArtistListingScreen({ route, navigation }) {
           renderItem={renderListArtistCard}
           initialNumToRender={6}
           maxToRenderPerBatch={10}
-          windowSize={10}
+          windowSize={5}
           removeClippedSubviews={Platform.OS === "android"}
           refreshControl={
             <RefreshControl

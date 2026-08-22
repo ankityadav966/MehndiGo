@@ -42,7 +42,7 @@ export default function SearchScreen({ navigation }) {
       setTrendingSearches(trending || []);
       setPopularCategories((cats || []).slice(0, 4));
     } catch (e) {
-      console.log("Failed to load initial search data:", e.message);
+      if (__DEV__) console.log("Failed to load initial search data:", e.message);
     }
   }, []);
 
@@ -68,7 +68,7 @@ export default function SearchScreen({ navigation }) {
         const list = await getSearchSuggestions(query);
         setSuggestions(list || []);
       } catch (err) {
-        console.log("Failed to load suggestions:", err.message);
+        if (__DEV__) console.log("Failed to load suggestions:", err.message);
       } finally {
         setSuggestionsLoading(false);
       }
@@ -89,7 +89,7 @@ export default function SearchScreen({ navigation }) {
       await loadSearchData(); // Refresh history
       navigation.navigate("ArtistListing", { searchQuery: term });
     } catch (err) {
-      console.log("Failed to save search history:", err.message);
+      if (__DEV__) console.log("Failed to save search history:", err.message);
       navigation.navigate("ArtistListing", { searchQuery: term });
     } finally {
       setLoading(false);
@@ -102,7 +102,7 @@ export default function SearchScreen({ navigation }) {
       await deleteRecentSearch(queryId);
       setRecentSearches((prev) => prev.filter((item) => item.id !== queryId));
     } catch (err) {
-      console.log("Failed to delete search item:", err.message);
+      if (__DEV__) console.log("Failed to delete search item:", err.message);
     }
   };
 
@@ -112,7 +112,7 @@ export default function SearchScreen({ navigation }) {
       await deleteRecentSearch("all");
       setRecentSearches([]);
     } catch (err) {
-      console.log("Failed to clear search history:", err.message);
+      if (__DEV__) console.log("Failed to clear search history:", err.message);
     }
   };
 

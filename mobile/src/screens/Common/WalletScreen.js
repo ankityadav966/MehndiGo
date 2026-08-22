@@ -84,7 +84,7 @@ export default function WalletScreen({ navigation }) {
     const rechargeAmount = Number(customAmount || 500);
 
     try {
-      console.log("[WALLET_SCREEN] Sending /wallet/add-money verification:", data);
+      if (__DEV__) console.log("[WALLET_SCREEN] Sending /wallet/add-money verification:", data);
       await apiRequest("POST", "/wallet/add-money", {
         razorpay_order_id: data.razorpay_order_id || sessionObj?.order_id || orderId,
         razorpay_payment_id: data.razorpay_payment_id,
@@ -133,7 +133,7 @@ export default function WalletScreen({ navigation }) {
 
     let sessionData = null;
     try {
-      console.log("[WALLET_SCREEN] Creating recharge payment session for ₹", amt);
+      if (__DEV__) console.log("[WALLET_SCREEN] Creating recharge payment session for ₹", amt);
       sessionData = await createPaymentSession(null, amt, "recharge");
 
       if (!sessionData || !sessionData.order_id || (!sessionData.key_id && !sessionData.key)) {

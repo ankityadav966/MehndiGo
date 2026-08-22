@@ -16,7 +16,10 @@
     "RAZORPAY_KEY_SECRET": "AJSFmZyxn471PmOT8OGRB768",
     "EMAIL_USER": "sonudonyadav87@gmail.com",
     "EMAIL_PASS": "kwemkkniwxyohmvm",
-    "RESEND_API_KEY": ""
+    "RESEND_API_KEY": "",
+    "CLOUDINARY_CLOUD_NAME": "dair21jov",
+    "CLOUDINARY_API_KEY": "344422783583887",
+    "CLOUDINARY_API_SECRET": "KxOubI4_DlRLsEtkP360SLlwJNg"
   },
   "d1_databases": [
     {

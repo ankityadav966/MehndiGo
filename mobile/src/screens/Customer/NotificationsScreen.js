@@ -30,7 +30,7 @@ export default function NotificationsScreen({ navigation }) {
       const data = await getNotificationHistory(1, 50);
       setNotifications(data?.notifications || data || []);
     } catch (err) {
-      console.log("Failed to load notifications list:", err.message);
+      if (__DEV__) console.log("Failed to load notifications list:", err.message);
     } finally {
       setLoading(false);
       setRefreshing(false);

@@ -47,7 +47,7 @@ export default function ReviewsScreen({ navigation }) {
         setReviews([]);
       }
     } catch (err) {
-      console.log("Failed to load reviews:", err.message);
+      if (__DEV__) console.log("Failed to load reviews:", err.message);
     } finally {
       setLoading(false);
       setRefreshing(false);

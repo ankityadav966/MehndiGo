@@ -32,7 +32,7 @@ export default function ChatListScreen({ navigation }) {
       const data = await getChatList();
       setChats(data);
     } catch (err) {
-      console.log("Error fetching chat list:", err.message);
+      if (__DEV__) console.log("Error fetching chat list:", err.message);
     } finally {
       setLoading(false);
       setRefreshing(false);

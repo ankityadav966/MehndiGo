@@ -42,13 +42,13 @@ export async function openRazorpayCheckout(
   const isNative = isRazorpayNativeAvailable();
 
   if (isNative) {
-    console.log("[RAZORPAY_LAUNCHER] Launching Native Razorpay SDK Sheet");
+    if (__DEV__) console.log("[RAZORPAY_LAUNCHER] Launching Native Razorpay SDK Sheet");
     try {
       const data = await RazorpayCheckout.open(options);
-      console.log("[RAZORPAY_LAUNCHER] Native checkout success:", data);
+      if (__DEV__) console.log("[RAZORPAY_LAUNCHER] Native checkout success:", data);
       if (onSuccess) onSuccess(data);
     } catch (error) {
-      console.log("[RAZORPAY_LAUNCHER] Native checkout response/cancel:", error);
+      if (__DEV__) console.log("[RAZORPAY_LAUNCHER] Native checkout response/cancel:", error);
       if (
         error &&
         (error.code === 0 ||
@@ -61,7 +61,7 @@ export async function openRazorpayCheckout(
       }
     }
   } else {
-    console.log("[RAZORPAY_LAUNCHER] Native Razorpay not present (Expo Go). Opening in-app Razorpay Web Checkout.");
+    if (__DEV__) console.log("[RAZORPAY_LAUNCHER] Native Razorpay not present (Expo Go). Opening in-app Razorpay Web Checkout.");
     if (onWebFallback) {
       onWebFallback(options);
     } else {

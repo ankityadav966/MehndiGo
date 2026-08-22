@@ -8,13 +8,14 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import { useArtistOnboarding } from "../../context/ArtistOnboardingContext";
 import { createArtistProfile } from "../../services/artist";
 import { secureStorage } from "../../utils/storage";
 
 export default function ReviewSubmitScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
   const { artistDetails, aadhaarFiles, profilePhoto, submitArtistProfile } =
     useArtistOnboarding();
   const [loading, setLoading] = useState(false);
@@ -164,7 +165,7 @@ export default function ReviewSubmitScreen({ navigation }) {
         </View>
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 20) }]}>
         <TouchableOpacity
           style={[styles.submitBtn, loading && styles.disabledBtn]}
           onPress={handleSubmit}

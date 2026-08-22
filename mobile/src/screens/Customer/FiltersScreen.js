@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 const categories = [
   "Mehndi",
@@ -28,6 +28,7 @@ const priceRanges = [
 const ratings = ["4.5+", "4.0+", "3.5+", "3.0+"];
 
 export default function FiltersScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
   const [selectedCategories, setSelectedCategories] = useState([]);
   const [selectedPrice, setSelectedPrice] = useState("");
   const [selectedRating, setSelectedRating] = useState("");
@@ -163,7 +164,7 @@ export default function FiltersScreen({ navigation }) {
         </View>
       </ScrollView>
 
-      <TouchableOpacity style={styles.applyBtn}>
+      <TouchableOpacity style={[styles.applyBtn, { bottom: Math.max(insets.bottom, 20) }]}>
         <Text style={styles.applyBtnText}>Apply Filters</Text>
       </TouchableOpacity>
     </SafeAreaView>

@@ -6,7 +6,7 @@ export async function getLiveCategories() {
     const list = res?.data || res?.categories || (Array.isArray(res) ? res : []);
     return Array.isArray(list) ? list : [];
   } catch (err) {
-    console.log("Failed to fetch live categories:", err.message);
+    if (__DEV__) console.log("Failed to fetch live categories:", err.message);
     throw err;
   }
 }

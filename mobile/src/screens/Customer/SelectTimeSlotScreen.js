@@ -81,7 +81,7 @@ export default function SelectTimeSlotScreen({ route, navigation }) {
           setSelectedSlotId(null);
         }
       } catch (err) {
-        console.log("Error loading availability slots:", err.message);
+        if (__DEV__) console.log("Error loading availability slots:", err.message);
         Alert.alert("Error", "Failed to fetch time slots for selected date.");
       } finally {
         setLoading(false);

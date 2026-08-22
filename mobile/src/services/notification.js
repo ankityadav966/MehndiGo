@@ -8,7 +8,7 @@ let Notifications = null;
 try {
   Notifications = require("expo-notifications");
 } catch (err) {
-  console.log("[PushNotification] expo-notifications module not loaded:", err.message);
+  if (__DEV__) console.log("[PushNotification] expo-notifications module not loaded:", err.message);
 }
 
 try {
@@ -24,7 +24,7 @@ try {
     });
   }
 } catch (err) {
-  console.log("[PushNotification] Skipped notification handler set:", err.message);
+  if (__DEV__) console.log("[PushNotification] Skipped notification handler set:", err.message);
 }
 
 // Environment Detection
@@ -65,7 +65,7 @@ export async function registerForPushNotificationsAsync() {
   try {
     // 2. Physical Device check
     if (!Device.isDevice) {
-      console.log("[PushNotification] Physical device required for push notifications. Emulator detected.");
+      if (__DEV__) console.log("[PushNotification] Physical device required for push notifications. Emulator detected.");
       return null;
     }
 
@@ -74,20 +74,20 @@ export async function registerForPushNotificationsAsync() {
     let finalStatus = existingStatus;
 
     if (existingStatus !== "granted") {
-      console.log("[PushNotification] Requesting notification permissions...");
+      if (__DEV__) console.log("[PushNotification] Requesting notification permissions...");
       const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
     }
 
-    console.log(`[PushNotification] Permission status: ${finalStatus}`);
+    if (__DEV__) console.log(`[PushNotification] Permission status: ${finalStatus}`);
     if (finalStatus !== "granted") {
-      console.log("[PushNotification] Notification permission denied by user.");
+      if (__DEV__) console.log("[PushNotification] Notification permission denied by user.");
       return null;
     }
 
     // 4. Android Notification Channels
     if (Platform.OS === "android") {
-      console.log("[PushNotification] Configuring Android notification channels...");
+      if (__DEV__) console.log("[PushNotification] Configuring Android notification channels...");
       await Notifications.setNotificationChannelAsync("default", {
         name: "Default",
         importance: Notifications.AndroidImportance.MAX,
@@ -130,7 +130,7 @@ export async function registerForPushNotificationsAsync() {
     }
 
     // 5. Fetch Expo Push Token
-    console.log("[PushNotification] Fetching Expo Push Token...");
+    if (__DEV__) console.log("[PushNotification] Fetching Expo Push Token...");
     let token = null;
     try {
       const tokenData = await Notifications.getExpoPushTokenAsync({
@@ -138,27 +138,27 @@ export async function registerForPushNotificationsAsync() {
       });
       token = tokenData?.data;
     } catch (tokenErr) {
-      console.log("[PushNotification] Expo token fetch notice:", tokenErr.message);
+      if (__DEV__) console.log("[PushNotification] Expo token fetch notice:", tokenErr.message);
       try {
         const deviceTokenData = await Notifications.getDevicePushTokenAsync();
         token = deviceTokenData?.data;
       } catch (devErr) {
-        console.log("[PushNotification] Device token fetch notice:", devErr.message);
+        if (__DEV__) console.log("[PushNotification] Device token fetch notice:", devErr.message);
       }
     }
 
     if (token) {
       const maskedToken = String(token).length > 20 ? `${String(token).substring(0, 18)}...${String(token).slice(-6)}` : String(token);
-      console.log(`[PushNotification] Token generated: ${maskedToken}`);
+      if (__DEV__) console.log(`[PushNotification] Token generated: ${maskedToken}`);
       // Register with backend automatically
       await sendNotificationTokenToServer(token);
     } else {
-      console.log("[PushNotification] Push token generation failed or unavailable on device.");
+      if (__DEV__) console.log("[PushNotification] Push token generation failed or unavailable on device.");
     }
 
     return token;
   } catch (err) {
-    console.log("[PushNotification] Push token fetch failed:", err.message);
+    if (__DEV__) console.log("[PushNotification] Push token fetch failed:", err.message);
     return null;
   }
 }
@@ -169,18 +169,18 @@ export async function sendNotificationTokenToServer(token) {
   if (!token) return;
   try {
     const maskedToken = String(token).length > 20 ? `${String(token).substring(0, 18)}...${String(token).slice(-6)}` : String(token);
-    console.log(`[PushNotification] Registering token for user: ${maskedToken}`);
+    if (__DEV__) console.log(`[PushNotification] Registering token for user: ${maskedToken}`);
     
     const response = await apiRequest("POST", "/notification/register-token", {
       token,
       device_type: Platform.OS === "ios" ? "IOS" : "ANDROID"
     }, true);
 
-    console.log("[PushNotification] Register token API response:", response?.message || "200 OK");
+    if (__DEV__) console.log("[PushNotification] Register token API response:", response?.message || "200 OK");
     await secureStorage.setNotificationToken(token);
-    console.log("[PushNotification] Token registration successful: true");
+    if (__DEV__) console.log("[PushNotification] Token registration successful: true");
   } catch (err) {
-    console.log("[PushNotification] Error registering push token on server:", err.message);
+    if (__DEV__) console.log("[PushNotification] Error registering push token on server:", err.message);
   }
 }
 
@@ -191,7 +191,7 @@ export async function removeNotificationToken() {
 
     await apiRequest("DELETE", "/notification/remove-token", { token }, true);
   } catch (err) {
-    console.log("[PushNotification] Error removing push token from server:", err.message);
+    if (__DEV__) console.log("[PushNotification] Error removing push token from server:", err.message);
   } finally {
     await secureStorage.removeNotificationToken();
   }
@@ -212,7 +212,7 @@ export async function scheduleLocalNotification({ title, body, data, delaySecond
         : null,
     });
   } catch (err) {
-    console.log("[PushNotification] Failed to schedule local notification:", err.message);
+    if (__DEV__) console.log("[PushNotification] Failed to schedule local notification:", err.message);
   }
 }
 
@@ -224,7 +224,7 @@ export function addNotificationReceivedListener(callback) {
     });
     return subscription;
   } catch (err) {
-    console.log("[PushNotification] Could not register notification received listener:", err.message);
+    if (__DEV__) console.log("[PushNotification] Could not register notification received listener:", err.message);
     return { remove: () => {} };
   }
 }
@@ -237,7 +237,7 @@ export function addNotificationResponseReceivedListener(callback) {
     });
     return subscription;
   } catch (err) {
-    console.log("[PushNotification] Could not register notification response listener:", err.message);
+    if (__DEV__) console.log("[PushNotification] Could not register notification response listener:", err.message);
     return { remove: () => {} };
   }
 }

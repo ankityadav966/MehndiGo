@@ -40,7 +40,7 @@ async function handleLocationUpdate(location) {
     }
 
     if (!activeTrackingConfig) {
-      console.log("[TrackingService] No active tracking config. Stopping.");
+      if (__DEV__) console.log("[TrackingService] No active tracking config. Stopping.");
       stopTracking();
       return;
     }
@@ -51,15 +51,8 @@ async function handleLocationUpdate(location) {
 
     lastUpdateTimestamp = timestamp || Date.now();
 
-    // 1. [ARTIST REAL GPS] Log
-    console.log("[ARTIST REAL GPS]");
-    console.log("latitude:", latitude);
-    console.log("longitude:", longitude);
-    console.log("accuracy:", accuracy || "High");
-    console.log("timestamp:", new Date(lastUpdateTimestamp).toISOString());
-
-    // 2. Send API Update
-    const apiRes = await updateArtistLocation({
+    // Send API Update
+    await updateArtistLocation({
       bookingId: Number(bookingId),
       artistId: Number(artistId),
       latitude,
@@ -71,13 +64,6 @@ async function handleLocationUpdate(location) {
       console.warn("[ARTIST LOCATION API] Failed:", err.message);
       return { success: false };
     });
-
-    // 3. [ARTIST LOCATION API] Log
-    console.log("[ARTIST LOCATION API]");
-    console.log("latitude:", latitude);
-    console.log("longitude:", longitude);
-    console.log("timestamp:", new Date(lastUpdateTimestamp).toISOString());
-    console.log("success:", apiRes?.success ?? true);
 
     // Update last sent location in storage
     await AsyncStorage.setItem(
@@ -113,11 +99,11 @@ export async function startTracking(bookingId, artistId) {
   try {
     // Duplicate watcher guard: if watcher is already active for this booking, reuse it!
     if (activeTrackingConfig && Number(activeTrackingConfig.bookingId) === Number(bookingId) && foregroundSubscription) {
-      console.log(`[TrackingService] Real GPS watcher already active for Booking ${bookingId}. Reusing existing watcher.`);
+      if (__DEV__) console.log(`[TrackingService] Real GPS watcher already active for Booking ${bookingId}. Reusing existing watcher.`);
       return;
     }
 
-    console.log(`[TrackingService] Starting REAL GPS tracking for Booking ${bookingId}...`);
+    if (__DEV__) console.log(`[TrackingService] Starting REAL GPS tracking for Booking ${bookingId}...`);
 
     // 1. Save config
     activeTrackingConfig = { bookingId, artistId };
@@ -135,9 +121,9 @@ export async function startTracking(bookingId, artistId) {
     const providerStatus = await Location.getProviderStatusAsync();
 
     // [GPS STATUS] Log
-    console.log("[GPS STATUS]");
-    console.log("permission:", fgStatus);
-    console.log("locationServicesEnabled:", providerStatus.locationServicesEnabled || providerStatus.gpsEnabled);
+    if (__DEV__) console.log("[GPS STATUS]");
+    if (__DEV__) console.log("permission:", fgStatus);
+    if (__DEV__) console.log("locationServicesEnabled:", providerStatus.locationServicesEnabled || providerStatus.gpsEnabled);
 
     if (fgStatus !== "granted") {
       throw new Error("Location permission required for live tracking. Please grant permission.");
@@ -210,7 +196,7 @@ export async function startTracking(bookingId, artistId) {
           if (freshLoc) {
             await handleLocationUpdate(freshLoc);
           } else if (elapsed > 60) {
-            console.log(`[ARTIST GPS INFO] Device stationary for ${Math.round(elapsed)}s.`);
+            if (__DEV__) console.log(`[ARTIST GPS INFO] Device stationary for ${Math.round(elapsed)}s.`);
           }
         } catch (_) {}
       }
@@ -235,10 +221,10 @@ export async function startTracking(bookingId, artistId) {
             notificationColor: "#FF4D6D"
           }
         });
-        console.log("[TrackingService] Background real GPS tracking started successfully.");
+        if (__DEV__) console.log("[TrackingService] Background real GPS tracking started successfully.");
       }
     } catch (bgErr) {
-      console.log("[TrackingService] Running in high-accuracy foreground tracking mode.");
+      if (__DEV__) console.log("[TrackingService] Running in high-accuracy foreground tracking mode.");
     }
   } catch (err) {
     console.error("[TrackingService] startTracking failed:", err.message);
@@ -251,10 +237,14 @@ export async function startTracking(bookingId, artistId) {
  */
 export async function stopTracking() {
   try {
-    console.log("[TrackingService] Stopping location tracking...");
     activeTrackingConfig = null;
     await AsyncStorage.removeItem(CONFIG_KEY);
     await AsyncStorage.removeItem(LAST_LOC_KEY);
+
+    if (staleCheckInterval) {
+      clearInterval(staleCheckInterval);
+      staleCheckInterval = null;
+    }
 
     if (foregroundSubscription) {
       try {
@@ -264,7 +254,7 @@ export async function stopTracking() {
           foregroundSubscription();
         }
       } catch (subErr) {
-        console.log("[TrackingService] Subscription removal catch:", subErr.message);
+        if (__DEV__) console.log("[TrackingService] Subscription removal catch:", subErr.message);
       }
       foregroundSubscription = null;
     }
@@ -278,7 +268,6 @@ export async function stopTracking() {
       const hasStartedBg = await TaskManager.isTaskRegisteredAsync(TRACKING_TASK_NAME);
       if (hasStartedBg) {
         await Location.stopLocationUpdatesAsync(TRACKING_TASK_NAME);
-        console.log("[TrackingService] Background location updates stopped.");
       }
     } catch (bgStopErr) {
       console.warn("[TrackingService] Failed to stop background updates:", bgStopErr.message);

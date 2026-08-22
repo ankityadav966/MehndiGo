@@ -53,7 +53,7 @@ export default function OtpScreen({ navigation, route }) {
         global.showToast(`New OTP sent to ${email || "your email"}`, "success");
       }
     } catch (e) {
-      console.log("Resend OTP error:", e);
+      if (__DEV__) console.log("Resend OTP error:", e);
       const msg = e?.response?.data?.message || e.message || "Failed to resend OTP. Please try again.";
       setError(msg);
       if (global.showToast) {
@@ -134,11 +134,11 @@ export default function OtpScreen({ navigation, route }) {
         const AsyncStorage = require("@react-native-async-storage/async-storage").default;
         await AsyncStorage.removeItem("pendingReferralCode");
       } catch (err) {
-        console.log("Failed to clear stored referral code:", err.message);
+        if (__DEV__) console.log("Failed to clear stored referral code:", err.message);
       }
       const token = await secureStorage.getAccessToken();
-      console.log("[ROLE TRACE 4] /register-verify-otp response:", JSON.stringify(data, null, 2));
-      console.log("[ROLE TRACE 5] data.user.role from API response:", data.user?.role, "| Route param role:", role);
+      if (__DEV__) console.log("[ROLE TRACE 4] /register-verify-otp response:", JSON.stringify(data, null, 2));
+      if (__DEV__) console.log("[ROLE TRACE 5] data.user.role from API response:", data.user?.role, "| Route param role:", role);
 
       const rawRole = data.user?.role || role || "";
       const userRole = (String(rawRole).toUpperCase() === "ARTIST") ? "ARTIST" : "USER";
@@ -148,7 +148,7 @@ export default function OtpScreen({ navigation, route }) {
       if (data.user) {
         await secureStorage.setUserData({ ...data.user, role: userRole, isFirstTimeArtistSignup: isFirstTimeArtist });
       }
-      console.log("[ROLE TRACE 6] Role saved in secureStorage:", userRole, "| isFirstTimeArtist:", isFirstTimeArtist);
+      if (__DEV__) console.log("[ROLE TRACE 6] Role saved in secureStorage:", userRole, "| isFirstTimeArtist:", isFirstTimeArtist);
 
       if (userRole === "ARTIST") {
         try {
@@ -156,11 +156,11 @@ export default function OtpScreen({ navigation, route }) {
             await refreshArtistProfile();
           }
         } catch (e) {
-          console.log("Failed to refresh artist details on login:", e.message);
+          if (__DEV__) console.log("Failed to refresh artist details on login:", e.message);
         }
       }
 
-      console.log("[ROLE TRACE 7] Role passed in LOGIN dispatch:", userRole);
+      if (__DEV__) console.log("[ROLE TRACE 7] Role passed in LOGIN dispatch:", userRole);
       dispatch({
         type: "LOGIN",
         payload: {
@@ -170,7 +170,7 @@ export default function OtpScreen({ navigation, route }) {
         },
       });
     } catch (error) {
-      console.log("Otp Verification error:", error);
+      if (__DEV__) console.log("Otp Verification error:", error);
       const message =
         error?.response?.data?.message || error.message || "Invalid OTP. Please try again.";
       setError(message);

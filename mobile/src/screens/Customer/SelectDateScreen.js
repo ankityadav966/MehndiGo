@@ -62,7 +62,7 @@ export default function SelectDateScreen({ route, navigation }) {
         }
         return true;
       } catch (err) {
-        console.log("Failed to check booking restrictions:", err.message);
+        if (__DEV__) console.log("Failed to check booking restrictions:", err.message);
         return true;
       }
     };
@@ -79,7 +79,7 @@ export default function SelectDateScreen({ route, navigation }) {
         // Keep unique dates
         setAvailabilityDates([...new Set(dates)]);
       } catch (err) {
-        console.log("Failed to load availability for calendar:", err.message);
+        if (__DEV__) console.log("Failed to load availability for calendar:", err.message);
       } finally {
         setLoading(false);
       }

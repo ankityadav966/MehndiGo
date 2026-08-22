@@ -79,7 +79,7 @@ export default function LeadsScreen({ route, navigation }) {
       setLeadsList(response?.leads || []);
       setStats(response?.stats || null);
     } catch (err) {
-      console.log("Failed to load leads:", err);
+      if (__DEV__) console.log("Failed to load leads:", err);
       setError(err?.message || "Something went wrong. Please check your connection.");
     } finally {
       setLoading(false);

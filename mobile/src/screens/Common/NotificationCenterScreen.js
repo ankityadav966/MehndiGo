@@ -109,7 +109,7 @@ export default function NotificationCenterScreen({ navigation }) {
       setPage(pageNum);
       setUnreadCount(res.unreadCount || 0);
     } catch (err) {
-      console.log("Error loading notification history:", err.message);
+      if (__DEV__) console.log("Error loading notification history:", err.message);
     } finally {
       setLoading(false);
       if (isRefresh) setRefreshing(false);
@@ -148,7 +148,7 @@ export default function NotificationCenterScreen({ navigation }) {
       // Navigate to details screen
       navigation.navigate("NotificationDetails", { id: item.id, notification: item });
     } catch (err) {
-      console.log("Error handling notification press:", err.message);
+      if (__DEV__) console.log("Error handling notification press:", err.message);
     }
   }, [navigation, setUnreadCount]);
 

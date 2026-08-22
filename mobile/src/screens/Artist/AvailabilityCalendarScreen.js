@@ -47,7 +47,7 @@ export default function AvailabilityCalendarScreen({ navigation }) {
           if (Array.isArray(data.working_days)) setSelectedDays(data.working_days);
         }
       } catch (err) {
-        console.log("Failed to load availability:", err.message);
+        if (__DEV__) console.log("Failed to load availability:", err.message);
       } finally {
         setLoading(false);
       }

@@ -15,7 +15,7 @@ export default function ApprovalPendingScreen({ navigation }) {
   const pollingRef = useRef(null);
   const hasNavigatedRef = useRef(false);
 
-  console.log(`[ARTIST_APPROVAL_DEBUG] CURRENT_ROUTE: ApprovalPending | VERIFICATION_STATUS: ${verificationStatus} | ARTIST_APPROVED_CONTEXT: ${artistApproved}`);
+  if (__DEV__) console.log(`[ARTIST_APPROVAL_DEBUG] CURRENT_ROUTE: ApprovalPending | VERIFICATION_STATUS: ${verificationStatus} | ARTIST_APPROVED_CONTEXT: ${artistApproved}`);
 
   // Transition handler when rejected
   useEffect(() => {
@@ -38,12 +38,12 @@ export default function ApprovalPendingScreen({ navigation }) {
       setStatusMessage(null);
     }
     try {
-      console.log(`[ARTIST_APPROVAL_DEBUG] handleCheckStatus triggered (silent: ${silent})`);
+      if (__DEV__) console.log(`[ARTIST_APPROVAL_DEBUG] handleCheckStatus triggered (silent: ${silent})`);
       const result = await refreshArtistProfile(silent);
       const freshStatus = result?.verificationStatus || verificationStatus;
       const freshApproved = result?.isApproved ?? artistApproved;
 
-      console.log(`[ARTIST_APPROVAL_DEBUG] handleCheckStatus result -> freshStatus: ${freshStatus} | freshApproved: ${freshApproved}`);
+      if (__DEV__) console.log(`[ARTIST_APPROVAL_DEBUG] handleCheckStatus result -> freshStatus: ${freshStatus} | freshApproved: ${freshApproved}`);
 
       if (!silent) {
         if (freshStatus === "APPROVED" || freshApproved) {

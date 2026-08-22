@@ -3,6 +3,7 @@ import * as Location from "expo-location";
 
 export const ACTIVE_ADDRESS_KEY = "@mehndigo_active_address";
 
+let cachedActiveAddress = null;
 const addressSubscribers = new Set();
 
 /**
@@ -18,24 +19,35 @@ function notifySubscribers(address) {
     try {
       cb(address);
     } catch (e) {
-      console.log("Subscriber notification error:", e.message);
+      if (__DEV__) console.log("Subscriber notification notice:", e.message);
     }
   });
 }
 
 /**
- * Get active cached service address from AsyncStorage
+ * Get active cached service address (in-memory fast path with AsyncStorage fallback)
  */
 export async function getActiveAddress() {
+  if (cachedActiveAddress) {
+    return cachedActiveAddress;
+  }
   try {
     const raw = await AsyncStorage.getItem(ACTIVE_ADDRESS_KEY);
     if (raw) {
-      return JSON.parse(raw);
+      cachedActiveAddress = JSON.parse(raw);
+      return cachedActiveAddress;
     }
   } catch (e) {
-    console.log("Error reading active address:", e.message);
+    if (__DEV__) console.log("Error reading active address:", e.message);
   }
   return null;
+}
+
+/**
+ * Synchronous in-memory getter for render paths
+ */
+export function getActiveAddressSync() {
+  return cachedActiveAddress;
 }
 
 /**
@@ -64,12 +76,13 @@ export async function setActiveAddress(address) {
         longitude: parseFloat(address.longitude || 75.7873),
         isDefault: !!(address.is_default || address.isDefault),
       };
+      cachedActiveAddress = normalized;
       await AsyncStorage.setItem(ACTIVE_ADDRESS_KEY, JSON.stringify(normalized));
       notifySubscribers(normalized);
       return normalized;
     }
   } catch (e) {
-    console.log("Error saving active address:", e.message);
+    if (__DEV__) console.log("Error saving active address:", e.message);
   }
   return null;
 }
@@ -119,7 +132,7 @@ export async function reverseGeocodeCoords(latitude, longitude) {
       };
     }
   } catch (e) {
-    console.log("Reverse geocode error:", e.message);
+    if (__DEV__) console.log("Reverse geocode notice:", e.message);
   }
   return {
     fullAddress: "Jaipur, Rajasthan",
@@ -173,7 +186,7 @@ export async function checkSmartLocationChange(primaryAddress, thresholdKm = 35)
       }
     }
   } catch (e) {
-    console.log("Smart location check failed silently:", e.message);
+    if (__DEV__) console.log("Smart location check notice:", e.message);
   }
   return { isFar: false };
 }

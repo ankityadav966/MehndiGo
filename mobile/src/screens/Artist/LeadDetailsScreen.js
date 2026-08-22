@@ -42,7 +42,7 @@ export default function LeadDetailsScreen({ route, navigation }) {
         await viewLead(id);
       }
     } catch (err) {
-      console.log("Failed to load lead details:", err);
+      if (__DEV__) console.log("Failed to load lead details:", err);
       setError(err?.message || "Failed to load lead details.");
     } finally {
       setLoading(false);

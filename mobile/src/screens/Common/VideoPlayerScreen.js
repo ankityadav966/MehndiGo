@@ -38,12 +38,12 @@ export default function VideoPlayerScreen({ route, navigation }) {
   const finalVideoUrl = resolveVideoUrl(videoUrl);
 
   useEffect(() => {
-    console.log("[PLAYER CREATED]", { title });
-    console.log("[SOURCE ASSIGNED]", { rawInput: videoUrl, finalResolvedUrl: finalVideoUrl });
+    if (__DEV__) console.log("[PLAYER CREATED]", { title });
+    if (__DEV__) console.log("[SOURCE ASSIGNED]", { rawInput: videoUrl, finalResolvedUrl: finalVideoUrl });
 
     // Synchronous extension check
     if (/\.(jpg|jpeg|png|webp)$/i.test(finalVideoUrl)) {
-      console.log("[MEDIA TYPE DETECTED] File extension is image, switching to ImageViewer mode.");
+      if (__DEV__) console.log("[MEDIA TYPE DETECTED] File extension is image, switching to ImageViewer mode.");
       setIsImageMedia(true);
       setLoading(false);
       return;
@@ -62,7 +62,7 @@ export default function VideoPlayerScreen({ route, navigation }) {
           });
 
           if (contentType.startsWith("image/")) {
-            console.log("[MEDIA TYPE DETECTED] Item is a Photo Image, switching to ImageViewer mode.");
+            if (__DEV__) console.log("[MEDIA TYPE DETECTED] Item is a Photo Image, switching to ImageViewer mode.");
             setIsImageMedia(true);
           }
           setLoading(false);
@@ -133,7 +133,7 @@ export default function VideoPlayerScreen({ route, navigation }) {
           });
 
           v.play().catch(function(err) {
-            console.log('Autoplay deferred:', err);
+            if (__DEV__) console.log('Autoplay deferred:', err);
           });
         </script>
       </body>
@@ -192,7 +192,7 @@ export default function VideoPlayerScreen({ route, navigation }) {
             onMessage={(event) => {
               try {
                 const data = JSON.parse(event.nativeEvent.data);
-                console.log("[VIDEO PLAYER EVENT]", data);
+                if (__DEV__) console.log("[VIDEO PLAYER EVENT]", data);
                 if (data.type === "PLAYBACK_ERROR") {
                   console.error("[PLAYBACK ERROR]", data.error);
                 }

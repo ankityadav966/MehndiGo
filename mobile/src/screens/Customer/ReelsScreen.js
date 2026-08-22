@@ -18,6 +18,7 @@ import {
   TouchableWithoutFeedback
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { LinearGradient } from "expo-linear-gradient";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -78,13 +79,13 @@ const ReelItem = ({
       try {
         if (typeof player.replaceAsync === "function") {
           player.replaceAsync(videoUri).catch((err) => {
-            console.log("Player replaceAsync notice:", err.message);
+            if (__DEV__) console.log("Player replaceAsync notice:", err.message);
           });
         } else if (typeof player.replace === "function") {
           player.replace(videoUri);
         }
       } catch (err) {
-        console.log("Player replace notice:", err.message);
+        if (__DEV__) console.log("Player replace notice:", err.message);
       }
     }
   }, [videoUri, player]);
@@ -97,7 +98,7 @@ const ReelItem = ({
       try {
         player.play();
       } catch (err) {
-        console.log("Player play notice:", err.message);
+        if (__DEV__) console.log("Player play notice:", err.message);
       }
 
       if (!hasViewed.current && item.id) {
@@ -108,7 +109,7 @@ const ReelItem = ({
       try {
         player.pause();
       } catch (err) {
-        console.log("Player pause notice:", err.message);
+        if (__DEV__) console.log("Player pause notice:", err.message);
       }
     }
   }, [isActive, isFocused, paused, player, item.id]);
@@ -151,11 +152,14 @@ const ReelItem = ({
         url: shareUrl
       });
     } catch (error) {
-      console.log("Error sharing reel:", error);
+      if (__DEV__) console.log("Error sharing reel:", error);
     }
   };
 
   const heightStyle = { height: itemHeight || WINDOW_HEIGHT, width: itemWidth || WINDOW_WIDTH };
+
+  const insets = useSafeAreaInsets();
+  const bottomBarClearance = 68 + (insets.bottom > 0 ? insets.bottom + 6 : 12) + 12;
 
   return (
     <View style={[styles.reelContainer, heightStyle]}>
@@ -189,7 +193,7 @@ const ReelItem = ({
       <LinearGradient
         colors={["transparent", "rgba(0,0,0,0.4)", "rgba(0,0,0,0.88)"]}
         locations={[0.45, 0.7, 1]}
-        style={styles.gradientOverlay}
+        style={[styles.gradientOverlay, { paddingBottom: bottomBarClearance }]}
         pointerEvents="box-none"
       >
         {/* Left Content (Artist, Caption, Booking CTA) */}
@@ -400,7 +404,7 @@ export default function ReelsScreen({ navigation }) {
       const res = await getPortfolioComments(reelId, 1, 50);
       setComments(res.data || res.comments || []);
     } catch (err) {
-      console.log("Error loading comments", err);
+      if (__DEV__) console.log("Error loading comments", err);
     } finally {
       setLoadingComments(false);
     }
@@ -423,7 +427,7 @@ export default function ReelsScreen({ navigation }) {
       setCommentText("");
       Keyboard.dismiss();
     } catch (err) {
-      console.log("Error submitting comment", err);
+      if (__DEV__) console.log("Error submitting comment", err);
     } finally {
       setSubmittingComment(false);
     }

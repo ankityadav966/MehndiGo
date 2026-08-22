@@ -10,7 +10,7 @@ import {
   View
 } from "react-native";
 import Alert from "../../utils/Alert";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 const DOCUMENTS = [
   { key: "aadhaarFront", label: "Aadhaar Front", icon: "card-outline" },
@@ -20,6 +20,7 @@ const DOCUMENTS = [
 ];
 
 export default function ReuploadDocumentsScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
   const [uploaded, setUploaded] = useState({});
 
   const pickDocument = async (docKey) => {
@@ -45,7 +46,7 @@ export default function ReuploadDocumentsScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 + insets.bottom }}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
             <Ionicons name="chevron-back" size={22} color="#111" />
@@ -83,7 +84,7 @@ export default function ReuploadDocumentsScreen({ navigation }) {
         ))}
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 20) }]}>
         <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
           <Text style={styles.submitButtonText}>Submit for Review</Text>
         </TouchableOpacity>

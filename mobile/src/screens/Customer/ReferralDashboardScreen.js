@@ -32,7 +32,7 @@ export default function ReferralDashboardScreen({ navigation }) {
       setDashboardData(dbInfo);
       setHistory(histList || []);
     } catch (err) {
-      console.log("Failed to load referrals:", err.message);
+      if (__DEV__) console.log("Failed to load referrals:", err.message);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -64,7 +64,7 @@ export default function ReferralDashboardScreen({ navigation }) {
         url: shareLink
       });
     } catch (err) {
-      console.log("Share failed:", err.message);
+      if (__DEV__) console.log("Share failed:", err.message);
     }
   };
 

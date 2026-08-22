@@ -15,7 +15,7 @@ import {
   Linking
 } from "react-native";
 import Alert from "../../utils/Alert";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
@@ -36,6 +36,7 @@ import {
 import { getBookingDetails } from "../../services/booking";
 
 export default function ChatRoomScreen({ route, navigation }) {
+  const insets = useSafeAreaInsets();
   const { bookingId, receiverId, receiverName, receiverImage } = route.params || {};
 
   const {
@@ -65,7 +66,7 @@ export default function ChatRoomScreen({ route, navigation }) {
         });
         setIsVoiceSupported(true);
       } catch (err) {
-        console.log("Native Audio recording is not supported in this environment:", err.message);
+        if (__DEV__) console.log("Native Audio recording is not supported in this environment:", err.message);
         setIsVoiceSupported(false);
       }
     }
@@ -110,7 +111,7 @@ export default function ChatRoomScreen({ route, navigation }) {
       const bDetails = await getBookingDetails(bookingId);
       setBooking(bDetails);
     } catch (e) {
-      console.log("Error loading history/booking details:", e.message);
+      if (__DEV__) console.log("Error loading history/booking details:", e.message);
     } finally {
       setLoading(false);
     }
@@ -256,7 +257,7 @@ export default function ChatRoomScreen({ route, navigation }) {
         uploadMediaAttachment(res.assets[0].uri, "pdf");
       }
     } catch (err) {
-      console.log("Document picker error:", err.message);
+      if (__DEV__) console.log("Document picker error:", err.message);
       Alert.alert("Notice", "Documents picker is not available in the current environment.");
     }
   };
@@ -947,7 +948,7 @@ export default function ChatRoomScreen({ route, navigation }) {
             </Text>
           </View>
         ) : (
-          <View style={styles.footerInputBar}>
+          <View style={[styles.footerInputBar, { paddingBottom: Math.max(insets.bottom, 10) }]}>
             <TouchableOpacity
               style={styles.attachBtn}
               onPress={() => setAttachmentVisible(true)}
@@ -973,7 +974,7 @@ export default function ChatRoomScreen({ route, navigation }) {
         )}
 
         {isRecording && (
-          <View style={styles.recordingOverlayBar}>
+          <View style={[styles.recordingOverlayBar, { paddingBottom: Math.max(insets.bottom, 10), height: 60 + (insets.bottom > 0 ? insets.bottom : 0) }]}>
             <Ionicons name="radio-button-on" size={16} color={Colors.error} style={styles.blinkDot} />
             <Text style={styles.recordingText}>Recording voice: {recordingDuration}s</Text>
             <TouchableOpacity onPress={cancelRecording} style={styles.recordingCancelBtn}>
@@ -995,7 +996,7 @@ export default function ChatRoomScreen({ route, navigation }) {
           activeOpacity={1}
           onPress={() => setAttachmentVisible(false)}
         >
-          <View style={styles.attachmentModalContent}>
+          <View style={[styles.attachmentModalContent, { paddingBottom: Math.max(insets.bottom, 24) }]}>
             <Text style={styles.attachmentTitle}>Share Attachments</Text>
             
             <View style={styles.attachmentGrid}>

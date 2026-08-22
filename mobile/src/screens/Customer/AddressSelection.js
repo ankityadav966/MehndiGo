@@ -50,7 +50,7 @@ export default function AddressSelection({ route, navigation }) {
           }
         }
       } catch (err) {
-        console.log("Failed to fetch saved addresses:", err.message);
+        if (__DEV__) console.log("Failed to fetch saved addresses:", err.message);
       } finally {
         setFetchingAddresses(false);
       }
@@ -65,11 +65,11 @@ export default function AddressSelection({ route, navigation }) {
           if (loc && loc.coords) {
             setLatitude(loc.coords.latitude);
             setLongitude(loc.coords.longitude);
-            console.log("[AUTO-DETECTED USER REAL GPS]", loc.coords.latitude, loc.coords.longitude);
+            if (__DEV__) console.log("[AUTO-DETECTED USER REAL GPS]", loc.coords.latitude, loc.coords.longitude);
           }
         }
       } catch (err) {
-        console.log("Background location auto-detect notice:", err.message);
+        if (__DEV__) console.log("Background location auto-detect notice:", err.message);
       }
     })();
   }, []);
@@ -117,7 +117,7 @@ export default function AddressSelection({ route, navigation }) {
       try {
         loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
       } catch (e) {
-        console.log("High accuracy location fetch fallback:", e.message);
+        if (__DEV__) console.log("High accuracy location fetch fallback:", e.message);
         loc = await Location.getLastKnownPositionAsync({});
       }
 
@@ -149,7 +149,7 @@ export default function AddressSelection({ route, navigation }) {
           pincodeVal = g.postalCode || "";
         }
       } catch (geoErr) {
-        console.log("Expo reverseGeocode error:", geoErr.message);
+        if (__DEV__) console.log("Expo reverseGeocode error:", geoErr.message);
       }
 
       // 2. Secondary Fallback via Nominatim API if fields missing
@@ -168,7 +168,7 @@ export default function AddressSelection({ route, navigation }) {
             if (!pincodeVal) pincodeVal = addr.postcode || "";
           }
         } catch (osmErr) {
-          console.log("Nominatim reverseGeocode fallback error:", osmErr.message);
+          if (__DEV__) console.log("Nominatim reverseGeocode fallback error:", osmErr.message);
         }
       }
 
@@ -186,14 +186,14 @@ export default function AddressSelection({ route, navigation }) {
       fullAddrVal = [nameVal, localityVal, cityVal, stateVal, pincodeVal].filter(Boolean).join(", ");
       setFullAddressText(fullAddrVal);
 
-      console.log("[GPS LOCATION RESOLVED]");
-      console.log("Latitude:", lat);
-      console.log("Longitude:", lng);
-      console.log("Full Address:", fullAddrVal);
+      if (__DEV__) console.log("[GPS LOCATION RESOLVED]");
+      if (__DEV__) console.log("Latitude:", lat);
+      if (__DEV__) console.log("Longitude:", lng);
+      if (__DEV__) console.log("Full Address:", fullAddrVal);
 
       Alert.alert("Location Resolved", "Your current location & GPS coordinates have been fetched successfully.");
     } catch (err) {
-      console.log("Error getting live location:", err.message);
+      if (__DEV__) console.log("Error getting live location:", err.message);
       Alert.alert("Location Resolution Failed", "Unable to fetch GPS location automatically. Please type your appointment address manually below.");
     } finally {
       setLoading(false);
@@ -223,10 +223,10 @@ export default function AddressSelection({ route, navigation }) {
         if (geoResult && geoResult.length > 0) {
           finalLat = geoResult[0].latitude;
           finalLng = geoResult[0].longitude;
-          console.log("[FORWARD GEOCODED MANUAL ADDRESS VIA EXPO]", finalAddress, "->", finalLat, finalLng);
+          if (__DEV__) console.log("[FORWARD GEOCODED MANUAL ADDRESS VIA EXPO]", finalAddress, "->", finalLat, finalLng);
         }
       } catch (geoErr) {
-        console.log("Forward geocoding manual address catch:", geoErr.message);
+        if (__DEV__) console.log("Forward geocoding manual address catch:", geoErr.message);
       }
     }
 
@@ -241,10 +241,10 @@ export default function AddressSelection({ route, navigation }) {
         if (Array.isArray(data) && data.length > 0) {
           finalLat = parseFloat(data[0].lat);
           finalLng = parseFloat(data[0].lon);
-          console.log("[FORWARD GEOCODED MANUAL ADDRESS VIA NOMINATIM]", finalAddress, "->", finalLat, finalLng);
+          if (__DEV__) console.log("[FORWARD GEOCODED MANUAL ADDRESS VIA NOMINATIM]", finalAddress, "->", finalLat, finalLng);
         }
       } catch (nomErr) {
-        console.log("Nominatim forward geocode error:", nomErr.message);
+        if (__DEV__) console.log("Nominatim forward geocode error:", nomErr.message);
       }
     }
 
@@ -264,12 +264,12 @@ export default function AddressSelection({ route, navigation }) {
       finalLng = 75.7873;
     }
 
-    console.log("==================================================");
-    console.log("📍 [SUBMITTING CUSTOMER BOOKING ADDRESS]");
-    console.log("Address:", finalAddress);
-    console.log("Latitude:", finalLat);
-    console.log("Longitude:", finalLng);
-    console.log("==================================================");
+    if (__DEV__) console.log("==================================================");
+    if (__DEV__) console.log("📍 [SUBMITTING CUSTOMER BOOKING ADDRESS]");
+    if (__DEV__) console.log("Address:", finalAddress);
+    if (__DEV__) console.log("Latitude:", finalLat);
+    if (__DEV__) console.log("Longitude:", finalLng);
+    if (__DEV__) console.log("==================================================");
 
     navigation.navigate("BookingSummary", {
       artistId,

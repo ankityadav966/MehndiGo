@@ -285,7 +285,7 @@ class NotificationTriggers {
   }
 
   static async _send({ userId, type, event, title, body, data }) {
-    console.log(`[NotificationTriggers] ${type}/${event}:`, { title, body });
+    if (__DEV__) console.log(`[NotificationTriggers] ${type}/${event}:`, { title, body });
     return { userId, type, event, title, body, data };
   }
 }

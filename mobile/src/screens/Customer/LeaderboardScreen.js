@@ -30,7 +30,7 @@ export default function LeaderboardScreen({ navigation }) {
         value: data?.myValue || 0
       });
     } catch (err) {
-      console.log("Failed to load leaderboard:", err.message);
+      if (__DEV__) console.log("Failed to load leaderboard:", err.message);
     } finally {
       setLoading(false);
       setRefreshing(false);

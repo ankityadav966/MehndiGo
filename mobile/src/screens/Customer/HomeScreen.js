@@ -48,22 +48,9 @@ import {
 } from "../../utils/locationManager";
 import { getActiveFestivalOffers } from "../../utils/festivalEngine";
 import { copyAndSaveCoupon } from "../../utils/couponManager";
-
+import { resolveImage } from "../../utils/imageHelper";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-
-const resolveImage = (uri) => {
-  if (!uri) return null;
-  if (typeof uri !== "string") return null;
-  if (uri.startsWith("http://") || uri.startsWith("https://") || uri.startsWith("data:")) {
-    return uri;
-  }
-  if (uri.startsWith("/")) {
-    const { BASE_URL } = require("../../services/api");
-    return `${BASE_URL}${uri}`;
-  }
-  return uri;
-};
 
 export default function HomeScreen({ navigation }) {
   const { user, dispatch, isDarkMode } = useAuth();
@@ -156,6 +143,7 @@ export default function HomeScreen({ navigation }) {
   // Favorites Map state (local toggle)
   const [favorites, setFavorites] = useState({});
   const [imageErrors, setImageErrors] = useState({});
+  const lastFavoritesSyncTimeRef = useRef(0);
 
   // Carousel slider state
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
@@ -203,7 +191,7 @@ export default function HomeScreen({ navigation }) {
           }
         }
       } catch (e) {
-        console.log("Error initializing location in Home:", e.message);
+        if (__DEV__) console.log("Error initializing location in Home:", e.message);
       }
     }
 
@@ -274,6 +262,7 @@ export default function HomeScreen({ navigation }) {
       // Load favorites from database
       try {
         const favs = await getFavorites();
+        lastFavoritesSyncTimeRef.current = Date.now();
         const favMap = {};
         (favs || []).forEach((artist) => {
           if (artist.id) favMap[artist.id] = true;
@@ -283,7 +272,7 @@ export default function HomeScreen({ navigation }) {
         });
         setFavorites(favMap);
       } catch (favErr) {
-        console.log("Failed to load favorites on dashboard:", favErr.message);
+        if (__DEV__) console.log("Failed to load favorites on dashboard:", favErr.message);
       }
 
       // Check for split payment pending remaining amount (ONLY open modal once on first arrival if not dismissed)
@@ -312,12 +301,12 @@ export default function HomeScreen({ navigation }) {
 
         }
       } catch (dashErr) {
-        console.log("Failed to check pending reviews/settlements on startup:", dashErr.message);
+        if (__DEV__) console.log("Pending check notice:", dashErr.message);
       }
 
       setError(null);
     } catch (err) {
-      console.log("Failed to load dashboard:", err.message);
+      if (__DEV__) console.log("Failed to load dashboard:", err.message);
       setError("Failed to fetch dashboard data. Please try again.");
     } finally {
       setDashboardLoading(false);
@@ -360,7 +349,7 @@ export default function HomeScreen({ navigation }) {
       setHasMoreNearby(list.length === 15 && ((page === 1 ? list.length : nearbyArtists.length + list.length) < total));
       setNearbyPage(page);
     } catch (err) {
-      console.log("Failed to load nearby artists:", err.message);
+      if (__DEV__) console.log("Failed to load nearby artists:", err.message);
     } finally {
       setNearbyLoading(false);
     }
@@ -411,14 +400,19 @@ export default function HomeScreen({ navigation }) {
             }
           }
         } catch (e) {
-          console.log("Failed to sync customer profile on Home:", e.message);
+          if (__DEV__) console.log("Failed to sync customer profile on Home:", e.message);
         }
       }
 
       async function syncFavorites() {
+        // Skip duplicate fetch if favorites were fetched less than 30s ago
+        if (Date.now() - lastFavoritesSyncTimeRef.current < 30000) {
+          return;
+        }
         try {
           const favs = await getFavorites();
           if (!isSubscribed) return;
+          lastFavoritesSyncTimeRef.current = Date.now();
           const favMap = {};
           (favs || []).forEach((artist) => {
             if (artist.id) favMap[artist.id] = true;
@@ -428,7 +422,7 @@ export default function HomeScreen({ navigation }) {
           });
           setFavorites(favMap);
         } catch (e) {
-          console.log("Failed to sync favorites on focus:", e.message);
+          if (__DEV__) console.log("Failed to sync favorites on focus:", e.message);
         }
       }
 
@@ -482,7 +476,7 @@ export default function HomeScreen({ navigation }) {
         await addFavorite(artistId);
       }
     } catch (err) {
-      console.log("Failed to persist favorite:", err.message);
+      if (__DEV__) console.log("Failed to persist favorite:", err.message);
       // Rollback
       setFavorites((prev) => ({
         ...prev,
@@ -663,7 +657,7 @@ export default function HomeScreen({ navigation }) {
   const renderRecentlyBookedItem = ({ item }) => {
     const formattedDate = item.booking_date ? formatServiceDate(item.booking_date) : "Recently";
     const artistName = item.name || item.full_name || item.user?.name || "Mehndi Specialist";
-    const avatarUrl = resolveImage(item.profile_image) || `https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=F3E8FF&color=7C3AED`;
+    const avatarUrl = resolveImage(item.profile_image || item.user?.profile_image || item.avatar || item.selfie_image || item.user?.avatar) || `https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=F3E8FF&color=7C3AED`;
 
     return (
       <TouchableOpacity
@@ -706,7 +700,7 @@ export default function HomeScreen({ navigation }) {
     const artistId = item.id || item.user_id || item.artist_id;
     const isFav = !!favorites[artistId];
     const artistName = item.name || item.full_name || item.user?.name || "Mehndi Artist";
-    const rawImage = item.profile_image || item.user?.profile_image || item.avatar;
+    const rawImage = item.profile_image || item.user?.profile_image || item.avatar || item.selfie_image || item.user?.avatar;
     const artistImage = resolveImage(rawImage) || `https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=F3E8FF&color=7C3AED`;
     const startingPrice = item.starting_price || item.services?.[0]?.minimum_price || item.services?.[0]?.price;
     const ratingVal = (item.rating || item.avg_rating) ? Number(item.rating || item.avg_rating).toFixed(1) : null;
@@ -758,7 +752,7 @@ export default function HomeScreen({ navigation }) {
     const artistId = item.id || item.user_id || item.artist_id;
     const isFav = !!favorites[artistId];
     const artistName = item.name || item.full_name || item.user?.name || "Mehndi Artist";
-    const rawImage = item.profile_image || item.user?.profile_image || item.avatar;
+    const rawImage = item.profile_image || item.user?.profile_image || item.avatar || item.selfie_image || item.user?.avatar;
     const artistImage = resolveImage(rawImage) || `https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=F3E8FF&color=7C3AED`;
     const startingPrice = item.starting_price || item.services?.[0]?.minimum_price || item.services?.[0]?.price;
     const ratingVal = (item.rating || item.avg_rating) ? Number(item.rating || item.avg_rating).toFixed(1) : null;

@@ -71,7 +71,7 @@ export function AuthProvider({ children }) {
     try {
       const { applyTheme } = require("../theme/ThemeManager");
       applyTheme(isDarkMode);
-      console.log("[ThemeManager] Applied theme state:", isDarkMode ? "dark" : "light");
+      if (__DEV__) console.log("[ThemeManager] Applied theme state:", isDarkMode ? "dark" : "light");
     } catch (err) {
       console.warn("[ThemeManager] Theme switch error:", err.message);
     }

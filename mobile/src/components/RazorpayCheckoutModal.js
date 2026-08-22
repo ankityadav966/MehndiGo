@@ -153,7 +153,7 @@ export default function RazorpayCheckoutModal({
         if (typeof Razorpay !== 'undefined') {
           var rzp = new Razorpay(rzpOptions);
           rzp.on('payment.failed', function (resp) {
-            console.log('payment failed:', resp);
+            if (__DEV__) console.log('payment failed:', resp);
           });
           rzp.open();
         }
@@ -175,7 +175,7 @@ export default function RazorpayCheckoutModal({
   const handleMessage = (event) => {
     try {
       const msg = JSON.parse(event.nativeEvent.data);
-      console.log("[RAZORPAY WEBVIEW EVENT]", msg.type);
+      if (__DEV__) console.log("[RAZORPAY WEBVIEW EVENT]", msg.type);
 
       if (msg.type === "PAYMENT_SUCCESS") {
         if (onSuccess) onSuccess(msg.data);
@@ -190,7 +190,7 @@ export default function RazorpayCheckoutModal({
   };
 
   const handleClose = () => {
-    console.log("[RAZORPAY_MODAL] Closing payment modal directly");
+    if (__DEV__) console.log("[RAZORPAY_MODAL] Closing payment modal directly");
     if (onDismiss) {
       onDismiss();
     }

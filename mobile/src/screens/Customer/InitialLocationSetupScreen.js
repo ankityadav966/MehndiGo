@@ -72,7 +72,7 @@ export default function InitialLocationSetupScreen({ navigation, route }) {
         if (geo.landmark) setLandmark(geo.landmark);
       }
     } catch (e) {
-      console.log("GPS Setup Error:", e.message);
+      if (__DEV__) console.log("GPS Setup Error:", e.message);
       setPermissionDenied(true);
     } finally {
       setLoading(false);

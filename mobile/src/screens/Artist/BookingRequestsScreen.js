@@ -27,7 +27,7 @@ export default function BookingRequestsScreen({ route, navigation }) {
       const data = await getArtistBookingsData();
       setBookings(data || []);
     } catch (e) {
-      console.log("Failed to fetch artist bookings:", e.message);
+      if (__DEV__) console.log("Failed to fetch artist bookings:", e.message);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -121,7 +121,7 @@ export default function BookingRequestsScreen({ route, navigation }) {
                 await acceptBooking(b.id);
                 successCount++;
               } catch (err) {
-                console.log(`Failed to accept booking ${b.id}:`, err.message);
+                if (__DEV__) console.log(`Failed to accept booking ${b.id}:`, err.message);
                 errorCount++;
               }
             }
@@ -176,7 +176,7 @@ export default function BookingRequestsScreen({ route, navigation }) {
                 await rejectBooking(b.id, "Declined by artist in bulk");
                 successCount++;
               } catch (err) {
-                console.log(`Failed to decline booking ${b.id}:`, err.message);
+                if (__DEV__) console.log(`Failed to decline booking ${b.id}:`, err.message);
                 errorCount++;
               }
             }

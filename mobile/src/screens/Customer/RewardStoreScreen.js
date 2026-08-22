@@ -35,7 +35,7 @@ export default function RewardStoreScreen({ navigation }) {
         setUserXp(dash.xp.currentXp);
       }
     } catch (err) {
-      console.log("Failed to load rewards store:", err.message);
+      if (__DEV__) console.log("Failed to load rewards store:", err.message);
     } finally {
       setLoading(false);
     }

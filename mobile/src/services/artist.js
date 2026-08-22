@@ -69,14 +69,12 @@ export async function createArtistProfile(profileData) {
   for (const key of imageKeys) {
     const val = payload[key];
     if (val && isLocalUri(val)) {
-      try {
-        const uri = getSafeUri(val);
-        const uploadResult = await uploadPortfolioMedia([{ uri }]);
-        if (uploadResult && uploadResult.length > 0 && uploadResult[0].url) {
-          payload[key] = uploadResult[0].url;
-        }
-      } catch (uploadErr) {
-        console.warn(`[createArtistProfile] Media upload fallback for ${key}:`, uploadErr.message);
+      const uri = getSafeUri(val);
+      const uploadResult = await uploadPortfolioMedia([{ uri }]);
+      if (uploadResult && uploadResult.length > 0 && uploadResult[0].url) {
+        payload[key] = uploadResult[0].url;
+      } else {
+        throw new Error(`Failed to upload ${key} to secure storage`);
       }
     }
   }
@@ -185,6 +183,9 @@ async function uploadDirectToCloudinary(localUri, mimeType, isVideo, onProgress)
         throw new Error(`Cloudinary direct upload failed with status ${result.status}: ${result.body}`);
       }
       const responseData = JSON.parse(result.body);
+      if (!responseData?.secure_url) {
+        throw new Error("Image upload failed: Cloudinary secure_url missing in response");
+      }
       return responseData.secure_url;
     } else {
       const response = await FileSystem.uploadAsync(url, safeUri, uploadOptions);
@@ -192,10 +193,13 @@ async function uploadDirectToCloudinary(localUri, mimeType, isVideo, onProgress)
         throw new Error(`Cloudinary direct upload failed with status ${response.status}: ${response.body}`);
       }
       const responseData = JSON.parse(response.body);
+      if (!responseData?.secure_url) {
+        throw new Error("Image upload failed: Cloudinary secure_url missing in response");
+      }
       return responseData.secure_url;
     }
   } catch (error) {
-    console.error("[uploadDirectToCloudinary] Error:", error);
+    console.error("[uploadDirectToCloudinary] Error:", error.message || error);
     throw error;
   }
 }
@@ -227,13 +231,13 @@ async function uploadToServerMultipart(localUri, mimeType, isVideo = false) {
     }
 
     const responseData = JSON.parse(response.body);
-    const uploadedUrl = responseData?.data?.[0]?.url;
+    const uploadedUrl = responseData?.data?.[0]?.url || responseData?.data?.[0]?.secure_url || responseData?.data?.url;
     if (!uploadedUrl) {
-      throw new Error("No media URL returned from server upload");
+      throw new Error("Image upload failed: No media URL returned from server upload");
     }
     return uploadedUrl;
   } catch (err) {
-    console.error("[uploadToServerMultipart] Error:", err);
+    console.error("[uploadToServerMultipart] Error:", err.message || err);
     throw err;
   }
 }
@@ -275,7 +279,7 @@ export async function createPortfolioItem(itemData, onProgress) {
           if (onProgress) onProgress(0.01 + progress * 0.79);
         }
       );
-      console.log("[VIDEO UPLOAD RESPONSE]", { videoUrl });
+      if (__DEV__) console.log("[VIDEO UPLOAD RESPONSE]", { videoUrl });
     }
 
     // 2. Upload Image if it is local and distinct from video
@@ -389,6 +393,10 @@ export async function uploadPortfolioMedia(mediaFiles, onProgress) {
           }
         }
       );
+
+      if (!secureUrl || typeof secureUrl !== "string" || (!secureUrl.startsWith("http://") && !secureUrl.startsWith("https://"))) {
+        throw new Error("Image upload failed: Cloudinary secure_url missing");
+      }
 
       results.push({ url: secureUrl, type: isVideo ? "video" : "image" });
     } else {

@@ -11,7 +11,7 @@ import {
   Platform
 } from "react-native";
 import Alert from "../../utils/Alert";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import Colors from "../../constants/Colors";
 import OptimizedImage from "../../components/OptimizedImage";
@@ -20,6 +20,7 @@ import { getArtistById } from "../../services/customer";
 import { formatServiceDate } from "../../utils/date";
 
 export default function BookingSummaryScreen({ route, navigation }) {
+  const insets = useSafeAreaInsets();
   const params = route.params || {};
   const {
     artistId,
@@ -61,7 +62,7 @@ export default function BookingSummaryScreen({ route, navigation }) {
         setAppliedCoupon(couponCode);
       }
     } catch (err) {
-      console.log("Failed to retrieve booking cost estimates:", err.message);
+      if (__DEV__) console.log("Failed to retrieve booking cost estimates:", err.message);
     } finally {
       setLoading(false);
     }
@@ -130,7 +131,7 @@ export default function BookingSummaryScreen({ route, navigation }) {
       const pricing = await getPriceDetails(serviceId, null, 1, selectedArt?.price, groupSize, serviceCoverage);
       setPriceDetails(pricing);
     } catch (err) {
-      console.log("Failed to refresh pricing on coupon removal:", err.message);
+      if (__DEV__) console.log("Failed to refresh pricing on coupon removal:", err.message);
     } finally {
       setLoading(false);
     }
@@ -447,7 +448,7 @@ export default function BookingSummaryScreen({ route, navigation }) {
       </ScrollView>
 
       {/* 7. Bottom CTA Bar */}
-      <View style={styles.bottomBar}>
+      <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) + 8 }]}>
         <View style={styles.bottomPriceGroup}>
           <Text style={styles.bottomPayLabel}>Pay Advance Today</Text>
           <Text style={styles.bottomPayAmount}>₹{advanceAmount}</Text>

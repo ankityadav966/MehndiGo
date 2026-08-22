@@ -30,7 +30,7 @@ export default function CategoriesScreen({ navigation }) {
       const data = await getLiveCategories();
       setCategories(data || []);
     } catch (err) {
-      console.log("Failed to fetch categories:", err.message);
+      if (__DEV__) console.log("Failed to fetch categories:", err.message);
       setError("Failed to load categories. Please tap to retry.");
     } finally {
       setLoading(false);

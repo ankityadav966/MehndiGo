@@ -41,7 +41,7 @@ function GreetingHeader({ artist, isVerified, unreadCount, onProfilePress, onNot
       <View style={styles.headerProfileRow}>
         <Pressable onPress={onProfilePress} style={styles.avatarWrapper}>
           <Image
-            source={{ uri: artist.profile_image || "https://picsum.photos/200" }}
+            source={artist.profile_image ? { uri: artist.profile_image } : require("../../assets/images/Henna.jpg")}
             style={styles.avatarImage}
           />
           {isVerified && (
@@ -157,7 +157,7 @@ export default function ArtistDashboardScreen({ navigation }) {
   const { socket } = useSocket();
   const { unreadCount } = useNotifications();
 
-  console.log(`[ARTIST_APPROVAL_DEBUG] CURRENT_ROUTE: ArtistDashboardScreen | USER_ID: ${user?.id} | ROLE: ${user?.role}`);
+  if (__DEV__) console.log(`[ARTIST_APPROVAL_DEBUG] CURRENT_ROUTE: ArtistDashboardScreen | USER_ID: ${user?.id} | ROLE: ${user?.role}`);
 
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -168,7 +168,7 @@ export default function ArtistDashboardScreen({ navigation }) {
       const data = await getArtistDashboardData();
       setDashboard(data);
     } catch (err) {
-      console.log("Failed to load artist dashboard details:", err.message);
+      if (__DEV__) console.log("Failed to load artist dashboard details:", err.message);
       Alert.alert("Error", "Something went wrong loading your dashboard. Please retry.");
       setDashboard(null);
     } finally {
@@ -247,7 +247,7 @@ export default function ArtistDashboardScreen({ navigation }) {
       <GreetingHeader
         artist={{
           ...artist,
-          profile_image: resolveImage(artist.profile_image)
+          profile_image: resolveImage(artist.profile_image || artist.avatar || user?.profile_image || user?.avatar)
         }}
         isVerified={isVerified}
         unreadCount={unreadCount}

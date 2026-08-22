@@ -89,7 +89,7 @@ export default function WalletScreen({ route, navigation }) {
         });
       }
     } catch (err) {
-      console.log("Failed to load artist wallet info:", err.message);
+      if (__DEV__) console.log("Failed to load artist wallet info:", err.message);
     } finally {
       setLoading(false);
       setRefreshing(false);

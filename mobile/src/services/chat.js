@@ -61,7 +61,7 @@ export async function uploadChatMedia(fileUri, fileType, fileName) {
       file_type: fileType
     };
   } catch (err) {
-    console.log("[CHAT MEDIA BASE64 READ WARNING, FALLBACK TO MULTIPART]", err.message);
+    if (__DEV__) console.log("[CHAT MEDIA BASE64 READ WARNING, FALLBACK TO MULTIPART]", err.message);
     const getSafeUri = (uri) => {
       if (!uri) return uri;
       let cleanUri = uri;
