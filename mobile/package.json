@@ -1,7 +1,7 @@
 {
   "name": "mehndiGo",
   "main": "index.js",
-  "version": "1.0.0",
+  "version": "1.0.6",
   "dependencies": {
     "@expo-google-fonts/poppins": "^0.4.1",
     "@expo/vector-icons": "^15.1.1",
