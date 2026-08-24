@@ -8199,6 +8199,7 @@ const handleGetArtistReviews = async (c) => {
     artistIdStr = c.req.query("artist_id") || c.req.query("artistId") || "";
   }
 
+  const artistId = Number(artistIdStr) || 0;
   const u = getUserFromHeader(c);
   let resolvedArtistId = artistId;
   if (!resolvedArtistId && u && (String(u.role).toLowerCase() === "artist")) {
