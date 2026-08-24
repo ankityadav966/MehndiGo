@@ -1347,7 +1347,7 @@ const handleGetArtistDetails = async (c) => {
   if (!u || !u.id) {
     return jsonRes(c, false, null, "Unauthorized access", 401);
   }
-  const user = await db.first("SELECT id, full_name, email, phone, role, is_verified, is_active, avatar FROM users WHERE id = ?", [u.id]);
+  const user = await db.first("SELECT id, full_name, email, phone, role, is_verified FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [u.id, String(u.id)]).catch(() => null);
   const profile = await db.first("SELECT * FROM artist_profiles WHERE user_id = ?", [u.id]).catch(() => null);
 
   const artistName = user?.full_name || user?.name || "Artist";
@@ -10824,6 +10824,14 @@ addRoute("put", "/artist/availability", handleUpdateArtistAvailability);
 addRoute("post", "/artist/availability", handleUpdateArtistAvailability);
 addRoute("get", "/customer/artist/:id/availability", handleGetArtistAvailability);
 addRoute("get", "/customer/artist/:artistId/availability", handleGetArtistAvailability);
+
+addRoute("get", "/artist/portfolio", handleGetArtistPortfolio);
+addRoute("get", "/portfolio", handleGetArtistPortfolio);
+addRoute("post", "/artist/portfolio", handleCreateArtistPortfolio);
+addRoute("post", "/portfolio", handleCreateArtistPortfolio);
+addRoute("put", "/artist/portfolio/:id", handleUpdateArtistPortfolio);
+addRoute("delete", "/artist/portfolio/:id", handleDeleteArtistPortfolio);
+addRoute("delete", "/portfolio/:id", handleDeleteArtistPortfolio);
 
 addRoute("get", "/booking/details/:id", handleGetBookingDetails);
 addRoute("get", "/booking/details", handleGetBookingDetails);
