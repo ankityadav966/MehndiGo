@@ -9850,9 +9850,9 @@ const handleValidateArrival = async (c) => {
         deepLink: `mehendigoo://tracking/${bookingId}`
       }).catch(() => null);
 
-      const customer = await db.first("SELECT email, full_name, name FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [customerId, String(customerId)]).catch(() => null);
+      const customer = await db.first("SELECT id, full_name, email, phone FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [customerId, String(customerId)]).catch(() => null);
       const customerEmail = customer?.email || booking.customer_email || booking.email || booking.user_email;
-      const customerName = customer?.full_name || customer?.name || booking.customer_name || booking.user_name || "Valued Customer";
+      const customerName = customer?.full_name || booking.customer_name || booking.user_name || "Valued Customer";
 
       if (customerEmail && checkinOtp) {
         console.log(`[handleValidateArrival] Dispatching Check-In PIN ${checkinOtp} to customer email: ${customerEmail}`);
@@ -9924,10 +9924,10 @@ const handleSendCheckInOtp = async (c) => {
   // Dispatch Check-In PIN directly to customer's registered email
   let customerUser = null;
   if (customerId) {
-    customerUser = await db.first("SELECT email, full_name, name FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [customerId, String(customerId)]).catch(() => null);
+    customerUser = await db.first("SELECT id, full_name, email, phone FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [customerId, String(customerId)]).catch(() => null);
   }
   const customerEmail = customerUser?.email || booking.customer_email || booking.email || booking.user_email;
-  const customerName = customerUser?.full_name || customerUser?.name || booking.customer_name || booking.user_name || "Valued Customer";
+  const customerName = customerUser?.full_name || booking.customer_name || booking.user_name || "Valued Customer";
 
   const maskedEmail = customerEmail ? customerEmail.replace(/^(.)(.*)(@.*)$/, "$1***$3") : "None";
   console.log(`[CHECKIN EMAIL TRACE] customerEmail=${maskedEmail} | emailFunctionCalled=true`);
@@ -10170,10 +10170,10 @@ const handleSendCheckOutOtp = async (c) => {
   const customerIdOut = booking.customer_id || booking.user_id;
   let customerUserOut = null;
   if (customerIdOut) {
-    customerUserOut = await db.first("SELECT email, full_name, name FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [customerIdOut, String(customerIdOut)]).catch(() => null);
+    customerUserOut = await db.first("SELECT id, full_name, email, phone FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [customerIdOut, String(customerIdOut)]).catch(() => null);
   }
   const customerEmailOut = customerUserOut?.email || booking.customer_email || booking.email || booking.user_email;
-  const customerNameOut = customerUserOut?.full_name || customerUserOut?.name || booking.customer_name || booking.user_name || "Valued Customer";
+  const customerNameOut = customerUserOut?.full_name || booking.customer_name || booking.user_name || "Valued Customer";
 
   const maskedEmailOut = customerEmailOut ? customerEmailOut.replace(/^(.)(.*)(@.*)$/, "$1***$3") : "None";
   console.log(`[CHECKOUT EMAIL TRACE] customerEmail=${maskedEmailOut} | emailFunctionCalled=true`);
