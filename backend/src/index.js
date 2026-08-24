@@ -10140,9 +10140,13 @@ const handleSendCheckOutOtp = async (c) => {
     }
   }
 
-  // Pre-condition Guard: Must be in progress
-  const inProgressStatuses = ["in_progress", "SERVICE_IN_PROGRESS", "CUSTOMER_VERIFIED", "SERVICE_STARTED", "checkout", "CHECKOUT"];
-  if (!inProgressStatuses.includes(booking.status) && !inProgressStatuses.includes(booking.detailed_status) && Number(booking.checkin_otp_verified) !== 1) {
+  // Pre-condition Guard: Must be in progress or checkin verified
+  const st = String(booking.status || "").toUpperCase();
+  const dst = String(booking.detailed_status || "").toUpperCase();
+  const inProgressStatuses = ["IN_PROGRESS", "SERVICE_IN_PROGRESS", "CUSTOMER_VERIFIED", "SERVICE_STARTED", "CHECKOUT"];
+  const isProgressValid = Number(booking.checkin_otp_verified) === 1 || inProgressStatuses.includes(st) || inProgressStatuses.includes(dst);
+
+  if (!isProgressValid) {
     return jsonRes(c, false, null, "Cannot generate Check-Out OTP before service is in progress", 400);
   }
 
