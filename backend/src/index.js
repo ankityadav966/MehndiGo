@@ -10641,62 +10641,60 @@ const handleVerifyCheckOutOtp = async (c) => {
 
   const totalAmt = Number(booking.total_amount || booking.total_price || 0);
   const advancePaid = Number(booking.advance_paid || 0);
-  const remainingAmount = Math.max(0, totalAmt - advancePaid);
-  const nowIso = new Date().toISOString();
+  const remainingAmount = Math.max(0, Math.round((totalAmt - advancePaid) * 100) / 100);
+  const isAlreadyFullyPaid = remainingAmount <= 0;
 
-  // Infallible atomic update for completion
-  try {
+  if (isAlreadyFullyPaid) {
+    // Already fully paid: Complete booking directly
     await db.run(
-      "UPDATE bookings SET status = 'completed', detailed_status = 'COMPLETED', checkout_otp_verified = 1, check_out_time = CURRENT_TIMESTAMP, checkout_otp = NULL, checkout_otp_expires_at = NULL, remaining_amount = 0 WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+      "UPDATE bookings SET status = 'completed', detailed_status = 'COMPLETED', booking_status = 'COMPLETED', checkout_otp_verified = 1, check_out_time = CURRENT_TIMESTAMP, checkout_otp = NULL, checkout_otp_expires_at = NULL, remaining_amount = 0, payment_status = 'PAID', final_payment_status = 'PAID', completed_at = CURRENT_TIMESTAMP WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
       [bookingId, String(bookingId)]
     );
-  } catch (sqlErr) {
-    console.error("[CRITICAL Check-Out SQL Update Failed]", sqlErr);
     await db.run(
-      "UPDATE bookings SET status = 'completed', detailed_status = 'COMPLETED', checkout_otp = NULL, checkout_otp_expires_at = NULL, remaining_amount = 0 WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
-      [bookingId, String(bookingId)]
+      "INSERT INTO booking_status_histories (booking_id, status, notes, created_at, updated_at) VALUES (?, 'COMPLETED', 'Check-Out OTP verified. Booking completed.', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+      [bookingId]
+    ).catch(() => { });
+    await processBookingSettlement(db, bookingId).catch(() => { });
+  } else {
+    // Remaining amount exists: Await final payment (Online / Cash)
+    await db.run(
+      "UPDATE bookings SET detailed_status = 'CHECKOUT', checkout_otp_verified = 1, check_out_time = CURRENT_TIMESTAMP, checkout_otp = NULL, checkout_otp_expires_at = NULL, remaining_amount = ?, payment_status = 'PARTIAL', final_payment_status = 'PENDING' WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+      [remainingAmount, bookingId, String(bookingId)]
+    );
+    await db.run(
+      "INSERT INTO booking_status_histories (booking_id, status, notes, created_at, updated_at) VALUES (?, 'CHECKOUT', 'Check-Out OTP verified. Awaiting remaining payment of ₹' || ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+      [bookingId, remainingAmount]
     ).catch(() => { });
   }
 
-  // Best-effort updates for tracking columns (safe if columns don't exist)
-  await db.run("UPDATE bookings SET booking_status = 'COMPLETED', payment_status = 'PAID' WHERE id = ?", [bookingId]).catch(() => { });
-  await db.run("UPDATE bookings SET checkout_verified_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => { });
-  await db.run("UPDATE bookings SET completed_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => { });
-  await db.run("UPDATE bookings SET service_completed_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => { });
-
-  // Record audit history
-  await db.run(
-    "INSERT INTO booking_status_histories (booking_id, status, notes, created_at, updated_at) VALUES (?, 'COMPLETED', 'Check-Out OTP verified. Booking completed and artist released as AVAILABLE.', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
-    [bookingId]
-  ).catch(() => { });
-
-  // Automatically settle booking and release earnings to artist wallet
-  await processBookingSettlement(db, bookingId).catch(() => { });
-
-  // Dispatch completion notifications to Customer and Artist
+  // Dispatch checkout notifications to Customer and Artist
   if (booking.customer_id) {
     dispatchNotification(db, {
       userId: booking.customer_id,
-      title: "Booking Completed ✨",
-      body: "Your mehndi service is completed! Please rate and review your artist.",
-      type: "BOOKING_COMPLETED",
+      title: isAlreadyFullyPaid ? "Booking Completed ✨" : "Service Completed ✨",
+      body: isAlreadyFullyPaid
+        ? "Your mehndi service is completed! Please rate and review your artist."
+        : `Service completed! Please pay the remaining balance of ₹${remainingAmount} online or via cash.`,
+      type: isAlreadyFullyPaid ? "BOOKING_COMPLETED" : "PAYMENT_REQUESTED",
       entityId: bookingId,
       entityType: "booking",
       channelId: "bookings",
-      deepLink: `mehendigoo://review/${bookingId}`
+      deepLink: `mehendigoo://booking/${bookingId}`
     }).catch(() => null);
   }
 
   if (booking.artist_id) {
     dispatchNotification(db, {
       userId: booking.artist_id,
-      title: "Payment Received 💰",
-      body: `Booking #${booking.booking_number || bookingId} completed. Earnings credited to your wallet. You are now AVAILABLE for new bookings.`,
-      type: "PAYMENT_SUCCESS",
+      title: isAlreadyFullyPaid ? "Booking Completed 🎉" : "Check-Out Verified ✨",
+      body: isAlreadyFullyPaid
+        ? `Booking #${booking.booking_number || bookingId} completed. Earnings credited to your wallet.`
+        : `Check-out verified for #${booking.booking_number || bookingId}. Please collect remaining ₹${remainingAmount} from customer (Online or Cash).`,
+      type: "BOOKING_UPDATED",
       entityId: bookingId,
       entityType: "booking",
-      channelId: "payments",
-      deepLink: `mehendigoo://artist/wallet`
+      channelId: "bookings",
+      deepLink: `mehendigoo://artist/booking/${bookingId}`
     }).catch(() => null);
   }
 
@@ -10707,15 +10705,15 @@ const handleVerifyCheckOutOtp = async (c) => {
     id: bookingId,
     booking_id: bookingId,
     bookingId: bookingId,
-    status: "completed",
-    booking_status: "COMPLETED",
-    bookingStatus: "COMPLETED",
-    detailed_status: "COMPLETED",
-    detailedStatus: "COMPLETED",
-    artist_status: "AVAILABLE",
-    service_completed_at: nowIso,
-    completed_at: nowIso
-  }, "Check-Out verified successfully. Booking completed and artist is now AVAILABLE for new bookings!");
+    status: isAlreadyFullyPaid ? "completed" : (updated?.status || "confirmed"),
+    detailed_status: isAlreadyFullyPaid ? "COMPLETED" : "CHECKOUT",
+    booking_status: isAlreadyFullyPaid ? "COMPLETED" : (updated?.booking_status || "CONFIRMED"),
+    remaining_amount: remainingAmount,
+    total_amount: totalAmt,
+    advance_paid: advancePaid,
+    final_payment_status: isAlreadyFullyPaid ? "PAID" : "PENDING",
+    is_fully_paid: isAlreadyFullyPaid
+  }, isAlreadyFullyPaid ? "Booking completed successfully" : "Check-Out OTP verified. Please collect remaining balance.");
 };
 
 // =========================================================================
