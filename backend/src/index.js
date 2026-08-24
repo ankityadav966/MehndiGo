@@ -9284,17 +9284,19 @@ const handleCreateBookingExplicit = async (c) => {
   const requiredAdvance = Math.round(totalAmount * 0.10);
   const initialRemaining = Math.max(0, totalAmount - requiredAdvance);
 
-  let newId = Date.now();
+  let newId = 0;
   try {
     const res = await db.run(`
       INSERT INTO bookings (
         booking_number, customer_id, artist_id, service_id, booking_date, booking_time,
-        total_amount, advance_paid, remaining_amount, address, latitude, longitude, notes, status, payment_status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 0.0, ?, ?, ?, ?, ?, 'pending_payment', 'pending')
+        total_amount, advance_paid, remaining_amount, address, latitude, longitude, notes, status, payment_status,
+        detailed_status, booking_status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 0.0, ?, ?, ?, ?, ?, 'pending_payment', 'pending', 'PENDING_PAYMENT', 'PENDING')
     `, [bookingNo, u.id, artistId, serviceId, bookingDate, bookingTime, totalAmount, initialRemaining, address, finalLat, finalLng, notes]);
-    newId = res?.meta?.last_row_id || res?.lastRowId || res?.meta?.last_insert_rowid || Date.now();
+    newId = res?.meta?.last_row_id || res?.lastRowId || res?.meta?.last_insert_rowid;
   } catch (err) {
-    console.log("Explicit booking insert catch:", err.message);
+    console.error("Explicit booking insert error:", err.message);
+    return jsonRes(c, false, null, "Failed to create booking: " + err.message, 500);
   }
 
   const createdBooking = await db.first("SELECT * FROM bookings WHERE booking_number = ? ORDER BY id DESC LIMIT 1", [bookingNo]).catch(() => null);
