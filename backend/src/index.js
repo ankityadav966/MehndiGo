@@ -3446,11 +3446,16 @@ const ensureFavoriteTable = async (db) => {
     CREATE TABLE IF NOT EXISTS favorites (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       customer_id INTEGER,
+      user_id INTEGER,
       artist_id INTEGER,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(customer_id, artist_id)
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `).catch(() => { });
+
+  await db.run("ALTER TABLE favorites ADD COLUMN customer_id INTEGER").catch(() => { });
+  await db.run("ALTER TABLE favorites ADD COLUMN user_id INTEGER").catch(() => { });
+  await db.run("ALTER TABLE favorites ADD COLUMN artist_id INTEGER").catch(() => { });
+  await db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_fav_unique ON favorites(customer_id, artist_id)").catch(() => { });
 };
 
 const handleGetFavorites = async (c) => {
@@ -3470,9 +3475,9 @@ const handleGetFavorites = async (c) => {
     FROM favorites f
     LEFT JOIN artist_profiles ap ON (f.artist_id = ap.id OR f.artist_id = ap.user_id OR CAST(f.artist_id AS TEXT) = CAST(ap.id AS TEXT) OR CAST(f.artist_id AS TEXT) = CAST(ap.user_id AS TEXT))
     LEFT JOIN users u ON (f.artist_id = u.id OR ap.user_id = u.id OR CAST(f.artist_id AS TEXT) = CAST(u.id AS TEXT) OR CAST(ap.user_id AS TEXT) = CAST(u.id AS TEXT))
-    WHERE f.customer_id = ? OR CAST(f.customer_id AS TEXT) = ?
+    WHERE f.customer_id = ? OR f.user_id = ? OR CAST(f.customer_id AS TEXT) = ? OR CAST(f.user_id AS TEXT) = ?
     ORDER BY f.id DESC
-  `, [u.id, String(u.id)]).catch(() => []);
+  `, [u.id, u.id, String(u.id), String(u.id)]).catch(() => []);
 
   await enrichArtistRecords(db, favs);
 
@@ -3490,9 +3495,14 @@ const handleAddFavorite = async (c) => {
   if (!artistId) return jsonRes(c, false, null, "Artist ID is required", 400);
 
   await db.run(
-    "INSERT OR IGNORE INTO favorites (customer_id, artist_id, created_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
-    [u.id, artistId]
-  ).catch(() => { });
+    "INSERT OR REPLACE INTO favorites (customer_id, user_id, artist_id, created_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+    [u.id, u.id, artistId]
+  ).catch(async () => {
+    await db.run(
+      "INSERT INTO favorites (customer_id, artist_id, created_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+      [u.id, artistId]
+    ).catch(() => { });
+  });
 
   return jsonRes(c, true, { customer_id: u.id, artist_id: artistId }, "Added to favorites");
 };
@@ -3508,8 +3518,8 @@ const handleRemoveFavorite = async (c) => {
   if (!artistId) return jsonRes(c, false, null, "Artist ID is required", 400);
 
   await db.run(
-    "DELETE FROM favorites WHERE (customer_id = ? OR CAST(customer_id AS TEXT) = ?) AND (artist_id = ? OR CAST(artist_id AS TEXT) = ?)",
-    [u.id, String(u.id), artistId, String(artistId)]
+    "DELETE FROM favorites WHERE (customer_id = ? OR user_id = ? OR CAST(customer_id AS TEXT) = ? OR CAST(user_id AS TEXT) = ?) AND (artist_id = ? OR CAST(artist_id AS TEXT) = ?)",
+    [u.id, u.id, String(u.id), String(u.id), artistId, String(artistId)]
   ).catch(() => { });
 
   return jsonRes(c, true, { customer_id: u.id, artist_id: artistId }, "Removed from favorites");
