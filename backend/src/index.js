@@ -3409,6 +3409,109 @@ const handleHomeDashboard = async (c) => {
   }, "Home dashboard loaded");
 };
 
+const handleGetNearbyArtists = async (c) => {
+  const db = getDb(c.env);
+  const page = parseInt(c.req.query("page") || "1", 10);
+  const limit = parseInt(c.req.query("limit") || "15", 10);
+  const offset = (page - 1) * limit;
+  const filter = c.req.query("filter") || "Nearest";
+
+  let orderBy = "ORDER BY COALESCE(ap.rating, 0) DESC, u.id DESC";
+  if (filter === "Top Rated") {
+    orderBy = "ORDER BY COALESCE(ap.rating, 0) DESC, COALESCE(ap.total_reviews, 0) DESC";
+  } else if (filter === "Price: Low to High") {
+    orderBy = "ORDER BY COALESCE(ap.starting_price, 99999) ASC";
+  } else if (filter === "Most Popular") {
+    orderBy = "ORDER BY COALESCE(ap.total_reviews, 0) DESC";
+  }
+
+  const artists = await db.all(`
+    SELECT u.id as id, u.id as user_id, COALESCE(NULLIF(u.full_name, ''), 'Mehndi Artist') as name,
+           COALESCE(NULLIF(u.full_name, ''), 'Mehndi Artist') as full_name, u.email, u.phone,
+           ap.bio, ap.experience_years, ap.starting_price, ap.city, ap.locality, ap.rating, ap.total_reviews, ap.status, ap.profile_image
+    FROM users u
+    LEFT JOIN artist_profiles ap ON (u.id = ap.user_id OR CAST(u.id AS TEXT) = CAST(ap.user_id AS TEXT))
+    WHERE (LOWER(u.role) = 'artist')
+    ${orderBy}
+    LIMIT ? OFFSET ?
+  `, [limit, offset]).catch(() => []);
+
+  await enrichArtistRecords(db, artists);
+
+  return jsonRes(c, true, artists || [], "Nearby artists loaded");
+};
+
+const ensureFavoriteTable = async (db) => {
+  await db.run(`
+    CREATE TABLE IF NOT EXISTS favorites (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_id INTEGER,
+      artist_id INTEGER,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(customer_id, artist_id)
+    )
+  `).catch(() => { });
+};
+
+const handleGetFavorites = async (c) => {
+  const db = getDb(c.env);
+  const u = getUserFromHeader(c);
+  if (!u || !u.id) return jsonRes(c, false, null, "Unauthorized access", 401);
+  await ensureFavoriteTable(db);
+
+  const favs = await db.all(`
+    SELECT f.id as fav_id, f.created_at as favorited_at,
+           u.id as id, u.id as user_id, COALESCE(NULLIF(u.full_name, ''), 'Mehndi Artist') as name,
+           COALESCE(NULLIF(u.full_name, ''), 'Mehndi Artist') as full_name, u.email, u.phone,
+           ap.bio, ap.experience_years, ap.starting_price, ap.city, ap.locality, ap.rating, ap.total_reviews, ap.status, ap.profile_image
+    FROM favorites f
+    JOIN users u ON (f.artist_id = u.id OR CAST(f.artist_id AS TEXT) = CAST(u.id AS TEXT))
+    LEFT JOIN artist_profiles ap ON (u.id = ap.user_id OR CAST(u.id AS TEXT) = CAST(ap.user_id AS TEXT))
+    WHERE f.customer_id = ? OR CAST(f.customer_id AS TEXT) = ?
+    ORDER BY f.id DESC
+  `, [u.id, String(u.id)]).catch(() => []);
+
+  await enrichArtistRecords(db, favs);
+
+  return jsonRes(c, true, favs || [], "Favorites retrieved successfully");
+};
+
+const handleAddFavorite = async (c) => {
+  const db = getDb(c.env);
+  const u = getUserFromHeader(c);
+  if (!u || !u.id) return jsonRes(c, false, null, "Unauthorized access", 401);
+  await ensureFavoriteTable(db);
+
+  const body = await c.req.json().catch(() => ({}));
+  const artistId = Number(body.artistId || body.artist_id || c.req.query("artistId") || 0);
+  if (!artistId) return jsonRes(c, false, null, "Artist ID is required", 400);
+
+  await db.run(
+    "INSERT OR IGNORE INTO favorites (customer_id, artist_id, created_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+    [u.id, artistId]
+  ).catch(() => { });
+
+  return jsonRes(c, true, { customer_id: u.id, artist_id: artistId }, "Added to favorites");
+};
+
+const handleRemoveFavorite = async (c) => {
+  const db = getDb(c.env);
+  const u = getUserFromHeader(c);
+  if (!u || !u.id) return jsonRes(c, false, null, "Unauthorized access", 401);
+  await ensureFavoriteTable(db);
+
+  const body = await c.req.json().catch(() => ({}));
+  const artistId = Number(body.artistId || body.artist_id || c.req.query("artistId") || c.req.query("artist_id") || 0);
+  if (!artistId) return jsonRes(c, false, null, "Artist ID is required", 400);
+
+  await db.run(
+    "DELETE FROM favorites WHERE (customer_id = ? OR CAST(customer_id AS TEXT) = ?) AND (artist_id = ? OR CAST(artist_id AS TEXT) = ?)",
+    [u.id, String(u.id), artistId, String(artistId)]
+  ).catch(() => { });
+
+  return jsonRes(c, true, { customer_id: u.id, artist_id: artistId }, "Removed from favorites");
+};
+
 const handleGetArtistAvailability = async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
@@ -10523,6 +10626,9 @@ const handleVerifyCheckOutOtp = async (c) => {
 const handleGetBookingDetails = async (c) => {
   const db = getDb(c.env);
   const rawId = c.req.param("id") || c.req.param("bookingId") || c.req.query("bookingId") || c.req.query("id") || c.req.path.split("/").pop();
+  if (rawId === "history" || rawId === "active" || rawId === "my-bookings" || rawId === "list") {
+    return handleGetCustomerBookings(c);
+  }
   const bookingId = parseInt(rawId, 10) || 0;
 
   let booking = null;
@@ -11028,6 +11134,22 @@ addRoute("put", "/artist/portfolio/:id", handleUpdateArtistPortfolio);
 addRoute("delete", "/artist/portfolio/:id", handleDeleteArtistPortfolio);
 addRoute("delete", "/portfolio/:id", handleDeleteArtistPortfolio);
 
+addRoute("get", "/customer/nearby-artists", handleGetNearbyArtists);
+addRoute("get", "/customer/artists/nearby", handleGetNearbyArtists);
+addRoute("get", "/nearby-artists", handleGetNearbyArtists);
+
+addRoute("get", "/customer/favorite", handleGetFavorites);
+addRoute("get", "/customer/favorites", handleGetFavorites);
+addRoute("post", "/customer/favorite", handleAddFavorite);
+addRoute("post", "/customer/favorites", handleAddFavorite);
+addRoute("delete", "/customer/favorite", handleRemoveFavorite);
+addRoute("delete", "/customer/favorites", handleRemoveFavorite);
+
+addRoute("get", "/customer/bookings", handleGetCustomerBookings);
+addRoute("get", "/booking/history", handleGetCustomerBookings);
+addRoute("get", "/customer/booking/history", handleGetCustomerBookings);
+addRoute("get", "/api/v1/customer/bookings", handleGetCustomerBookings);
+
 addRoute("get", "/booking/details/:id", handleGetBookingDetails);
 addRoute("get", "/booking/details", handleGetBookingDetails);
 addRoute("get", "/booking/:id", handleGetBookingDetails);
@@ -11035,11 +11157,6 @@ addRoute("get", "/customer/booking/:id", handleGetBookingDetails);
 addRoute("get", "/customer/booking/details/:id", handleGetBookingDetails);
 addRoute("get", "/artist/booking/:id", handleGetBookingDetails);
 addRoute("get", "/artist/booking/details/:id", handleGetBookingDetails);
-
-addRoute("get", "/customer/bookings", handleGetCustomerBookings);
-addRoute("get", "/booking/history", handleGetCustomerBookings);
-addRoute("get", "/customer/booking/history", handleGetCustomerBookings);
-addRoute("get", "/api/v1/customer/bookings", handleGetCustomerBookings);
 
 addRoute("get", "/booking/check-restricted", handleCheckRestrictedBooking);
 addRoute("get", "/customer/booking/check-restricted", handleCheckRestrictedBooking);
