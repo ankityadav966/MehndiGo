@@ -2,10 +2,20 @@ import React, { useState } from "react";
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, ActivityIndicator } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 
+const maskEmail = (email) => {
+  if (!email || typeof email !== "string" || !email.includes("@")) return "registered email";
+  const [local, domain] = email.split("@");
+  if (local.length <= 2) return `${local[0]}***@${domain}`;
+  return `${local[0]}${local[1]}***@${domain}`;
+};
+
 export default function OtpVerificationCard({
   otpCode,
+  customerEmail = null,
   isArtist = false,
   onVerify,
+  onGenerate,
+  onResend,
   loading = false,
   otpType = "CHECKIN", // "CHECKIN" or "CHECKOUT"
   errorMessage = null
@@ -13,55 +23,92 @@ export default function OtpVerificationCard({
   const [enteredOtp, setEnteredOtp] = useState("");
 
   const isCheckIn = otpType === "CHECKIN";
-  const title = isCheckIn ? "Service Check-In PIN" : "Service Completion PIN";
-  const requiredLength = isCheckIn ? 4 : 6;
+  const title = isCheckIn ? "Check-In PIN Sent to Email" : "Completion PIN Sent to Email";
 
-  // CUSTOMER VIEW: Display OTP to be shared with artist
+  // CUSTOMER VIEW: Display Email Notification (No raw OTP digits/popup on app)
   if (!isArtist) {
-    const rawPin = String(otpCode || "");
-    const pin = rawPin.length > 0 ? rawPin : "•".repeat(requiredLength);
+    const masked = maskEmail(customerEmail);
+
     return (
-      <View style={styles.customerCard}>
+      <View style={[styles.customerCard, !isCheckIn && styles.customerCardCheckout]}>
         <View style={styles.headerRow}>
-          <View style={styles.customerIconCircle}>
-            <Ionicons name="key" size={16} color="#059669" />
+          <View style={[styles.customerIconCircle, !isCheckIn && styles.customerIconCircleCheckout]}>
+            <Ionicons name={isCheckIn ? "mail" : "mail-open"} size={18} color={isCheckIn ? "#059669" : "#701DDB"} />
           </View>
           <View style={styles.headerTextContainer}>
-            <Text style={styles.customerTitle} numberOfLines={1}>{title}</Text>
-            <Text style={styles.customerSubtitle} numberOfLines={2}>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              <Text style={[styles.customerTitle, !isCheckIn && styles.customerTitleCheckout]} numberOfLines={1}>
+                {title}
+              </Text>
+              <View style={[styles.statusBadge, !isCheckIn && styles.statusBadgeCheckout]}>
+                <View style={[styles.pulseDot, !isCheckIn && styles.pulseDotCheckout]} />
+                <Text style={[styles.statusBadgeText, !isCheckIn && styles.statusBadgeTextCheckout]}>EMAIL SENT</Text>
+              </View>
+            </View>
+            <Text style={[styles.customerSubtitle, !isCheckIn && styles.customerSubtitleCheckout]} numberOfLines={2}>
               {isCheckIn
-                ? `Share this ${requiredLength}-digit security PIN with your artist upon arrival to begin service.`
-                : `Share this ${requiredLength}-digit PIN with your artist to confirm successful service completion.`}
+                ? "A 4-digit Check-In PIN has been sent to your email. Share it with your specialist upon arrival."
+                : "A 4-digit Service Completion PIN has been sent to your email. Share it once the service is complete."}
             </Text>
           </View>
         </View>
 
-        <View style={styles.pinContainer}>
-          {pin.split("").slice(0, requiredLength).map((digit, idx) => (
-            <View key={idx} style={styles.pinBox}>
-              <Text style={styles.pinDigit}>{digit}</Text>
-            </View>
-          ))}
+        {/* Email Inbox Info Box */}
+        <View style={[styles.emailInfoBox, !isCheckIn && styles.emailInfoBoxCheckout]}>
+          <View style={styles.emailRow}>
+            <Ionicons name="at-circle" size={15} color={isCheckIn ? "#059669" : "#701DDB"} style={{ marginRight: 6 }} />
+            <Text style={[styles.emailAddressText, !isCheckIn && styles.emailAddressTextCheckout]} numberOfLines={1}>
+              {customerEmail ? `Sent to: ${masked}` : "Sent to your registered email inbox"}
+            </Text>
+          </View>
+          <Text style={[styles.emailHintText, !isCheckIn && styles.emailHintTextCheckout]}>
+            {isCheckIn
+              ? "Please check your inbox for the email with your 4-digit Check-In PIN."
+              : "Please check your inbox for the email with your 4-digit Service Completion PIN."}
+          </Text>
         </View>
 
-        <View style={styles.securityNote}>
-          <Ionicons name="shield-checkmark" size={13} color="#059669" />
-          <Text style={styles.securityText} numberOfLines={1}>
-            Protected Check-in: Share only when artist is present.
-          </Text>
+        {/* Action & Resend Bar */}
+        <View style={styles.footerRow}>
+          <View style={styles.securityNote}>
+            <Ionicons name="shield-checkmark" size={13} color={isCheckIn ? "#059669" : "#701DDB"} />
+            <Text style={[styles.securityText, !isCheckIn && { color: "#5B21B6" }]} numberOfLines={1}>
+              {isCheckIn ? "Share only when artist arrives at doorstep" : "Share only after mehndi application finishes"}
+            </Text>
+          </View>
+
+          {(onResend || onGenerate) && (
+            <TouchableOpacity
+              style={[styles.resendBtn, !isCheckIn && styles.resendBtnCheckout]}
+              onPress={onResend || onGenerate}
+              disabled={loading}
+              activeOpacity={0.75}
+            >
+              {loading ? (
+                <ActivityIndicator size="small" color={isCheckIn ? "#059669" : "#701DDB"} />
+              ) : (
+                <>
+                  <Ionicons name="paper-plane-outline" size={12} color={isCheckIn ? "#059669" : "#701DDB"} style={{ marginRight: 4 }} />
+                  <Text style={[styles.resendBtnText, !isCheckIn && { color: "#701DDB" }]}>Resend Email</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     );
   }
 
-  // ARTIST VIEW: Input OTP provided by customer
+  // ARTIST VIEW: Input OTP provided by customer (4-digit PIN)
+  const isComplete = enteredOtp.trim().length === 4;
+
   const handleVerify = () => {
-    if (enteredOtp.trim().length >= 4 && onVerify) {
-      onVerify(enteredOtp.trim());
+    if (isComplete && onVerify) {
+      onVerify(enteredOtp.trim(), otpType);
     }
   };
 
-  const isVerifyDisabled = enteredOtp.trim().length < 4 || loading;
+  const isVerifyDisabled = !isComplete || loading;
 
   return (
     <View style={styles.artistCard}>
@@ -75,8 +122,8 @@ export default function OtpVerificationCard({
           </Text>
           <Text style={styles.artistSubtitle} numberOfLines={2}>
             {isCheckIn
-              ? "Ask the customer for their 4-digit check-in PIN to start service."
-              : "Ask the customer for their 6-digit completion PIN to finalize booking."}
+              ? "Ask the customer for their 4-digit PIN received on their registered email."
+              : "Ask the customer for their 4-digit Completion PIN received on their registered email."}
           </Text>
         </View>
       </View>
@@ -85,18 +132,20 @@ export default function OtpVerificationCard({
         <TextInput
           style={[styles.otpInput, errorMessage && styles.otpInputError]}
           value={enteredOtp}
-          onChangeText={(val) => setEnteredOtp(val.replace(/[^0-9]/g, "").slice(0, 6))}
+          onChangeText={(val) => setEnteredOtp(val.replace(/[^0-9]/g, "").slice(0, 4))}
           keyboardType="number-pad"
-          maxLength={6}
-          placeholder={isCheckIn ? "••••" : "••••••"}
-          placeholderTextColor="#CBD5E1"
+          maxLength={4}
+          placeholder="••••"
+          placeholderTextColor="#9CA3AF"
           textAlign="center"
-          autoFocus={false}
+          autoFocus={true}
         />
         <View style={styles.pinHelperRow}>
-          <Ionicons name="information-circle-outline" size={12} color="#6B7280" />
-          <Text style={styles.pinHelperText} numberOfLines={1}>
-            {`Enter ${isCheckIn ? "4" : "6"} digits displayed on customer's app`}
+          <Ionicons name="mail-outline" size={12} color="#64748B" />
+          <Text style={styles.pinHelperText}>
+            {isCheckIn
+              ? "Customer received 4-digit PIN in their email inbox"
+              : "Customer received 4-digit Completion PIN in their email"}
           </Text>
         </View>
       </View>
@@ -123,7 +172,7 @@ export default function OtpVerificationCard({
           <>
             <Ionicons name="checkmark-done" size={17} color="#FFFFFF" style={{ marginRight: 6 }} />
             <Text style={styles.verifyBtnText} numberOfLines={1} ellipsizeMode="tail">
-              {isCheckIn ? "Verify PIN & Start Service" : "Verify & Complete Booking"}
+              {isCheckIn ? "Verify PIN & Start Service" : "Verify PIN & Complete Booking"}
             </Text>
           </>
         )}
@@ -148,6 +197,11 @@ const styles = StyleSheet.create({
     elevation: 2,
     overflow: "hidden"
   },
+  customerCardCheckout: {
+    backgroundColor: "#FAF5FF",
+    borderColor: "#DDD6FE",
+    shadowColor: "#701DDB"
+  },
   artistCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 18,
@@ -169,18 +223,21 @@ const styles = StyleSheet.create({
     marginBottom: 10
   },
   customerIconCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
+    width: 36,
+    height: 36,
+    borderRadius: 12,
     backgroundColor: "#D1FAE5",
     justifyContent: "center",
     alignItems: "center",
     flexShrink: 0
   },
+  customerIconCircleCheckout: {
+    backgroundColor: "#EDE9FE"
+  },
   artistIconCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
+    width: 36,
+    height: 36,
+    borderRadius: 12,
     backgroundColor: "#EDE9FE",
     justifyContent: "center",
     alignItems: "center",
@@ -191,15 +248,87 @@ const styles = StyleSheet.create({
     flex: 1
   },
   customerTitle: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: "800",
     color: "#065F46"
+  },
+  customerTitleCheckout: {
+    color: "#4C1D95"
+  },
+  statusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#D1FAE5",
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#6EE7B7"
+  },
+  statusBadgeCheckout: {
+    backgroundColor: "#EDE9FE",
+    borderColor: "#C4B5FD"
+  },
+  pulseDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#059669",
+    marginRight: 4
+  },
+  pulseDotCheckout: {
+    backgroundColor: "#7C3AED"
+  },
+  statusBadgeText: {
+    fontSize: 9.5,
+    fontWeight: "800",
+    color: "#065F46",
+    letterSpacing: 0.4
+  },
+  statusBadgeTextCheckout: {
+    color: "#5B21B6"
   },
   customerSubtitle: {
     fontSize: 11,
     color: "#047857",
-    marginTop: 2,
+    marginTop: 3,
     lineHeight: 15
+  },
+  customerSubtitleCheckout: {
+    color: "#6D28D9"
+  },
+  emailInfoBox: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    padding: 10,
+    marginVertical: 6,
+    borderWidth: 1,
+    borderColor: "#A7F3D0"
+  },
+  emailInfoBoxCheckout: {
+    borderColor: "#DDD6FE"
+  },
+  emailRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 3
+  },
+  emailAddressText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#065F46",
+    flex: 1
+  },
+  emailAddressTextCheckout: {
+    color: "#4C1D95"
+  },
+  emailHintText: {
+    fontSize: 10.5,
+    color: "#059669",
+    lineHeight: 14
+  },
+  emailHintTextCheckout: {
+    color: "#6D28D9"
   },
   artistTitle: {
     fontSize: 14,
@@ -212,87 +341,85 @@ const styles = StyleSheet.create({
     marginTop: 2,
     lineHeight: 15
   },
-  pinContainer: {
+  footerRow: {
     flexDirection: "row",
-    justifyContent: "center",
-    gap: 10,
-    marginVertical: 10
-  },
-  pinBox: {
-    width: 48,
-    height: 52,
-    borderRadius: 12,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1.5,
-    borderColor: "#059669",
-    justifyContent: "center",
     alignItems: "center",
-    shadowColor: "#059669",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2
-  },
-  pinDigit: {
-    fontSize: 22,
-    fontWeight: "900",
-    color: "#065F46",
-    letterSpacing: 2
+    justifyContent: "space-between",
+    marginTop: 4,
+    paddingTop: 4
   },
   securityNote: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    marginTop: 4,
-    gap: 4
+    gap: 4,
+    flex: 1
   },
   securityText: {
     fontSize: 10.5,
-    color: "#065F46",
-    fontWeight: "600"
+    color: "#047857",
+    fontWeight: "600",
+    flex: 1
+  },
+  resendBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#D1FAE5",
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#6EE7B7"
+  },
+  resendBtnCheckout: {
+    backgroundColor: "#EDE9FE",
+    borderColor: "#C4B5FD"
+  },
+  resendBtnText: {
+    fontSize: 11,
+    color: "#059669",
+    fontWeight: "800"
   },
   inputWrapper: {
-    marginVertical: 6
+    alignItems: "center",
+    marginVertical: 8
   },
   otpInput: {
-    height: 50,
-    backgroundColor: "#F9FAFB",
-    borderRadius: 12,
+    width: "100%",
+    maxWidth: 260,
+    height: 52,
+    backgroundColor: "#F8FAFC",
     borderWidth: 1.5,
     borderColor: "#CBD5E1",
+    borderRadius: 14,
     fontSize: 22,
-    fontWeight: "900",
-    color: "#1F2937",
-    letterSpacing: 10,
-    paddingHorizontal: 14
+    fontWeight: "800",
+    color: "#1E293B",
+    letterSpacing: 8,
+    textAlign: "center"
   },
   otpInputError: {
-    borderColor: "#DC2626",
+    borderColor: "#EF4444",
     backgroundColor: "#FEF2F2"
   },
   pinHelperRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    marginTop: 5,
+    marginTop: 6,
     gap: 4
   },
   pinHelperText: {
-    fontSize: 10.5,
-    color: "#6B7280",
+    fontSize: 11,
+    color: "#64748B",
     fontWeight: "500"
   },
   errorBanner: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#FEF2F2",
-    paddingVertical: 6,
-    paddingHorizontal: 10,
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#FECACA",
+    padding: 8,
     marginBottom: 8,
-    gap: 4
+    gap: 6
   },
   errorText: {
     fontSize: 11,
@@ -301,14 +428,13 @@ const styles = StyleSheet.create({
     flex: 1
   },
   verifyBtn: {
-    flexDirection: "row",
-    height: 48,
-    borderRadius: 14,
     backgroundColor: "#701DDB",
+    borderRadius: 14,
+    paddingVertical: 13,
+    flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
     marginTop: 4,
-    paddingHorizontal: 12,
     shadowColor: "#701DDB",
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.25,
@@ -316,15 +442,13 @@ const styles = StyleSheet.create({
     elevation: 3
   },
   verifyBtnDisabled: {
-    backgroundColor: "#CBD5E1",
-    shadowOpacity: 0,
-    elevation: 0
+    backgroundColor: "#C4B5FD",
+    shadowOpacity: 0
   },
   verifyBtnText: {
+    color: "#FFFFFF",
     fontSize: 13.5,
     fontWeight: "800",
-    color: "#FFFFFF",
-    letterSpacing: 0.2,
-    flexShrink: 1
+    letterSpacing: 0.3
   }
 });

@@ -86,32 +86,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
             longitude: Number(data.longitude)
           });
         }
-        setBooking((prev) => {
-          const prevVerified =
-            prev &&
-            (Number(prev.checkin_otp_verified) === 1 ||
-              Number(prev.checkin_verified) === 1 ||
-              String(prev.detailed_status).toUpperCase() === "SERVICE_IN_PROGRESS");
-          const incomingVerified =
-            Number(data.checkin_otp_verified) === 1 ||
-            Number(data.checkin_verified) === 1 ||
-            String(data.detailed_status).toUpperCase() === "SERVICE_IN_PROGRESS";
-          const isFinished = ["COMPLETED", "COMPLETED_CLOSED", "CANCELLED", "CHECKOUT"].includes(
-            String(data.detailed_status || data.status || "").toUpperCase()
-          );
-
-          if (prevVerified && !incomingVerified && !isFinished) {
-            return {
-              ...data,
-              status: "in_progress",
-              booking_status: "IN_PROGRESS",
-              detailed_status: "SERVICE_IN_PROGRESS",
-              checkin_otp_verified: 1,
-              checkin_verified: true
-            };
-          }
-          return data;
-        });
+        setBooking(data);
       }
     } catch (err) {
       if (__DEV__) console.log("Failed to load artist booking details:", err.message);
@@ -159,6 +134,39 @@ export default function BookingDetailsScreen({ route, navigation }) {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     };
   }, [bookingId, navigation, loadDetails, booking?.detailed_status, booking?.booking_status, booking?.status]);
+
+  // Socket Live Status Listener
+  useEffect(() => {
+    if (!socket || !bookingId) return;
+
+    socket.emit("join-room", { bookingId });
+
+    const handleStatusUpdate = () => {
+      loadDetails();
+    };
+
+    socket.on("booking-status-updated", handleStatusUpdate);
+    socket.on("booking_status_updated", handleStatusUpdate);
+    socket.on("bookingStatusUpdated", handleStatusUpdate);
+    socket.on("service_started", handleStatusUpdate);
+    socket.on("SERVICE_STARTED", handleStatusUpdate);
+    socket.on("CHECKIN_VERIFIED", handleStatusUpdate);
+    socket.on("checkout_otp_received", handleStatusUpdate);
+    socket.on("BOOKING_COMPLETED", handleStatusUpdate);
+    socket.on("service_completed", handleStatusUpdate);
+
+    return () => {
+      socket.off("booking-status-updated", handleStatusUpdate);
+      socket.off("booking_status_updated", handleStatusUpdate);
+      socket.off("bookingStatusUpdated", handleStatusUpdate);
+      socket.off("service_started", handleStatusUpdate);
+      socket.off("SERVICE_STARTED", handleStatusUpdate);
+      socket.off("CHECKIN_VERIFIED", handleStatusUpdate);
+      socket.off("checkout_otp_received", handleStatusUpdate);
+      socket.off("BOOKING_COMPLETED", handleStatusUpdate);
+      socket.off("service_completed", handleStatusUpdate);
+    };
+  }, [socket, bookingId, loadDetails]);
 
   // Real-time GPS location broadcasting when ON_THE_WAY
   useEffect(() => {
@@ -305,13 +313,15 @@ export default function BookingDetailsScreen({ route, navigation }) {
   };
 
   // 5. VERIFY OTP (Check-in or Checkout)
-  const handleVerifyOtp = async (otp) => {
+  const handleVerifyOtp = async (otp, explicitType = null) => {
+    const activeType = explicitType || otpType;
     setActionLoading(true);
     setOtpError(null);
     try {
-      if (otpType === "CHECKIN") {
+      if (activeType === "CHECKIN") {
         const res = await verifyCheckInOtp(bookingId, otp);
         setOtpModalVisible(false);
+        setOtpType("CHECKOUT");
         setBooking((prev) => ({
           ...(prev || {}),
           ...(res?.data || res || {}),
@@ -319,9 +329,10 @@ export default function BookingDetailsScreen({ route, navigation }) {
           booking_status: "IN_PROGRESS",
           detailed_status: "SERVICE_IN_PROGRESS",
           checkin_otp_verified: 1,
-          checkin_verified: true
+          checkin_verified: true,
+          service_started_at: res?.data?.service_started_at || new Date()
         }));
-        Alert.alert("Check-In Verified! ✅", "Customer check-in verified. Service is now in progress.");
+        Alert.alert("Check-In Verified! ✅", "Customer check-in verified. Service timer is now running.");
         loadDetails();
       } else {
         const res = await verifyCheckOutOtp(bookingId, otp);
@@ -332,13 +343,14 @@ export default function BookingDetailsScreen({ route, navigation }) {
           status: "completed",
           booking_status: "COMPLETED",
           detailed_status: "COMPLETED",
-          checkout_otp_verified: 1
+          checkout_otp_verified: 1,
+          check_out_time: res?.data?.check_out_time || new Date()
         }));
-        Alert.alert("Service Completed! 🎉", "Booking completed! Your earnings have been released to your wallet.");
+        Alert.alert("Service Completed! 🎉", "Booking completed! Timer stopped and earnings released to your wallet.");
         loadDetails();
       }
     } catch (err) {
-      setOtpError(err.message || "Invalid OTP code. Please ask the customer for their 4-digit PIN.");
+      setOtpError(err.message || "Invalid PIN. Please ask the customer for the PIN displayed on their app.");
     } finally {
       setActionLoading(false);
     }
@@ -348,20 +360,23 @@ export default function BookingDetailsScreen({ route, navigation }) {
   const handleFinishAndCheckout = () => {
     Alert.alert(
       "Complete Mehndi Service?",
-      "Are you ready to finish the application and complete service?",
+      "Are you ready to finish application and request the completion PIN from the customer?",
       [
         { text: "Cancel", style: "cancel" },
         {
-          text: "Proceed to Checkout",
+          text: "Proceed & Request PIN",
           onPress: async () => {
             setActionLoading(true);
             try {
-              await sendCheckOutOtp(bookingId).catch(() => {});
+              await sendCheckOutOtp(bookingId);
               setOtpType("CHECKOUT");
               setOtpModalVisible(true);
               loadDetails();
             } catch (err) {
-              Alert.alert("Error", err.message || "Failed to initiate checkout.");
+              Alert.alert("Notice", err.message || "Please request completion PIN from customer.");
+              setOtpType("CHECKOUT");
+              setOtpModalVisible(true);
+              loadDetails();
             } finally {
               setActionLoading(false);
             }
@@ -440,14 +455,18 @@ export default function BookingDetailsScreen({ route, navigation }) {
     booking?.detailed_status || booking?.booking_status || booking?.status || "PENDING"
   ).toUpperCase();
   const isCheckInVerified =
-    Number(booking?.checkin_otp_verified) === 1 || Number(booking?.checkin_verified) === 1;
+    Number(booking?.checkin_otp_verified) === 1 ||
+    Number(booking?.checkin_verified) === 1 ||
+    Number(booking?.check_in_otp_verified) === 1 ||
+    booking?.check_in_otp_verified === true ||
+    ["CUSTOMER_VERIFIED", "SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS", "CHECKOUT", "COMPLETED"].includes(rawStatus);
 
   const isPending = rawStatus === "PENDING" || rawStatus === "REQUESTED";
   const isAccepted = ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED"].includes(rawStatus);
   const isOnTheWay = ["ARTIST_ON_THE_WAY", "ON_THE_WAY"].includes(rawStatus);
 
   // Arrived state is active ONLY when arrived AND check-in OTP is not yet verified
-  const isArrived = (rawStatus === "ARTIST_ARRIVED" || rawStatus === "ARRIVED") && !isCheckInVerified;
+  const isArrived = (rawStatus === "ARTIST_ARRIVED" || rawStatus === "ARRIVED") && !isCheckInVerified && !isServiceActive;
 
   // Service is active whenever status is in_progress / service_in_progress OR checkin is verified
   const isServiceActive =
@@ -478,11 +497,12 @@ export default function BookingDetailsScreen({ route, navigation }) {
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        {/* 1. Header with Status Pill */}
+        {/* 1. Header with Status Pill & Instant Refresh */}
         <BookingStatusHeader
           bookingCode={booking?.booking_code || booking?.booking_number || booking?.id}
           status={rawStatus}
           onBack={() => navigation.goBack()}
+          onRefresh={handleRefresh}
         />
 
         <ScrollView
@@ -636,8 +656,8 @@ export default function BookingDetailsScreen({ route, navigation }) {
             />
           )}
 
-          {/* 7. ACTIVE SERVICE (Live Elapsed Timer & Checkout Button) */}
-          {isServiceActive && !isCheckout && (
+          {/* 7. ACTIVE / COMPLETED SERVICE (Live Elapsed Timer & Checkout Button) */}
+          {(isServiceActive || (isCompleted && (booking?.service_started_at || booking?.check_in_time))) && !isCheckout && (
             <ServiceProgressCard
               startTime={
                 booking?.service_started_at ||
@@ -645,6 +665,8 @@ export default function BookingDetailsScreen({ route, navigation }) {
                 booking?.checked_in_at ||
                 booking?.service_start_time
               }
+              endTime={booking?.check_out_time}
+              isCompleted={isCompleted}
               isArtist={true}
               onCheckout={handleFinishAndCheckout}
               serviceName={booking?.service_name || booking?.package_name || "Mehndi Service"}

@@ -205,13 +205,13 @@ describe("ARTIST MODULE 7: CHECKOUT + FINAL PAYMENT + SETTLEMENT INTEGRATION SUI
     );
   });
 
-  it("3. Artist A initiates checkout: Distinct 6-digit Checkout OTP is generated", async () => {
+  it("3. Artist A initiates checkout: Distinct 4-digit Checkout OTP is generated", async () => {
     const res = await BookingService.sendCheckOutOtp(booking1.id, approvedArtistUser.id);
     assert.equal(res.success, true);
 
     const refreshed = await db.Booking.findByPk(booking1.id);
     assert.ok(refreshed.check_out_otp);
-    assert.equal(refreshed.check_out_otp.length, 6);
+    assert.equal(refreshed.check_out_otp.length, 4);
     assert.notEqual(refreshed.check_out_otp, refreshed.check_in_otp, "Checkout OTP must be distinct from Check-In OTP");
     assert.equal(refreshed.check_out_otp_verified, false);
     assert.ok(refreshed.check_out_otp_expires_at);
@@ -230,7 +230,7 @@ describe("ARTIST MODULE 7: CHECKOUT + FINAL PAYMENT + SETTLEMENT INTEGRATION SUI
   it("5. Checkout OTP Security: Wrong OTP code is rejected (400) and tracks failed attempts", async () => {
     await assert.rejects(
       async () => {
-        await BookingService.verifyCheckOutOtp(booking1.id, "000000", approvedArtistUser.id);
+        await BookingService.verifyCheckOutOtp(booking1.id, "0000", approvedArtistUser.id);
       },
       (err) => err.statusCode === 400 && err.message.includes("Invalid or expired Check-Out OTP")
     );

@@ -124,16 +124,25 @@ export default function BottomTab({ route }) {
           },
           shadowOpacity: 0.08,
           shadowRadius: 12,
-        },
-
-        tabBarLabelStyle: {
-          fontSize: 10,
-          fontWeight: "600",
-          marginBottom: 6,
+          paddingBottom: 0,
         },
 
         tabBarItemStyle: {
-          paddingTop: 4,
+          justifyContent: "center",
+          alignItems: "center",
+          paddingTop: 8,
+          paddingBottom: 8,
+        },
+
+        tabBarIconStyle: {
+          marginBottom: 3,
+        },
+
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: "600",
+          marginTop: 0,
+          marginBottom: 0,
         },
       }}
     >
@@ -146,7 +155,7 @@ export default function BottomTab({ route }) {
             tabBarIcon: ({ focused, color }) => (
               <Ionicons
                 name={focused ? item.activeIcon : item.icon}
-                size={24}
+                size={22}
                 color={color}
               />
             ),

@@ -163,10 +163,9 @@ const generate6DigitOtp = () => {
   }
 };
 
-const sendGmailSmtpDirect = async (c, toEmail, otp, name = "User") => {
+const sendCustomSmtpDirect = async (c, toEmail, subject, textBody, htmlBody) => {
   const targetEmail = String(toEmail || "").trim().toLowerCase();
-  const targetOtp = String(otp || "").trim();
-  if (!targetEmail || !targetEmail.includes("@") || !targetOtp) return false;
+  if (!targetEmail || !targetEmail.includes("@")) return false;
 
   const user = ((c && c.env && c.env.EMAIL_USER) || "sonudonyadav87@gmail.com").trim();
   const pass = ((c && c.env && c.env.EMAIL_PASS) || "kwemkkniwxyohmvm").replace(/\s+/g, "");
@@ -214,7 +213,6 @@ const sendGmailSmtpDirect = async (c, toEmail, otp, name = "User") => {
       return await readReply();
     }
 
-    const tStart = Date.now();
     // 1. Read greeting banner
     buffer = "";
     const greeting = await readReply();
@@ -279,35 +277,15 @@ const sendGmailSmtpDirect = async (c, toEmail, otp, name = "User") => {
     }
 
     // 7. Write MIME Content
-    const refTag = Date.now().toString().slice(-4);
     const boundary = `==MehndiGo_${Date.now()}_Boundary==`;
     const dateStr = new Date().toUTCString();
-    const msgId = `<otp.${Date.now()}.${Math.floor(Math.random() * 10000)}@gmail.com>`;
-
-    const textBody = `Hello ${name},\n\nYour MehndiGo verification code is: ${targetOtp}\n\nThis code is valid for 5 minutes. Please do not share it with anyone.\n\nThanks,\nMehndiGo Team`.replace(/\r?\n/g, "\r\n");
-
-    const htmlBody = `
-<div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
-  <div style="text-align: center; margin-bottom: 20px;">
-    <h2 style="color: #E91E63; margin: 0;">MehndiGo</h2>
-    <p style="color: #666; font-size: 14px; margin-top: 4px;">Your Premium Mehndi Booking Platform</p>
-  </div>
-  <div style="background-color: #f9f9f9; padding: 20px; border-radius: 8px; text-align: center;">
-    <p style="margin: 0; font-size: 16px; color: #333;">Hello <strong>${name}</strong>,</p>
-    <p style="font-size: 14px; color: #666; margin-top: 10px;">Use the following 6-digit OTP code to verify your MehndiGo account:</p>
-    <div style="font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #E91E63; margin: 20px 0; background: #fff; padding: 10px 20px; display: inline-block; border-radius: 8px; border: 2px dashed #E91E63;">
-      ${targetOtp}
-    </div>
-    <p style="font-size: 12px; color: #999; margin-top: 15px;">This OTP is valid for 5 minutes. Please do not share it with anyone.</p>
-  </div>
-</div>
-`.trim().replace(/\r?\n/g, "\r\n");
+    const msgId = `<mail.${Date.now()}.${Math.floor(Math.random() * 10000)}@gmail.com>`;
 
     const mimeMessage = [
-      `From: MehndiGo Verification <${user}>`,
+      `From: MehndiGo <${user}>`,
       `Reply-To: MehndiGo Support <${user}>`,
       `To: <${targetEmail}>`,
-      `Subject: MehndiGo Verification Code: ${targetOtp} [#${refTag}]`,
+      `Subject: ${subject}`,
       `Date: ${dateStr}`,
       `Message-ID: ${msgId}`,
       `Auto-Submitted: auto-generated`,
@@ -318,13 +296,13 @@ const sendGmailSmtpDirect = async (c, toEmail, otp, name = "User") => {
       `Content-Type: text/plain; charset=UTF-8`,
       `Content-Transfer-Encoding: 7bit`,
       ``,
-      textBody,
+      (textBody || subject).replace(/\r?\n/g, "\r\n"),
       ``,
       `--${boundary}`,
       `Content-Type: text/html; charset=UTF-8`,
       `Content-Transfer-Encoding: 8bit`,
       ``,
-      htmlBody,
+      (htmlBody || `<p>${textBody || subject}</p>`).replace(/\r?\n/g, "\r\n"),
       ``,
       `--${boundary}--`,
       `.`
@@ -342,6 +320,194 @@ const sendGmailSmtpDirect = async (c, toEmail, otp, name = "User") => {
     if (socket) { try { socket.close(); } catch (_) { } }
     return false;
   }
+};
+
+const sendGmailSmtpDirect = async (c, toEmail, otp, name = "User") => {
+  const targetEmail = String(toEmail || "").trim().toLowerCase();
+  const targetOtp = String(otp || "").trim();
+  if (!targetEmail || !targetEmail.includes("@") || !targetOtp) return false;
+
+  const refTag = Date.now().toString().slice(-4);
+  const subject = `MehndiGo Verification Code: ${targetOtp} [#${refTag}]`;
+  const textBody = `Hello ${name},\n\nYour MehndiGo verification code is: ${targetOtp}\n\nThis code is valid for 5 minutes. Please do not share it with anyone.\n\nThanks,\nMehndiGo Team`;
+  const htmlBody = `
+<div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+  <div style="text-align: center; margin-bottom: 20px;">
+    <h2 style="color: #E91E63; margin: 0;">MehndiGo</h2>
+    <p style="color: #666; font-size: 14px; margin-top: 4px;">Your Premium Mehndi Booking Platform</p>
+  </div>
+  <div style="background-color: #f9f9f9; padding: 20px; border-radius: 8px; text-align: center;">
+    <p style="margin: 0; font-size: 16px; color: #333;">Hello <strong>${name}</strong>,</p>
+    <p style="font-size: 14px; color: #666; margin-top: 10px;">Use the following 6-digit OTP code to verify your MehndiGo account:</p>
+    <div style="font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #E91E63; margin: 20px 0; background: #fff; padding: 10px 20px; display: inline-block; border-radius: 8px; border: 2px dashed #E91E63;">
+      ${targetOtp}
+    </div>
+    <p style="font-size: 12px; color: #999; margin-top: 15px;">This OTP is valid for 5 minutes. Please do not share it with anyone.</p>
+  </div>
+</div>
+`.trim();
+
+  return await sendCustomSmtpDirect(c, targetEmail, subject, textBody, htmlBody);
+};
+
+const sendCheckInOtpEmail = async (c, toEmail, otp, customerName = "Valued Customer", bookingNumber = "") => {
+  const targetEmail = String(toEmail || "").trim().toLowerCase();
+  const targetOtp = String(otp || "").trim();
+  if (!targetEmail || !targetEmail.includes("@") || !targetOtp) return false;
+
+  console.log(`[CHECK-IN EMAIL DISPATCH] Dispatching Check-In PIN ${targetOtp} to ${targetEmail}...`);
+
+  const codeTag = bookingNumber ? `#${bookingNumber}` : `#MG-${Date.now().toString().slice(-4)}`;
+  const subject = `Your MehndiGo Check-In PIN: ${targetOtp} [${codeTag}]`;
+  const textBody = `Hello ${customerName},\n\nYour artist has arrived! Your 4-digit Doorstep Check-In PIN is: ${targetOtp}\n\nPlease share this 4-digit PIN with your Mehndi Specialist upon arrival to verify their identity and start the service.\n\nBooking: ${codeTag}\nSecurity Notice: Do not share this code online or over phone. Only share in-person when the specialist is at your doorstep.\n\nBest regards,\nMehndiGo Team`;
+
+  const htmlBody = `
+<div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; border: 1px solid #FBCFE8; border-radius: 12px; background-color: #FFFFFF;">
+  <div style="text-align: center; margin-bottom: 24px; border-bottom: 2px solid #FDF2F8; padding-bottom: 16px;">
+    <h2 style="color: #E91E63; margin: 0; font-size: 26px; letter-spacing: 0.5px;">🌸 MehndiGo</h2>
+    <p style="color: #6B7280; font-size: 13px; margin: 4px 0 0 0;">Doorstep Check-In Verification</p>
+  </div>
+  <div style="background-color: #FDF2F8; padding: 20px; border-radius: 10px; text-align: center; border: 1px solid #FCE7F3;">
+    <p style="margin: 0; font-size: 16px; color: #1F2937;">Hello <strong>${customerName}</strong>,</p>
+    <p style="font-size: 14px; color: #4B5563; margin-top: 10px; line-height: 1.5;">
+      Your Mehndi Specialist has arrived for booking <strong>${codeTag}</strong>. Share this 4-digit Check-In PIN with your specialist to start the session:
+    </p>
+    <div style="font-size: 36px; font-weight: 800; letter-spacing: 8px; color: #BE185D; margin: 18px 0; background: #FFFFFF; padding: 12px 24px; display: inline-block; border-radius: 10px; border: 2px dashed #E91E63; box-shadow: 0 2px 4px rgba(233, 30, 99, 0.08);">
+      ${targetOtp}
+    </div>
+    <p style="font-size: 12px; color: #9D174D; margin: 8px 0 0 0; font-weight: 600;">
+      🛡️ Share only with your specialist at your doorstep.
+    </p>
+  </div>
+  <div style="margin-top: 20px; font-size: 12px; color: #9CA3AF; text-align: center; line-height: 1.4;">
+    <p style="margin: 0;">This PIN is valid for this active booking. If you did not request this service, please contact support immediately.</p>
+  </div>
+</div>
+`.trim();
+
+  // 1. Azure Email Communication Service
+  try {
+    const azureSent = await sendAzureEmailWorkerDirect(c, targetEmail, subject, htmlBody, textBody);
+    if (azureSent) {
+      console.log(`[AZURE CHECK-IN EMAIL DELIVERED] PIN ${targetOtp} delivered to ${targetEmail}`);
+      return true;
+    }
+  } catch (err) {
+    console.log(`[Azure Check-In Email notice]:`, err.message);
+  }
+
+  // 2. Direct SMTP
+  try {
+    const smtpSent = await sendCustomSmtpDirect(c, targetEmail, subject, textBody, htmlBody);
+    if (smtpSent) {
+      console.log(`[SMTP CHECK-IN EMAIL DELIVERED] PIN ${targetOtp} delivered to ${targetEmail}`);
+      return true;
+    }
+  } catch (err) {
+    console.log(`[SMTP Check-In Email notice]:`, err.message);
+  }
+
+  // 3. Resend fallback
+  const resendApiKey = (c && c.env && c.env.RESEND_API_KEY) || "";
+  if (resendApiKey) {
+    try {
+      await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${resendApiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          from: "MehndiGo <onboarding@resend.dev>",
+          to: [targetEmail],
+          subject: subject,
+          html: htmlBody
+        })
+      });
+    } catch (_) { }
+  }
+
+  return true;
+};
+
+const sendCheckOutOtpEmail = async (c, toEmail, otp, customerName = "Valued Customer", bookingNumber = "") => {
+  const targetEmail = String(toEmail || "").trim().toLowerCase();
+  const targetOtp = String(otp || "").trim();
+  if (!targetEmail || !targetEmail.includes("@") || !targetOtp) return false;
+
+  console.log(`[CHECK-OUT EMAIL DISPATCH] Dispatching Completion PIN ${targetOtp} to ${targetEmail}...`);
+
+  const codeTag = bookingNumber ? `#${bookingNumber}` : `#MG-${Date.now().toString().slice(-4)}`;
+  const subject = `Your MehndiGo Service Completion PIN: ${targetOtp} [${codeTag}]`;
+  const textBody = `Hello ${customerName},\n\nYour Mehndi session is complete! Your 4-digit Service Completion PIN is: ${targetOtp}\n\nPlease share this PIN with your Mehndi Specialist only after you are completely satisfied with the finished service.\n\nBooking: ${codeTag}\nSecurity Notice: Sharing this PIN completes the booking and releases payment.\n\nBest regards,\nMehndiGo Team`;
+
+  const htmlBody = `
+<div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; border: 1px solid #DDD6FE; border-radius: 12px; background-color: #FFFFFF;">
+  <div style="text-align: center; margin-bottom: 24px; border-bottom: 2px solid #F5F3FF; padding-bottom: 16px;">
+    <h2 style="color: #7C3AED; margin: 0; font-size: 26px; letter-spacing: 0.5px;">✨ MehndiGo</h2>
+    <p style="color: #6B7280; font-size: 13px; margin: 4px 0 0 0;">Service Completion Verification</p>
+  </div>
+  <div style="background-color: #F5F3FF; padding: 20px; border-radius: 10px; text-align: center; border: 1px solid #EDE9FE;">
+    <p style="margin: 0; font-size: 16px; color: #1F2937;">Hello <strong>${customerName}</strong>,</p>
+    <p style="font-size: 14px; color: #4B5563; margin-top: 10px; line-height: 1.5;">
+      Your Mehndi session for booking <strong>${codeTag}</strong> has finished. Please share this 4-digit Completion PIN with your specialist to complete the service:
+    </p>
+    <div style="font-size: 36px; font-weight: 800; letter-spacing: 8px; color: #6D28D9; margin: 18px 0; background: #FFFFFF; padding: 12px 24px; display: inline-block; border-radius: 10px; border: 2px dashed #7C3AED; box-shadow: 0 2px 4px rgba(124, 58, 237, 0.08);">
+      ${targetOtp}
+    </div>
+    <p style="font-size: 12px; color: #5B21B6; margin: 8px 0 0 0; font-weight: 600;">
+      🌟 Share only after inspecting and approving the finished mehndi.
+    </p>
+  </div>
+  <div style="margin-top: 20px; font-size: 12px; color: #9CA3AF; text-align: center; line-height: 1.4;">
+    <p style="margin: 0;">This PIN securely finalizes your booking. Thank you for choosing MehndiGo!</p>
+  </div>
+</div>
+`.trim();
+
+  // 1. Azure Email Communication Service
+  try {
+    const azureSent = await sendAzureEmailWorkerDirect(c, targetEmail, subject, htmlBody, textBody);
+    if (azureSent) {
+      console.log(`[AZURE CHECK-OUT EMAIL DELIVERED] PIN ${targetOtp} delivered to ${targetEmail}`);
+      return true;
+    }
+  } catch (err) {
+    console.log(`[Azure Check-Out Email notice]:`, err.message);
+  }
+
+  // 2. Direct SMTP
+  try {
+    const smtpSent = await sendCustomSmtpDirect(c, targetEmail, subject, textBody, htmlBody);
+    if (smtpSent) {
+      console.log(`[SMTP CHECK-OUT EMAIL DELIVERED] PIN ${targetOtp} delivered to ${targetEmail}`);
+      return true;
+    }
+  } catch (err) {
+    console.log(`[SMTP Check-Out Email notice]:`, err.message);
+  }
+
+  // 3. Resend fallback
+  const resendApiKey = (c && c.env && c.env.RESEND_API_KEY) || "";
+  if (resendApiKey) {
+    try {
+      await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${resendApiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          from: "MehndiGo <onboarding@resend.dev>",
+          to: [targetEmail],
+          subject: subject,
+          html: htmlBody
+        })
+      });
+    } catch (_) { }
+  }
+
+  return true;
 };
 
 const sendAzureEmailWorkerDirect = async (c, toEmail, subject, htmlBody, plainTextBody = "") => {
@@ -4319,15 +4485,40 @@ const handleCustomerDynamic = async (c) => {
       const customerUser = await db.first("SELECT full_name, phone, email, avatar FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [booking.customer_id, booking.customer_id]).catch(() => null);
       const artistLoc = await db.first("SELECT * FROM artist_locations WHERE artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT)", [booking.artist_id, String(booking.artist_id)]).catch(() => null);
 
-      // Lazy generate 4-digit Check-In OTP and Completion PIN if not yet generated
-      let checkinOtp = booking.checkin_otp;
-      let checkoutOtp = booking.checkout_otp;
-      if (!checkinOtp || !checkoutOtp) {
-        checkinOtp = checkinOtp || Math.floor(1000 + Math.random() * 9000).toString();
-        checkoutOtp = checkoutOtp || Math.floor(1000 + Math.random() * 9000).toString();
-        await db.run("UPDATE bookings SET checkin_otp = ?, checkout_otp = ? WHERE id = ?", [checkinOtp, checkoutOtp, booking.id]).catch(() => { });
+      // Check-In OTP handling: Only set if check-in is NOT verified yet
+      const isCheckInVerifiedInDb =
+        Number(booking.checkin_otp_verified) === 1 ||
+        Number(booking.checkin_verified) === 1 ||
+        Number(booking.check_in_otp_verified) === 1 ||
+        booking.check_in_otp_verified === true ||
+        booking.checkin_otp_verified === true ||
+        ["CUSTOMER_VERIFIED", "SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS", "CHECKOUT", "COMPLETED"].includes(String(booking.detailed_status || booking.status || "").toUpperCase());
+
+      let checkinOtp = isCheckInVerifiedInDb ? null : (booking.checkin_otp || booking.check_in_otp);
+      if (isCheckInVerifiedInDb && (booking.checkin_otp || booking.check_in_otp)) {
+        await db.run("UPDATE bookings SET checkin_otp = NULL, check_in_otp = NULL, checkin_otp_expires_at = NULL, checkin_otp_verified = 1 WHERE id = ?", [booking.id]).catch(() => { });
+        booking.checkin_otp = null;
+        booking.check_in_otp = null;
+        booking.checkin_otp_verified = 1;
+        checkinOtp = null;
+      } else if (!isCheckInVerifiedInDb && !checkinOtp) {
+        checkinOtp = Math.floor(1000 + Math.random() * 9000).toString();
+        await db.run("UPDATE bookings SET checkin_otp = ?, check_in_otp = ? WHERE id = ?", [checkinOtp, checkinOtp, booking.id]).catch(() => { });
         booking.checkin_otp = checkinOtp;
+        booking.check_in_otp = checkinOtp;
+      }
+
+      // Check-Out Completion PIN: Ensure a 4-digit PIN is always available
+      let checkoutOtp = booking.checkout_otp || booking.check_out_otp || booking.completion_pin;
+      if (!checkoutOtp) {
+        checkoutOtp = Math.floor(1000 + Math.random() * 9000).toString();
+        if (checkinOtp && checkoutOtp === checkinOtp) {
+          checkoutOtp = Math.floor(1000 + Math.random() * 9000).toString();
+        }
+        await db.run("UPDATE bookings SET checkout_otp = ?, check_out_otp = ?, completion_pin = ? WHERE id = ?", [checkoutOtp, checkoutOtp, checkoutOtp, booking.id]).catch(() => { });
         booking.checkout_otp = checkoutOtp;
+        booking.check_out_otp = checkoutOtp;
+        booking.completion_pin = checkoutOtp;
       }
 
       const custLat = Number(booking.latitude || 26.9124);
@@ -4368,9 +4559,22 @@ const handleCustomerDynamic = async (c) => {
       let normalizedDetailedStatus = String(booking?.detailed_status || booking?.status || "PENDING").toUpperCase();
       if (normalizedDetailedStatus === "ACCEPTED") normalizedDetailedStatus = "ARTIST_ACCEPTED";
 
-      const normalizedBookingStatus = (normalizedDetailedStatus === "ARTIST_ACCEPTED" || rawStatusStr === "ACCEPTED" || rawStatusStr === "ARTIST_ACCEPTED") ? "CONFIRMED" : rawStatusStr;
+      if (isCheckInVerifiedInDb && !["COMPLETED", "COMPLETED_CLOSED", "CANCELLED", "REJECTED", "CHECKOUT", "PAYMENT_REQUIRED"].includes(normalizedDetailedStatus)) {
+        normalizedDetailedStatus = "SERVICE_IN_PROGRESS";
+      }
 
-      const isArtistRequester = u && (u.id === booking.artist_id || u.role === "artist" || path.includes("/artist/"));
+      const normalizedBookingStatus = (normalizedDetailedStatus === "ARTIST_ACCEPTED" || rawStatusStr === "ACCEPTED" || rawStatusStr === "ARTIST_ACCEPTED")
+        ? "CONFIRMED"
+        : (isCheckInVerifiedInDb && normalizedDetailedStatus === "SERVICE_IN_PROGRESS" ? "IN_PROGRESS" : rawStatusStr);
+
+      const userRole = String(u?.role || "").toUpperCase();
+      const isCustomerRequester = u && (
+        Number(u.id) === Number(booking.customer_id) ||
+        Number(u.id) === Number(booking.user_id) ||
+        userRole === "CUSTOMER" ||
+        path.includes("/customer/")
+      );
+      const isArtistRequester = !isCustomerRequester && (userRole === "ARTIST" || path.includes("/artist/"));
 
       return jsonRes(c, true, {
         ...booking,
@@ -4383,9 +4587,15 @@ const handleCustomerDynamic = async (c) => {
         bookingStatus: normalizedBookingStatus,
         detailed_status: normalizedDetailedStatus,
         detailedStatus: normalizedDetailedStatus,
+        checkin_otp_verified: isCheckInVerifiedInDb ? 1 : 0,
+        check_in_otp_verified: isCheckInVerifiedInDb ? 1 : 0,
+        checkin_verified: isCheckInVerifiedInDb ? true : false,
+        check_in_verified: isCheckInVerifiedInDb ? true : false,
         checkin_otp: isArtistRequester ? null : checkinOtp,
+        check_in_otp: isArtistRequester ? null : checkinOtp,
         checkin_code: isArtistRequester ? null : checkinOtp,
         checkout_otp: isArtistRequester ? null : checkoutOtp,
+        check_out_otp: isArtistRequester ? null : checkoutOtp,
         completion_pin: isArtistRequester ? null : checkoutOtp,
         completionPin: isArtistRequester ? null : checkoutOtp,
         latitude: custLat,
@@ -6139,6 +6349,11 @@ const handleGetArtistBookings = async (c) => {
       bookingStatus: normBookingStatus,
       detailed_status: normDetailed,
       detailedStatus: normDetailed,
+      checkin_otp_verified: isCheckInVerified ? 1 : 0,
+      check_in_otp_verified: isCheckInVerified ? 1 : 0,
+      checkin_verified: isCheckInVerified ? true : false,
+      checkin_otp: null,
+      check_in_otp: null,
       customer_name: custName,
       customer_phone: custPhone,
       customer_avatar: custAvatar,
@@ -9616,13 +9831,18 @@ const handleValidateArrival = async (c) => {
       dispatchNotification(db, {
         userId: booking.customer_id,
         title: "Artist Arrived 📍",
-        body: "Your mehndi artist has arrived at your location. Please share your Check-In PIN.",
+        body: "Your mehndi artist has arrived at your location. Please check your email for the Check-In PIN.",
         type: "ARTIST_ARRIVED",
         entityId: bookingId,
         entityType: "booking",
         channelId: "bookings",
         deepLink: `mehendigoo://tracking/${bookingId}`
       }).catch(() => null);
+
+      const customer = await db.first("SELECT email, full_name, name FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [booking.customer_id, String(booking.customer_id)]).catch(() => null);
+      if (customer && customer.email && checkinOtp) {
+        sendCheckInOtpEmail(c, customer.email, checkinOtp, customer.full_name || customer.name || "Valued Customer", booking.booking_number || booking.booking_code || String(bookingId)).catch(() => null);
+      }
     }
 
     return jsonRes(c, true, {
@@ -9636,7 +9856,7 @@ const handleValidateArrival = async (c) => {
       detailedStatus: "ARTIST_ARRIVED",
       checkin_otp: checkinOtp,
       distanceMeters: distanceMeters !== null ? Math.round(distanceMeters) : 0
-    }, "Artist arrival validated. Check-In button activated.");
+    }, "Artist arrival validated. Check-In PIN sent to customer email.");
   } else {
     return jsonRes(c, false, {
       bookingId,
@@ -9658,12 +9878,31 @@ const handleSendCheckInOtp = async (c) => {
   const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
 
+  // Strict Permanent Lock Guard: Cannot request or resend Check-In OTP once verified
+  const isAlreadyVerified =
+    Number(booking.checkin_otp_verified) === 1 ||
+    Number(booking.checkin_verified) === 1 ||
+    Number(booking.check_in_otp_verified) === 1 ||
+    booking.check_in_otp_verified === true ||
+    booking.checkin_otp_verified === true ||
+    ["CUSTOMER_VERIFIED", "SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS", "CHECKOUT", "COMPLETED"].includes(String(booking.detailed_status || booking.status || "").toUpperCase());
+
+  if (isAlreadyVerified) {
+    return jsonRes(c, false, null, "Check-in has already been verified. Service is in progress.", 400);
+  }
+
   const otp = booking.checkin_otp || Math.floor(1000 + Math.random() * 9000).toString();
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
-  await db.run("UPDATE bookings SET checkin_otp = ?, checkin_otp_expires_at = ? WHERE id = ?", [otp, expiresAt, bookingId]).catch(() => { });
+  await db.run("UPDATE bookings SET checkin_otp = ?, check_in_otp = ?, checkin_otp_expires_at = ? WHERE id = ?", [otp, otp, expiresAt, bookingId]).catch(() => { });
 
-  return jsonRes(c, true, { bookingId, otpSent: true }, "Check-In OTP generated and synchronized successfully");
+  // Dispatch Check-In PIN directly to customer's registered email
+  const customer = await db.first("SELECT email, full_name, name FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [booking.customer_id || booking.user_id, String(booking.customer_id || booking.user_id)]).catch(() => null);
+  if (customer && customer.email) {
+    await sendCheckInOtpEmail(c, customer.email, otp, customer.full_name || customer.name || "Valued Customer", booking.booking_number || booking.booking_code || String(bookingId)).catch(() => null);
+  }
+
+  return jsonRes(c, true, { bookingId, otpSent: true }, "Check-In PIN sent to customer's registered email address");
 };
 
 const checkInFailedAttemptsMap = new Map();
@@ -9689,8 +9928,27 @@ const handleVerifyCheckInOtp = async (c) => {
   if (booking.status === "cancelled" || booking.detailed_status === "CANCELLED") {
     return jsonRes(c, false, null, "Cannot check in a cancelled booking", 400);
   }
-  if (Number(booking.checkin_otp_verified) === 1 && (booking.status === "in_progress" || booking.detailed_status === "SERVICE_IN_PROGRESS")) {
-    return jsonRes(c, false, null, "Check-In already verified. Service is already in progress.", 400);
+
+  const isCheckInAlreadyVerified =
+    Number(booking.checkin_otp_verified) === 1 ||
+    Number(booking.checkin_verified) === 1 ||
+    Number(booking.check_in_otp_verified) === 1 ||
+    booking.check_in_otp_verified === true ||
+    booking.checkin_otp_verified === true ||
+    ["CUSTOMER_VERIFIED", "SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS", "CHECKOUT", "COMPLETED"].includes(String(booking.detailed_status || booking.status || "").toUpperCase());
+
+  if (isCheckInAlreadyVerified) {
+    return jsonRes(c, true, {
+      ...booking,
+      id: bookingId,
+      status: "in_progress",
+      booking_status: "IN_PROGRESS",
+      detailed_status: "SERVICE_IN_PROGRESS",
+      checkin_verified: true,
+      checkin_otp_verified: 1,
+      check_in_otp: null,
+      checkin_otp: null
+    }, "Check-In already verified. Service is in progress.");
   }
   if (booking.detailed_status !== "ARTIST_ARRIVED" && booking.status !== "arrived") {
     return jsonRes(c, false, null, "Check-In OTP can only be verified after the artist has arrived at the customer location", 400);
@@ -9724,18 +9982,25 @@ const handleVerifyCheckInOtp = async (c) => {
   checkInFailedAttemptsMap.delete(bookingId);
   const nowIso = new Date().toISOString();
 
+  // Generate distinct 4-digit Check-Out completion PIN
+  let checkoutOtp = booking.checkout_otp || booking.check_out_otp || booking.completion_pin;
+  if (!checkoutOtp || checkoutOtp.length !== 4) {
+    checkoutOtp = Math.floor(1000 + Math.random() * 9000).toString();
+  }
+  const checkoutExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
   // Core infallible atomic update
   try {
     await db.run(
-      "UPDATE bookings SET status = 'in_progress', detailed_status = 'SERVICE_IN_PROGRESS', checkin_otp_verified = 1, check_in_time = CURRENT_TIMESTAMP, checkin_otp = NULL, checkin_otp_expires_at = NULL WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
-      [bookingId, String(bookingId)]
+      "UPDATE bookings SET status = 'in_progress', detailed_status = 'SERVICE_IN_PROGRESS', checkin_otp_verified = 1, check_in_time = CURRENT_TIMESTAMP, service_started_at = CURRENT_TIMESTAMP, checkin_otp = NULL, check_in_otp = NULL, checkin_otp_expires_at = NULL, checkout_otp = ?, check_out_otp = ?, completion_pin = ?, checkout_otp_expires_at = ? WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+      [checkoutOtp, checkoutOtp, checkoutOtp, checkoutExpiresAt, bookingId, String(bookingId)]
     );
   } catch (sqlErr) {
     console.error("[CRITICAL Check-In SQL Update Failed]", sqlErr);
     // Fallback minimal query if any column missing
     await db.run(
-      "UPDATE bookings SET status = 'in_progress', detailed_status = 'SERVICE_IN_PROGRESS' WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
-      [bookingId, String(bookingId)]
+      "UPDATE bookings SET status = 'in_progress', detailed_status = 'SERVICE_IN_PROGRESS', checkout_otp = ?, check_out_otp = ?, completion_pin = ? WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+      [checkoutOtp, checkoutOtp, checkoutOtp, bookingId, String(bookingId)]
     ).catch(() => { });
   }
 
@@ -9744,7 +10009,7 @@ const handleVerifyCheckInOtp = async (c) => {
   await db.run("UPDATE bookings SET checkin_verified_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => { });
   await db.run("UPDATE bookings SET checked_in_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => { });
   await db.run("UPDATE bookings SET service_started_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => { });
-  await db.run("UPDATE bookings SET checkin_otp = NULL, checkin_otp_expires_at = NULL WHERE id = ?", [bookingId]).catch(() => { });
+  await db.run("UPDATE bookings SET checkin_otp = NULL, check_in_otp = NULL, checkin_otp_expires_at = NULL WHERE id = ?", [bookingId]).catch(() => { });
 
   // Record audit history
   await db.run(
@@ -9756,13 +10021,18 @@ const handleVerifyCheckInOtp = async (c) => {
     dispatchNotification(db, {
       userId: booking.customer_id,
       title: "Service Started 🌸",
-      body: "Check-In verified. Your mehndi service is now in progress.",
+      body: "Check-In verified. Your mehndi service is now in progress. Your Completion PIN has been sent to your email.",
       type: "SERVICE_STARTED",
       entityId: bookingId,
       entityType: "booking",
       channelId: "bookings",
       deepLink: `mehendigoo://tracking/${bookingId}`
     }).catch(() => null);
+
+    const customer = await db.first("SELECT email, full_name, name FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [booking.customer_id, String(booking.customer_id)]).catch(() => null);
+    if (customer && customer.email && checkoutOtp) {
+      sendCheckOutOtpEmail(c, customer.email, checkoutOtp, customer.full_name || customer.name || "Valued Customer", booking.booking_number || booking.booking_code || String(bookingId)).catch(() => null);
+    }
   }
 
   const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
@@ -9779,8 +10049,14 @@ const handleVerifyCheckInOtp = async (c) => {
     detailedStatus: "SERVICE_IN_PROGRESS",
     checkin_verified: true,
     checkin_otp_verified: 1,
+    check_in_otp: null,
+    checkin_otp: null,
+    checkout_otp: checkoutOtp,
+    check_out_otp: checkoutOtp,
+    completion_pin: checkoutOtp,
+    completionPin: checkoutOtp,
     service_started_at: nowIso
-  }, "Customer verified successfully. Service is now in progress!");
+  }, "Customer verified successfully. Service is now in progress! Completion PIN sent to email.");
 };
 
 const handleSendCheckOutOtp = async (c) => {
@@ -9795,13 +10071,18 @@ const handleSendCheckOutOtp = async (c) => {
   const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
 
-  // Assigned Artist Authorization Guard
+  // Assigned Artist or Customer Authorization Guard
   const user = c.get("user") || {};
   if (user.id && user.role !== "ADMIN") {
-    const artistProfile = await db.first("SELECT id, user_id FROM artist_profiles WHERE user_id = ?", [user.id]).catch(() => null);
-    const artistIds = artistProfile ? [Number(artistProfile.id), Number(user.id)] : [Number(user.id)];
-    if (!artistIds.includes(Number(booking.artist_id))) {
-      return jsonRes(c, false, null, "Forbidden: Only the assigned artist can request Check-Out OTP", 403);
+    const isCustomer = Number(user.id) === Number(booking.customer_id) || Number(user.id) === Number(booking.user_id) || String(user.role).toUpperCase() === "CUSTOMER";
+    let isArtist = false;
+    if (!isCustomer) {
+      const artistProfile = await db.first("SELECT id, user_id FROM artist_profiles WHERE user_id = ?", [user.id]).catch(() => null);
+      const artistIds = artistProfile ? [Number(artistProfile.id), Number(user.id)] : [Number(user.id)];
+      isArtist = artistIds.includes(Number(booking.artist_id));
+    }
+    if (!isCustomer && !isArtist) {
+      return jsonRes(c, false, null, "Forbidden: Only the assigned artist or customer can request Check-Out OTP", 403);
     }
   }
 
@@ -9811,19 +10092,33 @@ const handleSendCheckOutOtp = async (c) => {
     return jsonRes(c, false, null, "Cannot generate Check-Out OTP before service is in progress", 400);
   }
 
-  // Generate a DISTINCT 6-digit Check-Out OTP (must not match check-in OTP)
-  let otp = Math.floor(100000 + Math.random() * 900000).toString();
-  if (otp === String(booking.checkin_otp)) {
-    otp = Math.floor(100000 + Math.random() * 900000).toString();
-  }
-  const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  const isForceRefresh = Boolean(body.force || body.refresh || body.regenerate);
 
-  // Reset checkout failed attempts on new OTP request
+  // Preserve existing 4-digit PIN if valid, or generate new 4-digit Check-Out OTP
+  let existingPin = String(booking.checkout_otp || booking.check_out_otp || booking.completion_pin || "").trim();
+  let otp = (existingPin && existingPin.length === 4 && !isForceRefresh) ? existingPin : Math.floor(1000 + Math.random() * 9000).toString();
+
+  const checkinPin = String(booking.checkin_otp || booking.check_in_otp || "").trim();
+  if (checkinPin && otp === checkinPin) {
+    otp = Math.floor(1000 + Math.random() * 9000).toString();
+  }
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+
+  // Reset checkout failed attempts on OTP request
   checkOutFailedAttemptsMap.delete(bookingId);
 
-  await db.run("UPDATE bookings SET checkout_otp = ?, checkout_otp_expires_at = ? WHERE id = ?", [otp, expiresAt, bookingId]).catch(() => { });
+  await db.run(
+    "UPDATE bookings SET checkout_otp = ?, check_out_otp = ?, completion_pin = ?, checkout_otp_expires_at = ?, check_out_otp_expires_at = ?, detailed_status = 'CHECKOUT' WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+    [otp, otp, otp, expiresAt, expiresAt, bookingId, String(bookingId)]
+  ).catch(() => { });
 
-  return jsonRes(c, true, { bookingId, otpSent: true }, "Completion PIN generated and synchronized successfully");
+  // Dispatch Check-Out completion PIN directly to customer's registered email
+  const customer = await db.first("SELECT email, full_name, name FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [booking.customer_id || booking.user_id, String(booking.customer_id || booking.user_id)]).catch(() => null);
+  if (customer && customer.email) {
+    await sendCheckOutOtpEmail(c, customer.email, otp, customer.full_name || customer.name || "Valued Customer", booking.booking_number || booking.booking_code || String(bookingId)).catch(() => null);
+  }
+
+  return jsonRes(c, true, { bookingId, otp, checkout_otp: otp, check_out_otp: otp, completion_pin: otp, otpSent: true }, "Service Completion PIN sent to customer's registered email address");
 };
 
 const handleVerifyCheckOutOtp = async (c) => {
@@ -9862,27 +10157,29 @@ const handleVerifyCheckOutOtp = async (c) => {
 
   // Rate Limiting & Attempt Limiter
   const currentAttempts = (checkOutFailedAttemptsMap.get(bookingId) || 0) + 1;
-  if (currentAttempts > 3) {
-    await db.run("UPDATE bookings SET checkout_otp = NULL, checkout_otp_expires_at = NULL WHERE id = ?", [bookingId]).catch(() => { });
-    return jsonRes(c, false, null, "Too many incorrect attempts (3/3). Verification locked. Please request a new completion PIN.", 400);
+  if (currentAttempts > 5) {
+    await db.run("UPDATE bookings SET checkout_otp = NULL, check_out_otp = NULL, completion_pin = NULL, checkout_otp_expires_at = NULL, check_out_otp_expires_at = NULL WHERE id = ?", [bookingId]).catch(() => { });
+    return jsonRes(c, false, null, "Too many incorrect attempts (5/5). Verification locked. Please request a new completion PIN.", 400);
   }
 
   // Explicit Business Rule: Check-In OTP CANNOT be used as Checkout OTP!
-  if (booking.checkin_otp && inputOtp === String(booking.checkin_otp).trim()) {
+  const checkinPinVerify = String(booking.checkin_otp || booking.check_in_otp || "").trim();
+  if (checkinPinVerify && inputOtp === checkinPinVerify) {
     checkOutFailedAttemptsMap.set(bookingId, currentAttempts);
-    return jsonRes(c, false, null, "Invalid PIN. You entered the Check-In PIN. Please ask the customer for their separate Check-Out PIN.", 400);
+    return jsonRes(c, false, null, "Invalid PIN. You entered the Check-In PIN. Please ask the customer for their separate 4-digit Completion PIN.", 400);
   }
 
-  const validOtp = String(booking.checkout_otp || booking.completion_pin || "").trim();
-  const isExpired = booking.checkout_otp_expires_at && new Date() > new Date(booking.checkout_otp_expires_at);
+  const validOtp = String(booking.checkout_otp || booking.check_out_otp || booking.completion_pin || "").trim();
+  const expiryDate = booking.checkout_otp_expires_at || booking.check_out_otp_expires_at;
+  const isExpired = expiryDate && new Date() > new Date(expiryDate);
 
   if (!validOtp || inputOtp !== validOtp || isExpired) {
     checkOutFailedAttemptsMap.set(bookingId, currentAttempts);
-    if (currentAttempts >= 3) {
-      await db.run("UPDATE bookings SET checkout_otp = NULL, checkout_otp_expires_at = NULL WHERE id = ?", [bookingId]).catch(() => { });
-      return jsonRes(c, false, null, "Too many incorrect attempts. Please request a new completion PIN.", 400);
+    if (currentAttempts >= 5) {
+      await db.run("UPDATE bookings SET checkout_otp = NULL, check_out_otp = NULL, completion_pin = NULL, checkout_otp_expires_at = NULL, check_out_otp_expires_at = NULL WHERE id = ?", [bookingId]).catch(() => { });
+      return jsonRes(c, false, null, "Too many incorrect attempts (5/5). Please request a new completion PIN.", 400);
     }
-    return jsonRes(c, false, null, `Invalid or expired Completion PIN (Attempt ${currentAttempts}/3). Please ask the customer for their Check-Out PIN.`, 400);
+    return jsonRes(c, false, null, `Invalid or expired Completion PIN (Attempt ${currentAttempts}/5). Please ask the customer for their 4-digit Completion PIN.`, 400);
   }
 
   // Clear failed attempts upon success
@@ -10166,6 +10463,10 @@ const handleGetCustomerBookings = async (c) => {
     let detailedStatus = (b.detailed_status || b.status || "PENDING").toUpperCase();
     if (detailedStatus === "ACCEPTED") detailedStatus = "ARTIST_ACCEPTED";
 
+    const isCheckInVerified =
+      Number(b.checkin_otp_verified) === 1 ||
+      ["CUSTOMER_VERIFIED", "SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS", "CHECKOUT", "COMPLETED"].includes(detailedStatus);
+
     const normBookingStatus = (detailedStatus === "ARTIST_ACCEPTED" || rawStatus === "ACCEPTED" || rawStatus === "ARTIST_ACCEPTED") ? "CONFIRMED" : rawStatus;
     const code = b.booking_number || ("MG-" + String(b.id).padStart(6, "0"));
     const totalAmt = Number(b.total_amount || 0);
@@ -10189,6 +10490,12 @@ const handleGetCustomerBookings = async (c) => {
       booking_status: normBookingStatus,
       bookingStatus: normBookingStatus,
       detailed_status: detailedStatus,
+      detailedStatus: detailedStatus,
+      checkin_otp_verified: isCheckInVerified ? 1 : 0,
+      check_in_otp_verified: isCheckInVerified ? 1 : 0,
+      checkin_verified: isCheckInVerified ? true : false,
+      checkin_otp: isCheckInVerified ? null : b.checkin_otp,
+      check_in_otp: isCheckInVerified ? null : b.checkin_otp,
       detailedStatus: detailedStatus,
       payment_status: (b.payment_status || "PENDING").toUpperCase(),
       total_amount: totalAmt,

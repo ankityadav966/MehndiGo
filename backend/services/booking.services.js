@@ -550,13 +550,13 @@ class BookingService {
       where.id = bookingId;
     }
 
-    if (role === "ADMIN") {
-      // Admins are fully authorized to view any booking
+    if (!userId || role === "ADMIN") {
+      // Direct lookup without user scope, or Admin access
     } else if (role === "ARTIST") {
       const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
       const artistIds = artist ? [artist.id, Number(userId)] : [Number(userId)];
       where.artist_id = { [Op.in]: artistIds };
-    } else {
+    } else if (userId) {
       // CUSTOMER / USER / CLIENT
       where.user_id = userId;
     }
@@ -617,7 +617,41 @@ class BookingService {
       throw new AppError("Booking not found", 404);
     }
 
-    return booking;
+    const data = booking.toJSON ? booking.toJSON() : { ...booking };
+
+    const isCheckInVerified =
+      Boolean(booking.check_in_otp_verified) ||
+      ["CUSTOMER_VERIFIED", "SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS", "CHECKOUT", "COMPLETED"].includes(String(booking.detailed_status || booking.booking_status || "").toUpperCase());
+
+    data.checkin_otp = isCheckInVerified ? null : (booking.check_in_otp || booking.checkin_otp);
+    data.check_in_otp = data.checkin_otp;
+    data.checkin_otp_verified = isCheckInVerified ? 1 : 0;
+    data.check_in_otp_verified = isCheckInVerified;
+
+    // If check-in is verified and service is in progress, ensure a valid 4-digit completion PIN is populated
+    if (isCheckInVerified && booking.booking_status !== "COMPLETED" && booking.detailed_status !== "COMPLETED" && (!booking.check_out_otp || String(booking.check_out_otp).length !== 4)) {
+      const autoOtp = Math.floor(1000 + Math.random() * 9000).toString();
+      await booking.update({
+        check_out_otp: autoOtp,
+        check_out_otp_expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        check_in_otp: null,
+        check_in_otp_expires_at: null
+      }).catch(() => {});
+      data.check_out_otp = autoOtp;
+      data.checkout_otp = autoOtp;
+      data.completion_pin = autoOtp;
+      data.completionPin = autoOtp;
+    } else {
+      data.checkout_otp = data.check_out_otp || data.checkout_otp || data.completion_pin;
+      data.check_out_otp = data.checkout_otp;
+      data.completion_pin = data.checkout_otp;
+      data.completionPin = data.checkout_otp;
+    }
+    data.checkout_otp_verified = data.check_out_otp_verified !== undefined ? data.check_out_otp_verified : data.checkout_otp_verified;
+    data.service_started_at = data.service_started_at || data.check_in_time;
+    data.service_start_time = data.service_started_at;
+
+    return data;
   }
 
   async getBookingHistory(userId, role) {
@@ -1588,7 +1622,11 @@ class BookingService {
       throw new AppError("Booking not found", 404);
     }
 
-    if (booking.detailed_status !== "ARTIST_ARRIVED" && booking.detailed_status !== "CUSTOMER_VERIFIED") {
+    if (booking.check_in_otp_verified || ["CUSTOMER_VERIFIED", "SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS", "CHECKOUT", "COMPLETED"].includes(booking.detailed_status)) {
+      throw new AppError("Check-In has already been verified and locked. Service is in progress.", 400);
+    }
+
+    if (booking.detailed_status !== "ARTIST_ARRIVED") {
       throw new AppError("Check-In OTP can only be generated after the artist has arrived at the customer location", 400);
     }
 
@@ -1727,6 +1765,12 @@ class BookingService {
     checkInFailedAttempts.delete(booking.id);
 
     const startTime = new Date();
+    let checkOutOtp = booking.check_out_otp;
+    if (!checkOutOtp || String(checkOutOtp).length !== 4) {
+      checkOutOtp = Math.floor(1000 + Math.random() * 9000).toString();
+    }
+    const checkOutExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
     await booking.update({
       booking_status: "CONFIRMED",
       detailed_status: "CUSTOMER_VERIFIED",
@@ -1734,7 +1778,10 @@ class BookingService {
       check_in_time: startTime,
       service_started_at: startTime,
       check_in_otp: null,
-      check_in_otp_expires_at: null
+      check_in_otp_expires_at: null,
+      check_out_otp: checkOutOtp,
+      check_out_otp_expires_at: checkOutExpiresAt,
+      check_out_otp_verified: false
     });
 
     await db.BookingStatusHistory.create({
@@ -1744,12 +1791,24 @@ class BookingService {
       notes: "Check-In OTP verified successfully. Customer identity confirmed — artist may now begin service."
     });
 
+    // Send Completion PIN directly to customer's email
+    if (booking.user && booking.user.email && checkOutOtp) {
+      try {
+        const { sendEmail } = require("../utils/mail.service");
+        await sendEmail(
+          booking.user.email,
+          "MehandiGo - Service Completion PIN",
+          `Hello ${booking.user.name},\n\nYour Mehndi service has started for booking #${booking.booking_code}. Your 4-digit Service Completion PIN is: ${checkOutOtp}.\n\nPlease share this 4-digit PIN with your artist ONLY after your mehndi application is completely finished to verify completion.\n\nBest regards,\nMehandiGo Team`
+        ).catch((err) => console.log("[Check-out email notice]:", err.message));
+      } catch (_) { }
+    }
+
     // Notify customer and artist
     try {
       await db.Notification.create({
         user_id: booking.user_id,
         title: "Service Started! 💅",
-        message: `Your Mehndi service has officially started.`,
+        message: `Your Mehndi service has officially started. Your Completion PIN has been sent to your email.`,
         type: "BOOKING",
         data: { type: "booking", event: "service_started", bookingId: booking.id }
       });
@@ -1805,12 +1864,17 @@ class BookingService {
       throw new AppError("Booking not found", 404);
     }
 
-    // Artist Authorization Guard
+    // Authorization Guard: Either Assigned Artist or Booking Customer or Admin
     if (userId) {
-      const artistProfile = await db.ArtistProfile.findOne({ where: { user_id: userId } });
-      const artistIds = artistProfile ? [artistProfile.id, Number(userId)] : [Number(userId)];
-      if (!artistIds.includes(Number(booking.artist_id))) {
-        throw new AppError("Forbidden: Only the assigned artist can initiate Check-Out OTP generation", 403);
+      const isCustomer = Number(userId) === Number(booking.user_id) || Number(userId) === Number(booking.customer_id);
+      let isArtist = false;
+      if (!isCustomer) {
+        const artistProfile = await db.ArtistProfile.findOne({ where: { user_id: userId } });
+        const artistIds = artistProfile ? [artistProfile.id, Number(userId)] : [Number(userId)];
+        isArtist = artistIds.includes(Number(booking.artist_id));
+      }
+      if (!isCustomer && !isArtist) {
+        throw new AppError("Forbidden: Only the assigned artist or customer can initiate Check-Out OTP generation", 403);
       }
     }
 
@@ -1840,17 +1904,18 @@ class BookingService {
     // Reset failed verification attempts
     checkOutFailedAttempts.delete(booking.id);
 
-    // Generate a DISTINCT 6-digit Check-Out OTP
-    let otp = Math.floor(100000 + Math.random() * 900000).toString();
+    // Generate a DISTINCT 4-digit Check-Out OTP
+    let otp = Math.floor(1000 + Math.random() * 9000).toString();
     if (booking.check_in_otp && otp === String(booking.check_in_otp)) {
-      otp = Math.floor(100000 + Math.random() * 900000).toString();
+      otp = Math.floor(1000 + Math.random() * 9000).toString();
     }
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 mins
 
     await booking.update({
       check_out_otp: otp,
       check_out_otp_expires_at: expiresAt,
-      check_out_otp_verified: false
+      check_out_otp_verified: false,
+      detailed_status: "CHECKOUT"
     });
 
     console.log(`[CHECK_OUT_OTP] OTP Generated successfully. Booking ID: ${booking.id}, Customer Email: ${booking.user?.email || "N/A"}`);
@@ -1881,18 +1946,30 @@ class BookingService {
         }
       });
 
-      // Emit realtime socket event to customer
+      // Emit realtime socket event to customer and booking room
       const { getIO } = require("../sockets/socket");
       const io = getIO();
+      const statusPayload = {
+        bookingId: booking.id,
+        bookingCode: booking.booking_code,
+        booking_status: booking.booking_status,
+        detailed_status: "CHECKOUT",
+        status: "CHECKOUT",
+        checkout_otp: otp,
+        timestamp: new Date()
+      };
       io.to(booking.user_id.toString()).emit("checkout_otp_received", {
         bookingId: booking.id,
+        checkout_otp: otp,
         message: "Your service has been completed. Please share the OTP sent to your registered mobile number."
       });
+      io.to(booking.user_id.toString()).emit("booking_status_updated", statusPayload);
+      io.to(`booking_room_${booking.id}`).emit("booking_status_updated", statusPayload);
     } catch (err) {
       console.error("Error dispatching Check-Out OTP notifications:", err.message);
     }
 
-    return { success: true };
+    return { success: true, otp };
   }
 
   async verifyCheckOutOtp(bookingId, otp, userId) {

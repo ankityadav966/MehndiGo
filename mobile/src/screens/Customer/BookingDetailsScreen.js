@@ -23,7 +23,9 @@ import {
   rescheduleBooking,
   selectCashPayment,
   getArtistLocation,
-  reportBookingDispute
+  reportBookingDispute,
+  sendCheckInOtp,
+  sendCheckOutOtp
 } from "../../services/booking";
 import { useSocket } from "../../context/SocketContext";
 import apiRequest from "../../services/api";
@@ -89,23 +91,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
             longitude: Number(data.longitude)
           });
         }
-        setBooking((prev) => {
-          const prevVerified = prev && (Number(prev.checkin_otp_verified) === 1 || Number(prev.checkin_verified) === 1 || String(prev.detailed_status).toUpperCase() === "SERVICE_IN_PROGRESS");
-          const incomingVerified = Number(data.checkin_otp_verified) === 1 || Number(data.checkin_verified) === 1 || String(data.detailed_status).toUpperCase() === "SERVICE_IN_PROGRESS";
-          const isFinished = ["COMPLETED", "COMPLETED_CLOSED", "CANCELLED", "CHECKOUT"].includes(String(data.detailed_status || data.status || "").toUpperCase());
-
-          if (prevVerified && !incomingVerified && !isFinished) {
-            return {
-              ...data,
-              status: "in_progress",
-              booking_status: "IN_PROGRESS",
-              detailed_status: "SERVICE_IN_PROGRESS",
-              checkin_otp_verified: 1,
-              checkin_verified: true
-            };
-          }
-          return data;
-        });
+        setBooking(data);
       }
 
       // If artist is on the way, load live location
@@ -199,9 +185,13 @@ export default function BookingDetailsScreen({ route, navigation }) {
     socket.on("booking-status-updated", handleStatusUpdate);
     socket.on("booking_status_updated", handleStatusUpdate);
     socket.on("bookingStatusUpdated", handleStatusUpdate);
+    socket.on("service_started", handleStatusUpdate);
     socket.on("SERVICE_STARTED", handleStatusUpdate);
     socket.on("CHECKIN_VERIFIED", handleStatusUpdate);
+    socket.on("checkout_otp_received", handleStatusUpdate);
+    socket.on("CHECKOUT_OTP_GENERATED", handleStatusUpdate);
     socket.on("BOOKING_COMPLETED", handleStatusUpdate);
+    socket.on("service_completed", handleStatusUpdate);
 
     return () => {
       socket.off("location-update", handleLocationUpdate);
@@ -211,9 +201,13 @@ export default function BookingDetailsScreen({ route, navigation }) {
       socket.off("booking-status-updated", handleStatusUpdate);
       socket.off("booking_status_updated", handleStatusUpdate);
       socket.off("bookingStatusUpdated", handleStatusUpdate);
+      socket.off("service_started", handleStatusUpdate);
       socket.off("SERVICE_STARTED", handleStatusUpdate);
       socket.off("CHECKIN_VERIFIED", handleStatusUpdate);
+      socket.off("checkout_otp_received", handleStatusUpdate);
+      socket.off("CHECKOUT_OTP_GENERATED", handleStatusUpdate);
       socket.off("BOOKING_COMPLETED", handleStatusUpdate);
+      socket.off("service_completed", handleStatusUpdate);
     };
   }, [socket, bookingId, loadDetails]);
 
@@ -342,7 +336,12 @@ export default function BookingDetailsScreen({ route, navigation }) {
   }
 
   const rawStatus = String(booking?.detailed_status || booking?.booking_status || booking?.status || "PENDING").toUpperCase();
-  const isCheckInVerified = Number(booking?.checkin_otp_verified) === 1 || Number(booking?.checkin_verified) === 1;
+  const isCheckInVerified =
+    Number(booking?.checkin_otp_verified) === 1 ||
+    Number(booking?.checkin_verified) === 1 ||
+    Number(booking?.check_in_otp_verified) === 1 ||
+    booking?.check_in_otp_verified === true ||
+    ["CUSTOMER_VERIFIED", "SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS", "CHECKOUT", "COMPLETED"].includes(rawStatus);
 
   const isPending = rawStatus === "PENDING" || rawStatus === "REQUESTED";
   const isAccepted = ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED"].includes(rawStatus);
@@ -366,12 +365,13 @@ export default function BookingDetailsScreen({ route, navigation }) {
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        {/* 1. Header with Status Pill */}
+        {/* 1. Header with Status Pill & Instant Refresh */}
         <BookingStatusHeader
           bookingCode={booking?.booking_code || booking?.booking_number || booking?.id}
           status={rawStatus}
           onBack={() => navigation.goBack()}
           onSupport={() => setDisputeModalVisible(true)}
+          onRefresh={handleRefresh}
         />
 
         <ScrollView
@@ -408,28 +408,81 @@ export default function BookingDetailsScreen({ route, navigation }) {
             />
           )}
 
-          {/* 4. Check-In OTP Card (Only when artist has legitimately arrived) */}
-          {isArrived && !isCheckInVerified && (booking?.checkin_otp || booking?.check_in_otp) && (
+          {/* 4. Check-In OTP Card (Visible ONLY before check-in is verified and service has NOT started) */}
+          {/* 4. Check-In OTP Card (Visible ONLY before check-in is verified and service has NOT started) */}
+          {!isCheckInVerified && !isServiceActive && !isCheckout && !isCompleted && !isCancelled && !isPending && (
             <OtpVerificationCard
-              otpCode={booking.checkin_otp || booking.check_in_otp}
+              otpCode={booking?.checkin_otp || booking?.check_in_otp}
+              customerEmail={booking?.customer_email || booking?.user?.email || booking?.customer?.email}
               isArtist={false}
               otpType="CHECKIN"
+              onGenerate={async () => {
+                try {
+                  setRefreshing(true);
+                  await sendCheckInOtp(booking.id);
+                  Alert.alert("Check-In PIN Sent! ✉️", "Your 4-digit Check-In PIN has been sent to your registered email address. Please check your inbox and share with your specialist upon arrival.");
+                  loadDetails();
+                } catch (err) {
+                  Alert.alert("Notice", err.message || "Failed to send check-in PIN email.");
+                } finally {
+                  setRefreshing(false);
+                }
+              }}
+              onResend={async () => {
+                try {
+                  setRefreshing(true);
+                  await sendCheckInOtp(booking.id);
+                  Alert.alert("Check-In PIN Resent! ✉️", "A new 4-digit Check-In PIN has been sent to your registered email address.");
+                  loadDetails();
+                } catch (err) {
+                  Alert.alert("Notice", err.message || "Please wait before requesting a new PIN.");
+                } finally {
+                  setRefreshing(false);
+                }
+              }}
             />
           )}
 
-          {/* 4b. Check-Out Completion PIN Card (When Checkout is active) */}
-          {isCheckout && (booking?.checkout_otp || booking?.check_out_otp) && (
+          {/* 4b. Check-Out Completion PIN Card (Available as soon as check-in is verified OR service in progress) */}
+          {(isCheckInVerified || isServiceActive || isCheckout) && !isCompleted && !isCancelled && (
             <OtpVerificationCard
-              otpCode={booking.checkout_otp || booking.check_out_otp}
+              otpCode={booking?.checkout_otp || booking?.check_out_otp || booking?.completion_pin || booking?.completionPin}
+              customerEmail={booking?.customer_email || booking?.user?.email || booking?.customer?.email}
               isArtist={false}
               otpType="CHECKOUT"
+              onGenerate={async () => {
+                try {
+                  setRefreshing(true);
+                  await sendCheckOutOtp(booking.id);
+                  Alert.alert("Completion PIN Sent! ✉️", "Your 4-digit Service Completion PIN has been sent to your registered email address.");
+                  loadDetails();
+                } catch (err) {
+                  Alert.alert("Notice", err.message || "Failed to send completion PIN email.");
+                } finally {
+                  setRefreshing(false);
+                }
+              }}
+              onResend={async () => {
+                try {
+                  setRefreshing(true);
+                  await sendCheckOutOtp(booking.id);
+                  Alert.alert("Completion PIN Resent! ✉️", "A new 4-digit Service Completion PIN has been sent to your registered email address.");
+                  loadDetails();
+                } catch (err) {
+                  Alert.alert("Notice", err.message || "Please wait before requesting a new PIN.");
+                } finally {
+                  setRefreshing(false);
+                }
+              }}
             />
           )}
 
-          {/* 5. During Service Active Dashboard */}
-          {isServiceActive && !isCheckout && (
+          {/* 5. Service Active / Completed Dashboard with Live/Frozen Timer */}
+          {(isServiceActive || (isCompleted && (booking?.service_started_at || booking?.check_in_time))) && (
             <ServiceProgressCard
               startTime={booking?.service_started_at || booking?.check_in_time || booking?.checked_in_at || booking?.service_start_time}
+              endTime={booking?.check_out_time}
+              isCompleted={isCompleted}
               isArtist={false}
               serviceName={booking?.service_name || booking?.package_name || "Mehndi Service"}
               estimatedDurationMinutes={booking?.duration_minutes || 60}

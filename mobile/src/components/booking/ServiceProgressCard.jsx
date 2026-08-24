@@ -4,6 +4,8 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 
 export default function ServiceProgressCard({
   startTime,
+  endTime = null,
+  isCompleted = false,
   isArtist = false,
   onCheckout,
   serviceName = "Bridal Mehndi",
@@ -14,6 +16,13 @@ export default function ServiceProgressCard({
   useEffect(() => {
     const startTimestamp = startTime ? new Date(startTime).getTime() : Date.now();
 
+    if (endTime || isCompleted) {
+      const endTimestamp = endTime ? new Date(endTime).getTime() : Date.now();
+      const diff = Math.max(0, Math.floor((endTimestamp - startTimestamp) / 1000));
+      setElapsedSeconds(diff);
+      return;
+    }
+
     const updateTimer = () => {
       const diff = Math.max(0, Math.floor((Date.now() - startTimestamp) / 1000));
       setElapsedSeconds(diff);
@@ -22,7 +31,7 @@ export default function ServiceProgressCard({
     updateTimer();
     const interval = setInterval(updateTimer, 1000);
     return () => clearInterval(interval);
-  }, [startTime]);
+  }, [startTime, endTime, isCompleted]);
 
   const hours = Math.floor(elapsedSeconds / 3600);
   const minutes = Math.floor((elapsedSeconds % 3600) / 60);
@@ -31,14 +40,21 @@ export default function ServiceProgressCard({
   const formattedTimer = `${hours > 0 ? String(hours).padStart(2, "0") + ":" : ""}${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, (endTime || isCompleted) && styles.cardCompleted]}>
       <View style={styles.headerRow}>
-        <View style={styles.livePulseBadge}>
-          <View style={styles.pulseDotOuter}>
-            <View style={styles.pulseDotInner} />
+        {endTime || isCompleted ? (
+          <View style={styles.completedBadge}>
+            <Ionicons name="checkmark-circle" size={13} color="#059669" />
+            <Text style={styles.completedBadgeText}>SERVICE COMPLETED</Text>
           </View>
-          <Text style={styles.pulseText}>IN PROGRESS</Text>
-        </View>
+        ) : (
+          <View style={styles.livePulseBadge}>
+            <View style={styles.pulseDotOuter}>
+              <View style={styles.pulseDotInner} />
+            </View>
+            <Text style={styles.pulseText}>LIVE SERVICE TIMER</Text>
+          </View>
+        )}
 
         <View style={styles.estBadge}>
           <Ionicons name="hourglass-outline" size={10} color="#6B7280" style={{ marginRight: 3 }} />
@@ -57,11 +73,15 @@ export default function ServiceProgressCard({
       </View>
 
       {/* Large Elapsed Timer */}
-      <View style={styles.timerContainer}>
-        <Text style={styles.timerValue}>{formattedTimer}</Text>
+      <View style={[styles.timerContainer, (endTime || isCompleted) && styles.timerContainerCompleted]}>
+        <Text style={[styles.timerValue, (endTime || isCompleted) && styles.timerValueCompleted]}>
+          {formattedTimer}
+        </Text>
         <View style={styles.timerLabelRow}>
-          <View style={styles.activeTimerDot} />
-          <Text style={styles.timerLabel} numberOfLines={1}>Elapsed Duration</Text>
+          <View style={[styles.activeTimerDot, (endTime || isCompleted) && { backgroundColor: "#059669" }]} />
+          <Text style={styles.timerLabel} numberOfLines={1}>
+            {endTime || isCompleted ? "Total Service Duration (Timer Stopped)" : "Live Elapsed Duration"}
+          </Text>
         </View>
       </View>
 
@@ -80,27 +100,35 @@ export default function ServiceProgressCard({
         </View>
 
         <View style={styles.stageItem}>
-          <View style={[styles.stageIconBox, styles.stageIconBoxActive]}>
-            <Ionicons name="brush" size={11} color="#E91E63" />
+          <View style={[styles.stageIconBox, (endTime || isCompleted) ? styles.stageIconBoxDone : styles.stageIconBoxActive]}>
+            <Ionicons name={(endTime || isCompleted) ? "checkmark" : "brush"} size={11} color={(endTime || isCompleted) ? "#059669" : "#E91E63"} />
           </View>
           <View style={styles.stageTextCol}>
-            <Text style={styles.stageTextActive} numberOfLines={1}>Intricate Henna Design Application</Text>
-            <Text style={styles.stageSubtextActive} numberOfLines={1}>In Progress Now</Text>
+            <Text style={(endTime || isCompleted) ? styles.stageTextDone : styles.stageTextActive} numberOfLines={1}>
+              Intricate Henna Design Application
+            </Text>
+            <Text style={(endTime || isCompleted) ? styles.stageSubtextDone : styles.stageSubtextActive} numberOfLines={1}>
+              {(endTime || isCompleted) ? "Completed" : "In Progress Now"}
+            </Text>
           </View>
         </View>
 
         <View style={styles.stageItem}>
-          <View style={[styles.stageIconBox, styles.stageIconBoxPending]}>
-            <Ionicons name="sparkles-outline" size={11} color="#9CA3AF" />
+          <View style={[styles.stageIconBox, (endTime || isCompleted) ? styles.stageIconBoxDone : styles.stageIconBoxPending]}>
+            <Ionicons name={(endTime || isCompleted) ? "checkmark" : "sparkles-outline"} size={11} color={(endTime || isCompleted) ? "#059669" : "#9CA3AF"} />
           </View>
           <View style={styles.stageTextCol}>
-            <Text style={styles.stageTextPending} numberOfLines={1}>Drying, Sealing Mist & Aftercare</Text>
-            <Text style={styles.stageSubtextPending} numberOfLines={1}>Upcoming</Text>
+            <Text style={(endTime || isCompleted) ? styles.stageTextDone : styles.stageTextPending} numberOfLines={1}>
+              Drying, Sealing Mist & Aftercare
+            </Text>
+            <Text style={(endTime || isCompleted) ? styles.stageSubtextDone : styles.stageSubtextPending} numberOfLines={1}>
+              {(endTime || isCompleted) ? "Completed" : "Upcoming"}
+            </Text>
           </View>
         </View>
       </View>
 
-      {isArtist && onCheckout && (
+      {isArtist && onCheckout && !isCompleted && !endTime && (
         <TouchableOpacity
           style={styles.checkoutBtn}
           onPress={onCheckout}
@@ -108,7 +136,7 @@ export default function ServiceProgressCard({
         >
           <Ionicons name="checkmark-done-circle" size={19} color="#FFFFFF" style={{ marginRight: 6 }} />
           <Text style={styles.checkoutBtnText} numberOfLines={1} ellipsizeMode="tail">
-            Complete Service & Checkout
+            Finish Service & Generate Completion PIN
           </Text>
         </TouchableOpacity>
       )}
@@ -132,6 +160,10 @@ const styles = StyleSheet.create({
     elevation: 3,
     overflow: "hidden"
   },
+  cardCompleted: {
+    borderColor: "#A7F3D0",
+    shadowColor: "#059669"
+  },
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -150,6 +182,24 @@ const styles = StyleSheet.create({
     borderColor: "#FCE7F3",
     gap: 4,
     flexShrink: 0
+  },
+  completedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ECFDF5",
+    paddingHorizontal: 7,
+    paddingVertical: 3.5,
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+    gap: 4,
+    flexShrink: 0
+  },
+  completedBadgeText: {
+    fontSize: 9.5,
+    fontWeight: "900",
+    color: "#059669",
+    letterSpacing: 0.5
   },
   pulseDotOuter: {
     width: 8,
@@ -207,12 +257,19 @@ const styles = StyleSheet.create({
     borderColor: "#FCE7F3",
     marginVertical: 10
   },
+  timerContainerCompleted: {
+    backgroundColor: "#ECFDF5",
+    borderColor: "#A7F3D0"
+  },
   timerValue: {
     fontSize: 34,
     fontWeight: "900",
     color: "#E91E63",
     fontVariant: ["tabular-nums"],
     letterSpacing: 1.5
+  },
+  timerValueCompleted: {
+    color: "#065F46"
   },
   timerLabelRow: {
     flexDirection: "row",
@@ -224,7 +281,7 @@ const styles = StyleSheet.create({
     width: 5,
     height: 5,
     borderRadius: 2.5,
-    backgroundColor: "#059669"
+    backgroundColor: "#E91E63"
   },
   timerLabel: {
     fontSize: 10.5,

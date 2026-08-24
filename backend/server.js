@@ -48,25 +48,45 @@ const { secureUploadsHandler } = require("./middleware/secureUploads.middleware"
 app.use("/uploads", secureUploadsHandler);
 app.use(checkBlockedIP);
 app.use(sanitizeInputs);
-app.use("/auth", require("./routes/auth.routes"));
-app.use("/admin", require("./routes/v1/admin.routes"));
-app.use("/analytics", require("./routes/analytics.routes"));
-app.use("/security", require("./routes/security.routes"));
-app.use("/customer", require("./routes/customer.routes"));
-app.use("/artist", require("./routes/artist.routes"));
-app.use("/booking", require("./routes/booking.routes"));
-app.use("/chat", require("./routes/chat.routes"));
-app.use("/coupon", require("./routes/coupon.routes"));
-app.use("/notification", require("./routes/notification.routes"));
-app.use("/payment", require("./routes/payment.routes"));
-app.use("/referral", require("./routes/referral.routes"));
-app.use("/category", require("./routes/category.routes"));
-app.use("/reward", require("./routes/reward.routes"));
-app.use("/reviews", require("./routes/review.routes"));
-app.use("/wallet", require("./routes/wallet.routes"));
-app.use("/transactions", require("./routes/wallet.routes"));
-app.use("/settlements", require("./routes/wallet.routes"));
-app.use("/bank-account", require("./routes/wallet.routes"));
+
+// Mount all core API routes with and without /api and /api/v1 prefixes for robust client compatibility
+const authRoutes = require("./routes/auth.routes");
+const adminRoutes = require("./routes/v1/admin.routes");
+const analyticsRoutes = require("./routes/analytics.routes");
+const securityRoutes = require("./routes/security.routes");
+const customerRoutes = require("./routes/customer.routes");
+const artistRoutes = require("./routes/artist.routes");
+const bookingRoutes = require("./routes/booking.routes");
+const chatRoutes = require("./routes/chat.routes");
+const couponRoutes = require("./routes/coupon.routes");
+const notificationRoutes = require("./routes/notification.routes");
+const paymentRoutes = require("./routes/payment.routes");
+const referralRoutes = require("./routes/referral.routes");
+const categoryRoutes = require("./routes/category.routes");
+const rewardRoutes = require("./routes/reward.routes");
+const reviewRoutes = require("./routes/review.routes");
+const walletRoutes = require("./routes/wallet.routes");
+
+app.use(["/auth", "/api/auth", "/api/v1/auth"], authRoutes);
+app.use(["/admin", "/api/admin", "/api/v1/admin"], adminRoutes);
+app.use(["/analytics", "/api/analytics", "/api/v1/analytics"], analyticsRoutes);
+app.use(["/security", "/api/security", "/api/v1/security"], securityRoutes);
+app.use(["/customer", "/api/customer", "/api/v1/customer"], customerRoutes);
+app.use(["/artist", "/api/artist", "/api/v1/artist"], artistRoutes);
+app.use(["/booking", "/api/booking", "/api/v1/booking"], bookingRoutes);
+app.use(["/chat", "/api/chat", "/api/v1/chat"], chatRoutes);
+app.use(["/coupon", "/api/coupon", "/api/v1/coupon"], couponRoutes);
+app.use(["/notification", "/api/notification", "/api/v1/notification"], notificationRoutes);
+app.use(["/payment", "/api/payment", "/api/v1/payment"], paymentRoutes);
+app.use(["/referral", "/api/referral", "/api/v1/referral"], referralRoutes);
+app.use(["/category", "/api/category", "/api/v1/category"], categoryRoutes);
+app.use(["/reward", "/api/reward", "/api/v1/reward"], rewardRoutes);
+app.use(["/reviews", "/api/reviews", "/api/v1/reviews"], reviewRoutes);
+app.use(["/wallet", "/api/wallet", "/api/v1/wallet"], walletRoutes);
+app.use(["/transactions", "/api/transactions", "/api/v1/transactions"], walletRoutes);
+app.use(["/settlements", "/api/settlements", "/api/v1/settlements"], walletRoutes);
+app.use(["/bank-account", "/api/bank-account", "/api/v1/bank-account"], walletRoutes);
+
 app.get("/health", (req, res) => {
   return res.status(200).json({
     success: true,
