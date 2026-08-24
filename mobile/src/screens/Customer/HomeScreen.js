@@ -52,19 +52,6 @@ import { resolveImage } from "../../utils/imageHelper";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
-const resolveImage = (uri) => {
-  if (!uri) return null;
-  if (typeof uri !== "string") return null;
-  if (uri.startsWith("http://") || uri.startsWith("https://") || uri.startsWith("data:")) {
-    return uri;
-  }
-  if (uri.startsWith("/")) {
-    const { BASE_URL } = require("../../services/api");
-    return `${BASE_URL}${uri}`;
-  }
-  return uri;
-};
-
 let memoryCachedDashboard = null;
 let memoryCachedNearby = null;
 
