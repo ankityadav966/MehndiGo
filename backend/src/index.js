@@ -3937,180 +3937,188 @@ const handlePaymentWebhook = async (c) => {
 };
 
 const handleVerifyPayment = async (c) => {
-  const db = getDb(c.env);
-  const u = getUserFromHeader(c);
-  await ensurePaymentColumns(db);
-
-  const body = await c.req.json().catch(() => ({}));
-  const bookingId = Number(body.bookingId || body.booking_id || 0);
-  const paymentId = body.razorpay_payment_id || body.payment_id;
-  const orderId = body.razorpay_order_id || body.order_id;
-  const signature = body.razorpay_signature || body.signature;
-  const keySecret = (c?.env?.RAZORPAY_KEY_SECRET || "").trim();
-
-  if (!keySecret) {
-    return jsonRes(c, false, null, "Razorpay secret key is not configured in server environment", 500);
-  }
-
-  if (!bookingId || !paymentId || !orderId || !signature) {
-    return jsonRes(c, false, null, "Missing required verification parameters (bookingId, razorpay_order_id, razorpay_payment_id, razorpay_signature)", 400);
-  }
-
-  // Reject simulator / test payloads in LIVE mode
-  if (String(paymentId).includes("sim") || String(signature).includes("simulated") || String(signature).includes("test")) {
-    return jsonRes(c, false, null, "Verification failed: Simulator & test signatures are strictly forbidden in LIVE mode.", 400);
-  }
-
-  // Web Crypto HMAC-SHA256 signature verification
-  let isValidSignature = false;
   try {
-    const encoder = new TextEncoder();
-    const secretKeyData = encoder.encode(keySecret);
-    const messageData = encoder.encode(`${orderId}|${paymentId}`);
+    const db = getDb(c.env);
+    const u = getUserFromHeader(c);
+    await ensurePaymentColumns(db);
 
-    const cryptoKey = await crypto.subtle.importKey(
-      "raw",
-      secretKeyData,
-      { name: "HMAC", hash: "SHA-256" },
-      false,
-      ["sign"]
+    const body = await c.req.json().catch(() => ({}));
+    const bookingId = Number(body.bookingId || body.booking_id || 0);
+    const paymentId = body.razorpay_payment_id || body.payment_id;
+    const orderId = body.razorpay_order_id || body.order_id;
+    const signature = body.razorpay_signature || body.signature;
+    const keySecret = (c?.env?.RAZORPAY_KEY_SECRET || "").trim();
+
+    if (!keySecret) {
+      return jsonRes(c, false, null, "Razorpay secret key is not configured in server environment", 500);
+    }
+
+    if (!bookingId || !paymentId || !orderId || !signature) {
+      return jsonRes(c, false, null, "Missing required verification parameters (bookingId, razorpay_order_id, razorpay_payment_id, razorpay_signature)", 400);
+    }
+
+    // Reject simulator / test payloads in LIVE mode
+    if (String(paymentId).includes("sim") || String(signature).includes("simulated") || String(signature).includes("test")) {
+      return jsonRes(c, false, null, "Verification failed: Simulator & test signatures are strictly forbidden in LIVE mode.", 400);
+    }
+
+    // Web Crypto HMAC-SHA256 signature verification
+    let isValidSignature = false;
+    try {
+      const encoder = new TextEncoder();
+      const secretKeyData = encoder.encode(keySecret);
+      const messageData = encoder.encode(`${orderId}|${paymentId}`);
+
+      const cryptoKey = await crypto.subtle.importKey(
+        "raw",
+        secretKeyData,
+        { name: "HMAC", hash: "SHA-256" },
+        false,
+        ["sign"]
+      );
+
+      const macBuffer = await crypto.subtle.sign("HMAC", cryptoKey, messageData);
+      const macArray = Array.from(new Uint8Array(macBuffer));
+      const expectedSignature = macArray.map(b => b.toString(16).padStart(2, "0")).join("");
+
+      isValidSignature = (expectedSignature.toLowerCase() === String(signature).toLowerCase());
+    } catch (err) {
+      console.error("Crypto verification error:", err);
+    }
+
+    if (!isValidSignature) {
+      return jsonRes(c, false, null, "Razorpay HMAC-SHA256 signature verification failed. Payment rejected.", 400);
+    }
+
+    let booking = await db.first(
+      "SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT) OR booking_number = ? OR CAST(booking_number AS TEXT) = CAST(? AS TEXT)",
+      [bookingId, String(bookingId), String(bookingId), String(bookingId)]
+    ).catch(() => null);
+    if (!booking) {
+      booking = await db.first("SELECT * FROM bookings ORDER BY id DESC LIMIT 1").catch(() => null);
+    }
+    const bookingTotal = Number(booking?.total_amount || booking?.final_amount || 100);
+
+    // Check payment order record for actual transaction amount
+    const payRecord = await db.first("SELECT * FROM payments WHERE razorpay_order_id = ? ORDER BY id DESC LIMIT 1", [orderId]).catch(() => null);
+    const paidOrderAmount = Number(payRecord?.amount || 0);
+
+    const existingAdvance = Number(booking?.advance_paid || 0);
+    const isSettlement = (body.isSettlement === true || body.is_settlement === true || String(body.purpose).includes("remaining") || String(body.purpose).includes("settlement") || String(body.payment_mode).includes("REMAINING") || String(body.payment_mode).includes("SETTLEMENT") || String(body.payment_mode).includes("FINAL") || String(body.payment_mode).includes("FULL") || payRecord?.payment_type === 'FINAL');
+
+    const isFullyPaid = isSettlement || (paidOrderAmount >= (booking?.remaining_amount || (bookingTotal * 0.8)));
+    const paymentStatus = isFullyPaid ? "PAID" : "PARTIAL";
+    const finalPaymentStatus = isFullyPaid ? "PAID" : (booking?.final_payment_status || "PENDING");
+    const finalPaymentMethod = isFullyPaid ? "ONLINE" : (booking?.final_payment_method || null);
+    const remainingAmount = isFullyPaid ? 0 : Math.max(0, Math.round((bookingTotal - (paidOrderAmount || Math.round(bookingTotal * 0.10))) * 100) / 100);
+    const newAdvancePaid = isFullyPaid ? bookingTotal : (paidOrderAmount || Math.round(bookingTotal * 0.10));
+    const targetStatus = isFullyPaid ? 'completed' : (booking?.status === 'completed' ? 'completed' : 'confirmed');
+    const targetBookingStatus = isFullyPaid ? 'COMPLETED' : (booking?.booking_status === 'COMPLETED' ? 'COMPLETED' : 'CONFIRMED');
+    const targetDetailedStatus = isFullyPaid ? 'COMPLETED' : (booking?.detailed_status === 'COMPLETED' ? 'COMPLETED' : 'CONFIRMED');
+
+    await db.run(
+      `UPDATE bookings 
+       SET status = ?,
+           booking_status = ?,
+           detailed_status = ?,
+           payment_status = ?,
+           final_payment_status = ?,
+           final_payment_method = ?,
+           payment_mode = 'ONLINE',
+           advance_paid = ?,
+           remaining_amount = ?,
+           completed_at = CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP ELSE completed_at END
+       WHERE id = ?`,
+      [targetStatus, targetBookingStatus, targetDetailedStatus, paymentStatus, finalPaymentStatus, finalPaymentMethod, newAdvancePaid, remainingAmount, isFullyPaid ? 1 : 0, booking.id]
     );
 
-    const macBuffer = await crypto.subtle.sign("HMAC", cryptoKey, messageData);
-    const macArray = Array.from(new Uint8Array(macBuffer));
-    const expectedSignature = macArray.map(b => b.toString(16).padStart(2, "0")).join("");
+    await db.run(
+      "UPDATE payments SET status = 'completed', razorpay_payment_id = ?, payment_method = 'ONLINE', payment_type = ?, paid_at = CURRENT_TIMESTAMP WHERE razorpay_order_id = ? OR id = ?",
+      [paymentId, isFullyPaid ? 'FINAL' : 'ADVANCE', orderId, payRecord?.id || 0]
+    ).catch(() => { });
 
-    isValidSignature = (expectedSignature.toLowerCase() === String(signature).toLowerCase());
-  } catch (err) {
-    console.error("Crypto verification error:", err);
-  }
+    await db.run(
+      "INSERT INTO payments (booking_id, razorpay_order_id, razorpay_payment_id, amount, currency, status, payment_method, payment_type, paid_at) VALUES (?, ?, ?, ?, 'INR', 'completed', 'ONLINE', ?, CURRENT_TIMESTAMP)",
+      [booking.id, orderId, paymentId, paidOrderAmount || (isFullyPaid ? (bookingTotal - existingAdvance) : newAdvancePaid), isFullyPaid ? 'FINAL' : 'ADVANCE']
+    ).catch(() => { });
 
-  if (!isValidSignature) {
-    return jsonRes(c, false, null, "Razorpay HMAC-SHA256 signature verification failed. Payment rejected.", 400);
-  }
-
-  let booking = await db.first(
-    "SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT) OR booking_number = ? OR CAST(booking_number AS TEXT) = CAST(? AS TEXT)",
-    [bookingId, String(bookingId), String(bookingId), String(bookingId)]
-  ).catch(() => null);
-  if (!booking) {
-    booking = await db.first("SELECT * FROM bookings ORDER BY id DESC LIMIT 1").catch(() => null);
-  }
-  const bookingTotal = Number(booking?.total_amount || booking?.final_amount || 378.00);
-
-  // Check payment order record for actual transaction amount
-  const payRecord = await db.first("SELECT * FROM payments WHERE razorpay_order_id = ? ORDER BY id DESC LIMIT 1", [orderId]).catch(() => null);
-  const paidOrderAmount = Number(payRecord?.amount || 0);
-
-  const existingAdvance = Number(booking?.advance_paid || 0);
-  const isSettlement = (body.isSettlement === true || body.is_settlement === true || String(body.purpose).includes("remaining") || String(body.purpose).includes("settlement") || String(body.payment_mode).includes("REMAINING") || String(body.payment_mode).includes("SETTLEMENT") || String(body.payment_mode).includes("FINAL") || String(body.payment_mode).includes("FULL") || payRecord?.payment_type === 'FINAL');
-
-  const isFullyPaid = isSettlement || (paidOrderAmount >= (booking?.remaining_amount || (bookingTotal * 0.8)));
-  const paymentStatus = isFullyPaid ? "PAID" : "PARTIAL";
-  const finalPaymentStatus = isFullyPaid ? "PAID" : (booking?.final_payment_status || "PENDING");
-  const finalPaymentMethod = isFullyPaid ? "ONLINE" : (booking?.final_payment_method || null);
-  const remainingAmount = isFullyPaid ? 0 : Math.max(0, Math.round((bookingTotal - (paidOrderAmount || Math.round(bookingTotal * 0.10))) * 100) / 100);
-  const newAdvancePaid = isFullyPaid ? bookingTotal : (paidOrderAmount || Math.round(bookingTotal * 0.10));
-
-  await db.run(
-    `UPDATE bookings 
-     SET status = CASE WHEN ? = 1 THEN 'completed' ELSE (CASE WHEN status = 'completed' THEN 'completed' ELSE 'confirmed' END) END,
-         booking_status = CASE WHEN ? = 1 THEN 'COMPLETED' ELSE (CASE WHEN booking_status = 'COMPLETED' THEN 'COMPLETED' ELSE 'CONFIRMED' END) END,
-         detailed_status = CASE WHEN ? = 1 THEN 'COMPLETED' ELSE (CASE WHEN detailed_status = 'COMPLETED' THEN 'COMPLETED' ELSE 'CONFIRMED' END) END,
-         payment_status = ?,
-         final_payment_status = ?,
-         final_payment_method = ?,
-         payment_mode = 'ONLINE',
-         advance_paid = ?,
-         remaining_amount = ?,
-         completed_at = CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP ELSE completed_at END
-     WHERE id = ?`,
-    [isFullyPaid ? 1 : 0, isFullyPaid ? 1 : 0, isFullyPaid ? 1 : 0, paymentStatus, finalPaymentStatus, finalPaymentMethod, newAdvancePaid, remainingAmount, isFullyPaid ? 1 : 0, bookingId]
-  );
-
-  await db.run(
-    "UPDATE payments SET status = 'completed', razorpay_payment_id = ?, payment_method = 'ONLINE', payment_type = ?, paid_at = CURRENT_TIMESTAMP WHERE razorpay_order_id = ? OR id = ?",
-    [paymentId, isFullyPaid ? 'FINAL' : 'ADVANCE', orderId, payRecord?.id || 0]
-  ).catch(() => { });
-
-  await db.run(
-    "INSERT INTO payments (booking_id, razorpay_order_id, razorpay_payment_id, amount, currency, status, payment_method, payment_type, paid_at) VALUES (?, ?, ?, ?, 'INR', 'completed', 'ONLINE', ?, CURRENT_TIMESTAMP)",
-    [bookingId, orderId, paymentId, paidOrderAmount || (isFullyPaid ? (bookingTotal - existingAdvance) : newAdvancePaid), isFullyPaid ? 'FINAL' : 'ADVANCE']
-  ).catch(() => { });
-
-  // Record customer transaction in wallet_transactions (with current ISO timestamp)
-  const customerUserId = booking?.customer_id || booking?.user_id || u?.id;
-  if (customerUserId) {
-    let customerWallet = await db.first("SELECT * FROM wallets WHERE user_id = ?", [customerUserId]).catch(() => null);
-    if (!customerWallet) {
-      await db.run("INSERT INTO wallets (user_id, balance, total_earnings) VALUES (?, 0.0, 0.0)", [customerUserId]).catch(() => null);
-      customerWallet = await db.first("SELECT * FROM wallets WHERE user_id = ?", [customerUserId]).catch(() => null);
+    // Record customer transaction in wallet_transactions
+    const customerUserId = booking?.customer_id || booking?.user_id || u?.id;
+    if (customerUserId) {
+      let customerWallet = await db.first("SELECT * FROM wallets WHERE user_id = ?", [customerUserId]).catch(() => null);
+      if (!customerWallet) {
+        await db.run("INSERT INTO wallets (user_id, balance, total_earnings) VALUES (?, 0.0, 0.0)", [customerUserId]).catch(() => null);
+        customerWallet = await db.first("SELECT * FROM wallets WHERE user_id = ?", [customerUserId]).catch(() => null);
+      }
+      const custWalletId = customerWallet?.id || 1;
+      const custTxRef = `PAY_${booking.id}_${paymentId}`;
+      const existingCustTx = await db.first("SELECT id FROM wallet_transactions WHERE reference_id = ?", [custTxRef]).catch(() => null);
+      if (!existingCustTx) {
+        const desc = isFullyPaid
+          ? `Final Settlement for Booking #${booking?.booking_number || booking.id}`
+          : `Advance Payment (10%) for Booking #${booking?.booking_number || booking.id}`;
+        await db.run(
+          "INSERT INTO wallet_transactions (wallet_id, user_id, booking_id, type, amount, description, status, reference_id, created_at) VALUES (?, ?, ?, 'debit', ?, ?, 'completed', ?, datetime('now'))",
+          [custWalletId, customerUserId, booking.id, paidOrderAmount || newAdvancePaid, desc, custTxRef]
+        ).catch(() => null);
+      }
     }
-    const custWalletId = customerWallet?.id || 1;
-    const custTxRef = `PAY_${bookingId}_${paymentId}`;
-    const existingCustTx = await db.first("SELECT id FROM wallet_transactions WHERE reference_id = ?", [custTxRef]).catch(() => null);
-    if (!existingCustTx) {
-      const desc = isFullyPaid
-        ? `Final Settlement for Booking #${booking?.booking_number || bookingId}`
-        : `Advance Payment (10%) for Booking #${booking?.booking_number || bookingId}`;
-      await db.run(
-        "INSERT INTO wallet_transactions (wallet_id, user_id, booking_id, type, amount, description, status, reference_id, created_at) VALUES (?, ?, ?, 'debit', ?, ?, 'completed', ?, datetime('now'))",
-        [custWalletId, customerUserId, bookingId, paidOrderAmount || newAdvancePaid, desc, custTxRef]
-      ).catch(() => null);
+
+    if (isFullyPaid) {
+      await processBookingSettlement(db, booking.id).catch((err) => console.log("Settlement err:", err.message));
+    } else {
+      await processBookingEscrow(db, booking.id, paymentId, newAdvancePaid).catch((err) => console.log("Escrow err:", err.message));
     }
-  }
 
-  if (isFullyPaid) {
-    await processBookingSettlement(db, bookingId);
-  } else {
-    await processBookingEscrow(db, bookingId, paymentId, newAdvancePaid);
-  }
+    // DISPATCH NOTIFICATION TO ARTIST
+    if (booking?.artist_id) {
+      dispatchNotification(db, {
+        userId: booking.artist_id,
+        title: isFullyPaid ? "Payment Completed 🎉" : "New Booking Request 🌸",
+        body: isFullyPaid
+          ? `Final payment of ₹${paidOrderAmount || (bookingTotal - existingAdvance)} received for booking #${booking.booking_number || booking.id}!`
+          : `New advance-paid booking #${booking.booking_number || booking.booking_code || booking.id} received for ₹${bookingTotal}!`,
+        type: isFullyPaid ? "PAYMENT_SUCCESS" : "BOOKING_CREATED",
+        entityId: booking.id,
+        entityType: "booking",
+        channelId: "bookings",
+        deepLink: `mehendigoo://artist/booking/${booking.id}`
+      }).catch(() => null);
+    }
 
-  // DISPATCH NOTIFICATION TO ARTIST (Now that advance payment is verified!)
-  if (booking?.artist_id) {
-    dispatchNotification(db, {
-      userId: booking.artist_id,
-      title: isFullyPaid ? "Payment Completed 🎉" : "New Booking Request 🌸",
-      body: isFullyPaid
-        ? `Final payment of ₹${paidOrderAmount || (bookingTotal - existingAdvance)} received for booking #${booking.booking_number || bookingId}!`
-        : `New advance-paid booking #${booking.booking_number || booking.booking_code || bookingId} received for ₹${bookingTotal}!`,
-      type: isFullyPaid ? "PAYMENT_SUCCESS" : "BOOKING_CREATED",
-      entityId: bookingId,
-      entityType: "booking",
-      channelId: "bookings",
-      deepLink: `mehendigoo://artist/booking/${bookingId}`
-    }).catch(() => null);
-  }
+    // DISPATCH NOTIFICATION TO CUSTOMER
+    if (booking?.customer_id) {
+      dispatchNotification(db, {
+        userId: booking.customer_id,
+        title: "Payment Confirmed ✨",
+        body: isFullyPaid
+          ? `Your final payment for booking #${booking.booking_number || booking.id} is completed. Thank you!`
+          : `Your booking #${booking.booking_number || booking.booking_code || booking.id} is confirmed and sent to the artist.`,
+        type: "PAYMENT_SUCCESS",
+        entityId: booking.id,
+        entityType: "booking",
+        channelId: "bookings",
+        deepLink: `mehendigoo://booking/${booking.id}`
+      }).catch(() => null);
+    }
 
-  // DISPATCH NOTIFICATION TO CUSTOMER
-  if (booking?.customer_id) {
-    dispatchNotification(db, {
-      userId: booking.customer_id,
-      title: "Payment Confirmed ✨",
-      body: isFullyPaid
-        ? `Your final payment for booking #${booking.booking_number || bookingId} is completed. Thank you!`
-        : `Your booking #${booking.booking_number || booking.booking_code || bookingId} is confirmed and sent to the artist.`,
-      type: "PAYMENT_SUCCESS",
-      entityId: bookingId,
-      entityType: "booking",
-      channelId: "bookings",
-      deepLink: `mehendigoo://booking/${bookingId}`
-    }).catch(() => null);
+    return jsonRes(c, true, {
+      booking_id: booking.id,
+      payment_status: paymentStatus,
+      final_payment_status: finalPaymentStatus,
+      final_payment_method: finalPaymentMethod,
+      status: isFullyPaid ? 'completed' : 'confirmed',
+      booking_status: isFullyPaid ? 'COMPLETED' : 'CONFIRMED',
+      advance_paid: newAdvancePaid,
+      remaining_amount: remainingAmount,
+      total_amount: bookingTotal,
+      escrow_status: isFullyPaid ? "SETTLED" : "HELD_IN_ESCROW",
+      payment_id: paymentId
+    }, "Payment verified successfully");
+  } catch (uncaughtErr) {
+    console.error("handleVerifyPayment uncaught exception:", uncaughtErr);
+    return jsonRes(c, false, null, "Payment verification exception: " + uncaughtErr.message, 500);
   }
-
-  return jsonRes(c, true, {
-    booking_id: bookingId,
-    payment_status: paymentStatus,
-    final_payment_status: finalPaymentStatus,
-    final_payment_method: finalPaymentMethod,
-    status: isFullyPaid ? 'completed' : 'confirmed',
-    booking_status: isFullyPaid ? 'COMPLETED' : 'CONFIRMED',
-    advance_paid: newAdvancePaid,
-    remaining_amount: remainingAmount,
-    total_amount: bookingTotal,
-    escrow_status: isFullyPaid ? "SETTLED" : "HELD_IN_ESCROW",
-    payment_id: paymentId
-  }, "Payment verified successfully");
 };
 
 // Catch-All Dynamic Customer Router
