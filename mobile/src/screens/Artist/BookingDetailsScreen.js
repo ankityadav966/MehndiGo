@@ -356,6 +356,33 @@ export default function BookingDetailsScreen({ route, navigation }) {
     }
   };
 
+  // 5b. RESEND PIN TO CUSTOMER EMAIL (Artist Action)
+  const handleResendCheckInPin = async () => {
+    setActionLoading(true);
+    try {
+      await sendCheckInOtp(bookingId);
+      Alert.alert("Check-In PIN Sent! ✉️", "A 4-digit Check-In PIN has been sent to the customer's registered email address.");
+      loadDetails();
+    } catch (err) {
+      Alert.alert("Notice", err.message || "Please wait before requesting a new PIN.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleResendCheckOutPin = async () => {
+    setActionLoading(true);
+    try {
+      await sendCheckOutOtp(bookingId);
+      Alert.alert("Completion PIN Sent! ✉️", "A 4-digit Service Completion PIN has been sent to the customer's registered email address.");
+      loadDetails();
+    } catch (err) {
+      Alert.alert("Notice", err.message || "Please wait before requesting a new PIN.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // 6. FINISH & CHECKOUT
   const handleFinishAndCheckout = () => {
     Alert.alert(
@@ -650,6 +677,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
             <OtpVerificationCard
               isArtist={true}
               onVerify={handleVerifyOtp}
+              onResend={handleResendCheckInPin}
               loading={actionLoading}
               otpType="CHECKIN"
               errorMessage={otpError}
@@ -753,6 +781,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
             <OtpVerificationCard
               isArtist={true}
               onVerify={handleVerifyOtp}
+              onResend={handleResendCheckOutPin}
               loading={actionLoading}
               otpType={otpType}
               errorMessage={otpError}

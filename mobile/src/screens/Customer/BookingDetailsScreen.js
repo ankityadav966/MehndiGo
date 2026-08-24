@@ -416,30 +416,6 @@ export default function BookingDetailsScreen({ route, navigation }) {
               customerEmail={booking?.customer_email || booking?.user?.email || booking?.customer?.email}
               isArtist={false}
               otpType="CHECKIN"
-              onGenerate={async () => {
-                try {
-                  setRefreshing(true);
-                  await sendCheckInOtp(booking.id);
-                  Alert.alert("Check-In PIN Sent! ✉️", "Your 4-digit Check-In PIN has been sent to your registered email address. Please check your inbox and share with your specialist upon arrival.");
-                  loadDetails();
-                } catch (err) {
-                  Alert.alert("Notice", err.message || "Failed to send check-in PIN email.");
-                } finally {
-                  setRefreshing(false);
-                }
-              }}
-              onResend={async () => {
-                try {
-                  setRefreshing(true);
-                  await sendCheckInOtp(booking.id);
-                  Alert.alert("Check-In PIN Resent! ✉️", "A new 4-digit Check-In PIN has been sent to your registered email address.");
-                  loadDetails();
-                } catch (err) {
-                  Alert.alert("Notice", err.message || "Please wait before requesting a new PIN.");
-                } finally {
-                  setRefreshing(false);
-                }
-              }}
             />
           )}
 
@@ -450,30 +426,6 @@ export default function BookingDetailsScreen({ route, navigation }) {
               customerEmail={booking?.customer_email || booking?.user?.email || booking?.customer?.email}
               isArtist={false}
               otpType="CHECKOUT"
-              onGenerate={async () => {
-                try {
-                  setRefreshing(true);
-                  await sendCheckOutOtp(booking.id);
-                  Alert.alert("Completion PIN Sent! ✉️", "Your 4-digit Service Completion PIN has been sent to your registered email address.");
-                  loadDetails();
-                } catch (err) {
-                  Alert.alert("Notice", err.message || "Failed to send completion PIN email.");
-                } finally {
-                  setRefreshing(false);
-                }
-              }}
-              onResend={async () => {
-                try {
-                  setRefreshing(true);
-                  await sendCheckOutOtp(booking.id);
-                  Alert.alert("Completion PIN Resent! ✉️", "A new 4-digit Service Completion PIN has been sent to your registered email address.");
-                  loadDetails();
-                } catch (err) {
-                  Alert.alert("Notice", err.message || "Please wait before requesting a new PIN.");
-                } finally {
-                  setRefreshing(false);
-                }
-              }}
             />
           )}
 

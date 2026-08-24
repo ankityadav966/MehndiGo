@@ -186,25 +186,33 @@ const sendCustomSmtpDirect = async (c, toEmail, subject, textBody, htmlBody) => 
 
     let buffer = "";
 
-    async function readReply() {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        if (!value || value.byteLength === 0) continue;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\r\n");
-        for (let i = 0; i < lines.length; i++) {
-          const l = lines[i].trim();
-          if (/^\d{3}\s/.test(l)) {
-            const out = buffer;
-            buffer = "";
-            return out;
+    async function readReply(timeoutMs = 7000) {
+      const readPromise = (async () => {
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (!value || value.byteLength === 0) continue;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\r\n");
+          for (let i = 0; i < lines.length; i++) {
+            const l = lines[i].trim();
+            if (/^\d{3}\s/.test(l)) {
+              const out = buffer;
+              buffer = "";
+              return out;
+            }
           }
         }
-      }
-      const out = buffer;
-      buffer = "";
-      return out;
+        const out = buffer;
+        buffer = "";
+        return out;
+      })();
+
+      const timeoutPromise = new Promise((resolve) =>
+        setTimeout(() => resolve("TIMEOUT"), timeoutMs)
+      );
+
+      return Promise.race([readPromise, timeoutPromise]);
     }
 
     async function sendCmd(cmd) {
@@ -358,7 +366,7 @@ const sendCheckInOtpEmail = async (c, toEmail, otp, customerName = "Valued Custo
   console.log(`[CHECK-IN EMAIL DISPATCH] Dispatching Check-In PIN ${targetOtp} to ${targetEmail}...`);
 
   const codeTag = bookingNumber ? `#${bookingNumber}` : `#MG-${Date.now().toString().slice(-4)}`;
-  const subject = `Your MehndiGo Check-In PIN: ${targetOtp} [${codeTag}]`;
+  const subject = `Your MehndiGo Check-In PIN - ${codeTag}`;
   const textBody = `Hello ${customerName},\n\nYour artist has arrived! Your 4-digit Doorstep Check-In PIN is: ${targetOtp}\n\nPlease share this 4-digit PIN with your Mehndi Specialist upon arrival to verify their identity and start the service.\n\nBooking: ${codeTag}\nSecurity Notice: Do not share this code online or over phone. Only share in-person when the specialist is at your doorstep.\n\nBest regards,\nMehndiGo Team`;
 
   const htmlBody = `
@@ -440,7 +448,7 @@ const sendCheckOutOtpEmail = async (c, toEmail, otp, customerName = "Valued Cust
   console.log(`[CHECK-OUT EMAIL DISPATCH] Dispatching Completion PIN ${targetOtp} to ${targetEmail}...`);
 
   const codeTag = bookingNumber ? `#${bookingNumber}` : `#MG-${Date.now().toString().slice(-4)}`;
-  const subject = `Your MehndiGo Service Completion PIN: ${targetOtp} [${codeTag}]`;
+  const subject = `Your MehndiGo Service Completion PIN - ${codeTag}`;
   const textBody = `Hello ${customerName},\n\nYour Mehndi session is complete! Your 4-digit Service Completion PIN is: ${targetOtp}\n\nPlease share this PIN with your Mehndi Specialist only after you are completely satisfied with the finished service.\n\nBooking: ${codeTag}\nSecurity Notice: Sharing this PIN completes the booking and releases payment.\n\nBest regards,\nMehndiGo Team`;
 
   const htmlBody = `
@@ -9832,9 +9840,10 @@ const handleValidateArrival = async (c) => {
 
     const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
 
-    if (booking.customer_id) {
+    const customerId = booking.customer_id || booking.user_id;
+    if (customerId) {
       dispatchNotification(db, {
-        userId: booking.customer_id,
+        userId: customerId,
         title: "Artist Arrived 📍",
         body: "Your mehndi artist has arrived at your location. Please check your email for the Check-In PIN.",
         type: "ARTIST_ARRIVED",
@@ -9844,9 +9853,18 @@ const handleValidateArrival = async (c) => {
         deepLink: `mehendigoo://tracking/${bookingId}`
       }).catch(() => null);
 
-      const customer = await db.first("SELECT email, full_name, name FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [booking.customer_id, String(booking.customer_id)]).catch(() => null);
-      if (customer && customer.email && checkinOtp) {
-        sendCheckInOtpEmail(c, customer.email, checkinOtp, customer.full_name || customer.name || "Valued Customer", booking.booking_number || booking.booking_code || String(bookingId)).catch(() => null);
+      const customer = await db.first("SELECT email, full_name, name FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [customerId, String(customerId)]).catch(() => null);
+      const customerEmail = customer?.email || booking.customer_email || booking.email || booking.user_email;
+      const customerName = customer?.full_name || customer?.name || booking.customer_name || booking.user_name || "Valued Customer";
+
+      if (customerEmail && checkinOtp) {
+        console.log(`[handleValidateArrival] Dispatching Check-In PIN ${checkinOtp} to customer email: ${customerEmail}`);
+        await sendCheckInOtpEmail(c, customerEmail, checkinOtp, customerName, booking.booking_number || booking.booking_code || String(bookingId)).catch((e) => {
+          console.error(`[handleValidateArrival Email Error] ${e.message}`);
+          return false;
+        });
+      } else {
+        console.warn(`[handleValidateArrival Warning] No customer email found for Booking ID: ${bookingId}, Customer ID: ${customerId}`);
       }
     }
 

@@ -1632,17 +1632,18 @@ class BookingService {
 
     // 60-second resend cooldown
     if (booking.check_in_otp_expires_at) {
-      const sentAt = new Date(new Date(booking.check_in_otp_expires_at).getTime() - 5 * 60 * 1000);
-      const secondsElapsed = Math.floor((Date.now() - sentAt.getTime()) / 1000);
-      if (secondsElapsed < 60) {
-        throw new AppError(`Please wait ${60 - secondsElapsed} seconds before requesting a new OTP.`, 429);
+      const expiresAtMs = new Date(booking.check_in_otp_expires_at).getTime();
+      const remainingMs = expiresAtMs - Date.now();
+      if (remainingMs > 4 * 60 * 1000 && remainingMs <= 5 * 60 * 1000) {
+        const secondsRemaining = Math.ceil((remainingMs - 4 * 60 * 1000) / 1000);
+        throw new AppError(`Please wait ${secondsRemaining} seconds before requesting a new OTP.`, 429);
       }
     }
 
     // Reset failed verification attempts
     checkInFailedAttempts.delete(booking.id);
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = Math.floor(1000 + Math.random() * 9000).toString();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 mins
 
     const updates = {
@@ -1654,17 +1655,25 @@ class BookingService {
     await booking.update(updates);
 
     console.log(`[CHECK_IN_OTP] OTP Generated successfully. Booking ID: ${booking.id}, Customer Email: ${booking.user?.email || "N/A"}`);
-    console.log(`[TESTING_OTP_LOG] Generated Check-In OTP: ${otp} for Booking ID: ${booking.id} (Email: ${booking.user?.email || "N/A"})`);
 
-    // Send via Email SMTP
+    // Send via Email SMTP to Customer's registered email
+    // Send via Email SMTP to Customer's registered email
+    let customerUser = booking.user;
+    if (!customerUser) {
+      customerUser = await db.User.findByPk(booking.customer_id || booking.user_id).catch(() => null);
+    }
+    const customerEmail = customerUser?.email || booking.customer_email || booking.email;
+    const customerName = customerUser?.name || customerUser?.full_name || "Valued Customer";
+
     let emailResult = null;
-    if (booking.user && booking.user.email) {
-      console.log(`[CHECK_IN_OTP] Sending Email request to: ${booking.user.email} for Booking ID: ${booking.id}`);
+    if (customerEmail) {
+      console.log(`[CHECK_IN_OTP] Sending Email request to: ${customerEmail} for Booking ID: ${booking.id}`);
       const { sendEmail } = require("../utils/mail.service");
+      const bookingTag = booking.booking_code ? `#${booking.booking_code}` : `#${booking.id}`;
       emailResult = await sendEmail(
-        booking.user.email,
-        "MehandiGo - Check-In Verification Code",
-        `Hello ${booking.user.name},\n\nYour check-in OTP for booking #${booking.booking_code} is: ${otp}.\n\nShare this code with your artist to verify their arrival.\n\nBest regards,\nMehandiGo Team`
+        customerEmail,
+        `Your MehndiGo Check-In PIN - ${bookingTag}`,
+        `Hello ${customerName},\n\nYour artist has arrived! Your 4-digit Doorstep Check-In PIN is: ${otp}\n\nPlease share this 4-digit PIN with your Mehndi Specialist upon arrival to verify their identity and start the service.\n\nBooking: ${bookingTag}\nSecurity Notice: Do not share this code online or over phone. Only share in-person when the specialist is at your doorstep.\n\nBest regards,\nMehndiGo Team`
       );
       console.log(`[CHECK_IN_OTP] Email Provider Response: ${JSON.stringify(emailResult)}`);
     } else {
@@ -1795,10 +1804,11 @@ class BookingService {
     if (booking.user && booking.user.email && checkOutOtp) {
       try {
         const { sendEmail } = require("../utils/mail.service");
+        const bookingTag = booking.booking_code ? `#${booking.booking_code}` : `#${booking.id}`;
         await sendEmail(
           booking.user.email,
-          "MehandiGo - Service Completion PIN",
-          `Hello ${booking.user.name},\n\nYour Mehndi service has started for booking #${booking.booking_code}. Your 4-digit Service Completion PIN is: ${checkOutOtp}.\n\nPlease share this 4-digit PIN with your artist ONLY after your mehndi application is completely finished to verify completion.\n\nBest regards,\nMehandiGo Team`
+          `Your MehndiGo Service Completion PIN - ${bookingTag}`,
+          `Hello ${booking.user.name || "Valued Customer"},\n\nYour Mehndi service has started for booking ${bookingTag}. Your 4-digit Service Completion PIN is: ${checkOutOtp}.\n\nPlease share this 4-digit PIN with your artist ONLY after your mehndi application is completely finished to verify completion.\n\nBest regards,\nMehndiGo Team`
         ).catch((err) => console.log("[Check-out email notice]:", err.message));
       } catch (_) { }
     }
@@ -1894,10 +1904,11 @@ class BookingService {
 
     // 60-second resend cooldown
     if (booking.check_out_otp_expires_at) {
-      const sentAt = new Date(new Date(booking.check_out_otp_expires_at).getTime() - 5 * 60 * 1000);
-      const secondsElapsed = Math.floor((Date.now() - sentAt.getTime()) / 1000);
-      if (secondsElapsed < 60) {
-        throw new AppError(`Please wait ${60 - secondsElapsed} seconds before requesting a new OTP.`, 429);
+      const expiresAtMs = new Date(booking.check_out_otp_expires_at).getTime();
+      const remainingMs = expiresAtMs - Date.now();
+      if (remainingMs > 4 * 60 * 1000 && remainingMs <= 5 * 60 * 1000) {
+        const secondsRemaining = Math.ceil((remainingMs - 4 * 60 * 1000) / 1000);
+        throw new AppError(`Please wait ${secondsRemaining} seconds before requesting a new OTP.`, 429);
       }
     }
 
@@ -1920,15 +1931,23 @@ class BookingService {
 
     console.log(`[CHECK_OUT_OTP] OTP Generated successfully. Booking ID: ${booking.id}, Customer Email: ${booking.user?.email || "N/A"}`);
 
-    // Send via Email SMTP
+    // Send via Email SMTP to Customer's registered email
+    let customerUser = booking.user;
+    if (!customerUser) {
+      customerUser = await db.User.findByPk(booking.customer_id || booking.user_id).catch(() => null);
+    }
+    const customerEmail = customerUser?.email || booking.customer_email || booking.email;
+    const customerName = customerUser?.name || customerUser?.full_name || "Valued Customer";
+
     let emailResult = null;
-    if (booking.user && booking.user.email) {
-      console.log(`[CHECK_OUT_OTP] Sending Email request to: ${booking.user.email} for Booking ID: ${booking.id}`);
+    if (customerEmail) {
+      console.log(`[CHECK_OUT_OTP] Sending Email request to: ${customerEmail} for Booking ID: ${booking.id}`);
       const { sendEmail } = require("../utils/mail.service");
+      const bookingTag = booking.booking_code ? `#${booking.booking_code}` : `#${booking.id}`;
       emailResult = await sendEmail(
-        booking.user.email,
-        "MehandiGo - Check-Out Verification Code",
-        `Hello ${booking.user.name},\n\nYour check-out OTP for booking #${booking.booking_code} is: ${otp}.\n\nShare this code with your artist to verify service completion.\n\nBest regards,\nMehandiGo Team`
+        customerEmail,
+        `Your MehndiGo Service Completion PIN - ${bookingTag}`,
+        `Hello ${customerName},\n\nYour Mehndi session for booking ${bookingTag} has finished. Your 4-digit Service Completion PIN is: ${otp}.\n\nPlease share this 4-digit Completion PIN with your Mehndi Specialist only after you are completely satisfied with the finished service to finalize the booking.\n\nBest regards,\nMehndiGo Team`
       );
     }
 

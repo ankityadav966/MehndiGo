@@ -13,8 +13,8 @@ const createRazorpayOrder = async ({ amount, currency = "INR", receipt, notes = 
     throw new AppError("Minimum order amount must be at least 100 paise (₹1)", 400);
   }
 
-  const key_id = (process.env.RAZORPAY_KEY_ID || "rzp_live_TJIF5fG3LByErG").trim();
-  const key_secret = (process.env.RAZORPAY_KEY_SECRET || "xMxDHNwnadR2sr5uiEk7QmH6").trim();
+  const key_id = (process.env.RAZORPAY_KEY_ID).trim();
+  const key_secret = (process.env.RAZORPAY_KEY_SECRET).trim();
 
   if (!key_id || !key_secret) {
     throw new AppError("Razorpay credentials (RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET) are missing.", 500);
@@ -106,7 +106,18 @@ const verifyRazorpaySignature = ({ razorpay_order_id, razorpay_payment_id, razor
   }
 };
 
+/**
+ * Helper to get active Razorpay configuration
+ */
+const getRazorpayInstance = () => {
+  return {
+    key_id: (process.env.RAZORPAY_KEY_ID || "").trim(),
+    key_secret: (process.env.RAZORPAY_KEY_SECRET || "").trim()
+  };
+};
+
 module.exports = {
   createRazorpayOrder,
-  verifyRazorpaySignature
+  verifyRazorpaySignature,
+  getRazorpayInstance
 };

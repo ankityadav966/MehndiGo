@@ -254,14 +254,14 @@ export default function PaymentScreen({ route, navigation }) {
         sessionData = await createPaymentSession(targetBookingId, paymentMethodType).catch(() => null);
       }
 
-      // If backend session did not return an authentic Razorpay order, generate a genuine Live Razorpay order directly
+      // If backend session did not return an authentic Razorpay order, generate a genuine Razorpay order directly
       if (!sessionData?.order_id || !sessionData.order_id.startsWith("order_") || sessionData.order_id.includes("order_178")) {
-        const liveKeyId = "rzp_live_TSIrGnJIllkt0H";
-        const liveKeySecret = "AJSFmZyxn471PmOT8OGRB768";
+        const liveKeyId = process.env.EXPO_PUBLIC_RAZORPAY_KEY_ID || "rzp_test_TTX0hx0yooeEQW";
+        const liveKeySecret = "qtlFcyZE33GB3mt2nGOtOoL1";
         const amountInPaise = Math.round(Number(payableNow || 50) * 100);
 
         try {
-          // Direct native REST call to Razorpay Live Order API
+          // Direct native REST call to Razorpay Order API
           const authString = `${liveKeyId}:${liveKeySecret}`;
           const base64Auth = typeof btoa !== "undefined" ? btoa(authString) : Buffer.from(authString).toString("base64");
           
@@ -284,7 +284,7 @@ export default function PaymentScreen({ route, navigation }) {
 
           const rzpData = await rzpRes.json();
           if (rzpData?.id) {
-            console.log("[PaymentScreen] Live Razorpay Order generated on server:", rzpData.id);
+            console.log("[PaymentScreen] Razorpay Order generated on server:", rzpData.id);
             sessionData = {
               key_id: liveKeyId,
               order_id: rzpData.id,
@@ -292,14 +292,14 @@ export default function PaymentScreen({ route, navigation }) {
               currency: "INR"
             };
           } else {
-            console.error("[PaymentScreen] Razorpay live order error:", rzpData);
+            console.error("[PaymentScreen] Razorpay order error:", rzpData);
           }
         } catch (rzpErr) {
-          console.error("[PaymentScreen] Live order exception:", rzpErr.message);
+          console.error("[PaymentScreen] order exception:", rzpErr.message);
         }
       }
 
-      const keyId = sessionData?.key_id || sessionData?.key || "rzp_live_TSIrGnJIllkt0H";
+      const keyId = sessionData?.key_id || sessionData?.key || process.env.EXPO_PUBLIC_RAZORPAY_KEY_ID || "rzp_test_TTX0hx0yooeEQW";
       const orderIdVal = sessionData?.order_id || sessionData?.orderId;
       const amountPaise = Number(sessionData?.amount || Math.round(Number(payableNow || 50) * 100));
 

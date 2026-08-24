@@ -7,7 +7,7 @@
 process.env.NODE_ENV = "test";
 process.env.DB_DIALECT = "sqlite";
 process.env.JWT_SECRET = "test_jwt_secret_key_mehndi_go_2026";
-process.env.RAZORPAY_KEY_ID = "rzp_live_TSIrGnJIllkt0H";
+process.env.RAZORPAY_KEY_ID = "rzp_test_TTX0hx0yooeEQW";
 process.env.RAZORPAY_KEY_SECRET = "test_secret_for_hmac_sha256_verification";
 
 const assert = require("assert");

@@ -1,9 +1,9 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, ActivityIndicator } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 
 const maskEmail = (email) => {
-  if (!email || typeof email !== "string" || !email.includes("@")) return "registered email";
+  if (!email || typeof email !== "string" || !email.includes("@")) return "your registered email inbox";
   const [local, domain] = email.split("@");
   if (local.length <= 2) return `${local[0]}***@${domain}`;
   return `${local[0]}${local[1]}***@${domain}`;
@@ -21,11 +21,26 @@ export default function OtpVerificationCard({
   errorMessage = null
 }) {
   const [enteredOtp, setEnteredOtp] = useState("");
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  useEffect(() => {
+    let timer = null;
+    if (resendCooldown > 0) {
+      timer = setInterval(() => {
+        setResendCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+      }, 1000);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [resendCooldown]);
 
   const isCheckIn = otpType === "CHECKIN";
   const title = isCheckIn ? "Check-In PIN Sent to Email" : "Completion PIN Sent to Email";
 
-  // CUSTOMER VIEW: Display Email Notification (No raw OTP digits/popup on app)
+  // =========================================================================
+  // 1. CUSTOMER VIEW: Display Email Notification ONLY (NO Resend Button on App)
+  // =========================================================================
   if (!isArtist) {
     const masked = maskEmail(customerEmail);
 
@@ -68,7 +83,7 @@ export default function OtpVerificationCard({
           </Text>
         </View>
 
-        {/* Action & Resend Bar */}
+        {/* Security Notice Footer (No Resend Button for Customer) */}
         <View style={styles.footerRow}>
           <View style={styles.securityNote}>
             <Ionicons name="shield-checkmark" size={13} color={isCheckIn ? "#059669" : "#701DDB"} />
@@ -76,35 +91,28 @@ export default function OtpVerificationCard({
               {isCheckIn ? "Share only when artist arrives at doorstep" : "Share only after mehndi application finishes"}
             </Text>
           </View>
-
-          {(onResend || onGenerate) && (
-            <TouchableOpacity
-              style={[styles.resendBtn, !isCheckIn && styles.resendBtnCheckout]}
-              onPress={onResend || onGenerate}
-              disabled={loading}
-              activeOpacity={0.75}
-            >
-              {loading ? (
-                <ActivityIndicator size="small" color={isCheckIn ? "#059669" : "#701DDB"} />
-              ) : (
-                <>
-                  <Ionicons name="paper-plane-outline" size={12} color={isCheckIn ? "#059669" : "#701DDB"} style={{ marginRight: 4 }} />
-                  <Text style={[styles.resendBtnText, !isCheckIn && { color: "#701DDB" }]}>Resend Email</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          )}
         </View>
       </View>
     );
   }
 
-  // ARTIST VIEW: Input OTP provided by customer (4-digit PIN)
+  // =========================================================================
+  // 2. ARTIST VIEW: 4-digit PIN Input + Exclusive Resend PIN Button for Artist
+  // =========================================================================
   const isComplete = enteredOtp.trim().length === 4;
 
   const handleVerify = () => {
     if (isComplete && onVerify) {
       onVerify(enteredOtp.trim(), otpType);
+    }
+  };
+
+  const handleArtistResend = () => {
+    if (resendCooldown > 0 || loading) return;
+    if (onResend || onGenerate) {
+      const fn = onResend || onGenerate;
+      fn();
+      setResendCooldown(60);
     }
   };
 
@@ -122,8 +130,8 @@ export default function OtpVerificationCard({
           </Text>
           <Text style={styles.artistSubtitle} numberOfLines={2}>
             {isCheckIn
-              ? "Ask the customer for their 4-digit PIN received on their registered email."
-              : "Ask the customer for their 4-digit Completion PIN received on their registered email."}
+              ? "Ask the customer for the 4-digit PIN received on their registered email."
+              : "Ask the customer for the 4-digit Completion PIN received on their registered email."}
           </Text>
         </View>
       </View>
@@ -177,6 +185,32 @@ export default function OtpVerificationCard({
           </>
         )}
       </TouchableOpacity>
+
+      {/* Artist-Exclusive Resend Button */}
+      {(onResend || onGenerate) && (
+        <View style={styles.artistResendRow}>
+          <TouchableOpacity
+            style={[styles.artistResendBtn, resendCooldown > 0 && styles.artistResendBtnDisabled]}
+            onPress={handleArtistResend}
+            disabled={resendCooldown > 0 || loading}
+            activeOpacity={0.75}
+          >
+            <Ionicons
+              name="paper-plane-outline"
+              size={13}
+              color={resendCooldown > 0 ? "#94A3B8" : "#701DDB"}
+              style={{ marginRight: 4 }}
+            />
+            <Text style={[styles.artistResendBtnText, resendCooldown > 0 && { color: "#94A3B8" }]}>
+              {resendCooldown > 0
+                ? `Resend Email (${resendCooldown}s)`
+                : isCheckIn
+                ? "Resend Check-In PIN to Customer Email"
+                : "Resend Completion PIN to Customer Email"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 }
@@ -219,41 +253,44 @@ const styles = StyleSheet.create({
   },
   headerRow: {
     flexDirection: "row",
-    alignItems: "flex-start",
-    marginBottom: 10
+    alignItems: "center"
   },
   customerIconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: "#D1FAE5",
     justifyContent: "center",
     alignItems: "center",
-    flexShrink: 0
+    marginRight: 10
   },
   customerIconCircleCheckout: {
     backgroundColor: "#EDE9FE"
   },
   artistIconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: "#EDE9FE",
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#F3E8FF",
     justifyContent: "center",
     alignItems: "center",
-    flexShrink: 0
+    marginRight: 10
   },
   headerTextContainer: {
-    marginLeft: 10,
     flex: 1
   },
   customerTitle: {
-    fontSize: 13.5,
-    fontWeight: "800",
+    fontSize: 14,
+    fontWeight: "700",
     color: "#065F46"
   },
   customerTitleCheckout: {
-    color: "#4C1D95"
+    color: "#5B21B6"
+  },
+  artistTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#1E293B"
   },
   statusBadge: {
     flexDirection: "row",
@@ -261,13 +298,10 @@ const styles = StyleSheet.create({
     backgroundColor: "#D1FAE5",
     paddingHorizontal: 7,
     paddingVertical: 2,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#6EE7B7"
+    borderRadius: 8
   },
   statusBadgeCheckout: {
-    backgroundColor: "#EDE9FE",
-    borderColor: "#C4B5FD"
+    backgroundColor: "#EDE9FE"
   },
   pulseDot: {
     width: 6,
@@ -277,124 +311,94 @@ const styles = StyleSheet.create({
     marginRight: 4
   },
   pulseDotCheckout: {
-    backgroundColor: "#7C3AED"
+    backgroundColor: "#701DDB"
   },
   statusBadgeText: {
-    fontSize: 9.5,
+    fontSize: 10,
     fontWeight: "800",
-    color: "#065F46",
-    letterSpacing: 0.4
+    color: "#065F46"
   },
   statusBadgeTextCheckout: {
     color: "#5B21B6"
   },
   customerSubtitle: {
-    fontSize: 11,
+    fontSize: 12,
     color: "#047857",
-    marginTop: 3,
-    lineHeight: 15
+    marginTop: 2,
+    lineHeight: 16
   },
   customerSubtitleCheckout: {
     color: "#6D28D9"
+  },
+  artistSubtitle: {
+    fontSize: 12,
+    color: "#64748B",
+    marginTop: 2,
+    lineHeight: 16
   },
   emailInfoBox: {
     backgroundColor: "#FFFFFF",
     borderRadius: 12,
     padding: 10,
-    marginVertical: 6,
+    marginTop: 10,
     borderWidth: 1,
-    borderColor: "#A7F3D0"
+    borderColor: "#D1FAE5"
   },
   emailInfoBoxCheckout: {
-    borderColor: "#DDD6FE"
+    borderColor: "#EDE9FE"
   },
   emailRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 3
+    marginBottom: 4
   },
   emailAddressText: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#065F46",
-    flex: 1
+    color: "#065F46"
   },
   emailAddressTextCheckout: {
-    color: "#4C1D95"
+    color: "#5B21B6"
   },
   emailHintText: {
-    fontSize: 10.5,
-    color: "#059669",
-    lineHeight: 14
-  },
-  emailHintTextCheckout: {
-    color: "#6D28D9"
-  },
-  artistTitle: {
-    fontSize: 14,
-    fontWeight: "800",
-    color: "#1F2937"
-  },
-  artistSubtitle: {
     fontSize: 11,
-    color: "#6B7280",
-    marginTop: 2,
+    color: "#059669",
     lineHeight: 15
   },
+  emailHintTextCheckout: {
+    color: "#7C3AED"
+  },
   footerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 4,
-    paddingTop: 4
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(5, 150, 105, 0.15)"
   },
   securityNote: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    flex: 1
+    alignItems: "center"
   },
   securityText: {
-    fontSize: 10.5,
-    color: "#047857",
-    fontWeight: "600",
-    flex: 1
-  },
-  resendBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#D1FAE5",
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#6EE7B7"
-  },
-  resendBtnCheckout: {
-    backgroundColor: "#EDE9FE",
-    borderColor: "#C4B5FD"
-  },
-  resendBtnText: {
     fontSize: 11,
-    color: "#059669",
-    fontWeight: "800"
+    fontWeight: "600",
+    color: "#065F46",
+    marginLeft: 4
   },
   inputWrapper: {
-    alignItems: "center",
-    marginVertical: 8
+    marginTop: 12,
+    alignItems: "center"
   },
   otpInput: {
     width: "100%",
-    maxWidth: 260,
-    height: 52,
+    height: 48,
     backgroundColor: "#F8FAFC",
+    borderRadius: 12,
     borderWidth: 1.5,
     borderColor: "#CBD5E1",
-    borderRadius: 14,
     fontSize: 22,
     fontWeight: "800",
-    color: "#1E293B",
-    letterSpacing: 8,
+    letterSpacing: 10,
+    color: "#0F172A",
     textAlign: "center"
   },
   otpInputError: {
@@ -404,51 +408,73 @@ const styles = StyleSheet.create({
   pinHelperRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 6,
-    gap: 4
+    marginTop: 6
   },
   pinHelperText: {
     fontSize: 11,
     color: "#64748B",
-    fontWeight: "500"
+    marginLeft: 4
   },
   errorBanner: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#FEF2F2",
     borderRadius: 8,
-    padding: 8,
-    marginBottom: 8,
-    gap: 6
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: "#FCA5A5"
   },
   errorText: {
     fontSize: 11,
-    color: "#DC2626",
     fontWeight: "600",
+    color: "#B91C1C",
+    marginLeft: 6,
     flex: 1
   },
   verifyBtn: {
-    backgroundColor: "#701DDB",
-    borderRadius: 14,
-    paddingVertical: 13,
     flexDirection: "row",
+    height: 46,
+    backgroundColor: "#701DDB",
+    borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
-    marginTop: 4,
+    marginTop: 12,
     shadowColor: "#701DDB",
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
     elevation: 3
   },
   verifyBtnDisabled: {
-    backgroundColor: "#C4B5FD",
-    shadowOpacity: 0
+    backgroundColor: "#CBD5E1",
+    shadowOpacity: 0,
+    elevation: 0
   },
   verifyBtnText: {
-    color: "#FFFFFF",
-    fontSize: 13.5,
-    fontWeight: "800",
-    letterSpacing: 0.3
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#FFFFFF"
+  },
+  artistResendRow: {
+    marginTop: 10,
+    alignItems: "center"
+  },
+  artistResendBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: "#F3E8FF"
+  },
+  artistResendBtnDisabled: {
+    backgroundColor: "#F1F5F9"
+  },
+  artistResendBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#701DDB"
   }
 });
