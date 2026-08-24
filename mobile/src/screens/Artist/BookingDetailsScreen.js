@@ -23,6 +23,7 @@ import {
   rejectBooking,
   updateOnTheWay,
   updateArrived,
+  sendCheckInOtp,
   verifyCheckInOtp,
   sendCheckOutOtp,
   verifyCheckOutOtp,
@@ -70,6 +71,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
   const [otpModalVisible, setOtpModalVisible] = useState(false);
   const [otpType, setOtpType] = useState("CHECKIN"); // "CHECKIN" or "CHECKOUT"
   const [otpError, setOtpError] = useState(null);
+  const [isCheckInLocallyVerified, setIsCheckInLocallyVerified] = useState(false);
 
   const pollIntervalRef = useRef(null);
 
@@ -86,7 +88,20 @@ export default function BookingDetailsScreen({ route, navigation }) {
             longitude: Number(data.longitude)
           });
         }
-        setBooking(data);
+        setBooking((prev) => {
+          const isLocallyVerified = isCheckInLocallyVerified || Number(prev?.checkin_otp_verified) === 1 || prev?.detailed_status === "SERVICE_IN_PROGRESS";
+          if (isLocallyVerified && Number(data?.checkin_otp_verified) !== 1 && data?.detailed_status !== "COMPLETED") {
+            return {
+              ...data,
+              status: "in_progress",
+              booking_status: "IN_PROGRESS",
+              detailed_status: "SERVICE_IN_PROGRESS",
+              checkin_otp_verified: 1,
+              checkin_verified: true
+            };
+          }
+          return data;
+        });
       }
     } catch (err) {
       if (__DEV__) console.log("Failed to load artist booking details:", err.message);
@@ -94,7 +109,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [bookingId]);
+  }, [bookingId, isCheckInLocallyVerified]);
 
   // Screen Focus & Polling
   useEffect(() => {
@@ -301,11 +316,15 @@ export default function BookingDetailsScreen({ route, navigation }) {
         console.warn("[handleArrived] GPS fetch notice:", locErr.message);
       }
 
-      await updateArrived(bookingId, lat, lng);
-      Alert.alert("Arrived! 📍", "You have arrived at the customer doorstep. Ask the customer for their 4-digit check-in PIN.");
+      const customerEmail = booking?.customer?.email || booking?.customer_email || booking?.user?.email || booking?.email || "Customer Email";
+      console.log(`[ARTIST ARRIVED AT DOORSTEP] Triggering Check-In PIN dispatch to Customer Email: ${customerEmail} | Booking ID: ${bookingId}`);
+      const res = await updateArrived(bookingId, lat, lng);
+      console.log(`[ARTIST ARRIVED API RESPONSE]:`, res);
+      Alert.alert("Arrived! 📍", "You have arrived at the customer doorstep. Check-In PIN has been sent to customer email.");
       setOtpType("CHECKIN");
       loadDetails();
     } catch (err) {
+      console.error(`[ARTIST ARRIVED ERROR]:`, err);
       Alert.alert("Error", err.message || "Failed to confirm arrival.");
     } finally {
       setActionLoading(false);
@@ -320,6 +339,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
     try {
       if (activeType === "CHECKIN") {
         const res = await verifyCheckInOtp(bookingId, otp);
+        setIsCheckInLocallyVerified(true);
         setOtpModalVisible(false);
         setOtpType("CHECKOUT");
         setBooking((prev) => ({
@@ -360,10 +380,15 @@ export default function BookingDetailsScreen({ route, navigation }) {
   const handleResendCheckInPin = async () => {
     setActionLoading(true);
     try {
-      await sendCheckInOtp(bookingId);
-      Alert.alert("Check-In PIN Sent! ✉️", "A 4-digit Check-In PIN has been sent to the customer's registered email address.");
+      const customerEmail = booking?.customer?.email || booking?.customer_email || booking?.user?.email || booking?.email || "Customer Email";
+      console.log(`[ARTIST RESEND CHECK-IN PIN] Sending OTP to Customer Email: ${customerEmail} | Booking ID: ${bookingId}`);
+      const res = await sendCheckInOtp(bookingId);
+      console.log(`[ARTIST RESEND CHECK-IN PIN API RESPONSE]:`, res);
+      const emailResolved = res?.customerEmail || res?.customer_email || res?.customerEmailMasked || customerEmail;
+      Alert.alert("Check-In PIN Sent! ✉️", `A 4-digit Check-In PIN has been sent to customer email (${emailResolved}).`);
       loadDetails();
     } catch (err) {
+      console.error(`[ARTIST RESEND CHECK-IN PIN ERROR]:`, err);
       Alert.alert("Notice", err.message || "Please wait before requesting a new PIN.");
     } finally {
       setActionLoading(false);
@@ -373,10 +398,15 @@ export default function BookingDetailsScreen({ route, navigation }) {
   const handleResendCheckOutPin = async () => {
     setActionLoading(true);
     try {
-      await sendCheckOutOtp(bookingId);
-      Alert.alert("Completion PIN Sent! ✉️", "A 4-digit Service Completion PIN has been sent to the customer's registered email address.");
+      const customerEmail = booking?.customer?.email || booking?.customer_email || booking?.user?.email || booking?.email || "Customer Email";
+      console.log(`[ARTIST RESEND CHECK-OUT PIN] Sending Completion OTP to Customer Email: ${customerEmail} | Booking ID: ${bookingId}`);
+      const res = await sendCheckOutOtp(bookingId);
+      console.log(`[ARTIST RESEND CHECK-OUT PIN API RESPONSE]:`, res);
+      const emailResolved = res?.customerEmail || res?.customer_email || res?.customerEmailMasked || customerEmail;
+      Alert.alert("Completion PIN Sent! ✉️", `A 4-digit Service Completion PIN has been sent to customer email (${emailResolved}).`);
       loadDetails();
     } catch (err) {
+      console.error(`[ARTIST RESEND CHECK-OUT PIN ERROR]:`, err);
       Alert.alert("Notice", err.message || "Please wait before requesting a new PIN.");
     } finally {
       setActionLoading(false);
@@ -395,11 +425,15 @@ export default function BookingDetailsScreen({ route, navigation }) {
           onPress: async () => {
             setActionLoading(true);
             try {
-              await sendCheckOutOtp(bookingId);
+              const customerEmail = booking?.customer?.email || booking?.customer_email || booking?.user?.email || booking?.email || "Customer Email";
+              console.log(`[ARTIST FINISH & CHECKOUT] Dispatching Completion PIN to Customer Email: ${customerEmail} | Booking ID: ${bookingId}`);
+              const res = await sendCheckOutOtp(bookingId);
+              console.log(`[ARTIST FINISH & CHECKOUT API RESPONSE]:`, res);
               setOtpType("CHECKOUT");
               setOtpModalVisible(true);
               loadDetails();
             } catch (err) {
+              console.error(`[ARTIST FINISH & CHECKOUT ERROR]:`, err);
               Alert.alert("Notice", err.message || "Please request completion PIN from customer.");
               setOtpType("CHECKOUT");
               setOtpModalVisible(true);
@@ -481,7 +515,9 @@ export default function BookingDetailsScreen({ route, navigation }) {
   const rawStatus = String(
     booking?.detailed_status || booking?.booking_status || booking?.status || "PENDING"
   ).toUpperCase();
+
   const isCheckInVerified =
+    isCheckInLocallyVerified ||
     Number(booking?.checkin_otp_verified) === 1 ||
     Number(booking?.checkin_verified) === 1 ||
     Number(booking?.check_in_otp_verified) === 1 ||
@@ -489,19 +525,18 @@ export default function BookingDetailsScreen({ route, navigation }) {
     ["CUSTOMER_VERIFIED", "SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS", "CHECKOUT", "COMPLETED"].includes(rawStatus);
 
   const isPending = rawStatus === "PENDING" || rawStatus === "REQUESTED";
-  const isAccepted = ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED"].includes(rawStatus);
-  const isOnTheWay = ["ARTIST_ON_THE_WAY", "ON_THE_WAY"].includes(rawStatus);
-
-  // Arrived state is active ONLY when arrived AND check-in OTP is not yet verified
-  const isArrived = (rawStatus === "ARTIST_ARRIVED" || rawStatus === "ARRIVED") && !isCheckInVerified && !isServiceActive;
+  const isAccepted = !isCheckInVerified && ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED"].includes(rawStatus);
+  const isOnTheWay = !isCheckInVerified && ["ARTIST_ON_THE_WAY", "ON_THE_WAY"].includes(rawStatus);
 
   // Service is active whenever status is in_progress / service_in_progress OR checkin is verified
   const isServiceActive =
-    (["SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS", "CUSTOMER_VERIFIED"].includes(rawStatus) ||
-      isCheckInVerified) &&
+    (isCheckInVerified || ["SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS", "CUSTOMER_VERIFIED"].includes(rawStatus)) &&
     rawStatus !== "COMPLETED" &&
     rawStatus !== "COMPLETED_CLOSED" &&
     rawStatus !== "CANCELLED";
+
+  // Arrived state is active ONLY when arrived AND check-in OTP is not yet verified AND service is not active
+  const isArrived = !isCheckInVerified && !isServiceActive && (rawStatus === "ARTIST_ARRIVED" || rawStatus === "ARRIVED");
 
   const isCheckout = ["CHECKOUT", "PAYMENT_REQUIRED"].includes(rawStatus) && rawStatus !== "COMPLETED";
   const isCompleted = rawStatus === "COMPLETED" || rawStatus === "COMPLETED_CLOSED";

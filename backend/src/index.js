@@ -59,8 +59,22 @@ app.get("/test-email", async (c) => {
   const logs = [];
 
   try {
-    logs.push(`Initiating Azure Email dispatch to ${to}...`);
-    const isSent = await sendAzureEmailWorkerDirect(
+    logs.push(`Initiating direct SMTP dispatch to ${to}...`);
+    const isSmtpSent = await sendCustomSmtpDirect(
+      c,
+      to,
+      "MehndiGo SMTP Verification - Doorstep OTP Service",
+      "Doorstep Check-In PIN: 4829",
+      "<h1>MehndiGo Email Verification</h1><p>Doorstep OTP Service is fully active from <b>donotreply@mehndigo.in</b>.</p>"
+    );
+
+    if (isSmtpSent) {
+      logs.push("SMTP Email successfully accepted and dispatched!");
+      return c.json({ success: true, message: `Email dispatched successfully to ${to} from donotreply@mehndigo.in`, provider: "gmail_smtp", logs });
+    }
+
+    logs.push("SMTP dispatch returned false, trying Azure...");
+    const isAzureSent = await sendAzureEmailWorkerDirect(
       c,
       to,
       "MehndiGo Azure Email Service Verification",
@@ -68,13 +82,12 @@ app.get("/test-email", async (c) => {
       "Azure Email Communication Services is fully active from donotreply@mehndigo.in."
     );
 
-    if (isSent) {
+    if (isAzureSent) {
       logs.push("Azure Email successfully accepted and dispatched!");
-      return c.json({ success: true, message: `Azure Email dispatched successfully to ${to} from donotreply@mehndigo.in`, logs });
-    } else {
-      logs.push("Azure Email dispatch returned false. Check logs.");
-      return c.json({ success: false, message: "Azure Email failed to dispatch", logs }, 500);
+      return c.json({ success: true, message: `Azure Email dispatched successfully to ${to} from donotreply@mehndigo.in`, provider: "azure", logs });
     }
+
+    return c.json({ success: false, message: "Both SMTP and Azure Email failed to dispatch", logs }, 500);
   } catch (err) {
     logs.push(`ERROR: ${err.message}`);
     return c.json({ success: false, error: err.message, logs }, 500);
@@ -421,7 +434,7 @@ const sendCheckInOtpEmail = async (c, toEmail, otp, customerName = "Valued Custo
   const resendApiKey = (c && c.env && c.env.RESEND_API_KEY) || "";
   if (resendApiKey) {
     try {
-      await fetch("https://api.resend.com/emails", {
+      const res = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${resendApiKey}`,
@@ -434,10 +447,15 @@ const sendCheckInOtpEmail = async (c, toEmail, otp, customerName = "Valued Custo
           html: htmlBody
         })
       });
+      if (res.ok) {
+        console.log(`[RESEND CHECK-IN EMAIL DELIVERED] PIN ${targetOtp} delivered to ${targetEmail}`);
+        return true;
+      }
     } catch (_) { }
   }
 
-  return true;
+  console.error(`[CHECK-IN EMAIL FAILED] Could not deliver PIN to ${targetEmail} via any provider`);
+  return false;
 };
 
 const sendCheckOutOtpEmail = async (c, toEmail, otp, customerName = "Valued Customer", bookingNumber = "") => {
@@ -503,7 +521,7 @@ const sendCheckOutOtpEmail = async (c, toEmail, otp, customerName = "Valued Cust
   const resendApiKey = (c && c.env && c.env.RESEND_API_KEY) || "";
   if (resendApiKey) {
     try {
-      await fetch("https://api.resend.com/emails", {
+      const res = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${resendApiKey}`,
@@ -516,10 +534,15 @@ const sendCheckOutOtpEmail = async (c, toEmail, otp, customerName = "Valued Cust
           html: htmlBody
         })
       });
+      if (res.ok) {
+        console.log(`[RESEND CHECK-OUT EMAIL DELIVERED] PIN ${targetOtp} delivered to ${targetEmail}`);
+        return true;
+      }
     } catch (_) { }
   }
 
-  return true;
+  console.error(`[CHECK-OUT EMAIL FAILED] Could not deliver PIN to ${targetEmail} via any provider`);
+  return false;
 };
 
 
@@ -9894,12 +9917,17 @@ const handleSendCheckInOtp = async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const bookingId = parseInt(body.bookingId || body.booking_id || 0, 10);
 
+  console.log(`[CHECKIN EMAIL TRACE] handler entered | bookingId=${bookingId}`);
+
   if (!bookingId) {
     return jsonRes(c, false, null, "Booking ID is required", 400);
   }
 
   const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
+
+  const customerId = booking.customer_id || booking.user_id;
+  console.log(`[CHECKIN EMAIL TRACE] bookingId=${bookingId} | customerId=${customerId}`);
 
   // Strict Permanent Lock Guard: Cannot request or resend Check-In OTP once verified
   const isAlreadyVerified =
@@ -9920,7 +9948,6 @@ const handleSendCheckInOtp = async (c) => {
   await db.run("UPDATE bookings SET checkin_otp = ?, check_in_otp = ?, checkin_otp_expires_at = ? WHERE id = ?", [otp, otp, expiresAt, bookingId]).catch(() => { });
 
   // Dispatch Check-In PIN directly to customer's registered email
-  const customerId = booking.customer_id || booking.user_id;
   let customerUser = null;
   if (customerId) {
     customerUser = await db.first("SELECT email, full_name, name FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [customerId, String(customerId)]).catch(() => null);
@@ -9928,11 +9955,26 @@ const handleSendCheckInOtp = async (c) => {
   const customerEmail = customerUser?.email || booking.customer_email || booking.email || booking.user_email;
   const customerName = customerUser?.full_name || customerUser?.name || booking.customer_name || booking.user_name || "Valued Customer";
 
-  if (customerEmail) {
-    await sendCheckInOtpEmail(c, customerEmail, otp, customerName, booking.booking_number || booking.booking_code || String(bookingId)).catch(() => null);
+  const maskedEmail = customerEmail ? customerEmail.replace(/^(.)(.*)(@.*)$/, "$1***$3") : "None";
+  console.log(`[CHECKIN EMAIL TRACE] customerEmail=${maskedEmail} | emailFunctionCalled=true`);
+
+  if (!customerEmail) {
+    console.error(`[CHECKIN EMAIL TRACE] No registered email found for customerId=${customerId}`);
+    return jsonRes(c, false, { bookingId, otpSent: false }, "Customer registered email address not found for this booking", 400);
   }
 
-  return jsonRes(c, true, { bookingId, otpSent: true }, "Check-In PIN sent to customer's registered email address");
+  const emailSent = await sendCheckInOtpEmail(c, customerEmail, otp, customerName, booking.booking_number || booking.booking_code || String(bookingId)).catch((e) => {
+    console.error(`[CHECKIN EMAIL TRACE] Exception in sendCheckInOtpEmail:`, e.message);
+    return false;
+  });
+
+  console.log(`[CHECKIN EMAIL TRACE] smtpResult=${emailSent ? "SUCCESS" : "FAILED"}`);
+
+  if (!emailSent) {
+    return jsonRes(c, false, { bookingId, otpSent: false }, "Unable to deliver OTP email to customer. Please verify email configuration.", 500);
+  }
+
+  return jsonRes(c, true, { bookingId, otpSent: true, customerEmailMasked: maskedEmail }, `Check-In PIN sent to customer's registered email address (${maskedEmail})`);
 };
 
 const checkInFailedAttemptsMap = new Map();
@@ -10159,11 +10201,26 @@ const handleSendCheckOutOtp = async (c) => {
   const customerEmailOut = customerUserOut?.email || booking.customer_email || booking.email || booking.user_email;
   const customerNameOut = customerUserOut?.full_name || customerUserOut?.name || booking.customer_name || booking.user_name || "Valued Customer";
 
-  if (customerEmailOut) {
-    await sendCheckOutOtpEmail(c, customerEmailOut, otp, customerNameOut, booking.booking_number || booking.booking_code || String(bookingId)).catch(() => null);
+  const maskedEmailOut = customerEmailOut ? customerEmailOut.replace(/^(.)(.*)(@.*)$/, "$1***$3") : "None";
+  console.log(`[CHECKOUT EMAIL TRACE] customerEmail=${maskedEmailOut} | emailFunctionCalled=true`);
+
+  if (!customerEmailOut) {
+    console.error(`[CHECKOUT EMAIL TRACE] No registered email found for customerId=${customerIdOut}`);
+    return jsonRes(c, false, { bookingId, otpSent: false }, "Customer registered email address not found for this booking", 400);
   }
 
-  return jsonRes(c, true, { bookingId, otp, checkout_otp: otp, check_out_otp: otp, completion_pin: otp, otpSent: true }, "Service Completion PIN sent to customer's registered email address");
+  const emailSentOut = await sendCheckOutOtpEmail(c, customerEmailOut, otp, customerNameOut, booking.booking_number || booking.booking_code || String(bookingId)).catch((e) => {
+    console.error(`[CHECKOUT EMAIL TRACE] Exception in sendCheckOutOtpEmail:`, e.message);
+    return false;
+  });
+
+  console.log(`[CHECKOUT EMAIL TRACE] smtpResult=${emailSentOut ? "SUCCESS" : "FAILED"}`);
+
+  if (!emailSentOut) {
+    return jsonRes(c, false, { bookingId, otpSent: false }, "Unable to deliver Completion OTP email to customer. Please verify email configuration.", 500);
+  }
+
+  return jsonRes(c, true, { bookingId, otp, checkout_otp: otp, check_out_otp: otp, completion_pin: otp, otpSent: true, customerEmailMasked: maskedEmailOut }, `Service Completion PIN sent to customer's registered email address (${maskedEmailOut})`);
 };
 
 const handleVerifyCheckOutOtp = async (c) => {
@@ -10541,7 +10598,6 @@ const handleGetCustomerBookings = async (c) => {
       checkin_verified: isCheckInVerified ? true : false,
       checkin_otp: isCheckInVerified ? null : b.checkin_otp,
       check_in_otp: isCheckInVerified ? null : b.checkin_otp,
-      detailedStatus: detailedStatus,
       payment_status: (b.payment_status || "PENDING").toUpperCase(),
       total_amount: totalAmt,
       final_amount: totalAmt,
