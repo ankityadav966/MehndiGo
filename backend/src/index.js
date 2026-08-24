@@ -8199,20 +8199,28 @@ const handleGetArtistReviews = async (c) => {
     artistIdStr = c.req.query("artist_id") || c.req.query("artistId") || "";
   }
 
-  const artistId = Number(artistIdStr) || 0;
+  const u = getUserFromHeader(c);
+  let resolvedArtistId = artistId;
+  if (!resolvedArtistId && u && (String(u.role).toLowerCase() === "artist")) {
+    resolvedArtistId = Number(u.id);
+  }
 
   let reviews = [];
-  if (artistId > 0) {
+  if (resolvedArtistId > 0) {
+    const artistProfile = await db.first("SELECT id, user_id FROM artist_profiles WHERE id = ? OR user_id = ?", [resolvedArtistId, resolvedArtistId]).catch(() => null);
+    const pId = artistProfile ? Number(artistProfile.id) : resolvedArtistId;
+    const uId = artistProfile ? Number(artistProfile.user_id) : resolvedArtistId;
+
     reviews = await db.all(`
       SELECT r.*, 
         COALESCE(u.full_name, u.name, 'Verified Customer') as customer_name, 
         u.profile_image as customer_avatar
       FROM reviews r
       LEFT JOIN users u ON (r.customer_id = u.id OR r.user_id = u.id)
-      WHERE (r.artist_id = ? OR CAST(r.artist_id AS TEXT) = ?)
+      WHERE (r.artist_id = ? OR r.artist_id = ? OR CAST(r.artist_id AS TEXT) = ? OR CAST(r.artist_id AS TEXT) = ?)
         AND (r.status = 'APPROVED' OR r.is_approved = 1)
       ORDER BY r.id DESC
-    `, [artistId, String(artistId)]).catch(() => []);
+    `, [pId, uId, String(pId), String(uId)]).catch(() => []);
   } else {
     reviews = await db.all(`
       SELECT r.*, 
