@@ -3728,7 +3728,10 @@ const handleCreatePaymentSession = async (c) => {
     if (!bookingId) {
       return jsonRes(c, false, null, "Booking ID is required for booking payments", 400);
     }
-    booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
+    booking = await db.first(
+      "SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT) OR booking_number = ? OR CAST(booking_number AS TEXT) = CAST(? AS TEXT)",
+      [bookingId, String(bookingId), String(bookingId), String(bookingId)]
+    ).catch(() => null);
     if (!booking) {
       return jsonRes(c, false, null, "Booking not found", 404);
     }
@@ -9289,18 +9292,19 @@ const handleCreateBookingExplicit = async (c) => {
         total_amount, advance_paid, remaining_amount, address, latitude, longitude, notes, status, payment_status
       ) VALUES (?, ?, ?, ?, ?, ?, ?, 0.0, ?, ?, ?, ?, ?, 'pending_payment', 'pending')
     `, [bookingNo, u.id, artistId, serviceId, bookingDate, bookingTime, totalAmount, initialRemaining, address, finalLat, finalLng, notes]);
-    newId = res.meta?.last_row_id || res.lastRowId || res.meta?.last_insert_rowid || Date.now();
+    newId = res?.meta?.last_row_id || res?.lastRowId || res?.meta?.last_insert_rowid || Date.now();
   } catch (err) {
     console.log("Explicit booking insert catch:", err.message);
   }
 
-  const createdBooking = await db.first("SELECT * FROM bookings WHERE id = ?", [newId]).catch(() => null);
+  const createdBooking = await db.first("SELECT * FROM bookings WHERE booking_number = ? ORDER BY id DESC LIMIT 1", [bookingNo]).catch(() => null);
+  const finalId = createdBooking?.id || newId;
 
   const bookingPayload = {
     ...createdBooking,
-    id: createdBooking?.id || newId,
-    booking_id: createdBooking?.id || newId,
-    bookingId: createdBooking?.id || newId,
+    id: finalId,
+    booking_id: finalId,
+    bookingId: finalId,
     booking_code: bookingNo,
     bookingCode: bookingNo,
     booking_number: bookingNo,
