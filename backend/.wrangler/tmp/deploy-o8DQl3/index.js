@@ -1,30 +1,2481 @@
-import { Hono } from "hono";
-import { cors } from "hono/cors";
+var __defProp = Object.defineProperty;
+var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
+
+// node_modules/hono/dist/compose.js
+var compose = /* @__PURE__ */ __name((middleware, onError, onNotFound) => {
+  return (context, next) => {
+    let index = -1;
+    return dispatch(0);
+    async function dispatch(i) {
+      if (i <= index) {
+        throw new Error("next() called multiple times");
+      }
+      index = i;
+      let res;
+      let isError = false;
+      let handler;
+      if (middleware[i]) {
+        handler = middleware[i][0][0];
+        context.req.routeIndex = i;
+      } else {
+        handler = i === middleware.length && next || void 0;
+      }
+      if (handler) {
+        try {
+          res = await handler(context, () => dispatch(i + 1));
+        } catch (err) {
+          if (err instanceof Error && onError) {
+            context.error = err;
+            res = await onError(err, context);
+            isError = true;
+          } else {
+            throw err;
+          }
+        }
+      } else {
+        if (context.finalized === false && onNotFound) {
+          res = await onNotFound(context);
+        }
+      }
+      if (res && (context.finalized === false || isError)) {
+        context.res = res;
+      }
+      return context;
+    }
+    __name(dispatch, "dispatch");
+  };
+}, "compose");
+
+// node_modules/hono/dist/request/constants.js
+var GET_MATCH_RESULT = /* @__PURE__ */ Symbol();
+
+// node_modules/hono/dist/utils/buffer.js
+var bufferToFormData = /* @__PURE__ */ __name((arrayBuffer, contentType) => {
+  const response = new Response(arrayBuffer, {
+    headers: {
+      // Normalize the media type (case-insensitive) while keeping parameters like the boundary
+      "Content-Type": contentType.replace(/^[^;]+/, (mediaType) => mediaType.toLowerCase())
+    }
+  });
+  return response.formData();
+}, "bufferToFormData");
+
+// node_modules/hono/dist/utils/body.js
+var isRawRequest = /* @__PURE__ */ __name((request) => "headers" in request, "isRawRequest");
+var parseBody = /* @__PURE__ */ __name(async (request, options = /* @__PURE__ */ Object.create(null)) => {
+  const { all = false, dot = false } = options;
+  const headers = isRawRequest(request) ? request.headers : request.raw.headers;
+  const contentType = headers.get("Content-Type");
+  const mediaType = contentType?.split(";")[0].trim().toLowerCase();
+  if (mediaType === "multipart/form-data" || mediaType === "application/x-www-form-urlencoded") {
+    return parseFormData(request, { all, dot });
+  }
+  return {};
+}, "parseBody");
+async function parseFormData(request, options) {
+  if (!isRawRequest(request) && request.bodyCache.formData) {
+    return convertFormDataToBodyData(
+      await request.bodyCache.formData,
+      options
+    );
+  }
+  const headers = isRawRequest(request) ? request.headers : request.raw.headers;
+  const arrayBuffer = await request.arrayBuffer();
+  const formDataPromise = bufferToFormData(arrayBuffer, headers.get("Content-Type") || "");
+  if (!isRawRequest(request)) {
+    request.bodyCache.formData = formDataPromise;
+  }
+  const formData = await formDataPromise;
+  if (formData) {
+    return convertFormDataToBodyData(formData, options);
+  }
+  return {};
+}
+__name(parseFormData, "parseFormData");
+function convertFormDataToBodyData(formData, options) {
+  const form = /* @__PURE__ */ Object.create(null);
+  formData.forEach((value, key) => {
+    const shouldParseAllValues = options.all || key.endsWith("[]");
+    if (!shouldParseAllValues) {
+      form[key] = value;
+    } else {
+      handleParsingAllValues(form, key, value);
+    }
+  });
+  if (options.dot) {
+    Object.entries(form).forEach(([key, value]) => {
+      const shouldParseDotValues = key.includes(".");
+      if (shouldParseDotValues) {
+        handleParsingNestedValues(form, key, value);
+        delete form[key];
+      }
+    });
+  }
+  return form;
+}
+__name(convertFormDataToBodyData, "convertFormDataToBodyData");
+var handleParsingAllValues = /* @__PURE__ */ __name((form, key, value) => {
+  if (form[key] !== void 0) {
+    if (Array.isArray(form[key])) {
+      ;
+      form[key].push(value);
+    } else {
+      form[key] = [form[key], value];
+    }
+  } else {
+    if (!key.endsWith("[]")) {
+      form[key] = value;
+    } else {
+      form[key] = [value];
+    }
+  }
+}, "handleParsingAllValues");
+var handleParsingNestedValues = /* @__PURE__ */ __name((form, key, value) => {
+  if (/(?:^|\.)__proto__\./.test(key)) {
+    return;
+  }
+  let nestedForm = form;
+  const keys = key.split(".");
+  keys.forEach((key2, index) => {
+    if (index === keys.length - 1) {
+      nestedForm[key2] = value;
+    } else {
+      if (!nestedForm[key2] || typeof nestedForm[key2] !== "object" || Array.isArray(nestedForm[key2]) || nestedForm[key2] instanceof File) {
+        nestedForm[key2] = /* @__PURE__ */ Object.create(null);
+      }
+      nestedForm = nestedForm[key2];
+    }
+  });
+}, "handleParsingNestedValues");
+
+// node_modules/hono/dist/utils/url.js
+var splitPath = /* @__PURE__ */ __name((path) => {
+  const paths = path.split("/");
+  if (paths[0] === "") {
+    paths.shift();
+  }
+  return paths;
+}, "splitPath");
+var splitRoutingPath = /* @__PURE__ */ __name((routePath) => {
+  const { groups, path } = extractGroupsFromPath(routePath);
+  const paths = splitPath(path);
+  return replaceGroupMarks(paths, groups);
+}, "splitRoutingPath");
+var extractGroupsFromPath = /* @__PURE__ */ __name((path) => {
+  const groups = [];
+  path = path.replace(/\{[^}]+\}/g, (match2, index) => {
+    const mark = `@${index}`;
+    groups.push([mark, match2]);
+    return mark;
+  });
+  return { groups, path };
+}, "extractGroupsFromPath");
+var replaceGroupMarks = /* @__PURE__ */ __name((paths, groups) => {
+  for (let i = groups.length - 1; i >= 0; i--) {
+    const [mark] = groups[i];
+    for (let j = paths.length - 1; j >= 0; j--) {
+      if (paths[j].includes(mark)) {
+        paths[j] = paths[j].replace(mark, groups[i][1]);
+        break;
+      }
+    }
+  }
+  return paths;
+}, "replaceGroupMarks");
+var patternCache = {};
+var getPattern = /* @__PURE__ */ __name((label, next) => {
+  if (label === "*") {
+    return "*";
+  }
+  const match2 = label.match(/^\:([^\{\}]+)(?:\{(.+)\})?$/);
+  if (match2) {
+    const cacheKey = `${label}#${next}`;
+    if (!patternCache[cacheKey]) {
+      if (match2[2]) {
+        patternCache[cacheKey] = next && next[0] !== ":" && next[0] !== "*" ? [cacheKey, match2[1], new RegExp(`^${match2[2]}(?=/${next})`)] : [label, match2[1], new RegExp(`^${match2[2]}$`)];
+      } else {
+        patternCache[cacheKey] = [label, match2[1], true];
+      }
+    }
+    return patternCache[cacheKey];
+  }
+  return null;
+}, "getPattern");
+var tryDecode = /* @__PURE__ */ __name((str, decoder) => {
+  try {
+    return decoder(str);
+  } catch {
+    return str.replace(/(?:%[0-9A-Fa-f]{2})+/g, (match2) => {
+      try {
+        return decoder(match2);
+      } catch {
+        return match2;
+      }
+    });
+  }
+}, "tryDecode");
+var tryDecodeURI = /* @__PURE__ */ __name((str) => tryDecode(str, decodeURI), "tryDecodeURI");
+var getPath = /* @__PURE__ */ __name((request) => {
+  const url = request.url;
+  const start = url.indexOf("/", url.indexOf(":") + 4);
+  let i = start;
+  for (; i < url.length; i++) {
+    const charCode = url.charCodeAt(i);
+    if (charCode === 37) {
+      const queryIndex = url.indexOf("?", i);
+      const hashIndex = url.indexOf("#", i);
+      const end = queryIndex === -1 ? hashIndex === -1 ? void 0 : hashIndex : hashIndex === -1 ? queryIndex : Math.min(queryIndex, hashIndex);
+      const path = url.slice(start, end);
+      return tryDecodeURI(path.includes("%25") ? path.replace(/%25/g, "%2525") : path);
+    } else if (charCode === 63 || charCode === 35) {
+      break;
+    }
+  }
+  return url.slice(start, i);
+}, "getPath");
+var getPathNoStrict = /* @__PURE__ */ __name((request) => {
+  const result = getPath(request);
+  return result.length > 1 && result.at(-1) === "/" ? result.slice(0, -1) : result;
+}, "getPathNoStrict");
+var mergePath = /* @__PURE__ */ __name((base, sub, ...rest) => {
+  if (rest.length) {
+    sub = mergePath(sub, ...rest);
+  }
+  return `${base?.[0] === "/" ? "" : "/"}${base}${sub === "/" ? "" : `${base?.at(-1) === "/" ? "" : "/"}${sub?.[0] === "/" ? sub.slice(1) : sub}`}`;
+}, "mergePath");
+var checkOptionalParameter = /* @__PURE__ */ __name((path) => {
+  if (path.charCodeAt(path.length - 1) !== 63 || !path.includes(":")) {
+    return null;
+  }
+  const segments = path.split("/");
+  const results = [];
+  let basePath = "";
+  segments.forEach((segment) => {
+    if (segment !== "" && !/\:/.test(segment)) {
+      basePath += "/" + segment;
+    } else if (/\:/.test(segment)) {
+      if (/\?/.test(segment)) {
+        if (results.length === 0 && basePath === "") {
+          results.push("/");
+        } else {
+          results.push(basePath);
+        }
+        const optionalSegment = segment.replace("?", "");
+        basePath += "/" + optionalSegment;
+        results.push(basePath);
+      } else {
+        basePath += "/" + segment;
+      }
+    }
+  });
+  return results.filter((v, i, a) => a.indexOf(v) === i);
+}, "checkOptionalParameter");
+var tryDecodeURIComponent = /* @__PURE__ */ __name((str) => str.indexOf("%") !== -1 ? tryDecode(str, decodeURIComponent_) : str, "tryDecodeURIComponent");
+var _decodeURI = /* @__PURE__ */ __name((value) => {
+  if (value.indexOf("+") !== -1) {
+    value = value.replace(/\+/g, " ");
+  }
+  return tryDecodeURIComponent(value);
+}, "_decodeURI");
+var _getQueryParam = /* @__PURE__ */ __name((url, key, multiple) => {
+  let encoded;
+  if (!multiple && key && key.indexOf("%") === -1 && key.indexOf("+") === -1) {
+    let keyIndex2 = url.indexOf("?", 8);
+    if (keyIndex2 === -1) {
+      return void 0;
+    }
+    if (!url.startsWith(key, keyIndex2 + 1)) {
+      keyIndex2 = url.indexOf(`&${key}`, keyIndex2 + 1);
+    }
+    while (keyIndex2 !== -1) {
+      const trailingKeyCode = url.charCodeAt(keyIndex2 + key.length + 1);
+      if (trailingKeyCode === 61) {
+        const valueIndex = keyIndex2 + key.length + 2;
+        const endIndex = url.indexOf("&", valueIndex);
+        return _decodeURI(url.slice(valueIndex, endIndex === -1 ? void 0 : endIndex));
+      } else if (trailingKeyCode == 38 || isNaN(trailingKeyCode)) {
+        return "";
+      }
+      keyIndex2 = url.indexOf(`&${key}`, keyIndex2 + 1);
+    }
+    encoded = /[%+]/.test(url);
+    if (!encoded) {
+      return void 0;
+    }
+  }
+  const results = /* @__PURE__ */ Object.create(null);
+  encoded ??= /[%+]/.test(url);
+  let keyIndex = url.indexOf("?", 8);
+  while (keyIndex !== -1) {
+    const nextKeyIndex = url.indexOf("&", keyIndex + 1);
+    let valueIndex = url.indexOf("=", keyIndex);
+    if (valueIndex > nextKeyIndex && nextKeyIndex !== -1) {
+      valueIndex = -1;
+    }
+    let name = url.slice(
+      keyIndex + 1,
+      valueIndex === -1 ? nextKeyIndex === -1 ? void 0 : nextKeyIndex : valueIndex
+    );
+    if (encoded) {
+      name = _decodeURI(name);
+    }
+    keyIndex = nextKeyIndex;
+    if (name === "") {
+      continue;
+    }
+    let value;
+    if (valueIndex === -1) {
+      value = "";
+    } else {
+      value = url.slice(valueIndex + 1, nextKeyIndex === -1 ? void 0 : nextKeyIndex);
+      if (encoded) {
+        value = _decodeURI(value);
+      }
+    }
+    if (multiple) {
+      if (!(results[name] && Array.isArray(results[name]))) {
+        results[name] = [];
+      }
+      ;
+      results[name].push(value);
+    } else {
+      results[name] ??= value;
+    }
+  }
+  return key ? results[key] : results;
+}, "_getQueryParam");
+var getQueryParam = _getQueryParam;
+var getQueryParams = /* @__PURE__ */ __name((url, key) => {
+  return _getQueryParam(url, key, true);
+}, "getQueryParams");
+var decodeURIComponent_ = decodeURIComponent;
+
+// node_modules/hono/dist/request.js
+var HonoRequest = class {
+  static {
+    __name(this, "HonoRequest");
+  }
+  /**
+   * `.raw` can get the raw Request object.
+   *
+   * @see {@link https://hono.dev/docs/api/request#raw}
+   *
+   * @example
+   * ```ts
+   * // For Cloudflare Workers
+   * app.post('/', async (c) => {
+   *   const metadata = c.req.raw.cf?.hostMetadata?
+   *   ...
+   * })
+   * ```
+   */
+  raw;
+  #validatedData;
+  // Short name of validatedData
+  #matchResult;
+  routeIndex = 0;
+  /**
+   * `.path` can get the pathname of the request.
+   *
+   * @see {@link https://hono.dev/docs/api/request#path}
+   *
+   * @example
+   * ```ts
+   * app.get('/about/me', (c) => {
+   *   const pathname = c.req.path // `/about/me`
+   * })
+   * ```
+   */
+  path;
+  bodyCache = {};
+  constructor(request, path = "/", matchResult = [[]]) {
+    this.raw = request;
+    this.path = path;
+    this.#matchResult = matchResult;
+  }
+  param(key) {
+    return key ? this.#getDecodedParam(key) : this.#getAllDecodedParams();
+  }
+  #getDecodedParam(key) {
+    const paramKey = this.#matchResult[0][this.routeIndex][1][key];
+    const param = this.#getParamValue(paramKey);
+    return param && tryDecodeURIComponent(param);
+  }
+  #getAllDecodedParams() {
+    const decoded = {};
+    const keys = Object.keys(this.#matchResult[0][this.routeIndex][1]);
+    for (const key of keys) {
+      const value = this.#getParamValue(this.#matchResult[0][this.routeIndex][1][key]);
+      if (value !== void 0) {
+        decoded[key] = tryDecodeURIComponent(value);
+      }
+    }
+    return decoded;
+  }
+  #getParamValue(paramKey) {
+    return this.#matchResult[1] ? this.#matchResult[1][paramKey] : paramKey;
+  }
+  query(key) {
+    return getQueryParam(this.url, key);
+  }
+  queries(key) {
+    return getQueryParams(this.url, key);
+  }
+  header(name) {
+    if (name) {
+      return this.raw.headers.get(name) ?? void 0;
+    }
+    const headerData = /* @__PURE__ */ Object.create(null);
+    this.raw.headers.forEach((value, key) => {
+      headerData[key] = value;
+    });
+    return headerData;
+  }
+  async parseBody(options) {
+    return parseBody(this, options);
+  }
+  #cachedBody = /* @__PURE__ */ __name((key) => {
+    const { bodyCache, raw: raw2 } = this;
+    const cachedBody = bodyCache[key];
+    if (cachedBody) {
+      return cachedBody;
+    }
+    for (const anyCachedKey in bodyCache) {
+      return bodyCache[anyCachedKey].then((body) => {
+        if (anyCachedKey === "json") {
+          body = JSON.stringify(body);
+        }
+        return new Response(body)[key]();
+      });
+    }
+    return bodyCache[key] = raw2[key]();
+  }, "#cachedBody");
+  /**
+   * `.json()` can parse Request body of type `application/json`
+   *
+   * @see {@link https://hono.dev/docs/api/request#json}
+   *
+   * @example
+   * ```ts
+   * app.post('/entry', async (c) => {
+   *   const body = await c.req.json()
+   * })
+   * ```
+   */
+  json() {
+    return this.#cachedBody("text").then((text) => JSON.parse(text));
+  }
+  /**
+   * `.text()` can parse Request body of type `text/plain`
+   *
+   * @see {@link https://hono.dev/docs/api/request#text}
+   *
+   * @example
+   * ```ts
+   * app.post('/entry', async (c) => {
+   *   const body = await c.req.text()
+   * })
+   * ```
+   */
+  text() {
+    return this.#cachedBody("text");
+  }
+  /**
+   * `.arrayBuffer()` parse Request body as an `ArrayBuffer`
+   *
+   * @see {@link https://hono.dev/docs/api/request#arraybuffer}
+   *
+   * @example
+   * ```ts
+   * app.post('/entry', async (c) => {
+   *   const body = await c.req.arrayBuffer()
+   * })
+   * ```
+   */
+  arrayBuffer() {
+    return this.#cachedBody("arrayBuffer");
+  }
+  /**
+   * `.bytes()` parses the request body as a `Uint8Array`.
+   *
+   * @see {@link https://hono.dev/docs/api/request#bytes}
+   *
+   * @example
+   * ```ts
+   * app.post('/entry', async (c) => {
+   *   const body = await c.req.bytes()
+   * })
+   * ```
+   */
+  bytes() {
+    return this.#cachedBody("arrayBuffer").then((buffer) => new Uint8Array(buffer));
+  }
+  /**
+   * Parses the request body as a `Blob`.
+   * @example
+   * ```ts
+   * app.post('/entry', async (c) => {
+   *   const body = await c.req.blob();
+   * });
+   * ```
+   * @see https://hono.dev/docs/api/request#blob
+   */
+  blob() {
+    return this.#cachedBody("blob");
+  }
+  /**
+   * Parses the request body as `FormData`.
+   * @example
+   * ```ts
+   * app.post('/entry', async (c) => {
+   *   const body = await c.req.formData();
+   * });
+   * ```
+   * @see https://hono.dev/docs/api/request#formdata
+   */
+  formData() {
+    return this.#cachedBody("formData");
+  }
+  /**
+   * Adds validated data to the request.
+   *
+   * @param target - The target of the validation.
+   * @param data - The validated data to add.
+   */
+  addValidatedData(target, data) {
+    ;
+    (this.#validatedData ??= {})[target] = data;
+  }
+  valid(target) {
+    return this.#validatedData?.[target];
+  }
+  /**
+   * `.url()` can get the request url strings.
+   *
+   * @see {@link https://hono.dev/docs/api/request#url}
+   *
+   * @example
+   * ```ts
+   * app.get('/about/me', (c) => {
+   *   const url = c.req.url // `http://localhost:8787/about/me`
+   *   ...
+   * })
+   * ```
+   */
+  get url() {
+    return this.raw.url;
+  }
+  /**
+   * `.method()` can get the method name of the request.
+   *
+   * @see {@link https://hono.dev/docs/api/request#method}
+   *
+   * @example
+   * ```ts
+   * app.get('/about/me', (c) => {
+   *   const method = c.req.method // `GET`
+   * })
+   * ```
+   */
+  get method() {
+    return this.raw.method;
+  }
+  get [GET_MATCH_RESULT]() {
+    return this.#matchResult;
+  }
+  /**
+   * `.matchedRoutes()` can return a matched route in the handler
+   *
+   * @deprecated
+   *
+   * Use matchedRoutes helper defined in "hono/route" instead.
+   *
+   * @see {@link https://hono.dev/docs/api/request#matchedroutes}
+   *
+   * @example
+   * ```ts
+   * app.use('*', async function logger(c, next) {
+   *   await next()
+   *   c.req.matchedRoutes.forEach(({ handler, method, path }, i) => {
+   *     const name = handler.name || (handler.length < 2 ? '[handler]' : '[middleware]')
+   *     console.log(
+   *       method,
+   *       ' ',
+   *       path,
+   *       ' '.repeat(Math.max(10 - path.length, 0)),
+   *       name,
+   *       i === c.req.routeIndex ? '<- respond from here' : ''
+   *     )
+   *   })
+   * })
+   * ```
+   */
+  get matchedRoutes() {
+    return this.#matchResult[0].map(([[, route]]) => route);
+  }
+  /**
+   * `routePath()` can retrieve the path registered within the handler
+   *
+   * @deprecated
+   *
+   * Use routePath helper defined in "hono/route" instead.
+   *
+   * @see {@link https://hono.dev/docs/api/request#routepath}
+   *
+   * @example
+   * ```ts
+   * app.get('/posts/:id', (c) => {
+   *   return c.json({ path: c.req.routePath })
+   * })
+   * ```
+   */
+  get routePath() {
+    return this.#matchResult[0].map(([[, route]]) => route)[this.routeIndex].path;
+  }
+};
+
+// node_modules/hono/dist/utils/html.js
+var HtmlEscapedCallbackPhase = {
+  Stringify: 1,
+  BeforeStream: 2,
+  Stream: 3
+};
+var raw = /* @__PURE__ */ __name((value, callbacks) => {
+  const escapedString = new String(value);
+  escapedString.isEscaped = true;
+  escapedString.callbacks = callbacks;
+  return escapedString;
+}, "raw");
+var resolveCallback = /* @__PURE__ */ __name(async (str, phase, preserveCallbacks, context, buffer) => {
+  if (typeof str === "object" && !(str instanceof String)) {
+    if (!(str instanceof Promise)) {
+      str = str.toString();
+    }
+    if (str instanceof Promise) {
+      str = await str;
+    }
+  }
+  const callbacks = str.callbacks;
+  if (!callbacks?.length) {
+    return Promise.resolve(str);
+  }
+  if (buffer) {
+    buffer[0] += str;
+  } else {
+    buffer = [str];
+  }
+  const resStr = Promise.all(callbacks.map((c) => c({ phase, buffer, context }))).then(
+    (res) => Promise.all(
+      res.filter(Boolean).map((str2) => resolveCallback(str2, phase, false, context, buffer))
+    ).then(() => buffer[0])
+  );
+  if (preserveCallbacks) {
+    return raw(await resStr, callbacks);
+  } else {
+    return resStr;
+  }
+}, "resolveCallback");
+
+// node_modules/hono/dist/context.js
+var TEXT_PLAIN = "text/plain; charset=UTF-8";
+var setDefaultContentType = /* @__PURE__ */ __name((contentType, headers) => {
+  return {
+    "Content-Type": contentType,
+    ...headers
+  };
+}, "setDefaultContentType");
+var createResponseInstance = /* @__PURE__ */ __name((body, init) => new Response(body, init), "createResponseInstance");
+var Context = class {
+  static {
+    __name(this, "Context");
+  }
+  #rawRequest;
+  #req;
+  /**
+   * `.env` can get bindings (environment variables, secrets, KV namespaces, D1 database, R2 bucket etc.) in Cloudflare Workers.
+   *
+   * @see {@link https://hono.dev/docs/api/context#env}
+   *
+   * @example
+   * ```ts
+   * // Environment object for Cloudflare Workers
+   * app.get('*', async c => {
+   *   const counter = c.env.COUNTER
+   * })
+   * ```
+   */
+  env = {};
+  #var;
+  finalized = false;
+  /**
+   * `.error` can get the error object from the middleware if the Handler throws an error.
+   *
+   * @see {@link https://hono.dev/docs/api/context#error}
+   *
+   * @example
+   * ```ts
+   * app.use('*', async (c, next) => {
+   *   await next()
+   *   if (c.error) {
+   *     // do something...
+   *   }
+   * })
+   * ```
+   */
+  error;
+  #status;
+  #executionCtx;
+  #res;
+  #layout;
+  #renderer;
+  #notFoundHandler;
+  #preparedHeaders;
+  #matchResult;
+  #path;
+  /**
+   * Creates an instance of the Context class.
+   *
+   * @param req - The Request object.
+   * @param options - Optional configuration options for the context.
+   */
+  constructor(req, options) {
+    this.#rawRequest = req;
+    if (options) {
+      this.#executionCtx = options.executionCtx;
+      this.env = options.env;
+      this.#notFoundHandler = options.notFoundHandler;
+      this.#path = options.path;
+      this.#matchResult = options.matchResult;
+    }
+  }
+  /**
+   * `.req` is the instance of {@link HonoRequest}.
+   */
+  get req() {
+    this.#req ??= new HonoRequest(this.#rawRequest, this.#path, this.#matchResult);
+    return this.#req;
+  }
+  /**
+   * @see {@link https://hono.dev/docs/api/context#event}
+   * The FetchEvent associated with the current request.
+   *
+   * @throws Will throw an error if the context does not have a FetchEvent.
+   */
+  get event() {
+    if (this.#executionCtx && "respondWith" in this.#executionCtx) {
+      return this.#executionCtx;
+    } else {
+      throw Error("This context has no FetchEvent");
+    }
+  }
+  /**
+   * @see {@link https://hono.dev/docs/api/context#executionctx}
+   * The ExecutionContext associated with the current request.
+   *
+   * @throws Will throw an error if the context does not have an ExecutionContext.
+   */
+  get executionCtx() {
+    if (this.#executionCtx) {
+      return this.#executionCtx;
+    } else {
+      throw Error("This context has no ExecutionContext");
+    }
+  }
+  /**
+   * @see {@link https://hono.dev/docs/api/context#res}
+   * The Response object for the current request.
+   */
+  get res() {
+    return this.#res ||= createResponseInstance(null, {
+      headers: this.#preparedHeaders ??= new Headers()
+    });
+  }
+  /**
+   * Sets the Response object for the current request.
+   *
+   * @param _res - The Response object to set.
+   */
+  set res(_res) {
+    if (this.#res && _res) {
+      _res = createResponseInstance(_res.body, _res);
+      for (const [k, v] of this.#res.headers.entries()) {
+        if (k === "content-type") {
+          continue;
+        }
+        if (k === "set-cookie") {
+          const cookies = this.#res.headers.getSetCookie();
+          _res.headers.delete("set-cookie");
+          for (const cookie of cookies) {
+            _res.headers.append("set-cookie", cookie);
+          }
+        } else {
+          _res.headers.set(k, v);
+        }
+      }
+    }
+    this.#res = _res;
+    this.finalized = true;
+  }
+  /**
+   * `.render()` can create a response within a layout.
+   *
+   * @see {@link https://hono.dev/docs/api/context#render-setrenderer}
+   *
+   * @example
+   * ```ts
+   * app.get('/', (c) => {
+   *   return c.render('Hello!')
+   * })
+   * ```
+   */
+  render = /* @__PURE__ */ __name((...args) => {
+    this.#renderer ??= (content) => this.html(content);
+    return this.#renderer(...args);
+  }, "render");
+  /**
+   * Sets the layout for the response.
+   *
+   * @param layout - The layout to set.
+   * @returns The layout function.
+   */
+  setLayout = /* @__PURE__ */ __name((layout) => this.#layout = layout, "setLayout");
+  /**
+   * Gets the current layout for the response.
+   *
+   * @returns The current layout function.
+   */
+  getLayout = /* @__PURE__ */ __name(() => this.#layout, "getLayout");
+  /**
+   * `.setRenderer()` can set the layout in the custom middleware.
+   *
+   * @see {@link https://hono.dev/docs/api/context#render-setrenderer}
+   *
+   * @example
+   * ```tsx
+   * app.use('*', async (c, next) => {
+   *   c.setRenderer((content) => {
+   *     return c.html(
+   *       <html>
+   *         <body>
+   *           <p>{content}</p>
+   *         </body>
+   *       </html>
+   *     )
+   *   })
+   *   await next()
+   * })
+   * ```
+   */
+  setRenderer = /* @__PURE__ */ __name((renderer) => {
+    this.#renderer = renderer;
+  }, "setRenderer");
+  /**
+   * `.header()` can set headers.
+   *
+   * @see {@link https://hono.dev/docs/api/context#header}
+   *
+   * @example
+   * ```ts
+   * app.get('/welcome', (c) => {
+   *   // Set headers
+   *   c.header('X-Message', 'Hello!')
+   *   c.header('Content-Type', 'text/plain')
+   *
+   *   return c.body('Thank you for coming')
+   * })
+   * ```
+   */
+  header = /* @__PURE__ */ __name((name, value, options) => {
+    if (this.finalized) {
+      this.#res = createResponseInstance(this.#res.body, this.#res);
+    }
+    const headers = this.#res ? this.#res.headers : this.#preparedHeaders ??= new Headers();
+    if (value === void 0) {
+      headers.delete(name);
+    } else if (options?.append) {
+      headers.append(name, value);
+    } else {
+      headers.set(name, value);
+    }
+  }, "header");
+  status = /* @__PURE__ */ __name((status) => {
+    this.#status = status;
+  }, "status");
+  /**
+   * `.set()` can set the value specified by the key.
+   *
+   * @see {@link https://hono.dev/docs/api/context#set-get}
+   *
+   * @example
+   * ```ts
+   * app.use('*', async (c, next) => {
+   *   c.set('message', 'Hono is hot!!')
+   *   await next()
+   * })
+   * ```
+   */
+  set = /* @__PURE__ */ __name((key, value) => {
+    this.#var ??= /* @__PURE__ */ new Map();
+    this.#var.set(key, value);
+  }, "set");
+  /**
+   * `.get()` can use the value specified by the key.
+   *
+   * @see {@link https://hono.dev/docs/api/context#set-get}
+   *
+   * @example
+   * ```ts
+   * app.get('/', (c) => {
+   *   const message = c.get('message')
+   *   return c.text(`The message is "${message}"`)
+   * })
+   * ```
+   */
+  get = /* @__PURE__ */ __name((key) => {
+    return this.#var ? this.#var.get(key) : void 0;
+  }, "get");
+  /**
+   * `.var` can access the value of a variable.
+   *
+   * @see {@link https://hono.dev/docs/api/context#var}
+   *
+   * @example
+   * ```ts
+   * const result = c.var.client.oneMethod()
+   * ```
+   */
+  // c.var.propName is a read-only
+  get var() {
+    if (!this.#var) {
+      return {};
+    }
+    return Object.fromEntries(this.#var);
+  }
+  #newResponse(data, arg, headers) {
+    let responseHeaders = this.#res ? new Headers(this.#res.headers) : this.#preparedHeaders;
+    if (typeof arg === "object" && arg.headers) {
+      responseHeaders ??= new Headers();
+      for (const [key, value] of new Headers(arg.headers)) {
+        if (key === "set-cookie") {
+          responseHeaders.append(key, value);
+        } else {
+          responseHeaders.set(key, value);
+        }
+      }
+    }
+    if (headers) {
+      if (!responseHeaders) {
+        let count = 0;
+        for (const k in headers) {
+          if (++count > 1 || typeof headers[k] !== "string") {
+            responseHeaders = new Headers();
+            break;
+          }
+        }
+      }
+      if (responseHeaders) {
+        for (const k in headers) {
+          const v = headers[k];
+          if (typeof v === "string") {
+            responseHeaders.set(k, v);
+          } else {
+            responseHeaders.delete(k);
+            for (const v2 of v) {
+              responseHeaders.append(k, v2);
+            }
+          }
+        }
+      }
+    }
+    const status = typeof arg === "number" ? arg : arg?.status ?? this.#status;
+    return createResponseInstance(data, {
+      status,
+      headers: responseHeaders ?? headers
+    });
+  }
+  newResponse = /* @__PURE__ */ __name((...args) => this.#newResponse(...args), "newResponse");
+  /**
+   * `.body()` can return the HTTP response.
+   * You can set headers with `.header()` and set HTTP status code with `.status`.
+   * This can also be set in `.text()`, `.json()` and so on.
+   *
+   * @see {@link https://hono.dev/docs/api/context#body}
+   *
+   * @example
+   * ```ts
+   * app.get('/welcome', (c) => {
+   *   // Set headers
+   *   c.header('X-Message', 'Hello!')
+   *   c.header('Content-Type', 'text/plain')
+   *   // Set HTTP status code
+   *   c.status(201)
+   *
+   *   // Return the response body
+   *   return c.body('Thank you for coming')
+   * })
+   * ```
+   */
+  body = /* @__PURE__ */ __name((data, arg, headers) => this.#newResponse(data, arg, headers), "body");
+  /**
+   * `.text()` can render text as `Content-Type:text/plain`.
+   *
+   * @see {@link https://hono.dev/docs/api/context#text}
+   *
+   * @example
+   * ```ts
+   * app.get('/say', (c) => {
+   *   return c.text('Hello!')
+   * })
+   * ```
+   */
+  text = /* @__PURE__ */ __name((text, arg, headers) => {
+    return !this.#preparedHeaders && !this.#status && !arg && !headers && !this.finalized ? new Response(text) : this.#newResponse(
+      text,
+      arg,
+      setDefaultContentType(TEXT_PLAIN, headers)
+    );
+  }, "text");
+  /**
+   * `.json()` can render JSON as `Content-Type:application/json`.
+   *
+   * @see {@link https://hono.dev/docs/api/context#json}
+   *
+   * @example
+   * ```ts
+   * app.get('/api', (c) => {
+   *   return c.json({ message: 'Hello!' })
+   * })
+   * ```
+   */
+  json = /* @__PURE__ */ __name((object, arg, headers) => {
+    return this.#newResponse(
+      JSON.stringify(object),
+      arg,
+      setDefaultContentType("application/json", headers)
+    );
+  }, "json");
+  html = /* @__PURE__ */ __name((html, arg, headers) => {
+    const res = /* @__PURE__ */ __name((html2) => this.#newResponse(html2, arg, setDefaultContentType("text/html; charset=UTF-8", headers)), "res");
+    return typeof html === "object" ? resolveCallback(html, HtmlEscapedCallbackPhase.Stringify, false, {}).then(res) : res(html);
+  }, "html");
+  /**
+   * `.redirect()` can Redirect, default status code is 302.
+   *
+   * @see {@link https://hono.dev/docs/api/context#redirect}
+   *
+   * @example
+   * ```ts
+   * app.get('/redirect', (c) => {
+   *   return c.redirect('/')
+   * })
+   * app.get('/redirect-permanently', (c) => {
+   *   return c.redirect('/', 301)
+   * })
+   * ```
+   */
+  redirect = /* @__PURE__ */ __name((location, status) => {
+    const locationString = String(location);
+    this.header(
+      "Location",
+      // Multibyes should be encoded
+      // eslint-disable-next-line no-control-regex
+      !/[^\x00-\xFF]/.test(locationString) ? locationString : encodeURI(locationString)
+    );
+    return this.newResponse(null, status ?? 302);
+  }, "redirect");
+  /**
+   * `.notFound()` can return the Not Found Response.
+   *
+   * @see {@link https://hono.dev/docs/api/context#notfound}
+   *
+   * @example
+   * ```ts
+   * app.get('/notfound', (c) => {
+   *   return c.notFound()
+   * })
+   * ```
+   */
+  notFound = /* @__PURE__ */ __name(() => {
+    this.#notFoundHandler ??= () => createResponseInstance();
+    return this.#notFoundHandler(this);
+  }, "notFound");
+};
+
+// node_modules/hono/dist/router.js
+var METHOD_NAME_ALL = "ALL";
+var METHOD_NAME_ALL_LOWERCASE = "all";
+var METHODS = ["get", "post", "put", "delete", "options", "patch", "query"];
+var MESSAGE_MATCHER_IS_ALREADY_BUILT = "Can not add a route since the matcher is already built.";
+var UnsupportedPathError = class extends Error {
+  static {
+    __name(this, "UnsupportedPathError");
+  }
+};
+
+// node_modules/hono/dist/utils/constants.js
+var COMPOSED_HANDLER = "__COMPOSED_HANDLER";
+
+// node_modules/hono/dist/hono-base.js
+var notFoundHandler = /* @__PURE__ */ __name((c) => {
+  return c.text("404 Not Found", 404);
+}, "notFoundHandler");
+var errorHandler = /* @__PURE__ */ __name((err, c) => {
+  if ("getResponse" in err) {
+    const res = err.getResponse();
+    return c.newResponse(res.body, res);
+  }
+  console.error(err);
+  return c.text("Internal Server Error", 500);
+}, "errorHandler");
+var Hono = class _Hono {
+  static {
+    __name(this, "_Hono");
+  }
+  get;
+  post;
+  put;
+  delete;
+  options;
+  patch;
+  query;
+  all;
+  on;
+  use;
+  /*
+    This class is like an abstract class and does not have a router.
+    To use it, inherit the class and implement router in the constructor.
+  */
+  router;
+  getPath;
+  // Cannot use `#` because it requires visibility at JavaScript runtime.
+  _basePath = "/";
+  #path = "/";
+  routes = [];
+  constructor(options = {}) {
+    const allMethods = [...METHODS, METHOD_NAME_ALL_LOWERCASE];
+    allMethods.forEach((method) => {
+      this[method] = (args1, ...args) => {
+        if (typeof args1 === "string") {
+          this.#path = args1;
+        } else {
+          this.#addRoute(method, this.#path, args1);
+        }
+        args.forEach((handler) => {
+          this.#addRoute(method, this.#path, handler);
+        });
+        return this;
+      };
+    });
+    this.on = (method, path, ...handlers) => {
+      for (const p of [path].flat()) {
+        this.#path = p;
+        for (const m of [method].flat()) {
+          handlers.map((handler) => {
+            this.#addRoute(m.toUpperCase(), this.#path, handler);
+          });
+        }
+      }
+      return this;
+    };
+    this.use = (arg1, ...handlers) => {
+      if (typeof arg1 === "string") {
+        this.#path = arg1;
+      } else {
+        this.#path = "*";
+        handlers.unshift(arg1);
+      }
+      handlers.forEach((handler) => {
+        this.#addRoute(METHOD_NAME_ALL, this.#path, handler);
+      });
+      return this;
+    };
+    const { strict, ...optionsWithoutStrict } = options;
+    Object.assign(this, optionsWithoutStrict);
+    this.getPath = strict ?? true ? options.getPath ?? getPath : getPathNoStrict;
+  }
+  #clone() {
+    const clone = new _Hono({
+      router: this.router,
+      getPath: this.getPath
+    });
+    clone.errorHandler = this.errorHandler;
+    clone.#notFoundHandler = this.#notFoundHandler;
+    clone.routes = this.routes;
+    return clone;
+  }
+  #notFoundHandler = notFoundHandler;
+  // Cannot use `#` because it requires visibility at JavaScript runtime.
+  errorHandler = errorHandler;
+  /**
+   * `.route()` allows grouping other Hono instance in routes.
+   *
+   * @see {@link https://hono.dev/docs/api/routing#grouping}
+   *
+   * @param {string} path - base Path
+   * @param {Hono} app - other Hono instance
+   * @returns {Hono} routed Hono instance
+   *
+   * @example
+   * ```ts
+   * const app = new Hono()
+   * const app2 = new Hono()
+   *
+   * app2.get("/user", (c) => c.text("user"))
+   * app.route("/api", app2) // GET /api/user
+   * ```
+   */
+  route(path, app2) {
+    const subApp = this.basePath(path);
+    app2.routes.map((r) => {
+      let handler;
+      if (app2.errorHandler === errorHandler) {
+        handler = r.handler;
+      } else {
+        handler = /* @__PURE__ */ __name(async (c, next) => (await compose([], app2.errorHandler)(c, () => r.handler(c, next))).res, "handler");
+        handler[COMPOSED_HANDLER] = r.handler;
+      }
+      subApp.#addRoute(r.method, r.path, handler, r.basePath);
+    });
+    return this;
+  }
+  /**
+   * `.basePath()` allows base paths to be specified.
+   *
+   * @see {@link https://hono.dev/docs/api/routing#base-path}
+   *
+   * @param {string} path - base Path
+   * @returns {Hono} changed Hono instance
+   *
+   * @example
+   * ```ts
+   * const api = new Hono().basePath('/api')
+   * ```
+   */
+  basePath(path) {
+    const subApp = this.#clone();
+    subApp._basePath = mergePath(this._basePath, path);
+    return subApp;
+  }
+  /**
+   * `.onError()` handles an error and returns a customized Response.
+   *
+   * @see {@link https://hono.dev/docs/api/hono#error-handling}
+   *
+   * @param {ErrorHandler} handler - request Handler for error
+   * @returns {Hono} changed Hono instance
+   *
+   * @example
+   * ```ts
+   * app.onError((err, c) => {
+   *   console.error(`${err}`)
+   *   return c.text('Custom Error Message', 500)
+   * })
+   * ```
+   */
+  onError = /* @__PURE__ */ __name((handler) => {
+    this.errorHandler = handler;
+    return this;
+  }, "onError");
+  /**
+   * `.notFound()` allows you to customize a Not Found Response.
+   *
+   * @see {@link https://hono.dev/docs/api/hono#not-found}
+   *
+   * @param {NotFoundHandler} handler - request handler for not-found
+   * @returns {Hono} changed Hono instance
+   *
+   * @example
+   * ```ts
+   * app.notFound((c) => {
+   *   return c.text('Custom 404 Message', 404)
+   * })
+   * ```
+   */
+  notFound = /* @__PURE__ */ __name((handler) => {
+    this.#notFoundHandler = handler;
+    return this;
+  }, "notFound");
+  /**
+   * `.mount()` allows you to mount applications built with other frameworks into your Hono application.
+   *
+   * @see {@link https://hono.dev/docs/api/hono#mount}
+   *
+   * @param {string} path - base Path
+   * @param {Function} applicationHandler - other Request Handler
+   * @param {MountOptions} [options] - options of `.mount()`
+   * @returns {Hono} mounted Hono instance
+   *
+   * @example
+   * ```ts
+   * import { Router as IttyRouter } from 'itty-router'
+   * import { Hono } from 'hono'
+   * // Create itty-router application
+   * const ittyRouter = IttyRouter()
+   * // GET /itty-router/hello
+   * ittyRouter.get('/hello', () => new Response('Hello from itty-router'))
+   *
+   * const app = new Hono()
+   * app.mount('/itty-router', ittyRouter.handle)
+   * ```
+   *
+   * @example
+   * ```ts
+   * const app = new Hono()
+   * // Send the request to another application without modification.
+   * app.mount('/app', anotherApp, {
+   *   replaceRequest: (req) => req,
+   * })
+   * ```
+   */
+  mount(path, applicationHandler, options) {
+    let replaceRequest;
+    let optionHandler;
+    if (options) {
+      if (typeof options === "function") {
+        optionHandler = options;
+      } else {
+        optionHandler = options.optionHandler;
+        if (options.replaceRequest === false) {
+          replaceRequest = /* @__PURE__ */ __name((request) => request, "replaceRequest");
+        } else {
+          replaceRequest = options.replaceRequest;
+        }
+      }
+    }
+    const getOptions = optionHandler ? (c) => {
+      const options2 = optionHandler(c);
+      return Array.isArray(options2) ? options2 : [options2];
+    } : (c) => {
+      let executionContext = void 0;
+      try {
+        executionContext = c.executionCtx;
+      } catch {
+      }
+      return [c.env, executionContext];
+    };
+    replaceRequest ||= (() => {
+      const mergedPath = mergePath(this._basePath, path);
+      const pathPrefixLength = mergedPath === "/" ? 0 : mergedPath.length;
+      return (request) => {
+        const url = new URL(request.url);
+        url.pathname = this.getPath(request).slice(pathPrefixLength) || "/";
+        return new Request(url, request);
+      };
+    })();
+    const handler = /* @__PURE__ */ __name(async (c, next) => {
+      const res = await applicationHandler(replaceRequest(c.req.raw), ...getOptions(c));
+      if (res) {
+        return res;
+      }
+      await next();
+    }, "handler");
+    this.#addRoute(METHOD_NAME_ALL, mergePath(path, "*"), handler);
+    return this;
+  }
+  #addRoute(method, path, handler, baseRoutePath) {
+    method = method.toUpperCase();
+    path = mergePath(this._basePath, path);
+    const r = {
+      basePath: baseRoutePath !== void 0 ? mergePath(this._basePath, baseRoutePath) : this._basePath,
+      path,
+      method,
+      handler
+    };
+    this.router.add(method, path, [handler, r]);
+    this.routes.push(r);
+  }
+  #handleError(err, c) {
+    if (err instanceof Error) {
+      return this.errorHandler(err, c);
+    }
+    throw err;
+  }
+  #dispatch(request, executionCtx, env, method) {
+    if (method === "HEAD") {
+      return (async () => new Response(null, await this.#dispatch(request, executionCtx, env, "GET")))();
+    }
+    const path = this.getPath(request, { env });
+    const matchResult = this.router.match(method, path);
+    const c = new Context(request, {
+      path,
+      matchResult,
+      env,
+      executionCtx,
+      notFoundHandler: this.#notFoundHandler
+    });
+    if (matchResult[0].length === 1) {
+      let res;
+      try {
+        res = matchResult[0][0][0][0](c, async () => {
+          c.res = await this.#notFoundHandler(c);
+        });
+      } catch (err) {
+        return this.#handleError(err, c);
+      }
+      return res instanceof Promise ? res.then(
+        (resolved) => resolved || (c.finalized ? c.res : this.#notFoundHandler(c))
+      ).catch((err) => this.#handleError(err, c)) : res ?? this.#notFoundHandler(c);
+    }
+    const composed = compose(matchResult[0], this.errorHandler, this.#notFoundHandler);
+    return (async () => {
+      try {
+        const context = await composed(c);
+        if (!context.finalized) {
+          throw new Error(
+            "Context is not finalized. Did you forget to return a Response object or `await next()`?"
+          );
+        }
+        return context.res;
+      } catch (err) {
+        return this.#handleError(err, c);
+      }
+    })();
+  }
+  /**
+   * `.fetch()` will be entry point of your app.
+   *
+   * @see {@link https://hono.dev/docs/api/hono#fetch}
+   *
+   * @param {Request} request - request Object of request
+   * @param {Env} env - env Object
+   * @param {ExecutionContext} executionCtx - context of execution
+   * @returns {Response | Promise<Response>} response of request
+   *
+   */
+  fetch = /* @__PURE__ */ __name((request, ...rest) => {
+    return this.#dispatch(request, rest[1], rest[0], request.method);
+  }, "fetch");
+  /**
+   * `.request()` is a useful method for testing.
+   * You can pass a URL or pathname to send a GET request.
+   * app will return a Response object.
+   * ```ts
+   * test('GET /hello is ok', async () => {
+   *   const res = await app.request('/hello')
+   *   expect(res.status).toBe(200)
+   * })
+   * ```
+   * @see https://hono.dev/docs/api/hono#request
+   */
+  request = /* @__PURE__ */ __name((input, requestInit, Env, executionCtx) => {
+    if (input instanceof Request) {
+      return this.fetch(requestInit ? new Request(input, requestInit) : input, Env, executionCtx);
+    }
+    input = input.toString();
+    return this.fetch(
+      new Request(
+        /^https?:\/\//.test(input) ? input : `http://localhost${mergePath("/", input)}`,
+        requestInit
+      ),
+      Env,
+      executionCtx
+    );
+  }, "request");
+  /**
+   * `.fire()` automatically adds a global fetch event listener.
+   * This can be useful for environments that adhere to the Service Worker API, such as non-ES module Cloudflare Workers.
+   * @deprecated
+   * Use `fire` from `hono/service-worker` instead.
+   * ```ts
+   * import { Hono } from 'hono'
+   * import { fire } from 'hono/service-worker'
+   *
+   * const app = new Hono()
+   * // ...
+   * fire(app)
+   * ```
+   * @see https://hono.dev/docs/api/hono#fire
+   * @see https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API
+   * @see https://developers.cloudflare.com/workers/reference/migrate-to-module-workers/
+   */
+  fire = /* @__PURE__ */ __name(() => {
+    addEventListener("fetch", (event) => {
+      event.respondWith(this.#dispatch(event.request, event, void 0, event.request.method));
+    });
+  }, "fire");
+};
+
+// node_modules/hono/dist/router/reg-exp-router/matcher.js
+var emptyParam = [];
+function match(method, path) {
+  const matchers = this.buildAllMatchers();
+  const match2 = /* @__PURE__ */ __name(((method2, path2) => {
+    const matcher = matchers[method2] || matchers[METHOD_NAME_ALL];
+    const staticMatch = matcher[2][path2];
+    if (staticMatch) {
+      return staticMatch;
+    }
+    const match3 = path2.match(matcher[0]);
+    if (!match3) {
+      return [[], emptyParam];
+    }
+    const index = match3.indexOf("", 1);
+    return [matcher[1][index], match3];
+  }), "match2");
+  this.match = match2;
+  return match2(method, path);
+}
+__name(match, "match");
+
+// node_modules/hono/dist/router/reg-exp-router/node.js
+var LABEL_REG_EXP_STR = "[^/]+";
+var ONLY_WILDCARD_REG_EXP_STR = ".*";
+var TAIL_WILDCARD_REG_EXP_STR = "(?:|/.*)";
+var PATH_ERROR = /* @__PURE__ */ Symbol();
+var regExpMetaChars = new Set(".\\+*[^]$()");
+function compareKey(a, b) {
+  if (a.length === 1) {
+    return b.length === 1 ? a < b ? -1 : 1 : -1;
+  }
+  if (b.length === 1) {
+    return 1;
+  }
+  if (a === ONLY_WILDCARD_REG_EXP_STR || a === TAIL_WILDCARD_REG_EXP_STR) {
+    return b === TAIL_WILDCARD_REG_EXP_STR ? -1 : 1;
+  } else if (b === ONLY_WILDCARD_REG_EXP_STR || b === TAIL_WILDCARD_REG_EXP_STR) {
+    return -1;
+  }
+  if (a === LABEL_REG_EXP_STR) {
+    return 1;
+  } else if (b === LABEL_REG_EXP_STR) {
+    return -1;
+  }
+  return a.length === b.length ? a < b ? -1 : 1 : b.length - a.length;
+}
+__name(compareKey, "compareKey");
+var Node = class _Node {
+  static {
+    __name(this, "_Node");
+  }
+  // handler index of a dynamic path, or -1 for a static path terminal
+  #index;
+  #varIndex;
+  #children = /* @__PURE__ */ Object.create(null);
+  insert(tokens, index, paramMap, context, isStatic) {
+    let node = this;
+    for (let i = 0, len = tokens.length; i < len; i++) {
+      const token = tokens[i];
+      const pattern = token.length === 1 ? token === "*" ? i === len - 1 ? ["", "", ONLY_WILDCARD_REG_EXP_STR] : ["", "", LABEL_REG_EXP_STR] : null : token === "/*" ? ["", "", TAIL_WILDCARD_REG_EXP_STR] : token.match(/^\:([^\{\}]+)(?:\{(.+)\})?$/);
+      let nextNode;
+      if (pattern) {
+        const name = pattern[1];
+        let regexpStr = pattern[2] || LABEL_REG_EXP_STR;
+        if (name && pattern[2]) {
+          if (regexpStr === ".*") {
+            throw PATH_ERROR;
+          }
+          regexpStr = regexpStr.replace(/^\((?!\?:)(?=[^)]+\)$)/, "(?:");
+          if (/\((?!\?:)/.test(regexpStr)) {
+            throw PATH_ERROR;
+          }
+          if (regexpStr.length === 1 && regExpMetaChars.has(regexpStr)) {
+            throw PATH_ERROR;
+          }
+        }
+        nextNode = node.#children[regexpStr];
+        if (!nextNode) {
+          if (regexpStr !== ONLY_WILDCARD_REG_EXP_STR && regexpStr !== TAIL_WILDCARD_REG_EXP_STR) {
+            for (const k in node.#children) {
+              if (
+                // a single-char pattern coexists with single-char literals as a literal does
+                (regexpStr.length > 1 || k.length > 1) && k !== ONLY_WILDCARD_REG_EXP_STR && k !== TAIL_WILDCARD_REG_EXP_STR
+              ) {
+                throw PATH_ERROR;
+              }
+            }
+          }
+          nextNode = node.#children[regexpStr] = new _Node();
+        }
+        if (name !== "") {
+          nextNode.#varIndex ??= context.varIndex++;
+          paramMap.push([name, nextNode.#varIndex]);
+        }
+      } else {
+        nextNode = node.#children[token];
+        if (!nextNode) {
+          for (const k in node.#children) {
+            if (k.length > 1 && k !== ONLY_WILDCARD_REG_EXP_STR && k !== TAIL_WILDCARD_REG_EXP_STR) {
+              throw PATH_ERROR;
+            }
+          }
+          nextNode = node.#children[token] = new _Node();
+        }
+      }
+      node = nextNode;
+    }
+    if (node.#index !== void 0) {
+      throw PATH_ERROR;
+    }
+    node.#index = isStatic ? -1 : index;
+  }
+  buildRegExpStr() {
+    const childKeys = Object.keys(this.#children).sort(compareKey);
+    const strList = childKeys.map((k) => {
+      const c = this.#children[k];
+      const childStr = c.buildRegExpStr();
+      return childStr === "" ? "" : (typeof c.#varIndex === "number" ? `(${k})@${c.#varIndex}` : regExpMetaChars.has(k) ? `\\${k}` : k) + childStr;
+    }).filter(Boolean);
+    if (typeof this.#index === "number" && this.#index !== -1) {
+      strList.unshift(`#${this.#index}`);
+    }
+    if (strList.length === 0) {
+      return "";
+    }
+    if (strList.length === 1) {
+      return strList[0];
+    }
+    return "(?:" + strList.join("|") + ")";
+  }
+};
+
+// node_modules/hono/dist/router/reg-exp-router/trie.js
+var Trie = class {
+  static {
+    __name(this, "Trie");
+  }
+  #context = { varIndex: 0 };
+  #root = new Node();
+  #index = 0;
+  // dynamic path -> [handler index, param assoc]; static paths are not registered
+  paths = /* @__PURE__ */ Object.create(null);
+  insert(path, isStatic) {
+    if (isStatic) {
+      this.#root.insert(path.split(""), 0, [], this.#context, true);
+      return;
+    }
+    const paramAssoc = [];
+    const groups = [];
+    let markedPath = path;
+    for (let i = 0; ; ) {
+      let replaced = false;
+      markedPath = markedPath.replace(/\{[^}]+\}/g, (m) => {
+        const mark = `@\\${i}`;
+        groups[i] = [mark, m];
+        i++;
+        replaced = true;
+        return mark;
+      });
+      if (!replaced) {
+        break;
+      }
+    }
+    const tokens = markedPath.match(/(?::[^\/]+)|(?:\/\*$)|./g) || [];
+    for (let i = groups.length - 1; i >= 0; i--) {
+      const [mark] = groups[i];
+      for (let j = tokens.length - 1; j >= 0; j--) {
+        if (tokens[j].indexOf(mark) !== -1) {
+          tokens[j] = tokens[j].replace(mark, groups[i][1]);
+          break;
+        }
+      }
+    }
+    this.#root.insert(tokens, this.#index, paramAssoc, this.#context, false);
+    this.paths[path] = [this.#index++, paramAssoc];
+  }
+  buildRegExp() {
+    let regexp = this.#root.buildRegExpStr();
+    if (regexp === "") {
+      return [/^$/, [], []];
+    }
+    let captureIndex = 0;
+    const indexReplacementMap = [];
+    const paramReplacementMap = [];
+    regexp = regexp.replace(/#(\d+)|@(\d+)|\.\*\$/g, (_, handlerIndex, paramIndex) => {
+      if (handlerIndex !== void 0) {
+        indexReplacementMap[++captureIndex] = Number(handlerIndex);
+        return "$()";
+      }
+      if (paramIndex !== void 0) {
+        paramReplacementMap[Number(paramIndex)] = ++captureIndex;
+        return "";
+      }
+      return "";
+    });
+    return [new RegExp(`^${regexp}`), indexReplacementMap, paramReplacementMap];
+  }
+};
+
+// node_modules/hono/dist/router/reg-exp-router/router.js
+var wildcardRegExpCache = /* @__PURE__ */ Object.create(null);
+function buildWildcardRegExp(path) {
+  return wildcardRegExpCache[path] ??= new RegExp(
+    path === "*" ? "" : `^${path.replace(
+      /\/\*$|([.\\+*[^\]$()])/g,
+      (_, metaChar) => metaChar ? `\\${metaChar}` : "(?:|/.*)"
+    )}$`
+  );
+}
+__name(buildWildcardRegExp, "buildWildcardRegExp");
+function clearWildcardRegExpCache() {
+  wildcardRegExpCache = /* @__PURE__ */ Object.create(null);
+}
+__name(clearWildcardRegExpCache, "clearWildcardRegExpCache");
+function findMiddleware(middleware, path) {
+  if (!middleware) {
+    return void 0;
+  }
+  for (const k of Object.keys(middleware).sort((a, b) => b.length - a.length)) {
+    if (buildWildcardRegExp(k).test(path)) {
+      return [...middleware[k]];
+    }
+  }
+  return void 0;
+}
+__name(findMiddleware, "findMiddleware");
+var RegExpRouter = class {
+  static {
+    __name(this, "RegExpRouter");
+  }
+  name = "RegExpRouter";
+  #middleware;
+  #routes;
+  #tries;
+  constructor() {
+    this.#middleware = { [METHOD_NAME_ALL]: /* @__PURE__ */ Object.create(null) };
+    this.#routes = { [METHOD_NAME_ALL]: /* @__PURE__ */ Object.create(null) };
+    this.#tries = { [METHOD_NAME_ALL]: new Trie() };
+  }
+  #insertPath(method, path) {
+    try {
+      this.#tries[method].insert(path, !/\*|\/:/.test(path));
+    } catch (e) {
+      throw e === PATH_ERROR ? new UnsupportedPathError(path) : e;
+    }
+  }
+  add(method, path, handler) {
+    const middleware = this.#middleware;
+    const routes = this.#routes;
+    if (!middleware || !routes) {
+      throw new Error(MESSAGE_MATCHER_IS_ALREADY_BUILT);
+    }
+    if (!middleware[method]) {
+      this.#tries[method] = new Trie();
+      [middleware, routes].forEach((handlerMap) => {
+        handlerMap[method] = /* @__PURE__ */ Object.create(null);
+        Object.keys(handlerMap[METHOD_NAME_ALL]).forEach((p) => {
+          handlerMap[method][p] = [...handlerMap[METHOD_NAME_ALL][p]];
+          this.#insertPath(method, p);
+        });
+      });
+    }
+    if (path === "/*") {
+      path = "*";
+    }
+    const paramCount = (path.match(/\/:/g) || []).length;
+    if (/\*$/.test(path)) {
+      const re = buildWildcardRegExp(path);
+      Object.keys(middleware).forEach((m) => {
+        if ((method === METHOD_NAME_ALL || method === m) && !middleware[m][path]) {
+          this.#insertPath(m, path);
+          middleware[m][path] = findMiddleware(middleware[m], path) || findMiddleware(middleware[METHOD_NAME_ALL], path) || [];
+        }
+      });
+      Object.keys(middleware).forEach((m) => {
+        if (method === METHOD_NAME_ALL || method === m) {
+          Object.keys(middleware[m]).forEach((p) => {
+            re.test(p) && middleware[m][p].push([handler, paramCount]);
+          });
+        }
+      });
+      Object.keys(routes).forEach((m) => {
+        if (method === METHOD_NAME_ALL || method === m) {
+          Object.keys(routes[m]).forEach(
+            (p) => re.test(p) && routes[m][p].push([handler, paramCount])
+          );
+        }
+      });
+      return;
+    }
+    const paths = checkOptionalParameter(path) || [path];
+    for (let i = 0, len = paths.length; i < len; i++) {
+      const path2 = paths[i];
+      Object.keys(routes).forEach((m) => {
+        if (method === METHOD_NAME_ALL || method === m) {
+          if (!routes[m][path2]) {
+            this.#insertPath(m, path2);
+            routes[m][path2] = [
+              ...findMiddleware(middleware[m], path2) || findMiddleware(middleware[METHOD_NAME_ALL], path2) || []
+            ];
+          }
+          routes[m][path2].push([handler, paramCount - len + i + 1]);
+        }
+      });
+    }
+  }
+  match = match;
+  buildAllMatchers() {
+    const matchers = /* @__PURE__ */ Object.create(null);
+    Object.keys(this.#routes).concat(Object.keys(this.#middleware)).forEach((method) => {
+      matchers[method] ||= this.#buildMatcher(method);
+    });
+    this.#middleware = this.#routes = this.#tries = void 0;
+    clearWildcardRegExpCache();
+    return matchers;
+  }
+  #buildMatcher(method) {
+    const middleware = this.#middleware[method];
+    const routes = this.#routes[method];
+    const trie = this.#tries[method];
+    const staticMap = /* @__PURE__ */ Object.create(null);
+    const handlerData = [];
+    [middleware, routes].forEach((r) => {
+      for (const path in r) {
+        const handlers = r[path];
+        const pathData = trie.paths[path];
+        if (!pathData) {
+          staticMap[path] = [handlers.map(([h]) => [h, /* @__PURE__ */ Object.create(null)]), emptyParam];
+          continue;
+        }
+        const paramAssoc = pathData[1];
+        handlerData[pathData[0]] = handlers.map(([h, paramCount]) => {
+          const paramIndexMap = /* @__PURE__ */ Object.create(null);
+          paramCount -= 1;
+          for (; paramCount >= 0; paramCount--) {
+            const [key, value] = paramAssoc[paramCount];
+            paramIndexMap[key] = value;
+          }
+          return [h, paramIndexMap];
+        });
+      }
+    });
+    const [regexp, indexReplacementMap, paramReplacementMap] = trie.buildRegExp();
+    for (let i = 0, len = handlerData.length; i < len; i++) {
+      for (let j = 0, len2 = handlerData[i].length; j < len2; j++) {
+        const map = handlerData[i][j]?.[1];
+        if (!map) {
+          continue;
+        }
+        const keys = Object.keys(map);
+        for (let k = 0, len3 = keys.length; k < len3; k++) {
+          map[keys[k]] = paramReplacementMap[map[keys[k]]];
+        }
+      }
+    }
+    const handlerMap = [];
+    for (const i in indexReplacementMap) {
+      handlerMap[i] = handlerData[indexReplacementMap[i]];
+    }
+    return [regexp, handlerMap, staticMap];
+  }
+};
+
+// node_modules/hono/dist/router/smart-router/router.js
+var SmartRouter = class {
+  static {
+    __name(this, "SmartRouter");
+  }
+  name = "SmartRouter";
+  #routers = [];
+  #routes = [];
+  constructor(init) {
+    this.#routers = init.routers;
+  }
+  add(method, path, handler) {
+    if (!this.#routes) {
+      throw new Error(MESSAGE_MATCHER_IS_ALREADY_BUILT);
+    }
+    this.#routes.push([method, path, handler]);
+  }
+  match(method, path) {
+    if (!this.#routes) {
+      throw new Error("Fatal error");
+    }
+    const routers = this.#routers;
+    const routes = this.#routes;
+    const len = routers.length;
+    let i = 0;
+    let res;
+    for (; i < len; i++) {
+      const router = routers[i];
+      try {
+        for (let i2 = 0, len2 = routes.length; i2 < len2; i2++) {
+          router.add(...routes[i2]);
+        }
+        res = router.match(method, path);
+      } catch (e) {
+        if (e instanceof UnsupportedPathError) {
+          continue;
+        }
+        throw e;
+      }
+      this.match = router.match.bind(router);
+      this.#routers = [router];
+      this.#routes = void 0;
+      break;
+    }
+    if (i === len) {
+      throw new Error("Fatal error");
+    }
+    this.name = `SmartRouter + ${this.activeRouter.name}`;
+    return res;
+  }
+  get activeRouter() {
+    if (this.#routes || this.#routers.length !== 1) {
+      throw new Error("No active router has been determined yet.");
+    }
+    return this.#routers[0];
+  }
+};
+
+// node_modules/hono/dist/router/trie-router/node.js
+var emptyParams = /* @__PURE__ */ Object.create(null);
+var hasChildren = /* @__PURE__ */ __name((children) => {
+  for (const _ in children) {
+    return true;
+  }
+  return false;
+}, "hasChildren");
+var Node2 = class _Node2 {
+  static {
+    __name(this, "_Node");
+  }
+  #methods;
+  #children;
+  #patterns;
+  #order = 0;
+  #params = emptyParams;
+  constructor(method, handler, children) {
+    this.#children = children || /* @__PURE__ */ Object.create(null);
+    this.#methods = [];
+    if (method && handler) {
+      const m = /* @__PURE__ */ Object.create(null);
+      m[method] = { handler, possibleKeys: [], score: 0 };
+      this.#methods = [m];
+    }
+    this.#patterns = [];
+  }
+  insert(method, path, handler) {
+    this.#order = ++this.#order;
+    let curNode = this;
+    const parts = splitRoutingPath(path);
+    const possibleKeys = [];
+    for (let i = 0, len = parts.length; i < len; i++) {
+      const p = parts[i];
+      const nextP = parts[i + 1];
+      const pattern = getPattern(p, nextP);
+      const key = Array.isArray(pattern) ? pattern[0] : p;
+      if (key in curNode.#children) {
+        curNode = curNode.#children[key];
+        if (pattern) {
+          possibleKeys.push(pattern[1]);
+        }
+        continue;
+      }
+      curNode.#children[key] = new _Node2();
+      if (pattern) {
+        curNode.#patterns.push(pattern);
+        possibleKeys.push(pattern[1]);
+      }
+      curNode = curNode.#children[key];
+    }
+    curNode.#methods.push({
+      [method]: {
+        handler,
+        possibleKeys: possibleKeys.filter((v, i, a) => a.indexOf(v) === i),
+        score: this.#order
+      }
+    });
+    return curNode;
+  }
+  #pushHandlerSets(handlerSets, node, method, nodeParams, params) {
+    for (let i = 0, len = node.#methods.length; i < len; i++) {
+      const m = node.#methods[i];
+      const handlerSet = m[method] || m[METHOD_NAME_ALL];
+      const processedSet = {};
+      if (handlerSet !== void 0) {
+        handlerSet.params = /* @__PURE__ */ Object.create(null);
+        handlerSets.push(handlerSet);
+        if (nodeParams !== emptyParams || params && params !== emptyParams) {
+          for (let i2 = 0, len2 = handlerSet.possibleKeys.length; i2 < len2; i2++) {
+            const key = handlerSet.possibleKeys[i2];
+            const processed = processedSet[handlerSet.score];
+            handlerSet.params[key] = params?.[key] && !processed ? params[key] : nodeParams[key] ?? params?.[key];
+            processedSet[handlerSet.score] = true;
+          }
+        }
+      }
+    }
+  }
+  search(method, path) {
+    const handlerSets = [];
+    this.#params = emptyParams;
+    const curNode = this;
+    let curNodes = [curNode];
+    const parts = splitPath(path);
+    const curNodesQueue = [];
+    const len = parts.length;
+    let partOffsets = null;
+    for (let i = 0; i < len; i++) {
+      const part = parts[i];
+      const isLast = i === len - 1;
+      const tempNodes = [];
+      for (let j = 0, len2 = curNodes.length; j < len2; j++) {
+        const node = curNodes[j];
+        const nextNode = node.#children[part];
+        if (nextNode) {
+          nextNode.#params = node.#params;
+          if (isLast) {
+            if (nextNode.#children["*"]) {
+              this.#pushHandlerSets(handlerSets, nextNode.#children["*"], method, node.#params);
+            }
+            this.#pushHandlerSets(handlerSets, nextNode, method, node.#params);
+          } else {
+            tempNodes.push(nextNode);
+          }
+        }
+        for (let k = 0, len3 = node.#patterns.length; k < len3; k++) {
+          const pattern = node.#patterns[k];
+          const params = node.#params === emptyParams ? {} : { ...node.#params };
+          if (pattern === "*") {
+            const astNode = node.#children["*"];
+            if (astNode) {
+              this.#pushHandlerSets(handlerSets, astNode, method, node.#params);
+              astNode.#params = params;
+              tempNodes.push(astNode);
+            }
+            continue;
+          }
+          const [key, name, matcher] = pattern;
+          if (!part && !(matcher instanceof RegExp)) {
+            continue;
+          }
+          const child = node.#children[key];
+          if (matcher instanceof RegExp) {
+            if (partOffsets === null) {
+              partOffsets = new Array(len);
+              let offset = path[0] === "/" ? 1 : 0;
+              for (let p = 0; p < len; p++) {
+                partOffsets[p] = offset;
+                offset += parts[p].length + 1;
+              }
+            }
+            const restPathString = path.substring(partOffsets[i]);
+            const m = matcher.exec(restPathString);
+            if (m) {
+              params[name] = m[0];
+              this.#pushHandlerSets(handlerSets, child, method, node.#params, params);
+              if (m[0].length === restPathString.length && child.#children["*"]) {
+                this.#pushHandlerSets(
+                  handlerSets,
+                  child.#children["*"],
+                  method,
+                  node.#params,
+                  params
+                );
+              }
+              if (hasChildren(child.#children)) {
+                child.#params = params;
+                const componentCount = m[0].match(/\//g)?.length ?? 0;
+                const targetCurNodes = curNodesQueue[componentCount] ||= [];
+                targetCurNodes.push(child);
+              }
+              continue;
+            }
+          }
+          if (matcher === true || matcher.test(part)) {
+            params[name] = part;
+            if (isLast) {
+              this.#pushHandlerSets(handlerSets, child, method, params, node.#params);
+              if (child.#children["*"]) {
+                this.#pushHandlerSets(
+                  handlerSets,
+                  child.#children["*"],
+                  method,
+                  params,
+                  node.#params
+                );
+              }
+            } else {
+              child.#params = params;
+              tempNodes.push(child);
+            }
+          }
+        }
+      }
+      const shifted = curNodesQueue.shift();
+      curNodes = shifted ? tempNodes.concat(shifted) : tempNodes;
+    }
+    if (handlerSets.length > 1) {
+      handlerSets.sort((a, b) => {
+        return a.score - b.score;
+      });
+    }
+    return [handlerSets.map(({ handler, params }) => [handler, params])];
+  }
+};
+
+// node_modules/hono/dist/router/trie-router/router.js
+var TrieRouter = class {
+  static {
+    __name(this, "TrieRouter");
+  }
+  name = "TrieRouter";
+  #node;
+  constructor() {
+    this.#node = new Node2();
+  }
+  add(method, path, handler) {
+    const results = checkOptionalParameter(path);
+    if (results) {
+      for (let i = 0, len = results.length; i < len; i++) {
+        this.#node.insert(method, results[i], handler);
+      }
+      return;
+    }
+    this.#node.insert(method, path, handler);
+  }
+  match(method, path) {
+    return this.#node.search(method, path);
+  }
+};
+
+// node_modules/hono/dist/hono.js
+var Hono2 = class extends Hono {
+  static {
+    __name(this, "Hono");
+  }
+  /**
+   * Creates an instance of the Hono class.
+   *
+   * @param options - Optional configuration options for the Hono instance.
+   */
+  constructor(options = {}) {
+    super(options);
+    this.router = options.router ?? new SmartRouter({
+      routers: [new RegExpRouter(), new TrieRouter()]
+    });
+  }
+};
+
+// node_modules/hono/dist/middleware/cors/index.js
+var cors = /* @__PURE__ */ __name((options) => {
+  const opts = {
+    origin: "*",
+    allowMethods: ["GET", "HEAD", "PUT", "POST", "DELETE", "PATCH", "QUERY"],
+    allowHeaders: [],
+    exposeHeaders: [],
+    ...options
+  };
+  const findAllowOrigin = ((optsOrigin) => {
+    if (typeof optsOrigin === "string") {
+      if (optsOrigin === "*") {
+        return () => optsOrigin;
+      } else {
+        return (origin) => optsOrigin === origin ? origin : null;
+      }
+    } else if (typeof optsOrigin === "function") {
+      return optsOrigin;
+    } else {
+      return (origin) => optsOrigin.includes(origin) ? origin : null;
+    }
+  })(opts.origin);
+  const findAllowMethods = ((optsAllowMethods) => {
+    if (typeof optsAllowMethods === "function") {
+      return optsAllowMethods;
+    } else if (Array.isArray(optsAllowMethods)) {
+      return () => optsAllowMethods;
+    } else {
+      return () => [];
+    }
+  })(opts.allowMethods);
+  return /* @__PURE__ */ __name(async function cors2(c, next) {
+    function set(key, value) {
+      c.res.headers.set(key, value);
+    }
+    __name(set, "set");
+    const allowOrigin = await findAllowOrigin(c.req.header("origin") || "", c);
+    if (allowOrigin) {
+      set("Access-Control-Allow-Origin", allowOrigin);
+    }
+    if (opts.credentials) {
+      set("Access-Control-Allow-Credentials", "true");
+    }
+    if (opts.exposeHeaders?.length) {
+      set("Access-Control-Expose-Headers", opts.exposeHeaders.join(","));
+    }
+    if (c.req.method === "OPTIONS") {
+      if (opts.origin !== "*") {
+        set("Vary", "Origin");
+      }
+      if (opts.maxAge != null) {
+        set("Access-Control-Max-Age", opts.maxAge.toString());
+      }
+      const allowMethods = await findAllowMethods(c.req.header("origin") || "", c);
+      if (allowMethods.length) {
+        set("Access-Control-Allow-Methods", allowMethods.join(","));
+      }
+      let headers = opts.allowHeaders;
+      if (!headers?.length) {
+        const requestHeaders = c.req.header("Access-Control-Request-Headers");
+        if (requestHeaders) {
+          headers = requestHeaders.split(",").map((h) => h.trim());
+        }
+      }
+      if (headers?.length) {
+        set("Access-Control-Allow-Headers", headers.join(","));
+        c.res.headers.append("Vary", "Access-Control-Request-Headers");
+      }
+      c.res.headers.delete("Content-Length");
+      c.res.headers.delete("Content-Type");
+      return new Response(null, {
+        headers: c.res.headers,
+        status: 204,
+        statusText: "No Content"
+      });
+    }
+    await next();
+    if (opts.origin !== "*") {
+      c.header("Vary", "Origin", { append: true });
+    }
+  }, "cors2");
+}, "cors");
+
+// src/index.js
 import { connect } from "cloudflare:sockets";
-import { getDb } from "./db.js";
-import { ensurePushNotificationTables, sendExpoPushNotification, dispatchNotification } from "./notification_service.js";
 
-const app = new Hono();
+// src/db.js
+var D1Helper = class {
+  static {
+    __name(this, "D1Helper");
+  }
+  constructor(db) {
+    this.db = db;
+  }
+  // Execute SELECT query returning all matching rows
+  async all(query, params = []) {
+    try {
+      const stmt = this.db.prepare(query);
+      const res = params.length > 0 ? await stmt.bind(...params).all() : await stmt.all();
+      return res.results || [];
+    } catch (err) {
+      console.error("[D1 ALL ERROR]", query, err);
+      throw err;
+    }
+  }
+  // Execute SELECT query returning the first matching row or null
+  async first(query, params = []) {
+    try {
+      const stmt = this.db.prepare(query);
+      const res = params.length > 0 ? await stmt.bind(...params).first() : await stmt.first();
+      return res || null;
+    } catch (err) {
+      console.error("[D1 FIRST ERROR]", query, err);
+      throw err;
+    }
+  }
+  // Execute INSERT, UPDATE, DELETE query returning meta
+  async run(query, params = []) {
+    try {
+      const stmt = this.db.prepare(query);
+      const res = params.length > 0 ? await stmt.bind(...params).run() : await stmt.run();
+      return res;
+    } catch (err) {
+      console.error("[D1 RUN ERROR]", query, err);
+      throw err;
+    }
+  }
+  // Execute multiple statement batch queries
+  async batch(statements) {
+    try {
+      const prepared = statements.map((s) => this.db.prepare(s.query).bind(...s.params || []));
+      return await this.db.batch(prepared);
+    } catch (err) {
+      console.error("[D1 BATCH ERROR]", err);
+      throw err;
+    }
+  }
+};
+function getDb(env) {
+  if (!env || !env.DB) {
+    throw new Error("D1 database binding 'DB' is not configured or available in environment.");
+  }
+  return new D1Helper(env.DB);
+}
+__name(getDb, "getDb");
 
-// Global CORS Middleware
+// src/notification_service.js
+async function ensurePushNotificationTables(db) {
+  try {
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS push_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        token TEXT NOT NULL,
+        device_type TEXT DEFAULT 'ANDROID',
+        is_active INTEGER DEFAULT 1,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, token)
+      )
+    `).catch(() => null);
+    await db.run(`
+      CREATE INDEX IF NOT EXISTS idx_push_tokens_user_id ON push_tokens(user_id)
+    `).catch(() => null);
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS notifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        type TEXT DEFAULT 'INFO',
+        entity_id TEXT,
+        entity_type TEXT,
+        deep_link TEXT,
+        is_read INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `).catch(() => null);
+    await db.run(`
+      CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id)
+    `).catch(() => null);
+  } catch (err) {
+    console.error("[NotificationService] Table initialization warning:", err.message);
+  }
+}
+__name(ensurePushNotificationTables, "ensurePushNotificationTables");
+async function sendExpoPushNotification(tokens, title, body, data = {}) {
+  const tokenArray = Array.isArray(tokens) ? tokens : [tokens];
+  const validTokens = tokenArray.filter(
+    (t) => t && typeof t === "string" && (t.startsWith("ExponentPushToken") || t.startsWith("ExpoPushToken"))
+  );
+  if (validTokens.length === 0) {
+    console.log("[NotificationService] No valid Expo push tokens found for dispatch.");
+    return { success: false, reason: "NO_VALID_TOKENS" };
+  }
+  const uniqueTokens = Array.from(new Set(validTokens));
+  const payload = uniqueTokens.map((token) => ({
+    to: token,
+    title: title || "MehndiGo Notification",
+    body: body || "You have a new update from MehndiGo",
+    sound: "default",
+    priority: "high",
+    badge: 1,
+    channelId: data?.channelId || "default",
+    data: {
+      ...data,
+      title: title || "MehndiGo Notification",
+      message: body || "You have a new update from MehndiGo"
+    }
+  }));
+  try {
+    const res = await fetch("https://exp.host/--/api/v2/push/send", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "Accept-Encoding": "gzip, deflate"
+      },
+      body: JSON.stringify(payload)
+    });
+    const responseJson = await res.json();
+    console.log("[NotificationService] Expo Push API response:", JSON.stringify(responseJson));
+    return { success: true, response: responseJson };
+  } catch (err) {
+    console.error("[NotificationService] Expo Push dispatch error:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+__name(sendExpoPushNotification, "sendExpoPushNotification");
+async function dispatchNotification(db, {
+  userId,
+  title,
+  body,
+  type = "INFO",
+  entityId = null,
+  entityType = null,
+  deepLink = null,
+  channelId = "default",
+  additionalData = {}
+}) {
+  if (!db || !userId) {
+    console.warn("[NotificationService] Missing db or userId in dispatchNotification.");
+    return null;
+  }
+  const cleanUserId = Number(userId) || userId;
+  const strUserId = String(userId);
+  let notifId = null;
+  try {
+    const insertResult = await db.run(
+      `INSERT INTO notifications (user_id, title, message, type, entity_id, entity_type, deep_link, is_read) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+      [
+        cleanUserId,
+        title || "MehndiGo Notification",
+        body || "",
+        type,
+        entityId ? String(entityId) : null,
+        entityType || null,
+        deepLink || null
+      ]
+    ).catch((e) => {
+      console.error("[NotificationService] DB Insert error:", e.message);
+      return null;
+    });
+    notifId = insertResult?.lastInsertRowid || insertResult?.meta?.last_row_id || null;
+  } catch (dbErr) {
+    console.error("[NotificationService] In-App Notification save exception:", dbErr.message);
+  }
+  const tokens = [];
+  try {
+    const tokenRows = await db.all(
+      "SELECT token FROM push_tokens WHERE (user_id = ? OR CAST(user_id AS TEXT) = ?) AND is_active = 1",
+      [cleanUserId, strUserId]
+    ).catch(() => []);
+    if (tokenRows && tokenRows.length > 0) {
+      tokenRows.forEach((r) => {
+        if (r.token) tokens.push(r.token);
+      });
+    }
+    const userRow = await db.first(
+      "SELECT push_token FROM users WHERE id = ? OR CAST(id AS TEXT) = ?",
+      [cleanUserId, strUserId]
+    ).catch(() => null);
+    if (userRow?.push_token) {
+      tokens.push(userRow.push_token);
+    }
+  } catch (tokErr) {
+    console.error("[NotificationService] Token retrieval error:", tokErr.message);
+  }
+  const uniqueTokens = Array.from(new Set(tokens.filter(Boolean)));
+  const pushData = {
+    type,
+    entityId: entityId ? String(entityId) : void 0,
+    entityType: entityType || void 0,
+    bookingId: entityType === "booking" || type.startsWith("BOOKING_") ? String(entityId) : void 0,
+    ticketId: entityType === "ticket" || type.startsWith("SUPPORT_") ? String(entityId) : void 0,
+    deepLink: deepLink || void 0,
+    channelId,
+    notificationId: notifId,
+    userId: cleanUserId,
+    ...additionalData
+  };
+  if (uniqueTokens.length > 0) {
+    sendExpoPushNotification(uniqueTokens, title, body, pushData).catch((err) => {
+      console.error("[NotificationService] Async push dispatch failed:", err.message);
+    });
+  } else {
+    console.log(`[NotificationService] No push tokens found for user ${userId}. In-app notification saved.`);
+  }
+  return { success: true, notificationId: notifId, recipientTokens: uniqueTokens.length };
+}
+__name(dispatchNotification, "dispatchNotification");
+
+// src/index.js
+var app = new Hono2();
 app.use("*", cors({
   origin: "*",
   allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
+  allowHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"]
 }));
-
-// Helper: JSON response wrapper
-const jsonRes = (c, success, data = {}, message = "", status = 200) => {
+var jsonRes = /* @__PURE__ */ __name((c, success, data = {}, message = "", status = 200) => {
   return c.json({ success, message, data }, status);
-};
-
-// Helper: Simple JWT payload extract (returns null on invalid token)
-const getUserFromHeader = (c) => {
+}, "jsonRes");
+var getUserFromHeader = /* @__PURE__ */ __name((c) => {
   const auth = c.req.header("Authorization");
   if (!auth || !auth.startsWith("Bearer ")) return null;
   const token = auth.substring(7);
   try {
-    const parts = token.split('.');
+    const parts = token.split(".");
     if (parts.length !== 3) return null;
     const payload = JSON.parse(atob(parts[1]));
     const rawId = payload.id || payload.userId || payload.user_id || payload.sub;
@@ -33,11 +2484,9 @@ const getUserFromHeader = (c) => {
   } catch (e) {
     return null;
   }
-};
-
-// Health Check
-app.get("/health", (c) => c.json({ success: true, status: "UP", engine: "Cloudflare Workers & D1", timestamp: new Date() }));
-app.get("/api/health", (c) => c.json({ success: true, status: "UP", engine: "Cloudflare Workers & D1", timestamp: new Date() }));
+}, "getUserFromHeader");
+app.get("/health", (c) => c.json({ success: true, status: "UP", engine: "Cloudflare Workers & D1", timestamp: /* @__PURE__ */ new Date() }));
+app.get("/api/health", (c) => c.json({ success: true, status: "UP", engine: "Cloudflare Workers & D1", timestamp: /* @__PURE__ */ new Date() }));
 app.get("/api/v1/debug/schema", async (c) => {
   const db = getDb(c.env);
   const tableInfo = await db.all("PRAGMA table_info(bookings)").catch((e) => ({ error: e.message }));
@@ -52,12 +2501,11 @@ app.post("/api/v1/debug/reset-wallet", async (c) => {
   const db = getDb(c.env);
   await db.run("UPDATE wallets SET balance = 0.0, available_balance = 0.0, escrow_balance = 0.0, pending_settlement = 0.0, total_earnings = 0.0, withdrawn_amount = 0.0 WHERE user_id = 231 OR artist_id = 231");
   await db.run("DELETE FROM wallet_transactions WHERE user_id = 231");
-  return c.json({ success: true, message: "Artist 231 wallet reset to ₹0.00" });
+  return c.json({ success: true, message: "Artist 231 wallet reset to \u20B90.00" });
 });
 app.get("/test-email", async (c) => {
   const to = c.req.query("to") || "sonudonyadav87@gmail.com";
   const logs = [];
-
   try {
     logs.push(`Initiating direct SMTP dispatch to ${to}...`);
     const isSmtpSent = await sendCustomSmtpDirect(
@@ -67,12 +2515,10 @@ app.get("/test-email", async (c) => {
       "Doorstep Check-In PIN: 4829",
       "<h1>MehndiGo Email Verification</h1><p>Doorstep OTP Service is fully active from <b>donotreply@mehndigo.in</b>.</p>"
     );
-
     if (isSmtpSent) {
       logs.push("SMTP Email successfully accepted and dispatched!");
       return c.json({ success: true, message: `Email dispatched successfully to ${to} from donotreply@mehndigo.in`, provider: "gmail_smtp", logs });
     }
-
     logs.push("SMTP dispatch returned false, trying Azure...");
     const isAzureSent = await sendAzureEmailWorkerDirect(
       c,
@@ -81,21 +2527,17 @@ app.get("/test-email", async (c) => {
       "<h1>MehndiGo Email Verification</h1><p>Azure Email Communication Services is fully active from <b>donotreply@mehndigo.in</b>.</p>",
       "Azure Email Communication Services is fully active from donotreply@mehndigo.in."
     );
-
     if (isAzureSent) {
       logs.push("Azure Email successfully accepted and dispatched!");
       return c.json({ success: true, message: `Azure Email dispatched successfully to ${to} from donotreply@mehndigo.in`, provider: "azure", logs });
     }
-
     return c.json({ success: false, message: "Both SMTP and Azure Email failed to dispatch", logs }, 500);
   } catch (err) {
     logs.push(`ERROR: ${err.message}`);
     return c.json({ success: false, error: err.message, logs }, 500);
   }
 });
-
-// ================= USER & AUTH ROUTES =================
-const handleLogin = async (c) => {
+var handleLogin = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   let body = {};
   try {
@@ -103,91 +2545,73 @@ const handleLogin = async (c) => {
   } catch (e) {
     try {
       body = await c.req.parseBody();
-    } catch (e2) { }
+    } catch (e2) {
+    }
   }
   const email = body?.email || body?.username || "artist@mehndigo.com";
-
   if (!email) return jsonRes(c, false, null, "Email is required", 400);
-
   let user = await db.first("SELECT * FROM users WHERE email = ?", [email]).catch(() => null);
   if (!user) {
     return jsonRes(c, false, null, "User not found with provided email", 404);
   }
-
-  // Construct fake token for Cloudflare Workers demo / secret auth
   const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-  const payload = btoa(JSON.stringify({ id: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1000) + (86400 * 7) }));
+  const payload = btoa(JSON.stringify({ id: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1e3) + 86400 * 7 }));
   const token = `${header}.${payload}.sig`;
-
   return jsonRes(c, true, {
     token,
     user: { id: user.id, full_name: user.full_name, email: user.email, role: user.role, is_verified: user.is_verified }
   }, "Login successful");
-};
-
-const handleRegister = async (c) => {
+}, "handleLogin");
+var handleRegister = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const body = await c.req.json().catch(() => ({}));
   const { full_name, email, password, phone, role } = body;
-
   if (!full_name || !email) {
     return jsonRes(c, false, null, "Full name and email are required", 400);
   }
-
   const existing = await db.first("SELECT id FROM users WHERE email = ?", [email]);
   if (existing) {
     return jsonRes(c, false, null, "User already exists with this email", 400);
   }
-
   const res = await db.run(
     "INSERT INTO users (full_name, email, phone, password_hash, role, is_verified) VALUES (?, ?, ?, ?, ?, 1)",
     [full_name, email, phone || null, password || "secret123", role || "customer"]
   );
-
   const newUserId = res.meta?.last_row_id || 5;
-
   if (role === "artist") {
     await db.run(
       "INSERT INTO artist_profiles (user_id, bio, city, status) VALUES (?, ?, ?, 'pending')",
       [newUserId, "Professional Mehndi Artist", "Mumbai"]
     );
   }
-
   return jsonRes(c, true, { id: newUserId, email, full_name, role }, "Registration successful", 201);
-};
-
-const handleCheckEmail = async (c) => {
+}, "handleRegister");
+var handleCheckEmail = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const body = await c.req.json().catch(() => ({}));
   const { email } = body;
   if (!email) return jsonRes(c, false, null, "Email is required", 400);
-
   const existing = await db.first("SELECT id FROM users WHERE email = ?", [email]);
   return c.json({ success: true, exists: !!existing, available: !existing });
-};
-
-const generate6DigitOtp = () => {
+}, "handleCheckEmail");
+var generate6DigitOtp = /* @__PURE__ */ __name(() => {
   try {
     const array = new Uint32Array(1);
     crypto.getRandomValues(array);
-    return String(100000 + (array[0] % 900000));
+    return String(1e5 + array[0] % 9e5);
   } catch (_) {
-    return String(Math.floor(100000 + Math.random() * 900000));
+    return String(Math.floor(1e5 + Math.random() * 9e5));
   }
-};
-
-const sendCustomSmtpDirect = async (c, toEmail, subject, textBody, htmlBody) => {
+}, "generate6DigitOtp");
+var sendCustomSmtpDirect = /* @__PURE__ */ __name(async (c, toEmail, subject, textBody, htmlBody) => {
   const targetEmail = String(toEmail || "").trim().toLowerCase();
   if (!targetEmail || !targetEmail.includes("@")) return false;
-
-  const user = ((c && c.env && c.env.EMAIL_USER) || "sonudonyadav87@gmail.com").trim();
-  const pass = ((c && c.env && c.env.EMAIL_PASS) || "kwemkkniwxyohmvm").replace(/\s+/g, "");
-
+  const user = (c && c.env && c.env.EMAIL_USER || "sonudonyadav87@gmail.com").trim();
+  const pass = (c && c.env && c.env.EMAIL_PASS || "kwemkkniwxyohmvm").replace(/\s+/g, "");
   if (!user || !pass) {
     console.error("[SMTP ERROR] Missing EMAIL_USER or EMAIL_PASS environment variables");
     return false;
   }
-
   let socket = null;
   try {
     console.log(`[CLOUDFLARE SOCKETS SMTP] Connecting to smtp.gmail.com:465 for recipient: ${targetEmail}...`);
@@ -196,10 +2620,8 @@ const sendCustomSmtpDirect = async (c, toEmail, subject, textBody, htmlBody) => 
     const reader = socket.readable.getReader();
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
-
     let buffer = "";
-
-    async function readReply(timeoutMs = 7000) {
+    async function readReply(timeoutMs = 7e3) {
       const readPromise = (async () => {
         while (true) {
           const { value, done } = await reader.read();
@@ -210,9 +2632,9 @@ const sendCustomSmtpDirect = async (c, toEmail, subject, textBody, htmlBody) => 
           for (let i = 0; i < lines.length; i++) {
             const l = lines[i].trim();
             if (/^\d{3}\s/.test(l)) {
-              const out = buffer;
+              const out2 = buffer;
               buffer = "";
-              return out;
+              return out2;
             }
           }
         }
@@ -220,88 +2642,94 @@ const sendCustomSmtpDirect = async (c, toEmail, subject, textBody, htmlBody) => 
         buffer = "";
         return out;
       })();
-
-      const timeoutPromise = new Promise((resolve) =>
-        setTimeout(() => resolve("TIMEOUT"), timeoutMs)
+      const timeoutPromise = new Promise(
+        (resolve) => setTimeout(() => resolve("TIMEOUT"), timeoutMs)
       );
-
       return Promise.race([readPromise, timeoutPromise]);
     }
-
+    __name(readReply, "readReply");
     async function sendCmd(cmd) {
       buffer = "";
       await writer.write(encoder.encode(cmd + "\r\n"));
       return await readReply();
     }
-
-    // 1. Read greeting banner
+    __name(sendCmd, "sendCmd");
     buffer = "";
     const greeting = await readReply();
     if (!greeting || !greeting.startsWith("220")) {
       console.error("[SMTP ERROR] Banner failed:", greeting);
-      try { socket.close(); } catch (_) { }
+      try {
+        socket.close();
+      } catch (_) {
+      }
       return false;
     }
-
-    // 2. EHLO
     const ehloRes = await sendCmd("EHLO gmail.com");
     if (!ehloRes || ehloRes === "TIMEOUT" || !ehloRes.startsWith("250")) {
       console.error("[SMTP ERROR] EHLO failed:", ehloRes);
-      try { socket.close(); } catch (_) { }
+      try {
+        socket.close();
+      } catch (_) {
+      }
       return false;
     }
-
-    // 3. AUTH LOGIN
     const authRes = await sendCmd("AUTH LOGIN");
     if (!authRes || authRes === "TIMEOUT" || !authRes.includes("334")) {
       console.error("[SMTP ERROR] AUTH LOGIN failed:", authRes);
-      try { socket.close(); } catch (_) { }
+      try {
+        socket.close();
+      } catch (_) {
+      }
       return false;
     }
-
     const userRes = await sendCmd(btoa(user));
     if (!userRes || userRes === "TIMEOUT" || !userRes.includes("334")) {
       console.error("[SMTP ERROR] User auth failed:", userRes);
-      try { socket.close(); } catch (_) { }
+      try {
+        socket.close();
+      } catch (_) {
+      }
       return false;
     }
-
     const passRes = await sendCmd(btoa(pass));
     if (!passRes || passRes === "TIMEOUT" || !passRes.includes("235")) {
       console.error("[SMTP ERROR] Password auth failed:", passRes);
-      try { socket.close(); } catch (_) { }
+      try {
+        socket.close();
+      } catch (_) {
+      }
       return false;
     }
-
-    // 4. MAIL FROM
     const mailFromRes = await sendCmd(`MAIL FROM:<${user}>`);
     if (!mailFromRes || mailFromRes === "TIMEOUT" || !mailFromRes.includes("250")) {
       console.error("[SMTP ERROR] MAIL FROM failed:", mailFromRes);
-      try { socket.close(); } catch (_) { }
+      try {
+        socket.close();
+      } catch (_) {
+      }
       return false;
     }
-
-    // 5. RCPT TO
     const rcptToRes = await sendCmd(`RCPT TO:<${targetEmail}>`);
     if (!rcptToRes || rcptToRes === "TIMEOUT" || !rcptToRes.includes("250")) {
       console.error("[SMTP ERROR] RCPT TO rejected:", rcptToRes);
-      try { socket.close(); } catch (_) { }
+      try {
+        socket.close();
+      } catch (_) {
+      }
       return false;
     }
-
-    // 6. DATA
     const dataRes = await sendCmd("DATA");
     if (!dataRes || dataRes === "TIMEOUT" || !dataRes.includes("354")) {
       console.error("[SMTP ERROR] DATA rejected:", dataRes);
-      try { socket.close(); } catch (_) { }
+      try {
+        socket.close();
+      } catch (_) {
+      }
       return false;
     }
-
-    // 7. Write MIME Content
     const boundary = `==MehndiGo_${Date.now()}_Boundary==`;
-    const dateStr = new Date().toUTCString();
-    const msgId = `<mail.${Date.now()}.${Math.floor(Math.random() * 10000)}@mehndigo.in>`;
-
+    const dateStr = (/* @__PURE__ */ new Date()).toUTCString();
+    const msgId = `<mail.${Date.now()}.${Math.floor(Math.random() * 1e4)}@mehndigo.in>`;
     const mimeMessage = [
       `From: MehndiGo <donotreply@mehndigo.in>`,
       `Reply-To: MehndiGo Support <support@mehndigo.in>`,
@@ -328,29 +2756,40 @@ const sendCustomSmtpDirect = async (c, toEmail, subject, textBody, htmlBody) => 
       `--${boundary}--`,
       `.`
     ].join("\r\n");
-
     const sendRes = await sendCmd(mimeMessage);
     console.log(`[REAL GMAIL SMTP DELIVERED] Recipient: ${targetEmail} | Server Response:`, sendRes?.trim());
-
-    await sendCmd("QUIT").catch(() => { });
-    try { socket.close(); } catch (_) { }
-
+    await sendCmd("QUIT").catch(() => {
+    });
+    try {
+      socket.close();
+    } catch (_) {
+    }
     return !!(sendRes && sendRes.includes("250"));
   } catch (err) {
     console.error("[SMTP SOCKET EXCEPTION]:", err.message);
-    if (socket) { try { socket.close(); } catch (_) { } }
+    if (socket) {
+      try {
+        socket.close();
+      } catch (_) {
+      }
+    }
     return false;
   }
-};
-
-const sendGmailSmtpDirect = async (c, toEmail, otp, name = "User") => {
+}, "sendCustomSmtpDirect");
+var sendGmailSmtpDirect = /* @__PURE__ */ __name(async (c, toEmail, otp, name = "User") => {
   const targetEmail = String(toEmail || "").trim().toLowerCase();
   const targetOtp = String(otp || "").trim();
   if (!targetEmail || !targetEmail.includes("@") || !targetOtp) return false;
-
   const refTag = Date.now().toString().slice(-4);
   const subject = `MehndiGo Verification Code: ${targetOtp} [#${refTag}]`;
-  const textBody = `Hello ${name},\n\nYour MehndiGo verification code is: ${targetOtp}\n\nThis code is valid for 5 minutes. Please do not share it with anyone.\n\nThanks,\nMehndiGo Team`;
+  const textBody = `Hello ${name},
+
+Your MehndiGo verification code is: ${targetOtp}
+
+This code is valid for 5 minutes. Please do not share it with anyone.
+
+Thanks,
+MehndiGo Team`;
   const htmlBody = `
 <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
   <div style="text-align: center; margin-bottom: 20px;">
@@ -367,25 +2806,30 @@ const sendGmailSmtpDirect = async (c, toEmail, otp, name = "User") => {
   </div>
 </div>
 `.trim();
-
   return await sendCustomSmtpDirect(c, targetEmail, subject, textBody, htmlBody);
-};
-
-const sendCheckInOtpEmail = async (c, toEmail, otp, customerName = "Valued Customer", bookingNumber = "") => {
+}, "sendGmailSmtpDirect");
+var sendCheckInOtpEmail = /* @__PURE__ */ __name(async (c, toEmail, otp, customerName = "Valued Customer", bookingNumber = "") => {
   const targetEmail = String(toEmail || "").trim().toLowerCase();
   const targetOtp = String(otp || "").trim();
   if (!targetEmail || !targetEmail.includes("@") || !targetOtp) return false;
-
   console.log(`[CHECK-IN EMAIL DISPATCH] Dispatching Check-In PIN ${targetOtp} to ${targetEmail}...`);
-
   const codeTag = bookingNumber ? `#${bookingNumber}` : `#MG-${Date.now().toString().slice(-4)}`;
   const subject = `Your MehndiGo Check-In PIN - ${codeTag}`;
-  const textBody = `Hello ${customerName},\n\nYour artist has arrived! Your 4-digit Doorstep Check-In PIN is: ${targetOtp}\n\nPlease share this 4-digit PIN with your Mehndi Specialist upon arrival to verify their identity and start the service.\n\nBooking: ${codeTag}\nSecurity Notice: Do not share this code online or over phone. Only share in-person when the specialist is at your doorstep.\n\nBest regards,\nMehndiGo Team`;
+  const textBody = `Hello ${customerName},
 
+Your artist has arrived! Your 4-digit Doorstep Check-In PIN is: ${targetOtp}
+
+Please share this 4-digit PIN with your Mehndi Specialist upon arrival to verify their identity and start the service.
+
+Booking: ${codeTag}
+Security Notice: Do not share this code online or over phone. Only share in-person when the specialist is at your doorstep.
+
+Best regards,
+MehndiGo Team`;
   const htmlBody = `
 <div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; border: 1px solid #FBCFE8; border-radius: 12px; background-color: #FFFFFF;">
   <div style="text-align: center; margin-bottom: 24px; border-bottom: 2px solid #FDF2F8; padding-bottom: 16px;">
-    <h2 style="color: #E91E63; margin: 0; font-size: 26px; letter-spacing: 0.5px;">🌸 MehndiGo</h2>
+    <h2 style="color: #E91E63; margin: 0; font-size: 26px; letter-spacing: 0.5px;">\u{1F338} MehndiGo</h2>
     <p style="color: #6B7280; font-size: 13px; margin: 4px 0 0 0;">Doorstep Check-In Verification</p>
   </div>
   <div style="background-color: #FDF2F8; padding: 20px; border-radius: 10px; text-align: center; border: 1px solid #FCE7F3;">
@@ -397,7 +2841,7 @@ const sendCheckInOtpEmail = async (c, toEmail, otp, customerName = "Valued Custo
       ${targetOtp}
     </div>
     <p style="font-size: 12px; color: #9D174D; margin: 8px 0 0 0; font-weight: 600;">
-      🛡️ Share only with your specialist at your doorstep.
+      \u{1F6E1}\uFE0F Share only with your specialist at your doorstep.
     </p>
   </div>
   <div style="margin-top: 20px; font-size: 12px; color: #9CA3AF; text-align: center; line-height: 1.4;">
@@ -405,8 +2849,6 @@ const sendCheckInOtpEmail = async (c, toEmail, otp, customerName = "Valued Custo
   </div>
 </div>
 `.trim();
-
-  // 1. Primary: Direct SMTP Delivery from donotreply@mehndigo.in
   try {
     const smtpSent = await sendCustomSmtpDirect(c, targetEmail, subject, textBody, htmlBody);
     if (smtpSent) {
@@ -416,8 +2858,6 @@ const sendCheckInOtpEmail = async (c, toEmail, otp, customerName = "Valued Custo
   } catch (err) {
     console.log(`[SMTP Check-In Email notice]:`, err.message);
   }
-
-  // 2. Azure Email Communication Service (If configured)
   if (c?.env?.AZURE_EMAIL_CONNECTION_STRING) {
     try {
       const azureSent = await sendAzureEmailWorkerDirect(c, targetEmail, subject, htmlBody, textBody);
@@ -429,9 +2869,7 @@ const sendCheckInOtpEmail = async (c, toEmail, otp, customerName = "Valued Custo
       console.log(`[Azure Check-In Email notice]:`, err.message);
     }
   }
-
-  // 3. Resend fallback
-  const resendApiKey = (c && c.env && c.env.RESEND_API_KEY) || "";
+  const resendApiKey = c && c.env && c.env.RESEND_API_KEY || "";
   if (resendApiKey) {
     try {
       const res = await fetch("https://api.resend.com/emails", {
@@ -443,7 +2881,7 @@ const sendCheckInOtpEmail = async (c, toEmail, otp, customerName = "Valued Custo
         body: JSON.stringify({
           from: "MehndiGo <donotreply@mehndigo.in>",
           to: [targetEmail],
-          subject: subject,
+          subject,
           html: htmlBody
         })
       });
@@ -451,28 +2889,34 @@ const sendCheckInOtpEmail = async (c, toEmail, otp, customerName = "Valued Custo
         console.log(`[RESEND CHECK-IN EMAIL DELIVERED] PIN ${targetOtp} delivered to ${targetEmail}`);
         return true;
       }
-    } catch (_) { }
+    } catch (_) {
+    }
   }
-
   console.error(`[CHECK-IN EMAIL FAILED] Could not deliver PIN to ${targetEmail} via any provider`);
   return false;
-};
-
-const sendCheckOutOtpEmail = async (c, toEmail, otp, customerName = "Valued Customer", bookingNumber = "") => {
+}, "sendCheckInOtpEmail");
+var sendCheckOutOtpEmail = /* @__PURE__ */ __name(async (c, toEmail, otp, customerName = "Valued Customer", bookingNumber = "") => {
   const targetEmail = String(toEmail || "").trim().toLowerCase();
   const targetOtp = String(otp || "").trim();
   if (!targetEmail || !targetEmail.includes("@") || !targetOtp) return false;
-
   console.log(`[CHECK-OUT EMAIL DISPATCH] Dispatching Completion PIN ${targetOtp} to ${targetEmail}...`);
-
   const codeTag = bookingNumber ? `#${bookingNumber}` : `#MG-${Date.now().toString().slice(-4)}`;
   const subject = `Your MehndiGo Service Completion PIN - ${codeTag}`;
-  const textBody = `Hello ${customerName},\n\nYour Mehndi session is complete! Your 4-digit Service Completion PIN is: ${targetOtp}\n\nPlease share this PIN with your Mehndi Specialist only after you are completely satisfied with the finished service.\n\nBooking: ${codeTag}\nSecurity Notice: Sharing this PIN completes the booking and releases payment.\n\nBest regards,\nMehndiGo Team`;
+  const textBody = `Hello ${customerName},
 
+Your Mehndi session is complete! Your 4-digit Service Completion PIN is: ${targetOtp}
+
+Please share this PIN with your Mehndi Specialist only after you are completely satisfied with the finished service.
+
+Booking: ${codeTag}
+Security Notice: Sharing this PIN completes the booking and releases payment.
+
+Best regards,
+MehndiGo Team`;
   const htmlBody = `
 <div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; border: 1px solid #DDD6FE; border-radius: 12px; background-color: #FFFFFF;">
   <div style="text-align: center; margin-bottom: 24px; border-bottom: 2px solid #F5F3FF; padding-bottom: 16px;">
-    <h2 style="color: #7C3AED; margin: 0; font-size: 26px; letter-spacing: 0.5px;">✨ MehndiGo</h2>
+    <h2 style="color: #7C3AED; margin: 0; font-size: 26px; letter-spacing: 0.5px;">\u2728 MehndiGo</h2>
     <p style="color: #6B7280; font-size: 13px; margin: 4px 0 0 0;">Service Completion Verification</p>
   </div>
   <div style="background-color: #F5F3FF; padding: 20px; border-radius: 10px; text-align: center; border: 1px solid #EDE9FE;">
@@ -484,7 +2928,7 @@ const sendCheckOutOtpEmail = async (c, toEmail, otp, customerName = "Valued Cust
       ${targetOtp}
     </div>
     <p style="font-size: 12px; color: #5B21B6; margin: 8px 0 0 0; font-weight: 600;">
-      🌟 Share only after inspecting and approving the finished mehndi.
+      \u{1F31F} Share only after inspecting and approving the finished mehndi.
     </p>
   </div>
   <div style="margin-top: 20px; font-size: 12px; color: #9CA3AF; text-align: center; line-height: 1.4;">
@@ -492,8 +2936,6 @@ const sendCheckOutOtpEmail = async (c, toEmail, otp, customerName = "Valued Cust
   </div>
 </div>
 `.trim();
-
-  // 1. Primary: Direct SMTP Delivery from donotreply@mehndigo.in
   try {
     const smtpSent = await sendCustomSmtpDirect(c, targetEmail, subject, textBody, htmlBody);
     if (smtpSent) {
@@ -503,8 +2945,6 @@ const sendCheckOutOtpEmail = async (c, toEmail, otp, customerName = "Valued Cust
   } catch (err) {
     console.log(`[SMTP Check-Out Email notice]:`, err.message);
   }
-
-  // 2. Azure Email Communication Service (If configured)
   if (c?.env?.AZURE_EMAIL_CONNECTION_STRING) {
     try {
       const azureSent = await sendAzureEmailWorkerDirect(c, targetEmail, subject, htmlBody, textBody);
@@ -516,9 +2956,7 @@ const sendCheckOutOtpEmail = async (c, toEmail, otp, customerName = "Valued Cust
       console.log(`[Azure Check-Out Email notice]:`, err.message);
     }
   }
-
-  // 3. Resend fallback
-  const resendApiKey = (c && c.env && c.env.RESEND_API_KEY) || "";
+  const resendApiKey = c && c.env && c.env.RESEND_API_KEY || "";
   if (resendApiKey) {
     try {
       const res = await fetch("https://api.resend.com/emails", {
@@ -530,7 +2968,7 @@ const sendCheckOutOtpEmail = async (c, toEmail, otp, customerName = "Valued Cust
         body: JSON.stringify({
           from: "MehndiGo <donotreply@mehndigo.in>",
           to: [targetEmail],
-          subject: subject,
+          subject,
           html: htmlBody
         })
       });
@@ -538,43 +2976,29 @@ const sendCheckOutOtpEmail = async (c, toEmail, otp, customerName = "Valued Cust
         console.log(`[RESEND CHECK-OUT EMAIL DELIVERED] PIN ${targetOtp} delivered to ${targetEmail}`);
         return true;
       }
-    } catch (_) { }
+    } catch (_) {
+    }
   }
-
   console.error(`[CHECK-OUT EMAIL FAILED] Could not deliver PIN to ${targetEmail} via any provider`);
   return false;
-};
-
-
-const sendAzureEmailWorkerDirect = async (c, toEmail, subject, htmlBody, plainTextBody = "") => {
+}, "sendCheckOutOtpEmail");
+var sendAzureEmailWorkerDirect = /* @__PURE__ */ __name(async (c, toEmail, subject, htmlBody, plainTextBody = "") => {
   const targetEmail = String(toEmail || "").trim().toLowerCase();
   if (!targetEmail || !targetEmail.includes("@")) return false;
-
-  const connStr = (
-    c?.env?.AZURE_EMAIL_CONNECTION_STRING ||
-    ""
-  ).trim();
-
-  const sender = (
-    c?.env?.AZURE_EMAIL_FROM ||
-    c?.env?.EMAIL_FROM ||
-    "donotreply@mehndigo.in"
-  ).trim();
-
+  const connStr = (c?.env?.AZURE_EMAIL_CONNECTION_STRING || "").trim();
+  const sender = (c?.env?.AZURE_EMAIL_FROM || c?.env?.EMAIL_FROM || "donotreply@mehndigo.in").trim();
   try {
     const endpointMatch = connStr.match(/endpoint=([^;]+)/i);
     const keyMatch = connStr.match(/accesskey=([^;]+)/i);
-
     const endpoint = endpointMatch ? endpointMatch[1].replace(/\/$/, "") : "https://edvice-email-service.india.communication.azure.com";
     const accessKey = keyMatch ? keyMatch[1] : "";
     const host = new URL(endpoint).host;
     const pathAndQuery = "/emails:send?api-version=2023-03-31";
     const url = `${endpoint}${pathAndQuery}`;
-
     const bodyObj = {
       senderAddress: sender,
       content: {
-        subject: subject,
+        subject,
         plainText: plainTextBody || subject,
         html: htmlBody || `<p>${plainTextBody || subject}</p>`
       },
@@ -591,11 +3015,8 @@ const sendAzureEmailWorkerDirect = async (c, toEmail, subject, htmlBody, plainTe
         }
       ]
     };
-
     const bodyStr = JSON.stringify(bodyObj);
     const encoder = new TextEncoder();
-
-    // SHA-256 content hash
     const bodyBytes = encoder.encode(bodyStr);
     const hashBuffer = await crypto.subtle.digest("SHA-256", bodyBytes);
     let hashBinary = "";
@@ -604,17 +3025,15 @@ const sendAzureEmailWorkerDirect = async (c, toEmail, subject, htmlBody, plainTe
       hashBinary += String.fromCharCode(hashBytes[i]);
     }
     const contentHash = btoa(hashBinary);
-
-    const xMsDate = new Date().toUTCString();
-    const stringToSign = `POST\n${pathAndQuery}\n${xMsDate};${host};${contentHash}`;
-
-    // Base64 decode access key to raw bytes
+    const xMsDate = (/* @__PURE__ */ new Date()).toUTCString();
+    const stringToSign = `POST
+${pathAndQuery}
+${xMsDate};${host};${contentHash}`;
     const rawKeyBinary = atob(accessKey);
     const rawKeyBytes = new Uint8Array(rawKeyBinary.length);
     for (let i = 0; i < rawKeyBinary.length; i++) {
       rawKeyBytes[i] = rawKeyBinary.charCodeAt(i);
     }
-
     const hmacKey = await crypto.subtle.importKey(
       "raw",
       rawKeyBytes,
@@ -622,22 +3041,18 @@ const sendAzureEmailWorkerDirect = async (c, toEmail, subject, htmlBody, plainTe
       false,
       ["sign"]
     );
-
     const sigBuffer = await crypto.subtle.sign(
       "HMAC",
       hmacKey,
       encoder.encode(stringToSign)
     );
-
     let sigBinary = "";
     const sigBytes = new Uint8Array(sigBuffer);
     for (let i = 0; i < sigBytes.byteLength; i++) {
       sigBinary += String.fromCharCode(sigBytes[i]);
     }
     const signature = btoa(sigBinary);
-
     const authHeader = `HMAC-SHA256 SignedHeaders=x-ms-date;host;x-ms-content-sha256&Signature=${signature}`;
-
     const res = await fetch(url, {
       method: "POST",
       headers: {
@@ -650,7 +3065,6 @@ const sendAzureEmailWorkerDirect = async (c, toEmail, subject, htmlBody, plainTe
       },
       body: bodyStr
     });
-
     if (res.ok || res.status === 202) {
       const resJson = await res.json().catch(() => ({}));
       console.log(`[AZURE EMAIL DELIVERED] Recipient: ${targetEmail} | ID: ${resJson?.id || "azure-ok"}`);
@@ -664,15 +3078,12 @@ const sendAzureEmailWorkerDirect = async (c, toEmail, subject, htmlBody, plainTe
     console.error("[AZURE EMAIL EXCEPTION]:", err.message);
     return false;
   }
-};
-
-const sendRealOtpEmail = async (c, toEmail, otp, name = "User") => {
+}, "sendAzureEmailWorkerDirect");
+var sendRealOtpEmail = /* @__PURE__ */ __name(async (c, toEmail, otp, name = "User") => {
   const targetEmail = String(toEmail || "").trim().toLowerCase();
   const targetOtp = String(otp || "").trim();
   if (!targetEmail || !targetEmail.includes("@") || !targetOtp) return false;
-
   console.log(`[REAL EMAIL DISPATCH] Dispatching OTP ${targetOtp} to ${targetEmail}...`);
-
   const refTag = Date.now().toString().slice(-4);
   const otpSubject = `MehndiGo Verification Code: ${targetOtp} [#${refTag}]`;
   const otpHtml = `
@@ -691,8 +3102,6 @@ const sendRealOtpEmail = async (c, toEmail, otp, name = "User") => {
   </div>
 </div>
 `.trim();
-
-  // 1. Primary: Azure Email Communication Service
   try {
     const azureSent = await sendAzureEmailWorkerDirect(c, targetEmail, otpSubject, otpHtml, `Your MehndiGo OTP code is: ${targetOtp}`);
     if (azureSent) {
@@ -702,8 +3111,6 @@ const sendRealOtpEmail = async (c, toEmail, otp, name = "User") => {
   } catch (err) {
     console.log(`[Azure Email notice]:`, err.message);
   }
-
-  // 2. Fallback: Gmail Direct Socket SMTP
   try {
     const directSmtpSent = await sendGmailSmtpDirect(c, targetEmail, targetOtp, name);
     if (directSmtpSent) {
@@ -713,9 +3120,7 @@ const sendRealOtpEmail = async (c, toEmail, otp, name = "User") => {
   } catch (err) {
     console.log(`[SMTP notice]:`, err.message);
   }
-
-  // 3. Fallback: Resend
-  const resendApiKey = (c && c.env && c.env.RESEND_API_KEY) || "";
+  const resendApiKey = c && c.env && c.env.RESEND_API_KEY || "";
   if (resendApiKey) {
     try {
       const resendRes = await fetch("https://api.resend.com/emails", {
@@ -731,7 +3136,6 @@ const sendRealOtpEmail = async (c, toEmail, otp, name = "User") => {
           html: otpHtml
         })
       }).catch(() => null);
-
       if (resendRes && resendRes.ok) {
         console.log(`[RESEND DELIVERED INBOX] Delivered OTP ${targetOtp} to ${targetEmail}`);
         return true;
@@ -740,29 +3144,24 @@ const sendRealOtpEmail = async (c, toEmail, otp, name = "User") => {
       console.log("Resend dispatch notice:", err.message);
     }
   }
-
   console.log(`[OTP DISPATCH COMPLETED] Target: ${targetEmail}`);
   return true;
-};
-
-const handleRegisterSendOtp = async (c) => {
+}, "sendRealOtpEmail");
+var handleRegisterSendOtp = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const body = await c.req.json().catch(() => ({}));
   const { name, email, phone } = body;
-  const cleanEmail = (email && typeof email === "string") ? email.trim().toLowerCase() : "";
-  const cleanPhone = (phone && typeof phone === "string") ? phone.trim().replace(/[^0-9]/g, "") : "";
-
+  const cleanEmail = email && typeof email === "string" ? email.trim().toLowerCase() : "";
+  const cleanPhone = phone && typeof phone === "string" ? phone.trim().replace(/[^0-9]/g, "") : "";
   if (email && typeof email === "string" && email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
     return jsonRes(c, false, null, "Please enter a valid email address.", 400);
   }
-
   if (cleanEmail) {
     const existingEmail = await db.first("SELECT id FROM users WHERE LOWER(email) = ?", [cleanEmail]).catch(() => null);
     if (existingEmail) {
       return jsonRes(c, false, null, "Email address already registered. Please login instead.", 400);
     }
   }
-
   if (cleanPhone) {
     const last10 = cleanPhone.slice(-10);
     const existingPhone = await db.first(
@@ -773,14 +3172,10 @@ const handleRegisterSendOtp = async (c) => {
       return jsonRes(c, false, null, "Phone number already registered. Please use another number or login.", 400);
     }
   }
-
   const identifier = (cleanEmail || cleanPhone || "user").toLowerCase();
-
-  // Invalidate previous OTPs for this identifier
-  await db.run("DELETE FROM otps WHERE LOWER(identifier) = ? OR LOWER(identifier) = ?", [identifier, cleanEmail]).catch(() => { });
-
+  await db.run("DELETE FROM otps WHERE LOWER(identifier) = ? OR LOWER(identifier) = ?", [identifier, cleanEmail]).catch(() => {
+  });
   const otp = generate6DigitOtp();
-
   try {
     await db.run(
       "INSERT INTO otps (identifier, code, expires_at) VALUES (?, ?, datetime('now', '+15 minutes'))",
@@ -801,41 +3196,34 @@ const handleRegisterSendOtp = async (c) => {
   } catch (e) {
     console.log("OTP DB insert notice:", e.message);
   }
-
   let sent = false;
   if (cleanEmail && cleanEmail.includes("@")) {
     sent = await sendRealOtpEmail(c, cleanEmail, otp, name || "User");
   } else {
-    sent = true; // Fallback for pure phone testing
+    sent = true;
   }
-
   if (!sent) {
     return jsonRes(c, false, null, "Unable to deliver OTP email. Please check your email address and try again.", 502);
   }
-
   return jsonRes(c, true, {
     message: "Registration OTP Sent to your Email",
     identifier
   }, "Registration OTP Sent Successfully");
-};
-
-const handleRegisterVerifyOtp = async (c) => {
+}, "handleRegisterSendOtp");
+var handleRegisterVerifyOtp = /* @__PURE__ */ __name(async (c) => {
   try {
     const db = getDb(c.env);
     const body = await c.req.json().catch(() => ({}));
     const { name, full_name, email, phone, role, password, otp, code } = body;
-
-    const targetEmail = (email && typeof email === "string" && email.trim()) ? email.trim().toLowerCase() : null;
+    const targetEmail = email && typeof email === "string" && email.trim() ? email.trim().toLowerCase() : null;
     const targetName = name || full_name || "Mehndi User";
-    const targetPhone = (phone && typeof phone === "string" && phone.trim()) ? phone.trim().replace(/[^0-9]/g, "") : null;
-    const targetRole = (role === "ARTIST" || role === "artist") ? "artist" : "customer";
+    const targetPhone = phone && typeof phone === "string" && phone.trim() ? phone.trim().replace(/[^0-9]/g, "") : null;
+    const targetRole = role === "ARTIST" || role === "artist" ? "artist" : "customer";
     const targetOtp = String(otp || code || "").trim();
-
     if (targetOtp) {
       let validOtp = null;
       const cleanPhoneDigits = targetPhone ? targetPhone.replace(/[^0-9]/g, "") : "";
       const last10 = cleanPhoneDigits.slice(-10);
-
       if (targetEmail) {
         validOtp = await db.first(
           "SELECT * FROM otps WHERE (LOWER(identifier) = ? OR LOWER(identifier) = ?) AND code = ? ORDER BY id DESC LIMIT 1",
@@ -857,24 +3245,20 @@ const handleRegisterVerifyOtp = async (c) => {
       if (!validOtp && (targetOtp === "123456" || targetOtp === "000000")) {
         validOtp = { id: 0, code: targetOtp, identifier: targetEmail || targetPhone || "test_user" };
       }
-
       if (!validOtp) {
         return jsonRes(c, false, null, "Invalid or expired OTP code entered. Please check your email inbox.", 400);
       }
-
-      // Single-use OTP: Invalidate immediately after successful verification
       if (validOtp.id) {
-        await db.run("DELETE FROM otps WHERE id = ? OR LOWER(identifier) = ? OR LOWER(identifier) = ?", [validOtp.id, targetEmail || "", targetPhone || ""]).catch(() => { });
+        await db.run("DELETE FROM otps WHERE id = ? OR LOWER(identifier) = ? OR LOWER(identifier) = ?", [validOtp.id, targetEmail || "", targetPhone || ""]).catch(() => {
+        });
       }
     }
-
     if (targetEmail) {
       const existingEmail = await db.first("SELECT id FROM users WHERE LOWER(email) = ?", [targetEmail]);
       if (existingEmail) {
         return jsonRes(c, false, null, "Email address already registered. Please login instead.", 400);
       }
     }
-
     if (targetPhone) {
       const last10 = targetPhone.slice(-10);
       const existingPhone = await db.first(
@@ -885,26 +3269,22 @@ const handleRegisterVerifyOtp = async (c) => {
         return jsonRes(c, false, null, "Phone number already registered. Please use another number or login.", 400);
       }
     }
-
     const res = await db.run(
       "INSERT INTO users (full_name, email, phone, password_hash, role, is_verified) VALUES (?, ?, ?, ?, ?, 1)",
       [targetName, targetEmail, targetPhone, password || "secret123", targetRole]
     );
     const newUserId = res.meta?.last_row_id || Date.now();
-
     if (targetRole === "artist") {
       await db.run(
         "INSERT INTO artist_profiles (user_id, bio, city, status, verification_status, is_available) VALUES (?, ?, ?, 'pending', 'PENDING', 0)",
         [newUserId, "", "Jaipur"]
-      ).catch(() => { });
+      ).catch(() => {
+      });
     }
-
     const user = { id: newUserId, full_name: targetName, email: targetEmail, phone: targetPhone, role: targetRole, is_verified: 1 };
-
     const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-    const payload = btoa(JSON.stringify({ id: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1000) + (86400 * 7) }));
+    const payload = btoa(JSON.stringify({ id: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1e3) + 86400 * 7 }));
     const token = `${header}.${payload}.sig`;
-
     return jsonRes(c, true, {
       token,
       user: {
@@ -921,28 +3301,21 @@ const handleRegisterVerifyOtp = async (c) => {
     console.log("Register verify OTP error:", err.message);
     return jsonRes(c, false, null, err.message || "Failed to register", 500);
   }
-};
-
-const handleSendOtp = async (c) => {
+}, "handleRegisterVerifyOtp");
+var handleSendOtp = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const body = await c.req.json().catch(() => ({}));
   const loginVal = (body.email || body.phone || body.identifier || "").trim().toLowerCase();
-
   if (!loginVal) {
     return jsonRes(c, false, null, "Email or Mobile Number is required for login", 400);
   }
-
   if (body.email && typeof body.email === "string" && body.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email.trim())) {
     return jsonRes(c, false, null, "Please enter a valid email address.", 400);
   }
-
   let user = await db.first("SELECT * FROM users WHERE LOWER(email) = ? OR phone = ?", [loginVal, loginVal]).catch(() => null);
-
-  // Invalidate previous OTPs for this identifier
-  await db.run("DELETE FROM otps WHERE LOWER(identifier) = ?", [loginVal]).catch(() => { });
-
+  await db.run("DELETE FROM otps WHERE LOWER(identifier) = ?", [loginVal]).catch(() => {
+  });
   const otp = generate6DigitOtp();
-
   try {
     await db.run(
       "INSERT INTO otps (identifier, code, expires_at) VALUES (?, ?, datetime('now', '+15 minutes'))",
@@ -963,7 +3336,6 @@ const handleSendOtp = async (c) => {
   } catch (e) {
     console.log("OTP DB insert notice:", e.message);
   }
-
   let sent = false;
   if (loginVal && loginVal.includes("@")) {
     sent = await sendRealOtpEmail(c, loginVal, otp, user?.full_name || "User");
@@ -972,51 +3344,40 @@ const handleSendOtp = async (c) => {
   } else {
     sent = true;
   }
-
   if (!user) {
     return jsonRes(c, false, { isNewUser: true, identifier: loginVal }, "User not found. Please register first.", 404);
   }
-
   if (!sent) {
     return jsonRes(c, false, null, "Unable to deliver OTP email. Please check your email address and try again.", 502);
   }
-
   return jsonRes(c, true, {
     message: "OTP Sent Successfully to your Email",
     identifier: loginVal,
     role: user.role
   }, "OTP Sent Successfully");
-};
-
-const handleVerifyOtp = async (c) => {
+}, "handleSendOtp");
+var handleVerifyOtp = /* @__PURE__ */ __name(async (c) => {
   try {
     const db = getDb(c.env);
     const body = await c.req.json().catch(() => ({}));
     const { email, phone, identifier, otp, code } = body;
     const targetEmail = (email || phone || identifier || "").trim().toLowerCase();
     const targetOtp = String(otp || code || "").trim();
-
     if (!targetEmail) {
       return jsonRes(c, false, null, "Email or Phone is required for login", 400);
     }
-
     const cleanPhoneDigits = targetEmail.replace(/[^0-9]/g, "");
     const last10 = cleanPhoneDigits.slice(-10);
-
     let user = await db.first(
       "SELECT * FROM users WHERE LOWER(email) = ? OR phone = ? OR phone = ? OR (length(?) >= 10 AND (phone LIKE ? OR phone = ?))",
       [targetEmail, targetEmail, `+91${last10}`, last10, `%${last10}`, last10]
     ).catch(() => null);
-
     if (!user) {
-      // Auto-create or resolve user
       user = await db.first("SELECT * FROM users WHERE LOWER(email) = ?", [targetEmail]).catch(() => null);
     }
-
     if (!user) {
       return jsonRes(c, false, null, "User not found. Please register first.", 404);
     }
-
     if (targetOtp) {
       let validOtp = null;
       if (targetEmail) {
@@ -1046,21 +3407,17 @@ const handleVerifyOtp = async (c) => {
       if (!validOtp && (targetOtp === "123456" || targetOtp === "000000")) {
         validOtp = { id: 0, code: targetOtp, identifier: targetEmail };
       }
-
       if (!validOtp) {
         return jsonRes(c, false, null, "Invalid or expired OTP code entered. Please check your email inbox.", 400);
       }
-
-      // Single-use OTP: Invalidate immediately after successful verification
       if (validOtp.id) {
-        await db.run("DELETE FROM otps WHERE id = ? OR LOWER(identifier) = ?", [validOtp.id, targetEmail]).catch(() => { });
+        await db.run("DELETE FROM otps WHERE id = ? OR LOWER(identifier) = ?", [validOtp.id, targetEmail]).catch(() => {
+        });
       }
     }
-
     const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-    const payload = btoa(JSON.stringify({ id: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1000) + (86400 * 7) }));
+    const payload = btoa(JSON.stringify({ id: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1e3) + 86400 * 7 }));
     const token = `${header}.${payload}.sig`;
-
     return jsonRes(c, true, {
       token,
       user: {
@@ -1076,116 +3433,96 @@ const handleVerifyOtp = async (c) => {
   } catch (err) {
     return jsonRes(c, false, null, err.message || "OTP verification failed", 500);
   }
-};
-
-const handleAdminSendOtp = async (c) => {
+}, "handleVerifyOtp");
+var handleAdminSendOtp = /* @__PURE__ */ __name(async (c) => {
   return jsonRes(c, true, {
     otp: "123456",
     message: "Admin OTP Sent Successfully"
   }, "Admin OTP Sent Successfully");
-};
-
-const handleAdminVerifyOtp = async (c) => {
+}, "handleAdminSendOtp");
+var handleAdminVerifyOtp = /* @__PURE__ */ __name(async (c) => {
   const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-  const payload = btoa(JSON.stringify({ id: 1, email: "admin@mehndigo.com", role: "admin", exp: Math.floor(Date.now() / 1000) + (86400 * 7) }));
+  const payload = btoa(JSON.stringify({ id: 1, email: "admin@mehndigo.com", role: "admin", exp: Math.floor(Date.now() / 1e3) + 86400 * 7 }));
   const token = `${header}.${payload}.sig`;
-
   return jsonRes(c, true, {
     token,
     user: { id: 1, full_name: "Admin MehndiGo", email: "admin@mehndigo.com", role: "admin", is_verified: 1 }
   }, "Admin Verified Successfully");
-};
-
-const handleUploadSignature = async (c) => {
+}, "handleAdminVerifyOtp");
+var handleUploadSignature = /* @__PURE__ */ __name(async (c) => {
   const u = getUserFromHeader(c);
   if (!u || !u.id) {
     return jsonRes(c, false, null, "Unauthorized access", 401);
   }
-
   const cloudName = c.env?.CLOUDINARY_CLOUD_NAME || "dair21jov";
   const apiKey = c.env?.CLOUDINARY_API_KEY || "344422783583887";
   const apiSecret = c.env?.CLOUDINARY_API_SECRET || "KxOubI4_DlRLsEtkP360SLlwJNg";
-
-  const timestamp = Math.floor(Date.now() / 1000);
+  const timestamp = Math.floor(Date.now() / 1e3);
   const folder = "mehndigo/portfolio";
-
   const toSign = `folder=${folder}&timestamp=${timestamp}${apiSecret}`;
   const msgUint8 = new TextEncoder().encode(toSign);
   const hashBuffer = await crypto.subtle.digest("SHA-1", msgUint8);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   const signature = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-
   return jsonRes(c, true, {
     signature,
     timestamp,
     folder,
     api_key: apiKey,
-    cloud_name: cloudName,
+    cloud_name: cloudName
   }, "Upload signature generated successfully");
-};
-
-const handleFileUpload = async (c) => {
+}, "handleUploadSignature");
+var handleFileUpload = /* @__PURE__ */ __name(async (c) => {
   const u = getUserFromHeader(c);
   if (!u || !u.id) {
     return jsonRes(c, false, null, "Unauthorized access", 401);
   }
-
   const cloudName = c.env?.CLOUDINARY_CLOUD_NAME || "dair21jov";
   const apiKey = c.env?.CLOUDINARY_API_KEY || "344422783583887";
   const apiSecret = c.env?.CLOUDINARY_API_SECRET || "KxOubI4_DlRLsEtkP360SLlwJNg";
-
   let body = {};
   try {
     body = await c.req.parseBody();
   } catch (e) {
     body = await c.req.json().catch(() => ({}));
   }
-
   const file = body.media || body.file || body.image;
   if (!file) {
     return jsonRes(c, false, null, "No file provided for upload", 400);
   }
-
   const isVideo = body.type === "video" || body.is_video === "true" || body.is_video === true;
   const resourceType = isVideo ? "video" : "image";
-  const timestamp = Math.floor(Date.now() / 1000);
+  const timestamp = Math.floor(Date.now() / 1e3);
   const folder = "mehndigo/portfolio";
-
   const toSign = `folder=${folder}&timestamp=${timestamp}${apiSecret}`;
   const msgUint8 = new TextEncoder().encode(toSign);
   const hashBuffer = await crypto.subtle.digest("SHA-1", msgUint8);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   const signature = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-
   const formData = new FormData();
   formData.append("file", file);
   formData.append("api_key", apiKey);
   formData.append("timestamp", String(timestamp));
   formData.append("folder", folder);
   formData.append("signature", signature);
-
   const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`, {
     method: "POST",
-    body: formData,
+    body: formData
   });
-
   const uploadData = await uploadRes.json().catch(() => ({}));
   if (!uploadRes.ok || !uploadData.secure_url) {
     return jsonRes(c, false, null, uploadData.error?.message || "Cloudinary upload failed", uploadRes.status || 500);
   }
-
   return jsonRes(c, true, [{
     url: uploadData.secure_url,
     secure_url: uploadData.secure_url,
     public_id: uploadData.public_id,
     resource_type: uploadData.resource_type || resourceType,
     format: uploadData.format,
-    bytes: uploadData.bytes,
+    bytes: uploadData.bytes
   }], "Media uploaded successfully");
-};
-
-// Route Registration Helper
-const addRoute = (method, path, handler) => {
+}, "handleFileUpload");
+var addRoute = /* @__PURE__ */ __name((method, path, handler) => {
   if (typeof handler !== "function") return;
   const m = String(method).toLowerCase();
   const prefixes = [
@@ -1205,7 +3542,7 @@ const addRoute = (method, path, handler) => {
     "/auth"
   ];
   const cleanPath = path.startsWith("/") ? path : `/${path}`;
-  const seen = new Set();
+  const seen = /* @__PURE__ */ new Set();
   prefixes.forEach((prefix) => {
     const fullPath = `${prefix}${cleanPath}`.replace(/\/+/g, "/");
     if (!seen.has(fullPath) && app[m]) {
@@ -1213,9 +3550,8 @@ const addRoute = (method, path, handler) => {
       app[m](fullPath, handler);
     }
   });
-};
-
-const handleGetArtistDashboard = async (c) => {
+}, "addRoute");
+var handleGetArtistDashboard = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) {
@@ -1223,26 +3559,20 @@ const handleGetArtistDashboard = async (c) => {
   }
   const user = await db.first("SELECT id, full_name, email, phone, role, is_verified, avatar FROM users WHERE id = ?", [u.id]);
   const profile = await db.first("SELECT * FROM artist_profiles WHERE user_id = ?", [u.id]).catch(() => null);
-
   if (!profile) {
     return jsonRes(c, false, null, "Artist profile not found. Please complete your onboarding first.", 404);
   }
-
   const rawStatus = profile?.verification_status || profile?.status || "PENDING";
   const canonicalVerificationStatus = String(rawStatus).toUpperCase();
   if (canonicalVerificationStatus !== "APPROVED") {
-    const errorMsg = canonicalVerificationStatus === "REJECTED"
-      ? (profile.rejection_reason ? `Your artist application has been rejected by the admin. Reason: ${profile.rejection_reason}` : "Your artist application has been rejected by the admin.")
-      : "Your artist account is pending admin approval. You will be able to access your dashboard after approval.";
+    const errorMsg = canonicalVerificationStatus === "REJECTED" ? profile.rejection_reason ? `Your artist application has been rejected by the admin. Reason: ${profile.rejection_reason}` : "Your artist application has been rejected by the admin." : "Your artist account is pending admin approval. You will be able to access your dashboard after approval.";
     return jsonRes(c, false, null, errorMsg, 403);
   }
-
   const artistName = user?.full_name || user?.name || "Artist";
   const artistAvatar = profile?.profile_image || user?.avatar || "";
-
-  const servicesCount = await db.first("SELECT COUNT(*) as count FROM services WHERE artist_id = ? OR user_id = ?", [u.id, u.id]).then(r => r?.count || 0).catch(() => 0);
-  const portfolioCount = await db.first("SELECT COUNT(*) as count FROM portfolios WHERE artist_id = ?", [u.id]).then(r => r?.count || 0).catch(() => 0);
-  const bookingsCount = await db.first("SELECT COUNT(*) as count FROM bookings WHERE artist_id = ?", [u.id]).then(r => r?.count || 0).catch(() => 0);
+  const servicesCount = await db.first("SELECT COUNT(*) as count FROM services WHERE artist_id = ? OR user_id = ?", [u.id, u.id]).then((r) => r?.count || 0).catch(() => 0);
+  const portfolioCount = await db.first("SELECT COUNT(*) as count FROM portfolios WHERE artist_id = ?", [u.id]).then((r) => r?.count || 0).catch(() => 0);
+  const bookingsCount = await db.first("SELECT COUNT(*) as count FROM bookings WHERE artist_id = ?", [u.id]).then((r) => r?.count || 0).catch(() => 0);
   const walletRow = await db.first("SELECT balance, pending_amount, pending_settlement FROM wallets WHERE user_id = ? OR artist_id = ?", [u.id, u.id]).catch(() => null);
   const walletBalance = Number(walletRow?.balance || 0);
   const pendingEarnings = Number(walletRow?.pending_amount || walletRow?.pending_settlement || 0);
@@ -1260,15 +3590,13 @@ const handleGetArtistDashboard = async (c) => {
     WHERE b.artist_id = ? OR CAST(b.artist_id AS TEXT) = CAST(? AS TEXT)
     ORDER BY b.id DESC LIMIT 10
   `, [u.id, String(u.id)]).catch(() => []);
-
   const formattedRecent = (recentBookingsList || []).map((b) => {
     const statusUpper = String(b.status || "PENDING").toUpperCase();
-    const code = b.booking_number || ("MG-" + String(b.id).padStart(6, "0"));
+    const code = b.booking_number || "MG-" + String(b.id).padStart(6, "0");
     const cName = b.customer_name || "Customer";
     const cPhone = b.customer_phone || "";
     const cEmail = b.customer_email || "";
     const cAvatar = b.customer_avatar || null;
-
     return {
       ...b,
       id: b.id,
@@ -1308,13 +3636,12 @@ const handleGetArtistDashboard = async (c) => {
       }
     };
   });
-
   return jsonRes(c, true, {
     artist: {
       name: artistName,
       full_name: artistName,
       profile_image: artistAvatar,
-      verification_status: profile?.status ? profile.status.toUpperCase() : (user?.is_verified ? "APPROVED" : "PENDING"),
+      verification_status: profile?.status ? profile.status.toUpperCase() : user?.is_verified ? "APPROVED" : "PENDING",
       avg_rating: String(profile?.rating || 0),
       total_reviews: profile?.total_reviews || 0,
       experience_years: profile?.experience_years || 0
@@ -1339,9 +3666,8 @@ const handleGetArtistDashboard = async (c) => {
     },
     recentBookings: formattedRecent
   }, "Artist dashboard data retrieved");
-};
-
-const handleGetArtistDetails = async (c) => {
+}, "handleGetArtistDashboard");
+var handleGetArtistDetails = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) {
@@ -1349,33 +3675,25 @@ const handleGetArtistDetails = async (c) => {
   }
   const user = await db.first("SELECT id, full_name, email, phone, role, is_verified, is_active, avatar FROM users WHERE id = ?", [u.id]);
   const profile = await db.first("SELECT * FROM artist_profiles WHERE user_id = ?", [u.id]).catch(() => null);
-
   const artistName = user?.full_name || user?.name || "Artist";
   const artistAvatar = profile?.profile_image || profile?.selfie_image || user?.avatar || "";
   const rawStatus = profile?.verification_status || profile?.status || "PENDING";
   const canonicalVerificationStatus = String(rawStatus).toUpperCase();
-
   const canonicalLocation = profile?.location || profile?.locality || "";
   const canonicalLocality = profile?.locality || profile?.location || "";
   const canonicalCity = profile?.city || "";
   const canonicalState = profile?.state || "";
   const canonicalPincode = profile?.pincode || "";
   const canonicalBio = profile?.bio || "";
-  const canonicalExp = profile?.experience_years !== undefined && profile?.experience_years !== null ? Number(profile.experience_years) : 0;
+  const canonicalExp = profile?.experience_years !== void 0 && profile?.experience_years !== null ? Number(profile.experience_years) : 0;
   const canonicalPrice = profile?.starting_price ? Number(profile.starting_price) : 1500;
-  const canonicalHomeSvc = profile?.home_service !== undefined ? Boolean(profile.home_service !== false && profile.home_service !== 0) : true;
+  const canonicalHomeSvc = profile?.home_service !== void 0 ? Boolean(profile.home_service !== false && profile.home_service !== 0) : true;
   const canonicalSalonSvc = Boolean(profile?.salon_service);
   const canonicalLanguages = profile?.languages || "English, Hindi";
-  const canonicalIsAvailable = profile?.is_available !== undefined ? Boolean(profile.is_available !== false && profile.is_available !== 0) : true;
-
+  const canonicalIsAvailable = profile?.is_available !== void 0 ? Boolean(profile.is_available !== false && profile.is_available !== 0) : true;
   const isProfileComplete = Boolean(
-    canonicalBio &&
-    canonicalBio.trim() !== "" &&
-    canonicalExp !== null &&
-    (canonicalCity || canonicalLocation) &&
-    (profile?.aadhaar_front || profile?.aadhaar_number)
+    canonicalBio && canonicalBio.trim() !== "" && canonicalExp !== null && (canonicalCity || canonicalLocation) && (profile?.aadhaar_front || profile?.aadhaar_number)
   );
-
   return jsonRes(c, true, {
     id: profile?.id || user?.id || u.id,
     user_id: user?.id || u.id,
@@ -1406,7 +3724,7 @@ const handleGetArtistDetails = async (c) => {
     state: canonicalState,
     pincode: canonicalPincode,
     languages: canonicalLanguages,
-    aadhaar_number: profile?.aadhaar_number ? (String(profile.aadhaar_number).replace(/\s/g, "").length >= 4 ? `•••• •••• ${String(profile.aadhaar_number).replace(/\s/g, "").slice(-4)}` : "••••") : "",
+    aadhaar_number: profile?.aadhaar_number ? String(profile.aadhaar_number).replace(/\s/g, "").length >= 4 ? `\u2022\u2022\u2022\u2022 \u2022\u2022\u2022\u2022 ${String(profile.aadhaar_number).replace(/\s/g, "").slice(-4)}` : "\u2022\u2022\u2022\u2022" : "",
     pan_number: profile?.pan_number || "",
     aadhaar_front: profile?.aadhaar_front || "",
     aadhaar_back: profile?.aadhaar_back || "",
@@ -1420,12 +3738,10 @@ const handleGetArtistDetails = async (c) => {
     verification_status: canonicalVerificationStatus,
     is_available: canonicalIsAvailable,
     rejection_reason: profile?.rejection_reason || null,
-    isProfileComplete: isProfileComplete
+    isProfileComplete
   }, "Artist details retrieved");
-};
-
-// User Profile & Pending Payment Handlers
-const handleGetProfile = async (c) => {
+}, "handleGetArtistDetails");
+var handleGetProfile = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) {
@@ -1450,9 +3766,8 @@ const handleGetProfile = async (c) => {
     state: addressRow?.state || "",
     pincode: addressRow?.pincode || ""
   });
-};
-
-const sanitizeStorageUrl = (val) => {
+}, "handleGetProfile");
+var sanitizeStorageUrl = /* @__PURE__ */ __name((val) => {
   if (!val || typeof val !== "string") return null;
   const trimmed = val.trim();
   if (!trimmed) return null;
@@ -1460,9 +3775,8 @@ const sanitizeStorageUrl = (val) => {
     return null;
   }
   return trimmed;
-};
-
-const handleUpdateProfile = async (c) => {
+}, "sanitizeStorageUrl");
+var handleUpdateProfile = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) {
@@ -1474,14 +3788,12 @@ const handleUpdateProfile = async (c) => {
   const phone = body.phone;
   const rawAvatar = body.profile_image || body.avatar;
   const avatar = sanitizeStorageUrl(rawAvatar);
-
   if (name || email || phone || avatar) {
     await db.run(
       "UPDATE users SET full_name = COALESCE(?, full_name), phone = COALESCE(?, phone), email = COALESCE(?, email), avatar = COALESCE(?, avatar) WHERE id = ?",
       [name || null, phone || null, email || null, avatar || null, u.id]
     ).catch(() => null);
   }
-
   if (body.address || body.full_address || body.city || body.pincode) {
     const fullAddress = body.address || body.full_address || "";
     const city = body.city || "";
@@ -1492,20 +3804,20 @@ const handleUpdateProfile = async (c) => {
       await db.run(
         "UPDATE customer_addresses SET full_address = ?, city = ?, state = ?, pincode = ? WHERE id = ?",
         [fullAddress, city, state, pincode, existingAddr.id]
-      ).catch(() => { });
+      ).catch(() => {
+      });
     } else {
       await db.run(
         "INSERT INTO customer_addresses (user_id, full_address, city, state, pincode, is_default) VALUES (?, ?, ?, ?, ?, 1)",
         [u.id, fullAddress, city, state, pincode]
-      ).catch(() => { });
+      ).catch(() => {
+      });
     }
   }
-
   return handleGetProfile(c);
-};
-
-const resolveFileValue = async (val) => {
-  if (val === null || val === undefined) return null;
+}, "handleUpdateProfile");
+var resolveFileValue = /* @__PURE__ */ __name(async (val) => {
+  if (val === null || val === void 0) return null;
   if (typeof val === "string") return val;
   if (typeof val === "object" && typeof val.arrayBuffer === "function") {
     try {
@@ -1525,45 +3837,41 @@ const resolveFileValue = async (val) => {
     }
   }
   return null;
-};
-
-const handleUpdateArtistProfile = async (c) => {
+}, "resolveFileValue");
+var handleUpdateArtistProfile = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) {
     return jsonRes(c, false, null, "Unauthorized access", 401);
   }
-
   let body = {};
   try {
     body = await c.req.json();
   } catch (e) {
     try {
       body = await c.req.parseBody();
-    } catch (_) { }
+    } catch (_) {
+    }
   }
-
   const name = body.full_name || body.fullName || body.name;
   const email = body.email;
   const phone = body.phone;
   const rawAvatar = body.profile_image || body.profileImage || body.avatar || body.selfie_image;
   const resolvedAvatar = await resolveFileValue(rawAvatar);
   const avatar = sanitizeStorageUrl(resolvedAvatar);
-
   if (name || email || phone || avatar) {
     await db.run(
       "UPDATE users SET full_name = COALESCE(?, full_name), phone = COALESCE(?, phone), email = COALESCE(?, email), avatar = COALESCE(?, avatar) WHERE id = ?",
       [name || null, phone || null, email || null, avatar || null, u.id]
     ).catch(() => null);
   }
-
   const bio = body.bio;
-  const experienceYears = body.experience_years !== undefined ? Number(body.experience_years) : (body.experience !== undefined ? Number(body.experience) : (body.experienceYears !== undefined ? Number(body.experienceYears) : undefined));
-  const startingPrice = body.starting_price !== undefined ? Number(body.starting_price) : (body.startingPrice !== undefined ? Number(body.startingPrice) : undefined);
-  const homeService = body.home_service !== undefined ? (body.home_service === true || body.home_service === "true" || body.home_service === 1 ? 1 : 0) : (body.homeService !== undefined ? (body.homeService ? 1 : 0) : undefined);
-  const salonService = body.salon_service !== undefined ? (body.salon_service === true || body.salon_service === "true" || body.salon_service === 1 ? 1 : 0) : (body.salonService !== undefined ? (body.salonService ? 1 : 0) : undefined);
-  const isAvailable = body.is_available !== undefined ? (body.is_available === true || body.is_available === "true" || body.is_available === 1 ? 1 : 0) : (body.isAvailable !== undefined ? (body.isAvailable ? 1 : 0) : undefined);
-  const location = body.location !== undefined ? body.location : (body.address !== undefined ? body.address : undefined);
+  const experienceYears = body.experience_years !== void 0 ? Number(body.experience_years) : body.experience !== void 0 ? Number(body.experience) : body.experienceYears !== void 0 ? Number(body.experienceYears) : void 0;
+  const startingPrice = body.starting_price !== void 0 ? Number(body.starting_price) : body.startingPrice !== void 0 ? Number(body.startingPrice) : void 0;
+  const homeService = body.home_service !== void 0 ? body.home_service === true || body.home_service === "true" || body.home_service === 1 ? 1 : 0 : body.homeService !== void 0 ? body.homeService ? 1 : 0 : void 0;
+  const salonService = body.salon_service !== void 0 ? body.salon_service === true || body.salon_service === "true" || body.salon_service === 1 ? 1 : 0 : body.salonService !== void 0 ? body.salonService ? 1 : 0 : void 0;
+  const isAvailable = body.is_available !== void 0 ? body.is_available === true || body.is_available === "true" || body.is_available === 1 ? 1 : 0 : body.isAvailable !== void 0 ? body.isAvailable ? 1 : 0 : void 0;
+  const location = body.location !== void 0 ? body.location : body.address !== void 0 ? body.address : void 0;
   const city = body.city;
   const state = body.state;
   const pincode = body.pincode;
@@ -1576,17 +3884,14 @@ const handleUpdateArtistProfile = async (c) => {
   const aadhaarBack = sanitizeStorageUrl(await resolveFileValue(rawBack));
   const latitude = body.latitude;
   const longitude = body.longitude;
-
-  // Sanitize Aadhaar: Only update if an actual 12-digit non-masked Aadhaar number was sent
-  let cleanAadhaar = undefined;
+  let cleanAadhaar = void 0;
   const rawAadhaar = body.aadhaar_number || body.aadhaarNumber;
-  if (rawAadhaar && typeof rawAadhaar === "string" && !rawAadhaar.includes("•") && !rawAadhaar.includes("*")) {
+  if (rawAadhaar && typeof rawAadhaar === "string" && !rawAadhaar.includes("\u2022") && !rawAadhaar.includes("*")) {
     const digits = rawAadhaar.replace(/[^0-9]/g, "");
     if (digits.length === 12) {
       cleanAadhaar = digits;
     }
   }
-
   const existingProfile = await db.first("SELECT id FROM artist_profiles WHERE user_id = ?", [u.id]).catch(() => null);
   if (existingProfile) {
     await db.run(`
@@ -1614,26 +3919,26 @@ const handleUpdateArtistProfile = async (c) => {
         updated_at = CURRENT_TIMESTAMP
       WHERE user_id = ?
     `, [
-      bio !== undefined ? bio : null,
-      experienceYears !== undefined ? experienceYears : null,
-      startingPrice !== undefined ? startingPrice : null,
-      homeService !== undefined ? homeService : null,
-      salonService !== undefined ? salonService : null,
-      isAvailable !== undefined ? isAvailable : null,
-      location !== undefined ? location : null,
-      location !== undefined ? location : null,
-      city !== undefined ? city : null,
-      state !== undefined ? state : null,
-      pincode !== undefined ? pincode : null,
-      languages !== undefined ? languages : null,
-      coverImage !== undefined ? coverImage : null,
-      avatar !== undefined ? avatar : null,
-      avatar !== undefined ? avatar : null,
-      cleanAadhaar !== undefined ? cleanAadhaar : null,
-      aadhaarFront !== undefined ? aadhaarFront : null,
-      aadhaarBack !== undefined ? aadhaarBack : null,
-      latitude !== undefined ? latitude : null,
-      longitude !== undefined ? longitude : null,
+      bio !== void 0 ? bio : null,
+      experienceYears !== void 0 ? experienceYears : null,
+      startingPrice !== void 0 ? startingPrice : null,
+      homeService !== void 0 ? homeService : null,
+      salonService !== void 0 ? salonService : null,
+      isAvailable !== void 0 ? isAvailable : null,
+      location !== void 0 ? location : null,
+      location !== void 0 ? location : null,
+      city !== void 0 ? city : null,
+      state !== void 0 ? state : null,
+      pincode !== void 0 ? pincode : null,
+      languages !== void 0 ? languages : null,
+      coverImage !== void 0 ? coverImage : null,
+      avatar !== void 0 ? avatar : null,
+      avatar !== void 0 ? avatar : null,
+      cleanAadhaar !== void 0 ? cleanAadhaar : null,
+      aadhaarFront !== void 0 ? aadhaarFront : null,
+      aadhaarBack !== void 0 ? aadhaarBack : null,
+      latitude !== void 0 ? latitude : null,
+      longitude !== void 0 ? longitude : null,
       u.id
     ]).catch((err) => console.warn("Artist profile update err:", err.message));
   } else {
@@ -1648,9 +3953,9 @@ const handleUpdateArtistProfile = async (c) => {
       bio || "",
       experienceYears || 0,
       startingPrice || 1500,
-      homeService !== undefined ? homeService : 1,
-      salonService !== undefined ? salonService : 0,
-      isAvailable !== undefined ? isAvailable : 1,
+      homeService !== void 0 ? homeService : 1,
+      salonService !== void 0 ? salonService : 0,
+      isAvailable !== void 0 ? isAvailable : 1,
       location || "",
       location || "",
       city || "",
@@ -1667,11 +3972,9 @@ const handleUpdateArtistProfile = async (c) => {
       longitude || "75.787270"
     ]).catch((err) => console.warn("Artist profile insert err:", err.message));
   }
-
   return handleGetArtistDetails(c);
-};
-
-const handlePendingPayment = async (c) => {
+}, "handleUpdateArtistProfile");
+var handlePendingPayment = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c) || { id: 1 };
   const pending = await db.first(`
@@ -1688,25 +3991,20 @@ const handlePendingPayment = async (c) => {
       AND status != 'cancelled'
     ORDER BY id DESC LIMIT 1
   `, [u.id, String(u.id)]).catch(() => null);
-
   if (!pending) {
     return jsonRes(c, true, null, "No pending payment");
   }
-
   const baseServiceAmount = Number(pending.base_service_amount || pending.total_amount || 0);
   const distanceKm = Number(pending.travel_distance_km || 0);
-  const isTravelConfirmed = String(pending.travel_charge_status || "").toUpperCase() === 'CONFIRMED';
+  const isTravelConfirmed = String(pending.travel_charge_status || "").toUpperCase() === "CONFIRMED";
   const travelCharge = Number(pending.travel_charge || 0);
   const settings = await getMarketplaceSettings(db);
   const calc = calculateBookingAmounts(baseServiceAmount, distanceKm, travelCharge, isTravelConfirmed, pending, settings);
-
   const advancePaidVal = Number(pending.advance_paid || calc.required_advance);
-  const remainingVal = Math.max(0, Number(pending.remaining_amount || (calc.customer_total_amount - advancePaidVal)));
-
+  const remainingVal = Math.max(0, Number(pending.remaining_amount || calc.customer_total_amount - advancePaidVal));
   if (remainingVal <= 0) {
     return jsonRes(c, true, null, "No pending payment");
   }
-
   return jsonRes(c, true, {
     ...pending,
     customer_total_amount: calc.customer_total_amount,
@@ -1719,9 +4017,8 @@ const handlePendingPayment = async (c) => {
     remaining_amount: remainingVal,
     remainingAmount: remainingVal
   }, "Pending payment found");
-};
-
-const handleGetAddresses = async (c) => {
+}, "handlePendingPayment");
+var handleGetAddresses = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c) || { id: 1 };
   try {
@@ -1730,13 +4027,11 @@ const handleGetAddresses = async (c) => {
   } catch (e) {
     return jsonRes(c, true, []);
   }
-};
-
-const handleSaveAddress = async (c) => {
+}, "handleGetAddresses");
+var handleSaveAddress = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c) || { id: 1 };
   const body = await c.req.json().catch(() => ({}));
-
   const label = body.label || body.name || "Home";
   const full_address = body.fullAddress || body.address_line_1 || body.addressLine1 || body.full_address || "Jaipur, Rajasthan";
   const house_flat = body.houseFlat || body.house_flat || "";
@@ -1747,7 +4042,6 @@ const handleSaveAddress = async (c) => {
   const latitude = body.latitude || 26.9124;
   const longitude = body.longitude || 75.7873;
   const is_default = body.isDefault || body.is_default ? 1 : 1;
-
   try {
     await db.run(
       `INSERT INTO customer_addresses (user_id, label, full_address, house_flat, landmark, city, state, pincode, latitude, longitude, is_default)
@@ -1757,7 +4051,6 @@ const handleSaveAddress = async (c) => {
   } catch (e) {
     console.log("Address DB Insert notice:", e.message);
   }
-
   const savedAddress = {
     id: Date.now(),
     user_id: u.id,
@@ -1774,11 +4067,9 @@ const handleSaveAddress = async (c) => {
     longitude,
     is_default: 1
   };
-
   return jsonRes(c, true, savedAddress, "Address saved successfully");
-};
-
-const handleGetBankAccount = async (c) => {
+}, "handleSaveAddress");
+var handleGetBankAccount = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) {
@@ -1792,7 +4083,7 @@ const handleGetBankAccount = async (c) => {
       user_id: acc.user_id,
       account_holder_name: acc.account_holder_name || "",
       account_number: acc.account_number || "",
-      account_number_masked: acc.account_number ? `•••• ${acc.account_number.slice(-4)}` : "",
+      account_number_masked: acc.account_number ? `\u2022\u2022\u2022\u2022 ${acc.account_number.slice(-4)}` : "",
       ifsc_code: acc.ifsc_code || "",
       bank_name: acc.bank_name || "",
       upi_id: acc.upi_id || "",
@@ -1801,9 +4092,8 @@ const handleGetBankAccount = async (c) => {
   } catch (e) {
     return jsonRes(c, true, null);
   }
-};
-
-const handleSaveBankAccount = async (c) => {
+}, "handleGetBankAccount");
+var handleSaveBankAccount = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) {
@@ -1815,11 +4105,9 @@ const handleSaveBankAccount = async (c) => {
   const account_holder_name = (body.account_holder_name || body.accountHolderName || body.name || "").trim();
   const bank_name = (body.bank_name || body.bankName || "Bank").trim();
   const upi_id = (body.upi_id || body.upiId || "").trim();
-
   if (!account_number || !ifsc_code || !account_holder_name || !bank_name) {
     return jsonRes(c, false, null, "Account name, account number, IFSC code, and bank name are required", 400);
   }
-
   try {
     const existing = await db.first("SELECT id FROM bank_accounts WHERE user_id = ?", [u.id]).catch(() => null);
     if (existing) {
@@ -1844,9 +4132,7 @@ const handleSaveBankAccount = async (c) => {
   } catch (e) {
     console.log("Bank account DB Save error:", e.message);
   }
-
   const saved = await db.first("SELECT * FROM bank_accounts WHERE user_id = ?", [u.id]).catch(() => null);
-
   return jsonRes(c, true, saved || {
     user_id: u.id,
     account_number,
@@ -1855,12 +4141,9 @@ const handleSaveBankAccount = async (c) => {
     bank_name,
     upi_id
   }, "Bank account saved successfully");
-};
-
-// Single Configuration Source of Truth: Platform Commission
-const PLATFORM_COMMISSION_RATE = 0.10; // 10% Platform Commission
-
-const ensureWalletTables = async (db) => {
+}, "handleSaveBankAccount");
+var PLATFORM_COMMISSION_RATE = 0.1;
+var ensureWalletTables = /* @__PURE__ */ __name(async (db) => {
   await db.run(`
     CREATE TABLE IF NOT EXISTS wallets (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1878,16 +4161,20 @@ const ensureWalletTables = async (db) => {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
-  `).catch(() => { });
-  await db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_wallets_user_id ON wallets(user_id)").catch(() => { });
-
-  // Add missing columns to existing wallets table if created previously without them
-  await db.run("ALTER TABLE wallets ADD COLUMN available_balance REAL DEFAULT 0.0").catch(() => { });
-  await db.run("ALTER TABLE wallets ADD COLUMN escrow_balance REAL DEFAULT 0.0").catch(() => { });
-  await db.run("ALTER TABLE wallets ADD COLUMN withdrawn_amount REAL DEFAULT 0.0").catch(() => { });
-  await db.run("ALTER TABLE wallets ADD COLUMN total_earnings REAL DEFAULT 0.0").catch(() => { });
-  await db.run("ALTER TABLE wallets ADD COLUMN pending_settlement REAL DEFAULT 0.0").catch(() => { });
-
+  `).catch(() => {
+  });
+  await db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_wallets_user_id ON wallets(user_id)").catch(() => {
+  });
+  await db.run("ALTER TABLE wallets ADD COLUMN available_balance REAL DEFAULT 0.0").catch(() => {
+  });
+  await db.run("ALTER TABLE wallets ADD COLUMN escrow_balance REAL DEFAULT 0.0").catch(() => {
+  });
+  await db.run("ALTER TABLE wallets ADD COLUMN withdrawn_amount REAL DEFAULT 0.0").catch(() => {
+  });
+  await db.run("ALTER TABLE wallets ADD COLUMN total_earnings REAL DEFAULT 0.0").catch(() => {
+  });
+  await db.run("ALTER TABLE wallets ADD COLUMN pending_settlement REAL DEFAULT 0.0").catch(() => {
+  });
   await db.run(`
     CREATE TABLE IF NOT EXISTS wallet_transactions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1904,44 +4191,68 @@ const ensureWalletTables = async (db) => {
       description TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
-  `).catch(() => { });
-
-  await db.run("ALTER TABLE wallet_transactions ADD COLUMN booking_id INTEGER").catch(() => { });
-  await db.run("ALTER TABLE wallet_transactions ADD COLUMN balance_before REAL DEFAULT 0.0").catch(() => { });
-  await db.run("ALTER TABLE wallet_transactions ADD COLUMN balance_after REAL DEFAULT 0.0").catch(() => { });
-  await db.run("ALTER TABLE wallet_transactions ADD COLUMN reference_id TEXT").catch(() => { });
-
-  // Add missing columns to existing bookings table
-  await db.run("ALTER TABLE bookings ADD COLUMN booking_number TEXT").catch(() => { });
-  await db.run("ALTER TABLE bookings ADD COLUMN total_amount REAL DEFAULT 0.0").catch(() => { });
-  await db.run("ALTER TABLE bookings ADD COLUMN advance_paid REAL DEFAULT 0.0").catch(() => { });
-  await db.run("ALTER TABLE bookings ADD COLUMN remaining_amount REAL DEFAULT 0.0").catch(() => { });
-  await db.run("ALTER TABLE bookings ADD COLUMN base_service_amount REAL DEFAULT 0.0").catch(() => { });
-  await db.run("ALTER TABLE bookings ADD COLUMN travel_charge REAL DEFAULT 0.0").catch(() => { });
-  await db.run("ALTER TABLE bookings ADD COLUMN travel_distance_km REAL DEFAULT 0.0").catch(() => { });
-  await db.run("ALTER TABLE bookings ADD COLUMN travel_charge_status TEXT DEFAULT 'NONE'").catch(() => { });
-  await db.run("ALTER TABLE bookings ADD COLUMN travel_charge_requested_by INTEGER").catch(() => { });
-  await db.run("ALTER TABLE bookings ADD COLUMN travel_charge_confirmed_at DATETIME").catch(() => { });
-  await db.run("ALTER TABLE bookings ADD COLUMN admin_commission REAL DEFAULT 0.0").catch(() => { });
-  await db.run("ALTER TABLE bookings ADD COLUMN artist_service_amount REAL DEFAULT 0.0").catch(() => { });
-  await db.run("ALTER TABLE bookings ADD COLUMN artist_travel_amount REAL DEFAULT 0.0").catch(() => { });
-  await db.run("ALTER TABLE bookings ADD COLUMN artist_total_payable REAL DEFAULT 0.0").catch(() => { });
-  await db.run("ALTER TABLE bookings ADD COLUMN customer_total_amount REAL DEFAULT 0.0").catch(() => { });
-  await db.run("ALTER TABLE bookings ADD COLUMN settlement_status TEXT DEFAULT 'PENDING'").catch(() => { });
-
-  // Additive Snapshot & Tax Columns to bookings table
-  await db.run("ALTER TABLE bookings ADD COLUMN commission_rate_snapshot REAL DEFAULT 0.10").catch(() => { });
-  await db.run("ALTER TABLE bookings ADD COLUMN commission_amount_snapshot REAL DEFAULT 0.0").catch(() => { });
-  await db.run("ALTER TABLE bookings ADD COLUMN travel_rate_snapshot REAL DEFAULT 5.0").catch(() => { });
-  await db.run("ALTER TABLE bookings ADD COLUMN free_distance_snapshot REAL DEFAULT 10.0").catch(() => { });
-  await db.run("ALTER TABLE bookings ADD COLUMN chargeable_distance_km REAL DEFAULT 0.0").catch(() => { });
-  await db.run("ALTER TABLE bookings ADD COLUMN taxable_amount REAL DEFAULT 0.0").catch(() => { });
-  await db.run("ALTER TABLE bookings ADD COLUMN gst_rate_snapshot REAL DEFAULT 0.0").catch(() => { });
-  await db.run("ALTER TABLE bookings ADD COLUMN gst_amount REAL DEFAULT 0.0").catch(() => { });
-  await db.run("ALTER TABLE bookings ADD COLUMN tcs_rate_snapshot REAL DEFAULT 0.0").catch(() => { });
-  await db.run("ALTER TABLE bookings ADD COLUMN tcs_amount REAL DEFAULT 0.0").catch(() => { });
-
-  // Marketplace Settings Central Configuration Table
+  `).catch(() => {
+  });
+  await db.run("ALTER TABLE wallet_transactions ADD COLUMN booking_id INTEGER").catch(() => {
+  });
+  await db.run("ALTER TABLE wallet_transactions ADD COLUMN balance_before REAL DEFAULT 0.0").catch(() => {
+  });
+  await db.run("ALTER TABLE wallet_transactions ADD COLUMN balance_after REAL DEFAULT 0.0").catch(() => {
+  });
+  await db.run("ALTER TABLE wallet_transactions ADD COLUMN reference_id TEXT").catch(() => {
+  });
+  await db.run("ALTER TABLE bookings ADD COLUMN booking_number TEXT").catch(() => {
+  });
+  await db.run("ALTER TABLE bookings ADD COLUMN total_amount REAL DEFAULT 0.0").catch(() => {
+  });
+  await db.run("ALTER TABLE bookings ADD COLUMN advance_paid REAL DEFAULT 0.0").catch(() => {
+  });
+  await db.run("ALTER TABLE bookings ADD COLUMN remaining_amount REAL DEFAULT 0.0").catch(() => {
+  });
+  await db.run("ALTER TABLE bookings ADD COLUMN base_service_amount REAL DEFAULT 0.0").catch(() => {
+  });
+  await db.run("ALTER TABLE bookings ADD COLUMN travel_charge REAL DEFAULT 0.0").catch(() => {
+  });
+  await db.run("ALTER TABLE bookings ADD COLUMN travel_distance_km REAL DEFAULT 0.0").catch(() => {
+  });
+  await db.run("ALTER TABLE bookings ADD COLUMN travel_charge_status TEXT DEFAULT 'NONE'").catch(() => {
+  });
+  await db.run("ALTER TABLE bookings ADD COLUMN travel_charge_requested_by INTEGER").catch(() => {
+  });
+  await db.run("ALTER TABLE bookings ADD COLUMN travel_charge_confirmed_at DATETIME").catch(() => {
+  });
+  await db.run("ALTER TABLE bookings ADD COLUMN admin_commission REAL DEFAULT 0.0").catch(() => {
+  });
+  await db.run("ALTER TABLE bookings ADD COLUMN artist_service_amount REAL DEFAULT 0.0").catch(() => {
+  });
+  await db.run("ALTER TABLE bookings ADD COLUMN artist_travel_amount REAL DEFAULT 0.0").catch(() => {
+  });
+  await db.run("ALTER TABLE bookings ADD COLUMN artist_total_payable REAL DEFAULT 0.0").catch(() => {
+  });
+  await db.run("ALTER TABLE bookings ADD COLUMN customer_total_amount REAL DEFAULT 0.0").catch(() => {
+  });
+  await db.run("ALTER TABLE bookings ADD COLUMN settlement_status TEXT DEFAULT 'PENDING'").catch(() => {
+  });
+  await db.run("ALTER TABLE bookings ADD COLUMN commission_rate_snapshot REAL DEFAULT 0.10").catch(() => {
+  });
+  await db.run("ALTER TABLE bookings ADD COLUMN commission_amount_snapshot REAL DEFAULT 0.0").catch(() => {
+  });
+  await db.run("ALTER TABLE bookings ADD COLUMN travel_rate_snapshot REAL DEFAULT 5.0").catch(() => {
+  });
+  await db.run("ALTER TABLE bookings ADD COLUMN free_distance_snapshot REAL DEFAULT 10.0").catch(() => {
+  });
+  await db.run("ALTER TABLE bookings ADD COLUMN chargeable_distance_km REAL DEFAULT 0.0").catch(() => {
+  });
+  await db.run("ALTER TABLE bookings ADD COLUMN taxable_amount REAL DEFAULT 0.0").catch(() => {
+  });
+  await db.run("ALTER TABLE bookings ADD COLUMN gst_rate_snapshot REAL DEFAULT 0.0").catch(() => {
+  });
+  await db.run("ALTER TABLE bookings ADD COLUMN gst_amount REAL DEFAULT 0.0").catch(() => {
+  });
+  await db.run("ALTER TABLE bookings ADD COLUMN tcs_rate_snapshot REAL DEFAULT 0.0").catch(() => {
+  });
+  await db.run("ALTER TABLE bookings ADD COLUMN tcs_amount REAL DEFAULT 0.0").catch(() => {
+  });
   await db.run(`
     CREATE TABLE IF NOT EXISTS marketplace_settings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1950,17 +4261,22 @@ const ensureWalletTables = async (db) => {
       description TEXT,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
-  `).catch(() => { });
-
-  await db.run("INSERT OR IGNORE INTO marketplace_settings (key, value, description) VALUES ('platform_commission_rate', '0.10', 'Default platform commission rate (10%)')").catch(() => { });
-  await db.run("INSERT OR IGNORE INTO marketplace_settings (key, value, description) VALUES ('travel_free_distance_km', '10.0', 'Free travel distance limit in KM (0-10 KM FREE)')").catch(() => { });
-  await db.run("INSERT OR IGNORE INTO marketplace_settings (key, value, description) VALUES ('travel_rate_per_km', '5.0', 'Travel charge rate per KM for distance exceeding free limit')").catch(() => { });
-  await db.run("INSERT OR IGNORE INTO marketplace_settings (key, value, description) VALUES ('tax_enabled', '0', 'Tax GST accounting enabled (0 = Disabled, 1 = Enabled)')").catch(() => { });
-  await db.run("INSERT OR IGNORE INTO marketplace_settings (key, value, description) VALUES ('gst_rate', '0.0', 'Configured GST tax rate percentage')").catch(() => { });
-  await db.run("INSERT OR IGNORE INTO marketplace_settings (key, value, description) VALUES ('tcs_rate', '0.0', 'E-commerce TCS rate percentage')").catch(() => { });
-  await db.run("INSERT OR IGNORE INTO marketplace_settings (key, value, description) VALUES ('min_withdrawal_amount', '100.0', 'Minimum withdrawal amount in INR')").catch(() => { });
-
-  // Master Financial Ledger Table
+  `).catch(() => {
+  });
+  await db.run("INSERT OR IGNORE INTO marketplace_settings (key, value, description) VALUES ('platform_commission_rate', '0.10', 'Default platform commission rate (10%)')").catch(() => {
+  });
+  await db.run("INSERT OR IGNORE INTO marketplace_settings (key, value, description) VALUES ('travel_free_distance_km', '10.0', 'Free travel distance limit in KM (0-10 KM FREE)')").catch(() => {
+  });
+  await db.run("INSERT OR IGNORE INTO marketplace_settings (key, value, description) VALUES ('travel_rate_per_km', '5.0', 'Travel charge rate per KM for distance exceeding free limit')").catch(() => {
+  });
+  await db.run("INSERT OR IGNORE INTO marketplace_settings (key, value, description) VALUES ('tax_enabled', '0', 'Tax GST accounting enabled (0 = Disabled, 1 = Enabled)')").catch(() => {
+  });
+  await db.run("INSERT OR IGNORE INTO marketplace_settings (key, value, description) VALUES ('gst_rate', '0.0', 'Configured GST tax rate percentage')").catch(() => {
+  });
+  await db.run("INSERT OR IGNORE INTO marketplace_settings (key, value, description) VALUES ('tcs_rate', '0.0', 'E-commerce TCS rate percentage')").catch(() => {
+  });
+  await db.run("INSERT OR IGNORE INTO marketplace_settings (key, value, description) VALUES ('min_withdrawal_amount', '100.0', 'Minimum withdrawal amount in INR')").catch(() => {
+  });
   await db.run(`
     CREATE TABLE IF NOT EXISTS master_financial_ledger (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1999,33 +4315,34 @@ const ensureWalletTables = async (db) => {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
-  `).catch(() => { });
-
-  // Seed essential users & services if missing
-  await db.run("INSERT OR IGNORE INTO users (id, full_name, email, phone, role, is_verified) VALUES (1, 'Customer One', 'customer1@mehndigo.in', '9829011000', 'customer', 1)").catch(() => { });
-  await db.run("INSERT OR IGNORE INTO users (id, full_name, email, phone, role, is_verified) VALUES (231, 'Sonu Yadav', 'artist_31_sonuyadavmasterartist@mehndigo.in', '9829011031', 'artist', 1)").catch(() => { });
-  await db.run("INSERT OR IGNORE INTO services (id, title, price) VALUES (1, 'Bridal Mehndi Service', 378.0)").catch(() => { });
-
-  await db.run("CREATE INDEX IF NOT EXISTS idx_wallet_tx_wallet_id ON wallet_transactions(wallet_id)").catch(() => { });
-  await db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_wallet_tx_booking_type ON wallet_transactions(booking_id, type)").catch(() => { });
-};
-
-// Helper: Fetch central marketplace configuration with fallbacks
-const getMarketplaceSettings = async (db) => {
+  `).catch(() => {
+  });
+  await db.run("INSERT OR IGNORE INTO users (id, full_name, email, phone, role, is_verified) VALUES (1, 'Customer One', 'customer1@mehndigo.in', '9829011000', 'customer', 1)").catch(() => {
+  });
+  await db.run("INSERT OR IGNORE INTO users (id, full_name, email, phone, role, is_verified) VALUES (231, 'Sonu Yadav', 'artist_31_sonuyadavmasterartist@mehndigo.in', '9829011031', 'artist', 1)").catch(() => {
+  });
+  await db.run("INSERT OR IGNORE INTO services (id, title, price) VALUES (1, 'Bridal Mehndi Service', 378.0)").catch(() => {
+  });
+  await db.run("CREATE INDEX IF NOT EXISTS idx_wallet_tx_wallet_id ON wallet_transactions(wallet_id)").catch(() => {
+  });
+  await db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_wallet_tx_booking_type ON wallet_transactions(booking_id, type)").catch(() => {
+  });
+}, "ensureWalletTables");
+var getMarketplaceSettings = /* @__PURE__ */ __name(async (db) => {
   try {
     const rows = await db.all("SELECT key, value FROM marketplace_settings").catch(() => []);
     const settings = {
-      platform_commission_rate: 0.10,
-      travel_free_distance_km: 10.0,
-      travel_rate_per_km: 5.0,
+      platform_commission_rate: 0.1,
+      travel_free_distance_km: 10,
+      travel_rate_per_km: 5,
       tax_enabled: 0,
-      gst_rate: 0.0,
-      tcs_rate: 0.0,
-      min_withdrawal_amount: 100.0
+      gst_rate: 0,
+      tcs_rate: 0,
+      min_withdrawal_amount: 100
     };
     if (Array.isArray(rows)) {
       for (const row of rows) {
-        if (row.key && row.value !== undefined) {
+        if (row.key && row.value !== void 0) {
           settings[row.key] = Number(row.value);
         }
       }
@@ -2033,57 +4350,39 @@ const getMarketplaceSettings = async (db) => {
     return settings;
   } catch (e) {
     return {
-      platform_commission_rate: 0.10,
-      travel_free_distance_km: 10.0,
-      travel_rate_per_km: 5.0,
+      platform_commission_rate: 0.1,
+      travel_free_distance_km: 10,
+      travel_rate_per_km: 5,
       tax_enabled: 0,
-      gst_rate: 0.0,
-      tcs_rate: 0.0,
-      min_withdrawal_amount: 100.0
+      gst_rate: 0,
+      tcs_rate: 0,
+      min_withdrawal_amount: 100
     };
   }
-};
-
-// Server-side Single Source of Truth for Booking Financial Calculations
-const calculateBookingAmounts = (
-  baseServiceAmount,
-  distanceKm = 0,
-  travelChargeOverride = 0,
-  isTravelConfirmed = false,
-  snapshots = {},
-  settings = {}
-) => {
+}, "getMarketplaceSettings");
+var calculateBookingAmounts = /* @__PURE__ */ __name((baseServiceAmount, distanceKm = 0, travelChargeOverride = 0, isTravelConfirmed = false, snapshots = {}, settings = {}) => {
   const base = Math.max(0, Number(baseServiceAmount || 0));
   const commissionRate = Number(
-    snapshots.commission_rate_snapshot ?? snapshots.commission_rate ?? settings.platform_commission_rate ?? 0.10
+    snapshots.commission_rate_snapshot ?? snapshots.commission_rate ?? settings.platform_commission_rate ?? 0.1
   );
   const freeDistance = Number(
-    snapshots.free_distance_snapshot ?? snapshots.free_distance_km ?? settings.travel_free_distance_km ?? 10.0
+    snapshots.free_distance_snapshot ?? snapshots.free_distance_km ?? settings.travel_free_distance_km ?? 10
   );
   const travelRate = Number(
-    snapshots.travel_rate_snapshot ?? snapshots.travel_rate_per_km ?? settings.travel_rate_per_km ?? 5.0
+    snapshots.travel_rate_snapshot ?? snapshots.travel_rate_per_km ?? settings.travel_rate_per_km ?? 5
   );
-
   const dist = Math.max(0, Number(distanceKm || 0));
   const chargeableDistance = Math.max(0, dist - freeDistance);
   const calculatedTravelCharge = Math.round(chargeableDistance * travelRate * 100) / 100;
-
-  // Effective travel charge is added ONLY if travel charge is CONFIRMED by customer
   const travelChargeToUse = travelChargeOverride > 0 ? Number(travelChargeOverride) : calculatedTravelCharge;
   const confirmedTravelCharge = isTravelConfirmed ? travelChargeToUse : 0;
-
-  // Platform Commission calculated strictly on Base Service Amount ONLY
   const adminCommission = Math.round(base * commissionRate * 100) / 100;
   const artistServiceEarning = Math.round((base - adminCommission) * 100) / 100;
-  const artistTravelEarning = confirmedTravelCharge; // 100% Artist Earning
+  const artistTravelEarning = confirmedTravelCharge;
   const artistTotalPayable = Math.round((artistServiceEarning + artistTravelEarning) * 100) / 100;
-
-  // Customer Total Amount = Base Service Amount + Confirmed Travel Charge (NO customer platform fee)
   const customerTotalAmount = Math.round((base + confirmedTravelCharge) * 100) / 100;
-
-  const requiredAdvance = Math.round(customerTotalAmount * 0.10);
+  const requiredAdvance = Math.round(customerTotalAmount * 0.1);
   const remainingCash = Math.max(0, customerTotalAmount - requiredAdvance);
-
   return {
     base_service_amount: base,
     distance_km: dist,
@@ -2105,9 +4404,8 @@ const calculateBookingAmounts = (
     required_advance: requiredAdvance,
     remaining_cash: remainingCash
   };
-};
-
-const recordMasterFinancialLedger = async (db, booking, calc, paymentInfo = {}) => {
+}, "calculateBookingAmounts");
+var recordMasterFinancialLedger = /* @__PURE__ */ __name(async (db, booking, calc, paymentInfo = {}) => {
   if (!booking) return null;
   const bookingId = booking.id;
   const customerId = booking.customer_id || booking.user_id || 1;
@@ -2115,7 +4413,6 @@ const recordMasterFinancialLedger = async (db, booking, calc, paymentInfo = {}) 
   const txId = paymentInfo.transaction_id || `MFL_${bookingId}_${Date.now()}`;
   const gatewayOrderId = paymentInfo.gateway_order_id || booking.razorpay_order_id || booking.payment_session_id || `ORD_${bookingId}`;
   const gatewayPaymentId = paymentInfo.gateway_payment_id || booking.razorpay_payment_id || `PAY_${bookingId}`;
-
   await db.run(`
     INSERT OR REPLACE INTO master_financial_ledger (
       transaction_id, booking_id, customer_id, artist_id, payment_id,
@@ -2137,57 +4434,70 @@ const recordMasterFinancialLedger = async (db, booking, calc, paymentInfo = {}) 
       ?, ?, ?, CURRENT_TIMESTAMP
     )
   `, [
-    txId, bookingId, customerId, artistId, paymentInfo.payment_id || null,
-    gatewayOrderId, gatewayPaymentId, calc.base_service_amount || 0, calc.distance_km || 0,
-    calc.free_distance_km || 10, calc.chargeable_distance_km || 0, calc.travel_rate_per_km || 5, calc.travel_charge || 0,
-    booking.travel_charge_status || (calc.is_travel_confirmed ? 'CONFIRMED' : 'NONE'),
-    calc.commission_rate_snapshot || 0.10, calc.admin_commission || 0,
-    calc.artist_service_earning || 0, calc.artist_travel_earning || 0, calc.artist_total_payable || 0,
-    calc.customer_total_amount || 0, calc.taxable_amount || 0, calc.gst_rate || 0, 0, 0,
-    0, 0, calc.tcs_rate || 0, 0, calc.admin_commission || 0,
-    paymentInfo.payment_status || 'PAID', booking.settlement_status || 'PENDING', paymentInfo.refund_status || 'NONE'
+    txId,
+    bookingId,
+    customerId,
+    artistId,
+    paymentInfo.payment_id || null,
+    gatewayOrderId,
+    gatewayPaymentId,
+    calc.base_service_amount || 0,
+    calc.distance_km || 0,
+    calc.free_distance_km || 10,
+    calc.chargeable_distance_km || 0,
+    calc.travel_rate_per_km || 5,
+    calc.travel_charge || 0,
+    booking.travel_charge_status || (calc.is_travel_confirmed ? "CONFIRMED" : "NONE"),
+    calc.commission_rate_snapshot || 0.1,
+    calc.admin_commission || 0,
+    calc.artist_service_earning || 0,
+    calc.artist_travel_earning || 0,
+    calc.artist_total_payable || 0,
+    calc.customer_total_amount || 0,
+    calc.taxable_amount || 0,
+    calc.gst_rate || 0,
+    0,
+    0,
+    0,
+    0,
+    calc.tcs_rate || 0,
+    0,
+    calc.admin_commission || 0,
+    paymentInfo.payment_status || "PAID",
+    booking.settlement_status || "PENDING",
+    paymentInfo.refund_status || "NONE"
   ]).catch((e) => console.log("Master financial ledger record error:", e.message));
-};
-
-const processBookingEscrow = async (db, bookingId, paymentId, paidAmount) => {
+}, "recordMasterFinancialLedger");
+var processBookingEscrow = /* @__PURE__ */ __name(async (db, bookingId, paymentId, paidAmount) => {
   await ensureWalletTables(db);
   const settings = await getMarketplaceSettings(db);
-
   let booking = await db.first(
     "SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT) OR booking_number = ? OR CAST(booking_number AS TEXT) = CAST(? AS TEXT)",
     [bookingId, String(bookingId), String(bookingId), String(bookingId)]
   ).catch(() => null);
-
   if (!booking) {
     booking = await db.first("SELECT * FROM bookings ORDER BY id DESC LIMIT 1").catch(() => null);
   }
   if (!booking) return null;
-
   const realBookingId = booking.id;
   const artistId = booking.artist_id || 231;
   const refCode = `ESCROW_BK_${realBookingId}`;
-
   const existingEscrow = await db.first(
     "SELECT * FROM wallet_transactions WHERE reference_id = ? OR (user_id = ? AND type = 'BOOKING_ESCROW' AND description LIKE ?)",
     [refCode, artistId, `%#${realBookingId}%`]
   ).catch(() => null);
-
   if (existingEscrow) {
     console.log(`[WALLET] Escrow transaction already exists for booking #${realBookingId}`);
     return existingEscrow;
   }
-
-  const baseAmount = Number(booking.base_service_amount || booking.total_amount || booking.final_amount || paidAmount || 378.00);
+  const baseAmount = Number(booking.base_service_amount || booking.total_amount || booking.final_amount || paidAmount || 378);
   const distanceKm = Number(booking.travel_distance_km || 0);
-  const isTravelConfirmed = String(booking.travel_charge_status).toUpperCase() === 'CONFIRMED';
+  const isTravelConfirmed = String(booking.travel_charge_status).toUpperCase() === "CONFIRMED";
   const travelCharge = Number(booking.travel_charge || 0);
-
   const calc = calculateBookingAmounts(baseAmount, distanceKm, travelCharge, isTravelConfirmed, booking, settings);
   const commission = calc.admin_commission;
   const artistEarning = calc.artist_total_payable;
   const bookingTotal = calc.customer_total_amount;
-
-  // Persist financial snapshot to bookings row
   await db.run(`
     UPDATE bookings SET
       base_service_amount = ?,
@@ -2219,184 +4529,148 @@ const processBookingEscrow = async (db, bookingId, paymentId, paidAmount) => {
     calc.artist_total_payable,
     calc.customer_total_amount,
     realBookingId
-  ]).catch(() => { });
-
+  ]).catch(() => {
+  });
   let wallet = await db.first("SELECT * FROM wallets WHERE user_id = ? OR artist_id = ?", [artistId, artistId]).catch(() => null);
   if (!wallet) {
     await db.run(
       "INSERT INTO wallets (user_id, artist_id, balance, available_balance, escrow_balance, total_earnings, withdrawn_amount) VALUES (?, ?, 0.0, 0.0, 0.0, 0.0, 0.0)",
       [artistId, artistId]
-    ).catch(() => { });
+    ).catch(() => {
+    });
     wallet = await db.first("SELECT * FROM wallets WHERE user_id = ? OR artist_id = ?", [artistId, artistId]).catch(() => null);
   }
-
   const walletId = wallet?.id || 1;
   const currentEscrow = Number(wallet?.escrow_balance || wallet?.pending_settlement || 0);
   const newEscrow = Math.round((currentEscrow + artistEarning) * 100) / 100;
-
   await db.run(
     "UPDATE wallets SET escrow_balance = ?, pending_settlement = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
     [newEscrow, newEscrow, walletId]
-  ).catch(() => { });
-
-  const desc = `Booking #${booking.booking_number || realBookingId} Earning held in Pending (Commission ${(calc.commission_rate_snapshot * 100).toFixed(0)}%: ₹${commission.toFixed(2)})`;
-
+  ).catch(() => {
+  });
+  const desc = `Booking #${booking.booking_number || realBookingId} Earning held in Pending (Commission ${(calc.commission_rate_snapshot * 100).toFixed(0)}%: \u20B9${commission.toFixed(2)})`;
   await db.run(
     `INSERT INTO wallet_transactions (wallet_id, user_id, type, amount, description, status, reference_id)
      VALUES (?, ?, 'credit', ?, ?, 'escrow_held', ?)`,
     [walletId, artistId, artistEarning, desc, refCode]
   ).catch((e) => console.log("Insert escrow tx error:", e.message));
-
-  // Record entry into Master Financial Ledger
   await recordMasterFinancialLedger(db, booking, calc, {
     payment_id: paymentId,
-    payment_status: 'PAID'
+    payment_status: "PAID"
   });
-
-  console.log(`[WALLET ESCROW] Booking #${realBookingId} Total: ₹${bookingTotal} | Commission (${(calc.commission_rate_snapshot * 100)}%): ₹${commission} | Artist Pending Earning: ₹${artistEarning}`);
+  console.log(`[WALLET ESCROW] Booking #${realBookingId} Total: \u20B9${bookingTotal} | Commission (${calc.commission_rate_snapshot * 100}%): \u20B9${commission} | Artist Pending Earning: \u20B9${artistEarning}`);
   return { artistEarning, commission, newEscrow };
-};
-
-const processBookingSettlement = async (db, bookingId) => {
+}, "processBookingEscrow");
+var processBookingSettlement = /* @__PURE__ */ __name(async (db, bookingId) => {
   await ensureWalletTables(db);
   const settings = await getMarketplaceSettings(db);
-
   let booking = await db.first(
     "SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT) OR booking_number = ? OR CAST(booking_number AS TEXT) = CAST(? AS TEXT)",
     [bookingId, String(bookingId), String(bookingId), String(bookingId)]
   ).catch(() => null);
-
   if (!booking) {
     booking = await db.first("SELECT * FROM bookings ORDER BY id DESC LIMIT 1").catch(() => null);
   }
   if (!booking) return null;
-
   const realBookingId = booking.id;
   const artistId = booking.artist_id || 231;
   const refCode = `RELEASE_BK_${realBookingId}`;
-
   const existingRelease = await db.first(
     "SELECT * FROM wallet_transactions WHERE reference_id = ? OR (user_id = ? AND (reference_id = ? OR description LIKE ?))",
     [refCode, artistId, refCode, `%#${realBookingId}%`]
   ).catch(() => null);
-
   if (existingRelease) {
     console.log(`[WALLET SETTLEMENT] Settlement already completed for booking #${realBookingId}`);
     return existingRelease;
   }
-
-  const baseAmount = Number(booking.base_service_amount || booking.total_amount || booking.final_amount || 378.00);
+  const baseAmount = Number(booking.base_service_amount || booking.total_amount || booking.final_amount || 378);
   const distanceKm = Number(booking.travel_distance_km || 0);
-  const isTravelConfirmed = String(booking.travel_charge_status).toUpperCase() === 'CONFIRMED';
+  const isTravelConfirmed = String(booking.travel_charge_status).toUpperCase() === "CONFIRMED";
   const travelCharge = Number(booking.travel_charge || 0);
-
   const calc = calculateBookingAmounts(baseAmount, distanceKm, travelCharge, isTravelConfirmed, booking, settings);
   const commission = calc.admin_commission;
   const artistEarning = calc.artist_total_payable;
-
   let wallet = await db.first("SELECT * FROM wallets WHERE user_id = ? OR artist_id = ?", [artistId, artistId]).catch(() => null);
   if (!wallet) {
-    await db.run("INSERT INTO wallets (user_id, artist_id, balance, available_balance, escrow_balance, total_earnings, withdrawn_amount) VALUES (?, ?, 0.0, 0.0, 0.0, 0.0, 0.0)", [artistId, artistId]).catch(() => { });
+    await db.run("INSERT INTO wallets (user_id, artist_id, balance, available_balance, escrow_balance, total_earnings, withdrawn_amount) VALUES (?, ?, 0.0, 0.0, 0.0, 0.0, 0.0)", [artistId, artistId]).catch(() => {
+    });
     wallet = await db.first("SELECT * FROM wallets WHERE user_id = ? OR artist_id = ?", [artistId, artistId]).catch(() => null);
   }
-
   const walletId = wallet?.id || 1;
   const currentAvailable = Number(wallet?.balance || wallet?.available_balance || 0);
   const currentEscrow = Number(wallet?.escrow_balance || wallet?.pending_settlement || 0);
   const currentLifetime = Number(wallet?.total_earnings || 0);
-
   const newAvailable = Math.round((currentAvailable + artistEarning) * 100) / 100;
   const newEscrow = Math.max(0, Math.round((currentEscrow - artistEarning) * 100) / 100);
   const newLifetime = Math.round((currentLifetime + artistEarning) * 100) / 100;
-
   await db.run(
     "UPDATE wallets SET balance = ?, available_balance = ?, escrow_balance = ?, pending_settlement = ?, total_earnings = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
     [newAvailable, newAvailable, newEscrow, newEscrow, newLifetime, walletId]
-  ).catch(() => { });
-
-  // Update settlement status on booking
-  await db.run("UPDATE bookings SET settlement_status = 'SETTLED' WHERE id = ?", [realBookingId]).catch(() => { });
-
-  const desc = `Settlement Released for Completed Booking #${booking.booking_number || realBookingId} (₹${artistEarning.toFixed(2)})`;
-
+  ).catch(() => {
+  });
+  await db.run("UPDATE bookings SET settlement_status = 'SETTLED' WHERE id = ?", [realBookingId]).catch(() => {
+  });
+  const desc = `Settlement Released for Completed Booking #${booking.booking_number || realBookingId} (\u20B9${artistEarning.toFixed(2)})`;
   await db.run(
     `INSERT INTO wallet_transactions (wallet_id, user_id, type, amount, description, status, reference_id)
      VALUES (?, ?, 'credit', ?, ?, 'completed', ?)`,
     [walletId, artistId, artistEarning, desc, refCode]
   ).catch((e) => console.log("Insert release tx error:", e.message));
-
-  // Record platform revenue in platform ledger (user_id = 0, wallet_id = 0)
   await db.run(
     `INSERT INTO wallet_transactions (wallet_id, user_id, type, amount, description, status, reference_id)
      VALUES (0, 0, 'credit', ?, ?, 'completed', ?)`,
-    [commission, `MehndiGo Platform Revenue (${(calc.commission_rate_snapshot * 100)}%) on Booking #${booking.booking_number || realBookingId}`, `COMMISSION_BK_${realBookingId}`]
-  ).catch(() => { });
-
-  // Update Master Financial Ledger with SETTLED status
-  await recordMasterFinancialLedger(db, booking, calc, {
-    payment_status: 'PAID',
-    settlement_status: 'SETTLED'
+    [commission, `MehndiGo Platform Revenue (${calc.commission_rate_snapshot * 100}%) on Booking #${booking.booking_number || realBookingId}`, `COMMISSION_BK_${realBookingId}`]
+  ).catch(() => {
   });
-
-  console.log(`[WALLET SETTLEMENT] Booking #${realBookingId} Released to Available Balance: ₹${artistEarning} | New Available Balance: ₹${newAvailable} | Platform Commission: ₹${commission}`);
+  await recordMasterFinancialLedger(db, booking, calc, {
+    payment_status: "PAID",
+    settlement_status: "SETTLED"
+  });
+  console.log(`[WALLET SETTLEMENT] Booking #${realBookingId} Released to Available Balance: \u20B9${artistEarning} | New Available Balance: \u20B9${newAvailable} | Platform Commission: \u20B9${commission}`);
   return { artistEarning, commission, newAvailable, newEscrow };
-};
-
-const processBookingRefund = async (db, bookingId, reason) => {
+}, "processBookingSettlement");
+var processBookingRefund = /* @__PURE__ */ __name(async (db, bookingId, reason) => {
   await ensureWalletTables(db);
   let booking = await db.first(
     "SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT) OR booking_number = ? OR CAST(booking_number AS TEXT) = CAST(? AS TEXT)",
     [bookingId, String(bookingId), String(bookingId), String(bookingId)]
   ).catch(() => null);
-
   if (!booking) {
     booking = await db.first("SELECT * FROM bookings ORDER BY id DESC LIMIT 1").catch(() => null);
   }
   if (!booking) return null;
-
   const realBookingId = booking.id;
   const artistId = booking.artist_id || 231;
   const refCode = `REFUND_BK_${realBookingId}`;
-
   const existingRefund = await db.first(
     "SELECT * FROM wallet_transactions WHERE reference_id = ? OR (user_id = ? AND (reference_id = ? OR description LIKE ?))",
     [refCode, artistId, refCode, `%#${realBookingId}%`]
   ).catch(() => null);
-
   if (existingRefund) return existingRefund;
-
   const escrowTx = await db.first(
     "SELECT * FROM wallet_transactions WHERE reference_id = ? OR (user_id = ? AND (reference_id = ? OR description LIKE ?))",
     [`ESCROW_BK_${realBookingId}`, artistId, `ESCROW_BK_${realBookingId}`, `%#${realBookingId}%`]
   ).catch(() => null);
-
-  const artistEarning = escrowTx ? Number(escrowTx.amount || 0) : 340.20;
-
+  const artistEarning = escrowTx ? Number(escrowTx.amount || 0) : 340.2;
   let wallet = await db.first("SELECT * FROM wallets WHERE user_id = ? OR artist_id = ?", [artistId, artistId]).catch(() => null);
   if (!wallet) return null;
-
   const walletId = wallet.id || 1;
   const currentEscrow = Number(wallet.escrow_balance || wallet.pending_settlement || 0);
   const newEscrow = Math.max(0, Math.round((currentEscrow - artistEarning) * 100) / 100);
-
   await db.run(
     "UPDATE wallets SET escrow_balance = ?, pending_settlement = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
     [newEscrow, newEscrow, walletId]
   );
-
-  const desc = `Booking #${booking.booking_number || realBookingId} Cancelled — Escrow Reversed (${reason || 'Customer Cancellation'})`;
-
+  const desc = `Booking #${booking.booking_number || realBookingId} Cancelled \u2014 Escrow Reversed (${reason || "Customer Cancellation"})`;
   await db.run(
     `INSERT INTO wallet_transactions (wallet_id, user_id, type, amount, description, status, reference_id)
      VALUES (?, ?, 'debit', ?, ?, 'escrow_reversed', ?)`,
     [walletId, artistId, artistEarning, desc, refCode]
   );
-
-  console.log(`[WALLET REFUND] Booking #${realBookingId} Reversed Escrow: ₹${artistEarning}`);
+  console.log(`[WALLET REFUND] Booking #${realBookingId} Reversed Escrow: \u20B9${artistEarning}`);
   return { artistEarning, newEscrow };
-};
-
-const handleGetWallet = async (c) => {
+}, "processBookingRefund");
+var handleGetWallet = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) {
@@ -2404,7 +4678,6 @@ const handleGetWallet = async (c) => {
   }
   try {
     await ensureWalletTables(db);
-
     let wallet = await db.first("SELECT * FROM wallets WHERE user_id = ? OR artist_id = ?", [u.id, u.id]).catch(() => null);
     if (!wallet) {
       await db.run(
@@ -2413,12 +4686,10 @@ const handleGetWallet = async (c) => {
       ).catch(() => null);
       wallet = await db.first("SELECT * FROM wallets WHERE user_id = ? OR artist_id = ?", [u.id, u.id]).catch(() => null);
     }
-
     const availBal = Math.round(Number(wallet?.balance || wallet?.available_balance || 0) * 100) / 100;
     const escrowBal = Math.round(Number(wallet?.escrow_balance || wallet?.pending_settlement || 0) * 100) / 100;
     const totalEar = Math.round(Number(wallet?.total_earnings || 0) * 100) / 100;
     const withAmt = Math.round(Number(wallet?.withdrawn_amount || 0) * 100) / 100;
-
     const normalized = {
       id: wallet?.id || 0,
       user_id: u.id,
@@ -2437,17 +4708,15 @@ const handleGetWallet = async (c) => {
       pending_settlement: escrowBal,
       withdrawn_amount: withAmt,
       withdrawnAmount: withAmt,
-      updated_at: wallet?.updated_at || new Date().toISOString()
+      updated_at: wallet?.updated_at || (/* @__PURE__ */ new Date()).toISOString()
     };
-
     return jsonRes(c, true, normalized);
   } catch (e) {
     return jsonRes(c, false, null, e.message || "Failed to fetch wallet", 500);
   }
-};
-
-const normalizeIsoDate = (dStr) => {
-  if (!dStr) return new Date().toISOString();
+}, "handleGetWallet");
+var normalizeIsoDate = /* @__PURE__ */ __name((dStr) => {
+  if (!dStr) return (/* @__PURE__ */ new Date()).toISOString();
   if (typeof dStr === "string") {
     const trimmed = dStr.trim();
     if (/^\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}/.test(trimmed)) {
@@ -2459,29 +4728,27 @@ const normalizeIsoDate = (dStr) => {
     const parsed = new Date(trimmed);
     if (!isNaN(parsed.getTime())) return parsed.toISOString();
   }
-  if (dStr instanceof Date) return isNaN(dStr.getTime()) ? new Date().toISOString() : dStr.toISOString();
-  return new Date().toISOString();
-};
-
-const handleGetWalletTransactions = async (c) => {
+  if (dStr instanceof Date) return isNaN(dStr.getTime()) ? (/* @__PURE__ */ new Date()).toISOString() : dStr.toISOString();
+  return (/* @__PURE__ */ new Date()).toISOString();
+}, "normalizeIsoDate");
+var handleGetWalletTransactions = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) {
     return jsonRes(c, false, null, "Unauthorized access", 401);
   }
   try {
-    await db.run("CREATE TABLE IF NOT EXISTS wallet_transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, wallet_id INTEGER, user_id INTEGER, booking_id INTEGER, type TEXT, amount REAL, status TEXT DEFAULT 'completed', description TEXT, reference_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)").catch(() => { });
-    await db.run("CREATE INDEX IF NOT EXISTS idx_wallet_tx_wallet_id ON wallet_transactions(wallet_id)").catch(() => { });
-
+    await db.run("CREATE TABLE IF NOT EXISTS wallet_transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, wallet_id INTEGER, user_id INTEGER, booking_id INTEGER, type TEXT, amount REAL, status TEXT DEFAULT 'completed', description TEXT, reference_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)").catch(() => {
+    });
+    await db.run("CREATE INDEX IF NOT EXISTS idx_wallet_tx_wallet_id ON wallet_transactions(wallet_id)").catch(() => {
+    });
     const wallet = await db.first("SELECT id FROM wallets WHERE user_id = ? OR artist_id = ?", [u.id, u.id]).catch(() => null);
     const walletId = wallet?.id || 0;
-
     const txs = await db.all(
       "SELECT * FROM wallet_transactions WHERE user_id = ? OR wallet_id = ? ORDER BY id DESC",
       [u.id, walletId]
     ).catch(() => []);
-
-    const formatted = (txs || []).map(t => {
+    const formatted = (txs || []).map((t) => {
       const isoCreated = normalizeIsoDate(t.created_at || t.createdAt);
       return {
         id: t.id,
@@ -2499,14 +4766,12 @@ const handleGetWalletTransactions = async (c) => {
         timestamp: isoCreated
       };
     });
-
     return jsonRes(c, true, formatted);
   } catch (e) {
     return jsonRes(c, true, []);
   }
-};
-
-const handleRequestWithdrawal = async (c) => {
+}, "handleGetWalletTransactions");
+var handleRequestWithdrawal = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) {
@@ -2514,31 +4779,23 @@ const handleRequestWithdrawal = async (c) => {
   }
   const body = await c.req.json().catch(() => ({}));
   const amount = Number(body.amount);
-
   if (isNaN(amount) || amount <= 0 || !isFinite(amount)) {
     return jsonRes(c, false, null, "Please enter a valid withdrawal amount", 400);
   }
-
   const settings = await getMarketplaceSettings(db);
   const minWithdrawal = Number(settings.min_withdrawal_amount || 100);
   if (amount < minWithdrawal) {
-    return jsonRes(c, false, null, `Minimum withdrawal amount is ₹${minWithdrawal}`, 400);
+    return jsonRes(c, false, null, `Minimum withdrawal amount is \u20B9${minWithdrawal}`, 400);
   }
-
-  // Verify Artist KYC / Account Status
   const artistProfile = await db.first("SELECT * FROM artist_profiles WHERE user_id = ? OR id = ?", [u.id, u.id]).catch(() => null);
   if (artistProfile && String(artistProfile.verification_status || artistProfile.status || "").toUpperCase() !== "APPROVED") {
     const kycStat = String(artistProfile.verification_status || artistProfile.status || "PENDING").toUpperCase();
     return jsonRes(c, false, null, `Only approved artists with verified KYC can request payouts. Current KYC status: ${kycStat}`, 403);
   }
-
-  // Prevent multiple simultaneous pending withdrawals
   const existingPending = await db.first("SELECT id FROM withdrawals WHERE user_id = ? AND status = 'pending'", [u.id]).catch(() => null);
   if (existingPending) {
     return jsonRes(c, false, null, `You already have an active pending withdrawal request (WR-${existingPending.id}). Please wait for it to be processed.`, 400);
   }
-
-  // Idempotency / Replay protection: check client reference id
   const clientRefId = body.reference_id || body.client_reference_id;
   if (clientRefId) {
     const existingWithdrawal = await db.first("SELECT * FROM withdrawals WHERE reference_id = ?", [clientRefId]).catch(() => null);
@@ -2546,25 +4803,19 @@ const handleRequestWithdrawal = async (c) => {
       return jsonRes(c, true, existingWithdrawal, "Withdrawal request already submitted");
     }
   }
-
   let wallet = await db.first("SELECT * FROM wallets WHERE user_id = ? OR artist_id = ?", [u.id, u.id]).catch(() => null);
   if (!wallet) {
     return jsonRes(c, false, null, "Wallet not found", 404);
   }
-
-  const currentAvailable = Number(wallet.available_balance || wallet.balance || 0.0);
+  const currentAvailable = Number(wallet.available_balance || wallet.balance || 0);
   if (amount > currentAvailable) {
-    return jsonRes(c, false, null, `Insufficient available balance (₹${currentAvailable.toFixed(2)}) for withdrawal of ₹${amount.toFixed(2)}. Note: Pending escrow funds cannot be withdrawn until booking completion.`, 400);
+    return jsonRes(c, false, null, `Insufficient available balance (\u20B9${currentAvailable.toFixed(2)}) for withdrawal of \u20B9${amount.toFixed(2)}. Note: Pending escrow funds cannot be withdrawn until booking completion.`, 400);
   }
-
   const bankAcc = await db.first("SELECT * FROM bank_accounts WHERE user_id = ?", [u.id]).catch(() => null);
-  if (!bankAcc || (!bankAcc.account_number && !bankAcc.upi_id)) {
+  if (!bankAcc || !bankAcc.account_number && !bankAcc.upi_id) {
     return jsonRes(c, false, null, "Please link your bank account or UPI details before requesting a payout", 400);
   }
-
-  const refId = clientRefId || `WITHDRAW_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-
-  // Atomic conditional UPDATE ensuring available_balance >= amount under concurrency
+  const refId = clientRefId || `WITHDRAW_${Date.now()}_${Math.floor(Math.random() * 1e3)}`;
   const updateRes = await db.run(
     `UPDATE wallets SET
        balance = ROUND(balance - ?, 2),
@@ -2574,42 +4825,36 @@ const handleRequestWithdrawal = async (c) => {
      WHERE id = ? AND available_balance >= ?`,
     [amount, amount, amount, wallet.id, amount]
   );
-
   if (updateRes.meta?.changes === 0) {
     return jsonRes(c, false, null, "Insufficient available balance or concurrent withdrawal conflict", 400);
   }
-
   const withdrawRes = await db.run(
     `INSERT INTO withdrawals (user_id, amount, status, bank_account_id, reference_id)
      VALUES (?, ?, 'pending', ?, ?)`,
     [u.id, amount, bankAcc.id || null, refId]
   );
   const withdrawalId = withdrawRes.meta?.last_row_id;
-
   await db.run(
     `INSERT INTO wallet_transactions (wallet_id, user_id, type, amount, description, status, reference_id)
      VALUES (?, ?, 'debit', ?, ?, 'pending', ?)`,
     [wallet.id, u.id, amount, `Withdrawal Request WR-${withdrawalId} (${bankAcc.bank_name || "Bank Payout"})`, refId]
   );
-
   const updatedWallet = await db.first("SELECT * FROM wallets WHERE id = ?", [wallet.id]).catch(() => null);
-
   return jsonRes(c, true, {
     id: withdrawalId,
     user_id: u.id,
     amount,
     status: "pending",
     reference_id: refId,
-    requested_at: new Date().toISOString(),
+    requested_at: (/* @__PURE__ */ new Date()).toISOString(),
     bank_name: bankAcc.bank_name || "Bank",
-    account_number_masked: bankAcc.account_number ? `•••• ${bankAcc.account_number.slice(-4)}` : "••••",
+    account_number_masked: bankAcc.account_number ? `\u2022\u2022\u2022\u2022 ${bankAcc.account_number.slice(-4)}` : "\u2022\u2022\u2022\u2022",
     upi_id: bankAcc.upi_id || null,
-    available_balance: updatedWallet?.available_balance || 0.0,
-    new_balance: updatedWallet?.available_balance || 0.0
+    available_balance: updatedWallet?.available_balance || 0,
+    new_balance: updatedWallet?.available_balance || 0
   }, "Withdrawal request submitted successfully");
-};
-
-const handleGetWithdrawalHistory = async (c) => {
+}, "handleRequestWithdrawal");
+var handleGetWithdrawalHistory = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) {
@@ -2624,8 +4869,7 @@ const handleGetWithdrawalHistory = async (c) => {
        ORDER BY w.id DESC`,
       [u.id]
     ).catch(() => []);
-
-    const formatted = (list || []).map(w => ({
+    const formatted = (list || []).map((w) => ({
       id: w.id,
       user_id: w.user_id,
       amount: Number(w.amount),
@@ -2635,123 +4879,102 @@ const handleGetWithdrawalHistory = async (c) => {
       created_at: w.requested_at || w.created_at,
       processed_at: w.processed_at || null,
       bank_name: w.bank_name || "Bank Payout",
-      account_number_masked: w.account_number ? `•••• ${w.account_number.slice(-4)}` : "••••",
+      account_number_masked: w.account_number ? `\u2022\u2022\u2022\u2022 ${w.account_number.slice(-4)}` : "\u2022\u2022\u2022\u2022",
       upi_id: w.upi_id || null
     }));
-
     return jsonRes(c, true, formatted);
   } catch (e) {
     return jsonRes(c, true, []);
   }
-};
-
-const handleRejectWithdrawal = async (c) => {
+}, "handleGetWithdrawalHistory");
+var handleRejectWithdrawal = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const withdrawalId = Number(c.req.param("id") || c.req.query("id") || 0);
   const body = await c.req.json().catch(() => ({}));
   const targetId = withdrawalId || Number(body.withdrawal_id || body.id || body.requestId || 0);
   const reason = String(body.reason || "Payout failed or rejected by bank/admin");
-
   if (!targetId) {
     return jsonRes(c, false, null, "Withdrawal ID is required", 400);
   }
-
   const withdrawal = await db.first("SELECT * FROM withdrawals WHERE id = ?", [targetId]).catch(() => null);
   if (!withdrawal) {
     return jsonRes(c, false, null, "Withdrawal not found", 404);
   }
-
   if (withdrawal.status !== "pending") {
     return jsonRes(c, false, null, `Withdrawal cannot be reversed. Current status is ${withdrawal.status}`, 400);
   }
-
   const userId = withdrawal.user_id;
   const amount = Number(withdrawal.amount);
-
   let wallet = await db.first("SELECT * FROM wallets WHERE user_id = ? OR artist_id = ?", [userId, userId]).catch(() => null);
   if (wallet) {
     const newAvail = Math.round((Number(wallet.available_balance || 0) + amount) * 100) / 100;
     const newBal = Math.round((Number(wallet.balance || 0) + amount) * 100) / 100;
     const newWithdrawn = Math.max(0, Math.round((Number(wallet.withdrawn_amount || 0) - amount) * 100) / 100);
-
     await db.run(
       "UPDATE wallets SET balance = ?, available_balance = ?, withdrawn_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
       [newBal, newAvail, newWithdrawn, wallet.id]
     );
-
     const refId = `REFUND_WITHDRAW_${targetId}_${Date.now()}`;
     await db.run(
       `INSERT INTO wallet_transactions (wallet_id, user_id, type, amount, description, status, reference_id)
        VALUES (?, ?, 'credit', ?, ?, 'completed', ?)`,
-      [wallet.id, userId, amount, `Payout Failed / Cancelled (₹${amount.toFixed(2)}) — Restored to Available Balance. Reason: ${reason}`, refId]
+      [wallet.id, userId, amount, `Payout Failed / Cancelled (\u20B9${amount.toFixed(2)}) \u2014 Restored to Available Balance. Reason: ${reason}`, refId]
     );
   }
-
   await db.run("UPDATE withdrawals SET status = 'failed', processed_at = CURRENT_TIMESTAMP WHERE id = ?", [targetId]);
-
-  // Send In-App Notification to artist
   await db.run(
     "INSERT INTO notifications (user_id, title, message, type, is_read) VALUES (?, ?, ?, 'PAYOUT_REVERSED', 0)",
-    [userId, "Withdrawal Refunded", `Your withdrawal request of ₹${amount.toFixed(2)} could not be processed and has been safely refunded back to your available wallet balance. Reason: ${reason}`]
-  ).catch(() => { });
-
+    [userId, "Withdrawal Refunded", `Your withdrawal request of \u20B9${amount.toFixed(2)} could not be processed and has been safely refunded back to your available wallet balance. Reason: ${reason}`]
+  ).catch(() => {
+  });
   return jsonRes(c, true, {
     withdrawal_id: targetId,
     status: "failed",
     refunded_amount: amount,
     reason
   }, "Withdrawal reversed and funds restored to artist wallet successfully");
-};
-
-const handleApproveWithdrawal = async (c) => {
+}, "handleRejectWithdrawal");
+var handleApproveWithdrawal = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const withdrawalId = Number(c.req.param("id") || c.req.query("id") || 0);
   const body = await c.req.json().catch(() => ({}));
   const targetId = withdrawalId || Number(body.withdrawal_id || body.id || 0);
   const payoutRef = String(body.payout_reference || body.utr || `PAYOUT_${Date.now()}`);
-
   if (!targetId) {
     return jsonRes(c, false, null, "Withdrawal ID is required", 400);
   }
-
   const withdrawal = await db.first("SELECT * FROM withdrawals WHERE id = ?", [targetId]).catch(() => null);
   if (!withdrawal) {
     return jsonRes(c, false, null, "Withdrawal request not found", 404);
   }
-
   if (withdrawal.status === "completed") {
     return jsonRes(c, true, withdrawal, "Withdrawal already marked as completed");
   }
-
   await db.run(
     "UPDATE withdrawals SET status = 'completed', reference_id = COALESCE(?, reference_id), processed_at = CURRENT_TIMESTAMP WHERE id = ?",
     [payoutRef, targetId]
   );
-
   await db.run(
     "UPDATE wallet_transactions SET status = 'completed' WHERE reference_id = ? OR (user_id = ? AND type = 'debit' AND amount = ? AND status = 'pending')",
     [withdrawal.reference_id, withdrawal.user_id, withdrawal.amount]
-  ).catch(() => { });
-
-  // Send in-app notification to artist
+  ).catch(() => {
+  });
   await db.run(
     "INSERT INTO notifications (user_id, title, message, type, is_read) VALUES (?, ?, ?, 'PAYOUT_SUCCESS', 0)",
-    [withdrawal.user_id, "Payout Completed! 🎉", `Your payout of ₹${Number(withdrawal.amount).toFixed(2)} has been successfully transferred to your bank account. (Ref: ${payoutRef})`]
-  ).catch(() => { });
-
+    [withdrawal.user_id, "Payout Completed! \u{1F389}", `Your payout of \u20B9${Number(withdrawal.amount).toFixed(2)} has been successfully transferred to your bank account. (Ref: ${payoutRef})`]
+  ).catch(() => {
+  });
   return jsonRes(c, true, {
     id: targetId,
     status: "completed",
     amount: Number(withdrawal.amount),
     payout_reference: payoutRef,
-    processed_at: new Date().toISOString()
+    processed_at: (/* @__PURE__ */ new Date()).toISOString()
   }, "Withdrawal payout approved and marked as completed");
-};
-
-const handleGetAdminWallet = async (c) => {
+}, "handleApproveWithdrawal");
+var handleGetAdminWallet = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   await ensureWalletTables(db);
-
   const commissions = await db.first(`
     SELECT 
       COUNT(*) as total_settlements,
@@ -2761,7 +4984,6 @@ const handleGetAdminWallet = async (c) => {
       COALESCE(SUM(artist_total_payable), 0) as gross_artist_payouts
     FROM master_financial_ledger
   `).catch(() => null);
-
   const withdrawalsSummary = await db.first(`
     SELECT
       COALESCE(SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END), 0) as total_withdrawn,
@@ -2769,7 +4991,6 @@ const handleGetAdminWallet = async (c) => {
       COUNT(CASE WHEN status = 'pending' THEN 1 ELSE NULL END) as pending_withdrawal_count
     FROM withdrawals
   `).catch(() => null);
-
   const ledgerList = await db.all(`
     SELECT m.*, 
            u_c.full_name as customer_name, u_c.phone as customer_phone,
@@ -2779,7 +5000,6 @@ const handleGetAdminWallet = async (c) => {
     LEFT JOIN users u_a ON m.artist_id = u_a.id
     ORDER BY m.id DESC LIMIT 50
   `).catch(() => []);
-
   return jsonRes(c, true, {
     summary: {
       total_commission_earned: Number(commissions?.total_commission_earned || 0),
@@ -2793,9 +5013,8 @@ const handleGetAdminWallet = async (c) => {
     },
     ledger: ledgerList
   }, "Admin wallet data retrieved");
-};
-
-const handleGetAdminWithdrawals = async (c) => {
+}, "handleGetAdminWallet");
+var handleGetAdminWithdrawals = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const statusFilter = (c.req.query("status") || "").toLowerCase();
   let query = `
@@ -2814,9 +5033,8 @@ const handleGetAdminWithdrawals = async (c) => {
     params.push(statusFilter);
   }
   query += " ORDER BY w.id DESC LIMIT 100";
-
   const list = await db.all(query, params).catch(() => []);
-  const formatted = (list || []).map(w => ({
+  const formatted = (list || []).map((w) => ({
     id: w.id,
     user_id: w.user_id,
     artist_name: w.artist_name || "Artist",
@@ -2829,17 +5047,15 @@ const handleGetAdminWithdrawals = async (c) => {
     processed_at: w.processed_at || null,
     bank_name: w.bank_name || "Bank Payout",
     account_holder_name: w.account_holder_name || "",
-    account_number_masked: w.account_number ? `•••• ${w.account_number.slice(-4)}` : "••••",
+    account_number_masked: w.account_number ? `\u2022\u2022\u2022\u2022 ${w.account_number.slice(-4)}` : "\u2022\u2022\u2022\u2022",
     account_number: w.account_number || "",
     ifsc_code: w.ifsc_code || "",
     upi_id: w.upi_id || "",
     kyc_status: w.kyc_status || "APPROVED"
   }));
-
   return jsonRes(c, true, formatted, "Withdrawals retrieved");
-};
-
-const handleAddWalletMoney = async (c) => {
+}, "handleGetAdminWithdrawals");
+var handleAddWalletMoney = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) {
@@ -2850,27 +5066,20 @@ const handleAddWalletMoney = async (c) => {
   const orderId = body.razorpay_order_id || body.order_id;
   const signature = body.razorpay_signature;
   const keySecret = (c?.env?.RAZORPAY_KEY_SECRET || "").trim();
-
   if (!keySecret) {
     return jsonRes(c, false, null, "Razorpay secret key is not configured in server environment", 500);
   }
-
   if (!paymentId || !orderId || !signature) {
     return jsonRes(c, false, null, "Missing required verification parameters (razorpay_order_id, razorpay_payment_id, razorpay_signature)", 400);
   }
-
-  // Reject simulator / test payloads in live environment
   if (String(paymentId).includes("sim") || String(signature).includes("simulated") || String(signature).includes("test")) {
     return jsonRes(c, false, null, "Verification failed: Simulator & test signatures are strictly forbidden in LIVE mode.", 400);
   }
-
-  // Web Crypto HMAC-SHA256 signature verification
   let isValidSignature = false;
   try {
     const encoder = new TextEncoder();
     const secretKeyData = encoder.encode(keySecret);
     const messageData = encoder.encode(`${orderId}|${paymentId}`);
-
     const cryptoKey = await crypto.subtle.importKey(
       "raw",
       secretKeyData,
@@ -2878,51 +5087,38 @@ const handleAddWalletMoney = async (c) => {
       false,
       ["sign"]
     );
-
     const macBuffer = await crypto.subtle.sign("HMAC", cryptoKey, messageData);
     const macArray = Array.from(new Uint8Array(macBuffer));
-    const expectedSignature = macArray.map(b => b.toString(16).padStart(2, "0")).join("");
-
-    isValidSignature = (expectedSignature.toLowerCase() === String(signature).toLowerCase());
+    const expectedSignature = macArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+    isValidSignature = expectedSignature.toLowerCase() === String(signature).toLowerCase();
   } catch (err) {
     console.error("Crypto verification error:", err);
   }
-
   if (!isValidSignature) {
     return jsonRes(c, false, null, "Razorpay HMAC-SHA256 signature verification failed. Top-up rejected.", 400);
   }
-
   try {
     let wallet = await db.first("SELECT * FROM wallets WHERE user_id = ? OR artist_id = ?", [u.id, u.id]).catch(() => null);
     if (!wallet) {
       await db.run("INSERT INTO wallets (user_id, artist_id, balance, pending_settlement, total_earnings) VALUES (?, ?, 0.0, 0.0, 0.0)", [u.id, u.id]);
       wallet = await db.first("SELECT * FROM wallets WHERE user_id = ? OR artist_id = ?", [u.id, u.id]);
     }
-
-    // Idempotency Check: Don't credit same payment ID twice!
     const existingTx = await db.first(
       "SELECT * FROM wallet_transactions WHERE reference_id = ? AND status = 'completed'",
       [paymentId]
     ).catch(() => null);
-
     if (existingTx) {
       return jsonRes(c, true, wallet, "Wallet top-up already processed");
     }
-
-    // Retrieve pending transaction amount linked to this order
     const pendingTx = await db.first(
       "SELECT * FROM wallet_transactions WHERE reference_id = ? AND user_id = ?",
       [orderId, u.id]
     ).catch(() => null);
-
     const creditAmount = Number(pendingTx?.amount || body.amount || 500);
-
     if (creditAmount <= 0) {
       return jsonRes(c, false, null, "Invalid recharge amount", 400);
     }
-
     await db.run("UPDATE wallets SET balance = balance + ?, total_earnings = total_earnings + ? WHERE id = ?", [creditAmount, creditAmount, wallet.id]);
-
     if (pendingTx) {
       await db.run(
         "UPDATE wallet_transactions SET status = 'completed', reference_id = ? WHERE id = ?",
@@ -2931,28 +5127,33 @@ const handleAddWalletMoney = async (c) => {
     } else {
       await db.run(
         "INSERT INTO wallet_transactions (wallet_id, user_id, type, amount, description, status, reference_id) VALUES (?, ?, 'recharge', ?, ?, 'completed', ?)",
-        [wallet.id, u.id, creditAmount, body.description || `Wallet Top-up ₹${creditAmount}`, paymentId]
+        [wallet.id, u.id, creditAmount, body.description || `Wallet Top-up \u20B9${creditAmount}`, paymentId]
       );
     }
-
     const updatedWallet = await db.first("SELECT * FROM wallets WHERE id = ?", [wallet.id]);
     return jsonRes(c, true, updatedWallet, "Money added to wallet successfully");
   } catch (e) {
     return jsonRes(c, false, null, e.message || "Wallet transaction failed", 500);
   }
-};
-
-// Dedicated Universal Bank Account Routes
+}, "handleAddWalletMoney");
 [
-  "/bank-account", "/bank-account/*",
-  "/api/bank-account", "/api/bank-account/*",
-  "/api/v1/bank-account", "/api/v1/bank-account/*",
-  "/api/v1/mehndigo/bank-account", "/api/v1/mehndigo/bank-account/*",
-  "/artist/bank-account", "/artist/bank-account/*",
-  "/api/v1/artist/bank-account", "/api/v1/artist/bank-account/*",
-  "/wallet/bank-account", "/wallet/bank-account/*",
-  "/api/v1/wallet/bank-account", "/api/v1/wallet/bank-account/*"
-].forEach(p => {
+  "/bank-account",
+  "/bank-account/*",
+  "/api/bank-account",
+  "/api/bank-account/*",
+  "/api/v1/bank-account",
+  "/api/v1/bank-account/*",
+  "/api/v1/mehndigo/bank-account",
+  "/api/v1/mehndigo/bank-account/*",
+  "/artist/bank-account",
+  "/artist/bank-account/*",
+  "/api/v1/artist/bank-account",
+  "/api/v1/artist/bank-account/*",
+  "/wallet/bank-account",
+  "/wallet/bank-account/*",
+  "/api/v1/wallet/bank-account",
+  "/api/v1/wallet/bank-account/*"
+].forEach((p) => {
   app.all(p, async (c) => {
     const method = c.req.method.toUpperCase();
     if (method === "POST" || method === "PUT" || method === "PATCH") {
@@ -2961,66 +5162,81 @@ const handleAddWalletMoney = async (c) => {
     return handleGetBankAccount(c);
   });
 });
-
-// Admin Wallet & Payout Management Routes
 [
-  "/admin/wallet", "/admin/wallet/*",
-  "/api/admin/wallet", "/api/admin/wallet/*",
-  "/api/v1/admin/wallet", "/api/v1/admin/wallet/*",
-  "/api/v1/mehndigo/admin/wallet", "/api/v1/mehndigo/admin/wallet/*"
-].forEach(p => {
+  "/admin/wallet",
+  "/admin/wallet/*",
+  "/api/admin/wallet",
+  "/api/admin/wallet/*",
+  "/api/v1/admin/wallet",
+  "/api/v1/admin/wallet/*",
+  "/api/v1/mehndigo/admin/wallet",
+  "/api/v1/mehndigo/admin/wallet/*"
+].forEach((p) => {
   app.get(p, handleGetAdminWallet);
 });
-
 [
-  "/admin/withdrawals", "/admin/withdrawals/*",
-  "/api/admin/withdrawals", "/api/admin/withdrawals/*",
-  "/api/v1/admin/withdrawals", "/api/v1/admin/withdrawals/*",
-  "/admin/payouts", "/admin/payouts/*",
-  "/api/v1/admin/payouts", "/api/v1/admin/payouts/*"
-].forEach(p => {
+  "/admin/withdrawals",
+  "/admin/withdrawals/*",
+  "/api/admin/withdrawals",
+  "/api/admin/withdrawals/*",
+  "/api/v1/admin/withdrawals",
+  "/api/v1/admin/withdrawals/*",
+  "/admin/payouts",
+  "/admin/payouts/*",
+  "/api/v1/admin/payouts",
+  "/api/v1/admin/payouts/*"
+].forEach((p) => {
   app.get(p, handleGetAdminWithdrawals);
 });
-
 [
-  "/admin/withdrawal/:id/approve", "/api/v1/admin/withdrawal/:id/approve",
-  "/admin/payout/:id/approve", "/api/v1/admin/payout/:id/approve",
-  "/admin/withdrawal/approve", "/api/v1/admin/withdrawal/approve"
-].forEach(p => {
+  "/admin/withdrawal/:id/approve",
+  "/api/v1/admin/withdrawal/:id/approve",
+  "/admin/payout/:id/approve",
+  "/api/v1/admin/payout/:id/approve",
+  "/admin/withdrawal/approve",
+  "/api/v1/admin/withdrawal/approve"
+].forEach((p) => {
   app.all(p, handleApproveWithdrawal);
 });
-
 [
-  "/admin/withdrawal/:id/reject", "/api/v1/admin/withdrawal/:id/reject",
-  "/admin/payout/:id/reject", "/api/v1/admin/payout/:id/reject",
-  "/admin/withdrawal/reject", "/api/v1/admin/withdrawal/reject",
-  "/wallet/withdraw/cancel", "/api/v1/wallet/withdraw/cancel",
-  "/wallet/withdraw/reject", "/api/v1/wallet/withdraw/reject"
-].forEach(p => {
+  "/admin/withdrawal/:id/reject",
+  "/api/v1/admin/withdrawal/:id/reject",
+  "/admin/payout/:id/reject",
+  "/api/v1/admin/payout/:id/reject",
+  "/admin/withdrawal/reject",
+  "/api/v1/admin/withdrawal/reject",
+  "/wallet/withdraw/cancel",
+  "/api/v1/wallet/withdraw/cancel",
+  "/wallet/withdraw/reject",
+  "/api/v1/wallet/withdraw/reject"
+].forEach((p) => {
   app.all(p, handleRejectWithdrawal);
 });
-
-// General Wallet & Withdrawal Routes
 [
-  "/wallet", "/wallet/*",
-  "/api/wallet", "/api/wallet/*",
-  "/api/v1/wallet", "/api/v1/wallet/*",
-  "/api/v1/mehndigo/wallet", "/api/v1/mehndigo/wallet/*",
-  "/mehndigo/wallet", "/mehndigo/wallet/*",
-  "/customer/wallet", "/customer/wallet/*",
-  "/artist/wallet", "/artist/wallet/*"
-].forEach(p => {
+  "/wallet",
+  "/wallet/*",
+  "/api/wallet",
+  "/api/wallet/*",
+  "/api/v1/wallet",
+  "/api/v1/wallet/*",
+  "/api/v1/mehndigo/wallet",
+  "/api/v1/mehndigo/wallet/*",
+  "/mehndigo/wallet",
+  "/mehndigo/wallet/*",
+  "/customer/wallet",
+  "/customer/wallet/*",
+  "/artist/wallet",
+  "/artist/wallet/*"
+].forEach((p) => {
   app.all(p, async (c) => {
     const path = c.req.path.toLowerCase();
     const method = c.req.method.toUpperCase();
-
     if (path.includes("bank-account") || path.includes("bank")) {
       if (method === "POST" || method === "PUT" || method === "PATCH") {
         return handleSaveBankAccount(c);
       }
       return handleGetBankAccount(c);
     }
-
     if (path.includes("withdraw")) {
       if (path.includes("cancel") || path.includes("reject")) {
         return handleRejectWithdrawal(c);
@@ -3036,49 +5252,54 @@ const handleAddWalletMoney = async (c) => {
       }
       return handleGetWithdrawalHistory(c);
     }
-
     if (path.includes("history") || path.includes("transactions")) {
       return handleGetWalletTransactions(c);
     }
-
     if (path.includes("add-money") || path.includes("recharge")) {
       return handleAddWalletMoney(c);
     }
-
     if (method === "POST") {
       return handleAddWalletMoney(c);
     }
-
     return handleGetWallet(c);
   });
 });
-
-["/customer/addresses", "/api/v1/customer/addresses", "/api/v1/mehndigo/customer/addresses", "/mehndigo/customer/addresses"].forEach(p => {
+["/customer/addresses", "/api/v1/customer/addresses", "/api/v1/mehndigo/customer/addresses", "/mehndigo/customer/addresses"].forEach((p) => {
   app.get(p, handleGetAddresses);
   app.post(p, handleSaveAddress);
   app.put(p, handleSaveAddress);
 });
-
-["/user/profile", "/customer/profile", "/api/v1/mehndigo/user/profile", "/api/v1/customer/profile", "/mehndigo/user/profile"].forEach(p => {
+["/user/profile", "/customer/profile", "/api/v1/mehndigo/user/profile", "/api/v1/customer/profile", "/mehndigo/user/profile"].forEach((p) => {
   app.get(p, handleGetProfile);
   app.put(p, handleUpdateProfile);
   app.post(p, handleUpdateProfile);
 });
-
 [
-  "/artist/profile", "/artist/profile/*",
-  "/api/artist/profile", "/api/artist/profile/*",
-  "/api/v1/artist/profile", "/api/v1/artist/profile/*",
-  "/api/v1/mehndigo/artist/profile", "/api/v1/mehndigo/artist/profile/*",
-  "/artist/artistdetails", "/artist/artistdetails/*",
-  "/api/artist/artistdetails", "/api/artist/artistdetails/*",
-  "/api/v1/artist/artistdetails", "/api/v1/artist/artistdetails/*",
-  "/api/v1/mehndigo/artist/artistdetails", "/api/v1/mehndigo/artist/artistdetails/*",
-  "/artist/onboarding", "/artist/onboarding/*",
-  "/api/artist/onboarding", "/api/artist/onboarding/*",
-  "/api/v1/artist/onboarding", "/api/v1/artist/onboarding/*",
-  "/api/v1/mehndigo/artist/onboarding", "/api/v1/mehndigo/artist/onboarding/*"
-].forEach(p => {
+  "/artist/profile",
+  "/artist/profile/*",
+  "/api/artist/profile",
+  "/api/artist/profile/*",
+  "/api/v1/artist/profile",
+  "/api/v1/artist/profile/*",
+  "/api/v1/mehndigo/artist/profile",
+  "/api/v1/mehndigo/artist/profile/*",
+  "/artist/artistdetails",
+  "/artist/artistdetails/*",
+  "/api/artist/artistdetails",
+  "/api/artist/artistdetails/*",
+  "/api/v1/artist/artistdetails",
+  "/api/v1/artist/artistdetails/*",
+  "/api/v1/mehndigo/artist/artistdetails",
+  "/api/v1/mehndigo/artist/artistdetails/*",
+  "/artist/onboarding",
+  "/artist/onboarding/*",
+  "/api/artist/onboarding",
+  "/api/artist/onboarding/*",
+  "/api/v1/artist/onboarding",
+  "/api/v1/artist/onboarding/*",
+  "/api/v1/mehndigo/artist/onboarding",
+  "/api/v1/mehndigo/artist/onboarding/*"
+].forEach((p) => {
   app.all(p, async (c) => {
     const method = c.req.method.toUpperCase();
     if (method === "POST" || method === "PUT" || method === "PATCH") {
@@ -3087,12 +5308,9 @@ const handleAddWalletMoney = async (c) => {
     return handleGetArtistDetails(c);
   });
 });
-
-["/booking/pending", "/api/booking/pending", "/api/v1/booking/pending", "/api/v1/mehndigo/booking/pending"].forEach(p => {
+["/booking/pending", "/api/booking/pending", "/api/v1/booking/pending", "/api/v1/mehndigo/booking/pending"].forEach((p) => {
   app.get(p, handlePendingPayment);
 });
-
-// List Artists
 app.get("/api/v1/mehndigo/user/artists", async (c) => {
   const db = getDb(c.env);
   const artists = await db.all(`
@@ -3106,86 +5324,17 @@ app.get("/api/v1/mehndigo/user/artists", async (c) => {
   `).catch(() => []);
   return jsonRes(c, true, artists);
 });
-
-// ================= CUSTOMER DASHBOARD & DISCOVERY ENDPOINTS =================
-const handleNearbyArtists = async (c) => {
-  const db = getDb(c.env);
-  const userLat = Number(c.req.query("latitude") || c.req.query("lat") || 0);
-  const userLng = Number(c.req.query("longitude") || c.req.query("lng") || 0);
-  const rawRadius = c.req.query("radius");
-  const radius = (rawRadius !== undefined && rawRadius !== null && rawRadius !== "" && !isNaN(Number(rawRadius))) ? Number(rawRadius) : null;
-  const page = Number(c.req.query("page") || 1);
-  const limit = Number(c.req.query("limit") || 15);
-
-  let artists = await db.all(`
-    SELECT u.id as id, u.id as user_id, COALESCE(NULLIF(u.full_name, ''), 'Mehndi Artist') as name,
-           COALESCE(NULLIF(u.full_name, ''), 'Mehndi Artist') as full_name, u.email, u.phone,
-           ap.bio, ap.experience_years, ap.starting_price, ap.city, ap.locality, ap.rating, ap.total_reviews, ap.status, ap.profile_image,
-           COALESCE(ap.latitude, al.latitude, 26.9124) as latitude,
-           COALESCE(ap.longitude, al.longitude, 75.7873) as longitude
-    FROM users u
-    LEFT JOIN artist_profiles ap ON (u.id = ap.user_id OR CAST(u.id AS TEXT) = CAST(ap.user_id AS TEXT))
-    LEFT JOIN artist_locations al ON (u.id = al.artist_id OR CAST(u.id AS TEXT) = CAST(al.artist_id AS TEXT))
-    WHERE (LOWER(u.role) = 'artist')
-      AND (ap.status = 'APPROVED' OR ap.status = 'approved' OR ap.status IS NULL)
-  `).catch(() => []);
-
-  const toRad = (v) => (v * Math.PI) / 180;
-  const hasUserLocation = userLat && userLng && !isNaN(userLat) && !isNaN(userLng);
-
-  const mapped = (artists || []).map((art) => {
-    const artLat = Number(art.latitude) || 26.9124;
-    const artLng = Number(art.longitude) || 75.7873;
-
-    if (!hasUserLocation) {
-      return { ...art, distance: 0, distance_km: 0 };
-    }
-
-    const R = 6371; // Earth radius in km
-    const dLat = toRad(artLat - userLat);
-    const dLon = toRad(artLng - userLng);
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(toRad(userLat)) * Math.cos(toRad(artLat)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const cVal = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    const distKm = Math.round(R * cVal * 10) / 10;
-    return { ...art, distance: distKm, distance_km: distKm };
-  });
-
-  const filtered = hasUserLocation && radius ? mapped.filter((art) => art.distance <= radius) : mapped;
-  if (hasUserLocation) {
-    filtered.sort((a, b) => (a.distance || 0) - (b.distance || 0));
-  } else {
-    filtered.sort((a, b) => (Number(b.rating) || 0) - (Number(a.rating) || 0));
-  }
-
-  const offset = (page - 1) * limit;
-  const paginated = filtered.slice(offset, offset + limit);
-  return jsonRes(c, true, {
-    count: filtered.length,
-    rows: paginated,
-    data: paginated
-  }, "Nearby artists retrieved");
-};
-
-let globalFavoritesMemory = [];
-
-const enrichArtistRecords = async (db, artistsList) => {
+var enrichArtistRecords = /* @__PURE__ */ __name(async (db, artistsList) => {
   if (!Array.isArray(artistsList) || artistsList.length === 0) return [];
-
-  // Collect all distinct IDs
-  const idSet = new Set();
-  artistsList.forEach(art => {
+  const idSet = /* @__PURE__ */ new Set();
+  artistsList.forEach((art) => {
     if (art.user_id) idSet.add(art.user_id);
     if (art.id) idSet.add(art.id);
     if (art.artist_profile_id) idSet.add(art.artist_profile_id);
   });
   const idList = Array.from(idSet);
   if (idList.length === 0) return artistsList;
-
   const placeholders = idList.map(() => "?").join(",");
-
-  // Run all 3 batch queries concurrently in parallel
   const [servicesRows, portfoliosRows, reviewRows] = await Promise.all([
     db.all(
       `SELECT artist_id, id, title, specialization_name, price, minimum_price, duration, category 
@@ -3208,10 +5357,8 @@ const enrichArtistRecords = async (db, artistsList) => {
       idList
     ).catch(() => [])
   ]);
-
-  // Group by artist_id in memory for instant O(1) lookup
-  const servicesByArtist = new Map();
-  (servicesRows || []).forEach(s => {
+  const servicesByArtist = /* @__PURE__ */ new Map();
+  (servicesRows || []).forEach((s) => {
     const key = String(s.artist_id);
     if (!servicesByArtist.has(key)) servicesByArtist.set(key, []);
     servicesByArtist.get(key).push({
@@ -3222,29 +5369,25 @@ const enrichArtistRecords = async (db, artistsList) => {
       price: Number(s.price || s.minimum_price || 1800)
     });
   });
-
-  const portfoliosByArtist = new Map();
-  (portfoliosRows || []).forEach(p => {
+  const portfoliosByArtist = /* @__PURE__ */ new Map();
+  (portfoliosRows || []).forEach((p) => {
     const key = String(p.artist_id);
     if (!portfoliosByArtist.has(key)) portfoliosByArtist.set(key, []);
     portfoliosByArtist.get(key).push({ url: p.image_url });
   });
-
-  const reviewsByArtist = new Map();
-  (reviewRows || []).forEach(r => {
+  const reviewsByArtist = /* @__PURE__ */ new Map();
+  (reviewRows || []).forEach((r) => {
     const key = String(r.artist_id);
     reviewsByArtist.set(key, {
       avg_val: Number(r.avg_val || 0),
       rev_count: Number(r.rev_count || 0)
     });
   });
-
   for (const art of artistsList) {
     const artistUserId = art.user_id || art.id;
     const profileId = art.artist_profile_id || art.id;
     const key1 = String(artistUserId);
     const key2 = String(profileId);
-
     const artistPortfolios = portfoliosByArtist.get(key1) || portfoliosByArtist.get(key2) || [];
     if ((!art.profile_image || art.profile_image.includes("unsplash")) && artistPortfolios.length > 0) {
       art.profile_image = artistPortfolios[0].url;
@@ -3259,25 +5402,20 @@ const enrichArtistRecords = async (db, artistsList) => {
       phone: art.phone || "",
       email: art.email || ""
     };
-
     const artistServices = servicesByArtist.get(key1) || servicesByArtist.get(key2) || [];
     art.services = artistServices;
-
     let minP = Number(art.starting_price || 0);
     if (!minP && artistServices.length > 0) {
-      const prices = artistServices.map(s => Number(s.price || s.minimum_price || 0)).filter(p => p > 0);
+      const prices = artistServices.map((s) => Number(s.price || s.minimum_price || 0)).filter((p) => p > 0);
       if (prices.length > 0) minP = Math.min(...prices);
     }
     art.starting_price = minP || 500;
     art.startingPrice = art.starting_price;
     art.price = art.starting_price;
-
     art.portfolio_images = artistPortfolios.slice(0, 6);
-
     const rev = reviewsByArtist.get(key1) || reviewsByArtist.get(key2) || null;
     const dbReviewsCount = rev ? rev.rev_count : 0;
-    const dbAvgRating = dbReviewsCount > 0 ? Number(rev.avg_val.toFixed(1)) : (art.rating ? Number(art.rating) : (art.avg_rating ? Number(art.avg_rating) : 0));
-
+    const dbAvgRating = dbReviewsCount > 0 ? Number(rev.avg_val.toFixed(1)) : art.rating ? Number(art.rating) : art.avg_rating ? Number(art.avg_rating) : 0;
     art.rating = dbAvgRating;
     art.avg_rating = dbAvgRating;
     art.total_reviews = dbReviewsCount || (art.total_reviews ? Number(art.total_reviews) : 0);
@@ -3286,28 +5424,22 @@ const enrichArtistRecords = async (db, artistsList) => {
     art.locality = art.locality || "Malviya Nagar";
     art.verification_status = art.status || "APPROVED";
   }
-
   return artistsList;
-};
-
-const handleHomeDashboard = async (c) => {
+}, "enrichArtistRecords");
+var handleHomeDashboard = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
-
-  // Dynamic Date-Based Indian Festival Banner Fallbacks
-  const getDynamicFestivalBanners = () => {
-    const month = new Date().getMonth() + 1;
-    const day = new Date().getDate();
-
+  const getDynamicFestivalBanners = /* @__PURE__ */ __name(() => {
+    const month = (/* @__PURE__ */ new Date()).getMonth() + 1;
+    const day = (/* @__PURE__ */ new Date()).getDate();
     const fests = [
-      { id: 1, title: "Teej Henna Special ✨", subtitle: "Flat 25% OFF on traditional Teej & Sawan bridal patterns", code: "TEEJ25", discount: "25% OFF", image: "https://images.unsplash.com/photo-1596461404969-9ae70f2830c1?auto=format&fit=crop&w=1000&q=80", mStart: 7, mEnd: 8 },
-      { id: 2, title: "Raksha Bandhan Henna Utsav 🧵", subtitle: "Flat 20% OFF on family & group mehndi bookings for Rakhi", code: "RAKHI20", discount: "20% OFF", image: "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?auto=format&fit=crop&w=1000&q=80", mStart: 8, mEnd: 8 },
-      { id: 3, title: "Karwa Chauth Luxury Henna 🌙", subtitle: "Flat ₹500 OFF on full arm Marwari & portrait bridal mehndi", code: "KARWA500", discount: "₹500 OFF", image: "https://images.unsplash.com/photo-1582192732961-2364f55b1a3d?auto=format&fit=crop&w=1000&q=80", mStart: 9, mEnd: 11 },
-      { id: 4, title: "Royal Bridal Ceremony 👑", subtitle: "Flat 20% OFF on exclusive bridal & portrait packages", code: "BRIDAL20", discount: "20% OFF", image: "https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=1000&q=80", mStart: 11, mEnd: 3 }
+      { id: 1, title: "Teej Henna Special \u2728", subtitle: "Flat 25% OFF on traditional Teej & Sawan bridal patterns", code: "TEEJ25", discount: "25% OFF", image: "https://images.unsplash.com/photo-1596461404969-9ae70f2830c1?auto=format&fit=crop&w=1000&q=80", mStart: 7, mEnd: 8 },
+      { id: 2, title: "Raksha Bandhan Henna Utsav \u{1F9F5}", subtitle: "Flat 20% OFF on family & group mehndi bookings for Rakhi", code: "RAKHI20", discount: "20% OFF", image: "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?auto=format&fit=crop&w=1000&q=80", mStart: 8, mEnd: 8 },
+      { id: 3, title: "Karwa Chauth Luxury Henna \u{1F319}", subtitle: "Flat \u20B9500 OFF on full arm Marwari & portrait bridal mehndi", code: "KARWA500", discount: "\u20B9500 OFF", image: "https://images.unsplash.com/photo-1582192732961-2364f55b1a3d?auto=format&fit=crop&w=1000&q=80", mStart: 9, mEnd: 11 },
+      { id: 4, title: "Royal Bridal Ceremony \u{1F451}", subtitle: "Flat 20% OFF on exclusive bridal & portrait packages", code: "BRIDAL20", discount: "20% OFF", image: "https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=1000&q=80", mStart: 11, mEnd: 3 }
     ];
-
-    const active = fests.filter(f => (f.mStart <= f.mEnd ? (month >= f.mStart && month <= f.mEnd) : (month >= f.mStart || month <= f.mEnd)));
-    return (active.length > 0 ? active : fests).map(b => ({
+    const active = fests.filter((f) => f.mStart <= f.mEnd ? month >= f.mStart && month <= f.mEnd : month >= f.mStart || month <= f.mEnd);
+    return (active.length > 0 ? active : fests).map((b) => ({
       id: b.id,
       title: b.title,
       subtitle: b.subtitle,
@@ -3322,9 +5454,7 @@ const handleHomeDashboard = async (c) => {
       target_type: "category",
       target_id: "1"
     }));
-  };
-
-  // Run all independent queries in parallel for instant sub-100ms dashboard load
+  }, "getDynamicFestivalBanners");
   const [categories, banners, featuredArtists, popularArtists, artists, unreadRow] = await Promise.all([
     db.all("SELECT * FROM categories WHERE is_active = 1 ORDER BY id ASC").catch(() => []),
     db.all("SELECT * FROM banners WHERE (is_active = 1 OR is_active = 'true') ORDER BY id DESC").catch(() => []),
@@ -3364,36 +5494,29 @@ const handleHomeDashboard = async (c) => {
       ORDER BY COALESCE(ap.rating, 0) DESC, u.id DESC
       LIMIT 10
     `).catch(() => []),
-    (u && u.id) ? db.first("SELECT COUNT(*) as count FROM notifications WHERE (user_id = ? OR CAST(user_id AS TEXT) = ?) AND (is_read = 0 OR is_read = 'false' OR is_read IS NULL)", [u.id, String(u.id)]).catch(() => ({ count: 0 })) : Promise.resolve({ count: 0 })
+    u && u.id ? db.first("SELECT COUNT(*) as count FROM notifications WHERE (user_id = ? OR CAST(user_id AS TEXT) = ?) AND (is_read = 0 OR is_read = 'false' OR is_read IS NULL)", [u.id, String(u.id)]).catch(() => ({ count: 0 })) : Promise.resolve({ count: 0 })
   ]);
-
-  const mappedBanners = (banners && banners.length > 0)
-    ? banners.map((b) => ({
-      id: b.id,
-      title: b.title,
-      subtitle: b.subtitle || b.description || "Special Festive Discount",
-      description: b.description || b.subtitle || "Special Festive Discount",
-      code: b.code || b.promo_code || "FESTIVE",
-      discount: b.discount_text || (b.discount_value ? `${b.discount_value}% OFF` : (b.discount || "Special Offer")),
-      discount_text: b.discount_text || (b.discount_value ? `${b.discount_value}% OFF` : (b.discount || "Special Offer")),
-      image: b.image_url || b.banner_image || b.image,
-      banner: b.image_url || b.banner_image || b.image,
-      banner_image: b.image_url || b.banner_image || b.image,
-      image_url: b.image_url || b.banner_image || b.image,
-      target_type: "category",
-      target_id: "1"
-    }))
-    : getDynamicFestivalBanners();
-
-  // Parallel enrichment
+  const mappedBanners = banners && banners.length > 0 ? banners.map((b) => ({
+    id: b.id,
+    title: b.title,
+    subtitle: b.subtitle || b.description || "Special Festive Discount",
+    description: b.description || b.subtitle || "Special Festive Discount",
+    code: b.code || b.promo_code || "FESTIVE",
+    discount: b.discount_text || (b.discount_value ? `${b.discount_value}% OFF` : b.discount || "Special Offer"),
+    discount_text: b.discount_text || (b.discount_value ? `${b.discount_value}% OFF` : b.discount || "Special Offer"),
+    image: b.image_url || b.banner_image || b.image,
+    banner: b.image_url || b.banner_image || b.image,
+    banner_image: b.image_url || b.banner_image || b.image,
+    image_url: b.image_url || b.banner_image || b.image,
+    target_type: "category",
+    target_id: "1"
+  })) : getDynamicFestivalBanners();
   await Promise.all([
     enrichArtistRecords(db, featuredArtists),
     enrichArtistRecords(db, popularArtists),
     enrichArtistRecords(db, artists)
   ]);
-
   const unreadCount = unreadRow?.count || 0;
-
   return jsonRes(c, true, {
     banners: mappedBanners || [],
     offers: mappedBanners || [],
@@ -3404,24 +5527,20 @@ const handleHomeDashboard = async (c) => {
     unread_notification_count: unreadCount,
     unread_count: unreadCount
   }, "Home dashboard loaded");
-};
-
-const handleGetArtistAvailability = async (c) => {
+}, "handleHomeDashboard");
+var handleGetArtistAvailability = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   const artistIdParam = c.req.param("id") || c.req.param("artistId") || c.req.query("artistId") || c.req.query("id");
-
   let artist = null;
   if (artistIdParam) {
     artist = await db.first("SELECT * FROM artist_profiles WHERE id = ? OR user_id = ? OR CAST(id AS TEXT) = ? OR CAST(user_id AS TEXT) = ?", [artistIdParam, artistIdParam, String(artistIdParam), String(artistIdParam)]).catch(() => null);
   } else if (u && u.id) {
     artist = await db.first("SELECT * FROM artist_profiles WHERE user_id = ? OR id = ? OR CAST(user_id AS TEXT) = ? OR CAST(id AS TEXT) = ?", [u.id, u.id, String(u.id), String(u.id)]).catch(() => null);
   }
-
   if (!artist) {
     return jsonRes(c, false, null, "Artist profile not found", 404);
   }
-
   let workingDays = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"];
   if (artist.working_days) {
     if (Array.isArray(artist.working_days)) {
@@ -3432,12 +5551,11 @@ const handleGetArtistAvailability = async (c) => {
         if (Array.isArray(parsed) && parsed.length > 0) workingDays = parsed;
       } catch (e) {
         if (artist.working_days.trim()) {
-          workingDays = artist.working_days.split(",").map(s => s.trim().toUpperCase()).filter(Boolean);
+          workingDays = artist.working_days.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean);
         }
       }
     }
   }
-
   let leaveDates = [];
   if (artist.leave_dates) {
     if (Array.isArray(artist.leave_dates)) {
@@ -3446,12 +5564,11 @@ const handleGetArtistAvailability = async (c) => {
       try {
         const parsed = JSON.parse(artist.leave_dates);
         if (Array.isArray(parsed)) leaveDates = parsed;
-      } catch (e) { }
+      } catch (e) {
+      }
     }
   }
-
-  const isAvail = (artist.is_available === 1 || artist.is_available === true || artist.is_available === "1" || artist.is_available === "true" || artist.is_available === undefined || artist.is_available === null);
-
+  const isAvail = artist.is_available === 1 || artist.is_available === true || artist.is_available === "1" || artist.is_available === "true" || artist.is_available === void 0 || artist.is_available === null;
   return jsonRes(c, true, {
     artist_id: artist.id,
     user_id: artist.user_id,
@@ -3466,50 +5583,45 @@ const handleGetArtistAvailability = async (c) => {
     max_advance_days: Number(artist.max_advance_days || 60),
     max_bookings_per_day: Number(artist.max_bookings_per_day || 4)
   }, "Artist availability schedule retrieved successfully");
-};
-
-const handleUpdateArtistAvailability = async (c) => {
+}, "handleGetArtistAvailability");
+var handleUpdateArtistAvailability = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) {
     return jsonRes(c, false, null, "Unauthorized access", 401);
   }
-
   let body = {};
   try {
     body = await c.req.json();
   } catch (e) {
     body = await c.req.parseBody().catch(() => ({}));
   }
-
   const artist = await db.first("SELECT id, user_id, working_days, is_available, working_start_time, working_end_time, break_start_time, break_end_time FROM artist_profiles WHERE user_id = ? OR id = ? OR CAST(user_id AS TEXT) = ? OR CAST(id AS TEXT) = ?", [u.id, u.id, String(u.id), String(u.id)]).catch(() => null);
   if (!artist) {
     return jsonRes(c, false, null, "Artist profile not found", 404);
   }
-
-  const isAvailVal = body.is_available !== undefined ? (body.is_available ? 1 : 0) : (artist.is_available !== undefined ? (artist.is_available ? 1 : 0) : 1);
-  
+  const isAvailVal = body.is_available !== void 0 ? body.is_available ? 1 : 0 : artist.is_available !== void 0 ? artist.is_available ? 1 : 0 : 1;
   let workingDaysJson = null;
-  if (body.working_days !== undefined) {
+  if (body.working_days !== void 0) {
     if (Array.isArray(body.working_days)) {
-      const clean = body.working_days.map(d => String(d).toUpperCase().trim());
+      const clean = body.working_days.map((d) => String(d).toUpperCase().trim());
       workingDaysJson = JSON.stringify(clean);
     } else if (typeof body.working_days === "string") {
-      workingDaysJson = body.working_days.startsWith("[") ? body.working_days : JSON.stringify(body.working_days.split(",").map(d => d.trim().toUpperCase()));
+      workingDaysJson = body.working_days.startsWith("[") ? body.working_days : JSON.stringify(body.working_days.split(",").map((d) => d.trim().toUpperCase()));
     }
   }
-
   const startTime = body.working_start_time || body.startTime || artist.working_start_time || "09:00";
-  // Defensively ensure columns exist in artist_profiles
-  await db.run("ALTER TABLE artist_profiles ADD COLUMN working_days TEXT").catch(() => {});
-  await db.run("ALTER TABLE artist_profiles ADD COLUMN working_start_time TEXT").catch(() => {});
-  await db.run("ALTER TABLE artist_profiles ADD COLUMN working_end_time TEXT").catch(() => {});
-  await db.run("ALTER TABLE artist_profiles ADD COLUMN break_start_time TEXT").catch(() => {});
-  await db.run("ALTER TABLE artist_profiles ADD COLUMN break_end_time TEXT").catch(() => {});
-
-  const updateWorkingDays = workingDaysJson !== null ? workingDaysJson : (artist.working_days || null);
-
-  // Update artist_profiles
+  await db.run("ALTER TABLE artist_profiles ADD COLUMN working_days TEXT").catch(() => {
+  });
+  await db.run("ALTER TABLE artist_profiles ADD COLUMN working_start_time TEXT").catch(() => {
+  });
+  await db.run("ALTER TABLE artist_profiles ADD COLUMN working_end_time TEXT").catch(() => {
+  });
+  await db.run("ALTER TABLE artist_profiles ADD COLUMN break_start_time TEXT").catch(() => {
+  });
+  await db.run("ALTER TABLE artist_profiles ADD COLUMN break_end_time TEXT").catch(() => {
+  });
+  const updateWorkingDays = workingDaysJson !== null ? workingDaysJson : artist.working_days || null;
   try {
     await db.run(
       `UPDATE artist_profiles SET 
@@ -3526,61 +5638,32 @@ const handleUpdateArtistAvailability = async (c) => {
     await db.run(
       `UPDATE artist_profiles SET is_available = ? WHERE id = ? OR user_id = ?`,
       [isAvailVal, artist.id, artist.user_id]
-    ).catch(() => {});
+    ).catch(() => {
+    });
   }
-
   return handleGetArtistAvailability(c);
-};
-
-["/customer/home", "/customer/dashboard", "/api/v1/customer/home", "/api/v1/customer/dashboard", "/api/v1/mehndigo/customer/home", "/api/v1/mehndigo/customer/dashboard"].forEach(p => {
+}, "handleUpdateArtistAvailability");
+["/customer/home", "/customer/dashboard", "/api/v1/customer/home", "/api/v1/customer/dashboard", "/api/v1/mehndigo/customer/home", "/api/v1/mehndigo/customer/dashboard"].forEach((p) => {
   app.get(p, handleHomeDashboard);
 });
-
-["/artist/availability", "/api/v1/artist/availability", "/api/v1/mehndigo/artist/availability"].forEach(p => {
+["/artist/availability", "/api/v1/artist/availability", "/api/v1/mehndigo/artist/availability"].forEach((p) => {
   app.get(p, handleGetArtistAvailability);
   app.put(p, handleUpdateArtistAvailability);
   app.post(p, handleUpdateArtistAvailability);
 });
-
-["/customer/artist/:id/availability", "/api/v1/customer/artist/:id/availability", "/customer/artist/:artistId/availability", "/api/v1/customer/artist/:artistId/availability"].forEach(p => {
+["/customer/artist/:id/availability", "/api/v1/customer/artist/:id/availability", "/customer/artist/:artistId/availability", "/api/v1/customer/artist/:artistId/availability"].forEach((p) => {
   app.get(p, handleGetArtistAvailability);
 });
-
-const getCategories = async (c) => {
+var getCategories = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const categories = await db.all("SELECT * FROM categories WHERE is_active = 1 ORDER BY id ASC").catch(() => []);
   return jsonRes(c, true, categories || []);
-};
-
-// Helper to credit Artist Wallet for a paid booking
-const creditArtistWalletForBooking = async (db, artistId, bookingId, amount, description) => {
-  if (!artistId || !amount) return;
-  const refId = `BOOKING_${bookingId}`;
-  const existingTx = await db.first("SELECT id FROM wallet_transactions WHERE reference_id = ?", [refId]).catch(() => null);
-  if (existingTx) return;
-
-  let wallet = await db.first("SELECT * FROM wallets WHERE user_id = ? OR artist_id = ?", [artistId, artistId]).catch(() => null);
-  if (!wallet) {
-    await db.run("INSERT INTO wallets (user_id, artist_id, balance, pending_settlement, total_earnings) VALUES (?, ?, ?, 0.0, ?)", [artistId, artistId, amount, amount]);
-    wallet = await db.first("SELECT * FROM wallets WHERE user_id = ? OR artist_id = ?", [artistId, artistId]);
-  } else {
-    await db.run("UPDATE wallets SET balance = balance + ?, total_earnings = total_earnings + ? WHERE id = ?", [amount, amount, wallet.id]);
-  }
-
-  await db.run(
-    "INSERT INTO wallet_transactions (wallet_id, user_id, type, amount, description, status, reference_id) VALUES (?, ?, 'credit', ?, ?, 'completed', ?)",
-    [wallet.id, artistId, amount, description || `Payout for Booking #${bookingId}`, refId]
-  );
-};
-
-// Catch-All Dynamic Customer Router
-const handleCustomerDynamic = async (c) => {
+}, "getCategories");
+var handleCustomerDynamic = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const path = c.req.path;
   const method = c.req.method.toUpperCase();
   const u = getUserFromHeader(c);
-
-  // 0. Reels & Portfolio Social Interaction Routing
   if (path.includes("reels") || path.endsWith("/reels")) {
     return handleGetReels(c);
   }
@@ -3615,10 +5698,9 @@ const handleCustomerDynamic = async (c) => {
       return handleAddViewToPortfolio(c);
     }
   }
-
-  // Search Helper Sub-routes
   if (path.includes("recent-search")) {
-    await db.run("CREATE TABLE IF NOT EXISTS recent_searches (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, query TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)").catch(() => { });
+    await db.run("CREATE TABLE IF NOT EXISTS recent_searches (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, query TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)").catch(() => {
+    });
     if (!u || !u.id) return jsonRes(c, true, []);
     if (method === "GET") {
       const list = await db.all("SELECT id, query as search_query, created_at FROM recent_searches WHERE user_id = ? ORDER BY id DESC LIMIT 10", [u.id]).catch(() => []);
@@ -3628,8 +5710,10 @@ const handleCustomerDynamic = async (c) => {
       const body = await c.req.json().catch(() => ({}));
       const queryText = (body.search_query || body.query || body.term || "").trim();
       if (queryText) {
-        await db.run("DELETE FROM recent_searches WHERE user_id = ? AND query = ?", [u.id, queryText]).catch(() => { });
-        await db.run("INSERT INTO recent_searches (user_id, query) VALUES (?, ?)", [u.id, queryText]).catch(() => { });
+        await db.run("DELETE FROM recent_searches WHERE user_id = ? AND query = ?", [u.id, queryText]).catch(() => {
+        });
+        await db.run("INSERT INTO recent_searches (user_id, query) VALUES (?, ?)", [u.id, queryText]).catch(() => {
+        });
       }
       const list = await db.all("SELECT id, query as search_query, created_at FROM recent_searches WHERE user_id = ? ORDER BY id DESC LIMIT 10", [u.id]).catch(() => []);
       return jsonRes(c, true, list || [], "Search saved");
@@ -3638,15 +5722,16 @@ const handleCustomerDynamic = async (c) => {
       const body = await c.req.json().catch(() => ({}));
       const qId = c.req.query("id") || body.id;
       if (qId) {
-        await db.run("DELETE FROM recent_searches WHERE user_id = ? AND id = ?", [u.id, qId]).catch(() => { });
+        await db.run("DELETE FROM recent_searches WHERE user_id = ? AND id = ?", [u.id, qId]).catch(() => {
+        });
       } else {
-        await db.run("DELETE FROM recent_searches WHERE user_id = ?", [u.id]).catch(() => { });
+        await db.run("DELETE FROM recent_searches WHERE user_id = ?", [u.id]).catch(() => {
+        });
       }
       const list = await db.all("SELECT id, query as search_query, created_at FROM recent_searches WHERE user_id = ? ORDER BY id DESC LIMIT 10", [u.id]).catch(() => []);
       return jsonRes(c, true, list || []);
     }
   }
-
   if (path.includes("trending-search")) {
     return jsonRes(c, true, [
       "Bridal Mehndi",
@@ -3657,28 +5742,22 @@ const handleCustomerDynamic = async (c) => {
       "Minimalist Fingers"
     ]);
   }
-
   if (path.includes("suggestions")) {
     const q = c.req.query("query") || c.req.query("q") || "";
     if (!q) return jsonRes(c, true, []);
     const term = `%${q}%`;
     const artists = await db.all("SELECT full_name as text, 'artist' as type FROM users WHERE LOWER(role) = 'artist' AND full_name LIKE ? LIMIT 5", [term]).catch(() => []);
     const categories = await db.all("SELECT name as text, 'category' as type FROM categories WHERE name LIKE ? LIMIT 3", [term]).catch(() => []);
-    return jsonRes(c, true, [...(artists || []), ...(categories || [])]);
+    return jsonRes(c, true, [...artists || [], ...categories || []]);
   }
-
   if (path.includes("filter")) {
     const categories = await db.all("SELECT name FROM categories WHERE is_active = 1").catch(() => []);
     return jsonRes(c, true, {
-      categories: (categories || []).map(cat => cat.name),
-      price_ranges: ["Under ₹1000", "₹1000 - ₹2500", "₹2500 - ₹5000", "Above ₹5000"],
+      categories: (categories || []).map((cat) => cat.name),
+      price_ranges: ["Under \u20B91000", "\u20B91000 - \u20B92500", "\u20B92500 - \u20B95000", "Above \u20B95000"],
       experience_levels: ["1+ Years", "3+ Years", "5+ Years", "8+ Years"]
     });
   }
-
-  // -------------------------------------------------------------
-  // 1. CUSTOMER PROFILE & ADDRESSES
-  // -------------------------------------------------------------
   if (path.includes("profile")) {
     if (!u || !u.id) {
       return jsonRes(c, false, null, "Unauthorized access", 401);
@@ -3702,27 +5781,25 @@ const handleCustomerDynamic = async (c) => {
         city: addressRow?.city || "",
         state: addressRow?.state || "",
         pincode: addressRow?.pincode || "",
-        created_at: user.created_at || new Date().toISOString()
+        created_at: user.created_at || (/* @__PURE__ */ new Date()).toISOString()
       };
       return jsonRes(c, true, profileData, "Profile fetched successfully");
     }
     if (method === "PUT" || method === "POST") {
       const body = await c.req.json().catch(() => ({}));
-      const name = body.full_name !== undefined ? body.full_name : body.name;
-      const avatar = body.avatar !== undefined ? body.avatar : body.profile_image;
+      const name = body.full_name !== void 0 ? body.full_name : body.name;
+      const avatar = body.avatar !== void 0 ? body.avatar : body.profile_image;
       const phone = body.phone;
       const email = body.email;
-
-      let cleanName = undefined;
-      if (name !== undefined) {
+      let cleanName = void 0;
+      if (name !== void 0) {
         cleanName = String(name || "").trim();
         if (cleanName.length === 0) {
           return jsonRes(c, false, null, "Full name cannot be empty", 400);
         }
       }
-
-      let cleanEmail = undefined;
-      if (email !== undefined && email !== null) {
+      let cleanEmail = void 0;
+      if (email !== void 0 && email !== null) {
         cleanEmail = String(email).trim().toLowerCase();
         if (cleanEmail.length > 0) {
           if (!/\S+@\S+\.\S+/.test(cleanEmail)) {
@@ -3734,9 +5811,8 @@ const handleCustomerDynamic = async (c) => {
           }
         }
       }
-
-      let cleanPhone = undefined;
-      if (phone !== undefined && phone !== null) {
+      let cleanPhone = void 0;
+      if (phone !== void 0 && phone !== null) {
         cleanPhone = String(phone).replace(/[^0-9]/g, "");
         if (cleanPhone.length > 0) {
           if (cleanPhone.length !== 10) {
@@ -3748,25 +5824,22 @@ const handleCustomerDynamic = async (c) => {
           }
         }
       }
-
-      let cleanAvatar = undefined;
-      if (avatar !== undefined && avatar !== null) {
+      let cleanAvatar = void 0;
+      if (avatar !== void 0 && avatar !== null) {
         cleanAvatar = String(avatar).trim();
       }
-
-      if (cleanName !== undefined || cleanAvatar !== undefined || cleanPhone !== undefined || cleanEmail !== undefined) {
+      if (cleanName !== void 0 || cleanAvatar !== void 0 || cleanPhone !== void 0 || cleanEmail !== void 0) {
         const currentUser = await db.first("SELECT full_name, phone, email, avatar FROM users WHERE id = ?", [u.id]).catch(() => null);
-        const finalName = cleanName !== undefined ? cleanName : currentUser?.full_name;
-        const finalPhone = cleanPhone !== undefined && cleanPhone.length > 0 ? cleanPhone : currentUser?.phone;
-        const finalEmail = cleanEmail !== undefined ? cleanEmail : currentUser?.email;
-        const finalAvatar = cleanAvatar !== undefined ? cleanAvatar : currentUser?.avatar;
-
+        const finalName = cleanName !== void 0 ? cleanName : currentUser?.full_name;
+        const finalPhone = cleanPhone !== void 0 && cleanPhone.length > 0 ? cleanPhone : currentUser?.phone;
+        const finalEmail = cleanEmail !== void 0 ? cleanEmail : currentUser?.email;
+        const finalAvatar = cleanAvatar !== void 0 ? cleanAvatar : currentUser?.avatar;
         await db.run(
           "UPDATE users SET full_name = ?, phone = ?, email = ?, avatar = ? WHERE id = ?",
           [finalName, finalPhone, finalEmail, finalAvatar, u.id]
-        ).catch(() => { });
+        ).catch(() => {
+        });
       }
-
       if (body.address || body.full_address || body.city || body.pincode) {
         const fullAddress = body.address || body.full_address || "";
         const city = body.city || "";
@@ -3777,15 +5850,16 @@ const handleCustomerDynamic = async (c) => {
           await db.run(
             "UPDATE customer_addresses SET full_address = ?, city = ?, state = ?, pincode = ? WHERE id = ?",
             [fullAddress, city, state, pincode, existingAddr.id]
-          ).catch(() => { });
+          ).catch(() => {
+          });
         } else {
           await db.run(
             "INSERT INTO customer_addresses (user_id, full_address, city, state, pincode, is_default) VALUES (?, ?, ?, ?, ?, 1)",
             [u.id, fullAddress, city, state, pincode]
-          ).catch(() => { });
+          ).catch(() => {
+          });
         }
       }
-
       const updatedUser = await db.first("SELECT id, full_name, email, phone, avatar, role FROM users WHERE id = ?", [u.id]).catch(() => null);
       const addressRow = await db.first("SELECT full_address, city, state, pincode FROM customer_addresses WHERE user_id = ? ORDER BY is_default DESC, id DESC LIMIT 1", [u.id]).catch(() => null);
       return jsonRes(c, true, {
@@ -3804,19 +5878,15 @@ const handleCustomerDynamic = async (c) => {
       }, "Profile updated successfully");
     }
   }
-
-  // Customer Addresses
   if (path.includes("addresses")) {
-    await db.run("CREATE TABLE IF NOT EXISTS customer_addresses (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, label TEXT, full_address TEXT, house_flat TEXT, landmark TEXT, city TEXT, state TEXT, pincode TEXT, latitude REAL, longitude REAL, is_default INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)").catch(() => { });
-    await db.run("CREATE INDEX IF NOT EXISTS idx_customer_addresses_user_id ON customer_addresses(user_id)").catch(() => { });
-
+    await db.run("CREATE TABLE IF NOT EXISTS customer_addresses (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, label TEXT, full_address TEXT, house_flat TEXT, landmark TEXT, city TEXT, state TEXT, pincode TEXT, latitude REAL, longitude REAL, is_default INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)").catch(() => {
+    });
+    await db.run("CREATE INDEX IF NOT EXISTS idx_customer_addresses_user_id ON customer_addresses(user_id)").catch(() => {
+    });
     if (!u || !u.id) return jsonRes(c, false, null, "Unauthorized access", 401);
-
     const addressIdMatch = path.match(/\/addresses\/(\d+)/);
     const targetAddressId = addressIdMatch ? Number(addressIdMatch[1]) : Number(c.req.query("id") || 0);
     const isDefaultAction = path.includes("/default") || c.req.query("action") === "default";
-
-    // 1. GET ALL ADDRESSES
     if (method === "GET") {
       if (targetAddressId) {
         const item = await db.first("SELECT * FROM customer_addresses WHERE id = ? AND user_id = ?", [targetAddressId, u.id]).catch(() => null);
@@ -3828,20 +5898,18 @@ const handleCustomerDynamic = async (c) => {
       const list = await db.all("SELECT * FROM customer_addresses WHERE user_id = ? ORDER BY is_default DESC, id DESC", [u.id]).catch(() => []);
       return jsonRes(c, true, list || [], "Addresses fetched successfully");
     }
-
-    // 2. SET DEFAULT ADDRESS (PATCH / POST / PUT with /default or action=default)
     if (isDefaultAction && targetAddressId) {
       const existing = await db.first("SELECT id FROM customer_addresses WHERE id = ? AND user_id = ?", [targetAddressId, u.id]).catch(() => null);
       if (!existing) {
         return jsonRes(c, false, null, "Address not found", 404);
       }
-      await db.run("UPDATE customer_addresses SET is_default = 0 WHERE user_id = ?", [u.id]).catch(() => { });
-      await db.run("UPDATE customer_addresses SET is_default = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?", [targetAddressId, u.id]).catch(() => { });
+      await db.run("UPDATE customer_addresses SET is_default = 0 WHERE user_id = ?", [u.id]).catch(() => {
+      });
+      await db.run("UPDATE customer_addresses SET is_default = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?", [targetAddressId, u.id]).catch(() => {
+      });
       const updated = await db.first("SELECT * FROM customer_addresses WHERE id = ?", [targetAddressId]).catch(() => null);
       return jsonRes(c, true, updated, "Default address set successfully");
     }
-
-    // 3. DELETE ADDRESS
     if (method === "DELETE") {
       if (!targetAddressId) {
         return jsonRes(c, false, null, "Address ID is required for deletion", 400);
@@ -3850,22 +5918,19 @@ const handleCustomerDynamic = async (c) => {
       if (!target) {
         return jsonRes(c, false, null, "Address not found or unauthorized", 404);
       }
-
       const wasDefault = Number(target.is_default || 0) === 1;
-      await db.run("DELETE FROM customer_addresses WHERE id = ? AND user_id = ?", [targetAddressId, u.id]).catch(() => { });
-
+      await db.run("DELETE FROM customer_addresses WHERE id = ? AND user_id = ?", [targetAddressId, u.id]).catch(() => {
+      });
       if (wasDefault) {
         const replacement = await db.first("SELECT id FROM customer_addresses WHERE user_id = ? ORDER BY id DESC LIMIT 1", [u.id]).catch(() => null);
         if (replacement) {
-          await db.run("UPDATE customer_addresses SET is_default = 1 WHERE id = ?", [replacement.id]).catch(() => { });
+          await db.run("UPDATE customer_addresses SET is_default = 1 WHERE id = ?", [replacement.id]).catch(() => {
+          });
         }
       }
-
       const remaining = await db.all("SELECT * FROM customer_addresses WHERE user_id = ? ORDER BY is_default DESC, id DESC", [u.id]).catch(() => []);
       return jsonRes(c, true, remaining || [], "Address deleted successfully");
     }
-
-    // 4. CREATE / UPDATE ADDRESS (POST / PUT)
     if (method === "POST" || method === "PUT" || method === "PATCH") {
       const body = await c.req.json().catch(() => ({}));
       const fullAddress = String(body.full_address || body.address || "").trim();
@@ -3875,11 +5940,9 @@ const handleCustomerDynamic = async (c) => {
       const city = String(body.city || "").trim();
       const state = String(body.state || "").trim();
       const pincodeRaw = String(body.pincode || "").trim();
-
       if (!fullAddress) {
         return jsonRes(c, false, null, "Full address is required", 400);
       }
-
       let pincode = "";
       if (pincodeRaw) {
         const cleanPin = pincodeRaw.replace(/[^0-9]/g, "");
@@ -3888,10 +5951,9 @@ const handleCustomerDynamic = async (c) => {
         }
         pincode = cleanPin;
       }
-
       let lat = null;
       let lng = null;
-      if (body.latitude !== undefined && body.latitude !== null && body.longitude !== undefined && body.longitude !== null) {
+      if (body.latitude !== void 0 && body.latitude !== null && body.longitude !== void 0 && body.longitude !== null) {
         const parsedLat = Number(body.latitude);
         const parsedLng = Number(body.longitude);
         if (!isNaN(parsedLat) && !isNaN(parsedLng) && parsedLat >= -90 && parsedLat <= 90 && parsedLng >= -180 && parsedLng <= 180) {
@@ -3899,54 +5961,47 @@ const handleCustomerDynamic = async (c) => {
           lng = parsedLng;
         }
       }
-
       const existingCount = await db.first("SELECT COUNT(*) as cnt FROM customer_addresses WHERE user_id = ?", [u.id]).catch(() => ({ cnt: 0 }));
       const isFirst = Number(existingCount?.cnt || 0) === 0;
       const makeDefault = isFirst || body.is_default === true || body.is_default === 1 || body.is_default === "1";
-
       if (targetAddressId) {
         const existing = await db.first("SELECT id FROM customer_addresses WHERE id = ? AND user_id = ?", [targetAddressId, u.id]).catch(() => null);
         if (!existing) {
           return jsonRes(c, false, null, "Address not found or unauthorized", 404);
         }
         if (makeDefault) {
-          await db.run("UPDATE customer_addresses SET is_default = 0 WHERE user_id = ?", [u.id]).catch(() => { });
+          await db.run("UPDATE customer_addresses SET is_default = 0 WHERE user_id = ?", [u.id]).catch(() => {
+          });
         }
         await db.run(
           "UPDATE customer_addresses SET label = ?, full_address = ?, house_flat = ?, landmark = ?, city = ?, state = ?, pincode = ?, latitude = ?, longitude = ?, is_default = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?",
           [label, fullAddress, houseFlat, landmark, city, state, pincode, lat, lng, makeDefault ? 1 : 0, targetAddressId, u.id]
-        ).catch(() => { });
-
+        ).catch(() => {
+        });
         const updated = await db.first("SELECT * FROM customer_addresses WHERE id = ?", [targetAddressId]).catch(() => null);
         return jsonRes(c, true, updated, "Address updated successfully");
       }
-
       if (makeDefault) {
-        await db.run("UPDATE customer_addresses SET is_default = 0 WHERE user_id = ?", [u.id]).catch(() => { });
+        await db.run("UPDATE customer_addresses SET is_default = 0 WHERE user_id = ?", [u.id]).catch(() => {
+        });
       }
-
       await db.run(
         "INSERT INTO customer_addresses (user_id, label, full_address, house_flat, landmark, city, state, pincode, latitude, longitude, is_default) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [u.id, label, fullAddress, houseFlat, landmark, city, state, pincode, lat, lng, makeDefault ? 1 : 0]
       ).catch(() => null);
-
       const inserted = await db.first("SELECT * FROM customer_addresses WHERE user_id = ? ORDER BY id DESC LIMIT 1", [u.id]).catch(() => null);
       return jsonRes(c, true, inserted, "Address saved successfully");
     }
   }
-
-  // -------------------------------------------------------------
-  // 2. WISHLIST / FAVORITES
-  // -------------------------------------------------------------
   if (path.includes("favorite") || path.includes("wishlist")) {
-    const db = getDb(c.env);
-    await db.run("CREATE TABLE IF NOT EXISTS favorites (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, artist_id INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)").catch(() => { });
-    await db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_favorites_user_artist ON favorites(user_id, artist_id)").catch(() => { });
-
+    const db2 = getDb(c.env);
+    await db2.run("CREATE TABLE IF NOT EXISTS favorites (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, artist_id INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)").catch(() => {
+    });
+    await db2.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_favorites_user_artist ON favorites(user_id, artist_id)").catch(() => {
+    });
     if (!u || !u.id) return jsonRes(c, false, null, "Unauthorized access", 401);
-
     if (method === "GET") {
-      let favs = await db.all(`
+      let favs = await db2.all(`
         SELECT DISTINCT
                f.id as fav_id,
                COALESCE(u.id, ap.user_id, f.artist_id) as id,
@@ -3975,11 +6030,13 @@ const handleCustomerDynamic = async (c) => {
         LEFT JOIN users u ON (u.id = f.artist_id OR CAST(u.id AS TEXT) = CAST(f.artist_id AS TEXT) OR u.id = ap.user_id OR CAST(u.id AS TEXT) = CAST(ap.user_id AS TEXT))
         WHERE (f.user_id = ? OR CAST(f.user_id AS TEXT) = ?)
         ORDER BY f.id DESC
-      `, [u.id, String(u.id)]).catch((err) => { console.log("[FAVS QUERY ERR]", err.message); return []; });
-
-      const seenArtistIds = new Set();
+      `, [u.id, String(u.id)]).catch((err) => {
+        console.log("[FAVS QUERY ERR]", err.message);
+        return [];
+      });
+      const seenArtistIds = /* @__PURE__ */ new Set();
       const uniqueFavs = [];
-      for (const fav of (favs || [])) {
+      for (const fav of favs || []) {
         const artistKey = fav.id || fav.user_id || fav.artist_id || fav.fav_id;
         if (!artistKey || seenArtistIds.has(artistKey)) continue;
         seenArtistIds.add(artistKey);
@@ -3988,72 +6045,64 @@ const handleCustomerDynamic = async (c) => {
         fav.artist_id = fav.artist_id || fav.id;
         uniqueFavs.push(fav);
       }
-
       let resultList = uniqueFavs;
-
-      await enrichArtistRecords(db, resultList);
+      await enrichArtistRecords(db2, resultList);
       return jsonRes(c, true, resultList, "Favorites retrieved");
     }
-
     if (method === "POST") {
       const body = await c.req.json().catch(() => ({}));
       const inputArtistId = Number(body.artistId || body.artist_id || body.id || 0);
       if (inputArtistId) {
-        const targetArtist = await db.first(
+        const targetArtist = await db2.first(
           `SELECT u.id as user_id, ap.id as artist_profile_id
            FROM users u
            LEFT JOIN artist_profiles ap ON (u.id = ap.user_id OR CAST(u.id AS TEXT) = CAST(ap.user_id AS TEXT))
            WHERE u.id = ? OR CAST(u.id AS TEXT) = ? OR ap.id = ? OR CAST(ap.id AS TEXT) = ?`,
           [inputArtistId, String(inputArtistId), inputArtistId, String(inputArtistId)]
         ).catch(() => null);
-
         const targetUserId = targetArtist ? targetArtist.user_id : inputArtistId;
         const targetProfileId = targetArtist?.artist_profile_id || inputArtistId;
-
-        await db.run("INSERT OR REPLACE INTO favorites (user_id, artist_id) VALUES (?, ?)", [u.id, targetUserId]).catch(() => { });
+        await db2.run("INSERT OR REPLACE INTO favorites (user_id, artist_id) VALUES (?, ?)", [u.id, targetUserId]).catch(() => {
+        });
         if (targetProfileId && targetProfileId !== targetUserId) {
-          await db.run("INSERT OR REPLACE INTO favorites (user_id, artist_id) VALUES (?, ?)", [u.id, targetProfileId]).catch(() => { });
+          await db2.run("INSERT OR REPLACE INTO favorites (user_id, artist_id) VALUES (?, ?)", [u.id, targetProfileId]).catch(() => {
+          });
         }
       }
-
       return jsonRes(c, true, null, "Artist added to wishlist");
     }
-
     if (method === "DELETE") {
       let body = {};
-      try { body = await c.req.json(); } catch (e) { }
+      try {
+        body = await c.req.json();
+      } catch (e) {
+      }
       const qId = c.req.query("artistId") || c.req.query("artist_id") || body.artistId || body.artist_id;
       const inputArtistId = Number(qId || 0);
       if (inputArtistId) {
-        const targetArtist = await db.first(
+        const targetArtist = await db2.first(
           `SELECT u.id as user_id, ap.id as artist_profile_id
            FROM users u
            LEFT JOIN artist_profiles ap ON (u.id = ap.user_id OR CAST(u.id AS TEXT) = CAST(ap.user_id AS TEXT))
            WHERE u.id = ? OR CAST(u.id AS TEXT) = ? OR ap.id = ? OR CAST(ap.id AS TEXT) = ?`,
           [inputArtistId, String(inputArtistId), inputArtistId, String(inputArtistId)]
         ).catch(() => null);
-
         const targetUserId = targetArtist ? targetArtist.user_id : inputArtistId;
         const targetProfileId = targetArtist?.artist_profile_id || inputArtistId;
-
-        await db.run(
+        await db2.run(
           "DELETE FROM favorites WHERE (user_id = ? OR CAST(user_id AS TEXT) = ?) AND (artist_id = ? OR CAST(artist_id AS TEXT) = ? OR artist_id = ? OR CAST(artist_id AS TEXT) = ? OR artist_id = ? OR CAST(artist_id AS TEXT) = ?)",
           [u.id, String(u.id), inputArtistId, String(inputArtistId), targetUserId, String(targetUserId), targetProfileId, String(targetProfileId)]
-        ).catch(() => { });
+        ).catch(() => {
+        });
       }
-
       return jsonRes(c, true, null, "Artist removed from wishlist");
     }
   }
-  // -------------------------------------------------------------
-  // 3. REVIEWS & RATINGS (WITH ADMIN MODERATION)
-  // -------------------------------------------------------------
   if (path.includes("admin/review")) {
     if (path.includes("approve")) return handleAdminApproveReview(c);
     if (path.includes("reject")) return handleAdminRejectReview(c);
     return handleAdminGetReviews(c);
   }
-
   if (path.includes("review")) {
     if (path.includes("upload") || path.includes("media")) {
       return handleUploadChatMedia(c);
@@ -4065,25 +6114,17 @@ const handleCustomerDynamic = async (c) => {
       return handleCreateReview(c);
     }
   }
-
-  // -------------------------------------------------------------
-  // 4. PAYMENTS & VERIFICATION
-  // -------------------------------------------------------------
   if (path.includes("payment")) {
     if (path.includes("create-session") || path.includes("create-order")) {
       const body = await c.req.json().catch(() => ({}));
       const bookingId = Number(body.bookingId || body.booking_id || 0);
       const rawPurpose = String(body.purpose || body.payment_purpose || "").toLowerCase();
-      const isRecharge = rawPurpose === "recharge" || (!bookingId && rawPurpose !== "booking" && rawPurpose !== "booking_advance" && rawPurpose !== "booking_remaining");
-
+      const isRecharge = rawPurpose === "recharge" || !bookingId && rawPurpose !== "booking" && rawPurpose !== "booking_advance" && rawPurpose !== "booking_remaining";
       const keyId = (c?.env?.RAZORPAY_KEY_ID || "").trim();
       const keySecret = (c?.env?.RAZORPAY_KEY_SECRET || "").trim();
-
       if (!keyId || !keySecret) {
         return jsonRes(c, false, null, "Razorpay credentials (RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET) are not configured in server environment", 500);
       }
-
-      // 1. Fetch or calculate trusted payable amount
       let booking = null;
       let totalAmtRupees = 0;
       if (!isRecharge) {
@@ -4095,49 +6136,38 @@ const handleCustomerDynamic = async (c) => {
           return jsonRes(c, false, null, "Booking not found", 404);
         }
       }
-
       if (booking) {
         const baseServiceAmount = Number(booking.base_service_amount || booking.total_amount || 0);
         const distanceKm = Number(booking.travel_distance_km || 0);
-        const isTravelConfirmed = String(booking.travel_charge_status).toUpperCase() === 'CONFIRMED';
+        const isTravelConfirmed = String(booking.travel_charge_status).toUpperCase() === "CONFIRMED";
         const travelCharge = Number(booking.travel_charge || 0);
         const settings = await getMarketplaceSettings(db);
         const calc = calculateBookingAmounts(baseServiceAmount, distanceKm, travelCharge, isTravelConfirmed, booking, settings);
-
         totalAmtRupees = calc.customer_total_amount;
       }
-
       if ((!totalAmtRupees || totalAmtRupees <= 0) && booking?.service_id) {
         const service = await db.first("SELECT price, minimum_price FROM services WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [booking.service_id, booking.service_id]).catch(() => null);
         if (service && (service.price || service.minimum_price)) {
           totalAmtRupees = Number(service.price || service.minimum_price);
         }
       }
-
       if (!totalAmtRupees || totalAmtRupees <= 0) {
-        totalAmtRupees = 1800; // Trusted fallback service amount in Rupees
+        totalAmtRupees = 1800;
       }
-
-      // Calculate payable amount (STRICTLY 10% Advance for initial booking confirmation)
       const paymentMode = String(body.payment_mode || body.paymentMethodType || body.mode || "").toUpperCase();
       let payAmountRupees = 50;
       if (isRecharge) {
         payAmountRupees = Math.round(Number(body.amount || 500));
       } else if (rawPurpose === "booking_remaining" || paymentMode === "REMAINING_PAYMENT" || paymentMode === "REMAINING") {
-        const advancePaid = Number(booking?.advance_paid || Math.round(totalAmtRupees * 0.10));
+        const advancePaid = Number(booking?.advance_paid || Math.round(totalAmtRupees * 0.1));
         payAmountRupees = Math.max(0, Math.round(totalAmtRupees - advancePaid));
       } else {
-        // Initial Booking Confirmation: STRICTLY 10% ADVANCE DEPOSIT ONLY
-        payAmountRupees = Math.round(totalAmtRupees * 0.10);
+        payAmountRupees = Math.round(totalAmtRupees * 0.1);
       }
-
       const payAmountPaise = Math.round(payAmountRupees * 100);
-
       if (!payAmountPaise || isNaN(payAmountPaise) || payAmountPaise <= 0) {
         return jsonRes(c, false, null, "Invalid payable amount calculation", 400);
       }
-
-      // 2. Create Authentic Razorpay Order via Razorpay LIVE API
       let orderId = null;
       try {
         const authHeader = "Basic " + btoa(`${keyId}:${keySecret}`);
@@ -4169,45 +6199,42 @@ const handleCustomerDynamic = async (c) => {
         console.error("Razorpay API order creation exception:", err.message);
         return jsonRes(c, false, null, "Razorpay API order creation failed: " + err.message, 500);
       }
-
       if (bookingId && !isRecharge) {
         await db.run(
           "INSERT INTO payments (booking_id, razorpay_order_id, amount, currency, status, payment_method) VALUES (?, ?, ?, 'INR', 'created', 'upi')",
           [bookingId, orderId, payAmountRupees]
-        ).catch(() => { });
+        ).catch(() => {
+        });
       } else if (isRecharge && u && u.id) {
         let wallet = await db.first("SELECT id FROM wallets WHERE user_id = ? OR artist_id = ?", [u.id, u.id]).catch(() => null);
         const walletId = wallet?.id || 0;
         await db.run(
           "INSERT INTO wallet_transactions (wallet_id, user_id, type, amount, status, description, reference_id) VALUES (?, ?, 'recharge', ?, 'pending', 'Wallet Top-up Request', ?)",
           [walletId, u.id, payAmountRupees, orderId]
-        ).catch(() => { });
+        ).catch(() => {
+        });
       }
-
       return jsonRes(c, true, {
         order_id: orderId,
-        orderId: orderId,
+        orderId,
         amount: payAmountPaise,
         amount_rupees: payAmountRupees,
         currency: "INR",
         key: keyId,
         key_id: keyId,
-        keyId: keyId
+        keyId
       }, "Payment order created successfully");
     }
-
     if (path.includes("webhook")) {
       const rawText = await c.req.text().catch(() => "{}");
       const signature = c.req.header("x-razorpay-signature") || c.req.header("X-Razorpay-Signature");
       const webhookSecret = (c?.env?.RAZORPAY_WEBHOOK_SECRET || c?.env?.RAZORPAY_KEY_SECRET || "").trim();
-
       if (webhookSecret && signature) {
         let isWebhookValid = false;
         try {
           const encoder = new TextEncoder();
           const secretKeyData = encoder.encode(webhookSecret);
           const messageData = encoder.encode(rawText);
-
           const cryptoKey = await crypto.subtle.importKey(
             "raw",
             secretKeyData,
@@ -4215,47 +6242,42 @@ const handleCustomerDynamic = async (c) => {
             false,
             ["sign"]
           );
-
           const macBuffer = await crypto.subtle.sign("HMAC", cryptoKey, messageData);
           const macArray = Array.from(new Uint8Array(macBuffer));
-          const expectedSignature = macArray.map(b => b.toString(16).padStart(2, "0")).join("");
-
-          isWebhookValid = (expectedSignature.toLowerCase() === String(signature).toLowerCase());
+          const expectedSignature = macArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+          isWebhookValid = expectedSignature.toLowerCase() === String(signature).toLowerCase();
         } catch (e) {
           console.error("[WEBHOOK] Crypto validation error:", e);
         }
-
         if (!isWebhookValid) {
           return jsonRes(c, false, null, "Invalid webhook signature", 400);
         }
       }
-
       let payload = {};
       try {
         payload = JSON.parse(rawText);
       } catch (e) {
         payload = {};
       }
-
       const event = payload?.event;
       if (event === "payment.captured" || event === "order.paid") {
         const paymentEntity = payload?.payload?.payment?.entity || {};
         const orderId = paymentEntity.order_id || payload?.payload?.order?.entity?.id;
         const paymentId = paymentEntity.id;
-
         if (orderId) {
           const payRec = await db.first("SELECT * FROM payments WHERE razorpay_order_id = ? ORDER BY id DESC LIMIT 1", [orderId]).catch(() => null);
           if (payRec && payRec.booking_id) {
             const booking = await db.first("SELECT * FROM bookings WHERE id = ?", [payRec.booking_id]).catch(() => null);
             if (booking && String(booking.payment_status).toUpperCase() === "PENDING") {
               const total = Number(booking.total_amount || 1800);
-              const advance = Number(payRec.amount || Math.round(total * 0.10));
+              const advance = Number(payRec.amount || Math.round(total * 0.1));
               const remaining = Math.max(0, total - advance);
               await db.run(
                 "UPDATE bookings SET payment_status = 'PARTIAL', status = 'confirmed', detailed_status = 'CONFIRMED', advance_paid = ?, remaining_amount = ? WHERE id = ?",
                 [advance, remaining, booking.id]
               );
-              await db.run("UPDATE payments SET status = 'completed', razorpay_payment_id = ? WHERE id = ?", [paymentId, payRec.id]).catch(() => { });
+              await db.run("UPDATE payments SET status = 'completed', razorpay_payment_id = ? WHERE id = ?", [paymentId, payRec.id]).catch(() => {
+              });
               await processBookingEscrow(db, booking.id, paymentId, advance);
             }
           }
@@ -4263,7 +6285,6 @@ const handleCustomerDynamic = async (c) => {
       }
       return jsonRes(c, true, { received: true, event }, "Webhook processed");
     }
-
     if (path.includes("verify")) {
       const body = await c.req.json().catch(() => ({}));
       const bookingId = Number(body.bookingId || body.booking_id || 0);
@@ -4271,27 +6292,20 @@ const handleCustomerDynamic = async (c) => {
       const orderId = body.razorpay_order_id || body.order_id;
       const signature = body.razorpay_signature || body.signature;
       const keySecret = (c?.env?.RAZORPAY_KEY_SECRET || "").trim();
-
       if (!keySecret) {
         return jsonRes(c, false, null, "Razorpay secret key is not configured in server environment", 500);
       }
-
       if (!bookingId || !paymentId || !orderId || !signature) {
         return jsonRes(c, false, null, "Missing required verification parameters (bookingId, razorpay_order_id, razorpay_payment_id, razorpay_signature)", 400);
       }
-
-      // Reject simulator / test payloads in LIVE mode
       if (String(paymentId).includes("sim") || String(signature).includes("simulated") || String(signature).includes("test")) {
         return jsonRes(c, false, null, "Verification failed: Simulator & test signatures are strictly forbidden in LIVE mode.", 400);
       }
-
-      // Web Crypto HMAC-SHA256 signature verification
       let isValidSignature = false;
       try {
         const encoder = new TextEncoder();
         const secretKeyData = encoder.encode(keySecret);
         const messageData = encoder.encode(`${orderId}|${paymentId}`);
-
         const cryptoKey = await crypto.subtle.importKey(
           "raw",
           secretKeyData,
@@ -4299,20 +6313,16 @@ const handleCustomerDynamic = async (c) => {
           false,
           ["sign"]
         );
-
         const macBuffer = await crypto.subtle.sign("HMAC", cryptoKey, messageData);
         const macArray = Array.from(new Uint8Array(macBuffer));
-        const expectedSignature = macArray.map(b => b.toString(16).padStart(2, "0")).join("");
-
-        isValidSignature = (expectedSignature.toLowerCase() === String(signature).toLowerCase());
+        const expectedSignature = macArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+        isValidSignature = expectedSignature.toLowerCase() === String(signature).toLowerCase();
       } catch (err) {
         console.error("Crypto verification error:", err);
       }
-
       if (!isValidSignature) {
         return jsonRes(c, false, null, "Razorpay HMAC-SHA256 signature verification failed. Payment rejected.", 400);
       }
-
       let booking = await db.first(
         "SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT) OR booking_number = ? OR CAST(booking_number AS TEXT) = CAST(? AS TEXT)",
         [bookingId, String(bookingId), String(bookingId), String(bookingId)]
@@ -4320,37 +6330,29 @@ const handleCustomerDynamic = async (c) => {
       if (!booking) {
         booking = await db.first("SELECT * FROM bookings ORDER BY id DESC LIMIT 1").catch(() => null);
       }
-      const bookingTotal = Number(booking?.total_amount || booking?.final_amount || 378.00);
-
-      // Check payment order record for actual transaction amount
+      const bookingTotal = Number(booking?.total_amount || booking?.final_amount || 378);
       const payRecord = await db.first("SELECT amount FROM payments WHERE razorpay_order_id = ? ORDER BY id DESC LIMIT 1", [orderId]).catch(() => null);
       const paidOrderAmount = Number(payRecord?.amount || 0);
-
       const existingAdvance = Number(booking?.advance_paid || 0);
-      const isSettlement = (body.isSettlement === true || body.is_settlement === true || String(body.purpose).includes("remaining") || String(body.payment_mode).includes("REMAINING") || String(body.payment_mode).includes("FULL"));
-
-      let newAdvancePaid = existingAdvance > 0 ? (existingAdvance + (paidOrderAmount || 0)) : (paidOrderAmount || Math.round(bookingTotal * 0.10));
+      const isSettlement = body.isSettlement === true || body.is_settlement === true || String(body.purpose).includes("remaining") || String(body.payment_mode).includes("REMAINING") || String(body.payment_mode).includes("FULL");
+      let newAdvancePaid = existingAdvance > 0 ? existingAdvance + (paidOrderAmount || 0) : paidOrderAmount || Math.round(bookingTotal * 0.1);
       if (newAdvancePaid >= bookingTotal || isSettlement || paidOrderAmount >= bookingTotal * 0.8) {
         newAdvancePaid = bookingTotal;
       }
-
       const remainingAmount = Math.max(0, Math.round((bookingTotal - newAdvancePaid) * 100) / 100);
       const isFullyPaid = remainingAmount <= 0;
       const paymentStatus = isFullyPaid ? "PAID" : "PARTIAL";
       const platformCommission = Math.round(bookingTotal * PLATFORM_COMMISSION_RATE * 100) / 100;
       const artistEarning = Math.round((bookingTotal - platformCommission) * 100) / 100;
-
       await db.run(
         "UPDATE bookings SET status = CASE WHEN status = 'completed' THEN 'completed' ELSE 'confirmed' END, payment_status = ?, advance_paid = ?, remaining_amount = ?, detailed_status = CASE WHEN ? = 1 THEN 'PAYMENT_COMPLETED' ELSE 'CONFIRMED' END WHERE id = ?",
         [paymentStatus, newAdvancePaid, remainingAmount, isFullyPaid ? 1 : 0, bookingId]
       );
-
       await db.run(
         "INSERT INTO payments (booking_id, razorpay_order_id, razorpay_payment_id, amount, currency, status, payment_method) VALUES (?, ?, ?, ?, 'INR', 'completed', 'upi')",
         [bookingId, orderId, paymentId, paidOrderAmount || newAdvancePaid]
-      ).catch(() => { });
-
-      // Record customer transaction in wallet_transactions (with current ISO timestamp)
+      ).catch(() => {
+      });
       const customerUserId = booking?.customer_id || booking?.user_id || u?.id;
       if (customerUserId) {
         let customerWallet = await db.first("SELECT * FROM wallets WHERE user_id = ?", [customerUserId]).catch(() => null);
@@ -4362,28 +6364,23 @@ const handleCustomerDynamic = async (c) => {
         const custTxRef = `PAY_${bookingId}_${paymentId}`;
         const existingCustTx = await db.first("SELECT id FROM wallet_transactions WHERE reference_id = ?", [custTxRef]).catch(() => null);
         if (!existingCustTx) {
-          const desc = isFullyPaid
-            ? `Final Settlement for Booking #${booking?.booking_number || bookingId}`
-            : `Advance Payment (10%) for Booking #${booking?.booking_number || bookingId}`;
+          const desc = isFullyPaid ? `Final Settlement for Booking #${booking?.booking_number || bookingId}` : `Advance Payment (10%) for Booking #${booking?.booking_number || bookingId}`;
           await db.run(
             "INSERT INTO wallet_transactions (wallet_id, user_id, booking_id, type, amount, description, status, reference_id, created_at) VALUES (?, ?, ?, 'debit', ?, ?, 'completed', ?, datetime('now'))",
             [custWalletId, customerUserId, bookingId, paidOrderAmount || newAdvancePaid, desc, custTxRef]
           ).catch(() => null);
         }
       }
-
       if (isFullyPaid) {
         await processBookingSettlement(db, bookingId);
       } else {
         await processBookingEscrow(db, bookingId, paymentId, newAdvancePaid);
       }
-
-      // DISPATCH NOTIFICATION TO ARTIST (Now that advance payment is verified!)
       if (booking?.artist_id) {
         dispatchNotification(db, {
           userId: booking.artist_id,
-          title: "New Booking Request 🌸",
-          body: `New advance-paid booking #${booking.booking_number || booking.booking_code || bookingId} received for ₹${bookingTotal}!`,
+          title: "New Booking Request \u{1F338}",
+          body: `New advance-paid booking #${booking.booking_number || booking.booking_code || bookingId} received for \u20B9${bookingTotal}!`,
           type: "BOOKING_CREATED",
           entityId: bookingId,
           entityType: "booking",
@@ -4391,12 +6388,10 @@ const handleCustomerDynamic = async (c) => {
           deepLink: `mehendigoo://artist/booking/${bookingId}`
         }).catch(() => null);
       }
-
-      // DISPATCH NOTIFICATION TO CUSTOMER
       if (booking?.customer_id) {
         dispatchNotification(db, {
           userId: booking.customer_id,
-          title: "Payment Confirmed ✨",
+          title: "Payment Confirmed \u2728",
           body: `Your booking #${booking.booking_number || booking.booking_code || bookingId} is confirmed and sent to the artist.`,
           type: "PAYMENT_SUCCESS",
           entityId: bookingId,
@@ -4405,11 +6400,10 @@ const handleCustomerDynamic = async (c) => {
           deepLink: `mehendigoo://booking/${bookingId}`
         }).catch(() => null);
       }
-
       return jsonRes(c, true, {
         booking_id: bookingId,
         payment_status: paymentStatus,
-        status: booking?.status === 'completed' ? 'completed' : 'confirmed',
+        status: booking?.status === "completed" ? "completed" : "confirmed",
         advance_paid: newAdvancePaid,
         remaining_amount: remainingAmount,
         total_amount: bookingTotal,
@@ -4421,24 +6415,16 @@ const handleCustomerDynamic = async (c) => {
       }, "Payment verified successfully");
     }
   }
-
-  // -------------------------------------------------------------
-  // 5. BOOKINGS & BOOKING LIFECYCLE
-  // -------------------------------------------------------------
   if (path.includes("booking")) {
-    // Price details helper (MUST BE BEFORE /details check!)
     if (path.includes("price-details")) {
       const serviceId = Number(c.req.query("serviceId") || c.req.query("service_id") || 101);
       const distanceKm = Number(c.req.query("distanceKm") || c.req.query("distance_km") || c.req.query("distance") || 0);
       const travelChargeOverride = Number(c.req.query("travelCharge") || c.req.query("travel_charge") || 0);
       const isTravelConfirmed = String(c.req.query("isTravelConfirmed") || c.req.query("travelConfirmed") || "false").toLowerCase() === "true";
-
       const service = await db.first("SELECT * FROM services WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [serviceId, String(serviceId)]).catch(() => null);
       const basePrice = service ? Number(service.price || service.minimum_price || 0) : 500;
       const settings = await getMarketplaceSettings(db);
-
       const calc = calculateBookingAmounts(basePrice, distanceKm, travelChargeOverride, isTravelConfirmed, {}, settings);
-
       return jsonRes(c, true, {
         service_id: serviceId,
         service_price: calc.base_service_amount,
@@ -4471,23 +6457,19 @@ const handleCustomerDynamic = async (c) => {
         remainingAmount: calc.remaining_cash
       }, "Price details calculated");
     }
-
-    // Single booking details lookup
     if (path.includes("/details/") || path.includes("booking/details")) {
       const parts = path.split("/").filter(Boolean);
       const bookingId = parseInt(parts[parts.length - 1], 10);
       if (isNaN(bookingId)) return jsonRes(c, false, null, "Invalid booking ID", 400);
-
       let booking = await db.first(
         "SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT) OR booking_number = ? OR CAST(booking_number AS TEXT) = CAST(? AS TEXT)",
         [bookingId, String(bookingId), String(bookingId), String(bookingId)]
       ).catch(() => null);
-
       if (!booking) {
         booking = {
           id: bookingId,
           booking_id: bookingId,
-          bookingId: bookingId,
+          bookingId,
           booking_code: "MG-" + String(bookingId).slice(-6),
           bookingCode: "MG-" + String(bookingId).slice(-6),
           booking_number: "MG-" + String(bookingId).slice(-6),
@@ -4495,14 +6477,14 @@ const handleCustomerDynamic = async (c) => {
           customer_id: u?.id || 0,
           artist_id: 0,
           service_id: 0,
-          booking_date: new Date().toISOString().split("T")[0],
+          booking_date: (/* @__PURE__ */ new Date()).toISOString().split("T")[0],
           booking_time: "10:00 AM",
           total_amount: 0,
           totalAmount: 0,
           finalAmount: 0,
           service_price: 0,
           servicePrice: 0,
-          advance_paid: 0.0,
+          advance_paid: 0,
           required_advance: 0,
           advance_price: 0,
           advancePrice: 0,
@@ -4515,64 +6497,52 @@ const handleCustomerDynamic = async (c) => {
           address: ""
         };
       }
-
       const artistUser = await db.first("SELECT full_name, phone FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [booking.artist_id, booking.artist_id]).catch(() => null);
       const artistProfile = await db.first("SELECT profile_image, city FROM artist_profiles WHERE user_id = ? OR CAST(user_id AS TEXT) = CAST(? AS TEXT)", [booking.artist_id, booking.artist_id]).catch(() => null);
       const customerUser = await db.first("SELECT full_name, phone, email, avatar FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [booking.customer_id, booking.customer_id]).catch(() => null);
       const artistLoc = await db.first("SELECT * FROM artist_locations WHERE artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT)", [booking.artist_id, String(booking.artist_id)]).catch(() => null);
-
-      // Check-In OTP handling: Only set if check-in is NOT verified yet
-      const isCheckInVerifiedInDb =
-        Number(booking.checkin_otp_verified) === 1 ||
-        Number(booking.checkin_verified) === 1 ||
-        Number(booking.check_in_otp_verified) === 1 ||
-        booking.check_in_otp_verified === true ||
-        booking.checkin_otp_verified === true ||
-        ["CUSTOMER_VERIFIED", "SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS", "CHECKOUT", "COMPLETED"].includes(String(booking.detailed_status || booking.status || "").toUpperCase());
-
-      let checkinOtp = isCheckInVerifiedInDb ? null : (booking.checkin_otp || booking.check_in_otp);
+      const isCheckInVerifiedInDb = Number(booking.checkin_otp_verified) === 1 || Number(booking.checkin_verified) === 1 || Number(booking.check_in_otp_verified) === 1 || booking.check_in_otp_verified === true || booking.checkin_otp_verified === true || ["CUSTOMER_VERIFIED", "SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS", "CHECKOUT", "COMPLETED"].includes(String(booking.detailed_status || booking.status || "").toUpperCase());
+      let checkinOtp = isCheckInVerifiedInDb ? null : booking.checkin_otp || booking.check_in_otp;
       if (isCheckInVerifiedInDb && (booking.checkin_otp || booking.check_in_otp)) {
-        await db.run("UPDATE bookings SET checkin_otp = NULL, check_in_otp = NULL, checkin_otp_expires_at = NULL, checkin_otp_verified = 1 WHERE id = ?", [booking.id]).catch(() => { });
+        await db.run("UPDATE bookings SET checkin_otp = NULL, check_in_otp = NULL, checkin_otp_expires_at = NULL, checkin_otp_verified = 1 WHERE id = ?", [booking.id]).catch(() => {
+        });
         booking.checkin_otp = null;
         booking.check_in_otp = null;
         booking.checkin_otp_verified = 1;
         checkinOtp = null;
       } else if (!isCheckInVerifiedInDb && !checkinOtp) {
-        checkinOtp = Math.floor(1000 + Math.random() * 9000).toString();
-        await db.run("UPDATE bookings SET checkin_otp = ?, check_in_otp = ? WHERE id = ?", [checkinOtp, checkinOtp, booking.id]).catch(() => { });
+        checkinOtp = Math.floor(1e3 + Math.random() * 9e3).toString();
+        await db.run("UPDATE bookings SET checkin_otp = ?, check_in_otp = ? WHERE id = ?", [checkinOtp, checkinOtp, booking.id]).catch(() => {
+        });
         booking.checkin_otp = checkinOtp;
         booking.check_in_otp = checkinOtp;
       }
-
-      // Check-Out Completion PIN: Ensure a 4-digit PIN is always available
       let checkoutOtp = booking.checkout_otp || booking.check_out_otp || booking.completion_pin;
       if (!checkoutOtp) {
-        checkoutOtp = Math.floor(1000 + Math.random() * 9000).toString();
+        checkoutOtp = Math.floor(1e3 + Math.random() * 9e3).toString();
         if (checkinOtp && checkoutOtp === checkinOtp) {
-          checkoutOtp = Math.floor(1000 + Math.random() * 9000).toString();
+          checkoutOtp = Math.floor(1e3 + Math.random() * 9e3).toString();
         }
-        await db.run("UPDATE bookings SET checkout_otp = ?, check_out_otp = ?, completion_pin = ? WHERE id = ?", [checkoutOtp, checkoutOtp, checkoutOtp, booking.id]).catch(() => { });
+        await db.run("UPDATE bookings SET checkout_otp = ?, check_out_otp = ?, completion_pin = ? WHERE id = ?", [checkoutOtp, checkoutOtp, checkoutOtp, booking.id]).catch(() => {
+        });
         booking.checkout_otp = checkoutOtp;
         booking.check_out_otp = checkoutOtp;
         booking.completion_pin = checkoutOtp;
       }
-
       const custLat = Number(booking.latitude || 26.9124);
       const custLng = Number(booking.longitude || 75.7873);
       const artLat = artistLoc ? Number(artistLoc.latitude) : null;
       const artLng = artistLoc ? Number(artistLoc.longitude) : null;
-
       let distanceMeters = null;
       let etaMins = null;
       if (artLat && artLng && custLat && custLng) {
-        const R = 6371000;
+        const R = 6371e3;
         const dLat = (custLat - artLat) * Math.PI / 180;
         const dLng = (custLng - artLng) * Math.PI / 180;
         const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(artLat * Math.PI / 180) * Math.cos(custLat * Math.PI / 180) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
         distanceMeters = Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
         etaMins = Math.max(1, Math.round(distanceMeters / 400));
       }
-
       const service = await db.first("SELECT title, duration, price FROM services WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [booking.service_id, booking.service_id]).catch(() => null);
       const servicePriceVal = Number(service?.price || booking.total_amount || 0);
       const baseServiceAmount = Number(booking?.base_service_amount || booking?.total_amount || servicePriceVal || 0);
@@ -4581,37 +6551,23 @@ const handleCustomerDynamic = async (c) => {
       const travelCharge = Number(booking?.travel_charge || 0);
       const settings = await getMarketplaceSettings(db);
       const calc = calculateBookingAmounts(baseServiceAmount, distanceKm, travelCharge, isTravelConfirmed, booking, settings);
-
       const advancePaidVal = booking ? Number(booking.advance_paid || 0) : 0;
       const advanceDeducted = advancePaidVal > 0 ? advancePaidVal : calc.required_advance;
       const remainingAmountVal = Math.max(0, calc.customer_total_amount - advanceDeducted);
-
       const custName = customerUser?.full_name || "Customer";
       const custPhone = customerUser?.phone || null;
       const custEmail = customerUser?.email || null;
       const custAvatar = customerUser?.avatar || null;
-
       const rawStatusStr = String(booking?.status || "PENDING").toUpperCase();
       let normalizedDetailedStatus = String(booking?.detailed_status || booking?.status || "PENDING").toUpperCase();
       if (normalizedDetailedStatus === "ACCEPTED") normalizedDetailedStatus = "ARTIST_ACCEPTED";
-
       if (isCheckInVerifiedInDb && !["COMPLETED", "COMPLETED_CLOSED", "CANCELLED", "REJECTED", "CHECKOUT", "PAYMENT_REQUIRED"].includes(normalizedDetailedStatus)) {
         normalizedDetailedStatus = "SERVICE_IN_PROGRESS";
       }
-
-      const normalizedBookingStatus = (normalizedDetailedStatus === "ARTIST_ACCEPTED" || rawStatusStr === "ACCEPTED" || rawStatusStr === "ARTIST_ACCEPTED")
-        ? "CONFIRMED"
-        : (isCheckInVerifiedInDb && normalizedDetailedStatus === "SERVICE_IN_PROGRESS" ? "IN_PROGRESS" : rawStatusStr);
-
+      const normalizedBookingStatus = normalizedDetailedStatus === "ARTIST_ACCEPTED" || rawStatusStr === "ACCEPTED" || rawStatusStr === "ARTIST_ACCEPTED" ? "CONFIRMED" : isCheckInVerifiedInDb && normalizedDetailedStatus === "SERVICE_IN_PROGRESS" ? "IN_PROGRESS" : rawStatusStr;
       const userRole = String(u?.role || "").toUpperCase();
-      const isCustomerRequester = u && (
-        Number(u.id) === Number(booking.customer_id) ||
-        Number(u.id) === Number(booking.user_id) ||
-        userRole === "CUSTOMER" ||
-        path.includes("/customer/")
-      );
+      const isCustomerRequester = u && (Number(u.id) === Number(booking.customer_id) || Number(u.id) === Number(booking.user_id) || userRole === "CUSTOMER" || path.includes("/customer/"));
       const isArtistRequester = !isCustomerRequester && (userRole === "ARTIST" || path.includes("/artist/"));
-
       return jsonRes(c, true, {
         ...booking,
         booking_id: booking.id,
@@ -4652,7 +6608,7 @@ const handleCustomerDynamic = async (c) => {
           updatedAt: artistLoc.updated_at
         } : null,
         distance_meters: distanceMeters,
-        distance_km: distanceMeters !== null ? (distanceMeters / 1000).toFixed(1) : null,
+        distance_km: distanceMeters !== null ? (distanceMeters / 1e3).toFixed(1) : null,
         eta_mins: etaMins,
         artist_name: artistUser?.full_name || "Mehndi Specialist",
         artist_phone: artistUser?.phone || null,
@@ -4728,23 +6684,19 @@ const handleCustomerDynamic = async (c) => {
         finalAmount: calc.customer_total_amount
       }, "Booking details fetched");
     }
-
-    // Booking creation
     if (method === "POST" && (path.includes("/create") || path.endsWith("/booking"))) {
       if (!u || !u.id) return jsonRes(c, false, null, "Unauthorized access", 401);
       await ensureWalletTables(db);
       const body = await c.req.json().catch(() => ({}));
       const artistId = Number(body.artist_id || body.artistId || body.artist?.id || body.artist || 0);
       const serviceId = Number(body.service_id || body.serviceId || 0);
-      const bookingDate = body.booking_date || body.bookingDate || body.selectedDate || new Date().toISOString().split('T')[0];
+      const bookingDate = body.booking_date || body.bookingDate || body.selectedDate || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
       const bookingTime = body.booking_time || body.bookingTime || body.timeLabel || "10:00 AM";
       const address = body.address || body.full_address || "Customer Location";
       const notes = body.notes || "";
       const bookingNo = "MG-" + Date.now().toString().slice(-6);
-      const lat = body.latitude !== undefined && body.latitude !== null ? Number(body.latitude) : (body.lat !== undefined ? Number(body.lat) : null);
-      const lng = body.longitude !== undefined && body.longitude !== null ? Number(body.longitude) : (body.lng !== undefined ? Number(body.lng) : null);
-
-      // Double Booking Protection: Ensure artist is not already committed on this date and time slot
+      const lat = body.latitude !== void 0 && body.latitude !== null ? Number(body.latitude) : body.lat !== void 0 ? Number(body.lat) : null;
+      const lng = body.longitude !== void 0 && body.longitude !== null ? Number(body.longitude) : body.lng !== void 0 ? Number(body.lng) : null;
       if (artistId && bookingDate && bookingTime) {
         const conflicting = await db.first(
           `SELECT id, booking_number, booking_date, booking_time, status 
@@ -4756,12 +6708,10 @@ const handleCustomerDynamic = async (c) => {
            LIMIT 1`,
           [artistId, String(artistId), bookingDate, bookingTime]
         ).catch(() => null);
-
         if (conflicting) {
           return jsonRes(c, false, null, `Artist is already booked for ${bookingDate} at ${bookingTime}. Please select another slot.`, 409);
         }
       }
-
       let totalAmount = Number(body.total_amount || body.totalAmount || body.finalAmount || body.price || body.amount || body.grandTotal || body.total_price || 0);
       if (!totalAmount && serviceId) {
         const service = await db.first("SELECT * FROM services WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [serviceId, serviceId]).catch(() => null);
@@ -4770,14 +6720,12 @@ const handleCustomerDynamic = async (c) => {
         }
       }
       if (!totalAmount) {
-        totalAmount = 378.00;
+        totalAmount = 378;
       }
-
       const baseServiceAmount = totalAmount;
       const distanceKm = Number(body.distance_km || body.distanceKm || body.distance || 0);
       const settings = await getMarketplaceSettings(db);
       const calc = calculateBookingAmounts(baseServiceAmount, distanceKm, 0, false, {}, settings);
-
       try {
         await db.run(
           `INSERT INTO bookings (
@@ -4787,19 +6735,30 @@ const handleCustomerDynamic = async (c) => {
             customer_total_amount, advance_paid, remaining_amount, address, latitude, longitude, notes, status, payment_status
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.0, 'NONE', ?, ?, 0.0, ?, ?, 0.0, ?, ?, ?, ?, ?, 'pending_payment', 'pending')`,
           [
-            bookingNo, u.id, artistId, serviceId, bookingDate, bookingTime,
-            calc.customer_total_amount, calc.base_service_amount,
-            calc.admin_commission, calc.artist_service_amount, calc.artist_service_amount,
-            calc.customer_total_amount, calc.remaining_cash, address, lat, lng, notes
+            bookingNo,
+            u.id,
+            artistId,
+            serviceId,
+            bookingDate,
+            bookingTime,
+            calc.customer_total_amount,
+            calc.base_service_amount,
+            calc.admin_commission,
+            calc.artist_service_amount,
+            calc.artist_service_amount,
+            calc.customer_total_amount,
+            calc.remaining_cash,
+            address,
+            lat,
+            lng,
+            notes
           ]
         );
       } catch (err) {
         console.log("Booking insert error:", err.message);
       }
-
       const createdBooking = await db.first("SELECT * FROM bookings WHERE booking_number = ? ORDER BY id DESC LIMIT 1", [bookingNo]).catch(() => null);
       const realId = createdBooking?.id || Date.now();
-
       const bookingPayload = {
         ...createdBooking,
         id: realId,
@@ -4810,11 +6769,11 @@ const handleCustomerDynamic = async (c) => {
         booking_number: bookingNo,
         bookingNumber: bookingNo,
         base_service_amount: calc.base_service_amount,
-        travel_charge: 0.0,
-        travel_charge_status: 'NONE',
+        travel_charge: 0,
+        travel_charge_status: "NONE",
         admin_commission: calc.admin_commission,
         artist_service_amount: calc.artist_service_amount,
-        artist_travel_amount: 0.0,
+        artist_travel_amount: 0,
         artist_total_payable: calc.artist_total_payable,
         customer_total_amount: calc.customer_total_amount,
         total_amount: calc.customer_total_amount,
@@ -4826,7 +6785,7 @@ const handleCustomerDynamic = async (c) => {
         booking_status: "PENDING_PAYMENT",
         bookingStatus: "PENDING_PAYMENT",
         payment_status: "pending",
-        advance_paid: 0.0,
+        advance_paid: 0,
         required_advance: calc.required_advance,
         requiredAdvance: calc.required_advance,
         advance_price: calc.required_advance,
@@ -4836,20 +6795,14 @@ const handleCustomerDynamic = async (c) => {
         remaining_amount: calc.remaining_cash,
         remainingAmount: calc.remaining_cash
       };
-
       return jsonRes(c, true, bookingPayload, "Booking initiated. Please complete advance payment to confirm.");
     }
-
-    // Booking status updates (on_the_way, arrived, start, complete, cancel)
-    if (method === "PUT" || (method === "POST" && (path.includes("cancel") || path.includes("complete")))) {
+    if (method === "PUT" || method === "POST" && (path.includes("cancel") || path.includes("complete"))) {
       try {
         const body = await c.req.json().catch(() => ({}));
         const bookingId = Number(body.bookingId || body.booking_id || 0);
         if (!bookingId) return jsonRes(c, false, null, "Booking ID is required", 400);
-
         let targetStatus = "confirmed";
-        // NOTE: The on-the-way flow updates the booking.status column directly.
-        // No separate detailed_status column exists.
         if (path.includes("on-the-way") || path.includes("on_the_way") || path.includes("arrived") || path.includes("start")) {
           targetStatus = "confirmed";
         } else if (path.includes("complete")) {
@@ -4857,36 +6810,31 @@ const handleCustomerDynamic = async (c) => {
         } else if (path.includes("cancel")) {
           const b = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, bookingId]).catch(() => null);
           if (!b) return jsonRes(c, false, null, "Booking not found", 404);
-
           if (u && u.id) {
             const isCustomer = String(b.customer_id) === String(u.id);
             if (!isCustomer) {
               return jsonRes(c, false, null, "Unauthorized: You do not own this booking", 403);
             }
           }
-
           const currentSt = String(b.status || "").toUpperCase();
           if (["CANCELLED", "REJECTED", "REFUNDED"].includes(currentSt)) {
             return jsonRes(c, true, b, "Booking is already cancelled");
           }
-
           if (["ARRIVED", "ARTIST_ARRIVED", "SERVICE_STARTED", "IN_PROGRESS", "COMPLETED", "COMPLETED_CLOSED"].includes(currentSt)) {
             return jsonRes(c, false, null, "Booking cannot be cancelled after specialist arrival or service start", 400);
           }
-
           const reason = body.reason || body.cancel_reason || body.cancellation_reason || "Cancelled by customer";
           const advancePaid = Number(b.advance_paid || 0);
-
           await db.run(
             "CREATE TABLE IF NOT EXISTS refunds (id INTEGER PRIMARY KEY AUTOINCREMENT, booking_id INTEGER, amount REAL, reason TEXT, status TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)"
-          ).catch(() => { });
-
+          ).catch(() => {
+          });
           if (advancePaid > 0) {
             await db.run(
               "INSERT INTO refunds (booking_id, amount, reason, status) VALUES (?, ?, ?, 'PROCESSED')",
               [bookingId, advancePaid, reason]
-            ).catch(() => { });
-
+            ).catch(() => {
+            });
             await db.run(
               "UPDATE bookings SET status = 'cancelled', payment_status = 'REFUNDED', notes = ? WHERE id = ?",
               [reason, bookingId]
@@ -4897,10 +6845,7 @@ const handleCustomerDynamic = async (c) => {
               [reason, bookingId]
             );
           }
-
-          // Reverse artist escrow balance upon booking cancellation
           await processBookingRefund(db, bookingId, reason);
-
           const updatedBooking = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
           return jsonRes(c, true, {
             ...updatedBooking,
@@ -4918,7 +6863,6 @@ const handleCustomerDynamic = async (c) => {
           }
           return jsonRes(c, true, { booking_id: bookingId, status: "completed", payment_status: "paid" }, "Cash payment confirmed and service completed");
         }
-
         let normalizedStatus = "pending";
         const lowerSt = String(targetStatus || "").toLowerCase();
         if (lowerSt.includes("cancel") || lowerSt.includes("reject")) {
@@ -4932,7 +6876,6 @@ const handleCustomerDynamic = async (c) => {
         } else if (["pending", "accepted", "confirmed", "completed", "cancelled"].includes(lowerSt)) {
           normalizedStatus = lowerSt;
         }
-
         if (normalizedStatus === "completed") {
           const currentBooking = await db.first("SELECT status, total_amount FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
           if (currentBooking && currentBooking.status !== "completed") {
@@ -4945,7 +6888,6 @@ const handleCustomerDynamic = async (c) => {
             await processBookingRefund(db, bookingId, body.reason || body.cancellation_reason || "Cancelled");
           }
         }
-
         await db.run("UPDATE bookings SET status = ? WHERE id = ?", [normalizedStatus, bookingId]);
         const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
         return jsonRes(c, true, updated, `Booking status updated to ${normalizedStatus}`);
@@ -4953,8 +6895,6 @@ const handleCustomerDynamic = async (c) => {
         return jsonRes(c, false, null, err.message || "Status update failed", 500);
       }
     }
-
-    // Customer Bookings List
     if (method === "GET") {
       if (!u || !u.id) return jsonRes(c, false, null, "Unauthorized access", 401);
       const rawBookings = await db.all(`
@@ -4970,10 +6910,9 @@ const handleCustomerDynamic = async (c) => {
         WHERE (b.customer_id = ? OR CAST(b.customer_id AS TEXT) = CAST(? AS TEXT))
         ORDER BY b.id DESC
       `, [u.id, String(u.id)]).catch(() => []);
-
       const formattedBookings = (rawBookings || []).map((b) => {
         const statusUpper = String(b.status || "PENDING").toUpperCase();
-        const code = b.booking_number || ("MG-" + String(b.id).padStart(6, "0"));
+        const code = b.booking_number || "MG-" + String(b.id).padStart(6, "0");
         return {
           ...b,
           id: b.id,
@@ -5004,25 +6943,17 @@ const handleCustomerDynamic = async (c) => {
           }
         };
       });
-
       return jsonRes(c, true, formattedBookings, "Customer bookings retrieved");
     }
   }
-
-  // -------------------------------------------------------------
-  // 6. PUBLIC ARTIST LOOKUP & SEARCH FOR CUSTOMERS
-  // -------------------------------------------------------------
   if (path.includes("artist") || path.includes("search")) {
     const parts = path.split("/").filter(Boolean);
     const lastSeg = parts[parts.length - 1];
     const targetId = parseInt(lastSeg, 10);
-
-    // Sub-resources for single artist
     if (path.includes("/services")) {
       const artistId = parseInt(parts[parts.length - 2], 10) || targetId || 6;
       const rawServices = await db.all("SELECT * FROM services WHERE artist_id = ? OR user_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT)", [artistId, artistId, artistId]).catch(() => []);
-      let services = Array.isArray(rawServices) ? rawServices : (rawServices?.results || []);
-
+      let services = Array.isArray(rawServices) ? rawServices : rawServices?.results || [];
       if (!services || services.length === 0) {
         services = [
           { id: 101, artist_id: artistId, user_id: artistId, title: "Royal Bridal Grand Mehndi Package", name: "Royal Bridal Grand Mehndi Package", specialization_name: "Royal Bridal Grand Mehndi Package", price: 5500, amount: 5500, minimum_price: 5500, starting_price: 5500, category: "Bridal Mehndi", duration: "4 Hours", duration_minutes: 240, description: "Full hand intricacy up to elbows with dulha-dulhan motifs." },
@@ -5031,7 +6962,7 @@ const handleCustomerDynamic = async (c) => {
           { id: 104, artist_id: artistId, user_id: artistId, title: "Rajasthani Marwari Traditional Henna", name: "Rajasthani Marwari Traditional Henna", specialization_name: "Rajasthani Marwari Traditional Henna", price: 3200, amount: 3200, minimum_price: 3200, starting_price: 3200, category: "Rajasthani Mehndi", duration: "3 Hours", duration_minutes: 180, description: "Authentic Marwari jaali patterns & lotus motifs." }
         ];
       } else {
-        services = services.map(s => ({
+        services = services.map((s) => ({
           ...s,
           specialization_name: s.specialization_name || s.title || s.name || "Henna Service",
           title: s.title || s.specialization_name || s.name || "Henna Service",
@@ -5043,26 +6974,22 @@ const handleCustomerDynamic = async (c) => {
           duration_minutes: Number(s.duration_minutes || (s.duration ? parseInt(s.duration, 10) * 60 : 60)) || 60
         }));
       }
-
       return jsonRes(c, true, services, "Services retrieved successfully");
     }
-
     if (path.includes("/portfolio")) {
       const artistId = parseInt(parts[parts.length - 2], 10) || targetId;
       const portfolio = await db.all("SELECT * FROM artist_portfolios WHERE artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT) ORDER BY id DESC", [artistId, artistId]).catch(() => []);
       return jsonRes(c, true, portfolio || []);
     }
-
     if (path.includes("/reviews") || path.includes("review")) {
       return handleGetArtistReviews(c);
     }
-
     if (path.includes("/availability")) {
-      const parts = path.split("/").filter(Boolean);
-      const artistId = parseInt(parts[parts.length - 2], 10) || targetId || 6;
+      const parts2 = path.split("/").filter(Boolean);
+      const artistId = parseInt(parts2[parts2.length - 2], 10) || targetId || 6;
       const slotsList = [];
       const times = ["09:00 AM", "11:30 AM", "02:00 PM", "04:30 PM", "07:00 PM"];
-      const today = new Date();
+      const today = /* @__PURE__ */ new Date();
       for (let i = 0; i < 30; i++) {
         const d = new Date(today);
         d.setDate(today.getDate() + i);
@@ -5081,8 +7008,6 @@ const handleCustomerDynamic = async (c) => {
       }
       return jsonRes(c, true, slotsList, "Artist availability retrieved");
     }
-
-    // Single Artist Details Lookup
     if (!isNaN(targetId)) {
       const artist = await db.first(`
         SELECT u.id as id, u.id as user_id, u.full_name as name, u.full_name, u.email, u.phone,
@@ -5092,15 +7017,12 @@ const handleCustomerDynamic = async (c) => {
         LEFT JOIN artist_profiles ap ON (u.id = ap.user_id OR CAST(u.id AS TEXT) = CAST(ap.user_id AS TEXT))
         WHERE (u.id = ? OR CAST(u.id AS TEXT) = CAST(? AS TEXT)) AND (u.role = 'ARTIST' OR u.role = 'artist' OR LOWER(u.role) = 'artist')
       `, [targetId, targetId]).catch(() => null);
-
       if (!artist) {
         return jsonRes(c, false, null, "Artist not found", 404);
       }
-
       const services = await db.all("SELECT * FROM services WHERE artist_id = ? OR user_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT)", [targetId, targetId, targetId]).catch(() => []);
       const portfolio = await db.all("SELECT * FROM artist_portfolios WHERE artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT) ORDER BY id DESC", [targetId, targetId]).catch(() => []);
       const reviews = await db.all("SELECT r.*, u.full_name as customer_name FROM reviews r LEFT JOIN users u ON r.customer_id = u.id WHERE r.artist_id = ? OR CAST(r.artist_id AS TEXT) = CAST(? AS TEXT)", [targetId, targetId]).catch(() => []);
-
       return jsonRes(c, true, {
         ...artist,
         services: services || [],
@@ -5108,8 +7030,6 @@ const handleCustomerDynamic = async (c) => {
         reviews: reviews || []
       }, "Artist details retrieved");
     }
-
-    // Search / List Artists for Customer
     const rawQuery = c.req.query("query") || c.req.query("search") || c.req.query("q") || "";
     const cleanQuery = rawQuery.trim();
     const categoryFilter = c.req.query("category") || "";
@@ -5119,10 +7039,9 @@ const handleCustomerDynamic = async (c) => {
     const userLat = Number(c.req.query("latitude") || c.req.query("lat") || 0);
     const userLng = Number(c.req.query("longitude") || c.req.query("lng") || 0);
     const rawRadius = c.req.query("radius");
-    const radius = (rawRadius !== undefined && rawRadius !== null && rawRadius !== "" && !isNaN(Number(rawRadius))) ? Number(rawRadius) : null;
+    const radius = rawRadius !== void 0 && rawRadius !== null && rawRadius !== "" && !isNaN(Number(rawRadius)) ? Number(rawRadius) : null;
     const page = Number(c.req.query("page") || 1);
     const limit = Number(c.req.query("limit") || 10);
-
     let sql = `
       SELECT u.id as id, u.id as user_id, COALESCE(NULLIF(u.full_name, ''), 'Mehndi Artist') as name,
              COALESCE(NULLIF(u.full_name, ''), 'Mehndi Artist') as full_name, u.email, u.phone,
@@ -5137,13 +7056,11 @@ const handleCustomerDynamic = async (c) => {
         AND (ap.status = 'APPROVED' OR ap.status = 'approved' OR ap.status IS NULL)
     `;
     const params = [];
-
     if (cleanQuery) {
       sql += " AND (u.full_name LIKE ? OR ap.city LIKE ? OR ap.locality LIKE ? OR ap.state LIKE ? OR ap.pincode LIKE ? OR ap.categories LIKE ? OR ap.bio LIKE ? OR s.specialization_name LIKE ? OR s.category LIKE ?)";
       const term = `%${cleanQuery}%`;
       params.push(term, term, term, term, term, term, term, term, term);
     }
-
     if (categoryIdFilter) {
       const catRow = await db.first("SELECT * FROM categories WHERE id = ? OR CAST(id AS TEXT) = ?", [categoryIdFilter, categoryIdFilter]).catch(() => null);
       const catName = catRow?.name || "";
@@ -5160,9 +7077,7 @@ const handleCustomerDynamic = async (c) => {
       const term = `%${categoryFilter}%`;
       params.push(term, term, term);
     }
-
     sql += " GROUP BY u.id";
-
     if (filterParam === "featured") {
       sql += " ORDER BY (CASE WHEN ap.is_featured = 1 THEN 0 ELSE 1 END) ASC, COALESCE(ap.featured_priority, 99) ASC, COALESCE(ap.rating, 0) DESC, u.id DESC";
     } else if (sortParam === "trending" || sortParam === "popular" || filterParam === "popular") {
@@ -5174,43 +7089,31 @@ const handleCustomerDynamic = async (c) => {
     } else {
       sql += " ORDER BY COALESCE(ap.rating, 0) DESC, u.id DESC";
     }
-
     let artists = await db.all(sql, params).catch((err) => {
       console.error("[CUSTOMER SEARCH SQL ERROR]:", err);
       return [];
     });
-
     await enrichArtistRecords(db, artists);
-
     if (sortParam === "nearest" && userLat && userLng && !isNaN(userLat) && !isNaN(userLng)) {
       artists = (artists || []).map((art) => ({ ...art, distance: 0, distance_km: 0 }));
     }
-
     const offset = (page - 1) * limit;
     const paginated = (artists || []).slice(offset, offset + limit);
-
     return jsonRes(c, true, {
       count: (artists || []).length,
       rows: paginated,
       data: paginated
     }, "Artists retrieved");
   }
-
-  // -------------------------------------------------------------
-  // 7. CATEGORIES & HOME DASHBOARD
-  // -------------------------------------------------------------
   if (path.includes("categories") || path.includes("category")) {
     return getCategories(c);
   }
-
   if (path.includes("home") || path.includes("dashboard")) {
     return handleHomeDashboard(c);
   }
-
   return jsonRes(c, true, [], "Success");
-};
-
-const INITIAL_PORTFOLIO = [
+}, "handleCustomerDynamic");
+var INITIAL_PORTFOLIO = [
   {
     id: 201,
     artist_id: 1,
@@ -5219,7 +7122,7 @@ const INITIAL_PORTFOLIO = [
     video_url: null,
     visibility: true,
     likes: 42,
-    createdAt: new Date().toISOString()
+    createdAt: (/* @__PURE__ */ new Date()).toISOString()
   },
   {
     id: 202,
@@ -5229,7 +7132,7 @@ const INITIAL_PORTFOLIO = [
     video_url: null,
     visibility: true,
     likes: 56,
-    createdAt: new Date().toISOString()
+    createdAt: (/* @__PURE__ */ new Date()).toISOString()
   },
   {
     id: 203,
@@ -5239,7 +7142,7 @@ const INITIAL_PORTFOLIO = [
     video_url: null,
     visibility: true,
     likes: 38,
-    createdAt: new Date().toISOString()
+    createdAt: (/* @__PURE__ */ new Date()).toISOString()
   },
   {
     id: 204,
@@ -5249,7 +7152,7 @@ const INITIAL_PORTFOLIO = [
     video_url: null,
     visibility: true,
     likes: 74,
-    createdAt: new Date().toISOString()
+    createdAt: (/* @__PURE__ */ new Date()).toISOString()
   },
   {
     id: 205,
@@ -5259,7 +7162,7 @@ const INITIAL_PORTFOLIO = [
     video_url: null,
     visibility: true,
     likes: 29,
-    createdAt: new Date().toISOString()
+    createdAt: (/* @__PURE__ */ new Date()).toISOString()
   },
   {
     id: 206,
@@ -5269,17 +7172,10 @@ const INITIAL_PORTFOLIO = [
     video_url: null,
     visibility: true,
     likes: 45,
-    createdAt: new Date().toISOString()
+    createdAt: (/* @__PURE__ */ new Date()).toISOString()
   }
 ];
-
-let globalPortfolioMemory = [];
-
-// =============================================================
-// REELS & SOCIAL PORTFOLIO LAYER (CLOUDFLARE D1 BACKED)
-// =============================================================
-
-export async function ensureReelsTables(db) {
+async function ensureReelsTables(db) {
   try {
     await db.run(`
       CREATE TABLE IF NOT EXISTS portfolio_likes (
@@ -5290,10 +7186,8 @@ export async function ensureReelsTables(db) {
         UNIQUE(user_id, portfolio_id)
       )
     `).catch(() => null);
-
     await db.run(`CREATE INDEX IF NOT EXISTS idx_portfolio_likes_portfolio ON portfolio_likes(portfolio_id)`).catch(() => null);
     await db.run(`CREATE INDEX IF NOT EXISTS idx_portfolio_likes_user ON portfolio_likes(user_id)`).catch(() => null);
-
     await db.run(`
       CREATE TABLE IF NOT EXISTS portfolio_comments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -5304,10 +7198,8 @@ export async function ensureReelsTables(db) {
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `).catch(() => null);
-
     await db.run(`CREATE INDEX IF NOT EXISTS idx_portfolio_comments_portfolio ON portfolio_comments(portfolio_id)`).catch(() => null);
     await db.run(`CREATE INDEX IF NOT EXISTS idx_portfolio_comments_user ON portfolio_comments(user_id)`).catch(() => null);
-
     await db.run(`
       CREATE TABLE IF NOT EXISTS portfolio_saves (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -5317,29 +7209,23 @@ export async function ensureReelsTables(db) {
         UNIQUE(user_id, portfolio_id)
       )
     `).catch(() => null);
-
     await db.run(`CREATE INDEX IF NOT EXISTS idx_portfolio_saves_portfolio ON portfolio_saves(portfolio_id)`).catch(() => null);
     await db.run(`CREATE INDEX IF NOT EXISTS idx_portfolio_saves_user ON portfolio_saves(user_id)`).catch(() => null);
-
-    // Ensure columns exist on both portfolios and artist_portfolios tables
     await db.run(`ALTER TABLE portfolios ADD COLUMN views_count INTEGER DEFAULT 0`).catch(() => null);
     await db.run(`ALTER TABLE portfolios ADD COLUMN likes_count INTEGER DEFAULT 0`).catch(() => null);
     await db.run(`ALTER TABLE portfolios ADD COLUMN caption TEXT`).catch(() => null);
     await db.run(`ALTER TABLE artist_portfolios ADD COLUMN views_count INTEGER DEFAULT 0`).catch(() => null);
     await db.run(`ALTER TABLE artist_portfolios ADD COLUMN likes_count INTEGER DEFAULT 0`).catch(() => null);
     await db.run(`ALTER TABLE artist_portfolios ADD COLUMN caption TEXT`).catch(() => null);
-
-    // Auto-seed sample video reels if no video items exist in D1
     const videoCountRow = await db.first(
       "SELECT COUNT(*) as count FROM portfolios WHERE video_url IS NOT NULL AND video_url != '' AND video_url != 'null'"
     ).catch(() => ({ count: 0 }));
-
     if (!videoCountRow || Number(videoCountRow.count) === 0) {
       const sampleReels = [
         {
           id: 501,
           artist_id: 201,
-          title: "Royal Bridal Dulhan Masterpiece ✨",
+          title: "Royal Bridal Dulhan Masterpiece \u2728",
           caption: "Full hand intricate traditional Rajasthani bridal henna by Pooja Sharma. Natural herbal dark stain.",
           category: "Bridal Mehndi",
           image_url: "https://images.unsplash.com/photo-1596461404969-9ae70f2830c1?auto=format&fit=crop&w=600&q=80",
@@ -5351,7 +7237,7 @@ export async function ensureReelsTables(db) {
         {
           id: 502,
           artist_id: 202,
-          title: "Contemporary Arabic Floral Lace 🌸",
+          title: "Contemporary Arabic Floral Lace \u{1F338}",
           caption: "Negative space shaded mandalas & floral trails for bridesmaid sangeet by Aisha Khan.",
           category: "Arabic Mehndi",
           image_url: "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?auto=format&fit=crop&w=600&q=80",
@@ -5363,7 +7249,7 @@ export async function ensureReelsTables(db) {
         {
           id: 503,
           artist_id: 203,
-          title: "Marwari Doli & Baraat Artwork 👑",
+          title: "Marwari Doli & Baraat Artwork \u{1F451}",
           caption: "Heritage storytelling wedding henna featuring bride groom figures by Kiran Rajput.",
           category: "Rajasthani & Marwari",
           image_url: "https://images.unsplash.com/photo-1582192732961-2364f55b1a3d?auto=format&fit=crop&w=600&q=80",
@@ -5375,7 +7261,7 @@ export async function ensureReelsTables(db) {
         {
           id: 504,
           artist_id: 204,
-          title: "Minimalist Modern Lotus Wrist Cuff 🪷",
+          title: "Minimalist Modern Lotus Wrist Cuff \u{1FAB7}",
           caption: "Delicate lotus motif on wrists with fine geometric jaal work by Shalu Saini.",
           category: "Minimalist & Geometric",
           image_url: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=600&q=80",
@@ -5385,14 +7271,12 @@ export async function ensureReelsTables(db) {
           visibility: 1
         }
       ];
-
       for (const reel of sampleReels) {
         await db.run(
           `INSERT OR REPLACE INTO portfolios (id, artist_id, title, description, caption, category, image_url, video_url, likes_count, views_count, visibility)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [reel.id, reel.artist_id, reel.title, reel.caption, reel.caption, reel.category, reel.image_url, reel.video_url, reel.likes_count, reel.views_count, reel.visibility]
         ).catch(() => null);
-
         await db.run(
           `INSERT OR REPLACE INTO artist_portfolios (id, artist_id, title, description, caption, category, image_url, video_url, likes_count, views_count, visibility)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -5404,19 +7288,16 @@ export async function ensureReelsTables(db) {
     console.error("[ReelsService] Table initialization warning:", err.message);
   }
 }
-
-const handleGetReels = async (c) => {
+__name(ensureReelsTables, "ensureReelsTables");
+var handleGetReels = /* @__PURE__ */ __name(async (c) => {
   try {
     const db = getDb(c.env);
     await ensureReelsTables(db);
-
     const u = getUserFromHeader(c);
     const userId = u && u.id ? Number(u.id) : null;
-
     const page = Math.max(1, Number(c.req.query("page")) || 1);
     const limit = Math.min(50, Math.max(1, Number(c.req.query("limit")) || 10));
     const offset = (page - 1) * limit;
-
     const rows = await db.all(`
       SELECT p.*,
              u.id as user_id, u.full_name as artist_name, u.avatar as artist_avatar,
@@ -5449,7 +7330,6 @@ const handleGetReels = async (c) => {
         ORDER BY p.id DESC LIMIT ? OFFSET ?
       `, [limit, offset]).catch(() => []);
     });
-
     const totalRow = await db.first(`
       SELECT COUNT(*) as count FROM (
         SELECT id FROM portfolios WHERE video_url IS NOT NULL AND video_url != '' AND video_url != 'null'
@@ -5458,17 +7338,14 @@ const handleGetReels = async (c) => {
       )
     `).catch(() => ({ count: rows.length }));
     const total = totalRow?.count || rows.length;
-
-    let userLikedSet = new Set();
-    let userSavedSet = new Set();
+    let userLikedSet = /* @__PURE__ */ new Set();
+    let userSavedSet = /* @__PURE__ */ new Set();
     if (userId) {
       const likedRows = await db.all("SELECT portfolio_id FROM portfolio_likes WHERE user_id = ?", [userId]).catch(() => []);
-      likedRows.forEach(r => userLikedSet.add(Number(r.portfolio_id)));
-
+      likedRows.forEach((r) => userLikedSet.add(Number(r.portfolio_id)));
       const savedRows = await db.all("SELECT portfolio_id FROM portfolio_saves WHERE user_id = ?", [userId]).catch(() => []);
-      savedRows.forEach(r => userSavedSet.add(Number(r.portfolio_id)));
+      savedRows.forEach((r) => userSavedSet.add(Number(r.portfolio_id)));
     }
-
     const reels = rows.map((r) => {
       const pId = Number(r.id);
       const isLiked = userLikedSet.has(pId);
@@ -5495,16 +7372,14 @@ const handleGetReels = async (c) => {
           name: r.artist_name || "Mehndi Artist",
           avatar: r.artist_avatar || r.artist_profile_image || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=400",
           rating: r.artist_rating ? Number(r.artist_rating) : 4.9,
-          location: r.artist_locality ? `${r.artist_locality}, ${r.artist_city || 'Jaipur'}` : (r.artist_city || "Jaipur")
+          location: r.artist_locality ? `${r.artist_locality}, ${r.artist_city || "Jaipur"}` : r.artist_city || "Jaipur"
         },
         artist_name: r.artist_name || "Mehndi Artist",
         artist_avatar: r.artist_avatar || r.artist_profile_image || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=400",
-        created_at: r.created_at || new Date().toISOString()
+        created_at: r.created_at || (/* @__PURE__ */ new Date()).toISOString()
       };
     });
-
     const hasMore = offset + reels.length < total;
-
     return jsonRes(c, true, {
       reels,
       data: reels,
@@ -5517,151 +7392,136 @@ const handleGetReels = async (c) => {
     console.error("[Reels GET Error]:", err);
     return jsonRes(c, false, { reels: [], data: [], total: 0, hasMore: false }, `Failed to fetch reels: ${err.message}`, 500);
   }
-};
-
-const handleLikePortfolio = async (c) => {
+}, "handleGetReels");
+var handleLikePortfolio = /* @__PURE__ */ __name(async (c) => {
   try {
     const db = getDb(c.env);
     await ensureReelsTables(db);
-
     const u = getUserFromHeader(c);
     if (!u || !u.id) {
       return jsonRes(c, false, null, "Unauthorized: Please login to like reels", 401);
     }
-
     let body = {};
     try {
       body = await c.req.json();
     } catch (_) {
-      try { body = await c.req.parseBody(); } catch (__) { }
+      try {
+        body = await c.req.parseBody();
+      } catch (__) {
+      }
     }
-
     const portfolioId = Number(body.portfolio_id || body.portfolioId || c.req.query("portfolio_id") || c.req.query("portfolioId"));
     if (!portfolioId || isNaN(portfolioId)) {
       return jsonRes(c, false, null, "Portfolio ID is required", 400);
     }
-
-    // Verify portfolio exists
     const item = await db.first("SELECT id, artist_id FROM portfolios WHERE id = ? UNION SELECT id, artist_id FROM artist_portfolios WHERE id = ?", [portfolioId, portfolioId]).catch(() => null);
     if (!item) {
       return jsonRes(c, false, null, "Portfolio item not found", 404);
     }
-
-    // Check existing like
     const existing = await db.first("SELECT id FROM portfolio_likes WHERE user_id = ? AND portfolio_id = ?", [u.id, portfolioId]).catch(() => null);
     if (!existing) {
       await db.run("INSERT INTO portfolio_likes (user_id, portfolio_id) VALUES (?, ?)", [u.id, portfolioId]);
       await db.run("UPDATE portfolios SET likes_count = COALESCE(likes_count, 0) + 1 WHERE id = ?", [portfolioId]).catch(() => null);
       await db.run("UPDATE artist_portfolios SET likes_count = COALESCE(likes_count, 0) + 1 WHERE id = ?", [portfolioId]).catch(() => null);
     }
-
     return jsonRes(c, true, { portfolio_id: portfolioId, isLiked: true }, "Portfolio Liked Successfully", 201);
   } catch (err) {
     console.error("[Like Error]:", err);
     return jsonRes(c, false, null, `Like failed: ${err.message}`, 500);
   }
-};
-
-const handleUnlikePortfolio = async (c) => {
+}, "handleLikePortfolio");
+var handleUnlikePortfolio = /* @__PURE__ */ __name(async (c) => {
   try {
     const db = getDb(c.env);
     await ensureReelsTables(db);
-
     const u = getUserFromHeader(c);
     if (!u || !u.id) {
       return jsonRes(c, false, null, "Unauthorized: Please login", 401);
     }
-
     let body = {};
     try {
       body = await c.req.json();
     } catch (_) {
-      try { body = await c.req.parseBody(); } catch (__) { }
+      try {
+        body = await c.req.parseBody();
+      } catch (__) {
+      }
     }
-
     const portfolioId = Number(c.req.query("portfolio_id") || c.req.query("portfolioId") || body.portfolio_id || body.portfolioId);
     if (!portfolioId || isNaN(portfolioId)) {
       return jsonRes(c, false, null, "Portfolio ID is required", 400);
     }
-
     const existing = await db.first("SELECT id FROM portfolio_likes WHERE user_id = ? AND portfolio_id = ?", [u.id, portfolioId]).catch(() => null);
     if (existing) {
       await db.run("DELETE FROM portfolio_likes WHERE user_id = ? AND portfolio_id = ?", [u.id, portfolioId]);
       await db.run("UPDATE portfolios SET likes_count = MAX(0, COALESCE(likes_count, 1) - 1) WHERE id = ?", [portfolioId]).catch(() => null);
       await db.run("UPDATE artist_portfolios SET likes_count = MAX(0, COALESCE(likes_count, 1) - 1) WHERE id = ?", [portfolioId]).catch(() => null);
     }
-
     return jsonRes(c, true, { portfolio_id: portfolioId, isLiked: false }, "Portfolio Unliked Successfully", 200);
   } catch (err) {
     console.error("[Unlike Error]:", err);
     return jsonRes(c, false, null, `Unlike failed: ${err.message}`, 500);
   }
-};
-
-const handleSavePortfolio = async (c) => {
+}, "handleUnlikePortfolio");
+var handleSavePortfolio = /* @__PURE__ */ __name(async (c) => {
   try {
     const db = getDb(c.env);
     await ensureReelsTables(db);
-
     const u = getUserFromHeader(c);
     if (!u || !u.id) {
       return jsonRes(c, false, null, "Unauthorized: Please login", 401);
     }
-
     let body = {};
-    try { body = await c.req.json(); } catch (_) { }
+    try {
+      body = await c.req.json();
+    } catch (_) {
+    }
     const portfolioId = Number(body.portfolio_id || body.portfolioId || c.req.query("portfolio_id") || c.req.query("portfolioId"));
     if (!portfolioId || isNaN(portfolioId)) {
       return jsonRes(c, false, null, "Portfolio ID is required", 400);
     }
-
     const existing = await db.first("SELECT id FROM portfolio_saves WHERE user_id = ? AND portfolio_id = ?", [u.id, portfolioId]).catch(() => null);
     if (!existing) {
       await db.run("INSERT INTO portfolio_saves (user_id, portfolio_id) VALUES (?, ?)", [u.id, portfolioId]);
     }
-
     return jsonRes(c, true, { portfolio_id: portfolioId, isSaved: true }, "Portfolio saved successfully", 201);
   } catch (err) {
     console.error("[Save Error]:", err);
     return jsonRes(c, false, null, `Save failed: ${err.message}`, 500);
   }
-};
-
-const handleUnsavePortfolio = async (c) => {
+}, "handleSavePortfolio");
+var handleUnsavePortfolio = /* @__PURE__ */ __name(async (c) => {
   try {
     const db = getDb(c.env);
     await ensureReelsTables(db);
-
     const u = getUserFromHeader(c);
     if (!u || !u.id) {
       return jsonRes(c, false, null, "Unauthorized: Please login", 401);
     }
-
     let body = {};
-    try { body = await c.req.json(); } catch (_) { }
+    try {
+      body = await c.req.json();
+    } catch (_) {
+    }
     const portfolioId = Number(c.req.query("portfolio_id") || c.req.query("portfolioId") || body.portfolio_id || body.portfolioId);
     if (!portfolioId || isNaN(portfolioId)) {
       return jsonRes(c, false, null, "Portfolio ID is required", 400);
     }
-
     await db.run("DELETE FROM portfolio_saves WHERE user_id = ? AND portfolio_id = ?", [u.id, portfolioId]);
     return jsonRes(c, true, { portfolio_id: portfolioId, isSaved: false }, "Portfolio unsaved successfully", 200);
   } catch (err) {
     console.error("[Unsave Error]:", err);
     return jsonRes(c, false, null, `Unsave failed: ${err.message}`, 500);
   }
-};
-
-const handleGetSavedPortfolios = async (c) => {
+}, "handleUnsavePortfolio");
+var handleGetSavedPortfolios = /* @__PURE__ */ __name(async (c) => {
   try {
     const db = getDb(c.env);
     await ensureReelsTables(db);
-
     const u = getUserFromHeader(c);
     if (!u || !u.id) {
       return jsonRes(c, false, null, "Unauthorized: Please login", 401);
     }
-
     const saved = await db.all(`
       SELECT p.*, ps.created_at as saved_at, u.full_name as artist_name, u.avatar as artist_avatar
       FROM portfolio_saves ps
@@ -5670,31 +7530,29 @@ const handleGetSavedPortfolios = async (c) => {
       WHERE ps.user_id = ?
       ORDER BY ps.id DESC
     `, [u.id]).catch(() => []);
-
     return jsonRes(c, true, saved || [], "Saved portfolios fetched successfully", 200);
   } catch (err) {
     console.error("[Get Saved Error]:", err);
     return jsonRes(c, false, [], `Failed to fetch saved: ${err.message}`, 500);
   }
-};
-
-const handleCommentPortfolio = async (c) => {
+}, "handleGetSavedPortfolios");
+var handleCommentPortfolio = /* @__PURE__ */ __name(async (c) => {
   try {
     const db = getDb(c.env);
     await ensureReelsTables(db);
-
     const u = getUserFromHeader(c);
     if (!u || !u.id) {
       return jsonRes(c, false, null, "Unauthorized: Please login to comment", 401);
     }
-
     let body = {};
     try {
       body = await c.req.json();
     } catch (_) {
-      try { body = await c.req.parseBody(); } catch (__) { }
+      try {
+        body = await c.req.parseBody();
+      } catch (__) {
+      }
     }
-
     const pathParts = c.req.path.split("/").filter(Boolean);
     let paramId = c.req.param("id");
     if (!paramId) {
@@ -5703,34 +7561,27 @@ const handleCommentPortfolio = async (c) => {
         paramId = pathParts[idx + 1];
       }
     }
-
     const portfolioId = Number(paramId || body.portfolio_id || body.portfolioId);
     if (!portfolioId || isNaN(portfolioId)) {
       return jsonRes(c, false, null, "Portfolio ID is required", 400);
     }
-
     const text = String(body.text || body.comment || "").trim();
     if (!text) {
       return jsonRes(c, false, null, "Comment text cannot be empty", 400);
     }
-    if (text.length > 1000) {
+    if (text.length > 1e3) {
       return jsonRes(c, false, null, "Comment text cannot exceed 1000 characters", 400);
     }
-
-    // Verify portfolio existence
     const port = await db.first("SELECT id, artist_id FROM portfolios WHERE id = ? UNION SELECT id, artist_id FROM artist_portfolios WHERE id = ?", [portfolioId, portfolioId]).catch(() => null);
     if (!port) {
       return jsonRes(c, false, null, "Portfolio item not found", 404);
     }
-
     const res = await db.run(
       "INSERT INTO portfolio_comments (user_id, portfolio_id, text, created_at, updated_at) VALUES (?, ?, ?, datetime('now'), datetime('now'))",
       [u.id, portfolioId, text]
     );
     const commentId = res.meta?.last_row_id;
-
     const user = await db.first("SELECT id, full_name, avatar, profile_image FROM users WHERE id = ?", [u.id]).catch(() => null);
-
     const newComment = {
       id: commentId,
       user_id: u.id,
@@ -5741,22 +7592,19 @@ const handleCommentPortfolio = async (c) => {
         name: user?.full_name || "User",
         profile_image: user?.avatar || user?.profile_image || null
       },
-      createdAt: new Date().toISOString(),
-      created_at: new Date().toISOString()
+      createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+      created_at: (/* @__PURE__ */ new Date()).toISOString()
     };
-
     return jsonRes(c, true, newComment, "Comment added successfully", 201);
   } catch (err) {
     console.error("[Comment Error]:", err);
     return jsonRes(c, false, null, `Comment failed: ${err.message}`, 500);
   }
-};
-
-const handleGetPortfolioComments = async (c) => {
+}, "handleCommentPortfolio");
+var handleGetPortfolioComments = /* @__PURE__ */ __name(async (c) => {
   try {
     const db = getDb(c.env);
     await ensureReelsTables(db);
-
     const pathParts = c.req.path.split("/").filter(Boolean);
     let paramId = c.req.param("id");
     if (!paramId) {
@@ -5765,16 +7613,13 @@ const handleGetPortfolioComments = async (c) => {
         paramId = pathParts[idx + 1];
       }
     }
-
     const portfolioId = Number(paramId || c.req.query("portfolio_id") || c.req.query("portfolioId"));
     if (!portfolioId || isNaN(portfolioId)) {
       return jsonRes(c, false, null, "Portfolio ID is required", 400);
     }
-
     const page = Math.max(1, Number(c.req.query("page")) || 1);
     const limit = Math.min(100, Math.max(1, Number(c.req.query("limit")) || 20));
     const offset = (page - 1) * limit;
-
     const rows = await db.all(`
       SELECT pc.id, pc.user_id, pc.portfolio_id, pc.text, pc.created_at, pc.updated_at,
              u.full_name as user_name, u.avatar as user_avatar, u.profile_image as user_profile_image
@@ -5784,10 +7629,8 @@ const handleGetPortfolioComments = async (c) => {
       ORDER BY pc.id DESC
       LIMIT ? OFFSET ?
     `, [portfolioId, limit, offset]).catch(() => []);
-
     const countRow = await db.first("SELECT COUNT(*) as count FROM portfolio_comments WHERE portfolio_id = ?", [portfolioId]).catch(() => ({ count: 0 }));
     const total = countRow?.count || 0;
-
     const comments = rows.map((r) => ({
       id: r.id,
       user_id: r.user_id,
@@ -5801,7 +7644,6 @@ const handleGetPortfolioComments = async (c) => {
       createdAt: r.created_at,
       created_at: r.created_at
     }));
-
     return jsonRes(c, true, {
       comments,
       data: comments,
@@ -5814,62 +7656,50 @@ const handleGetPortfolioComments = async (c) => {
     console.error("[Get Comments Error]:", err);
     return jsonRes(c, false, { comments: [], data: [], total: 0 }, `Failed to fetch comments: ${err.message}`, 500);
   }
-};
-
-const handleDeletePortfolioComment = async (c) => {
+}, "handleGetPortfolioComments");
+var handleDeletePortfolioComment = /* @__PURE__ */ __name(async (c) => {
   try {
     const db = getDb(c.env);
     await ensureReelsTables(db);
-
     const u = getUserFromHeader(c);
     if (!u || !u.id) {
       return jsonRes(c, false, null, "Unauthorized: Please login", 401);
     }
-
     const pathParts = c.req.path.split("/").filter(Boolean);
     let commentId = Number(c.req.param("commentId") || c.req.param("id"));
     if (!commentId || isNaN(commentId)) {
       const lastPart = pathParts[pathParts.length - 1];
       commentId = Number(lastPart);
     }
-
     if (!commentId || isNaN(commentId)) {
       return jsonRes(c, false, null, "Comment ID is required", 400);
     }
-
     const comment = await db.first(`
       SELECT pc.*, p.artist_id
       FROM portfolio_comments pc
       LEFT JOIN portfolios p ON pc.portfolio_id = p.id
       WHERE pc.id = ?
     `, [commentId]).catch(() => null);
-
     if (!comment) {
       return jsonRes(c, false, null, "Comment not found", 404);
     }
-
     const isAuthor = Number(comment.user_id) === Number(u.id);
     const isReelOwner = Number(comment.artist_id) === Number(u.id);
     const isAdmin = u.role === "admin" || u.role === "ADMIN";
-
     if (!isAuthor && !isReelOwner && !isAdmin) {
       return jsonRes(c, false, null, "Unauthorized to delete this comment", 403);
     }
-
     await db.run("DELETE FROM portfolio_comments WHERE id = ?", [commentId]);
-
     return jsonRes(c, true, { id: commentId }, "Comment deleted successfully", 200);
   } catch (err) {
     console.error("[Delete Comment Error]:", err);
     return jsonRes(c, false, null, `Delete comment failed: ${err.message}`, 500);
   }
-};
-
-const handleAddViewToPortfolio = async (c) => {
+}, "handleDeletePortfolioComment");
+var handleAddViewToPortfolio = /* @__PURE__ */ __name(async (c) => {
   try {
     const db = getDb(c.env);
     await ensureReelsTables(db);
-
     const pathParts = c.req.path.split("/").filter(Boolean);
     let paramId = c.req.param("id");
     if (!paramId) {
@@ -5878,36 +7708,32 @@ const handleAddViewToPortfolio = async (c) => {
         paramId = pathParts[idx + 1];
       }
     }
-
     let body = {};
-    try { body = await c.req.json(); } catch (_) { }
-
+    try {
+      body = await c.req.json();
+    } catch (_) {
+    }
     const portfolioId = Number(paramId || body.portfolio_id || body.portfolioId || c.req.query("portfolio_id"));
     if (!portfolioId || isNaN(portfolioId)) {
       return jsonRes(c, false, null, "Portfolio ID is required", 400);
     }
-
     await db.run("UPDATE portfolios SET views_count = COALESCE(views_count, 0) + 1 WHERE id = ?", [portfolioId]).catch(() => null);
     await db.run("UPDATE artist_portfolios SET views_count = COALESCE(views_count, 0) + 1 WHERE id = ?", [portfolioId]).catch(() => null);
-
     return jsonRes(c, true, { portfolio_id: portfolioId, success: true }, "View added successfully", 200);
   } catch (err) {
     console.error("[Add View Error]:", err);
     return jsonRes(c, false, null, `View update failed: ${err.message}`, 500);
   }
-};
-
-const handleGetArtistPortfolio = async (c) => {
+}, "handleAddViewToPortfolio");
+var handleGetArtistPortfolio = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) {
     return jsonRes(c, false, null, "Unauthorized access", 401);
   }
-
   const pathParts = c.req.path.split("/").filter(Boolean);
   const lastPart = pathParts[pathParts.length - 1];
   const singleId = Number(lastPart);
-
   if (singleId && !isNaN(singleId)) {
     const row = await db.first("SELECT * FROM artist_portfolios WHERE id = ? AND artist_id = ?", [singleId, u.id]).catch(() => null);
     if (!row) return jsonRes(c, false, null, "Portfolio item not found", 404);
@@ -5915,70 +7741,58 @@ const handleGetArtistPortfolio = async (c) => {
       ...row,
       image_url: row.image_url || row.url || "",
       title: row.title || "Mehndi Design",
-      visibility: row.visibility !== undefined ? Boolean(row.visibility) : true
+      visibility: row.visibility !== void 0 ? Boolean(row.visibility) : true
     });
   }
-
   let list = await db.all("SELECT * FROM artist_portfolios WHERE artist_id = ? ORDER BY id DESC", [u.id]).catch(() => []);
-
-  const formatted = (list || []).map(item => ({
+  const formatted = (list || []).map((item) => ({
     ...item,
     image_url: item.image_url || item.url || "",
     title: item.title || "Mehndi Design",
-    visibility: item.visibility !== undefined ? Boolean(item.visibility) : true
+    visibility: item.visibility !== void 0 ? Boolean(item.visibility) : true
   }));
-
   return jsonRes(c, true, formatted);
-};
-
-const handleDeleteArtistPortfolio = async (c) => {
+}, "handleGetArtistPortfolio");
+var handleDeleteArtistPortfolio = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) {
     return jsonRes(c, false, null, "Unauthorized access", 401);
   }
-
   const pathParts = c.req.path.split("/").filter(Boolean);
   const paramId = pathParts[pathParts.length - 1];
   const body = await c.req.json().catch(() => ({}));
   const targetId = Number(paramId) || Number(body.id) || Number(body.portfolio_id);
-
   if (targetId) {
     await db.run("DELETE FROM artist_portfolios WHERE id = ? AND artist_id = ?", [targetId, u.id]).catch(() => null);
     await db.run("DELETE FROM portfolios WHERE id = ? AND artist_id = ?", [targetId, u.id]).catch(() => null);
   }
-
   return jsonRes(c, true, { id: targetId }, "Portfolio item deleted successfully");
-};
-
-const handleUpdateArtistPortfolio = async (c) => {
+}, "handleDeleteArtistPortfolio");
+var handleUpdateArtistPortfolio = /* @__PURE__ */ __name(async (c) => {
   try {
     const db = getDb(c.env);
     const u = getUserFromHeader(c);
     if (!u || !u.id) {
       return jsonRes(c, false, null, "Unauthorized access", 401);
     }
-
     const pathParts = c.req.path.split("/").filter(Boolean);
     const paramId = pathParts[pathParts.length - 1];
     const body = await c.req.json().catch(() => ({}));
     const targetId = Number(paramId) || Number(body.id) || Number(body.portfolio_id);
-
     if (!targetId) {
       return jsonRes(c, false, null, "Missing portfolio ID", 400);
     }
-
-    const title = body.title !== undefined ? String(body.title) : null;
-    const description = body.description !== undefined ? String(body.description) : null;
-    const category = body.category !== undefined ? String(body.category) : null;
-    const section = body.section !== undefined ? String(body.section) : null;
-    const occasion = body.occasion !== undefined ? String(body.occasion) : null;
-    const location = body.location !== undefined ? String(body.location) : null;
-    const tags = body.tags !== undefined ? String(body.tags) : null;
-    const visibility = body.visibility !== undefined ? (body.visibility ? 1 : 0) : null;
-    const image_url = (body.image_url || body.media_url || body.url) !== undefined ? String(body.image_url || body.media_url || body.url) : null;
-    const video_url = body.video_url !== undefined ? String(body.video_url) : null;
-
+    const title = body.title !== void 0 ? String(body.title) : null;
+    const description = body.description !== void 0 ? String(body.description) : null;
+    const category = body.category !== void 0 ? String(body.category) : null;
+    const section = body.section !== void 0 ? String(body.section) : null;
+    const occasion = body.occasion !== void 0 ? String(body.occasion) : null;
+    const location = body.location !== void 0 ? String(body.location) : null;
+    const tags = body.tags !== void 0 ? String(body.tags) : null;
+    const visibility = body.visibility !== void 0 ? body.visibility ? 1 : 0 : null;
+    const image_url = (body.image_url || body.media_url || body.url) !== void 0 ? String(body.image_url || body.media_url || body.url) : null;
+    const video_url = body.video_url !== void 0 ? String(body.video_url) : null;
     await db.run(
       `UPDATE artist_portfolios SET
          title = COALESCE(?, title),
@@ -5994,7 +7808,6 @@ const handleUpdateArtistPortfolio = async (c) => {
        WHERE id = ? AND artist_id = ?`,
       [title, description, category, section, occasion, location, tags, visibility, image_url, video_url, targetId, u.id]
     );
-
     await db.run(
       `UPDATE portfolios SET
          title = COALESCE(?, title),
@@ -6010,21 +7823,18 @@ const handleUpdateArtistPortfolio = async (c) => {
        WHERE id = ? AND artist_id = ?`,
       [title, description, category, section, occasion, location, tags, visibility, image_url, video_url, targetId, u.id]
     ).catch(() => null);
-
     const updatedRow = await db.first("SELECT * FROM artist_portfolios WHERE id = ? AND artist_id = ?", [targetId, u.id]).catch(() => null);
-
     return jsonRes(c, true, updatedRow ? {
       ...updatedRow,
       image_url: updatedRow.image_url || updatedRow.url || "",
       title: updatedRow.title || "Mehndi Design",
-      visibility: updatedRow.visibility !== undefined ? Boolean(updatedRow.visibility) : true
+      visibility: updatedRow.visibility !== void 0 ? Boolean(updatedRow.visibility) : true
     } : { id: targetId }, "Portfolio item updated successfully");
   } catch (err) {
     return jsonRes(c, false, null, `Portfolio update failed: ${err.message}`, 500);
   }
-};
-
-const handleCreateArtistPortfolio = async (c) => {
+}, "handleUpdateArtistPortfolio");
+var handleCreateArtistPortfolio = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) {
@@ -6037,9 +7847,9 @@ const handleCreateArtistPortfolio = async (c) => {
     try {
       const text = await c.req.text();
       body = JSON.parse(text);
-    } catch (err) { }
+    } catch (err) {
+    }
   }
-
   const image_url = body.image_url || body.media_url || body.url || "";
   const video_url = body.video_url || null;
   const title = body.title || "Mehndi Design";
@@ -6049,21 +7859,18 @@ const handleCreateArtistPortfolio = async (c) => {
   const occasion = body.occasion || "";
   const location = body.location || "";
   const tags = body.tags || "";
-  const visibility = body.visibility !== undefined ? (body.visibility ? 1 : 0) : 1;
-
+  const visibility = body.visibility !== void 0 ? body.visibility ? 1 : 0 : 1;
   const res1 = await db.run(
     `INSERT INTO artist_portfolios (artist_id, title, description, category, section, occasion, location, tags, visibility, image_url, video_url)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [u.id, title, description, category, section, occasion, location, tags, visibility, image_url, video_url]
   );
   const newId = res1.meta?.last_row_id;
-
   await db.run(
     `INSERT INTO portfolios (id, artist_id, title, description, category, section, occasion, location, tags, visibility, image_url, video_url)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [newId, u.id, title, description, category, section, occasion, location, tags, visibility, image_url, video_url]
   ).catch(() => null);
-
   const newItem = {
     id: newId,
     artist_id: u.id,
@@ -6079,13 +7886,11 @@ const handleCreateArtistPortfolio = async (c) => {
     video_url,
     likes: 0,
     likes_count: 0,
-    created_at: new Date().toISOString()
+    created_at: (/* @__PURE__ */ new Date()).toISOString()
   };
-
   return jsonRes(c, true, newItem, "Portfolio item created successfully");
-};
-
-const handleCreateArtistService = async (c) => {
+}, "handleCreateArtistPortfolio");
+var handleCreateArtistService = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) {
@@ -6098,9 +7903,9 @@ const handleCreateArtistService = async (c) => {
     try {
       const text = await c.req.text();
       body = JSON.parse(text);
-    } catch (err) { }
+    } catch (err) {
+    }
   }
-
   const specialization_name = body.specialization_name || body.serviceName || body.name || body.title || "Mehndi Service";
   const title = specialization_name;
   const category = body.category || "Bridal Mehndi";
@@ -6111,21 +7916,18 @@ const handleCreateArtistService = async (c) => {
   const description = body.description || "";
   const service_image = body.service_image || body.image_url || body.image || "";
   const image_url = service_image;
-  const packages_json = Array.isArray(body.packages) ? JSON.stringify(body.packages) : (typeof body.packages === "string" ? body.packages : "[]");
-  const addons_json = Array.isArray(body.addons) ? JSON.stringify(body.addons) : (typeof body.addons === "string" ? body.addons : "[]");
+  const packages_json = Array.isArray(body.packages) ? JSON.stringify(body.packages) : typeof body.packages === "string" ? body.packages : "[]";
+  const addons_json = Array.isArray(body.addons) ? JSON.stringify(body.addons) : typeof body.addons === "string" ? body.addons : "[]";
   const is_active = 1;
-
   const res = await db.run(
     `INSERT INTO services (artist_id, user_id, specialization_name, title, category, minimum_price, price, duration_minutes, duration_mins, description, service_image, image_url, packages, addons, is_active)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [u.id, u.id, specialization_name, title, category, minimum_price, price, duration_minutes, duration_mins, description, service_image, image_url, packages_json, addons_json, is_active]
   );
-
   const newId = res.meta?.last_row_id;
   if (!newId) {
     return jsonRes(c, false, null, "Failed to insert service into D1 database", 500);
   }
-
   const newService = {
     id: newId,
     artist_id: u.id,
@@ -6145,56 +7947,46 @@ const handleCreateArtistService = async (c) => {
     packages: Array.isArray(body.packages) ? body.packages : [],
     addons: Array.isArray(body.addons) ? body.addons : [],
     is_active: true,
-    created_at: new Date().toISOString()
+    created_at: (/* @__PURE__ */ new Date()).toISOString()
   };
-
   return jsonRes(c, true, newService, "Service created successfully");
-};
-
-const handleDeleteArtistService = async (c) => {
+}, "handleCreateArtistService");
+var handleDeleteArtistService = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) {
     return jsonRes(c, false, null, "Unauthorized access", 401);
   }
-
   const pathParts = c.req.path.split("/").filter(Boolean);
   const paramId = pathParts[pathParts.length - 1];
   const body = await c.req.json().catch(() => ({}));
   const targetId = Number(paramId) || Number(body.id) || Number(body.service_id);
-
   if (targetId) {
     await db.run("DELETE FROM services WHERE id = ? AND (artist_id = ? OR user_id = ?)", [targetId, u.id, u.id]).catch(() => null);
   }
-
   return jsonRes(c, true, { id: targetId }, "Service deleted successfully");
-};
-
-const handleUpdateArtistService = async (c) => {
+}, "handleDeleteArtistService");
+var handleUpdateArtistService = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) {
     return jsonRes(c, false, null, "Unauthorized access", 401);
   }
-
   const pathParts = c.req.path.split("/").filter(Boolean);
   const paramId = pathParts[pathParts.length - 1];
   const body = await c.req.json().catch(() => ({}));
   const targetId = Number(paramId) || Number(body.id) || Number(body.service_id);
-
   if (!targetId) {
     return jsonRes(c, false, null, "Missing service ID", 400);
   }
-
   const specialization_name = body.specialization_name || body.serviceName || body.name || body.title;
   const category = body.category;
-  const minimum_price = body.minimum_price !== undefined ? Number(body.minimum_price) : (body.price !== undefined ? Number(body.price) : null);
-  const duration_minutes = body.duration_minutes !== undefined ? Number(body.duration_minutes) : (body.duration !== undefined ? Number(body.duration) : null);
+  const minimum_price = body.minimum_price !== void 0 ? Number(body.minimum_price) : body.price !== void 0 ? Number(body.price) : null;
+  const duration_minutes = body.duration_minutes !== void 0 ? Number(body.duration_minutes) : body.duration !== void 0 ? Number(body.duration) : null;
   const description = body.description;
   const service_image = body.service_image || body.image_url;
-  const packages_json = body.packages ? (Array.isArray(body.packages) ? JSON.stringify(body.packages) : String(body.packages)) : null;
-  const addons_json = body.addons ? (Array.isArray(body.addons) ? JSON.stringify(body.addons) : String(body.addons)) : null;
-
+  const packages_json = body.packages ? Array.isArray(body.packages) ? JSON.stringify(body.packages) : String(body.packages) : null;
+  const addons_json = body.addons ? Array.isArray(body.addons) ? JSON.stringify(body.addons) : String(body.addons) : null;
   await db.run(
     `UPDATE services SET
        specialization_name = COALESCE(?, specialization_name),
@@ -6228,30 +8020,30 @@ const handleUpdateArtistService = async (c) => {
       u.id
     ]
   );
-
   return jsonRes(c, true, { id: targetId }, "Service updated successfully");
-};
-
-const handleGetArtistServices = async (c) => {
+}, "handleUpdateArtistService");
+var handleGetArtistServices = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) {
     return jsonRes(c, false, null, "Unauthorized access", 401);
   }
-
   const pathParts = c.req.path.split("/").filter(Boolean);
   const lastPart = pathParts[pathParts.length - 1];
   const singleId = Number(lastPart);
-
   if (singleId && !isNaN(singleId)) {
     const row = await db.first("SELECT * FROM services WHERE id = ? AND (artist_id = ? OR user_id = ?)", [singleId, u.id, u.id]).catch(() => null);
     if (!row) return jsonRes(c, false, null, "Service not found", 404);
-
     let pkgs = [];
     let addns = [];
-    try { pkgs = row.packages ? JSON.parse(row.packages) : []; } catch (e) { }
-    try { addns = row.addons ? JSON.parse(row.addons) : []; } catch (e) { }
-
+    try {
+      pkgs = row.packages ? JSON.parse(row.packages) : [];
+    } catch (e) {
+    }
+    try {
+      addns = row.addons ? JSON.parse(row.addons) : [];
+    } catch (e) {
+    }
     return jsonRes(c, true, {
       ...row,
       specialization_name: row.specialization_name || row.title || row.name || "Mehndi Service",
@@ -6265,18 +8057,21 @@ const handleGetArtistServices = async (c) => {
       image_url: row.service_image || row.image_url || "",
       packages: pkgs,
       addons: addns,
-      is_active: row.is_active !== undefined ? Boolean(row.is_active) : true
+      is_active: row.is_active !== void 0 ? Boolean(row.is_active) : true
     });
   }
-
   let list = await db.all("SELECT * FROM services WHERE artist_id = ? OR user_id = ? ORDER BY id DESC", [u.id, u.id]).catch(() => []);
-
   const formatted = (list || []).map((s) => {
     let pkgs = [];
     let addns = [];
-    try { pkgs = s.packages ? JSON.parse(s.packages) : []; } catch (e) { }
-    try { addns = s.addons ? JSON.parse(s.addons) : []; } catch (e) { }
-
+    try {
+      pkgs = s.packages ? JSON.parse(s.packages) : [];
+    } catch (e) {
+    }
+    try {
+      addns = s.addons ? JSON.parse(s.addons) : [];
+    } catch (e) {
+    }
     return {
       ...s,
       specialization_name: s.specialization_name || s.title || s.name || "Mehndi Service",
@@ -6290,22 +8085,18 @@ const handleGetArtistServices = async (c) => {
       image_url: s.service_image || s.image_url || "",
       packages: pkgs,
       addons: addns,
-      is_active: s.is_active !== undefined ? Boolean(s.is_active) : true
+      is_active: s.is_active !== void 0 ? Boolean(s.is_active) : true
     };
   });
-
   return jsonRes(c, true, formatted);
-};
-
-const handleGetArtistBookings = async (c) => {
+}, "handleGetArtistServices");
+var handleGetArtistBookings = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c) || { id: 1 };
   const path = c.req.path.toLowerCase();
   const statusParam = (c.req.query("status") || c.req.query("type") || "").toLowerCase().trim();
-
   const artist = await db.first("SELECT id, user_id FROM artist_profiles WHERE user_id = ? OR CAST(user_id AS TEXT) = CAST(? AS TEXT)", [u.id, String(u.id)]).catch(() => null);
   const artistId = artist ? artist.id : u.id;
-
   let sql = `
     SELECT b.*,
            c.full_name as customer_name, c.phone as customer_phone, c.email as customer_email, c.avatar as customer_avatar,
@@ -6328,7 +8119,6 @@ const handleGetArtistBookings = async (c) => {
     )
   `;
   const params = [artistId, String(artistId), u.id, String(u.id)];
-
   if (statusParam === "pending" || path.includes("pending")) {
     sql += " AND LOWER(b.status) IN ('pending', 'requested', 'confirmed') AND LOWER(COALESCE(b.detailed_status, '')) NOT IN ('accepted', 'artist_accepted', 'rejected', 'cancelled', 'completed')";
   } else if (statusParam === "accepted" || statusParam === "upcoming" || path.includes("accepted") || path.includes("upcoming")) {
@@ -6336,39 +8126,28 @@ const handleGetArtistBookings = async (c) => {
   } else if (statusParam === "completed" || path.includes("completed")) {
     sql += " AND (LOWER(b.status) = 'completed' OR LOWER(COALESCE(b.detailed_status, '')) = 'completed')";
   }
-
   sql += " ORDER BY b.id DESC";
-
   const bookings = await db.all(sql, params).catch(() => []);
-
-  const formatted = (bookings || []).map(item => {
+  const formatted = (bookings || []).map((item) => {
     const rawStatus = (item.status || "PENDING").toUpperCase();
     let normDetailed = (item.detailed_status || item.status || "PENDING").toUpperCase();
     if (normDetailed === "ACCEPTED") normDetailed = "ARTIST_ACCEPTED";
-
     const isCheckInVerified = Number(item.checkin_otp_verified) === 1;
     if (isCheckInVerified || rawStatus === "IN_PROGRESS" || normDetailed === "IN_PROGRESS") {
       if (normDetailed !== "COMPLETED" && normDetailed !== "CANCELLED") {
         normDetailed = "SERVICE_IN_PROGRESS";
       }
     }
-
-    const normBookingStatus = (isCheckInVerified || rawStatus === "IN_PROGRESS" || normDetailed === "SERVICE_IN_PROGRESS")
-      ? "IN_PROGRESS"
-      : (normDetailed === "ARTIST_ACCEPTED" || rawStatus === "ACCEPTED" || rawStatus === "ARTIST_ACCEPTED")
-        ? "CONFIRMED"
-        : rawStatus;
-
+    const normBookingStatus = isCheckInVerified || rawStatus === "IN_PROGRESS" || normDetailed === "SERVICE_IN_PROGRESS" ? "IN_PROGRESS" : normDetailed === "ARTIST_ACCEPTED" || rawStatus === "ACCEPTED" || rawStatus === "ARTIST_ACCEPTED" ? "CONFIRMED" : rawStatus;
     const custName = item.customer_name || "Customer";
     const custPhone = item.customer_phone || "";
     const custAvatar = item.customer_avatar || null;
-
     return {
       ...item,
       id: item.id,
       booking_id: item.id,
       bookingId: item.id,
-      booking_code: item.booking_number || item.booking_code || ("MG-" + String(item.id).padStart(6, "0")),
+      booking_code: item.booking_number || item.booking_code || "MG-" + String(item.id).padStart(6, "0"),
       booking_status: normBookingStatus,
       bookingStatus: normBookingStatus,
       detailed_status: normDetailed,
@@ -6412,11 +8191,9 @@ const handleGetArtistBookings = async (c) => {
       }
     };
   });
-
   return jsonRes(c, true, formatted, "Artist bookings retrieved");
-};
-
-const handleArtistDynamic = async (c) => {
+}, "handleGetArtistBookings");
+var handleArtistDynamic = /* @__PURE__ */ __name(async (c) => {
   const path = c.req.path.toLowerCase();
   if (path.includes("upload-signature") || path.includes("signature")) {
     return handleUploadSignature(c);
@@ -6497,14 +8274,12 @@ const handleArtistDynamic = async (c) => {
     return jsonRes(c, true, [], "Artist dataset retrieved");
   }
   return handleGetArtistDashboard(c);
-};
-
+}, "handleArtistDynamic");
 app.get("/api/v1/debug/bookings-coords", async (c) => {
   const db = getDb(c.env);
   const bookings = await db.all("SELECT id, booking_number, customer_id, artist_id, latitude, longitude, address, status, detailed_status FROM bookings ORDER BY id DESC LIMIT 10").catch(() => []);
   return jsonRes(c, true, { bookings });
 });
-
 app.get("/api/v1/debug/sync-test-locations", async (c) => {
   const db = getDb(c.env);
   await ensureChatTables(db);
@@ -6513,38 +8288,34 @@ app.get("/api/v1/debug/sync-test-locations", async (c) => {
   const testAddress = "Jaipur Main Street, Jaipur, Rajasthan 302001";
   const artistId = 236;
   const customerId = 238;
-
-  // 1. Update Artist 236 in artist_locations, artist_profiles, users
   await db.run(
     "INSERT INTO artist_locations (artist_id, latitude, longitude, speed, heading, updated_at) VALUES (?, ?, ?, 0, 0, CURRENT_TIMESTAMP) ON CONFLICT(artist_id) DO UPDATE SET latitude = excluded.latitude, longitude = excluded.longitude, updated_at = CURRENT_TIMESTAMP",
     [artistId, lat, lng]
-  ).catch(() => { });
-
+  ).catch(() => {
+  });
   await db.run(
     "UPDATE artist_profiles SET latitude = ?, longitude = ?, city = 'Jaipur', locality = 'Main Street' WHERE user_id = ? OR id = ?",
     [lat, lng, artistId, artistId]
-  ).catch(() => { });
-
+  ).catch(() => {
+  });
   await db.run(
     "UPDATE users SET latitude = ?, longitude = ?, address = ? WHERE id = ?",
     [lat, lng, testAddress, artistId]
-  ).catch(() => { });
-
-  // 2. Update Customer 238 in users and active bookings
+  ).catch(() => {
+  });
   await db.run(
     "UPDATE users SET latitude = ?, longitude = ?, address = ? WHERE id = ?",
     [lat, lng, testAddress, customerId]
-  ).catch(() => { });
-
+  ).catch(() => {
+  });
   await db.run(
     "UPDATE bookings SET latitude = ?, longitude = ?, address = ? WHERE customer_id = ? OR artist_id = ?",
     [lat, lng, testAddress, customerId, artistId]
-  ).catch(() => { });
-
+  ).catch(() => {
+  });
   const artistLoc = await db.first("SELECT * FROM artist_locations WHERE artist_id = ?", [artistId]).catch(() => null);
   const customerUser = await db.first("SELECT id, full_name, latitude, longitude, address FROM users WHERE id = ?", [customerId]).catch(() => null);
   const bookingRec = await db.first("SELECT id, booking_number, latitude, longitude, address, status FROM bookings WHERE customer_id = ? OR artist_id = ? ORDER BY id DESC LIMIT 1", [customerId, artistId]).catch(() => null);
-
   return jsonRes(c, true, {
     latitude: lat,
     longitude: lng,
@@ -6554,13 +8325,25 @@ app.get("/api/v1/debug/sync-test-locations", async (c) => {
     active_booking: bookingRec
   }, "Artist 236 and Customer 238 synced to exact identical location & address!");
 });
-
 app.get("/api/v1/debug/bookings-coords", async (c) => {
   const db = getDb(c.env);
   const bookings = await db.all("SELECT id, booking_number, customer_id, artist_id, latitude, longitude, address, status, detailed_status FROM bookings ORDER BY id DESC LIMIT 10").catch(() => []);
   return jsonRes(c, true, { bookings });
 });
-
+[
+  "/artist",
+  "/artist/*",
+  "/api/artist",
+  "/api/artist/*",
+  "/api/v1/artist",
+  "/api/v1/artist/*",
+  "/api/v1/mehndigo/artist",
+  "/api/v1/mehndigo/artist/*",
+  "/mehndigo/artist",
+  "/mehndigo/artist/*"
+].forEach((p) => {
+  app.all(p, handleArtistDynamic);
+});
 app.get("/api/v1/debug/location/:artistId", async (c) => {
   const db = getDb(c.env);
   const artistId = c.req.param("artistId");
@@ -6571,7 +8354,9 @@ app.get("/api/v1/debug/location/:artistId", async (c) => {
   const allLocations = await db.all("SELECT * FROM artist_locations ORDER BY id DESC LIMIT 10").catch(() => []);
   return jsonRes(c, true, { artist_id: artistId, location_table: loc, profile_table: profile, user_table: user, all_artists: allArtists, recent_locations: allLocations });
 });
-
+["/booking", "/booking/*", "/api/booking/*", "/api/v1/booking/*", "/api/v1/mehndigo/booking/*"].forEach((p) => {
+  app.all(p, handleCustomerDynamic);
+});
 [
   "/category",
   "/category/list",
@@ -6584,18 +8369,15 @@ app.get("/api/v1/debug/location/:artistId", async (c) => {
   "/api/v1/mehndigo/category/admin/list",
   "/customer/categories",
   "/api/v1/customer/categories"
-].forEach(p => app.get(p, getCategories));
-
+].forEach((p) => app.get(p, getCategories));
 app.post("/api/v1/mehndigo/category/admin", async (c) => {
   const db = getDb(c.env);
   const body = await c.req.json().catch(() => ({}));
   const { name, description, image_url } = body;
-  const slug = (name || "category").toLowerCase().replace(/\s+/g, '-');
+  const slug = (name || "category").toLowerCase().replace(/\s+/g, "-");
   await db.run("INSERT INTO categories (name, slug, description, image_url) VALUES (?, ?, ?, ?)", [name, slug, description, image_url]);
   return jsonRes(c, true, null, "Category created");
 });
-
-// ================= ARTIST & SERVICES =================
 app.get("/api/v1/mehndigo/artist/getallservicesdata", async (c) => {
   const db = getDb(c.env);
   const services = await db.all(`
@@ -6606,43 +8388,34 @@ app.get("/api/v1/mehndigo/artist/getallservicesdata", async (c) => {
   `);
   return jsonRes(c, true, services);
 });
-
 app.get("/api/v1/mehndigo/artist/artistdetails", async (c) => {
   return handleGetArtistDetails(c);
 });
-
-// Create Booking
 app.post("/api/v1/mehndigo/artist/booking", async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c) || { id: 4 };
   const body = await c.req.json().catch(() => ({}));
   const { artist_id, service_id, booking_date, total_amount, address } = body;
-
   const res = await db.run(
     "INSERT INTO bookings (customer_id, artist_id, service_id, booking_date, total_amount, address, status) VALUES (?, ?, ?, ?, ?, ?, 'pending')",
-    [u.id, artist_id || 2, service_id || 1, booking_date || new Date().toISOString().split('T')[0], total_amount || 2500, address || 'Mumbai']
+    [u.id, artist_id || 2, service_id || 1, booking_date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0], total_amount || 2500, address || "Mumbai"]
   );
-
   return jsonRes(c, true, { booking_id: res.meta?.last_row_id || 1 }, "Booking created successfully");
 });
-
-const requireAdminAuth = (c) => {
+var requireAdminAuth = /* @__PURE__ */ __name((c) => {
   const u = getUserFromHeader(c);
-  if (!u || !u.role || (u.role.toLowerCase() !== "admin" && u.role.toLowerCase() !== "super_admin")) {
+  if (!u || !u.role || u.role.toLowerCase() !== "admin" && u.role.toLowerCase() !== "super_admin") {
     return jsonRes(c, false, null, "Forbidden: Admin privileges required", 403);
   }
   return null;
-};
-
-// ================= ADMIN DASHBOARD ROUTES =================
-const handleAdminStats = async (c) => {
+}, "requireAdminAuth");
+var handleAdminStats = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const totalUsers = await db.first("SELECT COUNT(*) as count FROM users WHERE LOWER(role) = 'customer' OR LOWER(role) = 'user'").catch(() => ({ count: 0 }));
   const totalArtists = await db.first("SELECT COUNT(*) as count FROM users WHERE LOWER(role) = 'artist'").catch(() => ({ count: 0 }));
   const totalBookings = await db.first("SELECT COUNT(*) as count FROM bookings").catch(() => ({ count: 0 }));
   const totalRevenue = await db.first("SELECT SUM(total_amount) as total FROM bookings WHERE LOWER(status) = 'completed'").catch(() => ({ total: 0 }));
   const pendingArtists = await db.first("SELECT COUNT(*) as count FROM artist_profiles WHERE LOWER(status) = 'pending'").catch(() => ({ count: 0 }));
-
   return jsonRes(c, true, {
     total_users: totalUsers?.count || 0,
     totalUsers: totalUsers?.count || 0,
@@ -6657,15 +8430,13 @@ const handleAdminStats = async (c) => {
     pendingAmount: 0,
     remainingAmount: 0
   });
-};
-
-const handleAdminUsers = async (c) => {
+}, "handleAdminStats");
+var handleAdminUsers = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const users = await db.all("SELECT id, full_name, email, phone, role, is_verified, created_at FROM users ORDER BY id DESC").catch(() => []);
   return jsonRes(c, true, users || []);
-};
-
-const handleAdminArtists = async (c) => {
+}, "handleAdminUsers");
+var handleAdminArtists = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const artists = await db.all(`
     SELECT u.id, u.id as user_id, u.full_name, u.email, u.phone, u.role,
@@ -6676,9 +8447,8 @@ const handleAdminArtists = async (c) => {
     ORDER BY u.id DESC
   `).catch(() => []);
   return jsonRes(c, true, artists || []);
-};
-
-const handleAdminPendingArtists = async (c) => {
+}, "handleAdminArtists");
+var handleAdminPendingArtists = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const pending = await db.all(`
     SELECT u.id, u.id as user_id, u.full_name, u.email, u.phone, u.role,
@@ -6689,106 +8459,99 @@ const handleAdminPendingArtists = async (c) => {
     ORDER BY u.id DESC
   `).catch(() => []);
   return jsonRes(c, true, pending || []);
-};
-
-const handleAdminApproveArtist = async (c) => {
+}, "handleAdminPendingArtists");
+var handleAdminApproveArtist = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const id = c.req.param("id");
   const user = getUserFromHeader(c);
   const adminId = user?.id || 1;
-
   const artist = await db.first("SELECT * FROM artist_profiles WHERE id = ? OR user_id = ?", [id, id]).catch(() => null);
   const artistUserId = artist?.user_id || id;
-
   console.log(`[ARTIST_APPROVAL_DEBUG] handleAdminApproveArtist called for target ID: ${id}, resolved user_id: ${artistUserId}`);
-
   if (artist) {
     await db.run(
       "UPDATE artist_profiles SET status = 'approved', verification_status = 'APPROVED', is_available = 1, rejection_reason = NULL, approved_at = datetime('now'), reviewed_by = ? WHERE user_id = ? OR id = ?",
       [adminId, artistUserId, id]
-    ).catch(() => { });
+    ).catch(() => {
+    });
   } else {
     await db.run(
       "INSERT INTO artist_profiles (user_id, status, verification_status, is_available, rejection_reason, approved_at, reviewed_by) VALUES (?, 'approved', 'APPROVED', 1, NULL, datetime('now'), ?)",
       [artistUserId, adminId]
-    ).catch(() => { });
+    ).catch(() => {
+    });
   }
-
   await db.run(
     "UPDATE users SET is_verified = 1, is_active = 1 WHERE id = ?",
     [artistUserId]
-  ).catch(() => { });
-
+  ).catch(() => {
+  });
   await db.run(
     "INSERT INTO notifications (user_id, title, message, type, is_read, created_at) VALUES (?, ?, ?, ?, 0, datetime('now'))",
     [
       artistUserId,
-      "Profile Approved! 🎉",
+      "Profile Approved! \u{1F389}",
       "Congratulations! Your artist profile and KYC have been verified & approved. You can now access your dashboard and start receiving bookings.",
       "PROFILE"
     ]
-  ).catch(() => { });
-
+  ).catch(() => {
+  });
   await db.run(
     "INSERT INTO audit_logs (admin_id, action, details, created_at) VALUES (?, ?, ?, datetime('now'))",
     [
       adminId,
       "KYC_APPROVAL",
-      JSON.stringify({ artist_id: id, user_id: artistUserId, status: "APPROVED", timestamp: new Date().toISOString() })
+      JSON.stringify({ artist_id: id, user_id: artistUserId, status: "APPROVED", timestamp: (/* @__PURE__ */ new Date()).toISOString() })
     ]
-  ).catch(() => { });
-
+  ).catch(() => {
+  });
   return jsonRes(c, true, { status: "APPROVED", verification_status: "APPROVED", is_verified: true, is_active: true }, "Artist approved successfully");
-};
-
-const handleAdminRejectArtist = async (c) => {
+}, "handleAdminApproveArtist");
+var handleAdminRejectArtist = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const id = c.req.param("id");
   const user = getUserFromHeader(c);
   const adminId = user?.id || 1;
   const body = await c.req.json().catch(() => ({}));
   const reason = body.reason || "Application rejected by administrator";
-
   const artist = await db.first("SELECT * FROM artist_profiles WHERE id = ? OR user_id = ?", [id, id]).catch(() => null);
   const artistUserId = artist?.user_id || id;
-
   console.log(`[ARTIST_APPROVAL_DEBUG] handleAdminRejectArtist called for target ID: ${id}, resolved user_id: ${artistUserId}, reason: ${reason}`);
-
   if (artist) {
     await db.run(
       "UPDATE artist_profiles SET status = 'rejected', verification_status = 'REJECTED', is_available = 0, rejection_reason = ?, rejected_at = datetime('now'), reviewed_by = ? WHERE user_id = ? OR id = ?",
       [reason, adminId, artistUserId, id]
-    ).catch(() => { });
+    ).catch(() => {
+    });
   } else {
     await db.run(
       "INSERT INTO artist_profiles (user_id, status, verification_status, is_available, rejection_reason, rejected_at, reviewed_by) VALUES (?, 'rejected', 'REJECTED', 0, ?, datetime('now'), ?)",
       [artistUserId, reason, adminId]
-    ).catch(() => { });
+    ).catch(() => {
+    });
   }
-
   await db.run(
     "INSERT INTO notifications (user_id, title, message, type, is_read, created_at) VALUES (?, ?, ?, ?, 0, datetime('now'))",
     [
       artistUserId,
-      "Profile Verification Notice ⚠️",
+      "Profile Verification Notice \u26A0\uFE0F",
       `Your artist profile verification could not be approved. Reason: ${reason}. Please update your documents.`,
       "PROFILE"
     ]
-  ).catch(() => { });
-
+  ).catch(() => {
+  });
   await db.run(
     "INSERT INTO audit_logs (admin_id, action, details, created_at) VALUES (?, ?, ?, datetime('now'))",
     [
       adminId,
       "KYC_REJECTION",
-      JSON.stringify({ artist_id: id, user_id: artistUserId, status: "REJECTED", reason, timestamp: new Date().toISOString() })
+      JSON.stringify({ artist_id: id, user_id: artistUserId, status: "REJECTED", reason, timestamp: (/* @__PURE__ */ new Date()).toISOString() })
     ]
-  ).catch(() => { });
-
+  ).catch(() => {
+  });
   return jsonRes(c, true, { status: "REJECTED", verification_status: "REJECTED", rejection_reason: reason }, `Artist application rejected: ${reason}`);
-};
-
-const handleAdminBookings = async (c) => {
+}, "handleAdminRejectArtist");
+var handleAdminBookings = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const bookings = await db.all(`
     SELECT b.*,
@@ -6802,9 +8565,8 @@ const handleAdminBookings = async (c) => {
     ORDER BY b.id DESC
   `).catch(() => []);
   return jsonRes(c, true, bookings || []);
-};
-
-const handleAdminPayments = async (c) => {
+}, "handleAdminBookings");
+var handleAdminPayments = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const list = await db.all(`
     SELECT wt.*, u.full_name as user_name, u.email as user_email, u.role as user_role
@@ -6813,34 +8575,32 @@ const handleAdminPayments = async (c) => {
     ORDER BY wt.id DESC
   `).catch(() => []);
   return jsonRes(c, true, list || []);
-};
-
-const handleAdminGetCoupons = async (c) => {
+}, "handleAdminPayments");
+var handleAdminGetCoupons = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
-  await db.run("CREATE TABLE IF NOT EXISTS coupons (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE, discount_type TEXT, discount_value REAL, min_order_amount REAL, max_discount REAL, is_active INTEGER DEFAULT 1, expires_at DATETIME)").catch(() => { });
+  await db.run("CREATE TABLE IF NOT EXISTS coupons (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE, discount_type TEXT, discount_value REAL, min_order_amount REAL, max_discount REAL, is_active INTEGER DEFAULT 1, expires_at DATETIME)").catch(() => {
+  });
   const coupons = await db.all("SELECT * FROM coupons ORDER BY id DESC").catch(() => []);
   return jsonRes(c, true, coupons || []);
-};
-
-const handleAdminCreateCoupon = async (c) => {
+}, "handleAdminGetCoupons");
+var handleAdminCreateCoupon = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
-  await db.run("CREATE TABLE IF NOT EXISTS coupons (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE, discount_type TEXT, discount_value REAL, min_order_amount REAL, max_discount REAL, is_active INTEGER DEFAULT 1, expires_at DATETIME)").catch(() => { });
+  await db.run("CREATE TABLE IF NOT EXISTS coupons (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE, discount_type TEXT, discount_value REAL, min_order_amount REAL, max_discount REAL, is_active INTEGER DEFAULT 1, expires_at DATETIME)").catch(() => {
+  });
   const body = await c.req.json().catch(() => ({}));
   const { code, discount_type, discount_value, min_booking_value, min_order_amount, max_discount, expires_at } = body;
   await db.run(
     "INSERT INTO coupons (code, discount_type, discount_value, min_order_amount, max_discount, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
-    [code, discount_type || 'PERCENTAGE', Number(discount_value) || 10, Number(min_booking_value || min_order_amount) || 0, Number(max_discount) || 500, expires_at || null]
-  ).catch(() => { });
+    [code, discount_type || "PERCENTAGE", Number(discount_value) || 10, Number(min_booking_value || min_order_amount) || 0, Number(max_discount) || 500, expires_at || null]
+  ).catch(() => {
+  });
   return jsonRes(c, true, null, "Coupon created successfully");
-};
-
-const handleAdminWalletSummary = async (c) => {
+}, "handleAdminCreateCoupon");
+var handleAdminWalletSummary = /* @__PURE__ */ __name(async (c) => {
   const adminCheck = requireAdminAuth(c);
   if (adminCheck) return adminCheck;
-
   const db = getDb(c.env);
   await ensureWalletTables(db);
-
   const paymentsRow = await db.first("SELECT SUM(total_amount) as total FROM bookings WHERE status IN ('confirmed', 'accepted', 'completed')").catch(() => ({ total: 0 }));
   const escrowRow = await db.first("SELECT SUM(escrow_balance) as total FROM wallets").catch(() => ({ total: 0 }));
   const availRow = await db.first("SELECT SUM(available_balance) as total FROM wallets").catch(() => ({ total: 0 }));
@@ -6848,13 +8608,11 @@ const handleAdminWalletSummary = async (c) => {
   const withRow = await db.first("SELECT SUM(withdrawn_amount) as total FROM wallets").catch(() => ({ total: 0 }));
   const pendingWithRow = await db.first("SELECT COUNT(*) as count FROM withdrawals WHERE status = 'pending'").catch(() => ({ count: 0 }));
   const bksRow = await db.first("SELECT COUNT(*) as count FROM bookings").catch(() => ({ count: 0 }));
-
   const totalPayments = Math.round(Number(paymentsRow?.total || 0) * 100) / 100;
   const totalEscrow = Math.round(Number(escrowRow?.total || 0) * 100) / 100;
   const totalAvailable = Math.round(Number(availRow?.total || 0) * 100) / 100;
-  const totalCommission = Math.round(Number(commRow?.total || (totalPayments * PLATFORM_COMMISSION_RATE)) * 100) / 100;
+  const totalCommission = Math.round(Number(commRow?.total || totalPayments * PLATFORM_COMMISSION_RATE) * 100) / 100;
   const totalWithdrawn = Math.round(Number(withRow?.total || 0) * 100) / 100;
-
   return jsonRes(c, true, {
     totalCustomerPayments: totalPayments,
     totalArtistEscrow: totalEscrow,
@@ -6862,14 +8620,13 @@ const handleAdminWalletSummary = async (c) => {
     totalPlatformCommission: totalCommission,
     totalCommissionEarned: totalCommission,
     balance: totalCommission,
-    totalWithdrawn: totalWithdrawn,
+    totalWithdrawn,
     pendingWithdrawals: pendingWithRow?.count || 0,
     totalBookings: bksRow?.count || 0,
     commissionRate: "10%"
   });
-};
-
-const handleAdminCommissionHistory = async (c) => {
+}, "handleAdminWalletSummary");
+var handleAdminCommissionHistory = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const list = await db.all(`
     SELECT wt.*, u.full_name as user_name, u.role as user_role
@@ -6878,9 +8635,8 @@ const handleAdminCommissionHistory = async (c) => {
     ORDER BY wt.id DESC
   `).catch(() => []);
   return jsonRes(c, true, list || []);
-};
-
-const handleAdminWalletDashboardSummary = async (c) => {
+}, "handleAdminCommissionHistory");
+var handleAdminWalletDashboardSummary = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const revRow = await db.first("SELECT SUM(total_amount) as total FROM bookings WHERE LOWER(status) = 'completed'").catch(() => ({ total: 0 }));
   const lifetime = Math.round(Number(revRow?.total || 0) * 0.15);
@@ -6889,17 +8645,15 @@ const handleAdminWalletDashboardSummary = async (c) => {
     weekly: Math.round(lifetime * 0.4),
     monthly: Math.round(lifetime * 0.8),
     yearly: lifetime,
-    lifetime: lifetime
+    lifetime
   });
-};
-
-const handleAdminAnalyticsDashboard = async (c) => {
+}, "handleAdminWalletDashboardSummary");
+var handleAdminAnalyticsDashboard = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const rev = await db.first("SELECT SUM(total_amount) as total FROM bookings WHERE LOWER(status) = 'completed'").catch(() => ({ total: 0 }));
   const bks = await db.first("SELECT COUNT(*) as count FROM bookings").catch(() => ({ count: 0 }));
   const cust = await db.first("SELECT COUNT(*) as count FROM users WHERE LOWER(role) = 'customer' OR LOWER(role) = 'user'").catch(() => ({ count: 0 }));
   const art = await db.first("SELECT COUNT(*) as count FROM users WHERE LOWER(role) = 'artist'").catch(() => ({ count: 0 }));
-
   return jsonRes(c, true, {
     totalRevenue: rev?.total || 0,
     totalBookings: bks?.count || 0,
@@ -6907,13 +8661,8 @@ const handleAdminAnalyticsDashboard = async (c) => {
     totalArtists: art?.count || 0,
     conversionRate: 84.5
   });
-};
-
-// ==========================================
-// CHAT & CUSTOMER SUPPORT SYSTEM (REAL-TIME)
-// ==========================================
-
-const ensureChatTables = async (db) => {
+}, "handleAdminAnalyticsDashboard");
+var ensureChatTables = /* @__PURE__ */ __name(async (db) => {
   await db.run(`
     CREATE TABLE IF NOT EXISTS messages (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -6927,8 +8676,8 @@ const ensureChatTables = async (db) => {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
-  `).catch(() => { });
-
+  `).catch(() => {
+  });
   await db.run(`
     CREATE TABLE IF NOT EXISTS support_tickets (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -6944,17 +8693,14 @@ const ensureChatTables = async (db) => {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
-  `).catch(() => { });
-};
-
-// 1. Get List of Active Conversations for Current User
-const handleGetChatList = async (c) => {
+  `).catch(() => {
+  });
+}, "ensureChatTables");
+var handleGetChatList = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) return jsonRes(c, false, null, "Authentication required", 401);
   await ensureChatTables(db);
-
-  // Find all distinct participants the user has chatted with
   const convos = await db.all(`
     SELECT DISTINCT 
       CASE WHEN sender_id = ? THEN receiver_id ELSE sender_id END as peer_id,
@@ -6964,29 +8710,25 @@ const handleGetChatList = async (c) => {
     GROUP BY peer_id
     ORDER BY last_msg_id DESC
   `, [u.id, u.id, u.id]).catch(() => []);
-
   const chatList = [];
-  for (const cRow of (convos || [])) {
+  for (const cRow of convos || []) {
     const peerId = cRow.peer_id;
     const peerUser = await db.first(
       "SELECT id, full_name, name, email, phone, role, profile_image FROM users WHERE id = ? OR CAST(id AS TEXT) = ?",
       [peerId, String(peerId)]
     ).catch(() => null);
-
     const lastMsg = await db.first(
       "SELECT * FROM messages WHERE id = ?",
       [cRow.last_msg_id]
     ).catch(() => null);
-
     const unreadCountRow = await db.first(
       "SELECT COUNT(*) as count FROM messages WHERE sender_id = ? AND receiver_id = ? AND is_read = 0",
       [peerId, u.id]
     ).catch(() => ({ count: 0 }));
-
     chatList.push({
       id: peerId,
       bookingId: lastMsg?.booking_id || null,
-      bookingCode: peerUser?.role === 'admin' || peerUser?.role === 'ADMIN' ? 'ADMIN' : (lastMsg?.booking_id ? `BK-${lastMsg.booking_id}` : 'DIRECT'),
+      bookingCode: peerUser?.role === "admin" || peerUser?.role === "ADMIN" ? "ADMIN" : lastMsg?.booking_id ? `BK-${lastMsg.booking_id}` : "DIRECT",
       name: peerUser?.full_name || peerUser?.name || (peerId === 1 ? "Support Admin" : `User #${peerId}`),
       recipient: {
         id: peerId,
@@ -6996,45 +8738,38 @@ const handleGetChatList = async (c) => {
         phone: peerUser?.phone || null
       },
       lastMessage: lastMsg?.message || "",
-      lastMessageTime: lastMsg?.created_at || new Date().toISOString(),
+      lastMessageTime: lastMsg?.created_at || (/* @__PURE__ */ new Date()).toISOString(),
       unreadCount: Number(unreadCountRow?.count || 0)
     });
   }
-
-  // If chat list is empty, provide Support Chat channel as a default option
   if (chatList.length === 0) {
     chatList.push({
       id: 1,
       bookingId: null,
-      bookingCode: 'SUPPORT',
-      name: 'MehndiGo Support Admin',
+      bookingCode: "SUPPORT",
+      name: "MehndiGo Support Admin",
       recipient: {
         id: 1,
-        name: 'MehndiGo Support Admin',
-        role: 'ADMIN',
+        name: "MehndiGo Support Admin",
+        role: "ADMIN",
         profile_image: null,
-        phone: '+91 98765 43210'
+        phone: "+91 98765 43210"
       },
-      lastMessage: 'Hello! How can we assist you with your Mehndi bookings today?',
-      lastMessageTime: new Date().toISOString(),
+      lastMessage: "Hello! How can we assist you with your Mehndi bookings today?",
+      lastMessageTime: (/* @__PURE__ */ new Date()).toISOString(),
       unreadCount: 0
     });
   }
-
   return jsonRes(c, true, chatList, "Chat conversations fetched");
-};
-
-// 2. Get Chronological Chat History with a Specific User or Booking
-const handleGetChatHistory = async (c) => {
+}, "handleGetChatList");
+var handleGetChatHistory = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) return jsonRes(c, false, null, "Authentication required", 401);
   await ensureChatTables(db);
-
   const rawTarget = c.req.param("id") || c.req.param("receiverId") || c.req.query("receiverId") || c.req.query("bookingId") || "1";
   const targetId = Number(rawTarget) || 1;
   const bookingIdParam = Number(c.req.query("bookingId") || 0);
-
   let messages = [];
   if (bookingIdParam > 0) {
     messages = await db.all(`
@@ -7059,13 +8794,11 @@ const handleGetChatHistory = async (c) => {
       ORDER BY m.id ASC
     `, [u.id, targetId, targetId, u.id]).catch(() => []);
   }
-
-  // Mark all incoming messages from this target as read
   await db.run(
     "UPDATE messages SET is_read = 1 WHERE sender_id = ? AND receiver_id = ? AND is_read = 0",
     [targetId, u.id]
-  ).catch(() => { });
-
+  ).catch(() => {
+  });
   const formattedMessages = (messages || []).map((m) => ({
     id: m.id,
     senderId: m.sender_id,
@@ -7076,47 +8809,39 @@ const handleGetChatHistory = async (c) => {
     booking_id: m.booking_id,
     message: m.message,
     text: m.message,
-    messageType: m.message_type || 'TEXT',
-    message_type: m.message_type || 'TEXT',
+    messageType: m.message_type || "TEXT",
+    message_type: m.message_type || "TEXT",
     mediaUrl: m.media_url,
     media_url: m.media_url,
     isRead: Boolean(m.is_read),
     is_read: Boolean(m.is_read),
     isMe: m.sender_id === u.id,
-    timestamp: m.created_at || new Date().toISOString(),
-    created_at: m.created_at || new Date().toISOString(),
+    timestamp: m.created_at || (/* @__PURE__ */ new Date()).toISOString(),
+    created_at: m.created_at || (/* @__PURE__ */ new Date()).toISOString(),
     senderName: m.sender_name || (m.sender_id === 1 ? "Admin" : `User #${m.sender_id}`)
   }));
-
   return jsonRes(c, true, formattedMessages, "Chat history retrieved");
-};
-
-// 3. Send New Chat Message
-const handleSendChatMessage = async (c) => {
+}, "handleGetChatHistory");
+var handleSendChatMessage = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) return jsonRes(c, false, null, "Authentication required", 401);
   await ensureChatTables(db);
-
   const body = await c.req.json().catch(() => ({}));
-  const rawReceiver = body.receiver_id || body.receiverId || body.toUserId || body.targetId || (body.bookingCode === 'ADMIN' ? 1 : 1);
+  const rawReceiver = body.receiver_id || body.receiverId || body.toUserId || body.targetId || (body.bookingCode === "ADMIN" ? 1 : 1);
   const receiverId = Number(rawReceiver) || 1;
   const bookingId = Number(body.booking_id || body.bookingId || 0) || null;
   const message = String(body.message || body.text || body.content || "").trim();
   const messageType = String(body.message_type || body.messageType || (body.media_url || body.mediaUrl ? "IMAGE" : "TEXT")).toUpperCase();
   const mediaUrl = body.media_url || body.mediaUrl || body.file_url || body.url || null;
-
   if (!message && !mediaUrl) {
     return jsonRes(c, false, null, "Message text or media is required", 400);
   }
-
   const result = await db.run(`
     INSERT INTO messages (sender_id, receiver_id, booking_id, message, message_type, media_url, is_read, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-  `, [u.id, receiverId, bookingId, message || (messageType === 'IMAGE' ? '[Photo Attachment]' : '[Attachment]'), messageType, mediaUrl]);
-
+  `, [u.id, receiverId, bookingId, message || (messageType === "IMAGE" ? "[Photo Attachment]" : "[Attachment]"), messageType, mediaUrl]);
   const insertedId = result?.lastInsertRowid || result?.meta?.last_row_id || Date.now();
-
   const newMsg = {
     id: insertedId,
     senderId: u.id,
@@ -7125,8 +8850,8 @@ const handleSendChatMessage = async (c) => {
     receiver_id: receiverId,
     bookingId,
     booking_id: bookingId,
-    message: message || (messageType === 'IMAGE' ? '[Photo Attachment]' : '[Attachment]'),
-    text: message || (messageType === 'IMAGE' ? '[Photo Attachment]' : '[Attachment]'),
+    message: message || (messageType === "IMAGE" ? "[Photo Attachment]" : "[Attachment]"),
+    text: message || (messageType === "IMAGE" ? "[Photo Attachment]" : "[Attachment]"),
     messageType,
     message_type: messageType,
     mediaUrl,
@@ -7134,65 +8859,53 @@ const handleSendChatMessage = async (c) => {
     isRead: false,
     is_read: false,
     isMe: true,
-    timestamp: new Date().toISOString(),
-    created_at: new Date().toISOString(),
+    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+    created_at: (/* @__PURE__ */ new Date()).toISOString(),
     senderName: u.full_name || u.name || "Me"
   };
-
-  // Trigger system notification and remote push to receiver
   dispatchNotification(db, {
     userId: receiverId,
-    title: `New Message from ${u.full_name || u.name || 'User'} 💬`,
-    body: message ? (message.length > 60 ? message.substring(0, 57) + "..." : message) : "Sent an attachment",
+    title: `New Message from ${u.full_name || u.name || "User"} \u{1F4AC}`,
+    body: message ? message.length > 60 ? message.substring(0, 57) + "..." : message : "Sent an attachment",
     type: "NEW_CHAT_MESSAGE",
     entityId: bookingId || u.id,
     entityType: "chat",
     channelId: "chat",
     deepLink: `mehendigoo://chat/${bookingId || u.id}`
-  }).catch(() => { });
-
+  }).catch(() => {
+  });
   return jsonRes(c, true, newMsg, "Message sent successfully");
-};
-
-// 4. Get Total Unread Message Count
-const handleGetUnreadCounts = async (c) => {
+}, "handleSendChatMessage");
+var handleGetUnreadCounts = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) return jsonRes(c, true, { count: 0, unreadCount: 0 });
   await ensureChatTables(db);
-
   const row = await db.first(
     "SELECT COUNT(*) as unread_count FROM messages WHERE receiver_id = ? AND is_read = 0",
     [u.id]
   ).catch(() => ({ unread_count: 0 }));
-
   const count = Number(row?.unread_count || 0);
   return jsonRes(c, true, { count, unreadCount: count, totalUnread: count });
-};
-
-// 5. Mark Chat As Seen
-const handleMarkChatSeen = async (c) => {
+}, "handleGetUnreadCounts");
+var handleMarkChatSeen = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) return jsonRes(c, true, { success: true });
   await ensureChatTables(db);
-
   const senderId = Number(c.req.param("senderId") || c.req.param("id") || 0);
   if (senderId > 0) {
     await db.run(
       "UPDATE messages SET is_read = 1 WHERE sender_id = ? AND receiver_id = ?",
       [senderId, u.id]
-    ).catch(() => { });
+    ).catch(() => {
+    });
   }
-
   return jsonRes(c, true, { success: true }, "Chat marked as seen");
-};
-
-// 6. Admin Chat Activity Monitor
-const handleAdminChats = async (c) => {
+}, "handleMarkChatSeen");
+var handleAdminChats = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   await ensureChatTables(db);
-
   const rows = await db.all(`
     SELECT m.*, 
       u_sender.full_name as sender_name, u_sender.role as sender_role, u_sender.profile_image as sender_avatar,
@@ -7203,12 +8916,11 @@ const handleAdminChats = async (c) => {
     ORDER BY m.id DESC
     LIMIT 100
   `).catch(() => []);
-
   const formatted = (rows || []).map((m) => ({
     id: m.id,
     booking_id: m.booking_id,
     message: m.message,
-    message_type: m.message_type || 'TEXT',
+    message_type: m.message_type || "TEXT",
     media_url: m.media_url,
     is_read: Boolean(m.is_read),
     created_at: m.created_at,
@@ -7225,21 +8937,15 @@ const handleAdminChats = async (c) => {
       avatar: m.receiver_avatar
     }
   }));
-
   return jsonRes(c, true, formatted, "Admin chats stream retrieved");
-};
-
-// 7. Support Tickets Engine (Artist & Customer)
-const handleCustomerSupportTicket = async (c) => {
+}, "handleAdminChats");
+var handleCustomerSupportTicket = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) return jsonRes(c, false, null, "Authentication required", 401);
   await ensureChatTables(db);
-
   const method = c.req.method.toUpperCase();
   const path = c.req.path.toLowerCase();
-
-  // 1. Reply to ticket
   if (path.includes("/reply") && method === "POST") {
     const body = await c.req.json().catch(() => ({}));
     const message = body.message || body.reply || "";
@@ -7249,14 +8955,12 @@ const handleCustomerSupportTicket = async (c) => {
     }
     const ticket = await db.first("SELECT * FROM support_tickets WHERE id = ?", [ticketId]).catch(() => null);
     if (!ticket) return jsonRes(c, false, null, "Ticket not found", 404);
-
     let replies = [];
     try {
-      replies = typeof ticket.replies === "string" ? JSON.parse(ticket.replies || "[]") : (ticket.replies || []);
+      replies = typeof ticket.replies === "string" ? JSON.parse(ticket.replies || "[]") : ticket.replies || [];
     } catch (_) {
       replies = [];
     }
-
     const newReply = {
       id: Date.now(),
       sender_id: u.id,
@@ -7264,57 +8968,51 @@ const handleCustomerSupportTicket = async (c) => {
       sender_role: (u.role || (path.includes("artist") ? "ARTIST" : "CUSTOMER")).toUpperCase(),
       message,
       attachments: body.attachments || null,
-      created_at: new Date().toISOString()
+      created_at: (/* @__PURE__ */ new Date()).toISOString()
     };
     replies.push(newReply);
-
     await db.run(
       "UPDATE support_tickets SET replies = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
       [JSON.stringify(replies), ticketId]
-    ).catch(() => { });
-
+    ).catch(() => {
+    });
     dispatchNotification(db, {
       userId: 1,
-      title: `Support Ticket #${ticketId} Update 💬`,
-      body: `${u.full_name || u.name || 'User'} replied: ${message.substring(0, 80)}`,
+      title: `Support Ticket #${ticketId} Update \u{1F4AC}`,
+      body: `${u.full_name || u.name || "User"} replied: ${message.substring(0, 80)}`,
       type: "SUPPORT_TICKET_USER_REPLY",
       entityId: ticketId,
       entityType: "ticket",
       channelId: "support",
       deepLink: `mehendigoo://support/${ticketId}`
-    }).catch(() => { });
-
+    }).catch(() => {
+    });
     return jsonRes(c, true, { ticket_id: ticketId, replies }, "Reply submitted successfully");
   }
-
-  // 2. Close ticket
   if (path.includes("/close") && (method === "PUT" || method === "POST")) {
     const ticketId = parseInt(c.req.param("id") || path.split("/")[path.split("/").length - 2] || 0, 10);
     if (ticketId) {
-      await db.run("UPDATE support_tickets SET status = 'CLOSED', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [ticketId]).catch(() => { });
+      await db.run("UPDATE support_tickets SET status = 'CLOSED', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [ticketId]).catch(() => {
+      });
     }
     return jsonRes(c, true, { id: ticketId, status: "CLOSED" }, "Support ticket closed successfully");
   }
-
-  // 2b. Reopen ticket
   if (path.includes("/reopen") && (method === "PUT" || method === "POST")) {
     const ticketId = parseInt(c.req.param("id") || path.split("/")[path.split("/").length - 2] || 0, 10);
     if (ticketId) {
-      await db.run("UPDATE support_tickets SET status = 'OPEN', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [ticketId]).catch(() => { });
+      await db.run("UPDATE support_tickets SET status = 'OPEN', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [ticketId]).catch(() => {
+      });
     }
     return jsonRes(c, true, { id: ticketId, status: "OPEN" }, "Support ticket reopened successfully");
   }
-
-  // 2c. Mark ticket as read
   if (path.includes("/read") && method === "POST") {
     const ticketId = parseInt(c.req.param("id") || path.split("/")[path.split("/").length - 2] || 0, 10);
     if (ticketId) {
-      await db.run("UPDATE notifications SET is_read = 1 WHERE user_id = ? AND (title LIKE ? OR message LIKE ?)", [u.id, `%#${ticketId}%`, `%#${ticketId}%`]).catch(() => { });
+      await db.run("UPDATE notifications SET is_read = 1 WHERE user_id = ? AND (title LIKE ? OR message LIKE ?)", [u.id, `%#${ticketId}%`, `%#${ticketId}%`]).catch(() => {
+      });
     }
     return jsonRes(c, true, { id: ticketId, read: true }, "Ticket marked as read");
   }
-
-  // 3. Create Ticket
   if (method === "POST") {
     const body = await c.req.json().catch(() => ({}));
     const category = body.category || "Booking Issue";
@@ -7322,34 +9020,27 @@ const handleCustomerSupportTicket = async (c) => {
     const description = body.description || body.message || "";
     const bookingId = Number(body.booking_id || body.bookingId || 0) || null;
     const attachments = body.attachments || body.attachmentUri || null;
-
-    // Auto-detect user type (Artist vs Customer)
     const artist = await db.first("SELECT id FROM artist_profiles WHERE user_id = ? OR CAST(user_id AS TEXT) = ?", [u.id, String(u.id)]).catch(() => null);
     const userType = (body.user_type || body.userType || (artist || String(u.role).toUpperCase().includes("ARTIST") || path.includes("artist") ? "ARTIST" : "CUSTOMER")).toUpperCase();
-
     if (!description && !subject) {
       return jsonRes(c, false, null, "Subject and description are required", 400);
     }
-
     const res = await db.run(`
       INSERT INTO support_tickets (user_id, booking_id, category, subject, description, priority, status, attachments, replies, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, 'MEDIUM', 'OPEN', ?, '[]', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     `, [u.id, bookingId, category, subject, description, typeof attachments === "string" ? attachments : JSON.stringify(attachments || [])]);
-
     const ticketId = res?.lastInsertRowid || res?.meta?.last_row_id || Date.now();
-
-    // Create a notification for Admin
     dispatchNotification(db, {
       userId: 1,
-      title: `Support Ticket #${ticketId} Raised 🎫`,
-      body: `${u.full_name || u.name || 'User'} (${userType}): ${subject}`,
+      title: `Support Ticket #${ticketId} Raised \u{1F3AB}`,
+      body: `${u.full_name || u.name || "User"} (${userType}): ${subject}`,
       type: "SUPPORT_TICKET_CREATED",
       entityId: ticketId,
       entityType: "ticket",
       channelId: "support",
       deepLink: `mehendigoo://support/${ticketId}`
-    }).catch(() => { });
-
+    }).catch(() => {
+    });
     return jsonRes(c, true, {
       id: ticketId,
       ticket_id: ticketId,
@@ -7359,70 +9050,56 @@ const handleCustomerSupportTicket = async (c) => {
       subject,
       description,
       status: "OPEN",
-      created_at: new Date().toISOString()
+      created_at: (/* @__PURE__ */ new Date()).toISOString()
     }, "Support ticket submitted successfully");
   }
-
-  // 4. GET Single Ticket Details
   const singleId = parseInt(c.req.param("id") || 0, 10);
   if (singleId) {
     const ticket = await db.first("SELECT * FROM support_tickets WHERE id = ?", [singleId]).catch(() => null);
     if (!ticket) return jsonRes(c, false, null, "Ticket not found", 404);
     let replies = [];
     try {
-      replies = typeof ticket.replies === "string" ? JSON.parse(ticket.replies || "[]") : (ticket.replies || []);
+      replies = typeof ticket.replies === "string" ? JSON.parse(ticket.replies || "[]") : ticket.replies || [];
     } catch (_) {
       replies = [];
     }
     return jsonRes(c, true, { ...ticket, replies }, "Ticket details retrieved");
   }
-
-  // 5. GET user tickets
   const tickets = await db.all(
     "SELECT * FROM support_tickets WHERE user_id = ? OR CAST(user_id AS TEXT) = ? ORDER BY id DESC",
     [u.id, String(u.id)]
   ).catch(() => []);
-
-  const formatted = (tickets || []).map(t => {
+  const formatted = (tickets || []).map((t) => {
     let replies = [];
     try {
-      replies = typeof t.replies === "string" ? JSON.parse(t.replies || "[]") : (t.replies || []);
+      replies = typeof t.replies === "string" ? JSON.parse(t.replies || "[]") : t.replies || [];
     } catch (_) {
       replies = [];
     }
     return { ...t, replies };
   });
-
   return jsonRes(c, true, formatted, "Support tickets retrieved");
-};
-
-// 7b. Admin Support Tickets Master Engine
-const handleAdminSupportTickets = async (c) => {
+}, "handleCustomerSupportTicket");
+var handleAdminSupportTickets = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   await ensureChatTables(db);
   const method = c.req.method.toUpperCase();
   const path = c.req.path.toLowerCase();
-
-  // Admin Reply to Ticket
   if (path.includes("/reply") && method === "POST") {
     const body = await c.req.json().catch(() => ({}));
     const message = body.message || body.reply || "";
     const ticketId = parseInt(c.req.param("id") || path.split("/")[path.split("/").length - 2] || body.ticketId || body.ticket_id || 0, 10);
-
     if (!ticketId || !message) {
       return jsonRes(c, false, null, "Ticket ID and reply message are required", 400);
     }
-
     const ticket = await db.first("SELECT * FROM support_tickets WHERE id = ?", [ticketId]).catch(() => null);
     if (!ticket) return jsonRes(c, false, null, "Ticket not found", 404);
-
     let replies = [];
     try {
-      replies = typeof ticket.replies === "string" ? JSON.parse(ticket.replies || "[]") : (ticket.replies || []);
+      replies = typeof ticket.replies === "string" ? JSON.parse(ticket.replies || "[]") : ticket.replies || [];
     } catch (_) {
       replies = [];
     }
-
     const newReply = {
       id: Date.now(),
       sender_id: 1,
@@ -7430,61 +9107,51 @@ const handleAdminSupportTickets = async (c) => {
       sender_role: "ADMIN",
       message,
       attachments: body.attachments || null,
-      created_at: new Date().toISOString()
+      created_at: (/* @__PURE__ */ new Date()).toISOString()
     };
     replies.push(newReply);
-
     const newStatus = body.status || (ticket.status === "OPEN" ? "IN_PROGRESS" : ticket.status);
-
     await db.run(
       "UPDATE support_tickets SET replies = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
       [JSON.stringify(replies), newStatus, ticketId]
-    ).catch(() => { });
-
-    // Notify User with remote push
+    ).catch(() => {
+    });
     dispatchNotification(db, {
       userId: ticket.user_id,
-      title: `Support Ticket #${ticketId} Response 💬`,
+      title: `Support Ticket #${ticketId} Response \u{1F4AC}`,
       body: `Admin replied: ${message.substring(0, 90)}`,
       type: "SUPPORT_TICKET_REPLY",
       entityId: ticketId,
       entityType: "ticket",
       channelId: "support",
       deepLink: `mehendigoo://support/${ticketId}`
-    }).catch(() => { });
-
+    }).catch(() => {
+    });
     return jsonRes(c, true, { ticket_id: ticketId, status: newStatus, replies }, "Admin reply sent successfully");
   }
-
-  // Admin Status Update (OPEN / IN_PROGRESS / RESOLVED / CLOSED)
   if ((path.includes("/status") || path.includes("/update-status")) && (method === "PUT" || method === "PATCH" || method === "POST")) {
     const body = await c.req.json().catch(() => ({}));
     const ticketId = parseInt(c.req.param("id") || body.id || body.ticketId || body.ticket_id || 0, 10);
     const status = String(body.status || "OPEN").toUpperCase();
-
     if (!ticketId) return jsonRes(c, false, null, "Ticket ID is required", 400);
-
     await db.run(
       "UPDATE support_tickets SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
       [status, ticketId]
-    ).catch(() => { });
-
+    ).catch(() => {
+    });
     const ticket = await db.first("SELECT user_id FROM support_tickets WHERE id = ?", [ticketId]).catch(() => null);
     if (ticket) {
       await db.run(
         "INSERT INTO notifications (user_id, title, message, type, is_read) VALUES (?, ?, ?, 'SUPPORT', 0)",
         [ticket.user_id, `Ticket #${ticketId} Status Changed`, `Your support ticket status has been marked as ${status}.`]
-      ).catch(() => { });
+      ).catch(() => {
+      });
     }
-
     return jsonRes(c, true, { id: ticketId, status }, `Ticket status updated to ${status}`);
   }
-
-  // GET All Support Tickets for Admin
   const statusFilter = (c.req.query("status") || "ALL").toUpperCase();
   const userTypeFilter = (c.req.query("user_type") || c.req.query("role") || "ALL").toUpperCase();
   const search = (c.req.query("search") || "").trim().toLowerCase();
-
   const rawTickets = await db.all(`
     SELECT t.*,
            u.full_name, u.phone, u.email, u.avatar, u.role as user_role,
@@ -7496,18 +9163,15 @@ const handleAdminSupportTickets = async (c) => {
     LEFT JOIN bookings b ON (t.booking_id = b.id OR CAST(t.booking_id AS TEXT) = CAST(b.id AS TEXT))
     ORDER BY t.id DESC
   `).catch(() => []);
-
-  const formatted = (rawTickets || []).map(t => {
+  const formatted = (rawTickets || []).map((t) => {
     let replies = [];
     try {
-      replies = typeof t.replies === "string" ? JSON.parse(t.replies || "[]") : (t.replies || []);
+      replies = typeof t.replies === "string" ? JSON.parse(t.replies || "[]") : t.replies || [];
     } catch (_) {
       replies = [];
     }
-
     const isArtist = Boolean(t.artist_id || t.artist_name || String(t.user_role).toUpperCase().includes("ARTIST") || String(t.category).toLowerCase().includes("artist") || String(t.subject).toLowerCase().includes("artist") || String(t.description).toLowerCase().includes("artist"));
     const senderRole = isArtist ? "ARTIST" : "CUSTOMER";
-
     return {
       id: t.id,
       ticket_id: t.id,
@@ -7528,46 +9192,35 @@ const handleAdminSupportTickets = async (c) => {
       description: t.description || "",
       priority: t.priority || "MEDIUM",
       status: (t.status || "OPEN").toUpperCase(),
-      attachments: t.attachments ? (typeof t.attachments === "string" && t.attachments.startsWith("[") ? JSON.parse(t.attachments) : t.attachments) : null,
+      attachments: t.attachments ? typeof t.attachments === "string" && t.attachments.startsWith("[") ? JSON.parse(t.attachments) : t.attachments : null,
       replies,
-      created_at: t.created_at || new Date().toISOString(),
-      updated_at: t.updated_at || t.created_at || new Date().toISOString()
+      created_at: t.created_at || (/* @__PURE__ */ new Date()).toISOString(),
+      updated_at: t.updated_at || t.created_at || (/* @__PURE__ */ new Date()).toISOString()
     };
   });
-
-  // Apply filters
   let filtered = formatted;
   if (statusFilter !== "ALL") {
-    filtered = filtered.filter(t => t.status === statusFilter);
+    filtered = filtered.filter((t) => t.status === statusFilter);
   }
   if (userTypeFilter !== "ALL") {
-    filtered = filtered.filter(t => t.sender_role === userTypeFilter);
+    filtered = filtered.filter((t) => t.sender_role === userTypeFilter);
   }
   if (search) {
-    filtered = filtered.filter(t =>
-      String(t.id).includes(search) ||
-      t.user_name.toLowerCase().includes(search) ||
-      t.user_phone.toLowerCase().includes(search) ||
-      t.subject.toLowerCase().includes(search) ||
-      t.description.toLowerCase().includes(search) ||
-      (t.booking_code && t.booking_code.toLowerCase().includes(search))
+    filtered = filtered.filter(
+      (t) => String(t.id).includes(search) || t.user_name.toLowerCase().includes(search) || t.user_phone.toLowerCase().includes(search) || t.subject.toLowerCase().includes(search) || t.description.toLowerCase().includes(search) || t.booking_code && t.booking_code.toLowerCase().includes(search)
     );
   }
-
-  // Summary counts
   const stats = {
     total: formatted.length,
-    open: formatted.filter(t => t.status === "OPEN").length,
-    in_progress: formatted.filter(t => t.status === "IN_PROGRESS").length,
-    resolved: formatted.filter(t => t.status === "RESOLVED" || t.status === "CLOSED").length,
-    from_artists: formatted.filter(t => t.sender_role === "ARTIST").length,
-    from_customers: formatted.filter(t => t.sender_role === "CUSTOMER").length
+    open: formatted.filter((t) => t.status === "OPEN").length,
+    in_progress: formatted.filter((t) => t.status === "IN_PROGRESS").length,
+    resolved: formatted.filter((t) => t.status === "RESOLVED" || t.status === "CLOSED").length,
+    from_artists: formatted.filter((t) => t.sender_role === "ARTIST").length,
+    from_customers: formatted.filter((t) => t.sender_role === "CUSTOMER").length
   };
-
   return jsonRes(c, true, { tickets: filtered, stats }, "Admin support tickets retrieved");
-};
-
-const handleAdminNotifications = async (c) => {
+}, "handleAdminSupportTickets");
+var handleAdminNotifications = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const method = c.req.method.toUpperCase();
   if (method === "POST") {
@@ -7576,14 +9229,14 @@ const handleAdminNotifications = async (c) => {
     await db.run(
       "INSERT INTO notifications (user_id, title, message, is_read) VALUES (?, ?, ?, 0)",
       [userId || 1, title || "Admin Notification", message || "Message from Admin"]
-    ).catch(() => { });
+    ).catch(() => {
+    });
     return jsonRes(c, true, null, "Notification sent successfully");
   }
   const list = await db.all("SELECT n.*, u.full_name as user_name FROM notifications n LEFT JOIN users u ON n.user_id = u.id ORDER BY n.id DESC LIMIT 50").catch(() => []);
   return jsonRes(c, true, list || []);
-};
-
-const handleAdminCategories = async (c) => {
+}, "handleAdminNotifications");
+var handleAdminCategories = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const method = c.req.method.toUpperCase();
   if (method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE") {
@@ -7598,9 +9251,8 @@ const handleAdminCategories = async (c) => {
     { id: 2, title: "Arabic Design", name: "Arabic Design", slug: "arabic-design", image_url: "https://images.unsplash.com/photo-1590523277543-a94d2e4eb00b?auto=format&fit=crop&q=80&w=400" },
     { id: 3, title: "Engagement / Party", name: "Engagement / Party", slug: "engagement-party", image_url: "https://images.unsplash.com/photo-1590523277543-a94d2e4eb00b?auto=format&fit=crop&q=80&w=400" }
   ]);
-};
-
-const handleAdminReferrals = async (c) => {
+}, "handleAdminCategories");
+var handleAdminReferrals = /* @__PURE__ */ __name(async (c) => {
   return jsonRes(c, true, {
     totalSignups: 18,
     completedInvites: 12,
@@ -7610,49 +9262,39 @@ const handleAdminReferrals = async (c) => {
       { id: 1, title: "Welcome Referral", referrer_reward: 200, referred_reward: 100, is_active: true }
     ]
   });
-};
-
-const getOrCreateReferralCode = async (db, userId, fullName = "") => {
-  await db.run("CREATE TABLE IF NOT EXISTS referral_codes (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER UNIQUE, code TEXT UNIQUE, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)").catch(() => { });
-
+}, "handleAdminReferrals");
+var getOrCreateReferralCode = /* @__PURE__ */ __name(async (db, userId, fullName = "") => {
+  await db.run("CREATE TABLE IF NOT EXISTS referral_codes (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER UNIQUE, code TEXT UNIQUE, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)").catch(() => {
+  });
   let record = await db.first("SELECT code FROM referral_codes WHERE user_id = ? OR CAST(user_id AS TEXT) = ?", [userId, String(userId)]).catch(() => null);
   if (record?.code) return record.code;
-
   const prefix = (fullName || "USR").replace(/[^A-Za-z]/g, "").substring(0, 3).toUpperCase() || "MGO";
-  const num = Math.floor(1000 + Math.random() * 9000);
+  const num = Math.floor(1e3 + Math.random() * 9e3);
   const code = `MGO${prefix}${num}`;
-
-  await db.run("INSERT OR REPLACE INTO referral_codes (user_id, code) VALUES (?, ?)", [userId, code]).catch(() => { });
+  await db.run("INSERT OR REPLACE INTO referral_codes (user_id, code) VALUES (?, ?)", [userId, code]).catch(() => {
+  });
   return code;
-};
-
-const handleGetReferralDashboard = async (c) => {
+}, "getOrCreateReferralCode");
+var handleGetReferralDashboard = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) return jsonRes(c, false, null, "Authentication required", 401);
-
-  await db.run("CREATE TABLE IF NOT EXISTS referral_history (id INTEGER PRIMARY KEY AUTOINCREMENT, referrer_id INTEGER, referred_id INTEGER, status TEXT DEFAULT 'PENDING', reward_amount REAL DEFAULT 100, reward_status TEXT DEFAULT 'PENDING', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)").catch(() => { });
-  await db.run("CREATE TABLE IF NOT EXISTS xp_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, amount INTEGER, description TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)").catch(() => { });
-
+  await db.run("CREATE TABLE IF NOT EXISTS referral_history (id INTEGER PRIMARY KEY AUTOINCREMENT, referrer_id INTEGER, referred_id INTEGER, status TEXT DEFAULT 'PENDING', reward_amount REAL DEFAULT 100, reward_status TEXT DEFAULT 'PENDING', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)").catch(() => {
+  });
+  await db.run("CREATE TABLE IF NOT EXISTS xp_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, amount INTEGER, description TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)").catch(() => {
+  });
   const user = await db.first("SELECT id, full_name, email, phone, current_xp, lifetime_xp, current_level, ambassador_tier FROM users WHERE id = ?", [u.id]).catch(() => null);
   const code = await getOrCreateReferralCode(db, u.id, user?.full_name || u.full_name || "");
-
   const invites = await db.all("SELECT * FROM referral_history WHERE referrer_id = ? OR CAST(referrer_id AS TEXT) = ?", [u.id, String(u.id)]).catch(() => []);
-
   const totalInvites = invites.length;
-  const pendingInvites = invites.filter(i => i.status === "PENDING" || i.status === "pending").length;
-  const completedInvites = invites.filter(i => i.status === "COMPLETED" || i.status === "completed").length;
-  const totalEarnings = invites
-    .filter(i => i.reward_status === "CREDITED" || i.reward_status === "credited")
-    .reduce((acc, curr) => acc + (Number(curr.reward_amount) || 100), 0);
-
+  const pendingInvites = invites.filter((i) => i.status === "PENDING" || i.status === "pending").length;
+  const completedInvites = invites.filter((i) => i.status === "COMPLETED" || i.status === "completed").length;
+  const totalEarnings = invites.filter((i) => i.reward_status === "CREDITED" || i.reward_status === "credited").reduce((acc, curr) => acc + (Number(curr.reward_amount) || 100), 0);
   const currentXp = Number(user?.current_xp || 120);
   const lifetimeXp = Number(user?.lifetime_xp || 120);
   const currentLevel = Number(user?.current_level || 1);
-  const tier = user?.ambassador_tier || (lifetimeXp >= 5000 ? "PLATINUM" : lifetimeXp >= 1500 ? "GOLD" : "BRONZE");
-
+  const tier = user?.ambassador_tier || (lifetimeXp >= 5e3 ? "PLATINUM" : lifetimeXp >= 1500 ? "GOLD" : "BRONZE");
   const rankRow = await db.first("SELECT COUNT(*) + 1 as rank FROM users WHERE COALESCE(lifetime_xp, 0) > ?", [lifetimeXp]).catch(() => ({ rank: 1 }));
-
   return jsonRes(c, true, {
     referralCode: code,
     referralLink: `https://mehndigo.in/invite?ref=${code}`,
@@ -7673,7 +9315,7 @@ const handleGetReferralDashboard = async (c) => {
       tier
     },
     badges: [
-      { id: 1, name: "Early Bird", description: "First 1000 MehndiGo Users", iconName: "star", earnedAt: new Date().toISOString() }
+      { id: 1, name: "Early Bird", description: "First 1000 MehndiGo Users", iconName: "star", earnedAt: (/* @__PURE__ */ new Date()).toISOString() }
     ],
     campaign: {
       title: "Standard Refer & Earn",
@@ -7681,15 +9323,13 @@ const handleGetReferralDashboard = async (c) => {
       referredReward: 50
     }
   }, "Referral dashboard fetched successfully");
-};
-
-const handleGetReferralHistory = async (c) => {
+}, "handleGetReferralDashboard");
+var handleGetReferralHistory = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) return jsonRes(c, false, null, "Authentication required", 401);
-
-  await db.run("CREATE TABLE IF NOT EXISTS referral_history (id INTEGER PRIMARY KEY AUTOINCREMENT, referrer_id INTEGER, referred_id INTEGER, status TEXT DEFAULT 'PENDING', reward_amount REAL DEFAULT 100, reward_status TEXT DEFAULT 'PENDING', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)").catch(() => { });
-
+  await db.run("CREATE TABLE IF NOT EXISTS referral_history (id INTEGER PRIMARY KEY AUTOINCREMENT, referrer_id INTEGER, referred_id INTEGER, status TEXT DEFAULT 'PENDING', reward_amount REAL DEFAULT 100, reward_status TEXT DEFAULT 'PENDING', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)").catch(() => {
+  });
   const list = await db.all(`
     SELECT rh.id, rh.referred_id, rh.status, rh.reward_amount, rh.reward_status, rh.created_at,
            COALESCE(NULLIF(u.full_name, ''), 'Invited Friend') as friendName,
@@ -7700,38 +9340,31 @@ const handleGetReferralHistory = async (c) => {
     WHERE rh.referrer_id = ? OR CAST(rh.referrer_id AS TEXT) = ?
     ORDER BY rh.id DESC
   `, [u.id, String(u.id)]).catch(() => []);
-
-  const formatted = (list || []).map(item => ({
+  const formatted = (list || []).map((item) => ({
     id: item.id,
     friendName: item.friendName || "Invited Friend",
     friendImage: item.friendImage || null,
-    joinedAt: item.joinedAt || item.created_at || new Date().toISOString(),
+    joinedAt: item.joinedAt || item.created_at || (/* @__PURE__ */ new Date()).toISOString(),
     status: item.status || "PENDING",
     rewardAmount: Number(item.reward_amount || 100),
     rewardStatus: item.reward_status || "PENDING"
   }));
-
   return jsonRes(c, true, formatted, "Referral history logs retrieved");
-};
-
-const handleGetReferralRewards = async (c) => {
+}, "handleGetReferralHistory");
+var handleGetReferralRewards = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) return jsonRes(c, false, null, "Authentication required", 401);
-
   const txs = await db.all(
     "SELECT * FROM wallet_transactions WHERE (user_id = ? OR CAST(user_id AS TEXT) = ?) AND (type = 'referral' OR type = 'cashback' OR type = 'CREDIT') ORDER BY id DESC LIMIT 50",
     [u.id, String(u.id)]
   ).catch(() => []);
-
   return jsonRes(c, true, txs || [], "Referral rewards fetched");
-};
-
-const handleGetReferralLeaderboard = async (c) => {
+}, "handleGetReferralRewards");
+var handleGetReferralLeaderboard = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   const type = (c.req.query("type") || "XP").toUpperCase();
-
   const usersList = await db.all(`
     SELECT u.id, COALESCE(NULLIF(u.full_name, ''), 'Mehndi User') as name, u.avatar as profileImage,
            COALESCE(u.current_level, 1) as level, COALESCE(u.ambassador_tier, 'BRONZE') as tier,
@@ -7739,7 +9372,6 @@ const handleGetReferralLeaderboard = async (c) => {
     FROM users u
     ORDER BY COALESCE(u.lifetime_xp, 0) DESC LIMIT 20
   `).catch(() => []);
-
   const leaderboard = (usersList || []).map((usr, idx) => ({
     rank: idx + 1,
     id: usr.id,
@@ -7749,131 +9381,110 @@ const handleGetReferralLeaderboard = async (c) => {
     tier: usr.tier,
     value: type === "XP" ? Number(usr.lifetime_xp || 120) : Math.floor(Math.random() * 5 + 1)
   }));
-
   const myUser = u?.id ? await db.first("SELECT lifetime_xp FROM users WHERE id = ?", [u.id]).catch(() => null) : null;
   const myValue = type === "XP" ? Number(myUser?.lifetime_xp || 120) : 0;
   const myRankRow = u?.id ? await db.first("SELECT COUNT(*) + 1 as rank FROM users WHERE COALESCE(lifetime_xp, 0) > ?", [myValue]).catch(() => ({ rank: 1 })) : { rank: 1 };
-
   return jsonRes(c, true, {
     leaderboard,
     myRank: Number(myRankRow?.rank || 1),
     myValue
   }, "Leaderboard retrieved");
-};
-
-const handleGetRewardStore = async (c) => {
+}, "handleGetReferralLeaderboard");
+var handleGetRewardStore = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
-  await db.run("CREATE TABLE IF NOT EXISTS reward_options (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, points_required INTEGER, discount_amount REAL, category TEXT, icon_name TEXT, description TEXT)").catch(() => { });
-
+  await db.run("CREATE TABLE IF NOT EXISTS reward_options (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, points_required INTEGER, discount_amount REAL, category TEXT, icon_name TEXT, description TEXT)").catch(() => {
+  });
   let options = await db.all("SELECT * FROM reward_options").catch(() => []);
   if (!options || options.length === 0) {
     options = [
-      { id: 1, title: "₹100 Off Bridal Mehndi", points_required: 500, discount_amount: 100, category: "Voucher", icon_name: "ticket-outline", description: "Get ₹100 instant discount on any Bridal Mehndi package." },
-      { id: 2, title: "₹200 Wallet Cash", points_required: 800, discount_amount: 200, category: "Cashback", icon_name: "wallet-outline", description: "Convert 800 XP into ₹200 wallet balance instantly." },
+      { id: 1, title: "\u20B9100 Off Bridal Mehndi", points_required: 500, discount_amount: 100, category: "Voucher", icon_name: "ticket-outline", description: "Get \u20B9100 instant discount on any Bridal Mehndi package." },
+      { id: 2, title: "\u20B9200 Wallet Cash", points_required: 800, discount_amount: 200, category: "Cashback", icon_name: "wallet-outline", description: "Convert 800 XP into \u20B9200 wallet balance instantly." },
       { id: 3, title: "Free Mehndi Aftercare Kit", points_required: 1200, discount_amount: 300, category: "Gift", icon_name: "gift-outline", description: "Get a free natural essential oil & aftercare balm kit delivered." }
     ];
   }
-
   return jsonRes(c, true, options, "Reward store options fetched");
-};
-
-const handleClaimReward = async (c) => {
+}, "handleGetRewardStore");
+var handleClaimReward = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) return jsonRes(c, false, null, "Authentication required", 401);
-
   const body = await c.req.json().catch(() => ({}));
   const rewardId = Number(body.rewardId || body.id || 0);
-
-  await db.run("CREATE TABLE IF NOT EXISTS claimed_rewards (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, reward_id INTEGER, voucher_code TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)").catch(() => { });
-
-  const voucherCode = `MGO-REWARD-${Math.floor(100000 + Math.random() * 900000)}`;
-  await db.run("INSERT INTO claimed_rewards (user_id, reward_id, voucher_code) VALUES (?, ?, ?)", [u.id, rewardId, voucherCode]).catch(() => { });
-
+  await db.run("CREATE TABLE IF NOT EXISTS claimed_rewards (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, reward_id INTEGER, voucher_code TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)").catch(() => {
+  });
+  const voucherCode = `MGO-REWARD-${Math.floor(1e5 + Math.random() * 9e5)}`;
+  await db.run("INSERT INTO claimed_rewards (user_id, reward_id, voucher_code) VALUES (?, ?, ?)", [u.id, rewardId, voucherCode]).catch(() => {
+  });
   return jsonRes(c, true, {
     voucherCode,
     rewardId,
     message: "Reward claimed successfully!"
   }, "Reward claimed successfully");
-};
-
-const handleApplyReferralCode = async (c) => {
+}, "handleClaimReward");
+var handleApplyReferralCode = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) return jsonRes(c, false, null, "Authentication required", 401);
-
   const body = await c.req.json().catch(() => ({}));
   const codeStr = (body.referralCode || body.code || "").trim();
-
   if (!codeStr) return jsonRes(c, false, null, "Referral code is required", 400);
-
-  await db.run("CREATE TABLE IF NOT EXISTS referral_history (id INTEGER PRIMARY KEY AUTOINCREMENT, referrer_id INTEGER, referred_id INTEGER, status TEXT DEFAULT 'PENDING', reward_amount REAL DEFAULT 100, reward_status TEXT DEFAULT 'PENDING', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)").catch(() => { });
-
+  await db.run("CREATE TABLE IF NOT EXISTS referral_history (id INTEGER PRIMARY KEY AUTOINCREMENT, referrer_id INTEGER, referred_id INTEGER, status TEXT DEFAULT 'PENDING', reward_amount REAL DEFAULT 100, reward_status TEXT DEFAULT 'PENDING', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)").catch(() => {
+  });
   const referrerRef = await db.first("SELECT user_id FROM referral_codes WHERE LOWER(code) = LOWER(?)", [codeStr]).catch(() => null);
-
   if (!referrerRef || !referrerRef.user_id) {
     return jsonRes(c, false, null, "Invalid referral code", 400);
   }
-
   if (String(referrerRef.user_id) === String(u.id)) {
     return jsonRes(c, false, null, "You cannot use your own referral code", 400);
   }
-
   const existing = await db.first("SELECT id FROM referral_history WHERE referred_id = ? OR CAST(referred_id AS TEXT) = ?", [u.id, String(u.id)]).catch(() => null);
   if (existing) {
     return jsonRes(c, false, null, "You have already applied a referral code", 400);
   }
-
   await db.run(
     "INSERT INTO referral_history (referrer_id, referred_id, status, reward_amount, reward_status) VALUES (?, ?, 'PENDING', 100, 'PENDING')",
     [referrerRef.user_id, u.id]
-  ).catch(() => { });
-
+  ).catch(() => {
+  });
   await db.run(
     "INSERT INTO notifications (user_id, title, message, type) VALUES (?, ?, ?, 'SYSTEM')",
-    [referrerRef.user_id, "Friend Joined! 🤝", "A friend joined MehndiGo using your referral code!", "SYSTEM"]
-  ).catch(() => { });
-
+    [referrerRef.user_id, "Friend Joined! \u{1F91D}", "A friend joined MehndiGo using your referral code!", "SYSTEM"]
+  ).catch(() => {
+  });
   return jsonRes(c, true, null, "Referral code applied successfully");
-};
-
-const handleAdminMarketplaceSettings = async (c) => {
+}, "handleApplyReferralCode");
+var handleAdminMarketplaceSettings = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   await ensureWalletTables(db);
   const method = c.req.method.toUpperCase();
-
   if (method === "GET") {
     const settings = await getMarketplaceSettings(db);
     return jsonRes(c, true, settings, "Marketplace settings retrieved");
   }
-
   if (method === "PUT" || method === "POST") {
     const body = await c.req.json().catch(() => ({}));
     for (const [key, val] of Object.entries(body)) {
-      if (val !== undefined && val !== null) {
+      if (val !== void 0 && val !== null) {
         await db.run(
           "INSERT OR REPLACE INTO marketplace_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
           [String(key), String(val)]
-        ).catch(() => { });
+        ).catch(() => {
+        });
       }
     }
     const updated = await getMarketplaceSettings(db);
     return jsonRes(c, true, updated, "Marketplace settings updated successfully");
   }
-
   return jsonRes(c, false, null, "Method not allowed", 405);
-};
-
-const handleAdminFinancialLedger = async (c) => {
+}, "handleAdminMarketplaceSettings");
+var handleAdminFinancialLedger = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   await ensureWalletTables(db);
   const ledger = await db.all(
     "SELECT * FROM master_financial_ledger ORDER BY id DESC LIMIT 100"
   ).catch(() => []);
   return jsonRes(c, true, ledger || [], "Master financial ledger retrieved");
-};
-
-// Admin Route Registration Wrappers
+}, "handleAdminFinancialLedger");
 [
   ["get", "/admin/stats", handleAdminStats],
   ["get", "/admin/dashboard", handleAdminStats],
@@ -7915,7 +9526,6 @@ const handleAdminFinancialLedger = async (c) => {
 ].forEach(([method, routePath, handler]) => {
   addRoute(method, routePath, handler);
 });
-
 addRoute("post", "/login", handleLogin);
 addRoute("post", "/user/login", handleLogin);
 addRoute("post", "/register", handleRegister);
@@ -7944,7 +9554,6 @@ addRoute("get", "/artist/dashboard", handleGetArtistDashboard);
 addRoute("get", "/artist/details", handleGetArtistDetails);
 addRoute("get", "/artist/profile", handleGetArtistDetails);
 addRoute("get", "/artist/wallet", handleGetWallet);
-// Chat & Messaging System Routes
 addRoute("get", "/chat/list", handleGetChatList);
 addRoute("get", "/chat/conversations", handleGetChatList);
 addRoute("get", "/chat/unread/counts", handleGetUnreadCounts);
@@ -7955,8 +9564,6 @@ addRoute("post", "/chat/send", handleSendChatMessage);
 addRoute("post", "/chat/message", handleSendChatMessage);
 addRoute("put", "/chat/seen/:senderId", handleMarkChatSeen);
 addRoute("post", "/chat/seen/:senderId", handleMarkChatSeen);
-
-// Support System Routes
 addRoute("get", "/customer/support/ticket", handleCustomerSupportTicket);
 addRoute("post", "/customer/support/ticket", handleCustomerSupportTicket);
 addRoute("get", "/customer/support/tickets", handleCustomerSupportTicket);
@@ -7966,8 +9573,6 @@ addRoute("post", "/support/ticket", handleCustomerSupportTicket);
 addRoute("get", "/support/tickets", handleCustomerSupportTicket);
 addRoute("post", "/support/tickets", handleCustomerSupportTicket);
 addRoute("get", "/admin/support/tickets", handleCustomerSupportTicket);
-
-// Referral & Reward System Routes
 addRoute("get", "/referral", handleGetReferralDashboard);
 addRoute("get", "/referral/dashboard", handleGetReferralDashboard);
 addRoute("get", "/customer/referral", handleGetReferralDashboard);
@@ -8002,11 +9607,7 @@ addRoute("post", "/bank-account", handleSaveBankAccount);
 addRoute("get", "/artist/bank-account", handleGetBankAccount);
 addRoute("post", "/artist/bank-account", handleSaveBankAccount);
 addRoute("get", "/wallet/bank-account", handleGetBankAccount);
-// ==========================================
-// REVIEW MODERATION & APPROVAL ENGINE
-// ==========================================
-
-const ensureReviewTables = async (db) => {
+var ensureReviewTables = /* @__PURE__ */ __name(async (db) => {
   await db.run(`
     CREATE TABLE IF NOT EXISTS reviews (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -8019,49 +9620,44 @@ const ensureReviewTables = async (db) => {
       is_approved INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
-  `).catch(() => { });
-
-  await db.run("ALTER TABLE reviews ADD COLUMN status TEXT DEFAULT 'PENDING'").catch(() => { });
-  await db.run("ALTER TABLE reviews ADD COLUMN is_approved INTEGER DEFAULT 0").catch(() => { });
-  await db.run("ALTER TABLE reviews ADD COLUMN customer_id INTEGER").catch(() => { });
-};
-
-// 1. Customer Submits Review (Defaults to PENDING until Admin Approval)
-const handleCreateReview = async (c) => {
+  `).catch(() => {
+  });
+  await db.run("ALTER TABLE reviews ADD COLUMN status TEXT DEFAULT 'PENDING'").catch(() => {
+  });
+  await db.run("ALTER TABLE reviews ADD COLUMN is_approved INTEGER DEFAULT 0").catch(() => {
+  });
+  await db.run("ALTER TABLE reviews ADD COLUMN customer_id INTEGER").catch(() => {
+  });
+}, "ensureReviewTables");
+var handleCreateReview = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) return jsonRes(c, false, null, "Unauthorized access", 401);
   await ensureReviewTables(db);
-
   try {
     const body = await c.req.json().catch(() => ({}));
     const artistId = Number(body.artist_id || body.artistId || 0);
     const bookingId = Number(body.booking_id || body.bookingId || 0);
     const rating = Number(body.rating || 5);
     const comment = String(body.comment || body.review || "Great experience!");
-
     let result = await db.run(`
       INSERT INTO reviews (customer_id, artist_id, booking_id, rating, comment, status, is_approved, created_at)
       VALUES (?, ?, ?, ?, ?, 'PENDING', 0, CURRENT_TIMESTAMP)
     `, [u.id, artistId, bookingId, rating, comment]).catch(async (e) => {
-      // Fallback if schema has user_id instead of customer_id
       return await db.run(`
         INSERT INTO reviews (user_id, artist_id, booking_id, rating, comment, status, is_approved, created_at)
         VALUES (?, ?, ?, ?, ?, 'PENDING', 0, CURRENT_TIMESTAMP)
       `, [u.id, artistId, bookingId, rating, comment]).catch(() => null);
     });
-
     const reviewId = result?.lastInsertRowid || result?.meta?.last_row_id || Date.now();
-
-    // Notify Administrator about pending review
     await db.run(
       "INSERT INTO notifications (user_id, title, message, type, is_read) VALUES (1, ?, ?, 'REVIEW_MODERATION', 0)",
       [
-        `Review #${reviewId} Awaiting Approval ⭐${rating}`,
-        `${u.full_name || 'Customer'} submitted a review for Artist #${artistId}. Please review and approve.`
+        `Review #${reviewId} Awaiting Approval \u2B50${rating}`,
+        `${u.full_name || "Customer"} submitted a review for Artist #${artistId}. Please review and approve.`
       ]
-    ).catch(() => { });
-
+    ).catch(() => {
+    });
     return jsonRes(c, true, {
       id: reviewId,
       customer_id: u.id,
@@ -8075,28 +9671,18 @@ const handleCreateReview = async (c) => {
   } catch (err) {
     return jsonRes(c, false, null, "Failed to submit review: " + err.message, 500);
   }
-};
-
-// 2. Get Public Approved Reviews for an Artist
-const handleGetArtistReviews = async (c) => {
+}, "handleCreateReview");
+var handleGetArtistReviews = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   await ensureReviewTables(db);
-
   let artistIdStr = "";
   try {
     const url = new URL(c.req.url);
-    artistIdStr = c.req.query("artist_id") ||
-      c.req.query("artistId") ||
-      url.searchParams.get("artist_id") ||
-      url.searchParams.get("artistId") ||
-      (c.req.param ? c.req.param("id") : "") ||
-      "";
+    artistIdStr = c.req.query("artist_id") || c.req.query("artistId") || url.searchParams.get("artist_id") || url.searchParams.get("artistId") || (c.req.param ? c.req.param("id") : "") || "";
   } catch (_) {
     artistIdStr = c.req.query("artist_id") || c.req.query("artistId") || "";
   }
-
   const artistId = Number(artistIdStr) || 0;
-
   let reviews = [];
   if (artistId > 0) {
     reviews = await db.all(`
@@ -8120,15 +9706,12 @@ const handleGetArtistReviews = async (c) => {
       ORDER BY r.id DESC LIMIT 50
     `).catch(() => []);
   }
-
   const distribution = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
   let sumRating = 0;
-
   const formattedReviews = (reviews || []).map((r) => {
     const starVal = Math.min(5, Math.max(1, Math.round(Number(r.rating || 5))));
     distribution[starVal] = (distribution[starVal] || 0) + 1;
     sumRating += Number(r.rating || 5);
-
     return {
       id: r.id,
       user_id: r.customer_id || r.user_id,
@@ -8144,25 +9727,19 @@ const handleGetArtistReviews = async (c) => {
       }
     };
   });
-
   const totalReviews = formattedReviews.length;
   const avgRating = totalReviews > 0 ? Number((sumRating / totalReviews).toFixed(1)) : 0;
-
   return jsonRes(c, true, {
     reviews: formattedReviews,
     avg_rating: avgRating,
     total_reviews: totalReviews,
     distribution
   }, "Artist reviews fetched");
-};
-
-// 3. Admin: Get All Reviews (With Status & Moderation Details)
-const handleAdminGetReviews = async (c) => {
+}, "handleGetArtistReviews");
+var handleAdminGetReviews = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   await ensureReviewTables(db);
-
   const statusFilter = c.req.query("status") || "ALL";
-
   let query = `
     SELECT r.*, 
       u_c.full_name as customer_name, u_c.email as customer_email, u_c.phone as customer_phone,
@@ -8171,7 +9748,6 @@ const handleAdminGetReviews = async (c) => {
     LEFT JOIN users u_c ON r.customer_id = u_c.id
     LEFT JOIN users u_a ON (r.artist_id = u_a.id)
   `;
-
   let params = [];
   if (statusFilter === "PENDING") {
     query += " WHERE r.status = 'PENDING' OR r.is_approved = 0";
@@ -8180,11 +9756,8 @@ const handleAdminGetReviews = async (c) => {
   } else if (statusFilter === "REJECTED") {
     query += " WHERE r.status = 'REJECTED'";
   }
-
   query += " ORDER BY r.id DESC LIMIT 100";
-
   const rows = await db.all(query, params).catch(() => []);
-
   const formatted = (rows || []).map((r) => ({
     id: r.id,
     customer_id: r.customer_id,
@@ -8201,47 +9774,35 @@ const handleAdminGetReviews = async (c) => {
     is_approved: Boolean(r.is_approved),
     created_at: r.created_at
   }));
-
   return jsonRes(c, true, formatted, "Admin reviews retrieved");
-};
-
-// 4. Admin: Approve Review
-const handleAdminApproveReview = async (c) => {
+}, "handleAdminGetReviews");
+var handleAdminApproveReview = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   await ensureReviewTables(db);
-
   const reviewId = Number(c.req.param("id") || c.req.query("id") || 0);
   if (!reviewId) return jsonRes(c, false, null, "Review ID required", 400);
-
   const review = await db.first("SELECT * FROM reviews WHERE id = ?", [reviewId]).catch(() => null);
   if (!review) return jsonRes(c, false, null, "Review not found", 404);
-
-  // Update status to APPROVED
   await db.run(
     "UPDATE reviews SET status = 'APPROVED', is_approved = 1 WHERE id = ?",
     [reviewId]
   );
-
-  // Recalculate artist's rating and total_reviews from ALL approved reviews
   const stats = await db.first(
     "SELECT AVG(rating) as avg_val, COUNT(*) as count_val FROM reviews WHERE (artist_id = ? OR CAST(artist_id AS TEXT) = ?) AND (status = 'APPROVED' OR is_approved = 1)",
     [review.artist_id, String(review.artist_id)]
   ).catch(() => null);
-
   const avgRating = stats?.avg_val ? Math.round(Number(stats.avg_val) * 10) / 10 : Number(review.rating);
   const totalCount = Number(stats?.count_val || 1);
-
   await db.run(
     "UPDATE artist_profiles SET rating = ?, avg_rating = ?, total_reviews = ? WHERE user_id = ? OR id = ?",
     [avgRating, avgRating, totalCount, review.artist_id, review.artist_id]
-  ).catch(() => { });
-
-  // Notify Artist
+  ).catch(() => {
+  });
   await db.run(
     "INSERT INTO notifications (user_id, title, message, type, is_read) VALUES (?, ?, ?, 'REVIEW_APPROVED', 0)",
-    [review.artist_id, "New Review Published! ⭐", `A new ⭐${review.rating} star review has been approved and published to your profile.`]
-  ).catch(() => { });
-
+    [review.artist_id, "New Review Published! \u2B50", `A new \u2B50${review.rating} star review has been approved and published to your profile.`]
+  ).catch(() => {
+  });
   return jsonRes(c, true, {
     id: reviewId,
     status: "APPROVED",
@@ -8249,45 +9810,34 @@ const handleAdminApproveReview = async (c) => {
     avg_rating: avgRating,
     total_reviews: totalCount
   }, "Review approved and published successfully!");
-};
-
-// 5. Admin: Reject Review
-const handleAdminRejectReview = async (c) => {
+}, "handleAdminApproveReview");
+var handleAdminRejectReview = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   await ensureReviewTables(db);
-
   const reviewId = Number(c.req.param("id") || c.req.query("id") || 0);
   if (!reviewId) return jsonRes(c, false, null, "Review ID required", 400);
-
   const review = await db.first("SELECT * FROM reviews WHERE id = ?", [reviewId]).catch(() => null);
   if (!review) return jsonRes(c, false, null, "Review not found", 404);
-
   await db.run(
     "UPDATE reviews SET status = 'REJECTED', is_approved = 0 WHERE id = ?",
     [reviewId]
   );
-
-  // Recalculate artist's rating without this review
   const stats = await db.first(
     "SELECT AVG(rating) as avg_val, COUNT(*) as count_val FROM reviews WHERE (artist_id = ? OR CAST(artist_id AS TEXT) = ?) AND (status = 'APPROVED' OR is_approved = 1)",
     [review.artist_id, String(review.artist_id)]
   ).catch(() => null);
-
   const avgRating = stats?.count_val > 0 ? Math.round(Number(stats.avg_val) * 10) / 10 : 0;
   const totalCount = Number(stats?.count_val || 0);
-
   await db.run(
     "UPDATE artist_profiles SET rating = ?, avg_rating = ?, total_reviews = ? WHERE user_id = ? OR id = ?",
     [avgRating, avgRating, totalCount, review.artist_id, review.artist_id]
-  ).catch(() => { });
-
+  ).catch(() => {
+  });
   return jsonRes(c, true, {
     id: reviewId,
     status: "REJECTED"
   }, "Review rejected successfully");
-};
-
-// Route Registrations for Reviews & Moderation
+}, "handleAdminRejectReview");
 addRoute("post", "/review/create", handleCreateReview);
 addRoute("post", "/reviews", handleCreateReview);
 addRoute("post", "/customer/review", handleCreateReview);
@@ -8302,22 +9852,19 @@ addRoute("post", "/admin/review/:id/approve", handleAdminApproveReview);
 addRoute("patch", "/admin/review/:id/reject", handleAdminRejectReview);
 addRoute("post", "/admin/review/:id/reject", handleAdminRejectReview);
 addRoute("get", "/artist/services", handleGetArtistServices);
-const handleGetNotifications = async (c) => {
+var handleGetNotifications = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) return jsonRes(c, true, { notifications: [], unreadCount: 0 });
-
   const page = Number(c.req.query("page") || 1);
   const limit = Number(c.req.query("limit") || 20);
   const offset = (page - 1) * limit;
-
   try {
     const list = await db.all(
       "SELECT * FROM notifications WHERE user_id = ? OR CAST(user_id AS TEXT) = ? ORDER BY id DESC LIMIT ? OFFSET ?",
       [u.id, String(u.id), limit, offset]
     ).catch(() => []);
-
-    const formattedNotifs = (list || []).map(n => {
+    const formattedNotifs = (list || []).map((n) => {
       const isoTime = normalizeIsoDate(n.created_at || n.createdAt);
       return {
         ...n,
@@ -8326,12 +9873,10 @@ const handleGetNotifications = async (c) => {
         timestamp: isoTime
       };
     });
-
     const unreadRow = await db.first(
       "SELECT COUNT(*) as count FROM notifications WHERE (user_id = ? OR CAST(user_id AS TEXT) = ?) AND (is_read = 0 OR is_read = 'false' OR is_read IS NULL)",
       [u.id, String(u.id)]
     ).catch(() => ({ count: 0 }));
-
     return jsonRes(c, true, {
       notifications: formattedNotifs,
       unreadCount: unreadRow?.count || 0,
@@ -8340,9 +9885,8 @@ const handleGetNotifications = async (c) => {
   } catch (e) {
     return jsonRes(c, true, { notifications: [], unreadCount: 0 });
   }
-};
-
-const handleMarkNotificationRead = async (c) => {
+}, "handleGetNotifications");
+var handleMarkNotificationRead = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) return jsonRes(c, false, null, "Unauthorized", 401);
@@ -8352,23 +9896,23 @@ const handleMarkNotificationRead = async (c) => {
     await db.run(
       "UPDATE notifications SET is_read = 1 WHERE (user_id = ? OR CAST(user_id AS TEXT) = ?) AND (id = ? OR CAST(id AS TEXT) = ?)",
       [u.id, String(u.id), notifId, String(notifId)]
-    ).catch(() => { });
+    ).catch(() => {
+    });
   }
   return jsonRes(c, true, null, "Notification marked as read");
-};
-
-const handleMarkAllNotificationsRead = async (c) => {
+}, "handleMarkNotificationRead");
+var handleMarkAllNotificationsRead = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) return jsonRes(c, false, null, "Unauthorized", 401);
   await db.run(
     "UPDATE notifications SET is_read = 1 WHERE (user_id = ? OR CAST(user_id AS TEXT) = ?) AND (is_read = 0 OR is_read = 'false' OR is_read IS NULL)",
     [u.id, String(u.id)]
-  ).catch(() => { });
+  ).catch(() => {
+  });
   return jsonRes(c, true, null, "All notifications marked as read");
-};
-
-const handleDeleteNotification = async (c) => {
+}, "handleMarkAllNotificationsRead");
+var handleDeleteNotification = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) return jsonRes(c, false, null, "Unauthorized", 401);
@@ -8377,69 +9921,57 @@ const handleDeleteNotification = async (c) => {
     await db.run(
       "DELETE FROM notifications WHERE (user_id = ? OR CAST(user_id AS TEXT) = ?) AND (id = ? OR CAST(id AS TEXT) = ?)",
       [u.id, String(u.id), notifId, String(notifId)]
-    ).catch(() => { });
+    ).catch(() => {
+    });
   }
   return jsonRes(c, true, null, "Notification deleted");
-};
-
-const handleClearAllNotifications = async (c) => {
+}, "handleDeleteNotification");
+var handleClearAllNotifications = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) return jsonRes(c, false, null, "Unauthorized", 401);
   await db.run(
     "DELETE FROM notifications WHERE user_id = ? OR CAST(user_id AS TEXT) = ?",
     [u.id, String(u.id)]
-  ).catch(() => { });
+  ).catch(() => {
+  });
   return jsonRes(c, true, null, "Notification history cleared");
-};
-
-
-const handleRegisterPushToken = async (c) => {
+}, "handleClearAllNotifications");
+var handleRegisterPushToken = /* @__PURE__ */ __name(async (c) => {
   const u = getUserFromHeader(c);
   if (!u || !u.id) return jsonRes(c, false, null, "Authentication required", 401);
-
   const body = await c.req.json().catch(() => ({}));
   const token = body.token || body.expo_push_token || body.push_token;
   const deviceType = body.device_type || body.platform || "ANDROID";
-
   if (!token || typeof token !== "string" || !token.trim()) {
     return jsonRes(c, false, null, "Valid push token is required", 400);
   }
-
   const cleanToken = token.trim();
   const db = getDb(c.env);
   await ensurePushNotificationTables(db);
-
   await db.run(
     "UPDATE users SET push_token = ? WHERE id = ? OR CAST(id AS TEXT) = ?",
     [cleanToken, u.id, String(u.id)]
   ).catch(() => null);
-
   await db.run(
     "INSERT INTO push_tokens (user_id, token, device_type, is_active, updated_at) VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP) ON CONFLICT(user_id, token) DO UPDATE SET device_type = excluded.device_type, is_active = 1, updated_at = CURRENT_TIMESTAMP",
     [u.id, cleanToken, deviceType]
   ).catch(() => null);
-
   console.log(`[PUSH TOKEN REGISTERED] User ${u.id} (${deviceType}) registered token: ${cleanToken.substring(0, 20)}...`);
-
   return jsonRes(c, true, { registered: true, token: cleanToken }, "Push token registered successfully");
-};
-
-const handleSendTestPushNotification = async (c) => {
+}, "handleRegisterPushToken");
+var handleSendTestPushNotification = /* @__PURE__ */ __name(async (c) => {
   const u = getUserFromHeader(c);
   const db = getDb(c.env);
   await ensurePushNotificationTables(db);
   const body = await c.req.json().catch(() => ({}));
-
   const userId = body.userId || body.user_id || (u ? u.id : null);
-  const title = body.title || "MehndiGo Push Test 🎉";
+  const title = body.title || "MehndiGo Push Test \u{1F389}";
   const message = body.message || body.body || "Push notifications are working perfectly on your device!";
   const data = body.data || { type: "TEST_NOTIFICATION" };
-
   if (!userId) {
     return jsonRes(c, false, null, "Target userId is required", 400);
   }
-
   const result = await dispatchNotification(db, {
     userId,
     title,
@@ -8448,27 +9980,21 @@ const handleSendTestPushNotification = async (c) => {
     channelId: data.channelId || "default",
     additionalData: data
   });
-
   return jsonRes(c, true, result, "Test notification dispatched successfully");
-};
-
-const handleRemovePushToken = async (c) => {
+}, "handleSendTestPushNotification");
+var handleRemovePushToken = /* @__PURE__ */ __name(async (c) => {
   const u = getUserFromHeader(c);
   if (!u || !u.id) return jsonRes(c, true, null, "Logged out");
-
   const body = await c.req.json().catch(() => ({}));
   const token = body.token || body.expo_push_token || body.push_token;
   const db = getDb(c.env);
-
   if (token) {
     await db.run("DELETE FROM push_tokens WHERE push_token = ?", [token]).catch(() => null);
   } else {
     await db.run("DELETE FROM push_tokens WHERE user_id = ?", [u.id]).catch(() => null);
   }
-
   return jsonRes(c, true, null, "Push token removed");
-};
-
+}, "handleRemovePushToken");
 addRoute("post", "/notification/register-token", handleRegisterPushToken);
 addRoute("post", "/notification/send-test-push", handleSendTestPushNotification);
 addRoute("delete", "/notification/remove-token", handleRemovePushToken);
@@ -8483,34 +10009,30 @@ addRoute("put", "/notification/read-all", handleMarkAllNotificationsRead);
 addRoute("post", "/notification/read-all", handleMarkAllNotificationsRead);
 addRoute("delete", "/notification/clear-all", handleClearAllNotifications);
 addRoute("delete", "/notification/:id", handleDeleteNotification);
-
-const handleGetCategories = async (c) => {
+var handleGetCategories = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   try {
     const list = await db.all("SELECT * FROM categories WHERE is_active = 1").catch(() => []);
     if (list && list.length > 0) return jsonRes(c, true, list);
-  } catch (e) { }
-
+  } catch (e) {
+  }
   const defaultCategories = [
     { id: 1, name: "Bridal Mehndi", slug: "bridal-mehndi", description: "Full arm & leg luxury traditional bridal henna.", image_url: "https://images.unsplash.com/photo-1596461404969-9ae70f2830c1?w=600", is_active: 1 },
     { id: 2, name: "Arabic Mehndi", slug: "arabic-mehndi", description: "Bold flowing floral vines & shaded mandalas.", image_url: "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=600", is_active: 1 },
     { id: 3, name: "Minimalist / Geometric", slug: "minimalist-geometric", description: "Chic modern fingers & wrist accents.", image_url: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=600", is_active: 1 },
     { id: 4, name: "Engagement & Sangeet", slug: "engagement-sangeet", description: "Festive party henna packages.", image_url: "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=600", is_active: 1 }
   ];
-
   return jsonRes(c, true, defaultCategories);
-};
-
+}, "handleGetCategories");
 app.get("/category", handleGetCategories);
 app.get("/categories", handleGetCategories);
-const handleGetArtistProfileById = async (c) => {
+var handleGetArtistProfileById = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const idStr = c.req.param("id") || c.req.path.split("/").pop();
   const id = parseInt(idStr, 10);
   if (isNaN(id)) {
     return jsonRes(c, false, null, "Invalid Artist ID", 400);
   }
-
   const artist = await db.first(`
     SELECT u.id as id, u.id as user_id, COALESCE(NULLIF(u.full_name, ''), u.name, 'Mehndi Artist') as name,
            COALESCE(NULLIF(u.full_name, ''), u.name, 'Mehndi Artist') as full_name, u.email, u.phone,
@@ -8520,17 +10042,15 @@ const handleGetArtistProfileById = async (c) => {
     LEFT JOIN artist_profiles ap ON (u.id = ap.user_id OR CAST(u.id AS TEXT) = CAST(ap.user_id AS TEXT))
     WHERE (u.id = ? OR CAST(u.id AS TEXT) = CAST(? AS TEXT)) AND (LOWER(u.role) = 'artist')
   `, [id, id]).catch(() => null);
-
   if (!artist) {
     return jsonRes(c, false, null, "Artist not found", 404);
   }
-
   const rawServices = await db.all("SELECT * FROM services WHERE artist_id = ? OR user_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT)", [id, id, id]).catch(() => []);
-  let services = Array.isArray(rawServices) ? rawServices : (rawServices?.results || []);
+  let services = Array.isArray(rawServices) ? rawServices : rawServices?.results || [];
   if (!services || !Array.isArray(services)) {
     services = [];
   } else {
-    services = services.map(s => ({
+    services = services.map((s) => ({
       ...s,
       specialization_name: s.specialization_name || s.title || s.name || "Henna Service",
       title: s.title || s.specialization_name || s.name || "Henna Service",
@@ -8542,14 +10062,9 @@ const handleGetArtistProfileById = async (c) => {
       duration_minutes: Number(s.duration_minutes || s.duration_mins || (s.duration ? parseInt(s.duration, 10) * 60 : 60)) || 60
     }));
   }
-
-  const minServicePrice = services.length > 0
-    ? Math.min(...services.map(s => Number(s.price || s.minimum_price || 0)).filter(p => p > 0))
-    : 0;
-
+  const minServicePrice = services.length > 0 ? Math.min(...services.map((s) => Number(s.price || s.minimum_price || 0)).filter((p) => p > 0)) : 0;
   const portfolio = await db.all("SELECT id, artist_id, title, description, category, image_url, video_url, likes_count, views_count, created_at FROM artist_portfolios WHERE artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT) ORDER BY id DESC LIMIT 30", [id, id]).catch(() => []);
   const reviews = await db.all("SELECT r.*, u.full_name as customer_name FROM reviews r LEFT JOIN users u ON r.customer_id = u.id WHERE r.artist_id = ? OR CAST(r.artist_id AS TEXT) = CAST(? AS TEXT) ORDER BY r.id DESC LIMIT 30", [id, id]).catch(() => []);
-
   return jsonRes(c, true, {
     ...artist,
     starting_price: Number(artist.starting_price || minServicePrice || 0),
@@ -8557,25 +10072,21 @@ const handleGetArtistProfileById = async (c) => {
     portfolio: portfolio || [],
     reviews: reviews || []
   }, "Artist details retrieved");
-};
-
-const handleGetArtistServicesById = async (c) => {
+}, "handleGetArtistProfileById");
+var handleGetArtistServicesById = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const matches = c.req.path.match(/\/artists?\/(\d+)\/services/i) || c.req.path.match(/\/services\/(\d+)/i);
   let id = matches ? parseInt(matches[1], 10) : 0;
   if (isNaN(id) || !id) return jsonRes(c, true, [], "Artist services retrieved");
-
   const rawServices = await db.all(
     "SELECT * FROM services WHERE artist_id = ? OR user_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT)",
     [id, id, id]
   ).catch(() => []);
-
-  let servicesList = Array.isArray(rawServices) ? rawServices : (rawServices?.results || []);
-
+  let servicesList = Array.isArray(rawServices) ? rawServices : rawServices?.results || [];
   if (!servicesList || !Array.isArray(servicesList)) {
     servicesList = [];
   } else {
-    servicesList = servicesList.map(s => ({
+    servicesList = servicesList.map((s) => ({
       ...s,
       specialization_name: s.specialization_name || s.title || s.name || "Henna Service",
       title: s.title || s.specialization_name || s.name || "Henna Service",
@@ -8587,53 +10098,43 @@ const handleGetArtistServicesById = async (c) => {
       duration_minutes: Number(s.duration_minutes || s.duration_mins || (s.duration ? parseInt(s.duration, 10) * 60 : 60)) || 60
     }));
   }
-
   return jsonRes(c, true, servicesList, "Artist services retrieved");
-};
-
-const handleGetArtistAvailabilityById = async (c) => {
+}, "handleGetArtistServicesById");
+var handleGetArtistAvailabilityById = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const matches = c.req.path.match(/\/artists?\/(\d+)\/availability/i) || c.req.path.match(/\/availability\/(\d+)/i);
   let id = matches ? parseInt(matches[1], 10) : 0;
   if (isNaN(id) || !id) return jsonRes(c, true, [], "Artist availability retrieved");
-
   const bookedRows = await db.all(
     "SELECT booking_date, booking_time FROM bookings WHERE (artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT)) AND LOWER(status) NOT IN ('cancelled', 'rejected')",
     [id, String(id)]
   ).catch(() => []);
-
   const bookedSet = new Set(
-    (bookedRows || []).map(b => `${b.booking_date}_${String(b.booking_time || "").trim().toUpperCase()}`)
+    (bookedRows || []).map((b) => `${b.booking_date}_${String(b.booking_time || "").trim().toUpperCase()}`)
   );
-
   const slotsList = [];
   const times = ["09:00 AM", "11:30 AM", "02:00 PM", "04:30 PM", "07:00 PM"];
-  const today = new Date();
+  const today = /* @__PURE__ */ new Date();
   const todayStr = today.toISOString().split("T")[0];
   const currentHour = today.getHours();
   const currentMinute = today.getMinutes();
-
   for (let i = 0; i < 30; i++) {
     const d = new Date(today);
     d.setDate(today.getDate() + i);
     const dateStr = d.toISOString().split("T")[0];
-
     times.forEach((t, idx) => {
       const isBooked = bookedSet.has(`${dateStr}_${t.toUpperCase()}`);
       let isPast = false;
-
       if (dateStr === todayStr) {
         let [timePart, modifier] = t.split(" ");
         let [hours, minutes] = timePart.split(":").map(Number);
         if (modifier === "PM" && hours < 12) hours += 12;
         if (modifier === "AM" && hours === 12) hours = 0;
-        if (hours < currentHour || (hours === currentHour && minutes <= currentMinute)) {
+        if (hours < currentHour || hours === currentHour && minutes <= currentMinute) {
           isPast = true;
         }
       }
-
       const available = !isBooked && !isPast;
-
       slotsList.push({
         id: i * 10 + idx + 1,
         artist_id: id,
@@ -8645,15 +10146,13 @@ const handleGetArtistAvailabilityById = async (c) => {
       });
     });
   }
-
   return jsonRes(c, true, slotsList, "Artist availability retrieved");
-};
-
-const defaultCouponsList = [
+}, "handleGetArtistAvailabilityById");
+var defaultCouponsList = [
   {
     id: 1,
     code: "WELCOME500",
-    title: "Welcome Bonus 🎉",
+    title: "Welcome Bonus \u{1F389}",
     discount_type: "FLAT",
     discount_value: 500,
     min_order_amount: 1500,
@@ -8661,12 +10160,12 @@ const defaultCouponsList = [
     max_discount: 500,
     is_active: 1,
     expires_at: "2026-12-31T23:59:59Z",
-    description: "Get Flat ₹500 instant discount on your first booking above ₹1500!"
+    description: "Get Flat \u20B9500 instant discount on your first booking above \u20B91500!"
   },
   {
     id: 2,
     code: "MEHNDI20",
-    title: "20% OFF Special 🌿",
+    title: "20% OFF Special \u{1F33F}",
     discount_type: "PERCENTAGE",
     discount_percentage: 20,
     discount_value: 20,
@@ -8675,12 +10174,12 @@ const defaultCouponsList = [
     max_discount: 400,
     is_active: 1,
     expires_at: "2026-12-31T23:59:59Z",
-    description: "Get 20% OFF on all Mehndi bookings up to ₹400 savings!"
+    description: "Get 20% OFF on all Mehndi bookings up to \u20B9400 savings!"
   },
   {
     id: 3,
     code: "FESTIVE100",
-    title: "Festive Joy 🪔",
+    title: "Festive Joy \u{1FA94}",
     discount_type: "FLAT",
     discount_value: 100,
     min_order_amount: 499,
@@ -8688,79 +10187,67 @@ const defaultCouponsList = [
     max_discount: 100,
     is_active: 1,
     expires_at: "2026-12-31T23:59:59Z",
-    description: "Flat ₹100 OFF on any Mehndi package above ₹499."
+    description: "Flat \u20B9100 OFF on any Mehndi package above \u20B9499."
   },
   {
     id: 4,
     code: "BRIDAL30",
-    title: "30% OFF Bridal Package 👰",
+    title: "30% OFF Bridal Package \u{1F470}",
     discount_type: "PERCENTAGE",
     discount_percentage: 30,
     discount_value: 30,
-    min_order_amount: 3000,
-    min_booking_value: 3000,
+    min_order_amount: 3e3,
+    min_booking_value: 3e3,
     max_discount: 1500,
     is_active: 1,
     expires_at: "2026-12-31T23:59:59Z",
-    description: "Save up to ₹1,500 on luxury Bridal Mehndi packages!"
+    description: "Save up to \u20B91,500 on luxury Bridal Mehndi packages!"
   }
 ];
-
-const handleGetCouponsPublic = async (c) => {
+var handleGetCouponsPublic = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
-  await db.run("CREATE TABLE IF NOT EXISTS coupons (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE, discount_type TEXT, discount_value REAL, min_order_amount REAL, max_discount REAL, is_active INTEGER DEFAULT 1, expires_at DATETIME)").catch(() => { });
+  await db.run("CREATE TABLE IF NOT EXISTS coupons (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE, discount_type TEXT, discount_value REAL, min_order_amount REAL, max_discount REAL, is_active INTEGER DEFAULT 1, expires_at DATETIME)").catch(() => {
+  });
   let coupons = await db.all("SELECT * FROM coupons WHERE is_active = 1 OR is_active = 'true' ORDER BY id DESC").catch(() => []);
   if (!coupons || coupons.length === 0) {
     coupons = defaultCouponsList;
   }
   return jsonRes(c, true, coupons, "Coupons retrieved successfully");
-};
-
-const handleApplyCoupon = async (c) => {
+}, "handleGetCouponsPublic");
+var handleApplyCoupon = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const body = await c.req.json().catch(() => ({}));
-
   const couponCode = String(body.couponCode || body.coupon_code || body.code || "").trim().toUpperCase();
   const basePrice = Number(body.basePrice || body.base_price || body.amount || body.price || 0);
-
   if (!couponCode) {
     return jsonRes(c, false, null, "Please enter a valid coupon code", 400);
   }
-
-  await db.run("CREATE TABLE IF NOT EXISTS coupons (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE, discount_type TEXT, discount_value REAL, min_order_amount REAL, max_discount REAL, is_active INTEGER DEFAULT 1, expires_at DATETIME)").catch(() => { });
-
+  await db.run("CREATE TABLE IF NOT EXISTS coupons (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE, discount_type TEXT, discount_value REAL, min_order_amount REAL, max_discount REAL, is_active INTEGER DEFAULT 1, expires_at DATETIME)").catch(() => {
+  });
   let coupon = await db.first("SELECT * FROM coupons WHERE UPPER(code) = UPPER(?) AND (is_active = 1 OR is_active = 'true' OR is_active IS NULL)", [couponCode]).catch(() => null);
-
   if (!coupon) {
-    coupon = defaultCouponsList.find(dc => dc.code === couponCode);
+    coupon = defaultCouponsList.find((dc) => dc.code === couponCode);
   }
-
   if (!coupon) {
     return jsonRes(c, false, null, `Invalid or expired coupon code '${couponCode}'`, 400);
   }
-
   const minOrder = Number(coupon.min_order_amount || coupon.min_booking_value || 0);
   if (basePrice > 0 && basePrice < minOrder) {
-    return jsonRes(c, false, null, `Minimum booking value of ₹${minOrder} required for coupon '${couponCode}'`, 400);
+    return jsonRes(c, false, null, `Minimum booking value of \u20B9${minOrder} required for coupon '${couponCode}'`, 400);
   }
-
   let discount = 0;
   const isFlat = coupon.discount_type === "FLAT" || coupon.discount_type === "flat";
   const val = Number(coupon.discount_value || coupon.discount_percentage || 0);
-  const maxDisc = Number(coupon.max_discount || 10000);
-
+  const maxDisc = Number(coupon.max_discount || 1e4);
   if (isFlat) {
     discount = val;
   } else {
-    discount = basePrice > 0 ? Math.round((basePrice * val) / 100) : val;
+    discount = basePrice > 0 ? Math.round(basePrice * val / 100) : val;
   }
-
   if (maxDisc > 0) {
     discount = Math.min(discount, maxDisc);
   }
-
   const finalAmount = Math.max(0, basePrice - discount);
-
   return jsonRes(c, true, {
     couponCode: coupon.code,
     coupon_code: coupon.code,
@@ -8771,14 +10258,12 @@ const handleApplyCoupon = async (c) => {
     discount_type: isFlat ? "FLAT" : "PERCENTAGE",
     basePrice,
     finalAmount,
-    message: `Coupon '${coupon.code}' applied successfully! Saved ₹${discount}`
-  }, `Coupon '${coupon.code}' applied! Saved ₹${discount}`);
-};
-
-const handleRemoveCoupon = async (c) => {
+    message: `Coupon '${coupon.code}' applied successfully! Saved \u20B9${discount}`
+  }, `Coupon '${coupon.code}' applied! Saved \u20B9${discount}`);
+}, "handleApplyCoupon");
+var handleRemoveCoupon = /* @__PURE__ */ __name(async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const basePrice = Number(body.basePrice || body.base_price || body.amount || body.price || 0);
-
   return jsonRes(c, true, {
     couponCode: null,
     coupon_code: null,
@@ -8788,103 +10273,93 @@ const handleRemoveCoupon = async (c) => {
     finalAmount: basePrice,
     message: "Coupon removed"
   }, "Coupon removed successfully");
-};
-
-const handleGetCouponHistory = async (c) => {
+}, "handleRemoveCoupon");
+var handleGetCouponHistory = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) return jsonRes(c, true, []);
-
   const bookingsWithCoupons = await db.all(
     "SELECT id, booking_number, coupon_code, coupon_discount, total_amount, created_at FROM bookings WHERE (user_id = ? OR CAST(user_id AS TEXT) = ?) AND coupon_code IS NOT NULL AND coupon_code != '' ORDER BY id DESC",
     [u.id, String(u.id)]
   ).catch(() => []);
-
   return jsonRes(c, true, bookingsWithCoupons || [], "Coupon history retrieved");
-};
-
-const handleGetPriceDetails = async (c) => {
+}, "handleGetCouponHistory");
+var handleGetPriceDetails = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const serviceId = Number(c.req.query("serviceId") || c.req.query("service_id") || 0);
   const couponCode = String(c.req.query("couponCode") || c.req.query("coupon_code") || "").trim().toUpperCase();
   const service = await db.first("SELECT * FROM services WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [serviceId, serviceId]).catch(() => null);
   const basePrice = service ? Number(service.price || service.minimum_price || 0) : 0;
-
   let couponDiscount = 0;
   if (couponCode) {
     let cp = await db.first("SELECT * FROM coupons WHERE UPPER(code) = UPPER(?) AND (is_active = 1 OR is_active = 'true' OR is_active IS NULL)", [couponCode]).catch(() => null);
     if (!cp) {
-      cp = defaultCouponsList.find(dc => dc.code === couponCode);
+      cp = defaultCouponsList.find((dc) => dc.code === couponCode);
     }
     if (cp) {
       const minVal = Number(cp.min_order_amount || cp.min_booking_value || 0);
       if (basePrice >= minVal || basePrice === 0) {
         const isFlat = cp.discount_type === "FLAT" || cp.discount_type === "flat";
         const val = Number(cp.discount_value || cp.discount_percentage || 0);
-        const maxDisc = Number(cp.max_discount || 10000);
-        couponDiscount = isFlat ? val : Math.round((basePrice * val) / 100);
+        const maxDisc = Number(cp.max_discount || 1e4);
+        couponDiscount = isFlat ? val : Math.round(basePrice * val / 100);
         if (maxDisc > 0) couponDiscount = Math.min(couponDiscount, maxDisc);
       }
     } else {
       if (couponCode === "WELCOME500") couponDiscount = Math.min(500, basePrice || 500);
-      else if (couponCode === "MEHNDI20" || couponCode === "TEEJ20") couponDiscount = Math.min(400, Math.round(basePrice * 0.20));
+      else if (couponCode === "MEHNDI20" || couponCode === "TEEJ20") couponDiscount = Math.min(400, Math.round(basePrice * 0.2));
       else couponDiscount = 100;
     }
   }
-
   const travelFee = 0;
   const platformFee = 49;
   const subTotal = Math.max(0, basePrice - couponDiscount);
   const grandTotal = subTotal + travelFee + platformFee;
-  const requiredAdvance = Math.round(grandTotal * 0.10);
+  const requiredAdvance = Math.round(grandTotal * 0.1);
   const remainingAmount = Math.max(0, grandTotal - requiredAdvance);
-
   return jsonRes(c, true, {
     service_id: serviceId,
     service_title: service?.title || "Mehndi Service",
     service_price: basePrice,
     servicePrice: basePrice,
     base_price: basePrice,
-    basePrice: basePrice,
+    basePrice,
     travel_fee: travelFee,
-    travelFee: travelFee,
+    travelFee,
     travelCharges: travelFee,
     platform_fee: platformFee,
-    platformFee: platformFee,
+    platformFee,
     convenience_fee: platformFee,
     convenienceFee: platformFee,
     coupon_discount: couponDiscount,
-    couponDiscount: couponDiscount,
+    couponDiscount,
     discount: couponDiscount,
     total_amount: grandTotal,
     finalAmount: grandTotal,
     totalAmount: grandTotal,
     required_advance: requiredAdvance,
-    requiredAdvance: requiredAdvance,
+    requiredAdvance,
     advance_price: requiredAdvance,
     advancePrice: requiredAdvance,
     advance_amount: requiredAdvance,
     advanceAmount: requiredAdvance,
     remaining_amount: remainingAmount,
-    remainingAmount: remainingAmount
+    remainingAmount
   }, "Price details calculated");
-};
-
-const handleCreateBookingExplicit = async (c) => {
+}, "handleGetPriceDetails");
+var handleCreateBookingExplicit = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c) || { id: 1 };
   const body = await c.req.json().catch(() => ({}));
   const artistId = Number(body.artist_id || body.artistId || body.artist?.id || body.artist || 0);
   const serviceId = Number(body.service_id || body.serviceId || 0);
-  const bookingDate = body.booking_date || body.bookingDate || body.selectedDate || new Date().toISOString().split('T')[0];
+  const bookingDate = body.booking_date || body.bookingDate || body.selectedDate || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
   const bookingTime = body.booking_time || body.bookingTime || body.timeLabel || "10:00 AM";
   const address = body.address || body.full_address || "Customer Location";
   const notes = body.notes || "";
   const bookingNo = "MG-" + Date.now().toString().slice(-6);
-
   const lat = Number(body.latitude || body.lat || body.custLat || body.customer_latitude || 0);
   const lng = Number(body.longitude || body.lng || body.custLng || body.customer_longitude || 0);
-
   let finalLat = lat;
   let finalLng = lng;
   if (!finalLat || !finalLng) {
@@ -8896,8 +10371,6 @@ const handleCreateBookingExplicit = async (c) => {
       return jsonRes(c, false, null, "Customer booking location required. Please select your location or use current location.", 400);
     }
   }
-
-  // Double Booking Protection: Ensure artist is not already committed on this date and time slot
   if (artistId && bookingDate && bookingTime) {
     const conflicting = await db.first(
       `SELECT id, booking_number, booking_date, booking_time, status 
@@ -8909,24 +10382,19 @@ const handleCreateBookingExplicit = async (c) => {
        LIMIT 1`,
       [artistId, String(artistId), bookingDate, bookingTime]
     ).catch(() => null);
-
     if (conflicting) {
       return jsonRes(c, false, null, `Artist is already booked for ${bookingDate} at ${bookingTime}. Please select another slot.`, 409);
     }
   }
-
   let totalAmount = Number(body.total_amount || body.totalAmount || body.finalAmount || body.price || body.amount || body.grandTotal || body.total_price || 0);
-
   if (!totalAmount && serviceId) {
     const service = await db.first("SELECT * FROM services WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [serviceId, serviceId]).catch(() => null);
     if (service && (service.price || service.minimum_price)) {
       totalAmount = Number(service.price || service.minimum_price);
     }
   }
-
-  const requiredAdvance = Math.round(totalAmount * 0.10);
+  const requiredAdvance = Math.round(totalAmount * 0.1);
   const initialRemaining = Math.max(0, totalAmount - requiredAdvance);
-
   let newId = Date.now();
   try {
     const res = await db.run(`
@@ -8939,9 +10407,7 @@ const handleCreateBookingExplicit = async (c) => {
   } catch (err) {
     console.log("Explicit booking insert catch:", err.message);
   }
-
   const createdBooking = await db.first("SELECT * FROM bookings WHERE id = ?", [newId]).catch(() => null);
-
   const bookingPayload = {
     ...createdBooking,
     id: createdBooking?.id || newId,
@@ -8955,14 +10421,14 @@ const handleCreateBookingExplicit = async (c) => {
     booking_status: "PENDING_PAYMENT",
     bookingStatus: "PENDING_PAYMENT",
     payment_status: "pending",
-    advance_paid: 0.0,
+    advance_paid: 0,
     required_advance: requiredAdvance,
-    requiredAdvance: requiredAdvance,
+    requiredAdvance,
     service_price: totalAmount,
     servicePrice: totalAmount,
     total_amount: totalAmount,
     finalAmount: totalAmount,
-    totalAmount: totalAmount,
+    totalAmount,
     advance_price: requiredAdvance,
     advancePrice: requiredAdvance,
     advance_amount: requiredAdvance,
@@ -8970,15 +10436,11 @@ const handleCreateBookingExplicit = async (c) => {
     remaining_amount: initialRemaining,
     remainingAmount: initialRemaining
   };
-
-  // Note: Artist notification is dispatched ONLY after advance payment is verified!
   return jsonRes(c, true, bookingPayload, "Booking initiated. Please complete advance payment to confirm.");
-};
-
-const handleUploadChatMedia = async (c) => {
+}, "handleCreateBookingExplicit");
+var handleUploadChatMedia = /* @__PURE__ */ __name(async (c) => {
   let fileUrl = null;
   let fileType = "image";
-
   try {
     const contentType = c.req.header("content-type") || "";
     if (contentType.includes("multipart/form-data")) {
@@ -9002,17 +10464,14 @@ const handleUploadChatMedia = async (c) => {
   } catch (err) {
     console.log("[UPLOAD CHAT MEDIA FORM-DATA ERR]", err.message);
   }
-
   if (!fileUrl) {
     const body = await c.req.json().catch(() => ({}));
     fileUrl = body.file_url || body.url || body.image || body.uri;
     fileType = body.file_type || body.type || fileType;
   }
-
   if (!fileUrl) {
     fileUrl = "https://res.cloudinary.com/dair21jov/image/upload/v1786090367/mehndigo/portfolio/hak4jaaduryilavoprxr.jpg";
   }
-
   return jsonRes(c, true, {
     file_url: fileUrl,
     url: fileUrl,
@@ -9020,47 +10479,35 @@ const handleUploadChatMedia = async (c) => {
     thumbnail: fileUrl,
     file_type: fileType
   }, "Media uploaded successfully");
-};
-
-const handleGetChatMedia = async (c) => {
+}, "handleUploadChatMedia");
+var handleGetChatMedia = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   await ensureChatTables(db);
   const bookingId = parseInt(c.req.query("bookingId") || c.req.query("booking_id") || 0, 10);
   if (!bookingId) return jsonRes(c, true, [], "Empty media");
-
   const mediaList = await db.all(
     "SELECT * FROM chat_messages WHERE (booking_id = ? OR CAST(booking_id AS TEXT) = CAST(? AS TEXT)) AND LOWER(message_type) IN ('image', 'video', 'voice', 'pdf') ORDER BY created_at DESC",
     [bookingId, String(bookingId)]
   ).catch(() => []);
-
   return jsonRes(c, true, mediaList || [], "Media history retrieved");
-};
-
-
-const handleGetArtistLocation = async (c) => {
+}, "handleGetChatMedia");
+var handleGetArtistLocation = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   await ensureChatTables(db);
-
   const matches = c.req.path.match(/\/booking\/(\d+)\/location/i) || c.req.path.match(/\/location\/(\d+)/i);
   const paramBookingId = c.req.query("bookingId") || c.req.query("booking_id") || (matches ? matches[1] : null);
   const bookingId = parseInt(paramBookingId, 10);
-
   if (!bookingId) return jsonRes(c, false, null, "Booking ID is required", 400);
-
   const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
-
   const artistLoc = await db.first("SELECT * FROM artist_locations WHERE artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT)", [booking.artist_id, String(booking.artist_id)]).catch(() => null);
   const artistUser = await db.first("SELECT id, full_name, name, phone, avatar, profile_image FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [booking.artist_id, String(booking.artist_id)]).catch(() => null);
-
   const custLat = booking.latitude ? Number(booking.latitude) : 26.9124;
   const custLng = booking.longitude ? Number(booking.longitude) : 75.7873;
   const artLat = artistLoc?.latitude ? Number(artistLoc.latitude) : null;
   const artLng = artistLoc?.longitude ? Number(artistLoc.longitude) : null;
-
   let distanceKm = null;
   let etaMins = null;
-
   if (custLat && custLng && artLat && artLng) {
     const R = 6371;
     const dLat = (artLat - custLat) * (Math.PI / 180);
@@ -9068,15 +10515,13 @@ const handleGetArtistLocation = async (c) => {
     const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(custLat * (Math.PI / 180)) * Math.cos(artLat * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
     const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     distanceKm = Number(dist.toFixed(1));
-    etaMins = Math.max(1, Math.ceil((dist / 20) * 60));
+    etaMins = Math.max(1, Math.ceil(dist / 20 * 60));
   }
-
   const detailedSt = String(booking.detailed_status || booking.status || "").toUpperCase();
   const isTrackingActive = Boolean(artLat && artLng && ["ARTIST_ON_THE_WAY", "ON_THE_WAY", "CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ARRIVED", "ARRIVED"].includes(detailedSt));
-
   return jsonRes(c, true, {
     is_active: isTrackingActive,
-    tracking_status: isTrackingActive ? (detailedSt.includes("ARRIVED") ? "Artist has arrived at your location" : "Artist is on the way") : (artLat ? "Artist location shared" : "Waiting for artist live location"),
+    tracking_status: isTrackingActive ? detailedSt.includes("ARRIVED") ? "Artist has arrived at your location" : "Artist is on the way" : artLat ? "Artist location shared" : "Waiting for artist live location",
     booking_id: bookingId,
     artist_id: booking.artist_id,
     artist_name: artistUser?.full_name || artistUser?.name || booking.artist_name || "Mehndi Artist",
@@ -9087,49 +10532,42 @@ const handleGetArtistLocation = async (c) => {
     customer_latitude: custLat,
     customer_longitude: custLng,
     distance_km: distanceKm,
-    distanceKm: distanceKm,
+    distanceKm,
     distance_text: distanceKm !== null ? `${distanceKm} km away` : "Waiting for location",
     eta_mins: etaMins,
-    etaMins: etaMins,
+    etaMins,
     eta_text: etaMins !== null ? `Arriving in ${etaMins} mins` : "Calculating ETA...",
     speed: artistLoc?.speed || 0,
     heading: artistLoc?.heading || 0,
-    updated_at: artistLoc?.updated_at || new Date().toISOString()
+    updated_at: artistLoc?.updated_at || (/* @__PURE__ */ new Date()).toISOString()
   }, "Artist location retrieved");
-};
-
-const handleGetDirectionsRoute = async (c) => {
+}, "handleGetArtistLocation");
+var handleGetDirectionsRoute = /* @__PURE__ */ __name(async (c) => {
   const originLat = Number(c.req.query("originLat") || c.req.query("origin_lat") || c.req.query("startLat"));
   const originLng = Number(c.req.query("originLng") || c.req.query("origin_lng") || c.req.query("startLng"));
   const destLat = Number(c.req.query("destLat") || c.req.query("dest_lat") || c.req.query("endLat"));
   const destLng = Number(c.req.query("destLng") || c.req.query("dest_lng") || c.req.query("endLng"));
-
   if (isNaN(originLat) || isNaN(originLng) || isNaN(destLat) || isNaN(destLng)) {
     return jsonRes(c, false, null, "Valid originLat, originLng, destLat, destLng query parameters are required", 400);
   }
-
   const mirrors = [
     `https://router.project-osrm.org/route/v1/driving/${originLng},${originLat};${destLng},${destLat}?overview=full&geometries=geojson`,
     `https://routing.openstreetmap.de/routed-car/route/v1/driving/${originLng},${originLat};${destLng},${destLat}?overview=full&geometries=geojson`
   ];
-
   let routeData = null;
-
   for (const url of mirrors) {
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 4000);
+      const timeout = setTimeout(() => controller.abort(), 4e3);
       const response = await fetch(url, { signal: controller.signal });
       clearTimeout(timeout);
-
       if (response.ok) {
         const json = await response.json();
         if (json && json.routes && json.routes.length > 0) {
           const r = json.routes[0];
-          const coordinates = r.geometry.coordinates.map((coord) => [coord[1], coord[0]]); // [lat, lng]
-          const distanceKm = Number((r.distance / 1000).toFixed(2));
+          const coordinates = r.geometry.coordinates.map((coord) => [coord[1], coord[0]]);
+          const distanceKm = Number((r.distance / 1e3).toFixed(2));
           const durationMins = Math.max(1, Math.round(r.duration / 60));
-
           routeData = {
             coordinates,
             distanceKm,
@@ -9145,19 +10583,14 @@ const handleGetDirectionsRoute = async (c) => {
       console.warn(`[Edge] Routing mirror error (${url}):`, mirrorErr.message);
     }
   }
-
   if (!routeData) {
     const R = 6371;
     const dLat = (destLat - originLat) * (Math.PI / 180);
     const dLon = (destLng - originLng) * (Math.PI / 180);
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(originLat * (Math.PI / 180)) * Math.cos(destLat * (Math.PI / 180)) *
-      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(originLat * (Math.PI / 180)) * Math.cos(destLat * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
     const directDist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     const roadDist = Number((directDist * 1.25).toFixed(2));
-    const durationMins = Math.max(1, Math.ceil((roadDist / 20) * 60));
-
+    const durationMins = Math.max(1, Math.ceil(roadDist / 20 * 60));
     const steps = 20;
     const coordinates = [];
     for (let i = 0; i <= steps; i++) {
@@ -9166,7 +10599,6 @@ const handleGetDirectionsRoute = async (c) => {
       const lng = originLng + (destLng - originLng) * t;
       coordinates.push([Number(lat.toFixed(6)), Number(lng.toFixed(6))]);
     }
-
     routeData = {
       coordinates,
       distanceKm: roadDist,
@@ -9176,52 +10608,40 @@ const handleGetDirectionsRoute = async (c) => {
       provider: "INTERPOLATED"
     };
   }
-
   return jsonRes(c, true, routeData, "Directions route calculated successfully");
-};
-
-const handleAcceptBooking = async (c) => {
+}, "handleGetDirectionsRoute");
+var handleAcceptBooking = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   const body = await c.req.json().catch(() => ({}));
   const bookingId = parseInt(body.bookingId || body.booking_id || body.id || c.req.query("bookingId") || 0, 10);
-
   if (!bookingId) {
     return jsonRes(c, false, null, "Booking ID is required", 400);
   }
-
   const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
-
   const artist = u ? await db.first("SELECT id, user_id FROM artist_profiles WHERE user_id = ? OR CAST(user_id AS TEXT) = CAST(? AS TEXT)", [u.id, String(u.id)]).catch(() => null) : null;
-  const assignedArtistId = booking.artist_id || (artist && artist.id) || u?.id || 231;
-
-  // Generate 4-digit Check-In OTP and Completion PIN if not already set
-  const checkinOtp = booking.checkin_otp || Math.floor(1000 + Math.random() * 9000).toString();
-  const checkoutOtp = booking.checkout_otp || Math.floor(1000 + Math.random() * 9000).toString();
-  const checkinExpires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-  const checkoutExpires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-
-  // Atomically update booking status to accepted / ARTIST_ACCEPTED and booking_status = 'CONFIRMED'
+  const assignedArtistId = booking.artist_id || artist && artist.id || u?.id || 231;
+  const checkinOtp = booking.checkin_otp || Math.floor(1e3 + Math.random() * 9e3).toString();
+  const checkoutOtp = booking.checkout_otp || Math.floor(1e3 + Math.random() * 9e3).toString();
+  const checkinExpires = new Date(Date.now() + 24 * 60 * 60 * 1e3).toISOString();
+  const checkoutExpires = new Date(Date.now() + 24 * 60 * 60 * 1e3).toISOString();
   await db.run(
     "UPDATE bookings SET status = 'accepted', booking_status = 'CONFIRMED', detailed_status = 'ARTIST_ACCEPTED', artist_id = ?, checkin_otp = ?, checkout_otp = ? WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
     [assignedArtistId, checkinOtp, checkoutOtp, bookingId, String(bookingId)]
-  ).catch(err => {
+  ).catch((err) => {
     console.error("Error updating bookings table:", err);
   });
-
-  // Attempt to update optional expiration timestamps if columns exist
   await db.run(
     "UPDATE bookings SET checkin_otp_expires_at = ?, checkout_otp_expires_at = ? WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
     [checkinExpires, checkoutExpires, bookingId, String(bookingId)]
-  ).catch(() => { });
-
+  ).catch(() => {
+  });
   const updated = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
-
   if (booking.customer_id) {
     dispatchNotification(db, {
       userId: booking.customer_id,
-      title: "Booking Confirmed! 🎉",
+      title: "Booking Confirmed! \u{1F389}",
       body: "Your mehndi artist has accepted your booking request.",
       type: "BOOKING_ACCEPTED",
       entityId: bookingId,
@@ -9230,12 +10650,11 @@ const handleAcceptBooking = async (c) => {
       deepLink: `mehendigoo://booking/${bookingId}`
     }).catch(() => null);
   }
-
   return jsonRes(c, true, {
     ...updated,
     id: bookingId,
     booking_id: bookingId,
-    bookingId: bookingId,
+    bookingId,
     artist_id: assignedArtistId,
     status: "accepted",
     booking_status: "CONFIRMED",
@@ -9243,32 +10662,18 @@ const handleAcceptBooking = async (c) => {
     detailed_status: "ARTIST_ACCEPTED",
     detailedStatus: "ARTIST_ACCEPTED"
   }, "Booking request accepted successfully");
-};
-
-const handleOnTheWayBooking = async (c) => {
+}, "handleAcceptBooking");
+var handleOnTheWayBooking = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   const body = await c.req.json().catch(() => ({}));
   const bookingId = parseInt(body.bookingId || body.booking_id || body.id || c.req.query("bookingId") || 0, 10);
-
   if (!bookingId) {
     return jsonRes(c, false, null, "Booking ID is required", 400);
   }
-
   const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
-
-  // Strict State Machine Guard:
-  // If booking is already ARRIVED, IN_PROGRESS, or COMPLETED, do NOT regress status
-  if (
-    booking.status === "in_progress" ||
-    booking.detailed_status === "SERVICE_IN_PROGRESS" ||
-    booking.detailed_status === "IN_PROGRESS" ||
-    booking.detailed_status === "ARTIST_ARRIVED" ||
-    booking.status === "completed" ||
-    booking.detailed_status === "COMPLETED" ||
-    Number(booking.checkin_otp_verified) === 1
-  ) {
+  if (booking.status === "in_progress" || booking.detailed_status === "SERVICE_IN_PROGRESS" || booking.detailed_status === "IN_PROGRESS" || booking.detailed_status === "ARTIST_ARRIVED" || booking.status === "completed" || booking.detailed_status === "COMPLETED" || Number(booking.checkin_otp_verified) === 1) {
     const normDetailed = String(booking.detailed_status || booking.status || "CONFIRMED").toUpperCase();
     return jsonRes(c, true, {
       ...booking,
@@ -9278,20 +10683,17 @@ const handleOnTheWayBooking = async (c) => {
       detailedStatus: normDetailed
     }, "Artist travel status already active");
   }
-
-  // Ensure 4-digit checkin_otp and checkout_otp exist
-  const checkinOtp = booking.checkin_otp || Math.floor(1000 + Math.random() * 9000).toString();
-  const checkoutOtp = booking.checkout_otp || Math.floor(1000 + Math.random() * 9000).toString();
-
+  const checkinOtp = booking.checkin_otp || Math.floor(1e3 + Math.random() * 9e3).toString();
+  const checkoutOtp = booking.checkout_otp || Math.floor(1e3 + Math.random() * 9e3).toString();
   await db.run(
     "UPDATE bookings SET status = 'accepted', booking_status = 'CONFIRMED', detailed_status = 'ARTIST_ON_THE_WAY', checkin_otp = ?, checkout_otp = ? WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
     [checkinOtp, checkoutOtp, bookingId, String(bookingId)]
-  ).catch(() => { });
-
+  ).catch(() => {
+  });
   if (booking.customer_id) {
     dispatchNotification(db, {
       userId: booking.customer_id,
-      title: "Artist On The Way 🚗",
+      title: "Artist On The Way \u{1F697}",
       body: "Your mehndi artist is traveling to your location.",
       type: "ARTIST_ON_THE_WAY",
       entityId: bookingId,
@@ -9300,81 +10702,65 @@ const handleOnTheWayBooking = async (c) => {
       deepLink: `mehendigoo://tracking/${bookingId}`
     }).catch(() => null);
   }
-
   const updated = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   return jsonRes(c, true, {
     ...updated,
     id: bookingId,
     booking_id: bookingId,
-    bookingId: bookingId,
+    bookingId,
     status: "accepted",
     booking_status: "CONFIRMED",
     bookingStatus: "CONFIRMED",
     detailed_status: "ARTIST_ON_THE_WAY",
     detailedStatus: "ARTIST_ON_THE_WAY"
   }, "Artist is on the way to customer location");
-};
-
-const handleStartService = async (c) => {
+}, "handleOnTheWayBooking");
+var handleStartService = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const body = await c.req.json().catch(() => ({}));
   const bookingId = parseInt(body.bookingId || body.booking_id || body.id || c.req.query("bookingId") || 0, 10);
-
   if (!bookingId) {
     return jsonRes(c, false, null, "Booking ID is required", 400);
   }
-
   const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
-
-  // Verify that Check-In was completed before starting service
-  const isCheckedIn = Number(booking.checkin_otp_verified) === 1 ||
-    booking.detailed_status === "CUSTOMER_VERIFIED" ||
-    booking.detailed_status === "CHECKED_IN" ||
-    booking.detailed_status === "ARTIST_ARRIVED" ||
-    body.force === true;
-
+  const isCheckedIn = Number(booking.checkin_otp_verified) === 1 || booking.detailed_status === "CUSTOMER_VERIFIED" || booking.detailed_status === "CHECKED_IN" || booking.detailed_status === "ARTIST_ARRIVED" || body.force === true;
   if (booking.status === "completed" || booking.detailed_status === "COMPLETED") {
     return jsonRes(c, false, null, "Cannot start service on an already completed booking", 400);
   }
-
   await db.run(
     "UPDATE bookings SET status = 'in_progress', detailed_status = 'SERVICE_IN_PROGRESS', checkin_otp_verified = 1, check_in_time = COALESCE(check_in_time, CURRENT_TIMESTAMP) WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
     [bookingId, String(bookingId)]
-  ).catch(() => { });
-
+  ).catch(() => {
+  });
   const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
   return jsonRes(c, true, {
     ...updated,
     id: bookingId,
     booking_id: bookingId,
-    bookingId: bookingId,
+    bookingId,
     status: "in_progress",
     booking_status: "IN_PROGRESS",
     bookingStatus: "IN_PROGRESS",
     detailed_status: "SERVICE_IN_PROGRESS",
     detailedStatus: "SERVICE_IN_PROGRESS"
   }, "Mehndi service started successfully");
-};
-
-const handleRejectBooking = async (c) => {
+}, "handleStartService");
+var handleRejectBooking = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const body = await c.req.json().catch(() => ({}));
   const bookingId = parseInt(body.bookingId || body.booking_id || body.id || c.req.query("bookingId") || 0, 10);
   const reason = body.rejectReason || body.reason || "Declined by artist";
-
   if (!bookingId) {
     return jsonRes(c, false, null, "Booking ID is required", 400);
   }
-
   const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
-
   await db.run(
     "UPDATE bookings SET status = 'cancelled', detailed_status = 'CANCELLED', notes = ? WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
     [reason, bookingId, String(bookingId)]
-  ).catch(() => { });
-
+  ).catch(() => {
+  });
   if (booking.customer_id) {
     dispatchNotification(db, {
       userId: booking.customer_id,
@@ -9387,39 +10773,33 @@ const handleRejectBooking = async (c) => {
       deepLink: `mehendigoo://booking/${bookingId}`
     }).catch(() => null);
   }
-
   const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
   return jsonRes(c, true, {
     ...updated,
     id: bookingId,
     booking_id: bookingId,
-    bookingId: bookingId,
+    bookingId,
     status: "cancelled",
     booking_status: "CANCELLED",
     bookingStatus: "CANCELLED",
     detailed_status: "CANCELLED",
     detailedStatus: "CANCELLED"
   }, "Booking request declined");
-};
-
-const handleUpdateArtistLocation = async (c) => {
+}, "handleRejectBooking");
+var handleUpdateArtistLocation = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   await ensureChatTables(db);
   const u = getUserFromHeader(c) || { id: 1 };
   const body = await c.req.json().catch(() => ({}));
-
   const artistId = body.artist_id || body.artistId || u.id;
   const lat = Number(body.latitude || body.lat);
   const lng = Number(body.longitude || body.lng);
   const speed = Number(body.speed || 0);
   const heading = Number(body.heading || 0);
   const incomingTs = body.timestamp ? new Date(body.timestamp).getTime() : Date.now();
-
   if (!lat || !lng || isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
     return jsonRes(c, false, null, "Valid Latitude and Longitude required", 400);
   }
-
-  // Stale Location Protection: Ensure incoming timestamp is newer than existing record
   const existingLoc = await db.first("SELECT updated_at FROM artist_locations WHERE artist_id = ?", [artistId]).catch(() => null);
   if (existingLoc && existingLoc.updated_at) {
     const existingTs = new Date(existingLoc.updated_at).getTime();
@@ -9427,56 +10807,44 @@ const handleUpdateArtistLocation = async (c) => {
       return jsonRes(c, false, null, "Ignored stale location update", 400);
     }
   }
-
   await db.run(
     "INSERT INTO artist_locations (artist_id, latitude, longitude, speed, heading, updated_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT(artist_id) DO UPDATE SET latitude = excluded.latitude, longitude = excluded.longitude, speed = excluded.speed, heading = excluded.heading, updated_at = CURRENT_TIMESTAMP",
     [artistId, lat, lng, speed, heading]
-  ).catch(() => { });
-
+  ).catch(() => {
+  });
   return jsonRes(c, true, { artist_id: artistId, latitude: lat, longitude: lng }, "Location updated successfully");
-};
-
-const handleRescheduleBooking = async (c) => {
+}, "handleUpdateArtistLocation");
+var handleRescheduleBooking = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const body = await c.req.json().catch(() => ({}));
-
   const bookingId = parseInt(body.bookingId || body.booking_id || 0, 10);
   const date = body.date || body.booking_date;
   const time = body.time || body.booking_time;
-
   if (!bookingId || !date || !time) {
     return jsonRes(c, false, null, "Booking ID, date, and time are required for rescheduling", 400);
   }
-
   const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
-
   await db.run(
     "UPDATE bookings SET booking_date = ?, booking_time = ? WHERE id = ?",
     [date, time, bookingId]
-  ).catch(() => { });
-
+  ).catch(() => {
+  });
   return jsonRes(c, true, { bookingId, date, time }, "Appointment rescheduled successfully");
-};
-
-const handleGetInvoice = async (c) => {
+}, "handleRescheduleBooking");
+var handleGetInvoice = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const bookingId = parseInt(c.req.query("bookingId") || c.req.query("booking_id") || c.req.path.split("/").pop() || 0, 10);
-
   if (!bookingId) return jsonRes(c, false, null, "Booking ID required", 400);
-
   const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
-
   const customer = await db.first("SELECT full_name, email, phone FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [booking.customer_id, String(booking.customer_id)]).catch(() => null);
   const artist = await db.first("SELECT full_name, phone FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [booking.artist_id, String(booking.artist_id)]).catch(() => null);
   const service = await db.first("SELECT title, price FROM services WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [booking.service_id, String(booking.service_id)]).catch(() => null);
   const payment = await db.first("SELECT razorpay_payment_id, payment_method, created_at FROM payments WHERE booking_id = ? ORDER BY id DESC LIMIT 1", [bookingId]).catch(() => null);
-
   const total = Number(booking.total_amount || service?.price || 0);
   const paid = Number(booking.advance_paid || 0);
-  const remaining = Number(booking.remaining_amount !== undefined ? booking.remaining_amount : (total - paid));
-
+  const remaining = Number(booking.remaining_amount !== void 0 ? booking.remaining_amount : total - paid);
   const invoiceData = {
     invoice_number: "INV-" + String(bookingId).padStart(6, "0"),
     booking_number: booking.booking_number || "MG-" + String(bookingId).slice(-6),
@@ -9497,39 +10865,31 @@ const handleGetInvoice = async (c) => {
     transaction_id: payment?.razorpay_payment_id || `PAY_${bookingId}_${Date.now()}`,
     transaction_date: payment?.created_at || booking.created_at
   };
-
   return jsonRes(c, true, invoiceData, "Invoice data retrieved");
-};
-
-const handleArtistTravelChargeRequest = async (c) => {
+}, "handleGetInvoice");
+var handleArtistTravelChargeRequest = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) return jsonRes(c, false, null, "Unauthorized access", 401);
-
   const body = await c.req.json().catch(() => ({}));
   const bookingId = Number(body.bookingId || body.booking_id || 0);
   const travelCharge = Math.max(0, Number(body.travelCharge || body.travel_charge || 0));
   const travelDistanceKm = Math.max(0, Number(body.travelDistanceKm || body.travel_distance_km || 0));
-
   if (!bookingId) {
     return jsonRes(c, false, null, "Booking ID is required", 400);
   }
-
   const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, bookingId]).catch(() => null);
   if (!booking) {
     return jsonRes(c, false, null, "Booking not found", 404);
   }
-
   const isArtist = String(booking.artist_id) === String(u.id);
   if (!isArtist) {
     return jsonRes(c, false, null, "Only the assigned artist can request travel charges", 403);
   }
-
   const baseServiceAmount = Number(booking.base_service_amount || booking.total_amount || 0);
   const distanceKm = Number(travelDistanceKm || booking.travel_distance_km || 0);
   const settings = await getMarketplaceSettings(db);
   const calc = calculateBookingAmounts(baseServiceAmount, distanceKm, travelCharge, false, booking, settings);
-
   await db.run(`
     UPDATE bookings SET
       base_service_amount = ?,
@@ -9553,47 +10913,39 @@ const handleArtistTravelChargeRequest = async (c) => {
     calc.artist_service_amount,
     calc.base_service_amount,
     bookingId
-  ]).catch(() => { });
-
+  ]).catch(() => {
+  });
   const updatedBooking = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
-
   return jsonRes(c, true, {
     ...updatedBooking,
-    travel_charge_status: 'REQUESTED',
+    travel_charge_status: "REQUESTED",
     travel_charge: travelCharge,
     travel_distance_km: distanceKm,
     message: "Travel charge requested. Customer confirmation is required."
   }, "Travel charge request submitted to customer");
-};
-
-const handleCustomerTravelChargeRespond = async (c) => {
+}, "handleArtistTravelChargeRequest");
+var handleCustomerTravelChargeRespond = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) return jsonRes(c, false, null, "Unauthorized access", 401);
-
   const body = await c.req.json().catch(() => ({}));
   const bookingId = Number(body.bookingId || body.booking_id || 0);
   const action = String(body.action || "").toUpperCase();
-
   if (!bookingId || !["ACCEPT", "REJECT"].includes(action)) {
     return jsonRes(c, false, null, "Valid bookingId and action ('ACCEPT' or 'REJECT') are required", 400);
   }
-
   const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!booking) {
     return jsonRes(c, false, null, "Booking not found", 404);
   }
-
   const isCustomer = String(booking.customer_id) === String(u.id);
   if (!isCustomer) {
     return jsonRes(c, false, null, "Only the booking customer can respond to travel charge requests", 403);
   }
-
   const baseServiceAmount = Number(booking.base_service_amount || booking.total_amount || 0);
   const distanceKm = Number(booking.travel_distance_km || 0);
   const travelCharge = Number(booking.travel_charge || 0);
   const settings = await getMarketplaceSettings(db);
-
   if (action === "ACCEPT") {
     const calc = calculateBookingAmounts(baseServiceAmount, distanceKm, travelCharge, true, booking, settings);
     await db.run(`
@@ -9617,17 +10969,16 @@ const handleCustomerTravelChargeRespond = async (c) => {
       calc.customer_total_amount,
       calc.remaining_cash,
       bookingId
-    ]).catch(() => { });
-
+    ]).catch(() => {
+    });
     const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
     return jsonRes(c, true, {
       ...updated,
-      travel_charge_status: 'CONFIRMED',
+      travel_charge_status: "CONFIRMED",
       customer_total_amount: calc.customer_total_amount,
       message: "Travel charge confirmed and added to final booking summary."
     }, "Travel charge accepted successfully");
   } else {
-    // REJECT
     const calc = calculateBookingAmounts(baseServiceAmount, distanceKm, 0, false, booking, settings);
     await db.run(`
       UPDATE bookings SET
@@ -9649,39 +11000,35 @@ const handleCustomerTravelChargeRespond = async (c) => {
       calc.base_service_amount,
       calc.remaining_cash,
       bookingId
-    ]).catch(() => { });
-
+    ]).catch(() => {
+    });
     const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
     return jsonRes(c, true, {
       ...updated,
-      travel_charge_status: 'REJECTED',
+      travel_charge_status: "REJECTED",
       customer_total_amount: calc.base_service_amount,
       message: "Travel charge request declined."
     }, "Travel charge rejected successfully");
   }
-};
-
+}, "handleCustomerTravelChargeRespond");
 app.get("/coupon", handleGetCouponsPublic);
 app.get("/coupons", handleGetCouponsPublic);
 app.get("/customer/coupon", handleGetCouponsPublic);
 app.get("/customer/coupons", handleGetCouponsPublic);
 app.get("/api/v1/coupon", handleGetCouponsPublic);
 app.get("/api/v1/coupons", handleGetCouponsPublic);
-
 app.post("/coupon/apply", handleApplyCoupon);
 app.post("/coupons/apply", handleApplyCoupon);
 app.post("/booking/apply-coupon", handleApplyCoupon);
 app.post("/customer/booking/apply-coupon", handleApplyCoupon);
 app.post("/api/v1/coupon/apply", handleApplyCoupon);
 app.post("/api/v1/booking/apply-coupon", handleApplyCoupon);
-
 app.post("/coupon/remove", handleRemoveCoupon);
 app.post("/coupons/remove", handleRemoveCoupon);
 app.post("/booking/remove-coupon", handleRemoveCoupon);
 app.post("/customer/booking/remove-coupon", handleRemoveCoupon);
 app.post("/api/v1/coupon/remove", handleRemoveCoupon);
 app.post("/api/v1/booking/remove-coupon", handleRemoveCoupon);
-
 app.get("/coupon/history", handleGetCouponHistory);
 app.get("/coupons/history", handleGetCouponHistory);
 app.get("/api/v1/coupon/history", handleGetCouponHistory);
@@ -9693,43 +11040,36 @@ app.post("/artist/booking/travel-charge/request", handleArtistTravelChargeReques
 app.post("/api/v1/artist/booking/travel-charge/request", handleArtistTravelChargeRequest);
 app.post("/customer/booking/travel-charge/respond", handleCustomerTravelChargeRespond);
 app.post("/api/v1/customer/booking/travel-charge/respond", handleCustomerTravelChargeRespond);
-
 app.get("/customer/artist/:id", handleGetArtistProfileById);
 app.get("/customer/artists/:id", handleGetArtistProfileById);
 app.get("/customer/artist/:id/services", handleGetArtistServicesById);
 app.get("/customer/artists/:id/services", handleGetArtistServicesById);
 app.get("/customer/artist/:id/availability", handleGetArtistAvailabilityById);
 app.get("/customer/artists/:id/availability", handleGetArtistAvailabilityById);
-
 app.get("/chat/list", handleGetChatList);
 app.get("/chat/media", handleGetChatMedia);
 app.get("/chat/:bookingId", handleGetChatHistory);
 app.post("/chat/send", handleSendChatMessage);
 app.post("/chat/upload", handleUploadChatMedia);
-
 app.get("/booking/invoice", handleGetInvoice);
 app.put("/booking/reschedule", handleRescheduleBooking);
 app.post("/artist/location/update", handleUpdateArtistLocation);
-
 addRoute("get", "/coupon", handleGetCouponsPublic);
 addRoute("get", "/coupons", handleGetCouponsPublic);
 addRoute("get", "/customer/coupon", handleGetCouponsPublic);
 addRoute("get", "/customer/coupons", handleGetCouponsPublic);
 addRoute("get", "/api/v1/coupon", handleGetCouponsPublic);
 addRoute("get", "/api/v1/coupons", handleGetCouponsPublic);
-
 addRoute("post", "/coupon/apply", handleApplyCoupon);
 addRoute("post", "/coupons/apply", handleApplyCoupon);
 addRoute("post", "/booking/apply-coupon", handleApplyCoupon);
 addRoute("post", "/customer/booking/apply-coupon", handleApplyCoupon);
 addRoute("post", "/api/v1/coupon/apply", handleApplyCoupon);
-
 addRoute("post", "/coupon/remove", handleRemoveCoupon);
 addRoute("post", "/coupons/remove", handleRemoveCoupon);
 addRoute("post", "/booking/remove-coupon", handleRemoveCoupon);
 addRoute("post", "/customer/booking/remove-coupon", handleRemoveCoupon);
 addRoute("post", "/api/v1/coupon/remove", handleRemoveCoupon);
-
 addRoute("get", "/coupon/history", handleGetCouponHistory);
 addRoute("get", "/coupons/history", handleGetCouponHistory);
 addRoute("get", "/api/v1/coupon/history", handleGetCouponHistory);
@@ -9748,41 +11088,19 @@ addRoute("get", "/customer/artists/:id/availability", handleGetArtistAvailabilit
 addRoute("get", "/artist/:id/services", handleGetArtistServicesById);
 addRoute("get", "/artist/services/:id", handleGetArtistServicesById);
 addRoute("get", "/artist/:id/availability", handleGetArtistAvailabilityById);
-
 addRoute("get", "/chat/list", handleGetChatList);
 addRoute("get", "/chat/media", handleGetChatMedia);
 addRoute("get", "/chat/:bookingId", handleGetChatHistory);
 addRoute("post", "/chat/send", handleSendChatMessage);
 addRoute("post", "/chat/upload", handleUploadChatMedia);
-
-const sendWorkerEmail = async (toEmail, subject, textBody) => {
-  if (!toEmail) return false;
-  console.log(`[WORKER EMAIL DISPATCH] Sending to: ${toEmail} | Subject: ${subject}`);
-  const otpMatch = textBody.match(/code is:\s*(\d{6})/i) || textBody.match(/(\d{6})/);
-  const otp = otpMatch ? otpMatch[1] : "889900";
-  return await sendRealOtpEmail(null, toEmail, otp, "Customer");
-};
-
-const handleValidateArrival = async (c) => {
+var handleValidateArrival = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const body = await c.req.json().catch(() => ({}));
   const bookingId = parseInt(body.bookingId || body.booking_id || 0, 10);
-
   if (!bookingId) return jsonRes(c, false, null, "Booking ID is required", 400);
-
   const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
-
-  // Strict State Machine Guard:
-  // If booking is already IN_PROGRESS or COMPLETED or check-in verified, do NOT regress to ARRIVED
-  if (
-    booking.status === "in_progress" ||
-    booking.detailed_status === "SERVICE_IN_PROGRESS" ||
-    booking.detailed_status === "IN_PROGRESS" ||
-    booking.status === "completed" ||
-    booking.detailed_status === "COMPLETED" ||
-    Number(booking.checkin_otp_verified) === 1
-  ) {
+  if (booking.status === "in_progress" || booking.detailed_status === "SERVICE_IN_PROGRESS" || booking.detailed_status === "IN_PROGRESS" || booking.status === "completed" || booking.detailed_status === "COMPLETED" || Number(booking.checkin_otp_verified) === 1) {
     const normDetailed = String(booking.detailed_status || "SERVICE_IN_PROGRESS").toUpperCase();
     return jsonRes(c, true, {
       ...booking,
@@ -9793,55 +11111,42 @@ const handleValidateArrival = async (c) => {
       detailedStatus: normDetailed
     }, "Check-In already verified. Service is in progress.");
   }
-
   const artistLoc = await db.first("SELECT * FROM artist_locations WHERE artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT)", [booking.artist_id, String(booking.artist_id)]).catch(() => null);
-
-  const custLat = (booking.latitude !== undefined && booking.latitude !== null && !isNaN(Number(booking.latitude))) ? Number(booking.latitude) : null;
-  const custLng = (booking.longitude !== undefined && booking.longitude !== null && !isNaN(Number(booking.longitude))) ? Number(booking.longitude) : null;
-
-  let artLat = (body.latitude !== undefined && body.latitude !== null && !isNaN(Number(body.latitude))) ? Number(body.latitude) :
-    ((body.artistLat !== undefined && body.artistLat !== null && !isNaN(Number(body.artistLat))) ? Number(body.artistLat) :
-      ((body.lat !== undefined && body.lat !== null && !isNaN(Number(body.lat))) ? Number(body.lat) : (artistLoc ? Number(artistLoc.latitude) : null)));
-
-  let artLng = (body.longitude !== undefined && body.longitude !== null && !isNaN(Number(body.longitude))) ? Number(body.longitude) :
-    ((body.artistLng !== undefined && body.artistLng !== null && !isNaN(Number(body.artistLng))) ? Number(body.artistLng) :
-      ((body.lng !== undefined && body.lng !== null && !isNaN(Number(body.lng))) ? Number(body.lng) : (artistLoc ? Number(artistLoc.longitude) : null)));
-
+  const custLat = booking.latitude !== void 0 && booking.latitude !== null && !isNaN(Number(booking.latitude)) ? Number(booking.latitude) : null;
+  const custLng = booking.longitude !== void 0 && booking.longitude !== null && !isNaN(Number(booking.longitude)) ? Number(booking.longitude) : null;
+  let artLat = body.latitude !== void 0 && body.latitude !== null && !isNaN(Number(body.latitude)) ? Number(body.latitude) : body.artistLat !== void 0 && body.artistLat !== null && !isNaN(Number(body.artistLat)) ? Number(body.artistLat) : body.lat !== void 0 && body.lat !== null && !isNaN(Number(body.lat)) ? Number(body.lat) : artistLoc ? Number(artistLoc.latitude) : null;
+  let artLng = body.longitude !== void 0 && body.longitude !== null && !isNaN(Number(body.longitude)) ? Number(body.longitude) : body.artistLng !== void 0 && body.artistLng !== null && !isNaN(Number(body.artistLng)) ? Number(body.artistLng) : body.lng !== void 0 && body.lng !== null && !isNaN(Number(body.lng)) ? Number(body.lng) : artistLoc ? Number(artistLoc.longitude) : null;
   if (artLat !== null && !isNaN(artLat) && artLng !== null && !isNaN(artLng) && booking.artist_id) {
     await db.run(
       "INSERT OR REPLACE INTO artist_locations (artist_id, latitude, longitude, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
       [booking.artist_id, artLat, artLng]
-    ).catch(() => { });
+    ).catch(() => {
+    });
   }
-
   let distanceMeters = null;
   if (artLat !== null && artLng !== null && custLat !== null && custLng !== null) {
-    const R = 6371000;
+    const R = 6371e3;
     const dLat = (custLat - artLat) * Math.PI / 180;
     const dLng = (custLng - artLng) * Math.PI / 180;
     const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(artLat * Math.PI / 180) * Math.cos(custLat * Math.PI / 180) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
     distanceMeters = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
-
   const ARRIVAL_RADIUS_METERS = 500;
-  const isWithinRadius = (distanceMeters !== null) ? distanceMeters <= ARRIVAL_RADIUS_METERS : true;
-
+  const isWithinRadius = distanceMeters !== null ? distanceMeters <= ARRIVAL_RADIUS_METERS : true;
   if (isWithinRadius || body.force === true) {
-    const checkinOtp = booking.checkin_otp || Math.floor(1000 + Math.random() * 9000).toString();
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-
+    const checkinOtp = booking.checkin_otp || Math.floor(1e3 + Math.random() * 9e3).toString();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1e3).toISOString();
     await db.run(
       "UPDATE bookings SET status = 'accepted', detailed_status = 'ARTIST_ARRIVED', arrival_verified_at = CURRENT_TIMESTAMP, checkin_otp = ?, checkin_otp_expires_at = ? WHERE id = ?",
       [checkinOtp, expiresAt, bookingId]
-    ).catch(() => { });
-
+    ).catch(() => {
+    });
     const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
-
     const customerId = booking.customer_id || booking.user_id;
     if (customerId) {
       dispatchNotification(db, {
         userId: customerId,
-        title: "Artist Arrived 📍",
+        title: "Artist Arrived \u{1F4CD}",
         body: "Your mehndi artist has arrived at your location. Please check your email for the Check-In PIN.",
         type: "ARTIST_ARRIVED",
         entityId: bookingId,
@@ -9849,11 +11154,9 @@ const handleValidateArrival = async (c) => {
         channelId: "bookings",
         deepLink: `mehendigoo://tracking/${bookingId}`
       }).catch(() => null);
-
       const customer = await db.first("SELECT email, full_name, name FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [customerId, String(customerId)]).catch(() => null);
       const customerEmail = customer?.email || booking.customer_email || booking.email || booking.user_email;
       const customerName = customer?.full_name || customer?.name || booking.customer_name || booking.user_name || "Valued Customer";
-
       if (customerEmail && checkinOtp) {
         console.log(`[handleValidateArrival] Dispatching Check-In PIN ${checkinOtp} to customer email: ${customerEmail}`);
         await sendCheckInOtpEmail(c, customerEmail, checkinOtp, customerName, booking.booking_number || booking.booking_code || String(bookingId)).catch((e) => {
@@ -9864,7 +11167,6 @@ const handleValidateArrival = async (c) => {
         console.warn(`[handleValidateArrival Warning] No customer email found for Booking ID: ${bookingId}, Customer ID: ${customerId}`);
       }
     }
-
     return jsonRes(c, true, {
       ...updated,
       id: bookingId,
@@ -9884,105 +11186,68 @@ const handleValidateArrival = async (c) => {
       distanceMeters: Math.round(distanceMeters)
     }, `Artist is ${Math.round(distanceMeters)}m away. Arrival radius is ${ARRIVAL_RADIUS_METERS}m.`, 400);
   }
-};
-
-const handleSendCheckInOtp = async (c) => {
+}, "handleValidateArrival");
+var handleSendCheckInOtp = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const body = await c.req.json().catch(() => ({}));
   const bookingId = parseInt(body.bookingId || body.booking_id || 0, 10);
-
   console.log(`[CHECKIN EMAIL TRACE] handler entered | bookingId=${bookingId}`);
-
   if (!bookingId) {
     return jsonRes(c, false, null, "Booking ID is required", 400);
   }
-
   const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
-
   const customerId = booking.customer_id || booking.user_id;
   console.log(`[CHECKIN EMAIL TRACE] bookingId=${bookingId} | customerId=${customerId}`);
-
-  // Strict Permanent Lock Guard: Cannot request or resend Check-In OTP once verified
-  const isAlreadyVerified =
-    Number(booking.checkin_otp_verified) === 1 ||
-    Number(booking.checkin_verified) === 1 ||
-    Number(booking.check_in_otp_verified) === 1 ||
-    booking.check_in_otp_verified === true ||
-    booking.checkin_otp_verified === true ||
-    ["CUSTOMER_VERIFIED", "SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS", "CHECKOUT", "COMPLETED"].includes(String(booking.detailed_status || booking.status || "").toUpperCase());
-
+  const isAlreadyVerified = Number(booking.checkin_otp_verified) === 1 || Number(booking.checkin_verified) === 1 || Number(booking.check_in_otp_verified) === 1 || booking.check_in_otp_verified === true || booking.checkin_otp_verified === true || ["CUSTOMER_VERIFIED", "SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS", "CHECKOUT", "COMPLETED"].includes(String(booking.detailed_status || booking.status || "").toUpperCase());
   if (isAlreadyVerified) {
     return jsonRes(c, false, null, "Check-in has already been verified. Service is in progress.", 400);
   }
-
-  const otp = booking.checkin_otp || Math.floor(1000 + Math.random() * 9000).toString();
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-
-  await db.run("UPDATE bookings SET checkin_otp = ?, check_in_otp = ?, checkin_otp_expires_at = ? WHERE id = ?", [otp, otp, expiresAt, bookingId]).catch(() => { });
-
-  // Dispatch Check-In PIN directly to customer's registered email
+  const otp = booking.checkin_otp || Math.floor(1e3 + Math.random() * 9e3).toString();
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1e3).toISOString();
+  await db.run("UPDATE bookings SET checkin_otp = ?, check_in_otp = ?, checkin_otp_expires_at = ? WHERE id = ?", [otp, otp, expiresAt, bookingId]).catch(() => {
+  });
   let customerUser = null;
   if (customerId) {
     customerUser = await db.first("SELECT email, full_name, name FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [customerId, String(customerId)]).catch(() => null);
   }
   const customerEmail = customerUser?.email || booking.customer_email || booking.email || booking.user_email;
   const customerName = customerUser?.full_name || customerUser?.name || booking.customer_name || booking.user_name || "Valued Customer";
-
   const maskedEmail = customerEmail ? customerEmail.replace(/^(.)(.*)(@.*)$/, "$1***$3") : "None";
   console.log(`[CHECKIN EMAIL TRACE] customerEmail=${maskedEmail} | emailFunctionCalled=true`);
-
   if (!customerEmail) {
     console.error(`[CHECKIN EMAIL TRACE] No registered email found for customerId=${customerId}`);
     return jsonRes(c, false, { bookingId, otpSent: false }, "Customer registered email address not found for this booking", 400);
   }
-
   const emailSent = await sendCheckInOtpEmail(c, customerEmail, otp, customerName, booking.booking_number || booking.booking_code || String(bookingId)).catch((e) => {
     console.error(`[CHECKIN EMAIL TRACE] Exception in sendCheckInOtpEmail:`, e.message);
     return false;
   });
-
   console.log(`[CHECKIN EMAIL TRACE] smtpResult=${emailSent ? "SUCCESS" : "FAILED"}`);
-
   if (!emailSent) {
     return jsonRes(c, false, { bookingId, otpSent: false }, "Unable to deliver OTP email to customer. Please verify email configuration.", 500);
   }
-
   return jsonRes(c, true, { bookingId, otpSent: true, customerEmailMasked: maskedEmail }, `Check-In PIN sent to customer's registered email address (${maskedEmail})`);
-};
-
-const checkInFailedAttemptsMap = new Map();
-const checkOutFailedAttemptsMap = new Map();
-
-const handleVerifyCheckInOtp = async (c) => {
+}, "handleSendCheckInOtp");
+var checkInFailedAttemptsMap = /* @__PURE__ */ new Map();
+var checkOutFailedAttemptsMap = /* @__PURE__ */ new Map();
+var handleVerifyCheckInOtp = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const body = await c.req.json().catch(() => ({}));
   const bookingId = parseInt(body.bookingId || body.booking_id || 0, 10);
   const inputOtp = String(body.otp || body.code || "").trim();
-
   if (!bookingId || !inputOtp) {
     return jsonRes(c, false, null, "Booking ID and 4-digit Check-In OTP are required", 400);
   }
-
   const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
-
-  // Strict State Machine Guard: Validate that booking is in a valid state for Check-In
   if (booking.status === "completed" || booking.detailed_status === "COMPLETED") {
     return jsonRes(c, false, null, "Cannot check in an already completed booking", 400);
   }
   if (booking.status === "cancelled" || booking.detailed_status === "CANCELLED") {
     return jsonRes(c, false, null, "Cannot check in a cancelled booking", 400);
   }
-
-  const isCheckInAlreadyVerified =
-    Number(booking.checkin_otp_verified) === 1 ||
-    Number(booking.checkin_verified) === 1 ||
-    Number(booking.check_in_otp_verified) === 1 ||
-    booking.check_in_otp_verified === true ||
-    booking.checkin_otp_verified === true ||
-    ["CUSTOMER_VERIFIED", "SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS", "CHECKOUT", "COMPLETED"].includes(String(booking.detailed_status || booking.status || "").toUpperCase());
-
+  const isCheckInAlreadyVerified = Number(booking.checkin_otp_verified) === 1 || Number(booking.checkin_verified) === 1 || Number(booking.check_in_otp_verified) === 1 || booking.check_in_otp_verified === true || booking.checkin_otp_verified === true || ["CUSTOMER_VERIFIED", "SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS", "CHECKOUT", "COMPLETED"].includes(String(booking.detailed_status || booking.status || "").toUpperCase());
   if (isCheckInAlreadyVerified) {
     return jsonRes(c, true, {
       ...booking,
@@ -9999,8 +11264,6 @@ const handleVerifyCheckInOtp = async (c) => {
   if (booking.detailed_status !== "ARTIST_ARRIVED" && booking.status !== "arrived") {
     return jsonRes(c, false, null, "Check-In OTP can only be verified after the artist has arrived at the customer location", 400);
   }
-
-  // Artist Authorization Guard
   const user = c.get("user") || {};
   if (user.id && user.role !== "ADMIN") {
     const artistProfile = await db.first("SELECT id, user_id FROM artist_profiles WHERE user_id = ?", [user.id]).catch(() => null);
@@ -10009,33 +11272,23 @@ const handleVerifyCheckInOtp = async (c) => {
       return jsonRes(c, false, null, "Forbidden: Only the assigned artist can verify the Check-In OTP", 403);
     }
   }
-
-  // Rate Limiting & Attempt Limiter
   const currentAttempts = (checkInFailedAttemptsMap.get(bookingId) || 0) + 1;
   if (currentAttempts > 5) {
     return jsonRes(c, false, null, "Too many incorrect attempts (5/5). Verification locked for 15 minutes. Please request a new OTP.", 429);
   }
-
   const validOtp = String(booking.checkin_otp || "").trim();
-  const isExpired = booking.checkin_otp_expires_at && new Date() > new Date(booking.checkin_otp_expires_at);
-
+  const isExpired = booking.checkin_otp_expires_at && /* @__PURE__ */ new Date() > new Date(booking.checkin_otp_expires_at);
   if (!validOtp || inputOtp !== validOtp || isExpired) {
     checkInFailedAttemptsMap.set(bookingId, currentAttempts);
     return jsonRes(c, false, null, `Invalid or expired Check-In OTP (Attempt ${currentAttempts}/5). Please ask the customer for their 4-digit PIN.`, 400);
   }
-
-  // Clear failed attempts upon success
   checkInFailedAttemptsMap.delete(bookingId);
-  const nowIso = new Date().toISOString();
-
-  // Generate distinct 4-digit Check-Out completion PIN
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
   let checkoutOtp = booking.checkout_otp || booking.check_out_otp || booking.completion_pin;
   if (!checkoutOtp || checkoutOtp.length !== 4) {
-    checkoutOtp = Math.floor(1000 + Math.random() * 9000).toString();
+    checkoutOtp = Math.floor(1e3 + Math.random() * 9e3).toString();
   }
-  const checkoutExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-
-  // Core infallible atomic update
+  const checkoutExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1e3).toISOString();
   try {
     await db.run(
       "UPDATE bookings SET status = 'in_progress', detailed_status = 'SERVICE_IN_PROGRESS', checkin_otp_verified = 1, check_in_time = CURRENT_TIMESTAMP, service_started_at = CURRENT_TIMESTAMP, checkin_otp = NULL, check_in_otp = NULL, checkin_otp_expires_at = NULL, checkout_otp = ?, check_out_otp = ?, completion_pin = ?, checkout_otp_expires_at = ? WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
@@ -10043,26 +11296,27 @@ const handleVerifyCheckInOtp = async (c) => {
     );
   } catch (sqlErr) {
     console.error("[CRITICAL Check-In SQL Update Failed]", sqlErr);
-    // Fallback minimal query if any column missing
     await db.run(
       "UPDATE bookings SET status = 'in_progress', detailed_status = 'SERVICE_IN_PROGRESS', checkout_otp = ?, check_out_otp = ?, completion_pin = ? WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
       [checkoutOtp, checkoutOtp, checkoutOtp, bookingId, String(bookingId)]
-    ).catch(() => { });
+    ).catch(() => {
+    });
   }
-
-  // Best-effort updates for tracking columns (safe if columns don't exist)
-  await db.run("UPDATE bookings SET booking_status = 'IN_PROGRESS' WHERE id = ?", [bookingId]).catch(() => { });
-  await db.run("UPDATE bookings SET checkin_verified_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => { });
-  await db.run("UPDATE bookings SET checked_in_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => { });
-  await db.run("UPDATE bookings SET service_started_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => { });
-  await db.run("UPDATE bookings SET checkin_otp = NULL, check_in_otp = NULL, checkin_otp_expires_at = NULL WHERE id = ?", [bookingId]).catch(() => { });
-
-  // Record audit history
+  await db.run("UPDATE bookings SET booking_status = 'IN_PROGRESS' WHERE id = ?", [bookingId]).catch(() => {
+  });
+  await db.run("UPDATE bookings SET checkin_verified_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => {
+  });
+  await db.run("UPDATE bookings SET checked_in_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => {
+  });
+  await db.run("UPDATE bookings SET service_started_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => {
+  });
+  await db.run("UPDATE bookings SET checkin_otp = NULL, check_in_otp = NULL, checkin_otp_expires_at = NULL WHERE id = ?", [bookingId]).catch(() => {
+  });
   await db.run(
     "INSERT INTO booking_status_histories (booking_id, status, notes, created_at, updated_at) VALUES (?, 'IN_PROGRESS', 'Check-In OTP verified and service started', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
     [bookingId]
-  ).catch(() => { });
-
+  ).catch(() => {
+  });
   const customerIdVerify = booking.customer_id || booking.user_id;
   let customerUserVerify = null;
   if (customerIdVerify) {
@@ -10070,11 +11324,10 @@ const handleVerifyCheckInOtp = async (c) => {
   }
   const customerEmailVerify = customerUserVerify?.email || booking.customer_email || booking.email || booking.user_email;
   const customerNameVerify = customerUserVerify?.full_name || customerUserVerify?.name || booking.customer_name || booking.user_name || "Valued Customer";
-
   if (customerIdVerify) {
     dispatchNotification(db, {
       userId: customerIdVerify,
-      title: "Service Started 🌸",
+      title: "Service Started \u{1F338}",
       body: "Check-In verified. Your mehndi service is now in progress. Your Completion PIN has been sent to your email.",
       type: "SERVICE_STARTED",
       entityId: bookingId,
@@ -10083,18 +11336,15 @@ const handleVerifyCheckInOtp = async (c) => {
       deepLink: `mehendigoo://tracking/${bookingId}`
     }).catch(() => null);
   }
-
   if (customerEmailVerify && checkoutOtp) {
     sendCheckOutOtpEmail(c, customerEmailVerify, checkoutOtp, customerNameVerify, booking.booking_number || booking.booking_code || String(bookingId)).catch(() => null);
   }
-
   const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
-
   return jsonRes(c, true, {
     ...updated,
     id: bookingId,
     booking_id: bookingId,
-    bookingId: bookingId,
+    bookingId,
     status: "in_progress",
     booking_status: "IN_PROGRESS",
     bookingStatus: "IN_PROGRESS",
@@ -10111,21 +11361,16 @@ const handleVerifyCheckInOtp = async (c) => {
     service_started_at: updated?.service_started_at || nowIso,
     check_in_time: updated?.check_in_time || nowIso
   }, "Check-In OTP verified successfully! Service is in progress.");
-};
-
-const handleSendCheckOutOtp = async (c) => {
+}, "handleVerifyCheckInOtp");
+var handleSendCheckOutOtp = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const body = await c.req.json().catch(() => ({}));
   const bookingId = parseInt(body.bookingId || body.booking_id || 0, 10);
-
   if (!bookingId) {
     return jsonRes(c, false, null, "Booking ID is required", 400);
   }
-
   const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
-
-  // Assigned Artist or Customer Authorization Guard
   const user = c.get("user") || {};
   if (user.id && user.role !== "ADMIN") {
     const isCustomer = Number(user.id) === Number(booking.customer_id) || Number(user.id) === Number(booking.user_id) || String(user.role).toUpperCase() === "CUSTOMER";
@@ -10139,34 +11384,24 @@ const handleSendCheckOutOtp = async (c) => {
       return jsonRes(c, false, null, "Forbidden: Only the assigned artist or customer can request Check-Out OTP", 403);
     }
   }
-
-  // Pre-condition Guard: Must be in progress
   const inProgressStatuses = ["in_progress", "SERVICE_IN_PROGRESS", "CUSTOMER_VERIFIED", "SERVICE_STARTED", "checkout", "CHECKOUT"];
   if (!inProgressStatuses.includes(booking.status) && !inProgressStatuses.includes(booking.detailed_status) && Number(booking.checkin_otp_verified) !== 1) {
     return jsonRes(c, false, null, "Cannot generate Check-Out OTP before service is in progress", 400);
   }
-
   const isForceRefresh = Boolean(body.force || body.refresh || body.regenerate);
-
-  // Preserve existing 4-digit PIN if valid, or generate new 4-digit Check-Out OTP
   let existingPin = String(booking.checkout_otp || booking.check_out_otp || booking.completion_pin || "").trim();
-  let otp = (existingPin && existingPin.length === 4 && !isForceRefresh) ? existingPin : Math.floor(1000 + Math.random() * 9000).toString();
-
+  let otp = existingPin && existingPin.length === 4 && !isForceRefresh ? existingPin : Math.floor(1e3 + Math.random() * 9e3).toString();
   const checkinPin = String(booking.checkin_otp || booking.check_in_otp || "").trim();
   if (checkinPin && otp === checkinPin) {
-    otp = Math.floor(1000 + Math.random() * 9000).toString();
+    otp = Math.floor(1e3 + Math.random() * 9e3).toString();
   }
-  const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-
-  // Reset checkout failed attempts on OTP request
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1e3).toISOString();
   checkOutFailedAttemptsMap.delete(bookingId);
-
   await db.run(
     "UPDATE bookings SET checkout_otp = ?, check_out_otp = ?, completion_pin = ?, checkout_otp_expires_at = ?, check_out_otp_expires_at = ?, detailed_status = 'CHECKOUT' WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
     [otp, otp, otp, expiresAt, expiresAt, bookingId, String(bookingId)]
-  ).catch(() => { });
-
-  // Dispatch Check-Out completion PIN directly to customer's registered email
+  ).catch(() => {
+  });
   const customerIdOut = booking.customer_id || booking.user_id;
   let customerUserOut = null;
   if (customerIdOut) {
@@ -10174,43 +11409,32 @@ const handleSendCheckOutOtp = async (c) => {
   }
   const customerEmailOut = customerUserOut?.email || booking.customer_email || booking.email || booking.user_email;
   const customerNameOut = customerUserOut?.full_name || customerUserOut?.name || booking.customer_name || booking.user_name || "Valued Customer";
-
   const maskedEmailOut = customerEmailOut ? customerEmailOut.replace(/^(.)(.*)(@.*)$/, "$1***$3") : "None";
   console.log(`[CHECKOUT EMAIL TRACE] customerEmail=${maskedEmailOut} | emailFunctionCalled=true`);
-
   if (!customerEmailOut) {
     console.error(`[CHECKOUT EMAIL TRACE] No registered email found for customerId=${customerIdOut}`);
     return jsonRes(c, false, { bookingId, otpSent: false }, "Customer registered email address not found for this booking", 400);
   }
-
   const emailSentOut = await sendCheckOutOtpEmail(c, customerEmailOut, otp, customerNameOut, booking.booking_number || booking.booking_code || String(bookingId)).catch((e) => {
     console.error(`[CHECKOUT EMAIL TRACE] Exception in sendCheckOutOtpEmail:`, e.message);
     return false;
   });
-
   console.log(`[CHECKOUT EMAIL TRACE] smtpResult=${emailSentOut ? "SUCCESS" : "FAILED"}`);
-
   if (!emailSentOut) {
     return jsonRes(c, false, { bookingId, otpSent: false }, "Unable to deliver Completion OTP email to customer. Please verify email configuration.", 500);
   }
-
   return jsonRes(c, true, { bookingId, otp, checkout_otp: otp, check_out_otp: otp, completion_pin: otp, otpSent: true, customerEmailMasked: maskedEmailOut }, `Service Completion PIN sent to customer's registered email address (${maskedEmailOut})`);
-};
-
-const handleVerifyCheckOutOtp = async (c) => {
+}, "handleSendCheckOutOtp");
+var handleVerifyCheckOutOtp = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const body = await c.req.json().catch(() => ({}));
   const bookingId = parseInt(body.bookingId || body.booking_id || 0, 10);
   const inputOtp = String(body.otp || body.code || body.pin || body.completion_pin || "").trim();
-
   if (!bookingId || !inputOtp) {
     return jsonRes(c, false, null, "Booking ID and Completion PIN are required", 400);
   }
-
   const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
-
-  // Assigned Artist Authorization Guard
   const user = c.get("user") || {};
   if (user.id && user.role !== "ADMIN") {
     const artistProfile = await db.first("SELECT id, user_id FROM artist_profiles WHERE user_id = ?", [user.id]).catch(() => null);
@@ -10219,8 +11443,6 @@ const handleVerifyCheckOutOtp = async (c) => {
       return jsonRes(c, false, null, "Forbidden: Only the assigned artist can verify the Check-Out OTP", 403);
     }
   }
-
-  // Strict State Machine Guard: Validate that booking is in a valid state for Check-Out
   if (booking.status === "completed" || booking.detailed_status === "COMPLETED") {
     return jsonRes(c, true, { bookingId, alreadyCompleted: true }, "Booking is already completed");
   }
@@ -10230,43 +11452,34 @@ const handleVerifyCheckOutOtp = async (c) => {
   if (Number(booking.checkin_otp_verified) !== 1 && booking.status !== "in_progress" && booking.detailed_status !== "SERVICE_IN_PROGRESS" && booking.detailed_status !== "CUSTOMER_VERIFIED") {
     return jsonRes(c, false, null, "Cannot check out before verifying Check-In OTP. Please complete Check-In first.", 400);
   }
-
-  // Rate Limiting & Attempt Limiter
   const currentAttempts = (checkOutFailedAttemptsMap.get(bookingId) || 0) + 1;
   if (currentAttempts > 5) {
-    await db.run("UPDATE bookings SET checkout_otp = NULL, check_out_otp = NULL, completion_pin = NULL, checkout_otp_expires_at = NULL, check_out_otp_expires_at = NULL WHERE id = ?", [bookingId]).catch(() => { });
+    await db.run("UPDATE bookings SET checkout_otp = NULL, check_out_otp = NULL, completion_pin = NULL, checkout_otp_expires_at = NULL, check_out_otp_expires_at = NULL WHERE id = ?", [bookingId]).catch(() => {
+    });
     return jsonRes(c, false, null, "Too many incorrect attempts (5/5). Verification locked. Please request a new completion PIN.", 400);
   }
-
-  // Explicit Business Rule: Check-In OTP CANNOT be used as Checkout OTP!
   const checkinPinVerify = String(booking.checkin_otp || booking.check_in_otp || "").trim();
   if (checkinPinVerify && inputOtp === checkinPinVerify) {
     checkOutFailedAttemptsMap.set(bookingId, currentAttempts);
     return jsonRes(c, false, null, "Invalid PIN. You entered the Check-In PIN. Please ask the customer for their separate 4-digit Completion PIN.", 400);
   }
-
   const validOtp = String(booking.checkout_otp || booking.check_out_otp || booking.completion_pin || "").trim();
   const expiryDate = booking.checkout_otp_expires_at || booking.check_out_otp_expires_at;
-  const isExpired = expiryDate && new Date() > new Date(expiryDate);
-
+  const isExpired = expiryDate && /* @__PURE__ */ new Date() > new Date(expiryDate);
   if (!validOtp || inputOtp !== validOtp || isExpired) {
     checkOutFailedAttemptsMap.set(bookingId, currentAttempts);
     if (currentAttempts >= 5) {
-      await db.run("UPDATE bookings SET checkout_otp = NULL, check_out_otp = NULL, completion_pin = NULL, checkout_otp_expires_at = NULL, check_out_otp_expires_at = NULL WHERE id = ?", [bookingId]).catch(() => { });
+      await db.run("UPDATE bookings SET checkout_otp = NULL, check_out_otp = NULL, completion_pin = NULL, checkout_otp_expires_at = NULL, check_out_otp_expires_at = NULL WHERE id = ?", [bookingId]).catch(() => {
+      });
       return jsonRes(c, false, null, "Too many incorrect attempts (5/5). Please request a new completion PIN.", 400);
     }
     return jsonRes(c, false, null, `Invalid or expired Completion PIN (Attempt ${currentAttempts}/5). Please ask the customer for their 4-digit Completion PIN.`, 400);
   }
-
-  // Clear failed attempts upon success
   checkOutFailedAttemptsMap.delete(bookingId);
-
   const totalAmt = Number(booking.total_amount || booking.total_price || 0);
   const advancePaid = Number(booking.advance_paid || 0);
   const remainingAmount = Math.max(0, totalAmt - advancePaid);
-  const nowIso = new Date().toISOString();
-
-  // Infallible atomic update for completion
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
   try {
     await db.run(
       "UPDATE bookings SET status = 'completed', detailed_status = 'COMPLETED', checkout_otp_verified = 1, check_out_time = CURRENT_TIMESTAMP, checkout_otp = NULL, checkout_otp_expires_at = NULL, remaining_amount = 0 WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
@@ -10277,29 +11490,28 @@ const handleVerifyCheckOutOtp = async (c) => {
     await db.run(
       "UPDATE bookings SET status = 'completed', detailed_status = 'COMPLETED', checkout_otp = NULL, checkout_otp_expires_at = NULL, remaining_amount = 0 WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
       [bookingId, String(bookingId)]
-    ).catch(() => { });
+    ).catch(() => {
+    });
   }
-
-  // Best-effort updates for tracking columns (safe if columns don't exist)
-  await db.run("UPDATE bookings SET booking_status = 'COMPLETED', payment_status = 'PAID' WHERE id = ?", [bookingId]).catch(() => { });
-  await db.run("UPDATE bookings SET checkout_verified_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => { });
-  await db.run("UPDATE bookings SET completed_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => { });
-  await db.run("UPDATE bookings SET service_completed_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => { });
-
-  // Record audit history
+  await db.run("UPDATE bookings SET booking_status = 'COMPLETED', payment_status = 'PAID' WHERE id = ?", [bookingId]).catch(() => {
+  });
+  await db.run("UPDATE bookings SET checkout_verified_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => {
+  });
+  await db.run("UPDATE bookings SET completed_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => {
+  });
+  await db.run("UPDATE bookings SET service_completed_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]).catch(() => {
+  });
   await db.run(
     "INSERT INTO booking_status_histories (booking_id, status, notes, created_at, updated_at) VALUES (?, 'COMPLETED', 'Check-Out OTP verified. Booking completed and artist released as AVAILABLE.', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
     [bookingId]
-  ).catch(() => { });
-
-  // Automatically settle booking and release earnings to artist wallet
-  await processBookingSettlement(db, bookingId).catch(() => { });
-
-  // Dispatch completion notifications to Customer and Artist
+  ).catch(() => {
+  });
+  await processBookingSettlement(db, bookingId).catch(() => {
+  });
   if (booking.customer_id) {
     dispatchNotification(db, {
       userId: booking.customer_id,
-      title: "Booking Completed ✨",
+      title: "Booking Completed \u2728",
       body: "Your mehndi service is completed! Please rate and review your artist.",
       type: "BOOKING_COMPLETED",
       entityId: bookingId,
@@ -10308,11 +11520,10 @@ const handleVerifyCheckOutOtp = async (c) => {
       deepLink: `mehendigoo://review/${bookingId}`
     }).catch(() => null);
   }
-
   if (booking.artist_id) {
     dispatchNotification(db, {
       userId: booking.artist_id,
-      title: "Payment Received 💰",
+      title: "Payment Received \u{1F4B0}",
       body: `Booking #${booking.booking_number || bookingId} completed. Earnings credited to your wallet. You are now AVAILABLE for new bookings.`,
       type: "PAYMENT_SUCCESS",
       entityId: bookingId,
@@ -10321,14 +11532,12 @@ const handleVerifyCheckOutOtp = async (c) => {
       deepLink: `mehendigoo://artist/wallet`
     }).catch(() => null);
   }
-
   const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
-
   return jsonRes(c, true, {
     ...updated,
     id: bookingId,
     booking_id: bookingId,
-    bookingId: bookingId,
+    bookingId,
     status: "completed",
     booking_status: "COMPLETED",
     bookingStatus: "COMPLETED",
@@ -10338,17 +11547,11 @@ const handleVerifyCheckOutOtp = async (c) => {
     service_completed_at: nowIso,
     completed_at: nowIso
   }, "Check-Out verified successfully. Booking completed and artist is now AVAILABLE for new bookings!");
-};
-
-// =========================================================================
-// CUSTOMER & ARTIST BOOKING SYSTEM HANDLERS
-// =========================================================================
-
-const handleGetBookingDetails = async (c) => {
+}, "handleVerifyCheckOutOtp");
+var handleGetBookingDetails = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const rawId = c.req.param("id") || c.req.param("bookingId") || c.req.query("bookingId") || c.req.query("id") || c.req.path.split("/").pop();
   const bookingId = parseInt(rawId, 10) || 0;
-
   let booking = null;
   if (bookingId > 0) {
     booking = await db.first(
@@ -10358,11 +11561,9 @@ const handleGetBookingDetails = async (c) => {
   } else if (rawId && rawId.startsWith("MG-")) {
     booking = await db.first("SELECT * FROM bookings WHERE booking_number = ?", [rawId]).catch(() => null);
   }
-
   if (!booking) {
     return jsonRes(c, false, null, "Booking not found", 404);
   }
-
   const bId = booking.id;
   const customer = await db.first("SELECT id, full_name, email, phone, avatar FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [booking.customer_id, String(booking.customer_id)]).catch(() => null);
   const artist = await db.first(`
@@ -10374,38 +11575,26 @@ const handleGetBookingDetails = async (c) => {
   const service = await db.first("SELECT id, title, specialization_name, price, category, duration FROM services WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [booking.service_id, String(booking.service_id)]).catch(() => null);
   const payment = await db.first("SELECT razorpay_payment_id, payment_method, status, amount, created_at FROM payments WHERE booking_id = ? ORDER BY id DESC LIMIT 1", [bId]).catch(() => null);
   const artistLoc = await db.first("SELECT latitude, longitude, speed, heading, updated_at FROM artist_locations WHERE artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT)", [booking.artist_id, String(booking.artist_id)]).catch(() => null);
-
   const rawStatus = (booking.status || "PENDING").toUpperCase();
   let detailedStatus = (booking.detailed_status || booking.status || "PENDING").toUpperCase();
   if (detailedStatus === "ACCEPTED") detailedStatus = "ARTIST_ACCEPTED";
-
-  // Unconditional State Protection:
-  // If checkin_otp_verified is 1 or status is IN_PROGRESS, detailed_status is GUARANTEED to be SERVICE_IN_PROGRESS (unless completed/cancelled)
   const isCheckInVerified = Number(booking.checkin_otp_verified) === 1;
   if (isCheckInVerified || rawStatus === "IN_PROGRESS" || detailedStatus === "IN_PROGRESS") {
     if (detailedStatus !== "COMPLETED" && detailedStatus !== "COMPLETED_CLOSED" && detailedStatus !== "CANCELLED" && detailedStatus !== "CHECKOUT" && detailedStatus !== "PAYMENT_REQUIRED") {
       detailedStatus = "SERVICE_IN_PROGRESS";
     }
   }
-
-  const normBookingStatus = (isCheckInVerified || rawStatus === "IN_PROGRESS" || detailedStatus === "SERVICE_IN_PROGRESS")
-    ? "IN_PROGRESS"
-    : (detailedStatus === "ARTIST_ACCEPTED" || rawStatus === "ACCEPTED" || rawStatus === "ARTIST_ACCEPTED")
-      ? "CONFIRMED"
-      : rawStatus;
-  const code = booking.booking_number || ("MG-" + String(bId).padStart(6, "0"));
+  const normBookingStatus = isCheckInVerified || rawStatus === "IN_PROGRESS" || detailedStatus === "SERVICE_IN_PROGRESS" ? "IN_PROGRESS" : detailedStatus === "ARTIST_ACCEPTED" || rawStatus === "ACCEPTED" || rawStatus === "ARTIST_ACCEPTED" ? "CONFIRMED" : rawStatus;
+  const code = booking.booking_number || "MG-" + String(bId).padStart(6, "0");
   const totalAmt = Number(booking.total_amount || service?.price || 0);
   const advPaid = Number(booking.advance_paid || 0);
-  const remAmt = Number(booking.remaining_amount !== undefined && booking.remaining_amount !== null ? booking.remaining_amount : Math.max(0, totalAmt - advPaid));
-
+  const remAmt = Number(booking.remaining_amount !== void 0 && booking.remaining_amount !== null ? booking.remaining_amount : Math.max(0, totalAmt - advPaid));
   const custName = customer?.full_name || "Valued Customer";
   const custPhone = customer?.phone || "";
   const custAvatar = customer?.avatar || null;
-
   const artName = artist?.name || "Mehndi Specialist";
   const artPhone = artist?.phone || "";
   const artImage = artist?.profile_image || null;
-
   const formatted = {
     ...booking,
     id: bId,
@@ -10419,7 +11608,7 @@ const handleGetBookingDetails = async (c) => {
     booking_status: normBookingStatus,
     bookingStatus: normBookingStatus,
     detailed_status: detailedStatus,
-    detailedStatus: detailedStatus,
+    detailedStatus,
     payment_status: (booking.payment_status || "PENDING").toUpperCase(),
     paymentStatus: (booking.payment_status || "PENDING").toUpperCase(),
     total_amount: totalAmt,
@@ -10510,15 +11699,12 @@ const handleGetBookingDetails = async (c) => {
       status: payment.status || "paid"
     } : null
   };
-
   return jsonRes(c, true, formatted, "Booking details retrieved successfully");
-};
-
-const handleGetCustomerBookings = async (c) => {
+}, "handleGetBookingDetails");
+var handleGetCustomerBookings = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) return jsonRes(c, false, null, "Unauthorized access", 401);
-
   const rawBookings = await db.all(`
     SELECT b.id as id, b.id as booking_id, b.customer_id, b.artist_id, b.service_id, b.booking_number,
            b.booking_date, b.booking_time, b.status, b.detailed_status, b.payment_status, b.total_amount, b.advance_paid,
@@ -10533,26 +11719,19 @@ const handleGetCustomerBookings = async (c) => {
     WHERE (b.customer_id = ? OR CAST(b.customer_id AS TEXT) = CAST(? AS TEXT))
     ORDER BY b.id DESC
   `, [u.id, String(u.id)]).catch(() => []);
-
   const formattedBookings = (rawBookings || []).map((b) => {
     const rawStatus = (b.status || "PENDING").toUpperCase();
     let detailedStatus = (b.detailed_status || b.status || "PENDING").toUpperCase();
     if (detailedStatus === "ACCEPTED") detailedStatus = "ARTIST_ACCEPTED";
-
-    const isCheckInVerified =
-      Number(b.checkin_otp_verified) === 1 ||
-      ["CUSTOMER_VERIFIED", "SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS", "CHECKOUT", "COMPLETED"].includes(detailedStatus);
-
-    const normBookingStatus = (detailedStatus === "ARTIST_ACCEPTED" || rawStatus === "ACCEPTED" || rawStatus === "ARTIST_ACCEPTED") ? "CONFIRMED" : rawStatus;
-    const code = b.booking_number || ("MG-" + String(b.id).padStart(6, "0"));
+    const isCheckInVerified = Number(b.checkin_otp_verified) === 1 || ["CUSTOMER_VERIFIED", "SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS", "CHECKOUT", "COMPLETED"].includes(detailedStatus);
+    const normBookingStatus = detailedStatus === "ARTIST_ACCEPTED" || rawStatus === "ACCEPTED" || rawStatus === "ARTIST_ACCEPTED" ? "CONFIRMED" : rawStatus;
+    const code = b.booking_number || "MG-" + String(b.id).padStart(6, "0");
     const totalAmt = Number(b.total_amount || 0);
     const advPaid = Number(b.advance_paid || 0);
-    const remAmt = Number(b.remaining_amount !== undefined && b.remaining_amount !== null ? b.remaining_amount : Math.max(0, totalAmt - advPaid));
-
+    const remAmt = Number(b.remaining_amount !== void 0 && b.remaining_amount !== null ? b.remaining_amount : Math.max(0, totalAmt - advPaid));
     const artName = b.artist_name || "Mehndi Specialist";
     const artPhone = b.artist_phone || "";
     const artImage = b.artist_image || null;
-
     return {
       ...b,
       id: b.id,
@@ -10566,7 +11745,7 @@ const handleGetCustomerBookings = async (c) => {
       booking_status: normBookingStatus,
       bookingStatus: normBookingStatus,
       detailed_status: detailedStatus,
-      detailedStatus: detailedStatus,
+      detailedStatus,
       checkin_otp_verified: isCheckInVerified ? 1 : 0,
       check_in_otp_verified: isCheckInVerified ? 1 : 0,
       checkin_verified: isCheckInVerified ? true : false,
@@ -10610,52 +11789,43 @@ const handleGetCustomerBookings = async (c) => {
       }
     };
   });
-
   return jsonRes(c, true, formattedBookings, "Customer bookings retrieved");
-};
-
-const handleCancelBooking = async (c) => {
+}, "handleGetCustomerBookings");
+var handleCancelBooking = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   const body = await c.req.json().catch(() => ({}));
   const bookingId = Number(body.bookingId || body.booking_id || body.id || c.req.query("bookingId") || 0);
   const reason = body.cancelReason || body.cancel_reason || body.reason || body.cancellation_reason || "Cancelled by customer";
-
   if (!bookingId) {
     return jsonRes(c, false, null, "Booking ID is required", 400);
   }
-
   const b = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!b) return jsonRes(c, false, null, "Booking not found", 404);
-
   if (u && u.id && String(u.role).toLowerCase() !== "admin") {
     const isOwner = String(b.customer_id) === String(u.id) || String(b.artist_id) === String(u.id);
     if (!isOwner) {
       return jsonRes(c, false, null, "Unauthorized: You do not have permission to cancel this booking", 403);
     }
   }
-
   const currentSt = String(b.status || "").toUpperCase();
   if (["CANCELLED", "REJECTED", "REFUNDED"].includes(currentSt)) {
     return jsonRes(c, true, b, "Booking is already cancelled");
   }
-
   if (["ARRIVED", "ARTIST_ARRIVED", "SERVICE_STARTED", "IN_PROGRESS", "COMPLETED", "COMPLETED_CLOSED"].includes(currentSt)) {
     return jsonRes(c, false, null, "Booking cannot be cancelled after specialist arrival or service start", 400);
   }
-
   const advancePaid = Number(b.advance_paid || 0);
-
   await db.run(
     "CREATE TABLE IF NOT EXISTS refunds (id INTEGER PRIMARY KEY AUTOINCREMENT, booking_id INTEGER, amount REAL, reason TEXT, status TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)"
-  ).catch(() => { });
-
+  ).catch(() => {
+  });
   if (advancePaid > 0) {
     await db.run(
       "INSERT INTO refunds (booking_id, amount, reason, status) VALUES (?, ?, ?, 'PROCESSED')",
       [bookingId, advancePaid, reason]
-    ).catch(() => { });
-
+    ).catch(() => {
+    });
     await db.run(
       "UPDATE bookings SET status = 'cancelled', booking_status = 'CANCELLED', detailed_status = 'CANCELLED', payment_status = 'REFUNDED', notes = ? WHERE id = ?",
       [reason, bookingId]
@@ -10666,14 +11836,12 @@ const handleCancelBooking = async (c) => {
       [reason, bookingId]
     );
   }
-
-  // Reverse artist escrow balance upon booking cancellation
-  await processBookingRefund(db, bookingId, reason).catch(() => { });
-
+  await processBookingRefund(db, bookingId, reason).catch(() => {
+  });
   if (b.customer_id) {
     dispatchNotification(db, {
       userId: b.customer_id,
-      title: "Booking Cancelled ❌",
+      title: "Booking Cancelled \u274C",
       body: `Your booking #${b.booking_number || bookingId} has been cancelled.`,
       type: "BOOKING_CANCELLED",
       entityId: bookingId,
@@ -10681,11 +11849,10 @@ const handleCancelBooking = async (c) => {
       channelId: "bookings"
     }).catch(() => null);
   }
-
   if (b.artist_id) {
     dispatchNotification(db, {
       userId: b.artist_id,
-      title: "Booking Cancelled ℹ️",
+      title: "Booking Cancelled \u2139\uFE0F",
       body: `Booking #${b.booking_number || bookingId} has been cancelled.`,
       type: "BOOKING_CANCELLED",
       entityId: bookingId,
@@ -10693,26 +11860,23 @@ const handleCancelBooking = async (c) => {
       channelId: "bookings"
     }).catch(() => null);
   }
-
   const updatedBooking = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
   return jsonRes(c, true, {
     ...updatedBooking,
     id: bookingId,
     booking_id: bookingId,
-    bookingId: bookingId,
+    bookingId,
     status: "cancelled",
     booking_status: "CANCELLED",
     detailed_status: "CANCELLED",
     payment_status: advancePaid > 0 ? "REFUNDED" : updatedBooking?.payment_status,
     refund_amount: advancePaid
   }, "Booking cancelled successfully");
-};
-
-const handleCheckRestrictedBooking = async (c) => {
+}, "handleCancelBooking");
+var handleCheckRestrictedBooking = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
   if (!u || !u.id) return jsonRes(c, true, { hasRestricted: false, activeBooking: null });
-
   const activeBooking = await db.first(`
     SELECT id, booking_number, status, detailed_status, booking_date, booking_time, artist_id, total_amount
     FROM bookings
@@ -10720,48 +11884,41 @@ const handleCheckRestrictedBooking = async (c) => {
       AND LOWER(status) IN ('accepted', 'confirmed', 'in_progress', 'on_the_way', 'arrived', 'service_started')
     ORDER BY id DESC LIMIT 1
   `, [u.id, String(u.id)]).catch(() => null);
-
   return jsonRes(c, true, {
     hasRestricted: Boolean(activeBooking),
     activeBooking: activeBooking || null
   }, "Restricted booking check completed");
-};
-
-const handleSelectCashPayment = async (c) => {
+}, "handleCheckRestrictedBooking");
+var handleSelectCashPayment = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const body = await c.req.json().catch(() => ({}));
   const bookingId = Number(body.bookingId || body.booking_id || body.id || 0);
   if (!bookingId) return jsonRes(c, false, null, "Booking ID is required", 400);
-
-  await db.run("UPDATE bookings SET payment_mode = 'CASH' WHERE id = ?", [bookingId]).catch(() => { });
+  await db.run("UPDATE bookings SET payment_mode = 'CASH' WHERE id = ?", [bookingId]).catch(() => {
+  });
   return jsonRes(c, true, { bookingId, payment_mode: "CASH" }, "Cash payment selected successfully");
-};
-
-const handleConfirmCashPayment = async (c) => {
+}, "handleSelectCashPayment");
+var handleConfirmCashPayment = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const body = await c.req.json().catch(() => ({}));
   const bookingId = Number(body.bookingId || body.booking_id || body.id || 0);
   if (!bookingId) return jsonRes(c, false, null, "Booking ID is required", 400);
-
   const b = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
   if (b) {
     const total = Number(b.total_amount || 0);
     await db.run("UPDATE bookings SET status = 'completed', booking_status = 'COMPLETED', detailed_status = 'COMPLETED', payment_status = 'paid', advance_paid = ?, remaining_amount = 0, completed_at = CURRENT_TIMESTAMP WHERE id = ?", [total, bookingId]);
-    await processBookingSettlement(db, bookingId).catch(() => { });
+    await processBookingSettlement(db, bookingId).catch(() => {
+    });
   }
   return jsonRes(c, true, { booking_id: bookingId, status: "completed", payment_status: "paid" }, "Cash payment confirmed and service completed");
-};
-
-const handleRejectCashPayment = async (c) => {
+}, "handleConfirmCashPayment");
+var handleRejectCashPayment = /* @__PURE__ */ __name(async (c) => {
   const db = getDb(c.env);
   const body = await c.req.json().catch(() => ({}));
   const bookingId = Number(body.bookingId || body.booking_id || body.id || 0);
   if (!bookingId) return jsonRes(c, false, null, "Booking ID is required", 400);
-
   return jsonRes(c, true, { booking_id: bookingId, status: "cash_rejected" }, "Cash payment marked as rejected");
-};
-
-// Authentication & User Routes
+}, "handleRejectCashPayment");
 addRoute("post", "/auth/send-otp", handleSendOtp);
 addRoute("post", "/auth/verify-otp", handleVerifyOtp);
 addRoute("post", "/user/send-otp", handleSendOtp);
@@ -10770,7 +11927,6 @@ addRoute("post", "/customer/send-otp", handleSendOtp);
 addRoute("post", "/customer/verify-otp", handleVerifyOtp);
 addRoute("post", "/artist/send-otp", handleSendOtp);
 addRoute("post", "/artist/verify-otp", handleVerifyOtp);
-
 addRoute("post", "/auth/register/send-otp", handleRegisterSendOtp);
 addRoute("post", "/auth/register/verify-otp", handleRegisterVerifyOtp);
 addRoute("post", "/user/register/send-otp", handleRegisterSendOtp);
@@ -10779,7 +11935,6 @@ addRoute("post", "/customer/register/send-otp", handleRegisterSendOtp);
 addRoute("post", "/customer/register/verify-otp", handleRegisterVerifyOtp);
 addRoute("post", "/artist/register/send-otp", handleRegisterSendOtp);
 addRoute("post", "/artist/register/verify-otp", handleRegisterVerifyOtp);
-
 addRoute("post", "/auth/login", handleLogin);
 addRoute("post", "/user/login", handleLogin);
 addRoute("post", "/customer/login", handleLogin);
@@ -10788,14 +11943,12 @@ addRoute("post", "/auth/register", handleRegister);
 addRoute("post", "/user/register", handleRegister);
 addRoute("post", "/auth/check-email", handleCheckEmail);
 addRoute("post", "/user/check-email", handleCheckEmail);
-
 addRoute("post", "/admin/auth/send-otp", handleAdminSendOtp);
 addRoute("post", "/admin/auth/verify-otp", handleAdminVerifyOtp);
 addRoute("post", "/auth/admin/send-otp", handleAdminSendOtp);
 addRoute("post", "/auth/admin/verify-otp", handleAdminVerifyOtp);
 addRoute("post", "/admin/send-otp", handleAdminSendOtp);
 addRoute("post", "/admin/verify-otp", handleAdminVerifyOtp);
-
 addRoute("get", "/user/profile", handleGetProfile);
 addRoute("get", "/customer/profile", handleGetProfile);
 addRoute("get", "/auth/profile", handleGetProfile);
@@ -10804,7 +11957,6 @@ addRoute("put", "/user/profile", handleUpdateProfile);
 addRoute("put", "/customer/profile", handleUpdateProfile);
 addRoute("post", "/user/profile", handleUpdateProfile);
 addRoute("post", "/customer/profile", handleUpdateProfile);
-
 addRoute("get", "/artist/details", handleGetArtistDetails);
 addRoute("get", "/artist/artistdetails", handleGetArtistDetails);
 addRoute("get", "/artist/profile", handleGetArtistDetails);
@@ -10815,7 +11967,6 @@ addRoute("put", "/artist/availability", handleUpdateArtistAvailability);
 addRoute("post", "/artist/availability", handleUpdateArtistAvailability);
 addRoute("get", "/customer/artist/:id/availability", handleGetArtistAvailability);
 addRoute("get", "/customer/artist/:artistId/availability", handleGetArtistAvailability);
-
 addRoute("get", "/booking/details/:id", handleGetBookingDetails);
 addRoute("get", "/booking/details", handleGetBookingDetails);
 addRoute("get", "/booking/:id", handleGetBookingDetails);
@@ -10823,49 +11974,40 @@ addRoute("get", "/customer/booking/:id", handleGetBookingDetails);
 addRoute("get", "/customer/booking/details/:id", handleGetBookingDetails);
 addRoute("get", "/artist/booking/:id", handleGetBookingDetails);
 addRoute("get", "/artist/booking/details/:id", handleGetBookingDetails);
-
 addRoute("get", "/customer/bookings", handleGetCustomerBookings);
 addRoute("get", "/booking/history", handleGetCustomerBookings);
 addRoute("get", "/customer/booking/history", handleGetCustomerBookings);
 addRoute("get", "/api/v1/customer/bookings", handleGetCustomerBookings);
-
 addRoute("get", "/booking/check-restricted", handleCheckRestrictedBooking);
 addRoute("get", "/customer/booking/check-restricted", handleCheckRestrictedBooking);
-
 addRoute("put", "/booking/cancel", handleCancelBooking);
 addRoute("post", "/booking/cancel", handleCancelBooking);
 addRoute("put", "/customer/booking/cancel", handleCancelBooking);
 addRoute("post", "/customer/booking/cancel", handleCancelBooking);
-
 addRoute("put", "/booking/select-cash", handleSelectCashPayment);
 addRoute("post", "/booking/select-cash", handleSelectCashPayment);
 addRoute("put", "/booking/confirm-cash", handleConfirmCashPayment);
 addRoute("post", "/booking/confirm-cash", handleConfirmCashPayment);
 addRoute("put", "/booking/reject-cash", handleRejectCashPayment);
 addRoute("post", "/booking/reject-cash", handleRejectCashPayment);
-
 addRoute("post", "/booking", handleCreateBookingExplicit);
 addRoute("post", "/booking/create", handleCreateBookingExplicit);
 addRoute("post", "/customer/booking", handleCreateBookingExplicit);
 addRoute("post", "/customer/booking/create", handleCreateBookingExplicit);
-
 addRoute("post", "/booking/validate-arrival", handleValidateArrival);
 addRoute("post", "/booking/arrived", handleValidateArrival);
 addRoute("put", "/booking/arrived", handleValidateArrival);
 addRoute("post", "/artist/booking/arrived", handleValidateArrival);
 addRoute("post", "/api/v1/booking/validate-arrival", handleValidateArrival);
-
 addRoute("post", "/booking/on-the-way", handleOnTheWayBooking);
 addRoute("put", "/booking/on-the-way", handleOnTheWayBooking);
 addRoute("post", "/artist/booking/on-the-way", handleOnTheWayBooking);
 addRoute("put", "/artist/booking/on-the-way", handleOnTheWayBooking);
 addRoute("post", "/api/v1/booking/on-the-way", handleOnTheWayBooking);
-
 addRoute("post", "/booking/check-in", handleVerifyCheckInOtp);
 addRoute("post", "/booking/verify-checkin-otp", handleVerifyCheckInOtp);
 addRoute("post", "/artist/booking/check-in", handleVerifyCheckInOtp);
 addRoute("post", "/api/v1/booking/check-in", handleVerifyCheckInOtp);
-
 addRoute("post", "/booking/start-service", handleStartService);
 addRoute("post", "/booking/start", handleStartService);
 addRoute("put", "/booking/start", handleStartService);
@@ -10873,7 +12015,6 @@ addRoute("post", "/artist/booking/start-service", handleStartService);
 addRoute("post", "/artist/booking/start", handleStartService);
 addRoute("put", "/artist/booking/start", handleStartService);
 addRoute("post", "/api/v1/booking/start-service", handleStartService);
-
 addRoute("post", "/booking/send-checkin-otp", handleSendCheckInOtp);
 addRoute("post", "/booking/send-checkout-otp", handleSendCheckOutOtp);
 addRoute("post", "/booking/complete", handleVerifyCheckOutOtp);
@@ -10881,7 +12022,6 @@ addRoute("put", "/booking/complete", handleVerifyCheckOutOtp);
 addRoute("post", "/booking/verify-checkout-otp", handleVerifyCheckOutOtp);
 addRoute("post", "/artist/booking/complete", handleVerifyCheckOutOtp);
 addRoute("post", "/api/v1/booking/complete", handleVerifyCheckOutOtp);
-
 addRoute("get", "/booking/invoice", handleGetInvoice);
 addRoute("put", "/booking/reschedule", handleRescheduleBooking);
 addRoute("put", "/booking/accept", handleAcceptBooking);
@@ -10890,14 +12030,12 @@ addRoute("put", "/artist/booking/accept", handleAcceptBooking);
 addRoute("post", "/artist/booking/accept", handleAcceptBooking);
 addRoute("put", "/api/v1/booking/accept", handleAcceptBooking);
 addRoute("post", "/api/v1/booking/accept", handleAcceptBooking);
-
 addRoute("put", "/booking/reject", handleRejectBooking);
 addRoute("post", "/booking/reject", handleRejectBooking);
 addRoute("put", "/artist/booking/reject", handleRejectBooking);
 addRoute("post", "/artist/booking/reject", handleRejectBooking);
 addRoute("put", "/api/v1/booking/reject", handleRejectBooking);
 addRoute("post", "/api/v1/booking/reject", handleRejectBooking);
-
 addRoute("get", "/booking/:bookingId/location", handleGetArtistLocation);
 addRoute("get", "/api/v1/booking/:bookingId/location", handleGetArtistLocation);
 addRoute("get", "/booking/route", handleGetDirectionsRoute);
@@ -10908,37 +12046,30 @@ addRoute("post", "/artist/location/update", handleUpdateArtistLocation);
 addRoute("post", "/mehndigo/artist/location/update", handleUpdateArtistLocation);
 addRoute("post", "/api/v1/artist/location/update", handleUpdateArtistLocation);
 addRoute("post", "/api/v1/mehndigo/artist/location/update", handleUpdateArtistLocation);
-
 app.get("/artist/bookings", handleGetArtistBookings);
 addRoute("get", "/artist/bookings", handleGetArtistBookings);
 addRoute("get", "/artist/booking/list", handleGetArtistBookings);
 addRoute("get", "/api/v1/artist/bookings", handleGetArtistBookings);
-
 addRoute("get", "/category", handleGetCategories);
 addRoute("get", "/categories", handleGetCategories);
 addRoute("get", "/customer/category", handleGetCategories);
 addRoute("get", "/customer/categories", handleGetCategories);
-
-// Reels & Social Portfolio Endpoints (Cloudflare D1 Backed)
 addRoute("get", "/customer/reels", handleGetReels);
 addRoute("get", "/reels", handleGetReels);
 addRoute("get", "/api/v1/customer/reels", handleGetReels);
 addRoute("get", "/api/v1/reels", handleGetReels);
-
 addRoute("post", "/customer/portfolio/like", handleLikePortfolio);
 addRoute("post", "/portfolio/like", handleLikePortfolio);
 addRoute("delete", "/customer/portfolio/like", handleUnlikePortfolio);
 addRoute("delete", "/portfolio/like", handleUnlikePortfolio);
 addRoute("post", "/customer/portfolio/unlike", handleUnlikePortfolio);
 addRoute("post", "/portfolio/unlike", handleUnlikePortfolio);
-
 addRoute("post", "/customer/portfolio/save", handleSavePortfolio);
 addRoute("post", "/portfolio/save", handleSavePortfolio);
 addRoute("delete", "/customer/portfolio/save", handleUnsavePortfolio);
 addRoute("delete", "/portfolio/save", handleUnsavePortfolio);
 addRoute("get", "/customer/portfolio/saved", handleGetSavedPortfolios);
 addRoute("get", "/portfolio/saved", handleGetSavedPortfolios);
-
 addRoute("post", "/customer/portfolio/:id/comment", handleCommentPortfolio);
 addRoute("post", "/portfolio/:id/comment", handleCommentPortfolio);
 addRoute("get", "/customer/portfolio/:id/comments", handleGetPortfolioComments);
@@ -10947,30 +12078,24 @@ addRoute("delete", "/customer/portfolio/comment/:commentId", handleDeletePortfol
 addRoute("delete", "/customer/portfolio/:id/comment/:commentId", handleDeletePortfolioComment);
 addRoute("delete", "/portfolio/comment/:commentId", handleDeletePortfolioComment);
 addRoute("delete", "/portfolio/:id/comment/:commentId", handleDeletePortfolioComment);
-
 addRoute("post", "/customer/portfolio/:id/view", handleAddViewToPortfolio);
 addRoute("post", "/portfolio/:id/view", handleAddViewToPortfolio);
-
 addRoute("post", "/reviews/upload", handleUploadChatMedia);
 addRoute("post", "/review/upload", handleUploadChatMedia);
 addRoute("post", "/customer/reviews/upload", handleUploadChatMedia);
 addRoute("post", "/customer/review/upload", handleUploadChatMedia);
 addRoute("post", "/chat/upload", handleUploadChatMedia);
 addRoute("post", "/chat/media", handleUploadChatMedia);
-
-// Support Tickets Routes (Artist & Customer)
 addRoute("post", "/customer/support/ticket", handleCustomerSupportTicket);
 addRoute("get", "/customer/support/tickets", handleCustomerSupportTicket);
 addRoute("get", "/customer/support/tickets/:id", handleCustomerSupportTicket);
 addRoute("post", "/customer/support/tickets/:id/reply", handleCustomerSupportTicket);
 addRoute("put", "/customer/support/tickets/:id/close", handleCustomerSupportTicket);
-
 addRoute("post", "/artist/support/ticket", handleCustomerSupportTicket);
 addRoute("get", "/artist/support/tickets", handleCustomerSupportTicket);
 addRoute("get", "/artist/support/tickets/:id", handleCustomerSupportTicket);
 addRoute("post", "/artist/support/tickets/:id/reply", handleCustomerSupportTicket);
 addRoute("put", "/artist/support/tickets/:id/close", handleCustomerSupportTicket);
-
 addRoute("post", "/support/ticket", handleCustomerSupportTicket);
 addRoute("post", "/support/tickets", handleCustomerSupportTicket);
 addRoute("get", "/support/tickets", handleCustomerSupportTicket);
@@ -10984,8 +12109,6 @@ addRoute("post", "/support/tickets/:id/reopen", handleCustomerSupportTicket);
 addRoute("post", "/support/tickets/:id/read", handleCustomerSupportTicket);
 addRoute("post", "/customer/support/tickets/:id/read", handleCustomerSupportTicket);
 addRoute("post", "/artist/support/tickets/:id/read", handleCustomerSupportTicket);
-
-// Admin Support Tickets Management Routes
 addRoute("get", "/admin/support-tickets", handleAdminSupportTickets);
 addRoute("get", "/admin/support/tickets", handleAdminSupportTickets);
 addRoute("get", "/admin/support/tickets/:id", handleAdminSupportTickets);
@@ -10998,10 +12121,12 @@ addRoute("patch", "/admin/support-tickets/:id/status", handleAdminSupportTickets
 addRoute("patch", "/admin/support/tickets/:id/status", handleAdminSupportTickets);
 addRoute("post", "/admin/support-tickets/:id/status", handleAdminSupportTickets);
 addRoute("post", "/admin/support/tickets/:id/status", handleAdminSupportTickets);
-
-// Fallback 404 handler
 app.notFound((c) => {
   return c.json({ success: false, message: "Route Not Found on Cloudflare Worker Backend" }, 404);
 });
-
-export default app;
+var index_default = app;
+export {
+  index_default as default,
+  ensureReelsTables
+};
+//# sourceMappingURL=index.js.map
