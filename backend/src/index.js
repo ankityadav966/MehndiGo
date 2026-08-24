@@ -1174,14 +1174,17 @@ const handleFileUpload = async (c) => {
     return jsonRes(c, false, null, uploadData.error?.message || "Cloudinary upload failed", uploadRes.status || 500);
   }
 
-  return jsonRes(c, true, [{
+  const payload = {
     url: uploadData.secure_url,
     secure_url: uploadData.secure_url,
+    thumbnail: uploadData.secure_url,
     public_id: uploadData.public_id,
     resource_type: uploadData.resource_type || resourceType,
     format: uploadData.format,
     bytes: uploadData.bytes,
-  }], "Media uploaded successfully");
+  };
+
+  return jsonRes(c, true, payload, "Media uploaded successfully");
 };
 
 // Route Registration Helper
@@ -8011,22 +8014,43 @@ const ensureReviewTables = async (db) => {
     CREATE TABLE IF NOT EXISTS reviews (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       customer_id INTEGER,
+      user_id INTEGER,
       artist_id INTEGER,
-      booking_id INTEGER,
-      rating REAL,
+      booking_id INTEGER UNIQUE,
+      rating REAL NOT NULL,
       comment TEXT,
-      status TEXT DEFAULT 'PENDING',
-      is_approved INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      design_quality REAL,
+      punctuality REAL,
+      professionalism REAL,
+      photos TEXT,
+      video_url TEXT,
+      video_thumbnail TEXT,
+      status TEXT DEFAULT 'APPROVED',
+      is_approved INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `).catch(() => { });
 
-  await db.run("ALTER TABLE reviews ADD COLUMN status TEXT DEFAULT 'PENDING'").catch(() => { });
-  await db.run("ALTER TABLE reviews ADD COLUMN is_approved INTEGER DEFAULT 0").catch(() => { });
   await db.run("ALTER TABLE reviews ADD COLUMN customer_id INTEGER").catch(() => { });
+  await db.run("ALTER TABLE reviews ADD COLUMN user_id INTEGER").catch(() => { });
+  await db.run("ALTER TABLE reviews ADD COLUMN artist_id INTEGER").catch(() => { });
+  await db.run("ALTER TABLE reviews ADD COLUMN booking_id INTEGER").catch(() => { });
+  await db.run("ALTER TABLE reviews ADD COLUMN rating REAL DEFAULT 5").catch(() => { });
+  await db.run("ALTER TABLE reviews ADD COLUMN comment TEXT").catch(() => { });
+  await db.run("ALTER TABLE reviews ADD COLUMN design_quality REAL").catch(() => { });
+  await db.run("ALTER TABLE reviews ADD COLUMN punctuality REAL").catch(() => { });
+  await db.run("ALTER TABLE reviews ADD COLUMN professionalism REAL").catch(() => { });
+  await db.run("ALTER TABLE reviews ADD COLUMN photos TEXT").catch(() => { });
+  await db.run("ALTER TABLE reviews ADD COLUMN video_url TEXT").catch(() => { });
+  await db.run("ALTER TABLE reviews ADD COLUMN video_thumbnail TEXT").catch(() => { });
+  await db.run("ALTER TABLE reviews ADD COLUMN status TEXT DEFAULT 'APPROVED'").catch(() => { });
+  await db.run("ALTER TABLE reviews ADD COLUMN is_approved INTEGER DEFAULT 1").catch(() => { });
+  await db.run("ALTER TABLE reviews ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP").catch(() => { });
+  await db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_booking_unique ON reviews(booking_id)").catch(() => { });
 };
 
-// 1. Customer Submits Review (Defaults to PENDING until Admin Approval)
+// 1. Customer Submits Review
 const handleCreateReview = async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
@@ -8035,43 +8059,123 @@ const handleCreateReview = async (c) => {
 
   try {
     const body = await c.req.json().catch(() => ({}));
-    const artistId = Number(body.artist_id || body.artistId || 0);
     const bookingId = Number(body.booking_id || body.bookingId || 0);
-    const rating = Number(body.rating || 5);
-    const comment = String(body.comment || body.review || "Great experience!");
+    const rating = Math.min(5, Math.max(1, Number(body.rating || 5)));
+    const comment = String(body.comment || body.review || "").trim();
+    const designQuality = body.design_quality !== undefined ? Number(body.design_quality) : rating;
+    const punctuality = body.punctuality !== undefined ? Number(body.punctuality) : rating;
+    const professionalism = body.professionalism !== undefined ? Number(body.professionalism) : rating;
 
-    let result = await db.run(`
-      INSERT INTO reviews (customer_id, artist_id, booking_id, rating, comment, status, is_approved, created_at)
-      VALUES (?, ?, ?, ?, ?, 'PENDING', 0, CURRENT_TIMESTAMP)
-    `, [u.id, artistId, bookingId, rating, comment]).catch(async (e) => {
-      // Fallback if schema has user_id instead of customer_id
-      return await db.run(`
-        INSERT INTO reviews (user_id, artist_id, booking_id, rating, comment, status, is_approved, created_at)
-        VALUES (?, ?, ?, ?, ?, 'PENDING', 0, CURRENT_TIMESTAMP)
-      `, [u.id, artistId, bookingId, rating, comment]).catch(() => null);
-    });
+    // Photos: Parse array or JSON string
+    let photosList = [];
+    if (Array.isArray(body.photos)) {
+      photosList = body.photos.filter(p => typeof p === 'string' && p.trim() !== "");
+    } else if (typeof body.photos === 'string' && body.photos.trim() !== "") {
+      try {
+        const parsed = JSON.parse(body.photos);
+        if (Array.isArray(parsed)) photosList = parsed;
+        else photosList = [body.photos];
+      } catch (_) {
+        photosList = [body.photos];
+      }
+    }
+    const photosJson = JSON.stringify(photosList);
+    const videoUrl = body.video_url ? String(body.video_url).trim() : null;
+    const videoThumbnail = body.video_thumbnail ? String(body.video_thumbnail).trim() : null;
+
+    if (!bookingId) {
+      return jsonRes(c, false, null, "Booking ID is required", 400);
+    }
+
+    // 1. Fetch booking & validate existence
+    const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
+    if (!booking) {
+      return jsonRes(c, false, null, "Booking not found", 404);
+    }
+
+    // 2. Validate customer eligibility (only booking customer can review)
+    const bookingCustomerId = Number(booking.customer_id || booking.user_id);
+    if (Number(u.id) !== bookingCustomerId && u.role !== 'ADMIN') {
+      return jsonRes(c, false, null, "Forbidden: You can only review your own bookings", 403);
+    }
+
+    // 3. Validate booking is eligible for review (Service completed / in_progress / checkin verified)
+    const rawStatus = String(booking.status || "").toUpperCase();
+    const detailedStatus = String(booking.detailed_status || "").toUpperCase();
+    const eligibleStatuses = ["COMPLETED", "SERVICE_COMPLETED", "IN_PROGRESS", "SERVICE_IN_PROGRESS", "CHECKOUT", "CUSTOMER_VERIFIED"];
+    const isCheckInVerified = Number(booking.checkin_otp_verified) === 1 || booking.checkin_verified === true;
+    
+    if (!eligibleStatuses.includes(rawStatus) && !eligibleStatuses.includes(detailedStatus) && !isCheckInVerified && !booking.service_completed_at) {
+      return jsonRes(c, false, null, "Cannot submit review for an unserviced or cancelled booking", 400);
+    }
+
+    const artistId = Number(body.artist_id || body.artistId || booking.artist_id || 0);
+
+    // 4. Duplicate Review Prevention: Check if review already exists for this booking
+    const existingReview = await db.first("SELECT * FROM reviews WHERE booking_id = ? OR CAST(booking_id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
+    if (existingReview) {
+      let existingPhotos = [];
+      try {
+        existingPhotos = typeof existingReview.photos === 'string' ? JSON.parse(existingReview.photos || '[]') : (existingReview.photos || []);
+      } catch (_) {
+        existingPhotos = [];
+      }
+      return jsonRes(c, false, {
+        review: {
+          ...existingReview,
+          photos: existingPhotos,
+          rating: Number(existingReview.rating || 5)
+        }
+      }, "You have already submitted a review for this booking", 400);
+    }
+
+    // 5. Insert Review into Database (Status APPROVED for immediate reflection)
+    const result = await db.run(`
+      INSERT INTO reviews (customer_id, user_id, artist_id, booking_id, rating, comment, design_quality, punctuality, professionalism, photos, video_url, video_thumbnail, status, is_approved, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'APPROVED', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `, [u.id, u.id, artistId, bookingId, rating, comment, designQuality, punctuality, professionalism, photosJson, videoUrl, videoThumbnail]);
 
     const reviewId = result?.lastInsertRowid || result?.meta?.last_row_id || Date.now();
 
-    // Notify Administrator about pending review
-    await db.run(
-      "INSERT INTO notifications (user_id, title, message, type, is_read) VALUES (1, ?, ?, 'REVIEW_MODERATION', 0)",
-      [
-        `Review #${reviewId} Awaiting Approval ⭐${rating}`,
-        `${u.full_name || 'Customer'} submitted a review for Artist #${artistId}. Please review and approve.`
-      ]
-    ).catch(() => { });
+    // 6. Recalculate Artist Average Rating and Total Reviews
+    if (artistId > 0) {
+      const stats = await db.first(`
+        SELECT COUNT(*) as total_reviews, AVG(rating) as avg_rating
+        FROM reviews
+        WHERE (artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT))
+          AND (status = 'APPROVED' OR is_approved = 1)
+      `, [artistId, String(artistId)]).catch(() => null);
 
-    return jsonRes(c, true, {
+      const totalReviews = Number(stats?.total_reviews || 1);
+      const avgRating = Number(Number(stats?.avg_rating || rating).toFixed(1));
+
+      await db.run(`
+        UPDATE artist_profiles
+        SET rating = ?, total_reviews = ?
+        WHERE id = ? OR user_id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT) OR CAST(user_id AS TEXT) = CAST(? AS TEXT)
+      `, [avgRating, totalReviews, artistId, artistId, String(artistId), String(artistId)]).catch(() => {});
+    }
+
+    const savedReview = {
       id: reviewId,
       customer_id: u.id,
+      user_id: u.id,
       artist_id: artistId,
       booking_id: bookingId,
       rating,
       comment,
-      status: "PENDING",
-      is_approved: false
-    }, "Review submitted successfully! It will be visible on the artist profile once approved by admin.");
+      design_quality: designQuality,
+      punctuality,
+      professionalism,
+      photos: photosList,
+      video_url: videoUrl,
+      video_thumbnail: videoThumbnail,
+      status: "APPROVED",
+      is_approved: true,
+      created_at: new Date().toISOString()
+    };
+
+    return jsonRes(c, true, savedReview, "Review submitted successfully! Thank you for your feedback.");
   } catch (err) {
     return jsonRes(c, false, null, "Failed to submit review: " + err.message, 500);
   }
@@ -8129,13 +8233,27 @@ const handleGetArtistReviews = async (c) => {
     distribution[starVal] = (distribution[starVal] || 0) + 1;
     sumRating += Number(r.rating || 5);
 
+    let photos = [];
+    try {
+      photos = typeof r.photos === 'string' ? JSON.parse(r.photos || '[]') : (r.photos || []);
+    } catch (_) {
+      photos = [];
+    }
+
     return {
       id: r.id,
       user_id: r.customer_id || r.user_id,
+      customer_id: r.customer_id || r.user_id,
       artist_id: r.artist_id,
       booking_id: r.booking_id,
       rating: Number(r.rating || 5),
       comment: r.comment || "",
+      design_quality: Number(r.design_quality || r.rating || 5),
+      punctuality: Number(r.punctuality || r.rating || 5),
+      professionalism: Number(r.professionalism || r.rating || 5),
+      photos,
+      video_url: r.video_url || null,
+      video_thumbnail: r.video_thumbnail || null,
       created_at: r.created_at,
       user: {
         id: r.customer_id || r.user_id,
@@ -8154,6 +8272,44 @@ const handleGetArtistReviews = async (c) => {
     total_reviews: totalReviews,
     distribution
   }, "Artist reviews fetched");
+};
+
+// 2b. Get Review for a Specific Booking
+const handleGetReviewByBooking = async (c) => {
+  const db = getDb(c.env);
+  await ensureReviewTables(db);
+  const rawId = c.req.param("bookingId") || c.req.param("id") || c.req.query("bookingId") || c.req.query("booking_id") || c.req.query("id");
+  const bookingId = parseInt(rawId, 10) || 0;
+  if (!bookingId) return jsonRes(c, false, null, "Booking ID is required", 400);
+
+  const review = await db.first("SELECT * FROM reviews WHERE booking_id = ? OR CAST(booking_id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
+  if (!review) {
+    return jsonRes(c, true, null, "No review found for this booking");
+  }
+
+  let photos = [];
+  try {
+    photos = typeof review.photos === 'string' ? JSON.parse(review.photos || '[]') : (review.photos || []);
+  } catch (_) {
+    photos = [];
+  }
+
+  return jsonRes(c, true, {
+    id: review.id,
+    customer_id: review.customer_id || review.user_id,
+    artist_id: review.artist_id,
+    booking_id: review.booking_id,
+    rating: Number(review.rating || 5),
+    comment: review.comment || "",
+    design_quality: Number(review.design_quality || review.rating || 5),
+    punctuality: Number(review.punctuality || review.rating || 5),
+    professionalism: Number(review.professionalism || review.rating || 5),
+    photos,
+    video_url: review.video_url || null,
+    video_thumbnail: review.video_thumbnail || null,
+    created_at: review.created_at,
+    status: review.status || "APPROVED"
+  }, "Review retrieved successfully");
 };
 
 // 3. Admin: Get All Reviews (With Status & Moderation Details)
@@ -8292,6 +8448,10 @@ addRoute("post", "/review/create", handleCreateReview);
 addRoute("post", "/reviews", handleCreateReview);
 addRoute("post", "/customer/review", handleCreateReview);
 addRoute("post", "/artist/review", handleCreateReview);
+addRoute("get", "/reviews/booking/:bookingId", handleGetReviewByBooking);
+addRoute("get", "/customer/review/:bookingId", handleGetReviewByBooking);
+addRoute("get", "/review/booking/:bookingId", handleGetReviewByBooking);
+addRoute("get", "/booking/:bookingId/review", handleGetReviewByBooking);
 addRoute("get", "/artist/reviews", handleGetArtistReviews);
 addRoute("get", "/artist/reviews/:id", handleGetArtistReviews);
 addRoute("get", "/reviews", handleGetArtistReviews);
@@ -10384,6 +10544,33 @@ const handleGetBookingDetails = async (c) => {
   const payment = await db.first("SELECT razorpay_payment_id, payment_method, status, amount, created_at FROM payments WHERE booking_id = ? ORDER BY id DESC LIMIT 1", [bId]).catch(() => null);
   const artistLoc = await db.first("SELECT latitude, longitude, speed, heading, updated_at FROM artist_locations WHERE artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT)", [booking.artist_id, String(booking.artist_id)]).catch(() => null);
 
+  const existingReview = await db.first("SELECT * FROM reviews WHERE booking_id = ? OR CAST(booking_id AS TEXT) = CAST(? AS TEXT)", [bId, String(bId)]).catch(() => null);
+  let reviewData = null;
+  if (existingReview) {
+    let photos = [];
+    try {
+      photos = typeof existingReview.photos === 'string' ? JSON.parse(existingReview.photos || '[]') : (existingReview.photos || []);
+    } catch (_) {
+      photos = [];
+    }
+    reviewData = {
+      id: existingReview.id,
+      customer_id: existingReview.customer_id || existingReview.user_id,
+      artist_id: existingReview.artist_id,
+      booking_id: existingReview.booking_id,
+      rating: Number(existingReview.rating || 5),
+      comment: existingReview.comment || "",
+      design_quality: Number(existingReview.design_quality || existingReview.rating || 5),
+      punctuality: Number(existingReview.punctuality || existingReview.rating || 5),
+      professionalism: Number(existingReview.professionalism || existingReview.rating || 5),
+      photos,
+      video_url: existingReview.video_url || null,
+      video_thumbnail: existingReview.video_thumbnail || null,
+      created_at: existingReview.created_at,
+      status: existingReview.status || "APPROVED"
+    };
+  }
+
   const rawStatus = (booking.status || "PENDING").toUpperCase();
   let detailedStatus = (booking.detailed_status || booking.status || "PENDING").toUpperCase();
   if (detailedStatus === "ACCEPTED") detailedStatus = "ARTIST_ACCEPTED";
@@ -10517,7 +10704,8 @@ const handleGetBookingDetails = async (c) => {
       transaction_id: payment.razorpay_payment_id,
       method: payment.payment_method || "Online",
       status: payment.status || "paid"
-    } : null
+    } : null,
+    review: reviewData
   };
 
   return jsonRes(c, true, formatted, "Booking details retrieved successfully");
@@ -10968,10 +11156,10 @@ addRoute("delete", "/portfolio/:id/comment/:commentId", handleDeletePortfolioCom
 addRoute("post", "/customer/portfolio/:id/view", handleAddViewToPortfolio);
 addRoute("post", "/portfolio/:id/view", handleAddViewToPortfolio);
 
-addRoute("post", "/reviews/upload", handleUploadChatMedia);
-addRoute("post", "/review/upload", handleUploadChatMedia);
-addRoute("post", "/customer/reviews/upload", handleUploadChatMedia);
-addRoute("post", "/customer/review/upload", handleUploadChatMedia);
+addRoute("post", "/reviews/upload", handleFileUpload);
+addRoute("post", "/review/upload", handleFileUpload);
+addRoute("post", "/customer/reviews/upload", handleFileUpload);
+addRoute("post", "/customer/review/upload", handleFileUpload);
 addRoute("post", "/chat/upload", handleUploadChatMedia);
 addRoute("post", "/chat/media", handleUploadChatMedia);
 

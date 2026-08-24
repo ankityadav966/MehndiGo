@@ -290,20 +290,32 @@ export default function BookingDetailsScreen({ route, navigation }) {
     }
   };
 
-  const handleSubmitReview = async ({ rating, comment }) => {
+  const handleSubmitReview = async ({ rating, comment, photos, video_url, video_thumbnail }) => {
     setReviewSubmitting(true);
     try {
-      await apiRequest("POST", "/customer/review", {
+      const res = await apiRequest("POST", "/customer/review", {
         bookingId: booking.id,
         booking_id: booking.id,
         artistId: booking.artist_id || booking.artist?.id,
         rating,
-        comment
+        comment,
+        photos: photos || [],
+        video_url: video_url || null,
+        video_thumbnail: video_thumbnail || null
       }, true);
-      Alert.alert("Thank You!", "Your review has been submitted successfully.");
+
+      const savedReview = res?.data || res?.review || res;
+      if (savedReview) {
+        setBooking(prev => ({
+          ...prev,
+          review: savedReview
+        }));
+      }
+
+      Alert.alert("Thank You! 🎉", "Your verified review has been submitted successfully!");
       loadDetails();
     } catch (err) {
-      Alert.alert("Error", err.message || "Failed to submit review.");
+      Alert.alert("Submission Error", err.message || "Failed to submit review.");
     } finally {
       setReviewSubmitting(false);
     }

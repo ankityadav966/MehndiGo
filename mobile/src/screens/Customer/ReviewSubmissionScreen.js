@@ -128,8 +128,8 @@ export default function ReviewSubmissionScreen({ route, navigation }) {
         photos: uploadedPhotosList
       });
 
-      Alert.alert("Review Submitted 🎉", "Thank you! Your review has been submitted for moderation and will appear on the artist profile once approved by admin.");
-      navigation.navigate("CustomerTabs", { screen: "Home" });
+      Alert.alert("Review Submitted 🎉", "Thank you! Your verified review has been published successfully.");
+      navigation.goBack();
     } catch (err) {
       Alert.alert("Submission Error", err.message || "Failed to save review.");
     } finally {
