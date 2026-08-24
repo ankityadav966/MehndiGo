@@ -2021,6 +2021,7 @@ const ensurePaymentColumns = async (db) => {
   await db.run("ALTER TABLE payments ADD COLUMN paid_at TEXT").catch(() => { });
   await db.run("ALTER TABLE bookings ADD COLUMN final_payment_status TEXT DEFAULT 'PENDING'").catch(() => { });
   await db.run("ALTER TABLE bookings ADD COLUMN final_payment_method TEXT").catch(() => { });
+  await db.run("ALTER TABLE bookings ADD COLUMN payment_mode TEXT").catch(() => { });
   await db.run("ALTER TABLE bookings ADD COLUMN cash_collected_by INTEGER").catch(() => { });
   await db.run("ALTER TABLE bookings ADD COLUMN cash_collected_at TEXT").catch(() => { });
 };
