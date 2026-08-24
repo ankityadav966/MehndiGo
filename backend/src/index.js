@@ -8214,8 +8214,7 @@ const handleGetArtistReviews = async (c) => {
 
     reviews = await db.all(`
       SELECT r.*, 
-        COALESCE(u.full_name, u.name, 'Verified Customer') as customer_name, 
-        u.profile_image as customer_avatar
+        COALESCE(u.full_name, 'Verified Customer') as customer_name
       FROM reviews r
       LEFT JOIN users u ON (r.customer_id = u.id OR r.user_id = u.id)
       WHERE (r.artist_id = ? OR r.artist_id = ? OR CAST(r.artist_id AS TEXT) = ? OR CAST(r.artist_id AS TEXT) = ?)
@@ -8225,8 +8224,7 @@ const handleGetArtistReviews = async (c) => {
   } else {
     reviews = await db.all(`
       SELECT r.*, 
-        COALESCE(u.full_name, u.name, 'Verified Customer') as customer_name, 
-        u.profile_image as customer_avatar
+        COALESCE(u.full_name, 'Verified Customer') as customer_name
       FROM reviews r
       LEFT JOIN users u ON (r.customer_id = u.id OR r.user_id = u.id)
       WHERE (r.status = 'APPROVED' OR r.is_approved = 1)
