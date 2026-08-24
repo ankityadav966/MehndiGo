@@ -9291,7 +9291,7 @@ const handleCreateBookingExplicit = async (c) => {
         booking_number, customer_id, artist_id, service_id, booking_date, booking_time,
         total_amount, advance_paid, remaining_amount, address, latitude, longitude, notes, status, payment_status,
         detailed_status, booking_status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 0.0, ?, ?, ?, ?, ?, 'pending_payment', 'pending', 'PENDING_PAYMENT', 'PENDING')
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 0.0, ?, ?, ?, ?, ?, 'pending', 'pending', 'PENDING_PAYMENT', 'PENDING')
     `, [bookingNo, u.id, artistId, serviceId, bookingDate, bookingTime, totalAmount, initialRemaining, address, finalLat, finalLng, notes]);
     newId = res?.meta?.last_row_id || res?.lastRowId || res?.meta?.last_insert_rowid;
   } catch (err) {
