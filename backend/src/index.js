@@ -5210,18 +5210,6 @@ const handleCustomerDynamic = async (c) => {
   return jsonRes(c, true, [], "Success");
 };
 
-["/customer/*", "/api/customer/*", "/api/v1/customer/*", "/api/v1/mehndigo/customer/*", "/mehndigo/customer/*"].forEach(p => {
-  app.all(p, handleCustomerDynamic);
-});
-
-["/booking", "/booking/*", "/api/booking/*", "/api/v1/booking/*", "/api/v1/mehndigo/booking/*"].forEach(p => {
-  app.all(p, handleCustomerDynamic);
-});
-
-["/payment", "/payment/*", "/api/payment/*", "/api/v1/payment/*", "/api/v1/mehndigo/payment/*"].forEach(p => {
-  app.all(p, handleCustomerDynamic);
-});
-
 const INITIAL_PORTFOLIO = [
   {
     id: 201,
