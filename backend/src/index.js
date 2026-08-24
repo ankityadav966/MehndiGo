@@ -279,11 +279,11 @@ const sendCustomSmtpDirect = async (c, toEmail, subject, textBody, htmlBody) => 
     // 7. Write MIME Content
     const boundary = `==MehndiGo_${Date.now()}_Boundary==`;
     const dateStr = new Date().toUTCString();
-    const msgId = `<mail.${Date.now()}.${Math.floor(Math.random() * 10000)}@gmail.com>`;
+    const msgId = `<mail.${Date.now()}.${Math.floor(Math.random() * 10000)}@mehndigo.in>`;
 
     const mimeMessage = [
-      `From: MehndiGo <${user}>`,
-      `Reply-To: MehndiGo Support <${user}>`,
+      `From: MehndiGo <donotreply@mehndigo.in>`,
+      `Reply-To: MehndiGo Support <support@mehndigo.in>`,
       `To: <${targetEmail}>`,
       `Subject: ${subject}`,
       `Date: ${dateStr}`,
@@ -385,18 +385,7 @@ const sendCheckInOtpEmail = async (c, toEmail, otp, customerName = "Valued Custo
 </div>
 `.trim();
 
-  // 1. Azure Email Communication Service
-  try {
-    const azureSent = await sendAzureEmailWorkerDirect(c, targetEmail, subject, htmlBody, textBody);
-    if (azureSent) {
-      console.log(`[AZURE CHECK-IN EMAIL DELIVERED] PIN ${targetOtp} delivered to ${targetEmail}`);
-      return true;
-    }
-  } catch (err) {
-    console.log(`[Azure Check-In Email notice]:`, err.message);
-  }
-
-  // 2. Direct SMTP
+  // 1. Primary: Direct SMTP Delivery from donotreply@mehndigo.in
   try {
     const smtpSent = await sendCustomSmtpDirect(c, targetEmail, subject, textBody, htmlBody);
     if (smtpSent) {
@@ -405,6 +394,19 @@ const sendCheckInOtpEmail = async (c, toEmail, otp, customerName = "Valued Custo
     }
   } catch (err) {
     console.log(`[SMTP Check-In Email notice]:`, err.message);
+  }
+
+  // 2. Azure Email Communication Service (If configured)
+  if (c?.env?.AZURE_EMAIL_CONNECTION_STRING) {
+    try {
+      const azureSent = await sendAzureEmailWorkerDirect(c, targetEmail, subject, htmlBody, textBody);
+      if (azureSent) {
+        console.log(`[AZURE CHECK-IN EMAIL DELIVERED] PIN ${targetOtp} delivered to ${targetEmail}`);
+        return true;
+      }
+    } catch (err) {
+      console.log(`[Azure Check-In Email notice]:`, err.message);
+    }
   }
 
   // 3. Resend fallback
@@ -418,7 +420,7 @@ const sendCheckInOtpEmail = async (c, toEmail, otp, customerName = "Valued Custo
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          from: "MehndiGo <onboarding@resend.dev>",
+          from: "MehndiGo <donotreply@mehndigo.in>",
           to: [targetEmail],
           subject: subject,
           html: htmlBody
@@ -465,18 +467,7 @@ const sendCheckOutOtpEmail = async (c, toEmail, otp, customerName = "Valued Cust
 </div>
 `.trim();
 
-  // 1. Azure Email Communication Service
-  try {
-    const azureSent = await sendAzureEmailWorkerDirect(c, targetEmail, subject, htmlBody, textBody);
-    if (azureSent) {
-      console.log(`[AZURE CHECK-OUT EMAIL DELIVERED] PIN ${targetOtp} delivered to ${targetEmail}`);
-      return true;
-    }
-  } catch (err) {
-    console.log(`[Azure Check-Out Email notice]:`, err.message);
-  }
-
-  // 2. Direct SMTP
+  // 1. Primary: Direct SMTP Delivery from donotreply@mehndigo.in
   try {
     const smtpSent = await sendCustomSmtpDirect(c, targetEmail, subject, textBody, htmlBody);
     if (smtpSent) {
@@ -485,6 +476,19 @@ const sendCheckOutOtpEmail = async (c, toEmail, otp, customerName = "Valued Cust
     }
   } catch (err) {
     console.log(`[SMTP Check-Out Email notice]:`, err.message);
+  }
+
+  // 2. Azure Email Communication Service (If configured)
+  if (c?.env?.AZURE_EMAIL_CONNECTION_STRING) {
+    try {
+      const azureSent = await sendAzureEmailWorkerDirect(c, targetEmail, subject, htmlBody, textBody);
+      if (azureSent) {
+        console.log(`[AZURE CHECK-OUT EMAIL DELIVERED] PIN ${targetOtp} delivered to ${targetEmail}`);
+        return true;
+      }
+    } catch (err) {
+      console.log(`[Azure Check-Out Email notice]:`, err.message);
+    }
   }
 
   // 3. Resend fallback
@@ -498,7 +502,7 @@ const sendCheckOutOtpEmail = async (c, toEmail, otp, customerName = "Valued Cust
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          from: "MehndiGo <onboarding@resend.dev>",
+          from: "MehndiGo <donotreply@mehndigo.in>",
           to: [targetEmail],
           subject: subject,
           html: htmlBody
@@ -509,6 +513,7 @@ const sendCheckOutOtpEmail = async (c, toEmail, otp, customerName = "Valued Cust
 
   return true;
 };
+
 
 const sendAzureEmailWorkerDirect = async (c, toEmail, subject, htmlBody, plainTextBody = "") => {
   const targetEmail = String(toEmail || "").trim().toLowerCase();
@@ -9897,9 +9902,16 @@ const handleSendCheckInOtp = async (c) => {
   await db.run("UPDATE bookings SET checkin_otp = ?, check_in_otp = ?, checkin_otp_expires_at = ? WHERE id = ?", [otp, otp, expiresAt, bookingId]).catch(() => { });
 
   // Dispatch Check-In PIN directly to customer's registered email
-  const customer = await db.first("SELECT email, full_name, name FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [booking.customer_id || booking.user_id, String(booking.customer_id || booking.user_id)]).catch(() => null);
-  if (customer && customer.email) {
-    await sendCheckInOtpEmail(c, customer.email, otp, customer.full_name || customer.name || "Valued Customer", booking.booking_number || booking.booking_code || String(bookingId)).catch(() => null);
+  const customerId = booking.customer_id || booking.user_id;
+  let customerUser = null;
+  if (customerId) {
+    customerUser = await db.first("SELECT email, full_name, name FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [customerId, String(customerId)]).catch(() => null);
+  }
+  const customerEmail = customerUser?.email || booking.customer_email || booking.email || booking.user_email;
+  const customerName = customerUser?.full_name || customerUser?.name || booking.customer_name || booking.user_name || "Valued Customer";
+
+  if (customerEmail) {
+    await sendCheckInOtpEmail(c, customerEmail, otp, customerName, booking.booking_number || booking.booking_code || String(bookingId)).catch(() => null);
   }
 
   return jsonRes(c, true, { bookingId, otpSent: true }, "Check-In PIN sent to customer's registered email address");
@@ -10017,9 +10029,17 @@ const handleVerifyCheckInOtp = async (c) => {
     [bookingId]
   ).catch(() => { });
 
-  if (booking.customer_id) {
+  const customerIdVerify = booking.customer_id || booking.user_id;
+  let customerUserVerify = null;
+  if (customerIdVerify) {
+    customerUserVerify = await db.first("SELECT email, full_name, name FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [customerIdVerify, String(customerIdVerify)]).catch(() => null);
+  }
+  const customerEmailVerify = customerUserVerify?.email || booking.customer_email || booking.email || booking.user_email;
+  const customerNameVerify = customerUserVerify?.full_name || customerUserVerify?.name || booking.customer_name || booking.user_name || "Valued Customer";
+
+  if (customerIdVerify) {
     dispatchNotification(db, {
-      userId: booking.customer_id,
+      userId: customerIdVerify,
       title: "Service Started 🌸",
       body: "Check-In verified. Your mehndi service is now in progress. Your Completion PIN has been sent to your email.",
       type: "SERVICE_STARTED",
@@ -10028,11 +10048,10 @@ const handleVerifyCheckInOtp = async (c) => {
       channelId: "bookings",
       deepLink: `mehendigoo://tracking/${bookingId}`
     }).catch(() => null);
+  }
 
-    const customer = await db.first("SELECT email, full_name, name FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [booking.customer_id, String(booking.customer_id)]).catch(() => null);
-    if (customer && customer.email && checkoutOtp) {
-      sendCheckOutOtpEmail(c, customer.email, checkoutOtp, customer.full_name || customer.name || "Valued Customer", booking.booking_number || booking.booking_code || String(bookingId)).catch(() => null);
-    }
+  if (customerEmailVerify && checkoutOtp) {
+    sendCheckOutOtpEmail(c, customerEmailVerify, checkoutOtp, customerNameVerify, booking.booking_number || booking.booking_code || String(bookingId)).catch(() => null);
   }
 
   const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
@@ -10055,8 +10074,9 @@ const handleVerifyCheckInOtp = async (c) => {
     check_out_otp: checkoutOtp,
     completion_pin: checkoutOtp,
     completionPin: checkoutOtp,
-    service_started_at: nowIso
-  }, "Customer verified successfully. Service is now in progress! Completion PIN sent to email.");
+    service_started_at: updated?.service_started_at || nowIso,
+    check_in_time: updated?.check_in_time || nowIso
+  }, "Check-In OTP verified successfully! Service is in progress.");
 };
 
 const handleSendCheckOutOtp = async (c) => {
@@ -10113,9 +10133,16 @@ const handleSendCheckOutOtp = async (c) => {
   ).catch(() => { });
 
   // Dispatch Check-Out completion PIN directly to customer's registered email
-  const customer = await db.first("SELECT email, full_name, name FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [booking.customer_id || booking.user_id, String(booking.customer_id || booking.user_id)]).catch(() => null);
-  if (customer && customer.email) {
-    await sendCheckOutOtpEmail(c, customer.email, otp, customer.full_name || customer.name || "Valued Customer", booking.booking_number || booking.booking_code || String(bookingId)).catch(() => null);
+  const customerIdOut = booking.customer_id || booking.user_id;
+  let customerUserOut = null;
+  if (customerIdOut) {
+    customerUserOut = await db.first("SELECT email, full_name, name FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [customerIdOut, String(customerIdOut)]).catch(() => null);
+  }
+  const customerEmailOut = customerUserOut?.email || booking.customer_email || booking.email || booking.user_email;
+  const customerNameOut = customerUserOut?.full_name || customerUserOut?.name || booking.customer_name || booking.user_name || "Valued Customer";
+
+  if (customerEmailOut) {
+    await sendCheckOutOtpEmail(c, customerEmailOut, otp, customerNameOut, booking.booking_number || booking.booking_code || String(bookingId)).catch(() => null);
   }
 
   return jsonRes(c, true, { bookingId, otp, checkout_otp: otp, check_out_otp: otp, completion_pin: otp, otpSent: true }, "Service Completion PIN sent to customer's registered email address");

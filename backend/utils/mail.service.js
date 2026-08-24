@@ -342,7 +342,7 @@ async function sendUsingGmail(
     .toString("hex")}@mehndigo.in>`;
 
   const mailOptions = {
-    from: `"MehndiGo" <${EMAIL_USER}>`,
+    from: `"MehndiGo" <${AZURE_EMAIL_FROM || "donotreply@mehndigo.in"}>`,
     to,
     replyTo: EMAIL_REPLY_TO,
     subject,
