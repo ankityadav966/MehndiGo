@@ -3461,12 +3461,15 @@ const handleGetFavorites = async (c) => {
 
   const favs = await db.all(`
     SELECT f.id as fav_id, f.created_at as favorited_at,
-           u.id as id, u.id as user_id, COALESCE(NULLIF(u.full_name, ''), 'Mehndi Artist') as name,
-           COALESCE(NULLIF(u.full_name, ''), 'Mehndi Artist') as full_name, u.email, u.phone,
+           COALESCE(u.id, ap.user_id, f.artist_id) as id,
+           COALESCE(u.id, ap.user_id, f.artist_id) as user_id,
+           COALESCE(NULLIF(u.full_name, ''), 'Mehndi Artist') as name,
+           COALESCE(NULLIF(u.full_name, ''), 'Mehndi Artist') as full_name,
+           u.email, u.phone,
            ap.bio, ap.experience_years, ap.starting_price, ap.city, ap.locality, ap.rating, ap.total_reviews, ap.status, ap.profile_image
     FROM favorites f
-    JOIN users u ON (f.artist_id = u.id OR CAST(f.artist_id AS TEXT) = CAST(u.id AS TEXT))
-    LEFT JOIN artist_profiles ap ON (u.id = ap.user_id OR CAST(u.id AS TEXT) = CAST(ap.user_id AS TEXT))
+    LEFT JOIN artist_profiles ap ON (f.artist_id = ap.id OR f.artist_id = ap.user_id OR CAST(f.artist_id AS TEXT) = CAST(ap.id AS TEXT) OR CAST(f.artist_id AS TEXT) = CAST(ap.user_id AS TEXT))
+    LEFT JOIN users u ON (f.artist_id = u.id OR ap.user_id = u.id OR CAST(f.artist_id AS TEXT) = CAST(u.id AS TEXT) OR CAST(ap.user_id AS TEXT) = CAST(u.id AS TEXT))
     WHERE f.customer_id = ? OR CAST(f.customer_id AS TEXT) = ?
     ORDER BY f.id DESC
   `, [u.id, String(u.id)]).catch(() => []);
