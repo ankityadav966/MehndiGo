@@ -10228,7 +10228,15 @@ const handleVerifyCheckOutOtp = async (c) => {
   if (booking.status === "cancelled" || booking.detailed_status === "CANCELLED") {
     return jsonRes(c, false, null, "Cannot complete a cancelled booking", 400);
   }
-  if (Number(booking.checkin_otp_verified) !== 1 && booking.status !== "in_progress" && booking.detailed_status !== "SERVICE_IN_PROGRESS" && booking.detailed_status !== "CUSTOMER_VERIFIED") {
+  const validCheckoutStatuses = ["IN_PROGRESS", "SERVICE_IN_PROGRESS", "CUSTOMER_VERIFIED", "CHECKOUT", "SERVICE_STARTED"];
+  const isStatusEligible =
+    Number(booking.checkin_otp_verified) === 1 ||
+    booking.checkin_verified === true ||
+    Boolean(booking.checkout_otp || booking.check_out_otp || booking.completion_pin) ||
+    validCheckoutStatuses.includes(String(booking.status || "").toUpperCase()) ||
+    validCheckoutStatuses.includes(String(booking.detailed_status || "").toUpperCase());
+
+  if (!isStatusEligible) {
     return jsonRes(c, false, null, "Cannot check out before verifying Check-In OTP. Please complete Check-In first.", 400);
   }
 
