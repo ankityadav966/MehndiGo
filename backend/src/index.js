@@ -8046,7 +8046,7 @@ const ensureReviewTables = async (db) => {
   await db.run("ALTER TABLE reviews ADD COLUMN video_thumbnail TEXT").catch(() => { });
   await db.run("ALTER TABLE reviews ADD COLUMN status TEXT DEFAULT 'APPROVED'").catch(() => { });
   await db.run("ALTER TABLE reviews ADD COLUMN is_approved INTEGER DEFAULT 1").catch(() => { });
-  await db.run("ALTER TABLE reviews ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP").catch(() => { });
+  await db.run("ALTER TABLE reviews ADD COLUMN updated_at TEXT").catch(() => { });
   await db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_booking_unique ON reviews(booking_id)").catch(() => { });
 };
 
@@ -8131,8 +8131,8 @@ const handleCreateReview = async (c) => {
 
     // 5. Insert Review into Database (Status APPROVED for immediate reflection)
     const result = await db.run(`
-      INSERT INTO reviews (customer_id, user_id, artist_id, booking_id, rating, comment, design_quality, punctuality, professionalism, photos, video_url, video_thumbnail, status, is_approved, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'APPROVED', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      INSERT INTO reviews (customer_id, user_id, artist_id, booking_id, rating, comment, design_quality, punctuality, professionalism, photos, video_url, video_thumbnail, status, is_approved, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'APPROVED', 1, CURRENT_TIMESTAMP)
     `, [u.id, u.id, artistId, bookingId, rating, comment, designQuality, punctuality, professionalism, photosJson, videoUrl, videoThumbnail]);
 
     const reviewId = result?.lastInsertRowid || result?.meta?.last_row_id || Date.now();
