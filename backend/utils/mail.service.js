@@ -27,7 +27,7 @@ const EMAIL_PASS = (process.env.EMAIL_PASS || "kwemkkniwxyohmvm").replace(/\s+/g
 const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
 
 const EMAIL_FROM =
-  process.env.EMAIL_FROM || `MehndiGo <${EMAIL_USER}>`;
+  process.env.EMAIL_FROM || "MehndiGo <donotreply@mehndigo.in>";
 
 const EMAIL_REPLY_TO =
   process.env.EMAIL_REPLY_TO || "support@mehndigo.in";
