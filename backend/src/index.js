@@ -3763,8 +3763,14 @@ const handleCreatePaymentSession = async (c) => {
   const paymentMode = String(body.payment_mode || body.paymentMethodType || body.mode || "").toUpperCase();
   const isFinalPayment = !isRecharge && (rawPurpose === "booking_remaining" || rawPurpose === "settlement" || paymentMode === "REMAINING_PAYMENT" || paymentMode === "REMAINING" || paymentMode === "SETTLEMENT" || paymentMode === "FINAL" || body.isSettlement === true);
 
-  // Duplicate Payment Protection: If final payment is already complete, reject
+  // Strict Rule 2 & 3: Final ₹90 payment ONLY available after Check-Out OTP is successfully verified
   if (isFinalPayment && booking) {
+    const isCheckoutVerified = Number(booking.checkout_otp_verified) === 1 || String(booking.detailed_status).toUpperCase() === "CHECKOUT" || Boolean(booking.check_out_time);
+    if (!isCheckoutVerified) {
+      return jsonRes(c, false, null, "Final payment (Pay Online) is strictly available only after Check-Out OTP has been successfully verified by the artist.", 400);
+    }
+
+    // Duplicate Payment Protection: If final payment is already complete, reject
     const pStatus = String(booking.payment_status || "").toUpperCase();
     const fpStatus = String(booking.final_payment_status || "").toUpperCase();
     const remAmt = Number(booking.remaining_amount !== undefined && booking.remaining_amount !== null ? booking.remaining_amount : -1);
@@ -8298,20 +8304,22 @@ const handleCreateReview = async (c) => {
       return jsonRes(c, false, null, "Forbidden: You can only review your own bookings", 403);
     }
 
-    // 3. Validate booking is eligible for review (Service completed / in_progress / checkin verified)
-    const rawStatus = String(booking.status || "").toUpperCase();
-    const detailedStatus = String(booking.detailed_status || "").toUpperCase();
-    const eligibleStatuses = ["COMPLETED", "SERVICE_COMPLETED", "IN_PROGRESS", "SERVICE_IN_PROGRESS", "CHECKOUT", "CUSTOMER_VERIFIED"];
-    const isCheckInVerified = Number(booking.checkin_otp_verified) === 1 || booking.checkin_verified === true;
+    // 3. Strict Rule 14: Review only permitted after Check-Out OTP verified + Final Payment PAID + Booking COMPLETED
+    const isCheckoutVerified = Number(booking.checkout_otp_verified) === 1 || Boolean(booking.check_out_time);
+    const isPaymentPaid = String(booking.payment_status || "").toUpperCase() === 'PAID' || String(booking.final_payment_status || "").toUpperCase() === 'PAID';
+    const isBookingCompleted = String(booking.status || "").toLowerCase() === 'completed' || String(booking.detailed_status || "").toUpperCase() === 'COMPLETED';
     
-    if (!eligibleStatuses.includes(rawStatus) && !eligibleStatuses.includes(detailedStatus) && !isCheckInVerified && !booking.service_completed_at) {
-      return jsonRes(c, false, null, "Cannot submit review for an unserviced or cancelled booking", 400);
+    if (!isCheckoutVerified || !isPaymentPaid || !isBookingCompleted) {
+      return jsonRes(c, false, null, "Review is strictly available only after Check-Out OTP is verified, remaining payment is PAID, and booking is marked COMPLETED.", 400);
     }
 
     const artistId = Number(body.artist_id || body.artistId || booking.artist_id || 0);
 
-    // 4. Duplicate Review Prevention: Check if review already exists for this booking
-    const existingReview = await db.first("SELECT * FROM reviews WHERE booking_id = ? OR CAST(booking_id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
+    // 4. Strict Rule 15: Duplicate Review Prevention (customer_id + booking_id = ONE REVIEW)
+    const existingReview = await db.first(
+      "SELECT * FROM reviews WHERE (booking_id = ? OR CAST(booking_id AS TEXT) = CAST(? AS TEXT)) AND (customer_id = ? OR user_id = ?)",
+      [bookingId, String(bookingId), u.id, u.id]
+    ).catch(() => null);
     if (existingReview) {
       let existingPhotos = [];
       try {
@@ -11168,7 +11176,21 @@ const handleConfirmCashPayment = async (c) => {
   const b = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!b) return jsonRes(c, false, null, "Booking not found", 404);
 
-  // Security check: Check if already paid
+  // Strict Rule 9: Assigned Artist Authorization Guard (must be assigned artist or admin)
+  if (u && u.id && u.role !== 'ADMIN' && u.role !== 'admin') {
+    const isAssigned = (Number(u.id) === Number(b.artist_id)) || (Number(u.user_id) === Number(b.artist_id));
+    if (!isAssigned) {
+      return jsonRes(c, false, null, "Forbidden: Only the assigned artist can confirm cash payment collection", 403);
+    }
+  }
+
+  // Strict Rule 2 & 3: Check-Out OTP must be successfully verified before cash collection
+  const isCheckoutVerified = Number(b.checkout_otp_verified) === 1 || String(b.detailed_status).toUpperCase() === "CHECKOUT" || Boolean(b.check_out_time);
+  if (!isCheckoutVerified) {
+    return jsonRes(c, false, null, "Cash payment can strictly be confirmed only after Check-Out OTP has been successfully verified.", 400);
+  }
+
+  // Strict Rule 17: Check if already paid online or cash
   const pStatus = String(b.payment_status || "").toUpperCase();
   const fpStatus = String(b.final_payment_status || "").toUpperCase();
   if (pStatus === "PAID" || fpStatus === "PAID" || (Number(b.remaining_amount) <= 0 && Number(b.advance_paid) >= Number(b.total_amount))) {
