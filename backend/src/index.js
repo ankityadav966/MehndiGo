@@ -10140,14 +10140,11 @@ const handleSendCheckOutOtp = async (c) => {
     }
   }
 
-  // Pre-condition Guard: Must be in progress or checkin verified
+  // State Guard: Cannot request Check-Out OTP for completed or cancelled bookings
   const st = String(booking.status || "").toUpperCase();
   const dst = String(booking.detailed_status || "").toUpperCase();
-  const inProgressStatuses = ["IN_PROGRESS", "SERVICE_IN_PROGRESS", "CUSTOMER_VERIFIED", "SERVICE_STARTED", "CHECKOUT"];
-  const isProgressValid = Number(booking.checkin_otp_verified) === 1 || inProgressStatuses.includes(st) || inProgressStatuses.includes(dst);
-
-  if (!isProgressValid) {
-    return jsonRes(c, false, null, "Cannot generate Check-Out OTP before service is in progress", 400);
+  if (st === "COMPLETED" || dst === "COMPLETED" || st === "CANCELLED" || dst === "CANCELLED") {
+    return jsonRes(c, false, null, "Cannot generate Check-Out OTP for a completed or cancelled booking", 400);
   }
 
   const isForceRefresh = Boolean(body.force || body.refresh || body.regenerate);
