@@ -2013,6 +2013,18 @@ const ensureWalletTables = async (db) => {
   await db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_wallet_tx_booking_type ON wallet_transactions(booking_id, type)").catch(() => { });
 };
 
+const ensurePaymentColumns = async (db) => {
+  await db.run("CREATE TABLE IF NOT EXISTS payments (id INTEGER PRIMARY KEY AUTOINCREMENT, booking_id INTEGER, razorpay_order_id TEXT, razorpay_payment_id TEXT, amount REAL, currency TEXT DEFAULT 'INR', status TEXT, payment_method TEXT, payment_type TEXT DEFAULT 'ADVANCE', collected_by INTEGER, collected_at TEXT, paid_at TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)").catch(() => { });
+  await db.run("ALTER TABLE payments ADD COLUMN payment_type TEXT DEFAULT 'ADVANCE'").catch(() => { });
+  await db.run("ALTER TABLE payments ADD COLUMN collected_by INTEGER").catch(() => { });
+  await db.run("ALTER TABLE payments ADD COLUMN collected_at TEXT").catch(() => { });
+  await db.run("ALTER TABLE payments ADD COLUMN paid_at TEXT").catch(() => { });
+  await db.run("ALTER TABLE bookings ADD COLUMN final_payment_status TEXT DEFAULT 'PENDING'").catch(() => { });
+  await db.run("ALTER TABLE bookings ADD COLUMN final_payment_method TEXT").catch(() => { });
+  await db.run("ALTER TABLE bookings ADD COLUMN cash_collected_by INTEGER").catch(() => { });
+  await db.run("ALTER TABLE bookings ADD COLUMN cash_collected_at TEXT").catch(() => { });
+};
+
 // Helper: Fetch central marketplace configuration with fallbacks
 const getMarketplaceSettings = async (db) => {
   try {
@@ -4189,11 +4201,13 @@ const handleCustomerDynamic = async (c) => {
   // 4. PAYMENTS & VERIFICATION
   // -------------------------------------------------------------
   if (path.includes("payment")) {
+    await ensurePaymentColumns(db);
+
     if (path.includes("create-session") || path.includes("create-order")) {
       const body = await c.req.json().catch(() => ({}));
       const bookingId = Number(body.bookingId || body.booking_id || 0);
       const rawPurpose = String(body.purpose || body.payment_purpose || "").toLowerCase();
-      const isRecharge = rawPurpose === "recharge" || (!bookingId && rawPurpose !== "booking" && rawPurpose !== "booking_advance" && rawPurpose !== "booking_remaining");
+      const isRecharge = rawPurpose === "recharge" || (!bookingId && rawPurpose !== "booking" && rawPurpose !== "booking_advance" && rawPurpose !== "booking_remaining" && rawPurpose !== "settlement");
 
       const keyId = (c?.env?.RAZORPAY_KEY_ID || "").trim();
       const keySecret = (c?.env?.RAZORPAY_KEY_SECRET || "").trim();
@@ -4237,14 +4251,26 @@ const handleCustomerDynamic = async (c) => {
         totalAmtRupees = 1800; // Trusted fallback service amount in Rupees
       }
 
-      // Calculate payable amount (STRICTLY 10% Advance for initial booking confirmation)
       const paymentMode = String(body.payment_mode || body.paymentMethodType || body.mode || "").toUpperCase();
+      const isFinalPayment = !isRecharge && (rawPurpose === "booking_remaining" || rawPurpose === "settlement" || paymentMode === "REMAINING_PAYMENT" || paymentMode === "REMAINING" || paymentMode === "SETTLEMENT" || paymentMode === "FINAL" || body.isSettlement === true);
+
+      // Duplicate Payment Protection: If final payment is already complete, reject
+      if (isFinalPayment && booking) {
+        const pStatus = String(booking.payment_status || "").toUpperCase();
+        const fpStatus = String(booking.final_payment_status || "").toUpperCase();
+        const remAmt = Number(booking.remaining_amount !== undefined && booking.remaining_amount !== null ? booking.remaining_amount : -1);
+        if (pStatus === "PAID" || fpStatus === "PAID" || (remAmt === 0 && Number(booking.advance_paid) >= totalAmtRupees)) {
+          return jsonRes(c, false, null, "Final payment has already been completed for this booking", 400);
+        }
+      }
+
       let payAmountRupees = 50;
       if (isRecharge) {
         payAmountRupees = Math.round(Number(body.amount || 500));
-      } else if (rawPurpose === "booking_remaining" || paymentMode === "REMAINING_PAYMENT" || paymentMode === "REMAINING") {
+      } else if (isFinalPayment) {
         const advancePaid = Number(booking?.advance_paid || Math.round(totalAmtRupees * 0.10));
-        payAmountRupees = Math.max(0, Math.round(totalAmtRupees - advancePaid));
+        const remDue = Number(booking?.remaining_amount !== undefined && booking?.remaining_amount !== null ? booking.remaining_amount : Math.max(0, totalAmtRupees - advancePaid));
+        payAmountRupees = Math.max(1, Math.round(remDue));
       } else {
         // Initial Booking Confirmation: STRICTLY 10% ADVANCE DEPOSIT ONLY
         payAmountRupees = Math.round(totalAmtRupees * 0.10);
@@ -4269,11 +4295,12 @@ const handleCustomerDynamic = async (c) => {
           body: JSON.stringify({
             amount: payAmountPaise,
             currency: "INR",
-            receipt: (isRecharge ? `rec_${Date.now()}` : `bk_${bookingId}_${Date.now()}`).slice(0, 32),
+            receipt: (isRecharge ? `rec_${Date.now()}` : (isFinalPayment ? `fin_${bookingId}_${Date.now()}` : `adv_${bookingId}_${Date.now()}`)).slice(0, 32),
             notes: {
-              purpose: isRecharge ? "recharge" : "booking_payment",
+              purpose: isRecharge ? "recharge" : (isFinalPayment ? "settlement_final_payment" : "booking_advance_10_percent"),
               user_id: String(u?.id || ""),
-              booking_id: isRecharge ? "" : String(bookingId)
+              booking_id: isRecharge ? "" : String(bookingId),
+              payment_type: isFinalPayment ? "FINAL" : "ADVANCE"
             }
           })
         });
@@ -4289,10 +4316,12 @@ const handleCustomerDynamic = async (c) => {
         return jsonRes(c, false, null, "Razorpay API order creation failed: " + err.message, 500);
       }
 
+      const paymentType = isFinalPayment ? "FINAL" : "ADVANCE";
+
       if (bookingId && !isRecharge) {
         await db.run(
-          "INSERT INTO payments (booking_id, razorpay_order_id, amount, currency, status, payment_method) VALUES (?, ?, ?, 'INR', 'created', 'upi')",
-          [bookingId, orderId, payAmountRupees]
+          "INSERT INTO payments (booking_id, razorpay_order_id, amount, currency, status, payment_method, payment_type) VALUES (?, ?, ?, 'INR', 'created', 'upi', ?)",
+          [bookingId, orderId, payAmountRupees, paymentType]
         ).catch(() => { });
       } else if (isRecharge && u && u.id) {
         let wallet = await db.first("SELECT id FROM wallets WHERE user_id = ? OR artist_id = ?", [u.id, u.id]).catch(() => null);
@@ -4311,8 +4340,12 @@ const handleCustomerDynamic = async (c) => {
         currency: "INR",
         key: keyId,
         key_id: keyId,
-        keyId: keyId
-      }, "Payment order created successfully");
+        keyId: keyId,
+        is_settlement: isFinalPayment,
+        payment_type: paymentType,
+        remaining_amount: isFinalPayment ? 0 : Math.max(0, totalAmtRupees - payAmountRupees),
+        booking_id: bookingId
+      }, isFinalPayment ? "Remaining balance payment order created successfully" : "10% Advance deposit payment order created successfully");
     }
 
     if (path.includes("webhook")) {
@@ -4446,27 +4479,39 @@ const handleCustomerDynamic = async (c) => {
       const paidOrderAmount = Number(payRecord?.amount || 0);
 
       const existingAdvance = Number(booking?.advance_paid || 0);
-      const isSettlement = (body.isSettlement === true || body.is_settlement === true || String(body.purpose).includes("remaining") || String(body.payment_mode).includes("REMAINING") || String(body.payment_mode).includes("FULL"));
+      const isSettlement = (body.isSettlement === true || body.is_settlement === true || String(body.purpose).includes("remaining") || String(body.purpose).includes("settlement") || String(body.payment_mode).includes("REMAINING") || String(body.payment_mode).includes("SETTLEMENT") || String(body.payment_mode).includes("FINAL") || String(body.payment_mode).includes("FULL") || payRecord?.payment_type === 'FINAL');
 
-      let newAdvancePaid = existingAdvance > 0 ? (existingAdvance + (paidOrderAmount || 0)) : (paidOrderAmount || Math.round(bookingTotal * 0.10));
-      if (newAdvancePaid >= bookingTotal || isSettlement || paidOrderAmount >= bookingTotal * 0.8) {
-        newAdvancePaid = bookingTotal;
-      }
-
-      const remainingAmount = Math.max(0, Math.round((bookingTotal - newAdvancePaid) * 100) / 100);
-      const isFullyPaid = remainingAmount <= 0;
+      const isFullyPaid = isSettlement || (paidOrderAmount >= (booking?.remaining_amount || (bookingTotal * 0.8)));
       const paymentStatus = isFullyPaid ? "PAID" : "PARTIAL";
-      const platformCommission = Math.round(bookingTotal * PLATFORM_COMMISSION_RATE * 100) / 100;
-      const artistEarning = Math.round((bookingTotal - platformCommission) * 100) / 100;
+      const finalPaymentStatus = isFullyPaid ? "PAID" : (booking?.final_payment_status || "PENDING");
+      const finalPaymentMethod = isFullyPaid ? "ONLINE" : (booking?.final_payment_method || null);
+      const remainingAmount = isFullyPaid ? 0 : Math.max(0, Math.round((bookingTotal - (paidOrderAmount || Math.round(bookingTotal * 0.10))) * 100) / 100);
+      const newAdvancePaid = isFullyPaid ? bookingTotal : (paidOrderAmount || Math.round(bookingTotal * 0.10));
 
       await db.run(
-        "UPDATE bookings SET status = CASE WHEN status = 'completed' THEN 'completed' ELSE 'confirmed' END, payment_status = ?, advance_paid = ?, remaining_amount = ?, detailed_status = CASE WHEN ? = 1 THEN 'PAYMENT_COMPLETED' ELSE 'CONFIRMED' END WHERE id = ?",
-        [paymentStatus, newAdvancePaid, remainingAmount, isFullyPaid ? 1 : 0, bookingId]
+        `UPDATE bookings 
+         SET status = CASE WHEN ? = 1 THEN 'completed' ELSE (CASE WHEN status = 'completed' THEN 'completed' ELSE 'confirmed' END) END,
+             booking_status = CASE WHEN ? = 1 THEN 'COMPLETED' ELSE (CASE WHEN booking_status = 'COMPLETED' THEN 'COMPLETED' ELSE 'CONFIRMED' END) END,
+             detailed_status = CASE WHEN ? = 1 THEN 'COMPLETED' ELSE (CASE WHEN detailed_status = 'COMPLETED' THEN 'COMPLETED' ELSE 'CONFIRMED' END) END,
+             payment_status = ?,
+             final_payment_status = ?,
+             final_payment_method = ?,
+             payment_mode = 'ONLINE',
+             advance_paid = ?,
+             remaining_amount = ?,
+             completed_at = CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP ELSE completed_at END
+         WHERE id = ?`,
+        [isFullyPaid ? 1 : 0, isFullyPaid ? 1 : 0, isFullyPaid ? 1 : 0, paymentStatus, finalPaymentStatus, finalPaymentMethod, newAdvancePaid, remainingAmount, isFullyPaid ? 1 : 0, bookingId]
       );
 
       await db.run(
-        "INSERT INTO payments (booking_id, razorpay_order_id, razorpay_payment_id, amount, currency, status, payment_method) VALUES (?, ?, ?, ?, 'INR', 'completed', 'upi')",
-        [bookingId, orderId, paymentId, paidOrderAmount || newAdvancePaid]
+        "UPDATE payments SET status = 'completed', razorpay_payment_id = ?, payment_method = 'ONLINE', payment_type = ?, paid_at = CURRENT_TIMESTAMP WHERE razorpay_order_id = ? OR id = ?",
+        [paymentId, isFullyPaid ? 'FINAL' : 'ADVANCE', orderId, payRecord?.id || 0]
+      ).catch(() => { });
+
+      await db.run(
+        "INSERT INTO payments (booking_id, razorpay_order_id, razorpay_payment_id, amount, currency, status, payment_method, payment_type, paid_at) VALUES (?, ?, ?, ?, 'INR', 'completed', 'ONLINE', ?, CURRENT_TIMESTAMP)",
+        [bookingId, orderId, paymentId, paidOrderAmount || (isFullyPaid ? (bookingTotal - existingAdvance) : newAdvancePaid), isFullyPaid ? 'FINAL' : 'ADVANCE']
       ).catch(() => { });
 
       // Record customer transaction in wallet_transactions (with current ISO timestamp)
@@ -10827,10 +10872,23 @@ const handleGetBookingDetails = async (c) => {
       updated_at: artistLoc.updated_at
     } : null,
     payment: payment ? {
-      transaction_id: payment.razorpay_payment_id,
-      method: payment.payment_method || "Online",
+      transaction_id: payment.razorpay_payment_id || `PAY_${bId}`,
+      method: payment.payment_method || booking.final_payment_method || "Online",
       status: payment.status || "paid"
     } : null,
+    final_payment_status: (booking.final_payment_status || (remAmt <= 0 ? "PAID" : "PENDING")).toUpperCase(),
+    final_payment_method: booking.final_payment_method || (payment?.payment_method || null),
+    cash_collected_by: booking.cash_collected_by || null,
+    cash_collected_at: booking.cash_collected_at || null,
+    payments: (await db.all("SELECT id, razorpay_order_id, razorpay_payment_id, amount, currency, status, payment_method, payment_type, collected_by, collected_at, created_at, paid_at FROM payments WHERE booking_id = ? ORDER BY id ASC", [bId]).catch(() => [])) || [],
+    payment_breakdown: {
+      total_amount: totalAmt,
+      advance_paid: advPaid,
+      remaining_amount: remAmt,
+      payment_status: (booking.payment_status || "PENDING").toUpperCase(),
+      final_payment_status: (booking.final_payment_status || (remAmt <= 0 ? "PAID" : "PENDING")).toUpperCase(),
+      final_payment_method: booking.final_payment_method || (payment?.payment_method || null)
+    },
     review: reviewData
   };
 
@@ -11062,17 +11120,81 @@ const handleSelectCashPayment = async (c) => {
 
 const handleConfirmCashPayment = async (c) => {
   const db = getDb(c.env);
+  await ensurePaymentColumns(db);
+  const u = getUserFromHeader(c);
   const body = await c.req.json().catch(() => ({}));
-  const bookingId = Number(body.bookingId || body.booking_id || body.id || 0);
+  const bookingId = Number(body.bookingId || body.booking_id || body.id || c.req.query("bookingId") || 0);
   if (!bookingId) return jsonRes(c, false, null, "Booking ID is required", 400);
 
-  const b = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
-  if (b) {
-    const total = Number(b.total_amount || 0);
-    await db.run("UPDATE bookings SET status = 'completed', booking_status = 'COMPLETED', detailed_status = 'COMPLETED', payment_status = 'paid', advance_paid = ?, remaining_amount = 0, completed_at = CURRENT_TIMESTAMP WHERE id = ?", [total, bookingId]);
-    await processBookingSettlement(db, bookingId).catch(() => { });
+  const b = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
+  if (!b) return jsonRes(c, false, null, "Booking not found", 404);
+
+  // Security check: Check if already paid
+  const pStatus = String(b.payment_status || "").toUpperCase();
+  const fpStatus = String(b.final_payment_status || "").toUpperCase();
+  if (pStatus === "PAID" || fpStatus === "PAID" || (Number(b.remaining_amount) <= 0 && Number(b.advance_paid) >= Number(b.total_amount))) {
+    return jsonRes(c, false, null, "Payment has already been completed for this booking", 400);
   }
-  return jsonRes(c, true, { booking_id: bookingId, status: "completed", payment_status: "paid" }, "Cash payment confirmed and service completed");
+
+  const total = Number(b.total_amount || b.final_amount || 0);
+  const advance = Number(b.advance_paid || 0);
+  const cashAmount = Number(b.remaining_amount !== undefined && b.remaining_amount !== null ? b.remaining_amount : Math.max(0, total - advance));
+  const collectorId = (u && u.id) ? u.id : (b.artist_id || 0);
+
+  await db.run(
+    `UPDATE bookings 
+     SET status = 'completed',
+         booking_status = 'COMPLETED',
+         detailed_status = 'COMPLETED',
+         payment_status = 'PAID',
+         final_payment_status = 'PAID',
+         final_payment_method = 'CASH',
+         payment_mode = 'CASH',
+         advance_paid = ?,
+         remaining_amount = 0,
+         cash_collected_by = ?,
+         cash_collected_at = CURRENT_TIMESTAMP,
+         completed_at = CURRENT_TIMESTAMP
+     WHERE id = ?`,
+    [total, collectorId, bookingId]
+  );
+
+  await db.run(
+    `INSERT INTO payments (booking_id, amount, currency, status, payment_method, payment_type, collected_by, collected_at, created_at)
+     VALUES (?, ?, 'INR', 'completed', 'CASH', 'FINAL', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+    [bookingId, cashAmount, collectorId]
+  ).catch(() => { });
+
+  // Record transaction in customer wallet_transactions
+  const custUserId = b.customer_id || b.user_id;
+  if (custUserId) {
+    let customerWallet = await db.first("SELECT * FROM wallets WHERE user_id = ?", [custUserId]).catch(() => null);
+    if (!customerWallet) {
+      await db.run("INSERT INTO wallets (user_id, balance, total_earnings) VALUES (?, 0.0, 0.0)", [custUserId]).catch(() => null);
+      customerWallet = await db.first("SELECT * FROM wallets WHERE user_id = ?", [custUserId]).catch(() => null);
+    }
+    const custWalletId = customerWallet?.id || 1;
+    const txRef = `CASH_${bookingId}_${Date.now()}`;
+    await db.run(
+      "INSERT INTO wallet_transactions (wallet_id, user_id, booking_id, type, amount, description, status, reference_id, created_at) VALUES (?, ?, ?, 'debit', ?, ?, 'completed', ?, CURRENT_TIMESTAMP)",
+      [custWalletId, custUserId, bookingId, cashAmount, `Direct Cash Payment for Booking #${b.booking_number || bookingId}`, txRef]
+    ).catch(() => null);
+  }
+
+  // Trigger wallet settlement & platform commission accounting
+  await processBookingSettlement(db, bookingId).catch((err) => console.log("Settlement error:", err.message));
+
+  return jsonRes(c, true, {
+    booking_id: bookingId,
+    status: "completed",
+    booking_status: "COMPLETED",
+    payment_status: "PAID",
+    final_payment_status: "PAID",
+    final_payment_method: "CASH",
+    remaining_amount: 0,
+    amount_collected: cashAmount,
+    collected_by: collectorId
+  }, "Cash payment confirmed and booking marked completed successfully!");
 };
 
 const handleRejectCashPayment = async (c) => {
