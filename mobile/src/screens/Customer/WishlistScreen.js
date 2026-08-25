@@ -51,11 +51,28 @@ export default function WishlistScreen({ navigation }) {
     fetchWishlist();
   }, [fetchWishlist]);
 
+  // Back handling: If subscreen -> goBack(), If tab -> switch to Home tab
   useEffect(() => {
-    const unsubscribe = navigation.addListener("focus", () => {
+    const { BackHandler } = require("react-native");
+    const unsubscribeFocus = navigation.addListener("focus", () => {
       fetchWishlist();
     });
-    return unsubscribe;
+
+    const onBackPress = () => {
+      if (navigation?.canGoBack && navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        navigation.navigate("CustomerTabs", { screen: "Home" });
+      }
+      return true;
+    };
+
+    const backSub = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+
+    return () => {
+      unsubscribeFocus();
+      backSub.remove();
+    };
   }, [navigation, fetchWishlist]);
 
   const handleRemoveFavorite = async (artistId) => {

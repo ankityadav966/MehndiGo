@@ -42,10 +42,27 @@ export default function BookingRequestsScreen({ route, navigation }) {
 
   useEffect(() => {
     fetchHistory();
-    const unsubscribe = navigation.addListener("focus", () => {
+    const { BackHandler } = require("react-native");
+
+    const unsubscribeFocus = navigation.addListener("focus", () => {
       fetchHistory();
     });
-    return unsubscribe;
+
+    const onBackPress = () => {
+      if (navigation?.canGoBack && navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        navigation.navigate("ArtistTabs", { screen: "Dashboard" });
+      }
+      return true;
+    };
+
+    const backSub = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+
+    return () => {
+      unsubscribeFocus();
+      backSub.remove();
+    };
   }, [navigation]);
 
   const handleRefresh = () => {

@@ -255,11 +255,29 @@ export default function LiveTrackingScreen({ route, navigation }) {
   const originCoords = customerCoords || (booking?.latitude ? { lat: Number(booking.latitude), lng: Number(booking.longitude) } : null);
   const destinationCoords = artistCoords || (booking?.artist?.latitude ? { lat: Number(booking.artist.latitude), lng: Number(booking.artist.longitude) } : null);
 
+  const handleBack = useCallback(() => {
+    if (navigation?.canGoBack && navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "CustomerTabs", params: { screen: "Bookings" } }]
+      });
+    }
+    return true;
+  }, [navigation]);
+
+  useEffect(() => {
+    const { BackHandler } = require("react-native");
+    const backSubscription = BackHandler.addEventListener("hardwareBackPress", handleBack);
+    return () => backSubscription.remove();
+  }, [handleBack]);
+
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       {/* Top Header Bar */}
       <View style={styles.topHeader}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+        <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
           <Ionicons name="chevron-back" size={24} color={Colors.text} />
         </TouchableOpacity>
         <Text style={styles.topHeaderTitle}>Live Artist Tracking</Text>

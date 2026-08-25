@@ -137,6 +137,25 @@ export default function LeadDetailsScreen({ route, navigation }) {
     }
   };
 
+  const handleBack = () => {
+    if (rejectModalVisible) {
+      setRejectModalVisible(false);
+      return true;
+    }
+    if (navigation?.canGoBack && navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate("ArtistTabs", { screen: "Leads" });
+    }
+    return true;
+  };
+
+  useEffect(() => {
+    const { BackHandler } = require("react-native");
+    const backSub = BackHandler.addEventListener("hardwareBackPress", handleBack);
+    return () => backSub.remove();
+  }, [rejectModalVisible, navigation]);
+
   if (loading) {
     return (
       <SafeAreaView style={[styles.container, styles.center]}>
@@ -152,7 +171,7 @@ export default function LeadDetailsScreen({ route, navigation }) {
         <Ionicons name="alert-circle-outline" size={48} color={Colors.primary} />
         <Text style={styles.errorTitle}>Failed to load lead details</Text>
         <Text style={styles.errorSubtitle}>{error || "Lead not found."}</Text>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+        <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
           <Text style={styles.backBtnText}>Go Back</Text>
         </TouchableOpacity>
       </SafeAreaView>
@@ -163,7 +182,7 @@ export default function LeadDetailsScreen({ route, navigation }) {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backIconButton}>
+        <TouchableOpacity onPress={handleBack} style={styles.backIconButton}>
           <Ionicons name="arrow-back" size={22} color={Colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Lead Info</Text>

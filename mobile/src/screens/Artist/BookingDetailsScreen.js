@@ -562,6 +562,37 @@ export default function BookingDetailsScreen({ route, navigation }) {
         }
       : null);
 
+  const handleBack = useCallback(() => {
+    if (rejectModalVisible) {
+      setRejectModalVisible(false);
+      return true;
+    }
+    if (travelChargeModalVisible) {
+      setTravelChargeModalVisible(false);
+      return true;
+    }
+    if (otpModalVisible) {
+      setOtpModalVisible(false);
+      return true;
+    }
+
+    if (navigation?.canGoBack && navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "ArtistTabs", params: { screen: "Dashboard" } }]
+      });
+    }
+    return true;
+  }, [rejectModalVisible, travelChargeModalVisible, otpModalVisible, navigation]);
+
+  useEffect(() => {
+    const { BackHandler } = require("react-native");
+    const backSubscription = BackHandler.addEventListener("hardwareBackPress", handleBack);
+    return () => backSubscription.remove();
+  }, [handleBack]);
+
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
@@ -572,7 +603,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
         <BookingStatusHeader
           bookingCode={booking?.booking_code || booking?.booking_number || booking?.id}
           status={rawStatus}
-          onBack={() => navigation.goBack()}
+          onBack={handleBack}
           onRefresh={handleRefresh}
         />
 

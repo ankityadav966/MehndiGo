@@ -91,6 +91,24 @@ export default function ReviewSubmissionScreen({ route, navigation }) {
     }
   };
 
+  const handleBack = useCallback(() => {
+    if (navigation?.canGoBack && navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "CustomerTabs", params: { screen: "Home" } }]
+      });
+    }
+    return true;
+  }, [navigation]);
+
+  useEffect(() => {
+    const { BackHandler } = require("react-native");
+    const backSubscription = BackHandler.addEventListener("hardwareBackPress", handleBack);
+    return () => backSubscription.remove();
+  }, [handleBack]);
+
   const handleSubmit = async () => {
     setLoading(true);
     try {
@@ -138,7 +156,7 @@ export default function ReviewSubmissionScreen({ route, navigation }) {
       });
 
       Alert.alert("Review Submitted 🎉", "Thank you! Your verified review has been published successfully.");
-      navigation.goBack();
+      handleBack();
     } catch (err) {
       Alert.alert("Submission Error", err.message || "Failed to save review.");
     } finally {
@@ -152,7 +170,7 @@ export default function ReviewSubmissionScreen({ route, navigation }) {
     try {
       await skipReview(bookingId);
       Alert.alert("Review Skipped", "Review skipped successfully. Conversation is now closed.");
-      navigation.navigate("CustomerTabs", { screen: "Home" });
+      handleBack();
     } catch (err) {
       Alert.alert("Skip Error", err.message || "Failed to skip review.");
     } finally {
@@ -186,7 +204,7 @@ export default function ReviewSubmissionScreen({ route, navigation }) {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.header}>
-            <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+            <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
               <Ionicons name="chevron-back" size={22} color={Colors.text} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Write Review</Text>

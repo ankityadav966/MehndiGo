@@ -250,6 +250,24 @@ export default function BookingSummaryScreen({ route, navigation }) {
 
   const artistName = artist?.user?.name || artist?.business_name || "Mehndi Artist";
 
+  const handleBack = () => {
+    if (navigation?.canGoBack && navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "CustomerTabs", params: { screen: "Home" } }]
+      });
+    }
+    return true;
+  };
+
+  useEffect(() => {
+    const { BackHandler } = require("react-native");
+    const backSubscription = BackHandler.addEventListener("hardwareBackPress", handleBack);
+    return () => backSubscription.remove();
+  }, [navigation]);
+
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
@@ -258,7 +276,7 @@ export default function BookingSummaryScreen({ route, navigation }) {
       >
         {/* 1. Header */}
         <View style={styles.header}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.backBtn} onPress={handleBack} activeOpacity={0.7}>
             <Ionicons name="chevron-back" size={22} color="#212121" />
           </TouchableOpacity>
           <View style={styles.headerTitleContainer}>

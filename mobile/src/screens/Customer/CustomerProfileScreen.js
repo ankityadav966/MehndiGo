@@ -44,8 +44,21 @@ export default function CustomerProfileScreen({ navigation }) {
 
   useFocusEffect(
     React.useCallback(() => {
+      const { BackHandler } = require("react-native");
       fetchDashboardDetails();
-    }, [fetchDashboardDetails])
+
+      const onBackPress = () => {
+        if (navigation?.canGoBack && navigation.canGoBack()) {
+          navigation.goBack();
+        } else {
+          navigation.navigate("CustomerTabs", { screen: "Home" });
+        }
+        return true;
+      };
+
+      const sub = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+      return () => sub.remove();
+    }, [fetchDashboardDetails, navigation])
   );
 
   const handleRefresh = () => {

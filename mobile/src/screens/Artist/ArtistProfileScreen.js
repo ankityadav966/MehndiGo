@@ -55,6 +55,29 @@ export default function ArtistProfileScreen({ navigation }) {
   const [tempFB, setTempFB] = useState("");
 
   useEffect(() => {
+    const { BackHandler } = require("react-native");
+    const onBackPress = () => {
+      if (instagramModalVisible) {
+        setInstagramModalVisible(false);
+        return true;
+      }
+      if (facebookModalVisible) {
+        setFacebookModalVisible(false);
+        return true;
+      }
+      if (navigation?.canGoBack && navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        navigation.navigate("ArtistTabs", { screen: "Dashboard" });
+      }
+      return true;
+    };
+
+    const backSub = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+    return () => backSub.remove();
+  }, [instagramModalVisible, facebookModalVisible, navigation]);
+
+  useEffect(() => {
     if (user?.id) {
       AsyncStorage.getItem(`@mehndigo_insta_${user.id}`).then(val => {
         if (val) setInstagramHandle(val);

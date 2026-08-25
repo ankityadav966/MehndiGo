@@ -35,6 +35,23 @@ export default function MyBookingsScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [imageErrors, setImageErrors] = useState({});
 
+  // Back handling: If subscreen -> goBack(), If tab -> switch to Home tab
+  useFocusEffect(
+    React.useCallback(() => {
+      const { BackHandler } = require("react-native");
+      const onBackPress = () => {
+        if (navigation?.canGoBack && navigation.canGoBack()) {
+          navigation.goBack();
+        } else {
+          navigation.navigate("CustomerTabs", { screen: "Home" });
+        }
+        return true;
+      };
+      const sub = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+      return () => sub.remove();
+    }, [navigation])
+  );
+
   const LOCAL_CATEGORY_IMAGES = {
     bridal: require("../../assets/images/categories/bridal.png"),
     royal: require("../../assets/images/categories/royal.png"),

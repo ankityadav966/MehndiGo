@@ -293,6 +293,33 @@ export default function HomeScreen({ navigation }) {
     return b.service?.specialization_name || "Custom Mehndi Package";
   };
 
+  // Root level back handler with double-back-to-exit prevention
+  useFocusEffect(
+    useCallback(() => {
+      const { BackHandler } = require("react-native");
+      const { handleRootDoubleBackExit } = require("../../utils/navigationHelper");
+
+      const onBackPress = () => {
+        if (paymentModalVisible) {
+          setPaymentModalVisible(false);
+          return true;
+        }
+        if (locationModalVisible) {
+          setLocationModalVisible(false);
+          return true;
+        }
+        if (smartAlertVisible) {
+          setSmartAlertVisible(false);
+          return true;
+        }
+        return handleRootDoubleBackExit("Press back again to exit MehndiGo");
+      };
+
+      const sub = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+      return () => sub.remove();
+    }, [paymentModalVisible, locationModalVisible, smartAlertVisible])
+  );
+
   // Smart Location Management States
   const [activeAddressState, setActiveAddressState] = useState(null);
   const [savedAddressesList, setSavedAddressesList] = useState([]);

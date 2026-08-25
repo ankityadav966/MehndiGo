@@ -1296,9 +1296,10 @@ const handleGetArtistDashboard = async (c) => {
   const servicesCount = await db.first("SELECT COUNT(*) as count FROM services WHERE artist_id = ? OR user_id = ?", [u.id, u.id]).then(r => r?.count || 0).catch(() => 0);
   const portfolioCount = await db.first("SELECT COUNT(*) as count FROM portfolios WHERE artist_id = ?", [u.id]).then(r => r?.count || 0).catch(() => 0);
   const bookingsCount = await db.first("SELECT COUNT(*) as count FROM bookings WHERE artist_id = ?", [u.id]).then(r => r?.count || 0).catch(() => 0);
-  const walletRow = await db.first("SELECT balance, pending_amount, pending_settlement FROM wallets WHERE user_id = ? OR artist_id = ?", [u.id, u.id]).catch(() => null);
-  const walletBalance = Number(walletRow?.balance || 0);
-  const pendingEarnings = Number(walletRow?.pending_amount || walletRow?.pending_settlement || 0);
+  const walletRow = await db.first("SELECT balance, available_balance, pending_amount, pending_settlement, escrow_balance, total_earnings FROM wallets WHERE user_id = ? OR artist_id = ?", [u.id, u.id]).catch(() => null);
+  const walletBalance = Number(walletRow?.available_balance !== undefined && walletRow?.available_balance !== null ? walletRow.available_balance : (walletRow?.balance || 0));
+  const pendingEarnings = Number(walletRow?.escrow_balance !== undefined && walletRow?.escrow_balance !== null ? walletRow.escrow_balance : (walletRow?.pending_amount || walletRow?.pending_settlement || 0));
+  const lifetimeEarnings = Number(walletRow?.total_earnings || 0);
   const recentBookingsList = await db.all(`
     SELECT b.id as id, b.id as booking_id, b.customer_id, b.artist_id, b.service_id, b.booking_number,
            b.booking_date, b.booking_time, b.status, b.payment_status, b.total_amount, b.advance_paid,
@@ -1369,10 +1370,18 @@ const handleGetArtistDashboard = async (c) => {
     [u.id, String(u.id), istDateStr]
   ).then(r => r?.count || 0).catch(() => 0);
 
-  const todayEarningsVal = await db.first(
-    "SELECT SUM(amount) as total FROM wallet_transactions WHERE (user_id = ? OR wallet_id = (SELECT id FROM wallets WHERE user_id = ? OR artist_id = ?)) AND type = 'credit' AND (status = 'completed' OR status IS NULL) AND DATE(created_at) = DATE('now')",
-    [u.id, u.id, u.id]
-  ).then(r => Number(r?.total || 0)).catch(() => 0);
+  const todayEarningsVal = await db.first(`
+    SELECT SUM(amount) as total 
+    FROM wallet_transactions 
+    WHERE (user_id = ? OR wallet_id = (SELECT id FROM wallets WHERE user_id = ? OR artist_id = ?)) 
+      AND type = 'credit' 
+      AND amount > 0 
+      AND (booking_id IS NOT NULL OR reference_id LIKE 'RELEASE_BK_%') 
+      AND (reference_id NOT LIKE 'TOPUP_%' AND reference_id NOT LIKE 'RECHARGE_%' AND reference_id NOT LIKE 'ADJ_%') 
+      AND (description NOT LIKE '%Top-up%' AND description NOT LIKE '%Recharge%')
+      AND (status = 'completed' OR status IS NULL) 
+      AND DATE(created_at) = DATE('now')
+  `, [u.id, u.id, u.id]).then(r => Number(r?.total || 0)).catch(() => 0);
 
   const pendingRequestsCount = await db.first(
     "SELECT COUNT(*) as count FROM bookings WHERE (artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT)) AND LOWER(status) IN ('pending', 'pending_payment', 'requested')",
@@ -1423,7 +1432,10 @@ const handleGetArtistDashboard = async (c) => {
     todayEarnings: todayEarningsVal,
     pendingRequests: pendingRequestsCount,
     walletBalance,
+    availableBalance: walletBalance,
     pendingEarnings,
+    escrowBalance: pendingEarnings,
+    lifetimeEarnings,
     bookingCounts: {
       PENDING: pendingRequestsCount,
       UPCOMING: upcomingCount,
@@ -1436,6 +1448,167 @@ const handleGetArtistDashboard = async (c) => {
     },
     recentBookings: formattedRecent
   }, "Artist dashboard data retrieved");
+};
+
+const handleGetArtistEarnings = async (c) => {
+  const db = getDb(c.env);
+  const u = getUserFromHeader(c);
+  if (!u || !u.id) {
+    return jsonRes(c, false, null, "Unauthorized access", 401);
+  }
+
+  await ensureWalletTables(db);
+  const artistId = u.id;
+
+  let wallet = await db.first("SELECT * FROM wallets WHERE user_id = ? OR artist_id = ?", [artistId, artistId]).catch(() => null);
+  const availableBalance = Number(wallet?.available_balance !== undefined && wallet?.available_balance !== null ? wallet.available_balance : (wallet?.balance || 0));
+  const escrowBalance = Number(wallet?.escrow_balance !== undefined && wallet?.escrow_balance !== null ? wallet.escrow_balance : (wallet?.pending_amount || wallet?.pending_settlement || 0));
+  const totalWithdrawn = Number(wallet?.withdrawn_amount || 0);
+  const lifetimeEarnings = Number(wallet?.total_earnings || 0);
+
+  // 1. Online Booking Earnings from wallet_transactions (credits from bookings only)
+  const onlineTodayRow = await db.first(`
+    SELECT SUM(amount) as total, COUNT(*) as count
+    FROM wallet_transactions
+    WHERE (user_id = ? OR wallet_id = ?)
+      AND type = 'credit'
+      AND amount > 0
+      AND (booking_id IS NOT NULL OR reference_id LIKE 'RELEASE_BK_%')
+      AND (reference_id NOT LIKE 'TOPUP_%' AND reference_id NOT LIKE 'RECHARGE_%' AND reference_id NOT LIKE 'ADJ_%')
+      AND (description NOT LIKE '%Top-up%' AND description NOT LIKE '%Recharge%')
+      AND (status = 'completed' OR status IS NULL)
+      AND DATE(created_at) = DATE('now')
+  `, [artistId, wallet?.id || 0]).catch(() => ({ total: 0, count: 0 }));
+
+  const onlineWeekRow = await db.first(`
+    SELECT SUM(amount) as total
+    FROM wallet_transactions
+    WHERE (user_id = ? OR wallet_id = ?)
+      AND type = 'credit'
+      AND amount > 0
+      AND (booking_id IS NOT NULL OR reference_id LIKE 'RELEASE_BK_%')
+      AND (reference_id NOT LIKE 'TOPUP_%' AND reference_id NOT LIKE 'RECHARGE_%' AND reference_id NOT LIKE 'ADJ_%')
+      AND (description NOT LIKE '%Top-up%' AND description NOT LIKE '%Recharge%')
+      AND (status = 'completed' OR status IS NULL)
+      AND created_at >= datetime('now', '-7 days')
+  `, [artistId, wallet?.id || 0]).catch(() => ({ total: 0 }));
+
+  const onlineMonthRow = await db.first(`
+    SELECT SUM(amount) as total
+    FROM wallet_transactions
+    WHERE (user_id = ? OR wallet_id = ?)
+      AND type = 'credit'
+      AND amount > 0
+      AND (booking_id IS NOT NULL OR reference_id LIKE 'RELEASE_BK_%')
+      AND (reference_id NOT LIKE 'TOPUP_%' AND reference_id NOT LIKE 'RECHARGE_%' AND reference_id NOT LIKE 'ADJ_%')
+      AND (description NOT LIKE '%Top-up%' AND description NOT LIKE '%Recharge%')
+      AND (status = 'completed' OR status IS NULL)
+      AND strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')
+  `, [artistId, wallet?.id || 0]).catch(() => ({ total: 0 }));
+
+  const onlineAllTimeRow = await db.first(`
+    SELECT SUM(amount) as total
+    FROM wallet_transactions
+    WHERE (user_id = ? OR wallet_id = ?)
+      AND type = 'credit'
+      AND amount > 0
+      AND (booking_id IS NOT NULL OR reference_id LIKE 'RELEASE_BK_%')
+      AND (reference_id NOT LIKE 'TOPUP_%' AND reference_id NOT LIKE 'RECHARGE_%' AND reference_id NOT LIKE 'ADJ_%')
+      AND (description NOT LIKE '%Top-up%' AND description NOT LIKE '%Recharge%')
+      AND (status = 'completed' OR status IS NULL)
+  `, [artistId, wallet?.id || 0]).catch(() => ({ total: 0 }));
+
+  // 2. Cash In Hand Earnings from completed cash bookings
+  const cashTodayRow = await db.first(`
+    SELECT SUM(COALESCE(artist_total_payable, base_service_amount * 0.9 + travel_charge, total_amount * 0.9)) as total, COUNT(*) as count
+    FROM bookings
+    WHERE artist_id = ?
+      AND LOWER(status) = 'completed'
+      AND (UPPER(final_payment_method) = 'CASH' OR UPPER(payment_mode) = 'CASH')
+      AND DATE(updated_at) = DATE('now')
+  `, [artistId]).catch(() => ({ total: 0, count: 0 }));
+
+  const cashWeekRow = await db.first(`
+    SELECT SUM(COALESCE(artist_total_payable, base_service_amount * 0.9 + travel_charge, total_amount * 0.9)) as total
+    FROM bookings
+    WHERE artist_id = ?
+      AND LOWER(status) = 'completed'
+      AND (UPPER(final_payment_method) = 'CASH' OR UPPER(payment_mode) = 'CASH')
+      AND updated_at >= datetime('now', '-7 days')
+  `, [artistId]).catch(() => ({ total: 0 }));
+
+  const cashMonthRow = await db.first(`
+    SELECT SUM(COALESCE(artist_total_payable, base_service_amount * 0.9 + travel_charge, total_amount * 0.9)) as total
+    FROM bookings
+    WHERE artist_id = ?
+      AND LOWER(status) = 'completed'
+      AND (UPPER(final_payment_method) = 'CASH' OR UPPER(payment_mode) = 'CASH')
+      AND strftime('%Y-%m', updated_at) = strftime('%Y-%m', 'now')
+  `, [artistId]).catch(() => ({ total: 0 }));
+
+  const cashAllTimeRow = await db.first(`
+    SELECT SUM(COALESCE(artist_total_payable, base_service_amount * 0.9 + travel_charge, total_amount * 0.9)) as total
+    FROM bookings
+    WHERE artist_id = ?
+      AND LOWER(status) = 'completed'
+      AND (UPPER(final_payment_method) = 'CASH' OR UPPER(payment_mode) = 'CASH')
+  `, [artistId]).catch(() => ({ total: 0 }));
+
+  // 3. Day-by-Day Breakdown (Last 7 Days) for charts/analytics
+  const breakdownRows = await db.all(`
+    SELECT 
+      DATE(created_at) as date,
+      SUM(amount) as total,
+      SUM(amount) as online,
+      0 as cash,
+      COUNT(DISTINCT booking_id) as bookings_count
+    FROM wallet_transactions
+    WHERE (user_id = ? OR wallet_id = ?)
+      AND type = 'credit'
+      AND amount > 0
+      AND (booking_id IS NOT NULL OR reference_id LIKE 'RELEASE_BK_%')
+      AND (reference_id NOT LIKE 'TOPUP_%' AND reference_id NOT LIKE 'RECHARGE_%' AND reference_id NOT LIKE 'ADJ_%')
+      AND (description NOT LIKE '%Top-up%' AND description NOT LIKE '%Recharge%')
+      AND (status = 'completed' OR status IS NULL)
+      AND created_at >= datetime('now', '-7 days')
+    GROUP BY DATE(created_at)
+    ORDER BY date ASC
+  `, [artistId, wallet?.id || 0]).catch(() => []);
+
+  const onlineToday = Number(onlineTodayRow?.total || 0);
+  const cashToday = Number(cashTodayRow?.total || 0);
+  const todayEarnings = Math.round((onlineToday + cashToday) * 100) / 100;
+
+  const onlineWeek = Number(onlineWeekRow?.total || 0);
+  const cashWeek = Number(cashWeekRow?.total || 0);
+  const weeklyEarnings = Math.round((onlineWeek + cashWeek) * 100) / 100;
+
+  const onlineMonth = Number(onlineMonthRow?.total || 0);
+  const cashMonth = Number(cashMonthRow?.total || 0);
+  const monthlyEarnings = Math.round((onlineMonth + cashMonth) * 100) / 100;
+
+  const onlineEarnings = Math.round(Number(onlineAllTimeRow?.total || 0) * 100) / 100;
+  const cashEarnings = Math.round(Number(cashAllTimeRow?.total || 0) * 100) / 100;
+  const effectiveLifetime = Math.round((onlineEarnings + cashEarnings) * 100) / 100;
+
+  return jsonRes(c, true, {
+    todayEarnings,
+    weeklyEarnings,
+    monthlyEarnings,
+    lifetimeEarnings: effectiveLifetime,
+    onlineEarnings,
+    cashEarnings,
+    availableBalance,
+    escrowBalance,
+    pendingEarnings: escrowBalance,
+    withdrawnEarnings: totalWithdrawn,
+    todayBreakdown: {
+      online: onlineToday,
+      cash: cashToday,
+      bookingsCount: Number(onlineTodayRow?.count || 0) + Number(cashTodayRow?.count || 0)
+    },
+    earningsBreakdown: breakdownRows || []
+  }, "Artist earnings retrieved successfully");
 };
 
 const handleGetArtistDetails = async (c) => {
@@ -2385,7 +2558,7 @@ const processBookingEscrow = async (db, bookingId, paymentId, paidAmount) => {
   return { artistEarning, commission, newEscrow };
 };
 
-const processBookingSettlement = async (db, bookingId) => {
+const processBookingSettlement = async (db, bookingId, options = {}) => {
   await ensureWalletTables(db);
   const settings = await getMarketplaceSettings(db);
 
@@ -2401,13 +2574,15 @@ const processBookingSettlement = async (db, bookingId) => {
   if (!artistId) return null;
 
   const refCode = `RELEASE_BK_${realBookingId}`;
+  const cashRefCode = `CASH_BK_${realBookingId}`;
 
+  // Idempotency check: Has this booking already been settled?
   const existingRelease = await db.first(
-    "SELECT * FROM wallet_transactions WHERE reference_id = ? OR (user_id = ? AND (reference_id = ? OR description LIKE ?))",
-    [refCode, artistId, refCode, `%#${realBookingId}%`]
+    "SELECT * FROM wallet_transactions WHERE reference_id = ? OR reference_id = ? OR (user_id = ? AND booking_id = ? AND status = 'completed' AND type IN ('credit', 'cash_collected'))",
+    [refCode, cashRefCode, artistId, realBookingId]
   ).catch(() => null);
 
-  if (existingRelease) {
+  if (existingRelease && String(booking.settlement_status).toUpperCase() === 'SETTLED') {
     console.log(`[WALLET SETTLEMENT] Settlement already completed for booking #${realBookingId}`);
     return existingRelease;
   }
@@ -2423,8 +2598,41 @@ const processBookingSettlement = async (db, bookingId) => {
   const travelCharge = Number(booking.travel_charge || 0);
 
   const calc = calculateBookingAmounts(baseAmount, distanceKm, travelCharge, isTravelConfirmed, booking, settings);
-  const commission = calc.admin_commission;
-  const artistEarning = calc.artist_total_payable;
+  const commission = calc.admin_commission; // 10% on base service only
+  const artistGrossEarning = calc.artist_total_payable; // Net service earning (90%) + Travel earning (100%)
+
+  // Query actual payment records for this booking
+  const paymentRows = await db.all("SELECT * FROM payments WHERE booking_id = ? AND (status = 'captured' OR status = 'completed')", [realBookingId]).catch(() => []) || [];
+  
+  let onlinePaid = 0;
+  let cashPaid = 0;
+  (paymentRows || []).forEach(p => {
+    const method = String(p.payment_method || '').toUpperCase();
+    const amt = Number(p.amount || 0);
+    if (method === 'CASH') {
+      cashPaid += amt;
+    } else {
+      onlinePaid += amt;
+    }
+  });
+
+  const finalMethod = String(booking.final_payment_method || booking.payment_mode || options.payment_method || '').toUpperCase();
+  const advancePaid = Number(booking.advance_paid || 0);
+  const totalAmount = Number(booking.total_amount || calc.customer_total_amount);
+
+  if (onlinePaid === 0 && advancePaid > 0) {
+    onlinePaid = advancePaid;
+  }
+  if (finalMethod === 'ONLINE' && onlinePaid < totalAmount) {
+    onlinePaid = totalAmount;
+  }
+
+  // Exact Golden Rule Formula:
+  // How much digital money does the Platform actually owe to the Artist?
+  // Platform keeps its commission from online payments collected.
+  // Any excess online payment collected above commission belongs to Artist.
+  const artistDigitalWalletCredit = Math.max(0, Math.round((onlinePaid - commission) * 100) / 100);
+  const artistCashEarning = Math.max(0, Math.round((artistGrossEarning - artistDigitalWalletCredit) * 100) / 100);
 
   let wallet = await db.first("SELECT * FROM wallets WHERE user_id = ? OR artist_id = ?", [artistId, artistId]).catch(() => null);
   if (!wallet) {
@@ -2437,9 +2645,12 @@ const processBookingSettlement = async (db, bookingId) => {
   const currentEscrow = Number(wallet?.escrow_balance || wallet?.pending_settlement || 0);
   const currentLifetime = Number(wallet?.total_earnings || 0);
 
-  const newAvailable = Math.round((currentAvailable + artistEarning) * 100) / 100;
-  const newEscrow = Math.max(0, Math.round((currentEscrow - artistEarning) * 100) / 100);
-  const newLifetime = Math.round((currentLifetime + artistEarning) * 100) / 100;
+  // Available balance increases ONLY by the actual digital credit (Online collected - Commission)
+  const newAvailable = Math.round((currentAvailable + artistDigitalWalletCredit) * 100) / 100;
+  // Escrow balance held is released (reduced by the gross earning)
+  const newEscrow = Math.max(0, Math.round((currentEscrow - artistGrossEarning) * 100) / 100);
+  // Total career lifetime earnings increases by full gross earning (both cash + online)
+  const newLifetime = Math.round((currentLifetime + artistGrossEarning) * 100) / 100;
 
   await db.run(
     "UPDATE wallets SET balance = ?, available_balance = ?, escrow_balance = ?, pending_settlement = ?, total_earnings = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
@@ -2449,18 +2660,37 @@ const processBookingSettlement = async (db, bookingId) => {
   // Update settlement status on booking
   await db.run("UPDATE bookings SET settlement_status = 'SETTLED' WHERE id = ?", [realBookingId]).catch(() => { });
 
-  const desc = `Settlement Released for Completed Booking #${booking.booking_number || realBookingId} (₹${artistEarning.toFixed(2)})`;
+  // Record Transaction for Digital Credit (if any)
+  if (artistDigitalWalletCredit > 0) {
+    const desc = `Settlement Released for Online Booking #${booking.booking_number || realBookingId} (₹${artistDigitalWalletCredit.toFixed(2)})`;
+    await db.run(
+      `INSERT INTO wallet_transactions (wallet_id, user_id, booking_id, type, amount, description, status, reference_id, created_at)
+       VALUES (?, ?, ?, 'credit', ?, ?, 'completed', ?, CURRENT_TIMESTAMP)`,
+      [walletId, artistId, realBookingId, artistDigitalWalletCredit, desc, refCode]
+    ).catch((e) => console.log("Insert release tx error:", e.message));
+  } else {
+    // Record explicit non-credit settlement marker to guarantee idempotency (amount = 0)
+    await db.run(
+      `INSERT INTO wallet_transactions (wallet_id, user_id, booking_id, type, amount, description, status, reference_id, created_at)
+       VALUES (?, ?, ?, 'credit', 0, ?, 'completed', ?, CURRENT_TIMESTAMP)`,
+      [walletId, artistId, realBookingId, `Settlement Settled for Cash Booking #${booking.booking_number || realBookingId} (Cash in Hand: ₹${artistCashEarning.toFixed(2)} - No Digital Credit Due)`, refCode]
+    ).catch(() => { });
+  }
 
-  await db.run(
-    `INSERT INTO wallet_transactions (wallet_id, user_id, booking_id, type, amount, description, status, reference_id)
-     VALUES (?, ?, ?, 'credit', ?, ?, 'completed', ?)`,
-    [walletId, artistId, realBookingId, artistEarning, desc, refCode]
-  ).catch((e) => console.log("Insert release tx error:", e.message));
+  // Record Transaction for Cash Collection (type = 'credit', amount = 0, recorded in description)
+  if (artistCashEarning > 0) {
+    const cashDesc = `Cash Collected in Hand for Booking #${booking.booking_number || realBookingId} (₹${artistCashEarning.toFixed(2)}) — Direct Payout`;
+    await db.run(
+      `INSERT INTO wallet_transactions (wallet_id, user_id, booking_id, type, amount, description, status, reference_id, created_at)
+       VALUES (?, ?, ?, 'credit', 0, ?, 'completed', ?, CURRENT_TIMESTAMP)`,
+      [walletId, artistId, realBookingId, cashDesc, cashRefCode]
+    ).catch((e) => console.log("Insert cash tx error:", e.message));
+  }
 
   // Record platform revenue in platform ledger (user_id = 0, wallet_id = 0)
   await db.run(
-    `INSERT INTO wallet_transactions (wallet_id, user_id, booking_id, type, amount, description, status, reference_id)
-     VALUES (0, 0, ?, 'credit', ?, ?, 'completed', ?)`,
+    `INSERT INTO wallet_transactions (wallet_id, user_id, booking_id, type, amount, description, status, reference_id, created_at)
+     VALUES (0, 0, ?, 'credit', ?, ?, 'completed', ?, CURRENT_TIMESTAMP)`,
     [realBookingId, commission, `MehndiGo Platform Revenue (${(calc.commission_rate_snapshot * 100)}%) on Booking #${booking.booking_number || realBookingId}`, `COMMISSION_BK_${realBookingId}`]
   ).catch(() => { });
 
@@ -2470,8 +2700,15 @@ const processBookingSettlement = async (db, bookingId) => {
     settlement_status: 'SETTLED'
   });
 
-  console.log(`[WALLET SETTLEMENT] Booking #${realBookingId} Released to Available Balance: ₹${artistEarning} | New Available Balance: ₹${newAvailable} | Platform Commission: ₹${commission}`);
-  return { artistEarning, commission, newAvailable, newEscrow };
+  console.log(`[WALLET SETTLEMENT] Booking #${realBookingId} | Online Paid: ₹${onlinePaid} | Cash Collected: ₹${artistCashEarning} | Platform Comm: ₹${commission} | Digital Credit to Wallet: ₹${artistDigitalWalletCredit} | New Available: ₹${newAvailable}`);
+  return {
+    artistGrossEarning,
+    artistDigitalWalletCredit,
+    artistCashEarning,
+    commission,
+    newAvailable,
+    newEscrow
+  };
 };
 
 const processBookingRefund = async (db, bookingId, reason) => {
@@ -3130,20 +3367,23 @@ const handleAddWalletMoney = async (c) => {
   }
 
   try {
+    await ensureWalletTables(db);
     let wallet = await db.first("SELECT * FROM wallets WHERE user_id = ? OR artist_id = ?", [u.id, u.id]).catch(() => null);
     if (!wallet) {
-      await db.run("INSERT INTO wallets (user_id, artist_id, balance, pending_settlement, total_earnings) VALUES (?, ?, 0.0, 0.0, 0.0)", [u.id, u.id]);
+      await db.run("INSERT INTO wallets (user_id, artist_id, balance, available_balance, escrow_balance, total_earnings) VALUES (?, ?, 0.0, 0.0, 0.0, 0.0)", [u.id, u.id]);
       wallet = await db.first("SELECT * FROM wallets WHERE user_id = ? OR artist_id = ?", [u.id, u.id]);
     }
 
+    const refCode = `TOPUP_${paymentId}`;
+
     // Idempotency Check: Don't credit same payment ID twice!
     const existingTx = await db.first(
-      "SELECT * FROM wallet_transactions WHERE reference_id = ? AND status = 'completed'",
-      [paymentId]
+      "SELECT * FROM wallet_transactions WHERE (reference_id = ? OR reference_id = ?) AND status = 'completed'",
+      [paymentId, refCode]
     ).catch(() => null);
 
     if (existingTx) {
-      return jsonRes(c, true, wallet, "Wallet top-up already processed");
+      return jsonRes(c, true, wallet, "Wallet top-up already processed (Idempotent replay)");
     }
 
     // Retrieve pending transaction amount linked to this order
@@ -3158,22 +3398,34 @@ const handleAddWalletMoney = async (c) => {
       return jsonRes(c, false, null, "Invalid recharge amount", 400);
     }
 
-    await db.run("UPDATE wallets SET balance = balance + ?, total_earnings = total_earnings + ? WHERE id = ?", [creditAmount, creditAmount, wallet.id]);
+    // EXACT RULE: Wallet balance and available_balance increase by ₹creditAmount.
+    // total_earnings is NEVER increased for self-recharges!
+    const currentBalance = Number(wallet.balance || 0);
+    const currentAvailable = Number(wallet.available_balance !== undefined && wallet.available_balance !== null ? wallet.available_balance : currentBalance);
+    const newBalance = Math.round((currentBalance + creditAmount) * 100) / 100;
+    const newAvailable = Math.round((currentAvailable + creditAmount) * 100) / 100;
+
+    await db.run(
+      "UPDATE wallets SET balance = ?, available_balance = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      [newBalance, newAvailable, wallet.id]
+    );
+
+    const desc = body.description || `Wallet Self Top-up / Recharge (₹${creditAmount.toFixed(2)})`;
 
     if (pendingTx) {
       await db.run(
-        "UPDATE wallet_transactions SET status = 'completed', reference_id = ? WHERE id = ?",
-        [paymentId, pendingTx.id]
+        "UPDATE wallet_transactions SET status = 'completed', type = 'credit', amount = ?, reference_id = ?, description = ? WHERE id = ?",
+        [creditAmount, refCode, desc, pendingTx.id]
       );
     } else {
       await db.run(
-        "INSERT INTO wallet_transactions (wallet_id, user_id, type, amount, description, status, reference_id) VALUES (?, ?, 'recharge', ?, ?, 'completed', ?)",
-        [wallet.id, u.id, creditAmount, body.description || `Wallet Top-up ₹${creditAmount}`, paymentId]
+        "INSERT INTO wallet_transactions (wallet_id, user_id, type, amount, description, status, reference_id) VALUES (?, ?, 'credit', ?, ?, 'completed', ?)",
+        [wallet.id, u.id, creditAmount, desc, refCode]
       );
     }
 
     const updatedWallet = await db.first("SELECT * FROM wallets WHERE id = ?", [wallet.id]);
-    return jsonRes(c, true, updatedWallet, "Money added to wallet successfully");
+    return jsonRes(c, true, updatedWallet, `₹${creditAmount} added to wallet successfully`);
   } catch (e) {
     return jsonRes(c, false, null, e.message || "Wallet transaction failed", 500);
   }
@@ -4470,7 +4722,7 @@ const handleCreatePaymentSession = async (c) => {
     let wallet = await db.first("SELECT id FROM wallets WHERE user_id = ? OR artist_id = ?", [u.id, u.id]).catch(() => null);
     const walletId = wallet?.id || 0;
     await db.run(
-      "INSERT INTO wallet_transactions (wallet_id, user_id, type, amount, status, description, reference_id) VALUES (?, ?, 'recharge', ?, 'pending', 'Wallet Top-up Request', ?)",
+      "INSERT INTO wallet_transactions (wallet_id, user_id, type, amount, status, description, reference_id) VALUES (?, ?, 'credit', ?, 'pending', 'Wallet Top-up Request', ?)",
       [walletId, u.id, payAmountRupees, orderId]
     ).catch(() => { });
   }
@@ -4488,7 +4740,7 @@ const handleCreatePaymentSession = async (c) => {
     payment_type: paymentType,
     remaining_amount: isFinalPayment ? 0 : Math.max(0, totalAmtRupees - payAmountRupees),
     booking_id: bookingId
-  }, isFinalPayment ? "Remaining balance payment order created successfully" : "10% Advance deposit payment order created successfully");
+  }, isFinalPayment ? "Remaining balance payment order created successfully" : (isRecharge ? `Top-up order of ₹${payAmountRupees} created successfully` : "10% Advance deposit payment order created successfully"));
 };
 
 const handlePaymentWebhook = async (c) => {
@@ -4563,6 +4815,41 @@ const handlePaymentWebhook = async (c) => {
             );
             await db.run("UPDATE payments SET status = 'captured', razorpay_payment_id = ?, payment_method = 'ONLINE', payment_type = 'ADVANCE', paid_at = CURRENT_TIMESTAMP WHERE id = ?", [paymentId, payRec.id]).catch(() => { });
             await processBookingEscrow(db, booking.id, paymentId, advance);
+          }
+        }
+      } else {
+        // Recharge / Top-up Webhook handling (Idempotent)
+        const pendingRecharge = await db.first(
+          "SELECT * FROM wallet_transactions WHERE reference_id = ? AND status = 'pending'",
+          [orderId]
+        ).catch(() => null);
+
+        if (pendingRecharge && paymentId) {
+          const refCode = `TOPUP_${paymentId}`;
+          const alreadyProcessed = await db.first(
+            "SELECT id FROM wallet_transactions WHERE (reference_id = ? OR reference_id = ?) AND status = 'completed'",
+            [paymentId, refCode]
+          ).catch(() => null);
+
+          if (!alreadyProcessed) {
+            const creditAmount = Number(pendingRecharge.amount || 0);
+            let wallet = await db.first("SELECT * FROM wallets WHERE id = ?", [pendingRecharge.wallet_id]).catch(() => null);
+            if (wallet && creditAmount > 0) {
+              const currentBalance = Number(wallet.balance || 0);
+              const currentAvailable = Number(wallet.available_balance !== undefined && wallet.available_balance !== null ? wallet.available_balance : currentBalance);
+              const newBalance = Math.round((currentBalance + creditAmount) * 100) / 100;
+              const newAvailable = Math.round((currentAvailable + creditAmount) * 100) / 100;
+
+              await db.run(
+                "UPDATE wallets SET balance = ?, available_balance = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                [newBalance, newAvailable, wallet.id]
+              );
+
+              await db.run(
+                "UPDATE wallet_transactions SET status = 'completed', type = 'credit', reference_id = ?, description = ? WHERE id = ?",
+                [refCode, `Wallet Self Top-up / Recharge (₹${creditAmount.toFixed(2)})`, pendingRecharge.id]
+              );
+            }
           }
         }
       }
@@ -7933,40 +8220,182 @@ const handleGetArtistLeads = async (c) => {
     return jsonRes(c, false, null, "Unauthorized access", 401);
   }
 
-  const artist = await db.first("SELECT id, user_id FROM artist_profiles WHERE user_id = ? OR CAST(user_id AS TEXT) = CAST(? AS TEXT)", [u.id, String(u.id)]).catch(() => null);
-  const artistId = artist ? artist.id : u.id;
+  const artist = await db.first(
+    "SELECT id, user_id, city FROM artist_profiles WHERE user_id = ? OR CAST(user_id AS TEXT) = CAST(? AS TEXT) OR id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+    [u.id, String(u.id), u.id, String(u.id)]
+  ).catch(() => null);
 
-  const bookings = await db.all(`
+  const artistProfileId = artist ? artist.id : u.id;
+  const artistUserId = artist ? (artist.user_id || u.id) : u.id;
+
+  // Query parameters
+  const searchParam = (c.req.query("search") || "").toLowerCase().trim();
+  const statusParam = (c.req.query("status") || "").trim();
+  const cityParam = (c.req.query("city") || "").toLowerCase().trim();
+  const categoryParam = (c.req.query("category") || "").toLowerCase().trim();
+  const sortParam = (c.req.query("sort") || "Newest").trim();
+  const minPrice = parseFloat(c.req.query("minPrice")) || 0;
+  const maxPrice = parseFloat(c.req.query("maxPrice")) || 0;
+
+  // Query all relevant bookings (either assigned to this artist or broadcast open leads)
+  let sql = `
     SELECT b.*,
            c.full_name as customer_name, c.phone as customer_phone, c.email as customer_email, c.avatar as customer_avatar,
-           s.title as service_title, s.specialization_name as service_specialization, s.category as service_category, s.duration_minutes
+           s.title as service_title, s.specialization_name as service_specialization, s.category as service_category, s.duration_minutes, s.price as service_price
     FROM bookings b
     LEFT JOIN users c ON (b.customer_id = c.id OR CAST(b.customer_id AS TEXT) = CAST(c.id AS TEXT))
     LEFT JOIN services s ON (b.service_id = s.id OR CAST(b.service_id AS TEXT) = CAST(s.id AS TEXT))
-    WHERE (b.artist_id = ? OR CAST(b.artist_id AS TEXT) = CAST(? AS TEXT) OR b.artist_id = ? OR CAST(b.artist_id AS TEXT) = CAST(? AS TEXT) OR b.artist_id IS NULL OR b.artist_id = 0)
-    ORDER BY b.id DESC LIMIT 50
-  `, [artistId, String(artistId), u.id, String(u.id)]).catch(() => []);
+    WHERE (
+      b.artist_id = ? OR CAST(b.artist_id AS TEXT) = CAST(? AS TEXT)
+      OR b.artist_id = ? OR CAST(b.artist_id AS TEXT) = CAST(? AS TEXT)
+      OR b.artist_id IS NULL
+      OR b.artist_id = 0
+    )
+  `;
+  const params = [artistUserId, String(artistUserId), artistProfileId, String(artistProfileId)];
 
-  const leads = (bookings || []).map(b => ({
-    ...b,
-    id: b.id,
-    booking_id: b.id,
-    status: b.status || "New Lead",
-    lead_status: b.status || "New Lead",
-    detailed_status: b.detailed_status || "PENDING",
-    customer_name: b.customer_name || "Valued Customer",
-    customer_phone: b.customer_phone || "",
-    service_title: b.service_title || b.service_specialization || "Bridal Mehndi Service",
-    total_amount: Number(b.total_amount || 0),
-    advance_paid: Number(b.advance_paid || 0),
-    remaining_amount: Number(b.remaining_amount || 0),
-    booking_date: b.booking_date || new Date().toISOString().split("T")[0],
-    booking_time: b.booking_time || "11:00 AM",
-    address: b.address || "Jaipur, Rajasthan",
-    created_at: b.created_at || new Date().toISOString()
-  }));
+  if (minPrice > 0) {
+    sql += " AND (COALESCE(b.total_amount, b.final_amount, 0) >= ?)";
+    params.push(minPrice);
+  }
+  if (maxPrice > 0) {
+    sql += " AND (COALESCE(b.total_amount, b.final_amount, 0) <= ?)";
+    params.push(maxPrice);
+  }
 
-  return jsonRes(c, true, leads, "Leads retrieved successfully");
+  if (sortParam === "Oldest") {
+    sql += " ORDER BY b.id ASC";
+  } else if (sortParam === "Highest Budget") {
+    sql += " ORDER BY COALESCE(b.total_amount, b.final_amount, 0) DESC";
+  } else if (sortParam === "Lowest Budget") {
+    sql += " ORDER BY COALESCE(b.total_amount, b.final_amount, 0) ASC";
+  } else {
+    sql += " ORDER BY b.id DESC";
+  }
+  sql += " LIMIT 100";
+
+  const bookings = await db.all(sql, params).catch(() => []);
+
+  const allLeads = (bookings || []).map(b => {
+    const rawStatus = (b.status || "PENDING").toLowerCase();
+    const rawDetailed = (b.detailed_status || "").toLowerCase();
+
+    let leadStatus = "New Lead";
+    if (rawStatus === "completed" || rawDetailed === "completed") {
+      leadStatus = "Completed";
+    } else if (rawStatus === "cancelled" || rawDetailed === "cancelled") {
+      leadStatus = "Cancelled";
+    } else if (rawStatus === "rejected" || rawDetailed === "rejected" || rawDetailed === "artist_rejected") {
+      leadStatus = "Rejected";
+    } else if (rawStatus === "accepted" || rawStatus === "confirmed" || rawDetailed === "accepted" || rawDetailed === "artist_accepted" || rawStatus === "in_progress" || rawDetailed === "in_progress") {
+      leadStatus = "Accepted";
+    } else if (rawStatus === "viewed" || rawDetailed === "viewed") {
+      leadStatus = "Viewed";
+    } else {
+      leadStatus = "New Lead";
+    }
+
+    const custName = b.customer_name || "Valued Customer";
+    const custAvatar = b.customer_avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(custName)}&background=800020&color=fff`;
+    const sName = b.service_title || b.service_specialization || "Bridal Mehndi Service";
+    const priceVal = Number(b.total_amount || b.final_amount || b.price || b.service_price || 1500);
+    const bookingCode = b.booking_number || b.booking_code || `BK-${b.id}`;
+    const bDate = b.booking_date || b.date || new Date().toISOString().split("T")[0];
+    const bTime = b.booking_time || b.time_slot || "11:00 AM";
+    const addr = b.address || "Jaipur, Rajasthan";
+    const city = b.city || addr.split(",")[0] || "Jaipur";
+
+    return {
+      ...b,
+      id: b.id,
+      booking_id: b.id,
+      booking_code: bookingCode,
+      booking_number: bookingCode,
+      status: leadStatus,
+      lead_status: leadStatus,
+      detailed_status: b.detailed_status || (leadStatus === "Accepted" ? "ACCEPTED" : "PENDING"),
+      customer_name: custName,
+      customer_phone: b.customer_phone || "",
+      customer_email: b.customer_email || "",
+      customer_image: custAvatar,
+      customer_avatar: custAvatar,
+      service_name: sName,
+      service_title: sName,
+      service_category: b.service_category || "Bridal",
+      price: priceVal,
+      total_amount: priceVal,
+      advance_paid: Number(b.advance_paid || 0),
+      remaining_amount: Number(b.remaining_amount || 0),
+      booking_date: bDate,
+      booking_time: bTime,
+      address: addr,
+      city: city,
+      distance: "2.5 km away",
+      payment_status: (b.payment_status || "PENDING").toUpperCase(),
+      booking_status: (b.status || "PENDING").toUpperCase(),
+      created_at: b.created_at || new Date().toISOString(),
+      customer: {
+        id: b.customer_id,
+        name: custName,
+        phone: b.customer_phone || "",
+        email: b.customer_email || "",
+        profile_image: custAvatar
+      },
+      service: {
+        id: b.service_id,
+        name: sName,
+        category: b.service_category || "Bridal",
+        price: priceVal
+      }
+    };
+  });
+
+  // Apply in-memory search and category filtering if specified
+  let filteredLeads = allLeads;
+  if (searchParam) {
+    filteredLeads = filteredLeads.filter(l =>
+      String(l.id).includes(searchParam) ||
+      String(l.booking_code).toLowerCase().includes(searchParam) ||
+      l.customer_name.toLowerCase().includes(searchParam) ||
+      l.customer_phone.includes(searchParam) ||
+      l.service_name.toLowerCase().includes(searchParam) ||
+      l.address.toLowerCase().includes(searchParam) ||
+      l.city.toLowerCase().includes(searchParam)
+    );
+  }
+
+  if (statusParam && statusParam !== "All") {
+    filteredLeads = filteredLeads.filter(l => l.status.toLowerCase() === statusParam.toLowerCase());
+  }
+
+  if (cityParam) {
+    filteredLeads = filteredLeads.filter(l => l.city.toLowerCase().includes(cityParam) || l.address.toLowerCase().includes(cityParam));
+  }
+
+  if (categoryParam) {
+    filteredLeads = filteredLeads.filter(l => l.service_category.toLowerCase().includes(categoryParam) || l.service_name.toLowerCase().includes(categoryParam));
+  }
+
+  const todayStr = new Date().toISOString().split("T")[0];
+  const todayCount = allLeads.filter(l => l.booking_date === todayStr || (l.created_at && l.created_at.startsWith(todayStr))).length;
+  const pendingCount = allLeads.filter(l => l.status === "New Lead" || l.status === "Viewed").length;
+  const acceptedOrCompleted = allLeads.filter(l => l.status === "Accepted" || l.status === "Completed").length;
+  const conversion = allLeads.length > 0 ? Math.round((acceptedOrCompleted / allLeads.length) * 100) : 100;
+  const earningsSum = allLeads.filter(l => l.status === "Completed").reduce((acc, cur) => acc + (cur.price || 0), 0);
+
+  const stats = {
+    todayLeads: todayCount,
+    pendingLeads: pendingCount,
+    conversionRate: conversion,
+    responseTime: "15 min",
+    totalEarnings: earningsSum
+  };
+
+  return jsonRes(c, true, {
+    leads: filteredLeads,
+    stats: stats,
+    total: filteredLeads.length
+  }, "Leads retrieved successfully");
 };
 
 const handleGetArtistLeadById = async (c) => {
@@ -7978,8 +8407,8 @@ const handleGetArtistLeadById = async (c) => {
 
   const b = await db.first(`
     SELECT b.*,
-           c.full_name as customer_name, c.phone as customer_phone, c.email as customer_email,
-           s.title as service_title, s.specialization_name as service_specialization
+           c.full_name as customer_name, c.phone as customer_phone, c.email as customer_email, c.avatar as customer_avatar,
+           s.title as service_title, s.specialization_name as service_specialization, s.category as service_category, s.price as service_price
     FROM bookings b
     LEFT JOIN users c ON (b.customer_id = c.id OR CAST(b.customer_id AS TEXT) = CAST(c.id AS TEXT))
     LEFT JOIN services s ON (b.service_id = s.id OR CAST(b.service_id AS TEXT) = CAST(s.id AS TEXT))
@@ -7987,13 +8416,76 @@ const handleGetArtistLeadById = async (c) => {
   `, [leadId, leadId]).catch(() => null);
 
   if (!b) return jsonRes(c, false, null, "Lead not found", 404);
-  return jsonRes(c, true, {
+
+  const rawStatus = (b.status || "PENDING").toLowerCase();
+  const rawDetailed = (b.detailed_status || "").toLowerCase();
+
+  let leadStatus = "New Lead";
+  if (rawStatus === "completed" || rawDetailed === "completed") {
+    leadStatus = "Completed";
+  } else if (rawStatus === "cancelled" || rawDetailed === "cancelled") {
+    leadStatus = "Cancelled";
+  } else if (rawStatus === "rejected" || rawDetailed === "rejected" || rawDetailed === "artist_rejected") {
+    leadStatus = "Rejected";
+  } else if (rawStatus === "accepted" || rawStatus === "confirmed" || rawDetailed === "accepted" || rawDetailed === "artist_accepted" || rawStatus === "in_progress" || rawDetailed === "service_started") {
+    leadStatus = "Accepted";
+  } else if (rawStatus === "viewed" || rawDetailed === "viewed") {
+    leadStatus = "Viewed";
+  }
+
+  const custName = b.customer_name || "Valued Customer";
+  const custAvatar = b.customer_avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(custName)}&background=800020&color=fff`;
+  const sName = b.service_title || b.service_specialization || "Bridal Mehndi Service";
+  const priceVal = Number(b.total_amount || b.final_amount || b.price || b.service_price || 1500);
+  const bookingCode = b.booking_number || b.booking_code || `BK-${b.id}`;
+
+  const formattedLead = {
     ...b,
     id: b.id,
     booking_id: b.id,
-    customer_name: b.customer_name || "Valued Customer",
-    service_title: b.service_title || "Mehndi Service"
-  }, "Lead details retrieved");
+    booking_code: bookingCode,
+    booking_number: bookingCode,
+    status: leadStatus,
+    lead_status: leadStatus,
+    detailed_status: b.detailed_status || (leadStatus === "Accepted" ? "ACCEPTED" : "PENDING"),
+    customer_name: custName,
+    customer_phone: b.customer_phone || "",
+    customer_email: b.customer_email || "",
+    customer_image: custAvatar,
+    customer_avatar: custAvatar,
+    service_name: sName,
+    service_title: sName,
+    service_category: b.service_category || "Bridal",
+    price: priceVal,
+    total_amount: priceVal,
+    advance_paid: Number(b.advance_paid || 0),
+    remaining_amount: Number(b.remaining_amount || 0),
+    booking_date: b.booking_date || b.date || new Date().toISOString().split("T")[0],
+    booking_time: b.booking_time || b.time_slot || "11:00 AM",
+    address: b.address || "Jaipur, Rajasthan",
+    city: b.city || (b.address ? b.address.split(",")[0] : "Jaipur"),
+    landmark: b.landmark || "",
+    distance: "2.5 km away",
+    notes: b.notes || b.special_instructions || "",
+    payment_status: (b.payment_status || "PENDING").toUpperCase(),
+    booking_status: (b.status || "PENDING").toUpperCase(),
+    created_at: b.created_at || new Date().toISOString(),
+    customer: {
+      id: b.customer_id,
+      name: custName,
+      phone: b.customer_phone || "",
+      email: b.customer_email || "",
+      profile_image: custAvatar
+    },
+    service: {
+      id: b.service_id,
+      name: sName,
+      category: b.service_category || "Bridal",
+      price: priceVal
+    }
+  };
+
+  return jsonRes(c, true, formattedLead, "Lead details retrieved");
 };
 
 app.get("/api/v1/debug/bookings-coords", async (c) => {
@@ -8617,15 +9109,149 @@ const handleAdminCommissionHistory = async (c) => {
   return jsonRes(c, true, list || []);
 };
 
+const handleAdminReconcileLegacyCashWallets = async (c) => {
+  try {
+    const adminCheck = requireAdminAuth(c);
+    if (adminCheck) return adminCheck;
+
+    const db = getDb(c.env);
+    await ensureWalletTables(db);
+
+    // Find all completed cash bookings
+    const cashBookings = await db.all(`
+      SELECT b.* 
+      FROM bookings b
+      WHERE LOWER(b.status) = 'completed'
+        AND (UPPER(b.final_payment_method) = 'CASH' OR UPPER(b.payment_mode) = 'CASH')
+      ORDER BY b.id ASC
+    `).catch(() => []);
+
+    const adjustments = [];
+    let totalReconciledAmount = 0;
+
+    for (const b of (cashBookings || [])) {
+      const realBookingId = b.id;
+      const artistId = b.artist_id;
+      if (!artistId) continue;
+
+      const releaseRef = `RELEASE_BK_${realBookingId}`;
+      const adjRef = `ADJ_CASH_BK_${realBookingId}`;
+      const cashRef = `CASH_BK_${realBookingId}`;
+
+      // Check if an adjustment has already been made
+      const existingAdj = await db.first("SELECT id FROM wallet_transactions WHERE reference_id = ?", [adjRef]).catch(() => null);
+      if (existingAdj) continue;
+
+      // Check if a wrong digital credit transaction was previously issued
+      const wrongCreditTx = await db.first(
+        "SELECT * FROM wallet_transactions WHERE reference_id = ? AND type = 'credit' AND amount > 0",
+        [releaseRef]
+      ).catch(() => null);
+
+      if (wrongCreditTx) {
+        const wrongCreditAmount = Number(wrongCreditTx.amount || 0);
+        let wallet = await db.first("SELECT * FROM wallets WHERE user_id = ? OR artist_id = ?", [artistId, artistId]).catch(() => null);
+        if (!wallet) continue;
+
+        const walletId = wallet.id || 1;
+        const oldAvailable = Number(wallet.available_balance !== undefined && wallet.available_balance !== null ? wallet.available_balance : (wallet.balance || 0));
+        const newAvailable = Math.max(0, Math.round((oldAvailable - wrongCreditAmount) * 100) / 100);
+
+        // 1. Update wallet balance
+        await db.run(
+          "UPDATE wallets SET balance = ?, available_balance = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+          [newAvailable, newAvailable, walletId]
+        );
+
+        // 2. Insert auditable reversal transaction
+        const adjDesc = `Reconciliation Adjustment: Reverse duplicate digital credit for completed cash booking #${b.booking_number || realBookingId} (₹${wrongCreditAmount.toFixed(2)})`;
+        await db.run(
+          `INSERT INTO wallet_transactions (wallet_id, user_id, booking_id, type, amount, description, status, reference_id)
+           VALUES (?, ?, ?, 'debit', ?, ?, 'completed', ?)`,
+          [walletId, artistId, realBookingId, wrongCreditAmount, adjDesc, adjRef]
+        );
+
+        // 3. Ensure cash_collected record exists for accurate career statistics (type = 'credit', amount = 0)
+        const existingCashTx = await db.first("SELECT id FROM wallet_transactions WHERE reference_id = ?", [cashRef]).catch(() => null);
+        if (!existingCashTx) {
+          const cashDesc = `Cash Collected in Hand for Booking #${b.booking_number || realBookingId} (₹${wrongCreditAmount.toFixed(2)}) — Direct Payout`;
+          await db.run(
+            `INSERT INTO wallet_transactions (wallet_id, user_id, booking_id, type, amount, description, status, reference_id)
+             VALUES (?, ?, ?, 'credit', 0, ?, 'completed', ?)`,
+            [walletId, artistId, realBookingId, cashDesc, cashRef]
+          );
+        }
+
+        totalReconciledAmount += wrongCreditAmount;
+        adjustments.push({
+          booking_id: realBookingId,
+          booking_number: b.booking_number || `MG-${realBookingId}`,
+          artist_id: artistId,
+          old_balance: oldAvailable,
+          wrong_credit: wrongCreditAmount,
+          correct_balance: newAvailable,
+          adjustment_amount: wrongCreditAmount,
+          reason: "Duplicate digital wallet credit reversal on cash-in-hand completed booking",
+          reference_id: adjRef,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
+
+    return jsonRes(c, true, {
+      total_adjusted_bookings: adjustments.length,
+      total_reconciled_amount: totalReconciledAmount,
+      adjustments
+    }, `Legacy cash wallet reconciliation completed. Adjusted ${adjustments.length} transactions totaling ₹${totalReconciledAmount}`);
+  } catch (err) {
+    return jsonRes(c, false, { error: err.message, stack: err.stack }, "Reconciliation error: " + err.message, 500);
+  }
+};
+
 const handleAdminWalletDashboardSummary = async (c) => {
   const db = getDb(c.env);
-  const revRow = await db.first("SELECT SUM(total_amount) as total FROM bookings WHERE LOWER(status) = 'completed'").catch(() => ({ total: 0 }));
-  const lifetime = Math.round(Number(revRow?.total || 0) * 0.15);
+  
+  const todayRow = await db.first(`
+    SELECT SUM(amount) as total FROM wallet_transactions 
+    WHERE (user_id = 0 OR type = 'PLATFORM_COMMISSION' OR description LIKE '%Platform Revenue%')
+      AND (status = 'completed' OR status IS NULL)
+      AND DATE(created_at) = DATE('now')
+  `).catch(() => ({ total: 0 }));
+
+  const weeklyRow = await db.first(`
+    SELECT SUM(amount) as total FROM wallet_transactions 
+    WHERE (user_id = 0 OR type = 'PLATFORM_COMMISSION' OR description LIKE '%Platform Revenue%')
+      AND (status = 'completed' OR status IS NULL)
+      AND created_at >= datetime('now', '-7 days')
+  `).catch(() => ({ total: 0 }));
+
+  const monthlyRow = await db.first(`
+    SELECT SUM(amount) as total FROM wallet_transactions 
+    WHERE (user_id = 0 OR type = 'PLATFORM_COMMISSION' OR description LIKE '%Platform Revenue%')
+      AND (status = 'completed' OR status IS NULL)
+      AND strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')
+  `).catch(() => ({ total: 0 }));
+
+  const yearlyRow = await db.first(`
+    SELECT SUM(amount) as total FROM wallet_transactions 
+    WHERE (user_id = 0 OR type = 'PLATFORM_COMMISSION' OR description LIKE '%Platform Revenue%')
+      AND (status = 'completed' OR status IS NULL)
+      AND strftime('%Y', created_at) = strftime('%Y', 'now')
+  `).catch(() => ({ total: 0 }));
+
+  const lifetimeRow = await db.first(`
+    SELECT SUM(amount) as total FROM wallet_transactions 
+    WHERE (user_id = 0 OR type = 'PLATFORM_COMMISSION' OR description LIKE '%Platform Revenue%')
+      AND (status = 'completed' OR status IS NULL)
+  `).catch(() => ({ total: 0 }));
+
+  const lifetime = Math.round(Number(lifetimeRow?.total || 0) * 100) / 100;
+
   return jsonRes(c, true, {
-    today: Math.round(lifetime * 0.1),
-    weekly: Math.round(lifetime * 0.4),
-    monthly: Math.round(lifetime * 0.8),
-    yearly: lifetime,
+    today: Math.round(Number(todayRow?.total || 0) * 100) / 100,
+    weekly: Math.round(Number(weeklyRow?.total || 0) * 100) / 100,
+    monthly: Math.round(Number(monthlyRow?.total || 0) * 100) / 100,
+    yearly: Math.round(Number(yearlyRow?.total || 0) * 100) / 100,
     lifetime: lifetime
   });
 };
@@ -8634,15 +9260,21 @@ const handleAdminAnalyticsDashboard = async (c) => {
   const db = getDb(c.env);
   const rev = await db.first("SELECT SUM(total_amount) as total FROM bookings WHERE LOWER(status) = 'completed'").catch(() => ({ total: 0 }));
   const bks = await db.first("SELECT COUNT(*) as count FROM bookings").catch(() => ({ count: 0 }));
+  const completedBks = await db.first("SELECT COUNT(*) as count FROM bookings WHERE LOWER(status) = 'completed'").catch(() => ({ count: 0 }));
   const cust = await db.first("SELECT COUNT(*) as count FROM users WHERE LOWER(role) = 'customer' OR LOWER(role) = 'user'").catch(() => ({ count: 0 }));
   const art = await db.first("SELECT COUNT(*) as count FROM users WHERE LOWER(role) = 'artist'").catch(() => ({ count: 0 }));
 
+  const totalCount = Number(bks?.count || 0);
+  const completedCount = Number(completedBks?.count || 0);
+  const realConversionRate = totalCount > 0 ? Math.round((completedCount / totalCount) * 1000) / 10 : 0;
+
   return jsonRes(c, true, {
     totalRevenue: rev?.total || 0,
-    totalBookings: bks?.count || 0,
+    totalBookings: totalCount,
+    completedBookings: completedCount,
     totalCustomers: cust?.count || 0,
     totalArtists: art?.count || 0,
-    conversionRate: 84.5
+    conversionRate: realConversionRate
   });
 };
 
@@ -9627,6 +10259,8 @@ const handleAdminFinancialLedger = async (c) => {
   ["get", "/admin/wallet/summary", handleAdminWalletSummary],
   ["get", "/admin/wallet/commission-history", handleAdminCommissionHistory],
   ["get", "/admin/wallet/dashboard-summary", handleAdminWalletDashboardSummary],
+  ["get", "/admin/reconcile-legacy-cash-wallets", handleAdminReconcileLegacyCashWallets],
+  ["post", "/admin/reconcile-legacy-cash-wallets", handleAdminReconcileLegacyCashWallets],
   ["get", "/admin/marketplace/settings", handleAdminMarketplaceSettings],
   ["put", "/admin/marketplace/settings", handleAdminMarketplaceSettings],
   ["post", "/admin/marketplace/settings", handleAdminMarketplaceSettings],
@@ -9681,6 +10315,10 @@ addRoute("get", "/artist/dashboard", handleGetArtistDashboard);
 addRoute("get", "/artist/details", handleGetArtistDetails);
 addRoute("get", "/artist/profile", handleGetArtistDetails);
 addRoute("get", "/artist/wallet", handleGetWallet);
+addRoute("get", "/artist/earnings", handleGetArtistEarnings);
+addRoute("get", "/api/v1/artist/earnings", handleGetArtistEarnings);
+addRoute("get", "/api/v1/mehndigo/artist/earnings", handleGetArtistEarnings);
+addRoute("get", "/mehndigo/artist/earnings", handleGetArtistEarnings);
 // Chat & Messaging System Routes
 addRoute("get", "/chat/list", handleGetChatList);
 addRoute("get", "/chat/conversations", handleGetChatList);
@@ -13472,6 +14110,7 @@ addRoute("get", "/artist/artistdetails", handleGetArtistDetails);
 addRoute("get", "/artist/profile", handleGetArtistDetails);
 addRoute("put", "/artist/profile", handleUpdateArtistProfile);
 addRoute("get", "/artist/dashboard", handleGetArtistDashboard);
+addRoute("get", "/artist/earnings", handleGetArtistEarnings);
 
 addRoute("get", "/artist/portfolio", handleGetArtistPortfolio);
 addRoute("get", "/portfolio", handleGetArtistPortfolio);
@@ -13834,9 +14473,12 @@ addRoute("post", "/admin/support/tickets/:id/status", handleAdminSupportTickets)
 
 // Payment & Razorpay Routes
 addRoute("post", "/payment/create-session", handleCreatePaymentSession);
+addRoute("post", "/payment/session", handleCreatePaymentSession);
 addRoute("post", "/payment/create-order", handleCreatePaymentSession);
 addRoute("post", "/booking/create-session", handleCreatePaymentSession);
 addRoute("post", "/customer/payment/create-session", handleCreatePaymentSession);
+addRoute("post", "/wallet/create-session", handleCreatePaymentSession);
+addRoute("post", "/wallet/recharge/create-session", handleCreatePaymentSession);
 
 addRoute("post", "/payment/verify", handleVerifyPayment);
 addRoute("post", "/payments/verify", handleVerifyPayment);

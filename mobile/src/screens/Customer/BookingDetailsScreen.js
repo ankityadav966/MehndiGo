@@ -353,6 +353,41 @@ export default function BookingDetailsScreen({ route, navigation }) {
     longitude: Number(booking.longitude)
   } : null);
 
+  const handleBack = useCallback(() => {
+    if (invoiceVisible) {
+      setInvoiceVisible(false);
+      return true;
+    }
+    if (cancelModalVisible) {
+      setCancelModalVisible(false);
+      return true;
+    }
+    if (rescheduleModalVisible) {
+      setRescheduleModalVisible(false);
+      return true;
+    }
+    if (disputeModalVisible) {
+      setDisputeModalVisible(false);
+      return true;
+    }
+
+    if (navigation?.canGoBack && navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "CustomerTabs", params: { screen: "Bookings" } }]
+      });
+    }
+    return true;
+  }, [invoiceVisible, cancelModalVisible, rescheduleModalVisible, disputeModalVisible, navigation]);
+
+  useEffect(() => {
+    const { BackHandler } = require("react-native");
+    const backSubscription = BackHandler.addEventListener("hardwareBackPress", handleBack);
+    return () => backSubscription.remove();
+  }, [handleBack]);
+
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
@@ -363,7 +398,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
         <BookingStatusHeader
           bookingCode={booking?.booking_code || booking?.booking_number || booking?.id}
           status={rawStatus}
-          onBack={() => navigation.goBack()}
+          onBack={handleBack}
           onSupport={() => setDisputeModalVisible(true)}
           onRefresh={handleRefresh}
         />

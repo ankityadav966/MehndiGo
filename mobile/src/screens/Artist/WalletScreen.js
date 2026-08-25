@@ -14,8 +14,10 @@ import {
 } from "react-native";
 import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useFocusEffect } from "@react-navigation/native";
 import Colors from "../../constants/Colors";
 import CustomButton from "../../components/CustomButton";
+import { useSocket } from "../../context/SocketContext";
 import {
   getUserWallet,
   getWalletHistory,
@@ -27,13 +29,15 @@ import {
 import moment from "moment";
 
 export default function WalletScreen({ route, navigation }) {
-  const [balance, setBalance] = useState(0);
-  const [walletData, setWalletData] = useState(null);
+  const initialPassedBalance = Number(route?.params?.balance || route?.params?.wallet?.available_balance || route?.params?.wallet?.balance || 0);
+  const [balance, setBalance] = useState(initialPassedBalance);
+  const [walletData, setWalletData] = useState(route?.params?.wallet || null);
   const [transactions, setTransactions] = useState([]);
   const [withdraws, setWithdraws] = useState([]);
   const [bankAccount, setBankAccount] = useState(null);
 
-  const [activeTab, setActiveTab] = useState("Withdraw"); // Withdraw, Transactions
+  // Default to Transactions so data shows immediately on first load
+  const [activeTab, setActiveTab] = useState(route?.params?.initialTab || "Transactions");
 
   useEffect(() => {
     if (route?.params?.initialTab) {
@@ -63,30 +67,71 @@ export default function WalletScreen({ route, navigation }) {
     upiId: ""
   });
 
-  const loadWalletDataset = useCallback(async () => {
+  const socketContext = useSocket?.();
+  const socket = socketContext?.socket;
+
+  const loadWalletDataset = useCallback(async (isSilent = false) => {
+    if (!isSilent && !refreshing && !walletData) {
+      setLoading(true);
+    }
     try {
-      const [wallet, history, requests, bank] = await Promise.all([
-        getUserWallet().catch(() => null),
-        getWalletHistory().catch(() => []),
-        getWithdrawalHistory().catch(() => []),
-        getBankAccountDetails().catch(() => null)
+      const [walletRes, historyRes, requestsRes, bankRes] = await Promise.allSettled([
+        getUserWallet(),
+        getWalletHistory(),
+        getWithdrawalHistory(),
+        getBankAccountDetails()
       ]);
 
-      if (wallet) {
-        setWalletData(wallet);
-        setBalance(wallet.balance || 0);
+      let wObj = null;
+      if (walletRes.status === "fulfilled" && walletRes.value) {
+        wObj = walletRes.value?.data || walletRes.value;
+        if (wObj && typeof wObj === "object") {
+          setWalletData(wObj);
+          const avBal = Number(
+            wObj.available_balance !== undefined && wObj.available_balance !== null
+              ? wObj.available_balance
+              : (wObj.balance || wObj.availableBalance || 0)
+          );
+          setBalance(avBal);
+        }
       }
-      setTransactions(Array.isArray(history) ? history : []);
-      setWithdraws(Array.isArray(requests) ? requests : []);
-      if (bank) {
-        setBankAccount(bank);
-        setBankForm({
-          accountHolderName: bank.account_holder_name || "",
-          accountNumber: bank.account_number || "",
-          ifscCode: bank.ifsc_code || "",
-          bankName: bank.bank_name || "",
-          upiId: bank.upi_id || ""
-        });
+
+      // Extract transaction history from historyRes OR wallet response wObj.transactions
+      let txList = [];
+      if (historyRes.status === "fulfilled" && historyRes.value) {
+        const hVal = historyRes.value?.data || historyRes.value;
+        if (Array.isArray(hVal)) {
+          txList = hVal;
+        }
+      }
+      if (txList.length === 0 && Array.isArray(wObj?.transactions)) {
+        txList = wObj.transactions;
+      }
+      if (txList.length > 0) {
+        setTransactions(txList);
+      }
+
+      // Extract withdrawal requests
+      if (requestsRes.status === "fulfilled" && requestsRes.value) {
+        const rVal = requestsRes.value?.data || requestsRes.value;
+        if (Array.isArray(rVal)) {
+          setWithdraws(rVal);
+        }
+      }
+
+      // Extract bank account details
+      if (bankRes.status === "fulfilled" && bankRes.value) {
+        const bank = bankRes.value?.data || bankRes.value;
+        if (bank && (bank.account_number || bank.bank_name || bank.ifsc_code)) {
+          setBankAccount(bank);
+          setBankForm({
+            accountHolderName: bank.account_holder_name || "",
+            accountNumber: bank.account_number || "",
+            ifscCode: bank.ifsc_code || "",
+            bankName: bank.bank_name || "",
+            upiId: bank.upi_id || ""
+          });
+        }
       }
     } catch (err) {
       if (__DEV__) console.log("Failed to load artist wallet info:", err.message);
@@ -94,18 +139,57 @@ export default function WalletScreen({ route, navigation }) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [refreshing, walletData]);
 
-  useEffect(() => {
-    loadWalletDataset();
-  }, []);
-
-  useEffect(() => {
-    const unsubscribe = navigation.addListener("focus", () => {
+  // Initial & Focus load + Back handling
+  useFocusEffect(
+    useCallback(() => {
       loadWalletDataset();
-    });
-    return unsubscribe;
-  }, [navigation]);
+      const { BackHandler } = require("react-native");
+
+      const onBackPress = () => {
+        if (selectedItem) {
+          setSelectedItem(null);
+          return true;
+        }
+        if (withdrawModalVisible) {
+          setWithdrawModalVisible(false);
+          return true;
+        }
+        if (bankModalVisible) {
+          setBankModalVisible(false);
+          return true;
+        }
+        if (navigation?.canGoBack && navigation.canGoBack()) {
+          navigation.goBack();
+        } else {
+          navigation.navigate("ArtistTabs", { screen: "Dashboard" });
+        }
+        return true;
+      };
+
+      const sub = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+      return () => sub.remove();
+    }, [loadWalletDataset, selectedItem, withdrawModalVisible, bankModalVisible, navigation])
+  );
+
+  // Auto-refresh on Real-time Socket Events
+  useEffect(() => {
+    if (!socket) return;
+    const handleSocketUpdate = () => {
+      loadWalletDataset(true);
+    };
+
+    socket.on("WALLET_UPDATED", handleSocketUpdate);
+    socket.on("BOOKING_COMPLETED", handleSocketUpdate);
+    socket.on("PAYMENT_RECEIVED", handleSocketUpdate);
+
+    return () => {
+      socket.off("WALLET_UPDATED", handleSocketUpdate);
+      socket.off("BOOKING_COMPLETED", handleSocketUpdate);
+      socket.off("PAYMENT_RECEIVED", handleSocketUpdate);
+    };
+  }, [socket, loadWalletDataset]);
 
   const handleRefresh = () => {
     setRefreshing(true);
@@ -164,7 +248,15 @@ export default function WalletScreen({ route, navigation }) {
 
   const renderTransaction = ({ item }) => {
     const rawType = String(item.type || item.transaction_type || "").toUpperCase();
+    const isCash = rawType === "CASH_COLLECTED" || rawType === "CASH" || String(item.description || "").toLowerCase().includes("cash collected");
+    const isInfo = rawType === "INFO";
     const isCredit = rawType === "CREDIT" || ["RECHARGE", "REFUND", "CASHBACK", "SETTLEMENT", "MANUAL_CREDIT", "EARNING"].includes(rawType);
+
+    let iconBg = isCredit ? "#ECFDF5" : (isCash ? "#EFF6FF" : (isInfo ? "#F3F4F6" : "#FEF2F2"));
+    let iconName = isCredit ? "arrow-down" : (isCash ? "cash-outline" : (isInfo ? "information-circle-outline" : "arrow-up"));
+    let iconColor = isCredit ? Colors.success : (isCash ? "#2563EB" : (isInfo ? "#6B7280" : Colors.error));
+    let amountColor = isCredit ? Colors.success : (isCash ? "#2563EB" : (isInfo ? "#6B7280" : Colors.error));
+    let sign = isCredit ? "+" : (isCash ? "✓ " : (isInfo ? "" : "-"));
 
     return (
       <TouchableOpacity 
@@ -172,23 +264,23 @@ export default function WalletScreen({ route, navigation }) {
         activeOpacity={0.7}
         onPress={() => setSelectedItem(item)}
       >
-        <View style={[styles.iconCircle, { backgroundColor: isCredit ? "#ECFDF5" : "#FEF2F2" }]}>
+        <View style={[styles.iconCircle, { backgroundColor: iconBg }]}>
           <Ionicons
-            name={isCredit ? "arrow-down" : "arrow-up"}
+            name={iconName}
             size={20}
-            color={isCredit ? Colors.success : Colors.error}
+            color={iconColor}
           />
         </View>
 
         <View style={styles.cardInfo}>
           <Text style={styles.cardTitle} numberOfLines={1}>
-            {item.description || item.transaction_type?.replace(/_/g, " ") || (isCredit ? "Credit" : "Debit")}
+            {item.description || item.transaction_type?.replace(/_/g, " ") || (isCredit ? "Credit" : (isCash ? "Cash Collected" : "Debit"))}
           </Text>
           <Text style={styles.cardSubtitle}>{moment(item.created_at || item.createdAt || item.date || new Date()).format("DD MMM YYYY, hh:mm A")}</Text>
         </View>
 
-        <Text style={[styles.cardAmount, { color: isCredit ? Colors.success : Colors.error }]}>
-          {isCredit ? "+" : "-"}₹{Number(item.amount || 0).toLocaleString("en-IN")}
+        <Text style={[styles.cardAmount, { color: amountColor }]}>
+          {sign}₹{Number(item.amount || 0).toLocaleString("en-IN")}
         </Text>
       </TouchableOpacity>
     );
@@ -357,7 +449,12 @@ export default function WalletScreen({ route, navigation }) {
           </>
         }
         ListEmptyComponent={
-          !loading && (
+          loading ? (
+            <View style={[styles.emptyState, { paddingVertical: 40 }]}>
+              <ActivityIndicator size="small" color={Colors.primary} />
+              <Text style={[styles.emptyText, { marginTop: 10 }]}>Loading wallet records...</Text>
+            </View>
+          ) : (
             <View style={styles.emptyState}>
               <Ionicons name="receipt-outline" size={40} color={Colors.textTertiary} />
               <Text style={styles.emptyText}>

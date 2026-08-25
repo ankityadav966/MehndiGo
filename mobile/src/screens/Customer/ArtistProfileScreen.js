@@ -409,6 +409,28 @@ export default function ArtistProfileScreen({ route, navigation }) {
   const artistAvatarUri = resolveImage(profile.profile_image || profile.avatar || profile.user?.profile_image || profile.selfie_image || profile.user?.avatar)
     || `https://ui-avatars.com/api/?name=${encodeURIComponent(artistDisplayName)}&background=F3E8FF&color=7C3AED`;
 
+  const handleBack = useCallback(() => {
+    if (zoomModalVisible) {
+      setZoomModalVisible(false);
+      return true;
+    }
+    if (navigation?.canGoBack && navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "CustomerTabs", params: { screen: "Home" } }]
+      });
+    }
+    return true;
+  }, [zoomModalVisible, navigation]);
+
+  useEffect(() => {
+    const { BackHandler } = require("react-native");
+    const backSubscription = BackHandler.addEventListener("hardwareBackPress", handleBack);
+    return () => backSubscription.remove();
+  }, [handleBack]);
+
   return (
     <View style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 + insets.bottom }}>
@@ -431,7 +453,7 @@ export default function ArtistProfileScreen({ route, navigation }) {
           
           {/* Header Actions Overlay */}
           <View style={styles.headerOverlay}>
-            <TouchableOpacity style={styles.circleBtn} onPress={() => navigation.goBack()}>
+            <TouchableOpacity style={styles.circleBtn} onPress={handleBack}>
               <Ionicons name="arrow-back" size={20} color={Colors.text} />
             </TouchableOpacity>
             <View style={{ flexDirection: "row" }}>

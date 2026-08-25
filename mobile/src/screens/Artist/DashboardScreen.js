@@ -166,6 +166,21 @@ export default function ArtistDashboardScreen({ navigation }) {
   const [loading, setLoading] = useState(() => !memoryCachedArtistDashboard);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Root level back handler with double-back-to-exit prevention
+  useFocusEffect(
+    React.useCallback(() => {
+      const { BackHandler } = require("react-native");
+      const { handleRootDoubleBackExit } = require("../../utils/navigationHelper");
+
+      const onBackPress = () => {
+        return handleRootDoubleBackExit("Press back again to exit MehndiGo Artist");
+      };
+
+      const sub = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+      return () => sub.remove();
+    }, [])
+  );
+
   const fetchDashboardDetails = React.useCallback(async () => {
     try {
       const data = await getArtistDashboardData();
@@ -273,8 +288,8 @@ export default function ArtistDashboardScreen({ navigation }) {
         {/* 2. Wallet Card Component */}
         <WalletCard
           balance={dashboard?.walletBalance || 0}
-          onWithdrawPress={() => navigation.navigate("Wallet", { initialTab: "Withdraw" })}
-          onCardPress={() => navigation.navigate("Wallet", { initialTab: "Withdraw" })}
+          onWithdrawPress={() => navigation.navigate("Wallet", { initialTab: "Withdraw", balance: dashboard?.walletBalance })}
+          onCardPress={() => navigation.navigate("Wallet", { initialTab: "Transactions", balance: dashboard?.walletBalance })}
         />
 
         {/* 3. Core Stats Widgets */}
@@ -296,7 +311,7 @@ export default function ArtistDashboardScreen({ navigation }) {
             description="Earnings cleared today"
             iconName="cash-outline"
             accentColor={Colors.success}
-            onPress={() => navigation.navigate("Wallet", { initialTab: "Transactions" })}
+            onPress={() => navigation.navigate("Wallet", { initialTab: "Transactions", balance: dashboard?.walletBalance })}
           />
           <DashboardCard
             count={dashboard?.pendingRequests || 0}
@@ -367,7 +382,7 @@ export default function ArtistDashboardScreen({ navigation }) {
             description="Settlements currently pending"
             iconName="logo-usd"
             accentColor="#EF4444"
-            onPress={() => navigation.navigate("Wallet", { initialTab: "Withdraw" })}
+            onPress={() => navigation.navigate("Wallet", { initialTab: "Transactions", balance: dashboard?.walletBalance })}
           />
           <DashboardCard
             count={counts.PENDING_CASH_APPROVAL || 0}
