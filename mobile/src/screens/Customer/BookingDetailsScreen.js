@@ -431,8 +431,8 @@ export default function BookingDetailsScreen({ route, navigation }) {
             />
           )}
 
-          {/* 4b. Check-Out Completion PIN Card (Available as soon as check-in is verified OR service in progress) */}
-          {(isCheckInVerified || isServiceActive || isCheckout) && !isCompleted && !isCancelled && (
+          {/* 4b. Check-Out Completion PIN Card (Shown when checkout OTP is generated/requested) */}
+          {Boolean(booking?.checkout_otp || booking?.check_out_otp || isCheckout) && !isCompleted && !isCancelled && (
             <OtpVerificationCard
               otpCode={booking?.checkout_otp || booking?.check_out_otp || booking?.completion_pin || booking?.completionPin}
               customerEmail={booking?.customer_email || booking?.user?.email || booking?.customer?.email}

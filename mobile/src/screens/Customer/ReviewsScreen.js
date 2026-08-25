@@ -12,6 +12,7 @@ import {
   ScrollView
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import ImageViewing from "react-native-image-viewing";
 import Colors from "../../constants/Colors";
 import { getCustomerReviews } from "../../services/customer";
 import { getNormalizedUrl } from "../../services/api";
@@ -35,6 +36,18 @@ export default function ReviewsScreen({ navigation }) {
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [viewerVisible, setViewerVisible] = useState(false);
+  const [viewerImages, setViewerImages] = useState([]);
+  const [viewerIndex, setViewerIndex] = useState(0);
+
+  const handleOpenPhotoViewer = (photos, initialIndex = 0) => {
+    const formatted = photos.map((p) => ({
+      uri: resolveImage(p),
+    }));
+    setViewerImages(formatted);
+    setViewerIndex(initialIndex);
+    setViewerVisible(true);
+  };
 
   const fetchReviews = React.useCallback(async () => {
     try {
@@ -98,6 +111,7 @@ export default function ReviewsScreen({ navigation }) {
     const initial = artistName[0]?.toUpperCase() || "A";
     const photos = Array.isArray(item.photos) ? item.photos : (typeof item.photos === 'string' ? JSON.parse(item.photos || "[]") : []);
     const artistId = item.artist_id || item.artist?.id;
+    const videoThumb = item.video_thumbnail || (item.video_url ? item.video_url.replace(/\.[^/.]+$/, ".jpg") : null);
 
     return (
       <View style={styles.reviewCard}>
@@ -136,10 +150,17 @@ export default function ReviewsScreen({ navigation }) {
         {(item.video_url || photos.length > 0) && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12 }}>
             {item.video_url && (
-              <View style={{ marginRight: 8, position: "relative" }}>
-                {item.video_thumbnail ? (
+              <TouchableOpacity
+                style={{ marginRight: 8, position: "relative" }}
+                onPress={() => navigation.navigate("VideoPlayer", {
+                  videoUrl: item.video_url,
+                  posterUrl: resolveImage(videoThumb),
+                  title: `Review by ${item.user?.name || "Client"}`
+                })}
+              >
+                {videoThumb ? (
                   <Image 
-                    source={{ uri: resolveImage(item.video_thumbnail) }} 
+                    source={{ uri: resolveImage(videoThumb) }} 
                     style={{ width: 100, height: 100, borderRadius: 8, backgroundColor: "#f0f0f0" }} 
                   />
                 ) : (
@@ -150,14 +171,19 @@ export default function ReviewsScreen({ navigation }) {
                 <View style={{ position: "absolute", top: "50%", left: "50%", marginLeft: -12, marginTop: -12, backgroundColor: "rgba(0,0,0,0.6)", borderRadius: 12, padding: 4 }}>
                   <Ionicons name="play" size={16} color="#fff" />
                 </View>
-              </View>
+              </TouchableOpacity>
             )}
             {photos.map((photo, pIdx) => (
-              <Image 
-                key={pIdx} 
-                source={{ uri: resolveImage(photo) }} 
-                style={{ width: 100, height: 100, borderRadius: 8, marginRight: 8, backgroundColor: "#f0f0f0" }} 
-              />
+              <TouchableOpacity 
+                key={pIdx}
+                activeOpacity={0.85}
+                onPress={() => handleOpenPhotoViewer(photos, pIdx)}
+              >
+                <Image 
+                  source={{ uri: resolveImage(photo) }} 
+                  style={{ width: 100, height: 100, borderRadius: 8, marginRight: 8, backgroundColor: "#f0f0f0" }} 
+                />
+              </TouchableOpacity>
             ))}
           </ScrollView>
         )}
@@ -221,6 +247,16 @@ export default function ReviewsScreen({ navigation }) {
             <Text style={styles.sectionTitle}>Review Logs</Text>
           </>
         }
+      />
+
+      {/* Full-Screen Image Viewing Modal */}
+      <ImageViewing
+        images={viewerImages}
+        imageIndex={viewerIndex}
+        visible={viewerVisible}
+        onRequestClose={() => setViewerVisible(false)}
+        swipeToCloseEnabled={true}
+        doubleTapToZoomEnabled={true}
       />
     </SafeAreaView>
   );

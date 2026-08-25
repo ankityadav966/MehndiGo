@@ -108,7 +108,7 @@ class AuthService {
       throw new AppError("Email address is already registered. Please log in.", 400);
     }
 
-    const otp = String(data.otp || data.code || Math.floor(100000 + Math.random() * 900000)).trim();
+    const otp = String(data.otp || data.code || crypto.randomInt(100000, 1000000)).trim();
 
     // Rate Limit check
     const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
@@ -353,7 +353,7 @@ class AuthService {
       throw new AppError("Too many OTP requests. Please try again after 10 minutes.", 429);
     }
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = String(crypto.randomInt(100000, 1000000));
 
     // Save OTP
     await OtpRepositor.create({

@@ -59,7 +59,16 @@ export default function ReviewSubmissionScreen({ route, navigation }) {
         videoMaxDuration: 60
       });
       if (!res.canceled && res.assets && res.assets.length > 0) {
-        setVideoMedia(res.assets[0]);
+        const asset = res.assets[0];
+        if (asset.fileSize && asset.fileSize > 50 * 1024 * 1024) {
+          Alert.alert("File Too Large", "Review video cannot exceed 50 MB.");
+          return;
+        }
+        if (asset.duration && asset.duration > 61000) {
+          Alert.alert("Video Too Long", "Review video must be a short-form video (max 60 seconds).");
+          return;
+        }
+        setVideoMedia(asset);
       }
     } catch (e) {
       Alert.alert("Error", "Failed to select video: " + e.message);

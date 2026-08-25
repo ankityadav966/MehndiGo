@@ -209,11 +209,11 @@ class PaymentService {
         console.log(`[VERIFY_PAYMENT] Booking #${booking.booking_code} status BEFORE update: booking_status=${booking.booking_status}, payment_status=${booking.payment_status}, detailed_status=${booking.detailed_status}`);
 
         if (isAdvance) {
-          const totalAmt = Number(booking.final_amount || booking.total_price || 1800);
+          const totalAmt = Number(booking.final_amount || booking.total_price || booking.total_amount || 0);
           const advancePaid = Math.round(totalAmt * 0.10);
           const remaining = Math.max(0, totalAmt - advancePaid);
           const platformCommission = Math.round(totalAmt * 0.10);
-          console.log(`[VERIFY_PAYMENT] Processing FIXED ₹500 ADVANCE payment of ₹${advancePaid} (Remaining: ₹${remaining}, Platform Commission: ₹${platformCommission}) for Booking #${booking.booking_code}`);
+          console.log(`[VERIFY_PAYMENT] Processing 10% Advance payment of ₹${advancePaid} (Remaining: ₹${remaining}, Platform Commission: ₹${platformCommission}) for Booking #${booking.booking_code}`);
           
           await booking.update({
             payment_status: "PARTIAL",
@@ -537,7 +537,7 @@ class PaymentService {
             if (booking && booking.payment_status !== "PAID") {
               const isAdvance = booking.payment_status === "PENDING";
               if (isAdvance) {
-                const totalAmt = Number(booking.final_amount || booking.total_price || 1800);
+                const totalAmt = Number(booking.final_amount || booking.total_price || booking.total_amount || 0);
                 const advancePaid = Math.round(totalAmt * 0.10);
                 const remaining = Math.max(0, totalAmt - advancePaid);
                 await booking.update({

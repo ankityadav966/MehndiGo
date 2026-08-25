@@ -14,17 +14,15 @@ export const Config = {
   APP_SCHEME: "mehendigoo",
   SUPPORTED_SCHEMES: ["mehendigoo", "mehndigo", "exp+sonu-yadav"],
 
-  // Primary Web & Deep Link Domain
-  PRIMARY_DOMAIN: "https://mehendigoo.com",
+  // Primary Web & Deep Link Domain (Canonical)
+  PRIMARY_DOMAIN: "https://mehndigo.in",
   SUPPORTED_DOMAINS: [
+    "mehndigo.in",
+    "www.mehndigo.in",
     "mehendigoo.com",
     "www.mehendigoo.com",
-    "mehndigo.com",
-    "www.mehndigo.com",
     "mehendigo.app",
-    "www.mehendigo.app",
-    "mehndigo.in",
-    "www.mehndigo.in"
+    "www.mehendigo.app"
   ]
 };
 

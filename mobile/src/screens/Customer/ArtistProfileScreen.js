@@ -166,6 +166,9 @@ export default function ArtistProfileScreen({ route, navigation }) {
       if (reviewsList.length > 0) {
         prof.avg_rating = Number((sumRating / reviewsList.length).toFixed(1));
         prof.total_reviews = reviewsList.length;
+      } else {
+        prof.avg_rating = 0;
+        prof.total_reviews = 0;
       }
       const calculatedReviewsData = {
         reviews: reviewsList,
@@ -569,24 +572,57 @@ export default function ArtistProfileScreen({ route, navigation }) {
           {services.length === 0 ? (
             <Text style={styles.emptyText}>No services listed by this artist.</Text>
           ) : (
-            services.map((item, index) => (
-              <View key={`service-${item.id || 'idx'}-${index}`} style={styles.serviceRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.serviceName}>{item.specialization_name || item.title || item.name || "Henna Package"}</Text>
-                  <Text style={styles.serviceCategory}>{item.category || "Henna Art"} • ⏱️ {item.duration_minutes || item.duration || 60} mins</Text>
-                  <Text style={styles.serviceDesc} numberOfLines={2}>{item.description || "Beautiful custom mehndi styling."}</Text>
-                  {item.add_on_services && (
-                    <Text style={styles.addonText}>🎁 Add-ons: {item.add_on_services}</Text>
-                  )}
+            services.map((item, index) => {
+              const hasVideo = Boolean(item.video_url || item.media_type === "video" || item.is_video);
+              const videoUrl = item.video_url || (hasVideo ? (item.service_image || item.image_url) : null);
+              const thumbUrl = item.thumbnail_url || item.service_image || item.image_url;
+
+              return (
+                <View key={`service-${item.id || 'idx'}-${index}`} style={styles.serviceRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.serviceName}>{item.specialization_name || item.title || item.name || "Henna Package"}</Text>
+                    <Text style={styles.serviceCategory}>{item.category || "Henna Art"} • ⏱️ {item.duration_minutes || item.duration || 60} mins</Text>
+                    <Text style={styles.serviceDesc} numberOfLines={2}>{item.description || "Beautiful custom mehndi styling."}</Text>
+                    {item.add_on_services && (
+                      <Text style={styles.addonText}>🎁 Add-ons: {item.add_on_services}</Text>
+                    )}
+
+                    {/* Service Video Reel Watch Button */}
+                    {hasVideo && videoUrl && (
+                      <TouchableOpacity
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 6,
+                          backgroundColor: "#F5F3FF",
+                          borderWidth: 1,
+                          borderColor: "#DDD6FE",
+                          paddingHorizontal: 10,
+                          paddingVertical: 5,
+                          borderRadius: 6,
+                          marginTop: 6,
+                          alignSelf: "flex-start"
+                        }}
+                        onPress={() => navigation.navigate("VideoPlayer", {
+                          videoUrl,
+                          posterUrl: thumbUrl,
+                          title: item.specialization_name || item.title || "Service Video Reel"
+                        })}
+                      >
+                        <Ionicons name="play-circle" size={16} color="#701DDB" />
+                        <Text style={{ fontSize: 11, fontWeight: "700", color: "#701DDB" }}>Watch Service Reel</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  <View style={styles.servicePriceBlock}>
+                    <Text style={styles.servicePrice}>{item.minimum_price ? `₹${item.minimum_price}` : (item.price ? `₹${item.price}` : "Price on request")}</Text>
+                    {item.offer_price && (
+                      <Text style={styles.offerPrice}>₹{item.offer_price} Offer</Text>
+                    )}
+                  </View>
                 </View>
-                <View style={styles.servicePriceBlock}>
-                  <Text style={styles.servicePrice}>{item.minimum_price ? `₹${item.minimum_price}` : (item.price ? `₹${item.price}` : "Price on request")}</Text>
-                  {item.offer_price && (
-                    <Text style={styles.offerPrice}>₹{item.offer_price} Offer</Text>
-                  )}
-                </View>
-              </View>
-            ))
+              );
+            })
           )}
         </View>
 
@@ -594,32 +630,52 @@ export default function ArtistProfileScreen({ route, navigation }) {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Portfolio Gallery ({portfolio.length})</Text>
           {portfolio.length === 0 ? (
-            <Text style={styles.emptyText}>No portfolio images available.</Text>
+            <Text style={styles.emptyText}>No portfolio images or videos available.</Text>
           ) : (
             <View style={styles.portfolioGrid}>
-              {portfolio.map((item, index) => (
-                <TouchableOpacity
-                  key={`portfolio-${item.id || 'idx'}-${index}`}
-                  style={styles.portfolioGridItem}
-                  onPress={() => {
-                    setZoomImageIndex(index);
-                    setZoomModalVisible(true);
-                  }}
-                >
-                  <Image source={{ uri: resolveImage(item.image_url || item.url || item.image || item.media_url || item) }} style={styles.portfolioThumb} />
-                  {item.video_url && (
-                    <View style={styles.videoBadge}>
-                      <Ionicons name="play" size={12} color={Colors.white} />
+              {portfolio.map((item, index) => {
+                const isVideo = Boolean(
+                  item.video_url ||
+                  item.is_video ||
+                  item.media_type === "video" ||
+                  /\.(mp4|mov|webm|avi|mkv)$/i.test(item.image_url || item.url || "") ||
+                  /\/video\/upload\//.test(item.image_url || item.url || "")
+                );
+                const videoUrl = item.video_url || (isVideo ? (item.image_url || item.url) : null);
+                const thumbUrl = item.thumbnail_url || item.image_url || item.url || item.image || item.media_url;
+
+                return (
+                  <TouchableOpacity
+                    key={`portfolio-${item.id || 'idx'}-${index}`}
+                    style={styles.portfolioGridItem}
+                    onPress={() => {
+                      if (isVideo && videoUrl) {
+                        navigation.navigate("VideoPlayer", {
+                          videoUrl,
+                          posterUrl: thumbUrl,
+                          title: item.title || "Portfolio Video Reel"
+                        });
+                      } else {
+                        setZoomImageIndex(index);
+                        setZoomModalVisible(true);
+                      }
+                    }}
+                  >
+                    <Image source={{ uri: resolveImage(thumbUrl || item) }} style={styles.portfolioThumb} />
+                    {isVideo && (
+                      <View style={styles.videoBadge}>
+                        <Ionicons name="play" size={14} color={Colors.white} />
+                      </View>
+                    )}
+                    {/* Tier Badge */}
+                    <View style={[styles.gridTierBadge, item.art_tier === "PREMIUM" ? styles.gridPremiumBadge : styles.gridStandardBadge]}>
+                      <Text style={[styles.gridTierText, item.art_tier === "PREMIUM" ? styles.gridPremiumText : styles.gridStandardText]}>
+                        {item.art_tier === "PREMIUM" ? `💎 ₹${item.price || "Prem"}` : (isVideo ? "🎬 Reel" : "✨ Standard")}
+                      </Text>
                     </View>
-                  )}
-                  {/* Tier Badge */}
-                  <View style={[styles.gridTierBadge, item.art_tier === "PREMIUM" ? styles.gridPremiumBadge : styles.gridStandardBadge]}>
-                    <Text style={[styles.gridTierText, item.art_tier === "PREMIUM" ? styles.gridPremiumText : styles.gridStandardText]}>
-                      {item.art_tier === "PREMIUM" ? `💎 ₹${item.price || "Prem"}` : "✨ Standard"}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           )}
         </View>

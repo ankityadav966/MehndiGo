@@ -229,24 +229,28 @@ export default function ArtistWalletScreen({ navigation }) {
             <Text style={styles.sectionTitle}>Recent Ledger Transactions</Text>
           </>
         }
-        renderItem={({ item }) => (
-          <View style={styles.txCard}>
-            <View style={styles.txIconWrapper}>
-              <Ionicons
-                name={item.transaction_type === "CREDIT" || item.transaction_type === "SETTLEMENT" ? "arrow-down-circle" : "arrow-up-circle"}
-                size={22}
-                color={item.transaction_type === "CREDIT" || item.transaction_type === "SETTLEMENT" ? "#059669" : Colors.primary}
-              />
+        renderItem={({ item }) => {
+          const rawType = String(item.type || item.transaction_type || "").toUpperCase();
+          const isCredit = rawType === "CREDIT" || rawType === "SETTLEMENT" || rawType === "RECHARGE" || rawType === "REFUND";
+          return (
+            <View style={styles.txCard}>
+              <View style={styles.txIconWrapper}>
+                <Ionicons
+                  name={isCredit ? "arrow-down-circle" : "arrow-up-circle"}
+                  size={22}
+                  color={isCredit ? "#059669" : Colors.primary}
+                />
+              </View>
+              <View style={styles.txInfo}>
+                <Text style={styles.txTitle}>{item.description || item.transaction_type || (isCredit ? "Credit" : "Debit")}</Text>
+                <Text style={styles.txDate}>{new Date(item.createdAt || item.created_at || new Date()).toLocaleDateString()}</Text>
+              </View>
+              <Text style={[styles.txAmount, { color: isCredit ? "#059669" : Colors.text }]}>
+                {isCredit ? "+" : "-"}₹{item.amount}
+              </Text>
             </View>
-            <View style={styles.txInfo}>
-              <Text style={styles.txTitle}>{item.description || item.transaction_type}</Text>
-              <Text style={styles.txDate}>{new Date(item.createdAt || item.created_at || new Date()).toLocaleDateString()}</Text>
-            </View>
-            <Text style={[styles.txAmount, { color: item.transaction_type === "CREDIT" || item.transaction_type === "SETTLEMENT" ? "#059669" : Colors.text }]}>
-              {item.transaction_type === "CREDIT" || item.transaction_type === "SETTLEMENT" ? "+" : "-"}₹{item.amount}
-            </Text>
-          </View>
-        )}
+          );
+        }}
       />
 
       {/* Razorpay In-App Web Checkout (Works seamlessly in Expo Go / Development / Standalone builds) */}

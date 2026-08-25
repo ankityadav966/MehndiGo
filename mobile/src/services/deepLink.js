@@ -16,8 +16,26 @@ export const STORAGE_KEYS = {
 // 1. CANONICAL LINK GENERATORS
 // =========================================================================
 
-export function getPlayStoreFallbackUrl() {
-  return Config.PLAY_STORE_URL;
+export function getPlayStoreFallbackUrl(targetPath = "") {
+  if (!targetPath) return Config.PLAY_STORE_URL;
+  const encodedPath = encodeURIComponent(targetPath);
+  return `${Config.PLAY_STORE_URL}&referrer=utm_source%3Dmehndigo_share%26utm_medium%3Ddeeplink%26utm_content%3D${encodedPath}`;
+}
+
+export function createReelDeepLink(reelId, useScheme = false) {
+  if (!reelId) return getPlayStoreFallbackUrl();
+  const cleanId = encodeURIComponent(String(reelId).trim());
+  return useScheme
+    ? `${Config.APP_SCHEME}://reel/${cleanId}`
+    : `${Config.PRIMARY_DOMAIN}/reel/${cleanId}`;
+}
+
+export function createServiceDeepLink(serviceId, useScheme = false) {
+  if (!serviceId) return getPlayStoreFallbackUrl();
+  const cleanId = encodeURIComponent(String(serviceId).trim());
+  return useScheme
+    ? `${Config.APP_SCHEME}://service/${cleanId}`
+    : `${Config.PRIMARY_DOMAIN}/service/${cleanId}`;
 }
 
 export function createArtistDeepLink(artistId, useScheme = false) {
@@ -78,6 +96,10 @@ export function createReferralDeepLink(referralCode, useScheme = false) {
   return useScheme
     ? `${Config.APP_SCHEME}://invite?ref=${cleanCode}`
     : `${Config.PRIMARY_DOMAIN}/invite?ref=${cleanCode}`;
+}
+
+export function createInviteDeepLink(referralCode, useScheme = false) {
+  return createReferralDeepLink(referralCode, useScheme);
 }
 
 export function createCategoryDeepLink(categoryId, useScheme = false) {
@@ -187,8 +209,51 @@ export function resolveDeepLink(rawUrl) {
     return /^[a-zA-Z0-9_-]+$/.test(clean);
   };
 
-  // 1. Artist Profile (/artist/:artistId)
-  if (segments[0] === "artist" && segments[1]) {
+  // 1. Reels & Short Videos (/reel/:reelId or /reels/:reelId or /reels)
+  if (segments[0] === "reel" || segments[0] === "reels") {
+    const reelId = segments[1];
+    if (!reelId || !isValidEntityId(reelId)) {
+      return {
+        isValid: true,
+        type: "REELS_FEED",
+        screen: "CustomerTabs",
+        tab: "Reels",
+        params: {},
+        requiresAuth: false,
+        rawUrl
+      };
+    }
+    const cleanId = isNaN(Number(reelId)) ? reelId : Number(reelId);
+    return {
+      isValid: true,
+      type: "REEL",
+      screen: "CustomerTabs",
+      tab: "Reels",
+      params: { reelId: cleanId, id: cleanId },
+      requiresAuth: false,
+      rawUrl
+    };
+  }
+
+  // 2. Services (/service/:serviceId or /services/:serviceId)
+  if (segments[0] === "service" || segments[0] === "services") {
+    const serviceId = segments[1];
+    if (!serviceId || !isValidEntityId(serviceId)) {
+      return { isValid: false, type: "SERVICE", error: "Invalid service ID" };
+    }
+    const cleanId = isNaN(Number(serviceId)) ? serviceId : Number(serviceId);
+    return {
+      isValid: true,
+      type: "SERVICE",
+      screen: "SelectService",
+      params: { serviceId: cleanId, id: cleanId },
+      requiresAuth: false,
+      rawUrl
+    };
+  }
+
+  // 3. Artist Profile (/artist/:artistId or /artists/:artistId)
+  if ((segments[0] === "artist" || segments[0] === "artists") && segments[1]) {
     const artistId = segments[1];
     if (!isValidEntityId(artistId)) {
       return { isValid: false, type: "ARTIST", error: "Invalid artist ID" };
@@ -204,7 +269,7 @@ export function resolveDeepLink(rawUrl) {
     };
   }
 
-  // 2. Artist Portfolio (/portfolio/:artistId)
+  // 4. Artist Portfolio (/portfolio/:artistId)
   if (segments[0] === "portfolio" && segments[1]) {
     const artistId = segments[1];
     if (!isValidEntityId(artistId)) {
@@ -221,7 +286,7 @@ export function resolveDeepLink(rawUrl) {
     };
   }
 
-  // 3. Booking Details (/booking/:id)
+  // 5. Booking Details (/booking/:id)
   if (segments[0] === "booking" && segments[1]) {
     const bookingId = segments[1];
     if (!isValidEntityId(bookingId)) {
@@ -238,7 +303,7 @@ export function resolveDeepLink(rawUrl) {
     };
   }
 
-  // 4. Live Tracking (/tracking/:id)
+  // 6. Live Tracking (/tracking/:id)
   if (segments[0] === "tracking" && segments[1]) {
     const bookingId = segments[1];
     if (!isValidEntityId(bookingId)) {
@@ -255,7 +320,7 @@ export function resolveDeepLink(rawUrl) {
     };
   }
 
-  // 5. Review Submission (/review/:id)
+  // 7. Review Submission (/review/:id)
   if (segments[0] === "review" && segments[1]) {
     const bookingId = segments[1];
     if (!isValidEntityId(bookingId)) {
@@ -272,7 +337,7 @@ export function resolveDeepLink(rawUrl) {
     };
   }
 
-  // 6. Support Ticket (/support/:ticketId or /support)
+  // 8. Support Ticket (/support/:ticketId or /support)
   if (segments[0] === "support") {
     if (segments[1]) {
       const ticketId = segments[1];
@@ -299,7 +364,7 @@ export function resolveDeepLink(rawUrl) {
     };
   }
 
-  // 7. Referral / Invite (/invite?ref=:code or /invite/:code or /referral/:code)
+  // 9. Referral / Invite (/invite?ref=:code or /invite/:code or /referral/:code)
   if (segments[0] === "invite" || segments[0] === "referral") {
     let refCode = queryParams.ref || queryParams.referralCode || queryParams.code || (segments[1] || "");
     refCode = (refCode || "").trim().toUpperCase();
@@ -310,6 +375,19 @@ export function resolveDeepLink(rawUrl) {
       screen: "ReferralDashboard",
       params: { ref: refCode, referralCode: refCode },
       referralCode: refCode || null,
+      requiresAuth: false,
+      rawUrl
+    };
+  }
+
+  // 10. Festival / Seasonal Offers (/festival/:code or /festivals/:code)
+  if (segments[0] === "festival" || segments[0] === "festivals") {
+    const festivalCode = (segments[1] || queryParams.code || "").trim();
+    return {
+      isValid: true,
+      type: "FESTIVAL",
+      screen: "Coupons",
+      params: { prefilledCode: festivalCode, festivalCode },
       requiresAuth: false,
       rawUrl
     };
@@ -329,7 +407,7 @@ export function resolveDeepLink(rawUrl) {
     };
   }
 
-  // 8. Category Filter (/category/:categoryId)
+  // 11. Category Filter (/category/:categoryId)
   if (segments[0] === "category" && segments[1]) {
     const categoryId = segments[1];
     if (!isValidEntityId(categoryId)) {
@@ -346,7 +424,7 @@ export function resolveDeepLink(rawUrl) {
     };
   }
 
-  // 9. Categories List (/categories)
+  // 12. Categories List (/categories)
   if (segments[0] === "categories") {
     return {
       isValid: true,
@@ -358,7 +436,7 @@ export function resolveDeepLink(rawUrl) {
     };
   }
 
-  // 10. Search Query (/search?q=:query or /search/:query)
+  // 13. Search Query (/search?q=:query or /search/:query)
   if (segments[0] === "search") {
     const q = queryParams.q || queryParams.query || segments[1] || "";
     return {
@@ -371,7 +449,7 @@ export function resolveDeepLink(rawUrl) {
     };
   }
 
-  // 11. Coupons & Offers (/coupons)
+  // 14. Coupons & Offers (/coupons)
   if (segments[0] === "coupons") {
     return {
       isValid: true,
@@ -383,7 +461,7 @@ export function resolveDeepLink(rawUrl) {
     };
   }
 
-  // 12. Wallet (/wallet)
+  // 15. Wallet (/wallet)
   if (segments[0] === "wallet") {
     return {
       isValid: true,
@@ -395,7 +473,7 @@ export function resolveDeepLink(rawUrl) {
     };
   }
 
-  // 13. Notifications (/notifications or /notification/:id)
+  // 16. Notifications (/notifications or /notification/:id)
   if (segments[0] === "notifications" || segments[0] === "notification") {
     if (segments[1]) {
       const notifId = segments[1];
@@ -419,7 +497,7 @@ export function resolveDeepLink(rawUrl) {
     };
   }
 
-  // 14. Customer My Bookings (/bookings or /my-bookings)
+  // 17. Customer My Bookings (/bookings or /my-bookings)
   if (segments[0] === "bookings" || segments[0] === "my-bookings") {
     return {
       isValid: true,
@@ -431,12 +509,13 @@ export function resolveDeepLink(rawUrl) {
     };
   }
 
-  // 15. Home Dashboard (/home or root)
+  // 18. Home Dashboard (/home or root)
   if (segments.length === 0 || segments[0] === "home") {
     return {
       isValid: true,
       type: "HOME",
       screen: "CustomerTabs",
+      tab: "Home",
       params: {},
       requiresAuth: false,
       rawUrl
@@ -452,7 +531,7 @@ export function resolveDeepLink(rawUrl) {
 }
 
 // =========================================================================
-// 3. PENDING DEEP LINK / LOGIN RESUME GATE
+// 3. AUTHENTICATION GATING & PERSISTENCE
 // =========================================================================
 
 export async function setPendingDeepLink(routeObj) {
@@ -493,8 +572,16 @@ export async function consumePendingDeepLink(navigation, isAuthenticated) {
     const pending = await getPendingDeepLink();
     if (pending && pending.screen) {
       await clearPendingDeepLink();
-      if (__DEV__) console.log("[DeepLink Gate] Resuming pending deep link destination:", pending.screen, pending.params);
-      if (pending.params && Object.keys(pending.params).length > 0) {
+      if (__DEV__) console.log("[DeepLink Gate] Resuming pending deep link destination:", pending.screen, pending.tab, pending.params);
+      if (pending.screen === "CustomerTabs" && pending.tab) {
+        navigation.navigate("CustomerStack", {
+          screen: "CustomerTabs",
+          params: {
+            screen: pending.tab,
+            params: pending.params || {}
+          }
+        });
+      } else if (pending.params && Object.keys(pending.params).length > 0) {
         navigation.navigate(pending.screen, pending.params);
       } else {
         navigation.navigate(pending.screen);
@@ -542,6 +629,18 @@ export async function handleDeepLinkNavigation(url, navigation, isAuthenticated 
     }
 
     // Direct navigation to target
+    if (resolved.screen === "CustomerTabs" && resolved.tab) {
+      if (__DEV__) console.log(`[DeepLink Dispatcher] Navigating to Tab ${resolved.tab} with params:`, resolved.params);
+      navigation.navigate("CustomerStack", {
+        screen: "CustomerTabs",
+        params: {
+          screen: resolved.tab,
+          params: resolved.params || {}
+        }
+      });
+      return;
+    }
+
     if (resolved.screen) {
       if (__DEV__) console.log(`[DeepLink Dispatcher] Navigating to ${resolved.screen} with params:`, resolved.params);
       if (resolved.params && Object.keys(resolved.params).length > 0) {
@@ -835,6 +934,7 @@ export const linkingConfig = {
           CustomerTabs: {
             screens: {
               Home: "home",
+              Reels: "reel/:reelId",
               Wishlist: "wishlist",
               Bookings: "bookings",
               Wallet: "wallet",
@@ -843,6 +943,7 @@ export const linkingConfig = {
           },
           ArtistProfile: "artist/:artistId",
           Portfolio: "portfolio/:artistId",
+          SelectService: "service/:serviceId",
           ArtistListing: "category/:categoryId",
           Categories: "categories",
           BookingDetails: "booking/:id",
@@ -898,6 +999,8 @@ export const linkingConfig = {
 export default {
   Config,
   getPlayStoreFallbackUrl,
+  createReelDeepLink,
+  createServiceDeepLink,
   createArtistDeepLink,
   createPortfolioDeepLink,
   createBookingDeepLink,
@@ -905,6 +1008,7 @@ export default {
   createReviewDeepLink,
   createSupportDeepLink,
   createReferralDeepLink,
+  createInviteDeepLink,
   createCategoryDeepLink,
   createSearchDeepLink,
   createCouponsDeepLink,

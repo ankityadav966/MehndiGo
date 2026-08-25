@@ -114,51 +114,68 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
+  const triggerPendingDeepLinkResume = useCallback(() => {
+    setTimeout(() => {
+      if (global.navigationRef && global.navigationRef.isReady && global.navigationRef.isReady()) {
+        try {
+          const { consumePendingDeepLink } = require("../services/deepLink");
+          consumePendingDeepLink(global.navigationRef, true);
+        } catch (e) {
+          if (__DEV__) console.log("[AuthContext] Failed to resume pending link:", e.message);
+        }
+      }
+    }, 400);
+  }, []);
+
   const loginWithGoogle = useCallback(async (idToken) => {
     dispatch({ type: "SET_LOADING", payload: true });
     try {
       const data = await signInWithGoogle(idToken);
       dispatch({ type: "LOGIN", payload: { user: data.user, token: data.accessToken, role: data.user.role } });
+      triggerPendingDeepLinkResume();
       return data;
     } catch (error) {
       dispatch({ type: "SET_LOADING", payload: false });
       throw error;
     }
-  }, []);
+  }, [triggerPendingDeepLinkResume]);
 
   const loginWithEmail = useCallback(async (email, password) => {
     dispatch({ type: "SET_LOADING", payload: true });
     try {
       const data = await signInWithEmail(email, password);
       dispatch({ type: "LOGIN", payload: { user: data.user, token: data.accessToken, role: data.user.role } });
+      triggerPendingDeepLinkResume();
       return data;
     } catch (error) {
       dispatch({ type: "SET_LOADING", payload: false });
       throw error;
     }
-  }, []);
+  }, [triggerPendingDeepLinkResume]);
 
   const register = useCallback(async (userData) => {
     dispatch({ type: "SET_LOADING", payload: true });
     try {
       const data = await registerUser(userData);
       dispatch({ type: "LOGIN", payload: { user: data.user, token: data.accessToken, role: data.user.role } });
+      triggerPendingDeepLinkResume();
       return data;
     } catch (error) {
       dispatch({ type: "SET_LOADING", payload: false });
       throw error;
     }
-  }, []);
+  }, [triggerPendingDeepLinkResume]);
 
   const verifyOtpAndLogin = useCallback(async (email, otp) => {
     try {
       const data = await verifyOtp(email, otp);
       dispatch({ type: "LOGIN", payload: { user: data.user, token: data.accessToken, role: data.user.role } });
+      triggerPendingDeepLinkResume();
       return data;
     } catch (error) {
       throw error;
     }
-  }, []);
+  }, [triggerPendingDeepLinkResume]);
 
   const sendOtp = useCallback(async (email, role) => {
     return await sendOtpService(email, undefined, role);
@@ -175,11 +192,12 @@ export function AuthProvider({ children }) {
           role: data.user.role,
         },
       });
+      triggerPendingDeepLinkResume();
       return data;
     } catch (error) {
       throw error;
     }
-  }, []);
+  }, [triggerPendingDeepLinkResume]);
 
   const setUserRole = useCallback(async (role) => {
     secureStorage.setUserRole(role);

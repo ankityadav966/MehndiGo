@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { adminService } from "../services/api";
-import { Check, X, ShieldAlert, Users, Award, ShieldCheck, Eye, Calendar, DollarSign, MessageSquare, Bell, Send, Tag, Gift, TrendingUp, Plus, Trash, Grid, Star, LifeBuoy, HelpCircle, UserCheck, MessageCircle, AlertCircle, Clock, CheckCircle2, RefreshCw, Filter, Search, Phone, Mail, Image as ImageIcon } from "lucide-react";
+import { Check, X, ShieldAlert, Users, Award, ShieldCheck, Eye, Calendar, DollarSign, MessageSquare, Bell, Send, Tag, Gift, TrendingUp, Plus, Trash, Grid, Star, LifeBuoy, HelpCircle, UserCheck, MessageCircle, AlertCircle, Clock, CheckCircle2, RefreshCw, Filter, Search, Phone, Mail, Sparkles, Image as ImageIcon } from "lucide-react";
 import {
   formatAdminDate,
   formatAdminDateTime,
@@ -53,6 +53,46 @@ const AdminDashboard = ({ showToast }) => {
 
   // Coupon State
   const [coupons, setCoupons] = useState([]);
+
+  // Festival & Dynamic Offers State
+  const [festivals, setFestivals] = useState([]);
+  const [festivalOffers, setFestivalOffers] = useState([]);
+  const [festivalTabMode, setFestivalTabMode] = useState("festivals"); // "festivals" | "offers"
+  const [showFestivalModal, setShowFestivalModal] = useState(false);
+  const [editingFestival, setEditingFestival] = useState(null);
+  const [festivalForm, setFestivalForm] = useState({
+    name: "",
+    code: "",
+    tagline: "",
+    description: "",
+    start_date: "",
+    end_date: "",
+    banner_image: "",
+    theme_color: "#800020",
+    badge_text: "FESTIVAL SPECIAL ✨",
+    priority: 50,
+    is_active: true
+  });
+  const [showOfferModal, setShowOfferModal] = useState(false);
+  const [editingOffer, setEditingOffer] = useState(null);
+  const [offerForm, setOfferForm] = useState({
+    festival_id: "",
+    title: "",
+    subtitle: "",
+    description: "",
+    coupon_code: "",
+    discount_type: "PERCENTAGE",
+    discount_value: 20,
+    min_booking_amount: 500,
+    max_discount: 500,
+    valid_from: "",
+    valid_until: "",
+    eligible_categories: "*",
+    terms_conditions: "",
+    banner_image: "",
+    priority: 50,
+    is_active: true
+  });
 
   // Category State
   const [categories, setCategories] = useState([]);
@@ -261,6 +301,13 @@ const AdminDashboard = ({ showToast }) => {
       } else if (activeTab === "coupons") {
         const couponsRes = await adminService.getCoupons();
         setCoupons(couponsRes.data || []);
+      } else if (activeTab === "festivals") {
+        const [fRes, oRes] = await Promise.all([
+          adminService.getFestivals(),
+          adminService.getFestivalOffers()
+        ]);
+        setFestivals(fRes.data || []);
+        setFestivalOffers(oRes.data || []);
       } else if (activeTab === "referrals") {
         const [campRes, analyRes] = await Promise.all([
           adminService.getReferralCampaigns(),
@@ -741,6 +788,139 @@ const AdminDashboard = ({ showToast }) => {
     }
   };
 
+  // Festival & Dynamic Offers Management Handlers
+  const fetchFestivalsData = async () => {
+    try {
+      const [fRes, oRes] = await Promise.all([
+        adminService.getFestivals(),
+        adminService.getFestivalOffers()
+      ]);
+      setFestivals(fRes.data || []);
+      setFestivalOffers(oRes.data || []);
+    } catch (err) {
+      showToast("Failed to refresh festival data", "danger");
+    }
+  };
+
+  const handleSaveFestival = async (e) => {
+    e.preventDefault();
+    try {
+      if (editingFestival) {
+        await adminService.updateFestival(editingFestival.id, festivalForm);
+        showToast("Festival updated successfully", "success");
+      } else {
+        await adminService.createFestival(festivalForm);
+        showToast("New Festival added to calendar", "success");
+      }
+      setShowFestivalModal(false);
+      setEditingFestival(null);
+      setFestivalForm({
+        name: "",
+        code: "",
+        tagline: "",
+        description: "",
+        start_date: "",
+        end_date: "",
+        banner_image: "",
+        theme_color: "#800020",
+        badge_text: "FESTIVAL SPECIAL ✨",
+        priority: 50,
+        is_active: true
+      });
+      fetchFestivalsData();
+    } catch (err) {
+      showToast(err.response?.data?.message || err.message || "Failed to save festival", "danger");
+    }
+  };
+
+  const handleToggleFestivalStatus = async (fest) => {
+    try {
+      await adminService.updateFestival(fest.id, { is_active: !fest.is_active });
+      showToast(`Festival ${fest.is_active ? "deactivated" : "activated"}`, "success");
+      fetchFestivalsData();
+    } catch (err) {
+      showToast("Failed to update status", "danger");
+    }
+  };
+
+  const handleDeleteFestival = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this festival? Linked offers will also be removed.")) return;
+    try {
+      await adminService.deleteFestival(id);
+      showToast("Festival deleted", "success");
+      fetchFestivalsData();
+    } catch (err) {
+      showToast("Failed to delete festival", "danger");
+    }
+  };
+
+  const handleSaveOffer = async (e) => {
+    e.preventDefault();
+    try {
+      const payload = {
+        ...offerForm,
+        discount_value: Number(offerForm.discount_value) || 0,
+        min_booking_amount: Number(offerForm.min_booking_amount) || 0,
+        max_discount: Number(offerForm.max_discount) || 0,
+        priority: Number(offerForm.priority) || 50,
+        eligible_categories: typeof offerForm.eligible_categories === "string"
+          ? offerForm.eligible_categories.split(",").map(s => s.trim()).filter(Boolean)
+          : ["*"]
+      };
+      if (editingOffer) {
+        await adminService.updateFestivalOffer(editingOffer.id, payload);
+        showToast("Festival offer updated", "success");
+      } else {
+        await adminService.createFestivalOffer(payload);
+        showToast("Festival offer created", "success");
+      }
+      setShowOfferModal(false);
+      setEditingOffer(null);
+      setOfferForm({
+        festival_id: "",
+        title: "",
+        subtitle: "",
+        description: "",
+        coupon_code: "",
+        discount_type: "PERCENTAGE",
+        discount_value: 20,
+        min_booking_amount: 500,
+        max_discount: 500,
+        valid_from: "",
+        valid_until: "",
+        eligible_categories: "*",
+        terms_conditions: "",
+        banner_image: "",
+        priority: 50,
+        is_active: true
+      });
+      fetchFestivalsData();
+    } catch (err) {
+      showToast(err.response?.data?.message || err.message || "Failed to save offer", "danger");
+    }
+  };
+
+  const handleToggleOfferStatus = async (offer) => {
+    try {
+      await adminService.updateFestivalOffer(offer.id, { is_active: !offer.is_active });
+      showToast(`Offer ${offer.is_active ? "deactivated" : "activated"}`, "success");
+      fetchFestivalsData();
+    } catch (err) {
+      showToast("Failed to update offer status", "danger");
+    }
+  };
+
+  const handleDeleteOffer = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this festival offer?")) return;
+    try {
+      await adminService.deleteFestivalOffer(id);
+      showToast("Festival offer deleted", "success");
+      fetchFestivalsData();
+    } catch (err) {
+      showToast("Failed to delete offer", "danger");
+    }
+  };
+
   const handleCampaignSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -855,6 +1035,14 @@ const AdminDashboard = ({ showToast }) => {
           style={{ width: "100%", justifyContent: "flex-start", border: "none", background: "none" }}
         >
           <Tag style={{ width: "18px" }} /> Coupons Manager
+        </button>
+
+        <button
+          className={`sidebar-link btn-secondary ${activeTab === "festivals" ? "active" : ""}`}
+          onClick={() => setActiveTab("festivals")}
+          style={{ width: "100%", justifyContent: "flex-start", border: "none", background: "none" }}
+        >
+          <Sparkles style={{ width: "18px", color: "#FFB800" }} /> Festivals & Offers
         </button>
 
         <button
@@ -1785,6 +1973,716 @@ const AdminDashboard = ({ showToast }) => {
                     </tbody>
                   </table>
                 </div>
+              </div>
+            )}
+
+            {activeTab === "festivals" && (
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem", flexWrap: "wrap", gap: "1rem" }}>
+                  <div>
+                    <h1 style={{ fontSize: "2rem", fontWeight: 800, marginBottom: "0.25rem" }}>Festivals & Offers Engine 🪔</h1>
+                    <p style={{ color: "var(--text-secondary)" }}>
+                      Dynamic multi-year Indian festival calendar, auto-promoted banner sliders & linked promo coupons.
+                    </p>
+                  </div>
+                  <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+                    <div style={{ display: "inline-flex", background: "var(--bg-secondary, rgba(255,255,255,0.05))", padding: "3px", borderRadius: "8px", border: "1px solid var(--border-color, rgba(255,255,255,0.1))" }}>
+                      <button
+                        className={`btn ${festivalTabMode === "festivals" ? "btn-primary" : "btn-secondary"}`}
+                        style={{ padding: "0.4rem 0.9rem", fontSize: "0.85rem", borderRadius: "6px" }}
+                        onClick={() => setFestivalTabMode("festivals")}
+                      >
+                        📅 Festivals ({festivals.length})
+                      </button>
+                      <button
+                        className={`btn ${festivalTabMode === "offers" ? "btn-primary" : "btn-secondary"}`}
+                        style={{ padding: "0.4rem 0.9rem", fontSize: "0.85rem", borderRadius: "6px" }}
+                        onClick={() => setFestivalTabMode("offers")}
+                      >
+                        🏷️ Offers & Banners ({festivalOffers.length})
+                      </button>
+                    </div>
+
+                    {festivalTabMode === "festivals" ? (
+                      <button
+                        className="btn btn-primary"
+                        onClick={() => {
+                          setEditingFestival(null);
+                          setFestivalForm({
+                            name: "",
+                            code: "",
+                            tagline: "",
+                            description: "",
+                            start_date: "",
+                            end_date: "",
+                            banner_image: "",
+                            theme_color: "#800020",
+                            badge_text: "FESTIVAL SPECIAL ✨",
+                            priority: 50,
+                            is_active: true
+                          });
+                          setShowFestivalModal(true);
+                        }}
+                      >
+                        <Plus style={{ width: "16px", marginRight: "4px" }} /> Add Festival
+                      </button>
+                    ) : (
+                      <button
+                        className="btn btn-primary"
+                        onClick={() => {
+                          setEditingOffer(null);
+                          setOfferForm({
+                            festival_id: festivals[0]?.id || "",
+                            title: "",
+                            subtitle: "",
+                            description: "",
+                            coupon_code: "",
+                            discount_type: "PERCENTAGE",
+                            discount_value: 20,
+                            min_booking_amount: 500,
+                            max_discount: 500,
+                            valid_from: "",
+                            valid_until: "",
+                            eligible_categories: "*",
+                            terms_conditions: "",
+                            banner_image: "",
+                            priority: 50,
+                            is_active: true
+                          });
+                          setShowOfferModal(true);
+                        }}
+                      >
+                        <Plus style={{ width: "16px", marginRight: "4px" }} /> Create Offer
+                      </button>
+                    )}
+
+                    <button className="btn btn-secondary" onClick={() => fetchFestivalsData()}>
+                      <RefreshCw style={{ width: "16px" }} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Festival Summary Cards */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1.25rem", marginBottom: "2rem" }}>
+                  <div className="glass-panel" style={{ padding: "1.25rem", borderLeft: "4px solid #F59E0B" }}>
+                    <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontWeight: 600 }}>Total Festivals</div>
+                    <div style={{ fontSize: "1.8rem", fontWeight: 800, marginTop: "0.4rem", color: "#F59E0B" }}>{festivals.length}</div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.2rem" }}>Configured in Cloudflare D1</div>
+                  </div>
+
+                  <div className="glass-panel" style={{ padding: "1.25rem", borderLeft: "4px solid #10B981" }}>
+                    <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontWeight: 600 }}>Active Today (IST)</div>
+                    <div style={{ fontSize: "1.8rem", fontWeight: 800, marginTop: "0.4rem", color: "#10B981" }}>
+                      {festivals.filter(f => f.is_active && (f.status === "ACTIVE" || f.is_current_active)).length || festivals.filter(f => {
+                        const today = new Date().toISOString().slice(0, 10);
+                        return f.is_active && f.start_date <= today && f.end_date >= today;
+                      }).length}
+                    </div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.2rem" }}>Promoted on mobile home slider</div>
+                  </div>
+
+                  <div className="glass-panel" style={{ padding: "1.25rem", borderLeft: "4px solid #3B82F6" }}>
+                    <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontWeight: 600 }}>Upcoming Scheduled</div>
+                    <div style={{ fontSize: "1.8rem", fontWeight: 800, marginTop: "0.4rem", color: "#3B82F6" }}>
+                      {festivals.filter(f => {
+                        const today = new Date().toISOString().slice(0, 10);
+                        return f.is_active && f.start_date > today;
+                      }).length}
+                    </div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.2rem" }}>Next in calendar pipeline</div>
+                  </div>
+
+                  <div className="glass-panel" style={{ padding: "1.25rem", borderLeft: "4px solid #8B5CF6" }}>
+                    <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontWeight: 600 }}>Linked Coupon Offers</div>
+                    <div style={{ fontSize: "1.8rem", fontWeight: 800, marginTop: "0.4rem", color: "#8B5CF6" }}>
+                      {festivalOffers.filter(o => o.is_active).length} / {festivalOffers.length}
+                    </div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.2rem" }}>Active checkout discounts</div>
+                  </div>
+                </div>
+
+                {/* Festival Form Modal */}
+                {showFestivalModal && (
+                  <div className="glass-panel" style={{ padding: "2rem", marginBottom: "2rem", border: "1px solid var(--accent-color, #800020)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+                      <h3 style={{ fontSize: "1.25rem", fontWeight: 700 }}>
+                        {editingFestival ? `Edit Festival: ${editingFestival.name}` : "Add New Indian Festival to Calendar"}
+                      </h3>
+                      <button className="btn btn-secondary" onClick={() => setShowFestivalModal(false)}>✕</button>
+                    </div>
+
+                    <form onSubmit={handleSaveFestival} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem" }}>
+                      <div className="form-group">
+                        <label className="form-label">Festival Name (with Emoji)</label>
+                        <input
+                          className="form-control"
+                          type="text"
+                          placeholder="e.g. Karwa Chauth 🌙"
+                          value={festivalForm.name}
+                          onChange={(e) => setFestivalForm({ ...festivalForm, name: e.target.value })}
+                          required
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label">Festival Code Key</label>
+                        <input
+                          className="form-control"
+                          type="text"
+                          placeholder="e.g. karwa_chauth"
+                          value={festivalForm.code}
+                          onChange={(e) => setFestivalForm({ ...festivalForm, code: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_") })}
+                          required
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label">Tagline / Short Subtitle</label>
+                        <input
+                          className="form-control"
+                          type="text"
+                          placeholder="e.g. Royal Bridal & Marwari Henna"
+                          value={festivalForm.tagline}
+                          onChange={(e) => setFestivalForm({ ...festivalForm, tagline: e.target.value })}
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label">Badge Text</label>
+                        <input
+                          className="form-control"
+                          type="text"
+                          placeholder="e.g. KARWA SPECIAL 🌙"
+                          value={festivalForm.badge_text}
+                          onChange={(e) => setFestivalForm({ ...festivalForm, badge_text: e.target.value })}
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label">Active Start Date (YYYY-MM-DD)</label>
+                        <input
+                          className="form-control"
+                          type="date"
+                          value={formatDateForInput(festivalForm.start_date)}
+                          onChange={(e) => setFestivalForm({ ...festivalForm, start_date: e.target.value })}
+                          required
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label">Active End Date (YYYY-MM-DD)</label>
+                        <input
+                          className="form-control"
+                          type="date"
+                          value={formatDateForInput(festivalForm.end_date)}
+                          onChange={(e) => setFestivalForm({ ...festivalForm, end_date: e.target.value })}
+                          required
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label">Theme Color (Hex code)</label>
+                        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                          <input
+                            type="color"
+                            value={festivalForm.theme_color || "#800020"}
+                            onChange={(e) => setFestivalForm({ ...festivalForm, theme_color: e.target.value })}
+                            style={{ width: "40px", height: "38px", padding: 0, border: "none", borderRadius: "6px", cursor: "pointer" }}
+                          />
+                          <input
+                            className="form-control"
+                            type="text"
+                            value={festivalForm.theme_color}
+                            onChange={(e) => setFestivalForm({ ...festivalForm, theme_color: e.target.value })}
+                            placeholder="#800020"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label">Slider Priority (1-100, higher shows first)</label>
+                        <input
+                          className="form-control"
+                          type="number"
+                          value={festivalForm.priority}
+                          onChange={(e) => setFestivalForm({ ...festivalForm, priority: Number(e.target.value) })}
+                          min="1"
+                          max="100"
+                        />
+                      </div>
+
+                      <div className="form-group" style={{ gridColumn: "span 2" }}>
+                        <label className="form-label">Banner Image URL</label>
+                        <input
+                          className="form-control"
+                          type="url"
+                          placeholder="https://images.unsplash.com/..."
+                          value={festivalForm.banner_image}
+                          onChange={(e) => setFestivalForm({ ...festivalForm, banner_image: e.target.value })}
+                        />
+                        {festivalForm.banner_image && (
+                          <div style={{ marginTop: "0.75rem", borderRadius: "8px", overflow: "hidden", height: "100px", maxWidth: "300px", border: "1px solid var(--border-color)" }}>
+                            <img src={festivalForm.banner_image} alt="Preview" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="form-group" style={{ gridColumn: "span 2" }}>
+                        <label className="form-label">Festival Description</label>
+                        <textarea
+                          className="form-control"
+                          rows="2"
+                          placeholder="Short festive description for customer app..."
+                          value={festivalForm.description}
+                          onChange={(e) => setFestivalForm({ ...festivalForm, description: e.target.value })}
+                        />
+                      </div>
+
+                      <div className="form-group" style={{ gridColumn: "span 2", display: "flex", gap: "1rem", alignItems: "center" }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(festivalForm.is_active)}
+                            onChange={(e) => setFestivalForm({ ...festivalForm, is_active: e.target.checked })}
+                          />
+                          <span style={{ fontWeight: 600 }}>Enable & Activate Festival in App</span>
+                        </label>
+                      </div>
+
+                      <div style={{ gridColumn: "span 2", display: "flex", gap: "1rem" }}>
+                        <button type="submit" className="btn btn-primary">
+                          {editingFestival ? "Update Festival" : "Save to Festival Calendar"}
+                        </button>
+                        <button type="button" className="btn btn-secondary" onClick={() => setShowFestivalModal(false)}>
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )}
+
+                {/* Festival Offer Form Modal */}
+                {showOfferModal && (
+                  <div className="glass-panel" style={{ padding: "2rem", marginBottom: "2rem", border: "1px solid var(--accent-color, #800020)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+                      <h3 style={{ fontSize: "1.25rem", fontWeight: 700 }}>
+                        {editingOffer ? `Edit Offer: ${editingOffer.title}` : "Create Festival Promo Offer & Coupon"}
+                      </h3>
+                      <button className="btn btn-secondary" onClick={() => setShowOfferModal(false)}>✕</button>
+                    </div>
+
+                    <form onSubmit={handleSaveOffer} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem" }}>
+                      <div className="form-group">
+                        <label className="form-label">Linked Festival</label>
+                        <select
+                          className="form-control"
+                          value={offerForm.festival_id}
+                          onChange={(e) => setOfferForm({ ...offerForm, festival_id: Number(e.target.value) })}
+                          required
+                        >
+                          <option value="">-- Select Festival --</option>
+                          {festivals.map(f => (
+                            <option key={f.id} value={f.id}>{f.name} ({f.start_date} to {f.end_date})</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label">Coupon Promo Code</label>
+                        <input
+                          className="form-control"
+                          type="text"
+                          placeholder="e.g. KARWA500"
+                          value={offerForm.coupon_code}
+                          onChange={(e) => setOfferForm({ ...offerForm, coupon_code: e.target.value.toUpperCase().trim() })}
+                          required
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label">Offer Title</label>
+                        <input
+                          className="form-control"
+                          type="text"
+                          placeholder="e.g. Karwa Chauth Luxury Henna 🌙"
+                          value={offerForm.title}
+                          onChange={(e) => setOfferForm({ ...offerForm, title: e.target.value })}
+                          required
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label">Subtitle</label>
+                        <input
+                          className="form-control"
+                          type="text"
+                          placeholder="e.g. Flat ₹500 OFF on bridal packages"
+                          value={offerForm.subtitle}
+                          onChange={(e) => setOfferForm({ ...offerForm, subtitle: e.target.value })}
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label">Discount Type</label>
+                        <select
+                          className="form-control"
+                          value={offerForm.discount_type}
+                          onChange={(e) => setOfferForm({ ...offerForm, discount_type: e.target.value })}
+                        >
+                          <option value="PERCENTAGE">Percentage (%)</option>
+                          <option value="FLAT">Flat Rate (₹)</option>
+                        </select>
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label">Discount Value ({offerForm.discount_type === "PERCENTAGE" ? "%" : "₹"})</label>
+                        <input
+                          className="form-control"
+                          type="number"
+                          placeholder="e.g. 25"
+                          value={offerForm.discount_value}
+                          onChange={(e) => setOfferForm({ ...offerForm, discount_value: e.target.value })}
+                          required
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label">Min Booking Amount (₹)</label>
+                        <input
+                          className="form-control"
+                          type="number"
+                          placeholder="e.g. 500"
+                          value={offerForm.min_booking_amount}
+                          onChange={(e) => setOfferForm({ ...offerForm, min_booking_amount: e.target.value })}
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label">Max Discount Cap (₹)</label>
+                        <input
+                          className="form-control"
+                          type="number"
+                          placeholder="e.g. 1000"
+                          value={offerForm.max_discount}
+                          onChange={(e) => setOfferForm({ ...offerForm, max_discount: e.target.value })}
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label">Valid From (YYYY-MM-DD)</label>
+                        <input
+                          className="form-control"
+                          type="date"
+                          value={formatDateForInput(offerForm.valid_from)}
+                          onChange={(e) => setOfferForm({ ...offerForm, valid_from: e.target.value })}
+                          required
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label">Valid Until (YYYY-MM-DD)</label>
+                        <input
+                          className="form-control"
+                          type="date"
+                          value={formatDateForInput(offerForm.valid_until)}
+                          onChange={(e) => setOfferForm({ ...offerForm, valid_until: e.target.value })}
+                          required
+                        />
+                      </div>
+
+                      <div className="form-group" style={{ gridColumn: "span 2" }}>
+                        <label className="form-label">Banner / Card Image URL</label>
+                        <input
+                          className="form-control"
+                          type="url"
+                          placeholder="https://images.unsplash.com/..."
+                          value={offerForm.banner_image}
+                          onChange={(e) => setOfferForm({ ...offerForm, banner_image: e.target.value })}
+                        />
+                      </div>
+
+                      <div className="form-group" style={{ gridColumn: "span 2" }}>
+                        <label className="form-label">Terms & Conditions</label>
+                        <input
+                          className="form-control"
+                          type="text"
+                          placeholder="e.g. Valid on bridal packages above ₹1500."
+                          value={offerForm.terms_conditions}
+                          onChange={(e) => setOfferForm({ ...offerForm, terms_conditions: e.target.value })}
+                        />
+                      </div>
+
+                      <div className="form-group" style={{ gridColumn: "span 2", display: "flex", gap: "1rem", alignItems: "center" }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(offerForm.is_active)}
+                            onChange={(e) => setOfferForm({ ...offerForm, is_active: e.target.checked })}
+                          />
+                          <span style={{ fontWeight: 600 }}>Active Offer (usable at checkout)</span>
+                        </label>
+                      </div>
+
+                      <div style={{ gridColumn: "span 2", display: "flex", gap: "1rem" }}>
+                        <button type="submit" className="btn btn-primary">
+                          {editingOffer ? "Update Offer" : "Save Festival Offer"}
+                        </button>
+                        <button type="button" className="btn btn-secondary" onClick={() => setShowOfferModal(false)}>
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )}
+
+                {/* Table Views */}
+                {festivalTabMode === "festivals" ? (
+                  <div className="glass-panel" style={{ overflowX: "auto" }}>
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>Festival Name</th>
+                          <th>Badge</th>
+                          <th>Theme Color</th>
+                          <th>Date Window (IST)</th>
+                          <th>Status</th>
+                          <th>Priority</th>
+                          <th>Banner</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {festivals.length === 0 ? (
+                          <tr>
+                            <td colSpan="8" style={{ textAlign: "center", padding: "2rem", color: "var(--text-secondary)" }}>
+                              No festivals configured. Click "Add Festival" to seed Indian occasions.
+                            </td>
+                          </tr>
+                        ) : (
+                          festivals.map((fest) => {
+                            const today = new Date().toISOString().slice(0, 10);
+                            const isActiveToday = fest.is_active && fest.start_date <= today && fest.end_date >= today;
+                            const isUpcoming = fest.is_active && fest.start_date > today;
+                            const isExpired = fest.end_date < today;
+
+                            return (
+                              <tr key={fest.id}>
+                                <td>
+                                  <div style={{ fontWeight: 700 }}>{fest.name}</div>
+                                  <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>{fest.tagline || fest.code}</div>
+                                </td>
+                                <td>
+                                  <span style={{
+                                    background: fest.theme_color || "var(--accent-color)",
+                                    color: "#FFF",
+                                    fontSize: "0.75rem",
+                                    fontWeight: 700,
+                                    padding: "3px 8px",
+                                    borderRadius: "4px"
+                                  }}>
+                                    {fest.badge_text || "SPECIAL"}
+                                  </span>
+                                </td>
+                                <td>
+                                  <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                                    <div style={{ width: "16px", height: "16px", borderRadius: "50%", background: fest.theme_color || "#800020", border: "1px solid rgba(255,255,255,0.2)" }} />
+                                    <span style={{ fontSize: "0.8rem", fontFamily: "monospace" }}>{fest.theme_color || "#800020"}</span>
+                                  </div>
+                                </td>
+                                <td>
+                                  <div style={{ fontSize: "0.85rem", fontWeight: 600 }}>{fest.start_date} → {fest.end_date}</div>
+                                </td>
+                                <td>
+                                  {!fest.is_active ? (
+                                    <span className="badge badge-danger">Disabled</span>
+                                  ) : isActiveToday ? (
+                                    <span className="badge badge-success">🔥 Active Today</span>
+                                  ) : isUpcoming ? (
+                                    <span className="badge badge-info">⏳ Upcoming</span>
+                                  ) : (
+                                    <span className="badge badge-secondary">Past / Season Over</span>
+                                  )}
+                                </td>
+                                <td>
+                                  <span style={{ fontWeight: 700, fontSize: "0.9rem" }}>{fest.priority || 50}</span>
+                                </td>
+                                <td>
+                                  {fest.banner_image ? (
+                                    <img
+                                      src={fest.banner_image}
+                                      alt={fest.name}
+                                      style={{ width: "60px", height: "36px", objectFit: "cover", borderRadius: "4px" }}
+                                    />
+                                  ) : (
+                                    <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>No Image</span>
+                                  )}
+                                </td>
+                                <td>
+                                  <div style={{ display: "flex", gap: "0.4rem" }}>
+                                    <button
+                                      className="btn btn-secondary"
+                                      style={{ padding: "0.25rem 0.5rem", minHeight: "auto", fontSize: "0.8rem" }}
+                                      onClick={() => {
+                                        setEditingFestival(fest);
+                                        setFestivalForm({
+                                          name: fest.name,
+                                          code: fest.code,
+                                          tagline: fest.tagline || "",
+                                          description: fest.description || "",
+                                          start_date: fest.start_date,
+                                          end_date: fest.end_date,
+                                          banner_image: fest.banner_image || "",
+                                          theme_color: fest.theme_color || "#800020",
+                                          badge_text: fest.badge_text || "FESTIVAL SPECIAL ✨",
+                                          priority: fest.priority || 50,
+                                          is_active: Boolean(fest.is_active)
+                                        });
+                                        setShowFestivalModal(true);
+                                        window.scrollTo({ top: 0, behavior: "smooth" });
+                                      }}
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      className={`btn ${fest.is_active ? "btn-warning" : "btn-success"}`}
+                                      style={{ padding: "0.25rem 0.5rem", minHeight: "auto", fontSize: "0.8rem" }}
+                                      onClick={() => handleToggleFestivalStatus(fest)}
+                                    >
+                                      {fest.is_active ? "Pause" : "Resume"}
+                                    </button>
+                                    <button
+                                      className="btn btn-danger"
+                                      style={{ padding: "0.25rem 0.5rem", minHeight: "auto" }}
+                                      onClick={() => handleDeleteFestival(fest.id)}
+                                    >
+                                      <Trash style={{ width: "14px" }} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="glass-panel" style={{ overflowX: "auto" }}>
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>Offer Title</th>
+                          <th>Coupon Code</th>
+                          <th>Discount</th>
+                          <th>Min Order / Cap</th>
+                          <th>Validity Period</th>
+                          <th>Status</th>
+                          <th>Priority</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {festivalOffers.length === 0 ? (
+                          <tr>
+                            <td colSpan="8" style={{ textAlign: "center", padding: "2rem", color: "var(--text-secondary)" }}>
+                              No festival offers configured. Click "Create Offer" to link a coupon discount.
+                            </td>
+                          </tr>
+                        ) : (
+                          festivalOffers.map((off) => {
+                            const isFlat = off.discount_type === "FLAT" || off.discount_type === "fixed";
+                            const discountText = isFlat ? `₹${off.discount_value} FLAT` : `${off.discount_value}% OFF`;
+
+                            return (
+                              <tr key={off.id}>
+                                <td>
+                                  <div style={{ fontWeight: 700 }}>{off.title}</div>
+                                  <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>{off.subtitle || off.description}</div>
+                                </td>
+                                <td>
+                                  <span style={{
+                                    background: "rgba(255,255,255,0.1)",
+                                    border: "1px dashed var(--accent-color, #800020)",
+                                    padding: "3px 8px",
+                                    borderRadius: "4px",
+                                    fontWeight: 800,
+                                    letterSpacing: "1px",
+                                    fontSize: "0.85rem"
+                                  }}>
+                                    {off.coupon_code}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span style={{ fontWeight: 800, color: "var(--accent-color, #10B981)" }}>{discountText}</span>
+                                </td>
+                                <td>
+                                  <div style={{ fontSize: "0.85rem" }}>Min: ₹{off.min_booking_amount || 0}</div>
+                                  <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>Cap: ₹{off.max_discount || "No Cap"}</div>
+                                </td>
+                                <td>
+                                  <div style={{ fontSize: "0.85rem", fontWeight: 600 }}>{off.valid_from} → {off.valid_until}</div>
+                                </td>
+                                <td>
+                                  <span className={`badge ${off.is_active ? "badge-success" : "badge-danger"}`}>
+                                    {off.is_active ? "Active" : "Disabled"}
+                                  </span>
+                                </td>
+                                <td>{off.priority || 50}</td>
+                                <td>
+                                  <div style={{ display: "flex", gap: "0.4rem" }}>
+                                    <button
+                                      className="btn btn-secondary"
+                                      style={{ padding: "0.25rem 0.5rem", minHeight: "auto", fontSize: "0.8rem" }}
+                                      onClick={() => {
+                                        setEditingOffer(off);
+                                        setOfferForm({
+                                          festival_id: off.festival_id || "",
+                                          title: off.title,
+                                          subtitle: off.subtitle || "",
+                                          description: off.description || "",
+                                          coupon_code: off.coupon_code,
+                                          discount_type: off.discount_type || "PERCENTAGE",
+                                          discount_value: off.discount_value,
+                                          min_booking_amount: off.min_booking_amount || 0,
+                                          max_discount: off.max_discount || 0,
+                                          valid_from: off.valid_from,
+                                          valid_until: off.valid_until,
+                                          eligible_categories: Array.isArray(off.eligible_categories) ? off.eligible_categories.join(", ") : (off.eligible_categories || "*"),
+                                          terms_conditions: off.terms_conditions || "",
+                                          banner_image: off.banner_image || "",
+                                          priority: off.priority || 50,
+                                          is_active: Boolean(off.is_active)
+                                        });
+                                        setShowOfferModal(true);
+                                        window.scrollTo({ top: 0, behavior: "smooth" });
+                                      }}
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      className={`btn ${off.is_active ? "btn-warning" : "btn-success"}`}
+                                      style={{ padding: "0.25rem 0.5rem", minHeight: "auto", fontSize: "0.8rem" }}
+                                      onClick={() => handleToggleOfferStatus(off)}
+                                    >
+                                      {off.is_active ? "Pause" : "Resume"}
+                                    </button>
+                                    <button
+                                      className="btn btn-danger"
+                                      style={{ padding: "0.25rem 0.5rem", minHeight: "auto" }}
+                                      onClick={() => handleDeleteOffer(off.id)}
+                                    >
+                                      <Trash style={{ width: "14px" }} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             )}
 

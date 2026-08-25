@@ -1,12 +1,68 @@
-import React, { useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Modal, Dimensions } from "react-native";
+import React, { useState, useEffect } from "react";
+import { View, Text, StyleSheet, TouchableOpacity, Modal, Dimensions, Image } from "react-native";
+import { useVideoPlayer, VideoView } from "expo-video";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import Colors from "../../constants/Colors";
-import OptimizedImage from "../OptimizedImage";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
-function ArtistPortfolioGrid({ portfolio = [], onSelectPhoto }) {
+function isVideoItem(item) {
+  if (!item) return false;
+  if (item.video_url || item.isVideo || item.media_type === "video" || item.is_video) return true;
+  const rawUrl = typeof item === "string" ? item : (item.image_url || item.url || item.media_url || "");
+  return /\.(mp4|mov|webm|avi|mkv)$/i.test(rawUrl) || /\/video\/upload\//.test(rawUrl);
+}
+
+function resolveMediaUrl(item) {
+  if (!item) return "";
+  if (typeof item === "string") return item;
+  return item.video_url || item.image_url || item.url || item.uri || "";
+}
+
+function resolveThumbnailUrl(item) {
+  if (!item) return "";
+  if (typeof item === "string") {
+    if (/\.(mp4|mov|webm|avi|mkv)$/i.test(item)) {
+      return item.replace(/\.[^/.]+$/, ".jpg");
+    }
+    return item;
+  }
+  let img = item.thumbnail_url || item.image_url || item.url || item.uri || "";
+  if (/\.(mp4|mov|webm|avi|mkv)$/i.test(img)) {
+    img = img.replace(/\.[^/.]+$/, ".jpg");
+  }
+  return img;
+}
+
+// Modal Video Player Component
+function PortfolioVideoModalPlayer({ videoUrl, posterUrl }) {
+  const player = useVideoPlayer(videoUrl, (p) => {
+    p.loop = true;
+    p.showsPlaybackControls = true;
+    try {
+      p.play();
+    } catch (_) {}
+  });
+
+  return (
+    <View style={styles.modalVideoContainer}>
+      {posterUrl ? (
+        <Image source={{ uri: posterUrl }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+      ) : null}
+      {player ? (
+        <VideoView
+          style={styles.modalVideoSurface}
+          player={player}
+          allowsFullscreen={true}
+          showsPlaybackControls={true}
+          contentFit="contain"
+        />
+      ) : null}
+    </View>
+  );
+}
+
+export default function ArtistPortfolioGrid({ portfolio = [], onSelectPhoto, onOpenVideoPlayer }) {
   const [selectedItem, setSelectedItem] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
 
@@ -23,7 +79,7 @@ function ArtistPortfolioGrid({ portfolio = [], onSelectPhoto }) {
   const leftColumn = [];
   const rightColumn = [];
 
-  const displayList = (portfolio || []).slice(0, 24);
+  const displayList = (portfolio || []).slice(0, 30);
   displayList.forEach((item, index) => {
     if (index % 2 === 0) leftColumn.push({ item, index });
     else rightColumn.push({ item, index });
@@ -33,39 +89,36 @@ function ArtistPortfolioGrid({ portfolio = [], onSelectPhoto }) {
     setSelectedItem(item);
     setModalVisible(true);
     if (onSelectPhoto) {
-      const uri = typeof item === "string" ? item : item.image_url || item.url || item.uri;
+      const uri = resolveMediaUrl(item);
       onSelectPhoto(uri, index);
     }
   };
 
   const renderMasonryCard = ({ item, index }) => {
-    const imageUri = typeof item === "string" ? item : item.image_url || item.url || item.uri;
-    const isVideo = !!(item.video_url || item.isVideo);
-    const categoryTag = item.category || item.tag || (index % 3 === 0 ? "Bridal" : index % 3 === 1 ? "Arabic" : "Portrait");
-
-    // Alternate aspect ratios for staggered Pinterest masonry aesthetic
+    const thumbUri = resolveThumbnailUrl(item);
+    const isVideo = isVideoItem(item);
+    const categoryTag = item.category || item.tag || (index % 3 === 0 ? "Bridal" : index % 3 === 1 ? "Arabic" : "Traditional");
     const itemHeight = index % 3 === 0 ? 220 : index % 3 === 1 ? 160 : 190;
 
-    if (!imageUri) return null;
+    if (!thumbUri) return null;
 
     return (
       <TouchableOpacity
         key={item.id || index}
         style={[styles.masonryCard, { height: itemHeight }]}
         onPress={() => handleItemPress(item, index)}
-        activeOpacity={0.9}
+        activeOpacity={0.88}
       >
-        <OptimizedImage
-          source={{ uri: imageUri }}
+        <Image
+          source={{ uri: thumbUri }}
           style={styles.cardImage}
-          width={220}
-          height={itemHeight}
+          resizeMode="cover"
         />
 
-        {/* Video Overlay Badge */}
+        {/* Video Play Overlay Badge */}
         {isVideo && (
           <View style={styles.videoOverlay}>
-            <Ionicons name="play-circle" size={32} color="#FFFFFF" />
+            <Ionicons name="play-circle" size={36} color="#FFFFFF" />
           </View>
         )}
 
@@ -73,15 +126,28 @@ function ArtistPortfolioGrid({ portfolio = [], onSelectPhoto }) {
         <View style={styles.tagBadge}>
           <Text style={styles.tagText}>{categoryTag}</Text>
         </View>
+
+        {/* Tier Badge */}
+        {item.art_tier && (
+          <View style={[styles.tierBadge, item.art_tier === "PREMIUM" ? styles.tierPremium : styles.tierStandard]}>
+            <Text style={styles.tierText}>
+              {item.art_tier === "PREMIUM" ? "💎 Premium" : "✨ Standard"}
+            </Text>
+          </View>
+        )}
       </TouchableOpacity>
     );
   };
+
+  const isSelectedVideo = selectedItem ? isVideoItem(selectedItem) : false;
+  const selectedMediaUri = selectedItem ? resolveMediaUrl(selectedItem) : "";
+  const selectedPosterUri = selectedItem ? resolveThumbnailUrl(selectedItem) : "";
 
   return (
     <View style={styles.container}>
       <View style={styles.titleRow}>
         <Text style={styles.sectionTitle}>Portfolio Gallery ({portfolio.length})</Text>
-        <Text style={styles.subtitle}>Pinterest-Style Masonry</Text>
+        <Text style={styles.subtitle}>Photos & Video Reels</Text>
       </View>
 
       {/* 2-Column Pinterest Staggered Masonry Grid */}
@@ -90,7 +156,7 @@ function ArtistPortfolioGrid({ portfolio = [], onSelectPhoto }) {
         <View style={styles.column}>{rightColumn.map(renderMasonryCard)}</View>
       </View>
 
-      {/* Fullscreen Preview Modal */}
+      {/* Fullscreen Preview / Video Playback Modal */}
       <Modal visible={modalVisible} transparent={true} animationType="fade" onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalBackdrop}>
           <TouchableOpacity style={styles.closeBtn} onPress={() => setModalVisible(false)}>
@@ -99,15 +165,19 @@ function ArtistPortfolioGrid({ portfolio = [], onSelectPhoto }) {
 
           {selectedItem && (
             <View style={styles.modalContent}>
-              <OptimizedImage
-                source={{
-                  uri: typeof selectedItem === "string" ? selectedItem : selectedItem.image_url || selectedItem.url || selectedItem.uri,
-                }}
-                style={styles.fullscreenImage}
-                width={SCREEN_WIDTH}
-                height={SCREEN_HEIGHT * 0.7}
-                resizeMode="contain"
-              />
+              {isSelectedVideo ? (
+                <PortfolioVideoModalPlayer
+                  videoUrl={selectedMediaUri}
+                  posterUrl={selectedPosterUri}
+                />
+              ) : (
+                <Image
+                  source={{ uri: selectedPosterUri || selectedMediaUri }}
+                  style={styles.fullscreenImage}
+                  resizeMode="contain"
+                />
+              )}
+
               {selectedItem.title ? <Text style={styles.modalTitle}>{selectedItem.title}</Text> : null}
               {selectedItem.description ? <Text style={styles.modalDesc}>{selectedItem.description}</Text> : null}
             </View>
@@ -135,7 +205,7 @@ const styles = StyleSheet.create({
     color: Colors.text || "#1D1D1D",
   },
   subtitle: {
-    fontSize: 11,
+    fontSize: 12,
     color: Colors.primary || "#9C1344",
     fontWeight: "600",
   },
@@ -148,7 +218,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   masonryCard: {
-    borderRadius: 16,
+    borderRadius: 12,
     overflow: "hidden",
     backgroundColor: "#F1F5F9",
     position: "relative",
@@ -158,10 +228,14 @@ const styles = StyleSheet.create({
     height: "100%",
   },
   videoOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.3)",
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     justifyContent: "center",
     alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.25)",
   },
   tagBadge: {
     position: "absolute",
@@ -175,28 +249,39 @@ const styles = StyleSheet.create({
   tagText: {
     color: "#FFFFFF",
     fontSize: 10,
-    fontWeight: "600",
+    fontWeight: "700",
   },
-  emptyContainer: {
-    padding: 32,
-    alignItems: "center",
+  tierBadge: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
   },
-  emptyText: {
-    color: "#94A3B8",
-    fontSize: 13,
-    marginTop: 8,
+  tierPremium: {
+    backgroundColor: "rgba(112, 29, 219, 0.85)",
+  },
+  tierStandard: {
+    backgroundColor: "rgba(16, 185, 129, 0.85)",
+  },
+  tierText: {
+    color: "#FFFFFF",
+    fontSize: 9,
+    fontWeight: "800",
   },
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.92)",
     justifyContent: "center",
     alignItems: "center",
+    padding: 16,
   },
   closeBtn: {
     position: "absolute",
     top: 50,
     right: 20,
-    zIndex: 99,
+    zIndex: 20,
     width: 44,
     height: 44,
     borderRadius: 22,
@@ -208,24 +293,46 @@ const styles = StyleSheet.create({
     width: "100%",
     alignItems: "center",
   },
+  modalVideoContainer: {
+    width: SCREEN_WIDTH * 0.92,
+    height: SCREEN_HEIGHT * 0.6,
+    borderRadius: 16,
+    overflow: "hidden",
+    backgroundColor: "#000000",
+  },
+  modalVideoSurface: {
+    width: "100%",
+    height: "100%",
+  },
   fullscreenImage: {
     width: SCREEN_WIDTH * 0.92,
-    height: SCREEN_HEIGHT * 0.65,
+    height: SCREEN_HEIGHT * 0.6,
     borderRadius: 16,
   },
   modalTitle: {
-    color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "700",
-    marginTop: 16,
+    color: "#FFFFFF",
+    marginTop: 14,
+    textAlign: "center",
   },
   modalDesc: {
-    color: "#D1D5DB",
     fontSize: 13,
+    color: "#CBD5E1",
     marginTop: 4,
     textAlign: "center",
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
+  },
+  emptyContainer: {
+    alignItems: "center",
+    paddingVertical: 32,
+    backgroundColor: "#F8FAFC",
+    borderRadius: 16,
+    marginVertical: 12,
+  },
+  emptyText: {
+    fontSize: 13,
+    color: "#94A3B8",
+    marginTop: 8,
   },
 });
-
-export default React.memo(ArtistPortfolioGrid);

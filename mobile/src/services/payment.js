@@ -2,9 +2,16 @@ import apiRequest from "./api";
 
 export async function createPaymentSession(bookingId, paymentMethodOrAmount, purpose) {
   const isNumber = typeof paymentMethodOrAmount === "number";
+  const isSettlementMode = paymentMethodOrAmount === "SETTLEMENT" || paymentMethodOrAmount === "REMAINING_PAYMENT" || paymentMethodOrAmount === "FINAL" || purpose === "settlement" || purpose === "booking_remaining";
   const payload = isNumber
     ? { bookingId, amount: paymentMethodOrAmount, payment_mode: "FULL_ONLINE", purpose: purpose || (!bookingId ? "recharge" : "booking") }
-    : { bookingId, payment_mode: paymentMethodOrAmount || "ADVANCE_CASH", purpose: purpose || "booking" };
+    : {
+        bookingId,
+        payment_mode: paymentMethodOrAmount || (isSettlementMode ? "SETTLEMENT" : "ADVANCE_CASH"),
+        purpose: purpose || (isSettlementMode ? "booking_remaining" : "booking_advance"),
+        isSettlement: isSettlementMode,
+        is_settlement: isSettlementMode
+      };
   const res = await apiRequest("POST", "/payment/create-session", payload, true);
   return res?.data || res;
 }

@@ -53,7 +53,7 @@ function GreetingHeader({ artist, isVerified, unreadCount, onProfilePress, onNot
         </Pressable>
         <View style={styles.headerTextCol}>
           <Text style={styles.greetingText}>{getGreeting()}</Text>
-          <Text style={styles.artistNameText}>{artist.name || "Sonu Ma'am"}</Text>
+          <Text style={styles.artistNameText}>{artist.full_name || artist.name || "Specialist Artist"}</Text>
           <View style={styles.statusBadgeRow}>
             <View style={[styles.statusBadge, { backgroundColor: isVerified ? "#E6F4EA" : "#FEF3C7" }]}>
               <Text style={[styles.statusBadgeText, { color: isVerified ? Colors.success : Colors.warning }]}>

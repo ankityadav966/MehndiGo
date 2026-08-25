@@ -164,9 +164,10 @@ export default function SelectDateScreen({ route, navigation }) {
                 // Single Date Rule: Selecting a date automatically replaces previous date!
                 setSelectedDate(dateStr);
               }}
-              hideExtraDays
-              enableSwipeMonths
+              hideExtraDays={false}
+              enableSwipeMonths={true}
               minDate={todayStr}
+              maxDate={moment().add(90, "days").format("YYYY-MM-DD")}
               renderArrow={(direction) => (
                 <Ionicons name={direction === "left" ? "chevron-back" : "chevron-forward"} size={20} color={Colors.text} />
               )}

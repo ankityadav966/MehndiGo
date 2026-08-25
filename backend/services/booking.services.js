@@ -6,6 +6,14 @@ const crypto = require("crypto");
 const checkInFailedAttempts = new Map();
 const checkOutFailedAttempts = new Map();
 
+function generateSecure4DigitOtp() {
+  return String(crypto.randomInt(1000, 10000));
+}
+
+function generateSecure6DigitOtp() {
+  return String(crypto.randomInt(100000, 1000000));
+}
+
 function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
   if (!lat1 || !lon1 || !lat2 || !lon2) return 5.0; // default fallback 5km
   const R = 6371; // Earth radius in KM
@@ -463,7 +471,7 @@ class BookingService {
       const selectedArtDuration = Number(data.selected_art_duration || data.selectedArt?.duration_minutes || 60);
       const selectedArtPrice = data.selected_art_price || data.selectedArt?.price || null;
 
-      const completionPin = Math.floor(1000 + Math.random() * 9000).toString();
+      const completionPin = generateSecure4DigitOtp();
       const holdExpiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15-minute temporary hold
 
       // Calculate price with group size & coverage
@@ -477,7 +485,7 @@ class BookingService {
         numPeople,
         coverage
       );
-      const bookingCode = `BK-${Math.floor(100000 + Math.random() * 900000)}`;
+      const bookingCode = `BK-${generateSecure6DigitOtp()}`;
 
       const booking = await db.Booking.create({
         booking_code: bookingCode,
@@ -630,7 +638,7 @@ class BookingService {
 
     // If check-in is verified and service is in progress, ensure a valid 4-digit completion PIN is populated
     if (isCheckInVerified && booking.booking_status !== "COMPLETED" && booking.detailed_status !== "COMPLETED" && (!booking.check_out_otp || String(booking.check_out_otp).length !== 4)) {
-      const autoOtp = Math.floor(1000 + Math.random() * 9000).toString();
+      const autoOtp = generateSecure4DigitOtp();
       await booking.update({
         check_out_otp: autoOtp,
         check_out_otp_expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000),
@@ -999,7 +1007,7 @@ class BookingService {
       updates.arrival_verified_at = new Date();
 
       // Auto-generate check-in OTP for customer
-      const checkInOtp = booking.check_in_otp || Math.floor(100000 + Math.random() * 900000).toString();
+      const checkInOtp = booking.check_in_otp || generateSecure4DigitOtp();
       updates.check_in_otp = checkInOtp;
       updates.check_in_otp_expires_at = new Date(Date.now() + 15 * 60 * 1000);
       updates.check_in_otp_verified = false;
@@ -1074,7 +1082,7 @@ class BookingService {
 
       // Create success transaction record
       try {
-        const cashTxId = `txn_cash_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+        const cashTxId = `txn_cash_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
         await db.Transaction.create({
           user_id: booking.user_id,
           booking_id: booking.id,
@@ -1118,7 +1126,7 @@ class BookingService {
       updates.booking_status = "CONFIRMED";
       updates.detailed_status = "ARTIST_ARRIVED";
       updates.arrival_verified_at = new Date();
-      const checkInOtp = booking.check_in_otp || Math.floor(100000 + Math.random() * 900000).toString();
+      const checkInOtp = booking.check_in_otp || generateSecure4DigitOtp();
       updates.check_in_otp = checkInOtp;
       updates.check_in_otp_expires_at = new Date(Date.now() + 15 * 60 * 1000);
       updates.check_in_otp_verified = false;
@@ -1643,7 +1651,7 @@ class BookingService {
     // Reset failed verification attempts
     checkInFailedAttempts.delete(booking.id);
 
-    const otp = Math.floor(1000 + Math.random() * 9000).toString();
+    const otp = generateSecure4DigitOtp();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 mins
 
     const updates = {
@@ -1776,7 +1784,7 @@ class BookingService {
     const startTime = new Date();
     let checkOutOtp = booking.check_out_otp;
     if (!checkOutOtp || String(checkOutOtp).length !== 4) {
-      checkOutOtp = Math.floor(1000 + Math.random() * 9000).toString();
+      checkOutOtp = generateSecure4DigitOtp();
     }
     const checkOutExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
@@ -1916,9 +1924,9 @@ class BookingService {
     checkOutFailedAttempts.delete(booking.id);
 
     // Generate a DISTINCT 4-digit Check-Out OTP
-    let otp = Math.floor(1000 + Math.random() * 9000).toString();
+    let otp = generateSecure4DigitOtp();
     if (booking.check_in_otp && otp === String(booking.check_in_otp)) {
-      otp = Math.floor(1000 + Math.random() * 9000).toString();
+      otp = generateSecure4DigitOtp();
     }
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 mins
 

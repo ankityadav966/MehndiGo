@@ -1,5 +1,6 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import React, { useEffect, useState, useCallback, useRef } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import {
   ActivityIndicator,
   FlatList,
@@ -56,7 +57,7 @@ export default function WalletScreen({ navigation }) {
         getWalletTransactions().catch(() => [])
       ]);
       setBalance(Number(walletRes?.balance || 0));
-      setTransactions(Array.isArray(txRes) ? txRes : []);
+      setTransactions(Array.isArray(txRes) ? txRes : (Array.isArray(walletRes?.transactions) ? walletRes.transactions : []));
     } catch (err) {
       console.error("Wallet loading error:", err.message);
     } finally {
@@ -65,9 +66,11 @@ export default function WalletScreen({ navigation }) {
     }
   }, []);
 
-  useEffect(() => {
-    loadWalletData();
-  }, [loadWalletData]);
+  useFocusEffect(
+    useCallback(() => {
+      loadWalletData();
+    }, [loadWalletData])
+  );
 
   const onRefresh = () => {
     setRefreshing(true);

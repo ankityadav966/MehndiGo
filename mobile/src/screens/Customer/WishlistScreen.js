@@ -17,9 +17,8 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import Colors from "../../constants/Colors";
 import Alert from "../../utils/Alert";
 import { getCustomerWishlist, removeArtistFavorite } from "../../services/customer";
-import CustomButton from "../../components/CustomButton";
-
 import OptimizedImage from "../../components/OptimizedImage";
+import Config from "../../constants/Config";
 
 export default function WishlistScreen({ navigation }) {
   const [wishlist, setWishlist] = useState([]);
@@ -74,7 +73,7 @@ export default function WishlistScreen({ navigation }) {
     if (wishlist.length === 0) return;
     try {
       const names = wishlist.map((a) => a.user?.name || a.name || "Mehndi Specialist").join(", ");
-      const shareUrl = "https://mehendigoo.com";
+      const shareUrl = Config.PRIMARY_DOMAIN;
       await Share.share({
         message: `Check out my favorite MehndiGo artists collection: ${names}\n\nBook top home mehendi specialists on MehndiGo! ${shareUrl}`,
         title: "My Favorite Mehndi Artists Collection",

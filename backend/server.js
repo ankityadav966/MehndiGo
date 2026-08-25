@@ -95,6 +95,40 @@ app.get("/health", (req, res) => {
   });
 });
 
+app.get(["/.well-known/assetlinks.json", "/assetlinks.json"], (req, res) => {
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  return res.status(200).json([
+    {
+      relation: ["delegate_permission/common.handle_all_urls"],
+      target: {
+        namespace: "android_app",
+        package_name: "com.sonuy123.mehendigoo",
+        sha256_cert_fingerprints: [
+          "08:A7:0F:01:36:61:BB:CD:15:9C:68:53:FB:9C:C6:5C:09:D2:69:61:B7:AE:13:91:3A:D7:F9:5F:74:2C:0E:98",
+          "FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C"
+        ]
+      }
+    }
+  ]);
+});
+
+app.get(["/.well-known/apple-app-site-association", "/apple-app-site-association"], (req, res) => {
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  return res.status(200).json({
+    applinks: {
+      apps: [],
+      details: [
+        {
+          appID: "TEAMID.com.sonuy123.mehendigoo",
+          paths: ["*"]
+        }
+      ]
+    }
+  });
+});
+
 app.use("/api", require("./routes/index"));
 app.use((req, res) => {
   return res.status(404).json({

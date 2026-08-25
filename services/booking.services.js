@@ -6,6 +6,14 @@ const crypto = require("crypto");
 const checkInFailedAttempts = new Map();
 const checkOutFailedAttempts = new Map();
 
+function generateSecure4DigitOtp() {
+  return String(crypto.randomInt(1000, 10000));
+}
+
+function generateSecure6DigitOtp() {
+  return String(crypto.randomInt(100000, 1000000));
+}
+
 class BookingService {
   constructor() {
     this.createBooking = this.createBooking.bind(this);
@@ -183,7 +191,7 @@ class BookingService {
       }
 
       const pricing = await this.calculatePriceDetails(serviceId, couponCode, userId, slotCount);
-      const bookingCode = `BK-${Math.floor(100000 + Math.random() * 900000)}`;
+      const bookingCode = `BK-${generateSecure6DigitOtp()}`;
 
       const booking = await db.Booking.create({
         booking_code: bookingCode,
@@ -659,7 +667,7 @@ class BookingService {
     // Reset failed verification attempts
     checkInFailedAttempts.delete(booking.id);
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = generateSecure4DigitOtp();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 mins
 
     const updates = {
@@ -824,7 +832,7 @@ class BookingService {
     // Reset failed verification attempts
     checkOutFailedAttempts.delete(booking.id);
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = generateSecure4DigitOtp();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 mins
 
     await booking.update({
@@ -946,7 +954,7 @@ class BookingService {
 
     // Create success transaction record
     try {
-      const cfPaymentId = `pay_cash_${Math.random().toString(36).substring(2, 10)}`;
+      const cfPaymentId = `pay_cash_${crypto.randomBytes(4).toString('hex')}`;
       await db.Transaction.create({
         user_id: booking.user_id,
         booking_id: booking.id,

@@ -163,7 +163,8 @@ export default function WalletScreen({ route, navigation }) {
   };
 
   const renderTransaction = ({ item }) => {
-    const isCredit = ["RECHARGE", "REFUND", "CASHBACK", "SETTLEMENT", "MANUAL_CREDIT", "EARNING"].includes(item.transaction_type);
+    const rawType = String(item.type || item.transaction_type || "").toUpperCase();
+    const isCredit = rawType === "CREDIT" || ["RECHARGE", "REFUND", "CASHBACK", "SETTLEMENT", "MANUAL_CREDIT", "EARNING"].includes(rawType);
 
     return (
       <TouchableOpacity 
@@ -181,13 +182,13 @@ export default function WalletScreen({ route, navigation }) {
 
         <View style={styles.cardInfo}>
           <Text style={styles.cardTitle} numberOfLines={1}>
-            {item.description || item.transaction_type?.replace(/_/g, " ")}
+            {item.description || item.transaction_type?.replace(/_/g, " ") || (isCredit ? "Credit" : "Debit")}
           </Text>
-          <Text style={styles.cardSubtitle}>{moment(item.createdAt).format("DD MMM YYYY, hh:mm A")}</Text>
+          <Text style={styles.cardSubtitle}>{moment(item.created_at || item.createdAt || item.date || new Date()).format("DD MMM YYYY, hh:mm A")}</Text>
         </View>
 
         <Text style={[styles.cardAmount, { color: isCredit ? Colors.success : Colors.error }]}>
-          {isCredit ? "+" : "-"}₹{Number(item.amount).toLocaleString("en-IN")}
+          {isCredit ? "+" : "-"}₹{Number(item.amount || 0).toLocaleString("en-IN")}
         </Text>
       </TouchableOpacity>
     );

@@ -25,6 +25,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import Colors from "../../constants/Colors";
 import {
   getReels,
+  getReelById,
   likePortfolio,
   unlikePortfolio,
   commentPortfolio,
@@ -32,7 +33,7 @@ import {
   addViewToPortfolio,
   sharePortfolio
 } from "../../services/customer";
-import { createArtistDeepLink } from "../../services/deepLink";
+import { createReelDeepLink, createArtistDeepLink } from "../../services/deepLink";
 
 const { height: WINDOW_HEIGHT, width: WINDOW_WIDTH } = Dimensions.get("window");
 
@@ -55,11 +56,18 @@ const ReelItem = ({
   itemHeight,
   itemWidth,
   onNavigateToArtist,
-  onOpenComments
+  onOpenComments,
+  onToggleLike
 }) => {
-  const [isLiked, setIsLiked] = useState(item.isLiked || item.is_liked || false);
-  const [likesCount, setLikesCount] = useState(Number(item.likes_count || item.likes || 0));
+  const [isLiked, setIsLiked] = useState(Boolean(item.isLiked || item.is_liked));
+  const [likesCount, setLikesCount] = useState(Number(item.likes_count ?? item.likesCount ?? item.likes ?? 0));
   const [paused, setPaused] = useState(false);
+  const likingRef = useRef(false);
+
+  useEffect(() => {
+    setIsLiked(Boolean(item.isLiked || item.is_liked));
+    setLikesCount(Number(item.likes_count ?? item.likesCount ?? item.likes ?? 0));
+  }, [item.isLiked, item.is_liked, item.likes_count, item.likesCount, item.likes]);
 
   const videoUri = resolveMedia(item.video_url);
   const posterUri = resolveMedia(item.thumbnail_url || item.image_url || item.artist_avatar);
@@ -126,19 +134,49 @@ const ReelItem = ({
   };
 
   const handleLike = async () => {
+    if (likingRef.current) return;
+    likingRef.current = true;
+
+    const prevLiked = isLiked;
+    const prevCount = likesCount;
+
+    // Optimistic toggle
+    const nextLiked = !prevLiked;
+    const nextCount = nextLiked ? prevCount + 1 : Math.max(0, prevCount - 1);
+
+    setIsLiked(nextLiked);
+    setLikesCount(nextCount);
+    if (typeof onToggleLike === "function") {
+      onToggleLike(item.id, nextLiked, nextCount);
+    }
+
     try {
-      if (isLiked) {
-        setIsLiked(false);
-        setLikesCount((prev) => Math.max(0, prev - 1));
-        await unlikePortfolio(item.id);
+      if (prevLiked) {
+        const res = await unlikePortfolio(item.id);
+        const serverCount = res?.likes_count ?? res?.likesCount ?? res?.data?.likes_count;
+        if (serverCount !== undefined) {
+          const finalCount = Number(serverCount);
+          setLikesCount(finalCount);
+          if (typeof onToggleLike === "function") onToggleLike(item.id, false, finalCount);
+        }
       } else {
-        setIsLiked(true);
-        setLikesCount((prev) => prev + 1);
-        await likePortfolio(item.id);
+        const res = await likePortfolio(item.id);
+        const serverCount = res?.likes_count ?? res?.likesCount ?? res?.data?.likes_count;
+        if (serverCount !== undefined) {
+          const finalCount = Number(serverCount);
+          setLikesCount(finalCount);
+          if (typeof onToggleLike === "function") onToggleLike(item.id, true, finalCount);
+        }
       }
     } catch (_error) {
-      setIsLiked(item.isLiked || item.is_liked || false);
-      setLikesCount(Number(item.likes_count || item.likes || 0));
+      // Safe rollback on error
+      setIsLiked(prevLiked);
+      setLikesCount(prevCount);
+      if (typeof onToggleLike === "function") {
+        onToggleLike(item.id, prevLiked, prevCount);
+      }
+    } finally {
+      likingRef.current = false;
     }
   };
 
@@ -160,6 +198,7 @@ const ReelItem = ({
 
   const insets = useSafeAreaInsets();
   const bottomBarClearance = 68 + (insets.bottom > 0 ? insets.bottom + 6 : 12) + 12;
+  const currentCommentCount = Number(item.comments_count ?? item.commentCount ?? item.comments ?? 0);
 
   return (
     <View style={[styles.reelContainer, heightStyle]}>
@@ -171,68 +210,67 @@ const ReelItem = ({
           resizeMode="cover"
         />
       ) : (
-        <View style={[styles.videoSurface, heightStyle, { backgroundColor: "#111827" }]} />
+        <View style={[styles.videoSurface, styles.placeholderSurface, heightStyle]}>
+          <ActivityIndicator size="small" color="#E91E63" />
+        </View>
       )}
 
-      {/* 2. Native Video Surface Layer (ExoPlayer SurfaceView on Android) */}
-      {videoUri ? (
+      {/* 2. Expo Video View Layer */}
+      {videoUri && player && (
         <VideoView
-          style={[styles.videoSurface, heightStyle]}
           player={player}
-          allowsFullscreen={false}
-          nativeControls={false}
+          style={[styles.videoSurface, heightStyle]}
           contentFit="cover"
-          showsPlaybackControls={false}
+          nativeControls={false}
         />
-      ) : null}
+      )}
 
-      {/* 3. Transparent Touch Layer for Play / Pause Gestures */}
-      <Pressable style={[StyleSheet.absoluteFillObject, { zIndex: 5 }]} onPress={togglePlayPause} />
+      {/* 3. Touch to Play / Pause layer */}
+      <Pressable style={styles.touchableArea} onPress={togglePlayPause} />
 
-      {/* 4. Luxury Dark Gradient Overlay for High Readability */}
+      {/* 4. Overlay Content: Artist Metadata (Bottom-Left) & Action Icons (Bottom-Right) */}
       <LinearGradient
-        colors={["transparent", "rgba(0,0,0,0.4)", "rgba(0,0,0,0.88)"]}
-        locations={[0.45, 0.7, 1]}
-        style={[styles.gradientOverlay, { paddingBottom: bottomBarClearance }]}
+        colors={["transparent", "rgba(0,0,0,0.3)", "rgba(0,0,0,0.85)"]}
+        style={[styles.bottomGradient, { bottom: bottomBarClearance }]}
         pointerEvents="box-none"
       >
-        {/* Left Content (Artist, Caption, Booking CTA) */}
-        <View style={styles.leftOverlay} pointerEvents="box-none">
+        {/* Left Info (Artist Avatar, Name, Category, Title/Caption) */}
+        <View style={styles.leftInfoContainer} pointerEvents="box-none">
           <TouchableOpacity
-            style={styles.artistInfo}
+            style={styles.artistRow}
             onPress={() => onNavigateToArtist(item.artist_id)}
             activeOpacity={0.8}
           >
             <Image
               source={{
-                uri: resolveMedia(item.artist_avatar || item.artist_profile_image) || "https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=150"
+                uri: resolveMedia(item.artist_avatar || item.artist_profile_image) || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=150"
               }}
               style={styles.artistAvatar}
             />
-            <View>
-              <View style={styles.artistNameRow}>
-                <Text style={styles.artistName}>@{item.artist_name || "mehndi_artist"}</Text>
-                <Ionicons name="checkmark-circle" size={14} color="#059669" style={{ marginLeft: 4 }} />
+            <View style={styles.artistTextCol}>
+              <View style={styles.artistNameBadgeRow}>
+                <Text style={styles.artistName} numberOfLines={1}>
+                  {item.artist_name || item.artist?.name || "Mehndi Specialist"}
+                </Text>
+                <Ionicons name="checkmark-circle" size={14} color="#10B981" style={{ marginLeft: 4 }} />
               </View>
-              {item.city || item.artist_city ? (
-                <Text style={styles.artistLocation}>📍 {item.city || item.artist_city}</Text>
-              ) : null}
+              <Text style={styles.artistLocation} numberOfLines={1}>
+                {item.artist?.location || "Jaipur, Rajasthan"} • ⭐ {item.artist?.rating || "5.0"}
+              </Text>
             </View>
           </TouchableOpacity>
 
-          {item.title ? (
-            <Text style={styles.caption} numberOfLines={2}>
-              {item.title}
-            </Text>
-          ) : null}
+          <Text style={styles.reelTitle} numberOfLines={2}>
+            {item.title || item.caption || item.description || "Bridal Mehndi Masterpiece"}
+          </Text>
 
-          {item.description ? (
-            <Text style={styles.description} numberOfLines={2}>
-              {item.description}
-            </Text>
-          ) : null}
+          <View style={styles.categoryPillRow}>
+            <View style={styles.categoryPill}>
+              <Text style={styles.categoryPillText}>{item.category || "Bridal Mehndi"}</Text>
+            </View>
+          </View>
 
-          {/* Book Artist Direct CTA */}
+          {/* Quick Book Artist CTA */}
           <TouchableOpacity
             style={styles.bookButton}
             onPress={() => onNavigateToArtist(item.artist_id)}
@@ -260,7 +298,7 @@ const ReelItem = ({
             <View style={styles.actionIconCircle}>
               <Ionicons name="chatbubble-ellipses-outline" size={24} color="#FFFFFF" />
             </View>
-            <Text style={styles.actionText}>Comments</Text>
+            <Text style={styles.actionText}>{currentCommentCount}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.actionButton} onPress={handleShare} activeOpacity={0.7}>
@@ -302,21 +340,24 @@ const ReelItem = ({
   );
 };
 
-export default function ReelsScreen({ navigation }) {
+export default function ReelsScreen({ navigation, route }) {
   const [reels, setReels] = useState([]);
+  const [activeIndex, setActiveIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
-  const [activeIndex, setActiveIndex] = useState(0);
-  const [isFocused, setIsFocused] = useState(true);
   const [error, setError] = useState(null);
+  const [isFocused, setIsFocused] = useState(true);
+  const [dimensions, setDimensions] = useState({
+    width: WINDOW_WIDTH,
+    height: WINDOW_HEIGHT
+  });
 
-  // Dynamic layout measurement to adapt to device screen & bottom tab
-  const [containerHeight, setContainerHeight] = useState(WINDOW_HEIGHT);
-  const [containerWidth, setContainerWidth] = useState(WINDOW_WIDTH);
+  const insets = useSafeAreaInsets();
+  const targetReelId = route?.params?.reelId || route?.params?.id;
 
-  // Comments state
+  // Comments Sheet State
   const [commentsModalVisible, setCommentsModalVisible] = useState(false);
   const [activeReelId, setActiveReelId] = useState(null);
   const [comments, setComments] = useState([]);
@@ -335,31 +376,45 @@ export default function ReelsScreen({ navigation }) {
 
   const fetchReels = useCallback(async (pageNum = 1) => {
     try {
-      if (pageNum > 1) setLoadingMore(true);
-      else setLoading(true);
+      if (pageNum === 1) setLoading(true);
+      else setLoadingMore(true);
       setError(null);
+
+      let targetReel = null;
+      if (pageNum === 1 && targetReelId) {
+        try {
+          targetReel = await getReelById(targetReelId);
+        } catch (e) {
+          if (__DEV__) console.log("Could not fetch targeted deep-link reel directly:", e.message);
+        }
+      }
+
       const res = await getReels(pageNum, 10);
       const reelsArray = res.reels || res.data?.reels || res.data || [];
-      const validReels = reelsArray.filter(
-        (r) => r.video_url && typeof r.video_url === "string" && r.video_url.trim() !== "" && r.video_url !== "null"
+      let validReels = reelsArray.filter(
+        (r) => r.video_url && typeof r.video_url === "string" && r.video_url.trim() !== ""
       );
+
+      if (targetReel && targetReel.video_url) {
+        validReels = [targetReel, ...validReels.filter(r => Number(r.id) !== Number(targetReel.id))];
+      }
 
       if (pageNum === 1) {
         setReels(validReels);
+        setActiveIndex(0);
       } else {
         setReels((prev) => [...prev, ...validReels]);
       }
-
-      setHasMore(res.hasMore ?? (validReels.length === 10));
       setPage(pageNum);
+      setHasMore(res.hasMore ?? (validReels.length === 10));
     } catch (err) {
-      console.error(err);
+      if (__DEV__) console.log("Error fetching reels:", err.message);
       if (pageNum === 1) setError("Unable to load Reels. Please check connection.");
     } finally {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, []);
+  }, [targetReelId]);
 
   useEffect(() => {
     const unsubscribe = navigation.addListener("focus", () => {
@@ -369,14 +424,14 @@ export default function ReelsScreen({ navigation }) {
   }, [navigation, fetchReels]);
 
   const handleLayout = (e) => {
-    const { height, width } = e.nativeEvent.layout;
-    if (height > 0 && Math.abs(height - containerHeight) > 1) {
-      setContainerHeight(height);
-    }
-    if (width > 0 && Math.abs(width - containerWidth) > 1) {
-      setContainerWidth(width);
+    const { width, height } = e.nativeEvent.layout;
+    if (width > 0 && height > 0) {
+      setDimensions({ width, height });
     }
   };
+
+  const containerHeight = dimensions.height > 0 ? dimensions.height : WINDOW_HEIGHT;
+  const containerWidth = dimensions.width > 0 ? dimensions.width : WINDOW_WIDTH;
 
   const loadMore = () => {
     if (!loadingMore && hasMore && !loading) {
@@ -395,6 +450,16 @@ export default function ReelsScreen({ navigation }) {
     navigation.navigate("ArtistProfile", { artistId });
   };
 
+  const handleToggleLike = useCallback((reelId, liked, count) => {
+    setReels((prev) =>
+      prev.map((r) =>
+        r.id === reelId
+          ? { ...r, isLiked: liked, is_liked: liked, likes_count: count, likesCount: count, likes: count }
+          : r
+      )
+    );
+  }, []);
+
   const openComments = async (reelId) => {
     setActiveReelId(reelId);
     setCommentsModalVisible(true);
@@ -402,7 +467,8 @@ export default function ReelsScreen({ navigation }) {
     setComments([]);
     try {
       const res = await getPortfolioComments(reelId, 1, 50);
-      setComments(res.data || res.comments || []);
+      const list = Array.isArray(res) ? res : (res?.comments || res?.data || []);
+      setComments(list);
     } catch (err) {
       if (__DEV__) console.log("Error loading comments", err);
     } finally {
@@ -411,21 +477,41 @@ export default function ReelsScreen({ navigation }) {
   };
 
   const submitComment = async () => {
-    if (!commentText.trim() || !activeReelId) return;
+    if (!commentText.trim() || !activeReelId || submittingComment) return;
+    const textToSubmit = commentText.trim();
     setSubmittingComment(true);
     try {
-      const newComment = await commentPortfolio(activeReelId, commentText);
-      setComments((prev) => [
-        {
-          id: newComment.id || Date.now(),
-          text: commentText,
-          user: { name: "You", profile_image: null },
-          created_at: new Date().toISOString()
+      const res = await commentPortfolio(activeReelId, textToSubmit);
+      const returnedComment = res?.data || res || {};
+      const newComment = {
+        id: returnedComment.id || Date.now(),
+        text: textToSubmit,
+        comment: textToSubmit,
+        user: {
+          name: returnedComment.user?.name || "You",
+          profile_image: returnedComment.user?.profile_image || null
         },
-        ...prev
-      ]);
+        created_at: returnedComment.created_at || new Date().toISOString()
+      };
+      setComments((prev) => [newComment, ...prev]);
       setCommentText("");
       Keyboard.dismiss();
+
+      // Update comments count on active reel in reels array
+      setReels((prev) =>
+        prev.map((r) => {
+          if (r.id === activeReelId) {
+            const currentC = Number(r.comments_count ?? r.commentCount ?? r.comments ?? 0);
+            return {
+              ...r,
+              comments_count: currentC + 1,
+              commentCount: currentC + 1,
+              comments: currentC + 1
+            };
+          }
+          return r;
+        })
+      );
     } catch (err) {
       if (__DEV__) console.log("Error submitting comment", err);
     } finally {
@@ -438,28 +524,6 @@ export default function ReelsScreen({ navigation }) {
       <View style={styles.centerContainer}>
         <ActivityIndicator size="large" color="#E91E63" />
         <Text style={styles.loadingText}>Loading Mehndi Reels...</Text>
-      </View>
-    );
-  }
-
-  if (error && reels.length === 0) {
-    return (
-      <View style={styles.centerContainer}>
-        <Ionicons name="alert-circle-outline" size={48} color="#DC2626" />
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryBtn} onPress={() => fetchReels(1)}>
-          <Text style={styles.retryText}>Retry</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  if (!loading && reels.length === 0) {
-    return (
-      <View style={styles.centerContainer}>
-        <Ionicons name="videocam-outline" size={64} color="#6B7280" />
-        <Text style={styles.emptyTitle}>No Reels Yet</Text>
-        <Text style={styles.emptySub}>Artists will upload video henna portfolios soon.</Text>
       </View>
     );
   }
@@ -478,6 +542,7 @@ export default function ReelsScreen({ navigation }) {
             itemWidth={containerWidth}
             onNavigateToArtist={navigateToArtist}
             onOpenComments={openComments}
+            onToggleLike={handleToggleLike}
           />
         )}
         pagingEnabled
@@ -505,31 +570,47 @@ export default function ReelsScreen({ navigation }) {
         visible={commentsModalVisible}
         animationType="slide"
         transparent={true}
-        onRequestClose={() => setCommentsModalVisible(false)}
+        onRequestClose={() => {
+          Keyboard.dismiss();
+          setCommentsModalVisible(false);
+        }}
       >
         <KeyboardAvoidingView
           style={styles.modalContainer}
           behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
-          <TouchableWithoutFeedback onPress={() => setCommentsModalVisible(false)}>
+          <TouchableWithoutFeedback onPress={() => {
+            Keyboard.dismiss();
+            setCommentsModalVisible(false);
+          }}>
             <View style={styles.modalOverlay} />
           </TouchableWithoutFeedback>
-          <View style={styles.bottomSheet}>
+          <View style={[styles.bottomSheet, { paddingBottom: Math.max(insets.bottom, 12) + 8 }]}>
             <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>Comments</Text>
-              <TouchableOpacity onPress={() => setCommentsModalVisible(false)}>
+              <Text style={styles.sheetTitle}>Comments ({comments.length})</Text>
+              <TouchableOpacity onPress={() => {
+                Keyboard.dismiss();
+                setCommentsModalVisible(false);
+              }}>
                 <Ionicons name="close" size={24} color="#212121" />
               </TouchableOpacity>
             </View>
 
             {loadingComments ? (
-              <ActivityIndicator style={{ margin: 20 }} color="#E91E63" />
+              <View style={{ paddingVertical: 40, alignItems: "center" }}>
+                <ActivityIndicator size="small" color="#E91E63" />
+                <Text style={{ color: "#6B7280", fontSize: 12, marginTop: 8 }}>Loading comments...</Text>
+              </View>
             ) : comments.length === 0 ? (
-              <Text style={styles.noCommentsText}>No comments yet. Share your appreciation!</Text>
+              <View style={{ paddingVertical: 40, alignItems: "center" }}>
+                <Ionicons name="chatbubble-ellipses-outline" size={36} color="#9CA3AF" />
+                <Text style={styles.noCommentsText}>No comments yet. Be the first to comment!</Text>
+              </View>
             ) : (
               <FlatList
                 data={comments}
-                keyExtractor={(item) => String(item.id)}
+                keyExtractor={(item, idx) => String(item.id || idx)}
+                keyboardShouldPersistTaps="handled"
                 renderItem={({ item }) => (
                   <View style={styles.commentItem}>
                     <Image
@@ -539,7 +620,12 @@ export default function ReelsScreen({ navigation }) {
                       style={styles.commentAvatar}
                     />
                     <View style={styles.commentContent}>
-                      <Text style={styles.commentUser}>{item.user?.name || "Customer"}</Text>
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                        <Text style={styles.commentUser}>{item.user?.name || "Customer"}</Text>
+                        <Text style={{ fontSize: 10, color: "#9CA3AF" }}>
+                          {item.created_at ? new Date(item.created_at).toLocaleDateString() : "Just now"}
+                        </Text>
+                      </View>
                       <Text style={styles.commentText}>{item.text || item.comment}</Text>
                     </View>
                   </View>
@@ -555,10 +641,12 @@ export default function ReelsScreen({ navigation }) {
                 placeholderTextColor="#9CA3AF"
                 value={commentText}
                 onChangeText={setCommentText}
-                multiline
+                multiline={false}
+                returnKeyType="send"
+                onSubmitEditing={submitComment}
               />
               <TouchableOpacity
-                style={[styles.sendButton, !commentText.trim() && { opacity: 0.5 }]}
+                style={[styles.sendButton, (!commentText.trim() || submittingComment) && { opacity: 0.5 }]}
                 onPress={submitComment}
                 disabled={submittingComment || !commentText.trim()}
               >
@@ -638,24 +726,22 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%"
   },
-  gradientOverlay: {
+  bottomGradient: {
     position: "absolute",
-    bottom: 0,
     left: 0,
     right: 0,
-    height: "55%",
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-end",
     paddingHorizontal: 16,
-    paddingBottom: Platform.OS === "ios" ? 100 : 80,
+    paddingTop: 30,
     zIndex: 10
   },
-  leftOverlay: {
+  leftInfoContainer: {
     flex: 1,
     paddingRight: 16
   },
-  artistInfo: {
+  artistRow: {
     flexDirection: "row",
     alignItems: "center",
     marginBottom: 8
@@ -668,7 +754,10 @@ const styles = StyleSheet.create({
     borderColor: "#E91E63",
     marginRight: 10
   },
-  artistNameRow: {
+  artistTextCol: {
+    flex: 1
+  },
+  artistNameBadgeRow: {
     flexDirection: "row",
     alignItems: "center"
   },
@@ -685,22 +774,41 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 1
   },
-  caption: {
+  reelTitle: {
     color: "#FFFFFF",
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "700",
-    marginBottom: 3,
+    marginBottom: 6,
+    lineHeight: 18,
     textShadowColor: "rgba(0, 0, 0, 0.8)",
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 6
   },
-  description: {
-    color: "#CBD5E1",
-    fontSize: 12,
-    lineHeight: 16,
-    textShadowColor: "rgba(0, 0, 0, 0.8)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 6
+  categoryPillRow: {
+    flexDirection: "row",
+    marginBottom: 8
+  },
+  categoryPill: {
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 0.5,
+    borderColor: "rgba(255, 255, 255, 0.35)"
+  },
+  categoryPillText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "700"
+  },
+  placeholderSurface: {
+    backgroundColor: "#111827",
+    justifyContent: "center",
+    alignItems: "center"
+  },
+  touchableArea: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 5
   },
   bookButton: {
     flexDirection: "row",

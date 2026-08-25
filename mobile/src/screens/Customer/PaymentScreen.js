@@ -256,8 +256,8 @@ export default function PaymentScreen({ route, navigation }) {
 
       // If backend session did not return an authentic Razorpay order, generate a genuine Razorpay order directly
       if (!sessionData?.order_id || !sessionData.order_id.startsWith("order_") || sessionData.order_id.includes("order_178")) {
-        const liveKeyId = process.env.EXPO_PUBLIC_RAZORPAY_KEY_ID || "rzp_test_TTX0hx0yooeEQW";
-        const liveKeySecret = "qtlFcyZE33GB3mt2nGOtOoL1";
+        const liveKeyId = process.env.EXPO_PUBLIC_RAZORPAY_KEY_ID || "rzp_live_TSIrGnJIllkt0H";
+        const liveKeySecret = "AJSFmZyxn471PmOT8OGRB768";
         const amountInPaise = Math.round(Number(payableNow || 50) * 100);
 
         try {
@@ -299,7 +299,7 @@ export default function PaymentScreen({ route, navigation }) {
         }
       }
 
-      const keyId = sessionData?.key_id || sessionData?.key || process.env.EXPO_PUBLIC_RAZORPAY_KEY_ID || "rzp_test_TTX0hx0yooeEQW";
+      const keyId = sessionData?.key_id || sessionData?.key || process.env.EXPO_PUBLIC_RAZORPAY_KEY_ID || "rzp_live_TSIrGnJIllkt0H";
       const orderIdVal = sessionData?.order_id || sessionData?.orderId;
       const amountPaise = Number(sessionData?.amount || Math.round(Number(payableNow || 50) * 100));
 

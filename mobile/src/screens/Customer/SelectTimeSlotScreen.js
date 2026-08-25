@@ -28,7 +28,7 @@ export default function SelectTimeSlotScreen({ route, navigation }) {
 
     const loadSlots = async () => {
       try {
-        const rawData = await fetchArtistAvailability(artistId);
+        const rawData = await fetchArtistAvailability(artistId, targetDate);
         const slotsList = Array.isArray(rawData)
           ? rawData
           : (rawData?.smart_slots || rawData?.slots || rawData?.data || []);

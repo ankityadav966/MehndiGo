@@ -31,6 +31,7 @@ import { formatServiceDate, formatTime } from "../../utils/date";
 
 import {
   getHomeDashboard,
+  getCategories,
   getNearbyArtists,
   getCustomerProfile,
   getFavorites,
@@ -46,7 +47,7 @@ import {
   checkSmartLocationChange,
   reverseGeocodeCoords,
 } from "../../utils/locationManager";
-import { getActiveFestivalOffers } from "../../utils/festivalEngine";
+import { getActiveFestivalOffers, resolveFestivalBanner } from "../../utils/festivalEngine";
 import { copyAndSaveCoupon } from "../../utils/couponManager";
 import { resolveImage } from "../../utils/imageHelper";
 
@@ -62,8 +63,9 @@ const PromotionalBannerSlider = React.memo(function PromotionalBannerSlider({ of
   const bannerFlatListRef = useRef(null);
   const bannerTimerRef = useRef(null);
 
-  const dynamicFestivalBanners = React.useMemo(() => getActiveFestivalOffers(), []);
-  const displayOffers = (offers && offers.length > 0) ? offers : dynamicFestivalBanners;
+  const dynamicFestivalBanners = React.useMemo(() => (getActiveFestivalOffers() || []).slice(0, 4), []);
+  const rawOffers = (offers && offers.length > 0) ? offers : dynamicFestivalBanners;
+  const displayOffers = React.useMemo(() => (rawOffers || []).slice(0, 4), [rawOffers]);
 
   useEffect(() => {
     if (displayOffers.length === 0 || !isAutoPlayEnabled) return;
@@ -94,27 +96,22 @@ const PromotionalBannerSlider = React.memo(function PromotionalBannerSlider({ of
   }, [isAutoPlayEnabled, displayOffers.length]);
 
   const getBannerImage = (item) => {
-    if (!item) return null;
-    const imgUrl = item.image_url || item.banner_image || item.image;
-    if (imgUrl && typeof imgUrl === "string") {
-      if (imgUrl.startsWith("http://") || imgUrl.startsWith("https://")) {
-        return { uri: imgUrl };
-      }
-      if (imgUrl.startsWith("/")) {
-        const { BASE_URL } = require("../../services/api");
-        const cleanBase = (BASE_URL || "").replace(/\/api\/v1\/?$/, "");
-        return { uri: `${cleanBase}${imgUrl}` };
-      }
-    }
-    return null;
+    return resolveFestivalBanner(item);
   };
 
   const renderBannerItem = useCallback(({ item }) => {
     const bannerImg = getBannerImage(item);
     const hasImageError = !!bannerErrors[item.id];
 
-    const handleBannerPress = () => {
+    const handleBannerPress = async () => {
       if (!item) return;
+
+      if (item.code && item.code !== "FESTIVE") {
+        await copyAndSaveCoupon(item.code, item.title || item.festival_name);
+        navigation.navigate("Coupons", { prefilledCode: item.code, offer: item });
+        return;
+      }
+
       if (item.target_type === "category" && item.target_id) {
         navigation.navigate("ArtistListing", { categoryId: item.target_id, category: item.title });
       } else if (item.target_type === "artist" && item.target_id) {
@@ -124,6 +121,8 @@ const PromotionalBannerSlider = React.memo(function PromotionalBannerSlider({ of
       } else if (item.cta_link && typeof item.cta_link === "string" && item.cta_link.startsWith("http")) {
         const { Linking } = require("react-native");
         Linking.openURL(item.cta_link).catch(() => {});
+      } else {
+        navigation.navigate("ArtistListing", { filter: "featured" });
       }
     };
 
@@ -142,13 +141,20 @@ const PromotionalBannerSlider = React.memo(function PromotionalBannerSlider({ of
               resizeMode="cover"
             />
           ) : (
-            <View style={[styles.bannerBgImage, { backgroundColor: Colors.primary + "20" }]} />
+            <View style={[styles.bannerBgImage, { backgroundColor: (item.theme_color || Colors.primary) + "30" }]} />
           )}
           <View style={styles.bannerOverlay}>
             <View style={styles.bannerTextContainer}>
-              <Text style={styles.bannerTitle} numberOfLines={1}>{item.title}</Text>
+              {!!(item.badge || item.badge_text) && (
+                <View style={[styles.festivalBadgeContainer, { backgroundColor: item.theme_color || Colors.primary }]}>
+                  <Text style={styles.festivalBadgeText} numberOfLines={1}>
+                    {item.badge || item.badge_text}
+                  </Text>
+                </View>
+              )}
+              <Text style={styles.bannerTitle} numberOfLines={1}>{item.title || item.festival_name}</Text>
               {!!(item.subtitle || item.description) && (
-                <Text style={styles.bannerSubTitle} numberOfLines={2}>{item.subtitle || item.description}</Text>
+                <Text style={styles.bannerSubTitle} numberOfLines={1}>{item.subtitle || item.description}</Text>
               )}
               {!!item.code && (
                 <TouchableOpacity
@@ -156,7 +162,7 @@ const PromotionalBannerSlider = React.memo(function PromotionalBannerSlider({ of
                   activeOpacity={0.8}
                   onPress={(e) => {
                     e.stopPropagation();
-                    copyAndSaveCoupon(item.code, item.title);
+                    copyAndSaveCoupon(item.code, item.title || item.festival_name);
                   }}
                 >
                   <Text style={styles.promoBadgeText}>Code: {item.code}</Text>
@@ -165,7 +171,14 @@ const PromotionalBannerSlider = React.memo(function PromotionalBannerSlider({ of
               )}
             </View>
             {!!(item.discount || item.discount_text) && (
-              <Text style={styles.bannerDiscountText}>{item.discount || item.discount_text}</Text>
+              <View style={styles.discountBadgeWrapper}>
+                <Text style={styles.bannerDiscountText}>{item.discount || item.discount_text}</Text>
+                {!!item.valid_until && (
+                  <Text style={styles.bannerValidityText} numberOfLines={1}>
+                    Valid till {item.valid_until.slice(5)}
+                  </Text>
+                )}
+              </View>
             )}
           </View>
         </View>
@@ -301,6 +314,7 @@ export default function HomeScreen({ navigation }) {
   const [nearbyLoading, setNearbyLoading] = useState(false);
   const [nearbyPage, setNearbyPage] = useState(1);
   const [hasMoreNearby, setHasMoreNearby] = useState(true);
+  const [totalArtistsCount, setTotalArtistsCount] = useState(() => memoryCachedDashboard?.total_artists_count || memoryCachedDashboard?.totalArtistsCount || memoryCachedDashboard?.artists_count || 0);
 
   // Global Page Loading & Refresh States
   const [dashboardLoading, setDashboardLoading] = useState(() => !memoryCachedDashboard);
@@ -440,26 +454,40 @@ export default function HomeScreen({ navigation }) {
       const lat = activeAddressState?.latitude || null;
       const lng = activeAddressState?.longitude || null;
 
-      // Fetch dashboard and favorites in parallel for ultra-fast startup
-      const [data, favs] = await Promise.all([
+      // Fetch dashboard, categories, and favorites in parallel for ultra-fast startup
+      const [data, directCats, favs] = await Promise.all([
         getHomeDashboard(lat, lng),
+        getCategories().catch(() => []),
         getFavorites().catch(() => [])
       ]);
 
+      const rawCatList = (data?.categories && data.categories.length > 0)
+        ? data.categories
+        : (Array.isArray(directCats) && directCats.length > 0 ? directCats : (directCats?.data || []));
+
       if (data) {
-        memoryCachedDashboard = data;
-        setCategories(data?.categories || []);
+        memoryCachedDashboard = { ...data, categories: rawCatList };
+        setCategories(rawCatList || []);
         setOffers(data?.offers || data?.banners || []);
         setFeaturedArtists(data?.featured_artists || data?.featuredArtists || []);
         setPopularArtists(data?.popular_artists || data?.popularArtists || []);
         setRecentlyBookedArtists(data?.recently_booked || data?.recentlyBooked || []);
+        if (data.total_artists_count !== undefined) {
+          setTotalArtistsCount(Number(data.total_artists_count));
+        } else if (data.totalArtistsCount !== undefined) {
+          setTotalArtistsCount(Number(data.totalArtistsCount));
+        } else if (data.artists_count !== undefined) {
+          setTotalArtistsCount(Number(data.artists_count));
+        }
         if (setUnreadCount && (data?.unread_notification_count !== undefined || data?.unread_count !== undefined)) {
           setUnreadCount(data.unread_notification_count ?? data.unread_count ?? 0);
         }
         try {
           const AsyncStorage = require("@react-native-async-storage/async-storage").default;
-          AsyncStorage.setItem("@mehndigo_dashboard_cache", JSON.stringify(data));
+          AsyncStorage.setItem("@mehndigo_dashboard_cache", JSON.stringify({ ...data, categories: rawCatList }));
         } catch (e) {}
+      } else if (rawCatList && rawCatList.length > 0) {
+        setCategories(rawCatList);
       }
 
       if (favs && Array.isArray(favs)) {
@@ -510,19 +538,31 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-  // Banner display with dynamic date-aware festival engine fallback
-  const dynamicFestivalBanners = React.useMemo(() => getActiveFestivalOffers(), []);
-  const displayOffers = (offers && offers.length > 0) ? offers : dynamicFestivalBanners;
+  // Banner display with dynamic date-aware festival engine fallback (Strict 4-card maximum)
+  const dynamicFestivalBanners = React.useMemo(() => (getActiveFestivalOffers() || []).slice(0, 4), []);
+  const displayOffers = React.useMemo(() => ((offers && offers.length > 0) ? offers : dynamicFestivalBanners).slice(0, 4), [offers, dynamicFestivalBanners]);
 
   // Deduplicated unique initial 6 categories for HomeScreen
   const unique6Categories = React.useMemo(() => {
     const map = new Map();
     (categories || []).forEach((cat) => {
-      if (cat && cat.id && !map.has(String(cat.id))) {
-        map.set(String(cat.id), cat);
+      const key = String(cat?.id || cat?.name || cat?.slug || "");
+      if (key && !map.has(key)) {
+        map.set(key, cat);
       }
     });
-    return Array.from(map.values()).slice(0, 6);
+    const list = Array.from(map.values()).slice(0, 6);
+    if (list.length > 0) return list;
+
+    // Fallback 6 rich mehndi categories
+    return [
+      { id: 1, name: "Bridal Mehndi", slug: "bridal-mehndi", description: "Royal bridal henna" },
+      { id: 2, name: "Arabic Mehndi", slug: "arabic-mehndi", description: "Flowing floral patterns" },
+      { id: 3, name: "Rajasthani", slug: "rajasthani-marwari", description: "Traditional Marwari jaali" },
+      { id: 4, name: "Indo-Western", slug: "indo-western", description: "Modern fusion henna" },
+      { id: 5, name: "Floral & Mandala", slug: "floral-mandala", description: "Delicate lotus & florals" },
+      { id: 6, name: "Traditional", slug: "traditional-indian", description: "Classic Indian patterns" }
+    ];
   }, [categories]);
 
   // Load nearby artists paginated
@@ -534,8 +574,8 @@ export default function HomeScreen({ navigation }) {
       const lng = activeAddressState?.longitude || null;
       const currentFilter = filterOverride !== null ? filterOverride : selectedFilter;
       const data = await getNearbyArtists(lat, lng, null, page, 15, currentFilter);
-      const list = data?.rows || [];
-      const total = data?.count || 0;
+      const list = Array.isArray(data) ? data : (data?.rows || data?.data || data?.artists || []);
+      const total = typeof data?.count === 'number' ? data.count : (typeof data?.total === 'number' ? data.total : list.length);
 
       if (page === 1) {
         memoryCachedNearby = list;
@@ -673,10 +713,14 @@ export default function HomeScreen({ navigation }) {
     "bridal": require("../../assets/images/categories/bridal.png"),
     "royal": require("../../assets/images/categories/royal.png"),
     "arabic": require("../../assets/images/categories/arabic.png"),
+    "rajasthani": require("../../assets/images/categories/rajasthani.png"),
     "traditional": require("../../assets/images/categories/traditional.png"),
     "floral": require("../../assets/images/categories/floral.png"),
     "minimal": require("../../assets/images/categories/minimal.png"),
+    "minimalist": require("../../assets/images/categories/minimalist.png"),
     "modern": require("../../assets/images/categories/modern.png"),
+    "pakistani": require("../../assets/images/categories/pakistani.png"),
+    "indo-western": require("../../assets/images/categories/indo_western.png"),
     "finger": require("../../assets/images/categories/finger.png"),
     "full-hand": require("../../assets/images/categories/full_hand.png"),
     "back-hand": require("../../assets/images/categories/back_hand.png"),
@@ -689,33 +733,38 @@ export default function HomeScreen({ navigation }) {
     "karwa-chauth": require("../../assets/images/categories/karwa_chauth.png"),
     "eid": require("../../assets/images/categories/eid.png"),
     "festival": require("../../assets/images/categories/festival.png"),
-    "indo-arabic": require("../../assets/images/categories/indo_arabic.png"),
+    "indo-arabic": require("../../assets/images/categories/indo-arabic.png"),
     "custom": require("../../assets/images/categories/custom.png")
   };
 
   const getCategoryImage = (item) => {
-    if (item && item.image && typeof item.image === "string") {
-      if (item.image.startsWith("http://") || item.image.startsWith("https://")) {
-        return { uri: item.image };
+    const imgUrl = item?.image_url || item?.image;
+    if (imgUrl && typeof imgUrl === "string") {
+      if (!imgUrl.includes("unsplash.com") && (imgUrl.startsWith("http://") || imgUrl.startsWith("https://"))) {
+        return { uri: imgUrl };
       }
-      if (item.image.startsWith("/")) {
+      if (imgUrl.startsWith("/")) {
         const { BASE_URL } = require("../../services/api");
         const cleanBase = (BASE_URL || "").replace(/\/api\/v1\/?$/, "");
-        return { uri: `${cleanBase}${item.image}` };
+        return { uri: `${cleanBase}${imgUrl}` };
       }
     }
     const name = (item?.name || "").toLowerCase();
     const slug = (item?.slug || "").toLowerCase();
 
     let key = "custom";
-    if (slug.includes("indo-arabic") || slug.includes("indo_arabic") || name.includes("indo-arabic") || name.includes("indo arabic") || name.includes("fusion")) key = "indo-arabic";
-    else if (slug.includes("royal") || name.includes("royal")) key = "royal";
+    if (slug.includes("pakistani") || name.includes("pakistani") || slug.includes("khafif") || name.includes("khafif")) key = "pakistani";
+    else if (slug.includes("rajasthani") || name.includes("rajasthani") || slug.includes("marwari") || name.includes("marwari")) key = "rajasthani";
+    else if (slug.includes("indo-western") || slug.includes("indo_western") || name.includes("indo-western") || name.includes("indo western") || name.includes("fusion")) key = "indo-western";
+    else if (slug.includes("indo-arabic") || slug.includes("indo_arabic") || name.includes("indo-arabic") || name.includes("indo arabic")) key = "indo-arabic";
+    else if (slug.includes("royal") || name.includes("royal") || slug.includes("portrait") || name.includes("portrait")) key = "royal";
     else if (slug.includes("bridal") || name.includes("bridal")) key = "bridal";
     else if (slug.includes("arabic") || name.includes("arabic")) key = "arabic";
     else if (slug.includes("traditional") || name.includes("traditional")) key = "traditional";
-    else if (slug.includes("floral") || name.includes("floral")) key = "floral";
-    else if (slug.includes("minimal") || name.includes("minimal")) key = "minimal";
+    else if (slug.includes("floral") || name.includes("floral") || slug.includes("mandala") || name.includes("mandala")) key = "floral";
+    else if (slug.includes("minimal") || name.includes("minimal") || slug.includes("geometric") || name.includes("geometric")) key = "minimalist";
     else if (slug.includes("modern") || name.includes("modern")) key = "modern";
+    else if (slug.includes("engagement") || name.includes("engagement") || slug.includes("sangeet") || name.includes("sangeet")) key = "engagement";
     else if (slug.includes("finger") || name.includes("finger")) key = "finger";
     else if (slug.includes("full-hand") || name.includes("full hand") || name.includes("full-hand") || name.includes("hand mehendi") || name.includes("hand mehndi")) key = "full-hand";
     else if (slug.includes("back-hand") || name.includes("back hand") || name.includes("back-hand")) key = "back-hand";
@@ -723,7 +772,6 @@ export default function HomeScreen({ navigation }) {
     else if (slug.includes("leg") || name.includes("leg") || slug.includes("feet") || name.includes("feet")) key = "leg";
     else if (slug.includes("kids") || name.includes("kid") || slug.includes("kid")) key = "kids";
     else if (slug.includes("groom") || name.includes("groom")) key = "groom";
-    else if (slug.includes("engagement") || name.includes("engagement")) key = "engagement";
     else if (slug.includes("wedding") || name.includes("wedding")) key = "wedding";
     else if (slug.includes("karwa") || name.includes("karwa")) key = "karwa-chauth";
     else if (slug.includes("eid") || name.includes("eid")) key = "eid";
@@ -739,7 +787,7 @@ export default function HomeScreen({ navigation }) {
     return (
       <TouchableOpacity
         style={styles.categoryCard}
-        onPress={() => navigation.navigate("ArtistListing", { categoryId: item.id, category: item.name })}
+        onPress={() => navigation.navigate("ArtistListing", { categoryId: item.id, category: item.name, categorySlug: item.slug })}
       >
         <View style={[styles.categoryIcon, { overflow: "hidden" }]}>
           <OptimizedImage
@@ -1091,11 +1139,11 @@ export default function HomeScreen({ navigation }) {
         <View style={{ flexDirection: "row", alignItems: "center" }}>
           <Text style={[styles.sectionTitle, { color: currentTextColor }]}>All Mehndi Artists</Text>
           <View style={{ backgroundColor: Colors.primary + "18", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, marginLeft: 8 }}>
-            <Text style={{ color: Colors.primary, fontSize: 11, fontWeight: "700" }}>{nearbyArtists.length > 0 ? `${nearbyArtists.length}+` : "All"}</Text>
+            <Text style={{ color: Colors.primary, fontSize: 11, fontWeight: "700" }}>{totalArtistsCount > 0 ? `${totalArtistsCount}` : (nearbyArtists.length > 0 ? `${nearbyArtists.length}+` : "All")}</Text>
           </View>
         </View>
         <TouchableOpacity onPress={() => navigation.navigate("ArtistListing", { filter: "all" })}>
-          <Text style={styles.viewAllText}>View All ({nearbyArtists.length})</Text>
+          <Text style={styles.viewAllText}>View All ({totalArtistsCount > 0 ? totalArtistsCount : nearbyArtists.length})</Text>
         </TouchableOpacity>
       </View>
       <FlatList
@@ -1622,11 +1670,36 @@ const styles = StyleSheet.create({
     maxWidth: "100%"
   },
   promoBadgeText: { color: Colors.white, fontSize: 10, fontWeight: "600" },
+  festivalBadgeContainer: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    alignSelf: "flex-start",
+    marginBottom: 4
+  },
+  festivalBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 9,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    textTransform: "uppercase"
+  },
+  discountBadgeWrapper: {
+    alignItems: "flex-end",
+    justifyContent: "center",
+    marginLeft: 8,
+    flexShrink: 0
+  },
+  bannerValidityText: {
+    color: "rgba(255,255,255,0.85)",
+    fontSize: 10,
+    fontWeight: "500",
+    marginTop: 2
+  },
   bannerDiscountText: {
     color: Colors.white,
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: "800",
-    marginLeft: 6,
     textAlign: "right",
     flexShrink: 0
   },

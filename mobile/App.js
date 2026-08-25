@@ -85,14 +85,12 @@ import { useEffect } from "react";
 import { linkingConfig } from "./src/services/deepLink";
 
 const navigationRef = createNavigationContainerRef();
+global.navigationRef = navigationRef;
 
 export default function App() {
   const [fontsLoaded, fontError] = useFonts({
     Poppins: Poppins_400Regular,
   });
-  useEffect(() => {
-    // Artificial delay removed for faster startup
-  }, []);
 
   useEffect(() => {
     const handleDeepLink = async (url) => {
@@ -112,9 +110,7 @@ export default function App() {
               const AsyncStorage = require("@react-native-async-storage/async-storage").default;
               await AsyncStorage.setItem("pendingReferralCode", resolved.referralCode);
             }
-            if (resolved.requiresAuth) {
-              await setPendingDeepLink(resolved);
-            }
+            await setPendingDeepLink(resolved);
           }
         }
       } catch (err) {
@@ -125,7 +121,9 @@ export default function App() {
     const checkInitialUrl = async () => {
       const Linking = require("expo-linking");
       const url = await Linking.getInitialURL();
-      if (url) handleDeepLink(url);
+      if (url) {
+        handleDeepLink(url);
+      }
     };
 
     checkInitialUrl();
@@ -147,6 +145,30 @@ export default function App() {
     // to prevent a white screen flash.
   }, [isReady]);
 
+  const onNavReady = useCallback(async () => {
+    try {
+      const { consumePendingDeepLink, handleDeepLinkNavigation } = require("./src/services/deepLink");
+      const { secureStorage } = require("./src/utils/storage");
+      const token = await secureStorage.getAccessToken();
+      const role = await secureStorage.getUserRole();
+
+      // Check if there is an unconsumed pending deep link
+      const consumed = await consumePendingDeepLink(navigationRef, !!token);
+
+      // Check if there is a deferred deep link stored from Play Store install referrer
+      if (!consumed) {
+        const AsyncStorage = require("@react-native-async-storage/async-storage").default;
+        const pendingDeferredUrl = await AsyncStorage.getItem("pending_deferred_deep_link");
+        if (pendingDeferredUrl) {
+          await AsyncStorage.removeItem("pending_deferred_deep_link");
+          await handleDeepLinkNavigation(pendingDeferredUrl, navigationRef, !!token, role || "CUSTOMER");
+        }
+      }
+    } catch (e) {
+      if (__DEV__) console.log("[App onReady] Error processing initial/pending links:", e.message);
+    }
+  }, []);
+
   if (!isReady) {
     return null;
   }
@@ -161,7 +183,7 @@ export default function App() {
             <ArtistOnboardingProvider>
               <PortfolioProvider>
                 <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-                <NavigationContainer ref={navigationRef} linking={linkingConfig}>
+                <NavigationContainer ref={navigationRef} linking={linkingConfig} onReady={onNavReady}>
                   <RootNavigator />
                 </NavigationContainer>
               </PortfolioProvider>

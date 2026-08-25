@@ -9,8 +9,8 @@ routes = [
 [vars]
 ENVIRONMENT = "production"
 JWT_SECRET = "mehndigo-super-secret-jwt-token-key-2026"
-RAZORPAY_KEY_ID = "rzp_test_TTX0hx0yooeEQW"
-RAZORPAY_KEY_SECRET = "qtlFcyZE33GB3mt2nGOtOoL1"
+RAZORPAY_KEY_ID = "rzp_live_TSIrGnJIllkt0H"
+RAZORPAY_KEY_SECRET = "AJSFmZyxn471PmOT8OGRB768"
 EMAIL_USER = "sonudonyadav87@gmail.com"
 EMAIL_PASS = "kwemkkniwxyohmvm"
 AZURE_EMAIL_FROM = "donotreply@mehndigo.in"

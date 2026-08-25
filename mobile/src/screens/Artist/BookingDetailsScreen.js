@@ -357,16 +357,24 @@ export default function BookingDetailsScreen({ route, navigation }) {
       } else {
         const res = await verifyCheckOutOtp(bookingId, otp);
         setOtpModalVisible(false);
+        const resData = res?.data || res || {};
+        const isFullyPaid = resData.is_fully_paid || Number(resData.remaining_amount) <= 0;
+
         setBooking((prev) => ({
           ...(prev || {}),
-          ...(res?.data || res || {}),
-          status: "completed",
-          booking_status: "COMPLETED",
-          detailed_status: "COMPLETED",
+          ...resData,
+          status: isFullyPaid ? "completed" : "confirmed",
+          booking_status: isFullyPaid ? "COMPLETED" : "CHECKOUT",
+          detailed_status: isFullyPaid ? "COMPLETED" : "CHECKOUT",
           checkout_otp_verified: 1,
-          check_out_time: res?.data?.check_out_time || new Date()
+          check_out_time: resData.check_out_time || new Date()
         }));
-        Alert.alert("Service Completed! 🎉", "Booking completed! Timer stopped and earnings released to your wallet.");
+
+        if (isFullyPaid) {
+          Alert.alert("Service Completed! 🎉", "Booking completed! Timer stopped and earnings released to your wallet.");
+        } else {
+          Alert.alert("Check-Out Verified! ✨", `Check-out verified. Please collect remaining balance of ₹${Number(resData.remaining_amount || 0).toLocaleString("en-IN")} from customer (Online or Cash).`);
+        }
         loadDetails();
       }
     } catch (err) {
@@ -461,14 +469,15 @@ export default function BookingDetailsScreen({ route, navigation }) {
             setActionLoading(true);
             try {
               await confirmCashPayment(bookingId);
-              await completeService(bookingId);
               setBooking((prev) => ({
                 ...(prev || {}),
                 status: "completed",
                 booking_status: "COMPLETED",
                 detailed_status: "COMPLETED",
                 remaining_amount: 0,
-                payment_status: "paid"
+                payment_status: "PAID",
+                final_payment_status: "PAID",
+                final_payment_method: "CASH"
               }));
               Alert.alert("Payment Confirmed! 💰", "Cash payment recorded and booking marked complete.");
               loadDetails();

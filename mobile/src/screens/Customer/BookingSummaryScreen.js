@@ -405,22 +405,39 @@ export default function BookingSummaryScreen({ route, navigation }) {
               </TouchableOpacity>
             </View>
           ) : (
-            <View style={styles.couponInputRow}>
-              <TextInput
-                style={styles.couponInput}
-                value={couponInput}
-                onChangeText={(t) => setCouponInput(t.toUpperCase())}
-                placeholder="Enter coupon code (e.g. MEHNDI500)"
-                placeholderTextColor="#9CA3AF"
-                autoCapitalize="characters"
-              />
+            <View>
+              <View style={styles.couponInputRow}>
+                <TextInput
+                  style={styles.couponInput}
+                  value={couponInput}
+                  onChangeText={(t) => setCouponInput(t.toUpperCase())}
+                  placeholder="Enter coupon code (e.g. RAKHI20)"
+                  placeholderTextColor="#9CA3AF"
+                  autoCapitalize="characters"
+                />
+                <TouchableOpacity
+                  style={styles.applyBtn}
+                  onPress={handleApplyCoupon}
+                  disabled={loading}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.applyBtnText}>Apply</Text>
+                </TouchableOpacity>
+              </View>
               <TouchableOpacity
-                style={styles.applyBtn}
-                onPress={handleApplyCoupon}
-                disabled={loading}
-                activeOpacity={0.8}
+                style={{ flexDirection: "row", alignItems: "center", marginTop: 8 }}
+                onPress={() => navigation.navigate("Coupons", {
+                  basePrice,
+                  prefilledCode: appliedCoupon,
+                  onSelectCoupon: (code) => {
+                    setCouponInput(code);
+                    setAppliedCoupon(code);
+                    fetchPricingAndArtist(code, groupSize, serviceCoverage);
+                  }
+                })}
               >
-                <Text style={styles.applyBtnText}>Apply</Text>
+                <Ionicons name="sparkles" size={13} color="#9C1344" style={{ marginRight: 4 }} />
+                <Text style={{ fontSize: 12, color: "#9C1344", fontWeight: "600" }}>View All Available Coupons & Offers →</Text>
               </TouchableOpacity>
             </View>
           )}

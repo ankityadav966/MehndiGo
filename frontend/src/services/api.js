@@ -162,6 +162,16 @@ export const adminService = {
     } catch (_) {}
     return { success: true, message: "Reply sent successfully" };
   },
+
+  // Festivals & Festival Offers CRUD
+  getFestivals: () => apiClient.get("/admin/festivals"),
+  createFestival: (data) => apiClient.post("/admin/festivals", data),
+  updateFestival: (id, data) => apiClient.put(`/admin/festivals/${id}`, data),
+  deleteFestival: (id) => apiClient.delete(`/admin/festivals/${id}`),
+  getFestivalOffers: (params = {}) => apiClient.get("/admin/festival-offers", { params }),
+  createFestivalOffer: (data) => apiClient.post("/admin/festival-offers", data),
+  updateFestivalOffer: (id, data) => apiClient.put(`/admin/festival-offers/${id}`, data),
+  deleteFestivalOffer: (id) => apiClient.delete(`/admin/festival-offers/${id}`),
 };
 
 export const chatService = {
