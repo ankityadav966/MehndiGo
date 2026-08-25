@@ -4668,7 +4668,7 @@ const handleCreatePaymentSession = async (c) => {
     payAmountRupees = Math.max(1, Math.round(remDue));
   } else {
     // Initial Booking Confirmation: STRICTLY 10% ADVANCE DEPOSIT ONLY
-    payAmountRupees = Math.round(totalAmtRupees * 0.10);
+    payAmountRupees = Math.max(1, Math.round(totalAmtRupees * 0.10));
   }
 
   const payAmountPaise = Math.round(payAmountRupees * 100);
@@ -5980,10 +5980,10 @@ const handleCustomerDynamic = async (c) => {
         } else if (path.includes("confirm-cash")) {
           const b = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
           if (b) {
-            await db.run("UPDATE bookings SET status = 'completed', payment_status = 'paid', advance_paid = total_amount, remaining_amount = 0 WHERE id = ?", [bookingId]);
+            await db.run("UPDATE bookings SET status = 'completed', booking_status = 'COMPLETED', detailed_status = 'COMPLETED', payment_status = 'PAID', final_payment_status = 'PAID', advance_paid = total_amount, remaining_amount = 0, completed_at = CURRENT_TIMESTAMP WHERE id = ?", [bookingId]);
             await processBookingSettlement(db, bookingId);
           }
-          return jsonRes(c, true, { booking_id: bookingId, status: "completed", payment_status: "paid" }, "Cash payment confirmed and service completed");
+          return jsonRes(c, true, { booking_id: bookingId, status: "completed", booking_status: "COMPLETED", detailed_status: "COMPLETED", payment_status: "PAID" }, "Cash payment confirmed and service completed");
         }
 
         let normalizedStatus = "pending";
@@ -14038,10 +14038,62 @@ const handleConfirmCashPayment = async (c) => {
   // Trigger wallet settlement & platform commission accounting
   await processBookingSettlement(db, bookingId).catch((err) => console.log("Settlement error:", err.message));
 
+  // Dispatch push notifications & socket updates
+  const customerTargetId = b.customer_id || b.user_id;
+  if (customerTargetId) {
+    dispatchNotification(db, {
+      userId: customerTargetId,
+      title: "Booking Completed ✨",
+      body: "Cash payment confirmed and booking completed. Please rate your artist!",
+      type: "BOOKING_COMPLETED",
+      entityId: bookingId,
+      entityType: "booking",
+      channelId: "bookings",
+      deepLink: `mehendigoo://booking/${bookingId}`
+    }).catch(() => null);
+  }
+
+  if (b.artist_id) {
+    dispatchNotification(db, {
+      userId: b.artist_id,
+      title: "Cash Payment Confirmed 💰",
+      body: `Booking #${b.booking_number || bookingId} completed. ₹${cashAmount} cash recorded.`,
+      type: "BOOKING_COMPLETED",
+      entityId: bookingId,
+      entityType: "booking",
+      channelId: "bookings",
+      deepLink: `mehendigoo://artist/booking/${bookingId}`
+    }).catch(() => null);
+  }
+
+  try {
+    const io = typeof getIO === "function" ? getIO() : null;
+    if (io) {
+      const payload = {
+        bookingId,
+        bookingCode: b.booking_number || b.booking_code,
+        booking_status: "COMPLETED",
+        detailed_status: "COMPLETED",
+        status: "completed",
+        payment_status: "PAID",
+        final_payment_status: "PAID",
+        final_payment_method: "CASH",
+        remaining_amount: 0,
+        timestamp: new Date()
+      };
+      if (customerTargetId) io.to(customerTargetId.toString()).emit("booking_status_updated", payload);
+      if (b.artist_id) io.to(b.artist_id.toString()).emit("booking_status_updated", payload);
+      io.to(`booking_room_${bookingId}`).emit("booking_status_updated", payload);
+      io.to(`booking_room_${bookingId}`).emit("BOOKING_COMPLETED", payload);
+      io.to(`booking_room_${bookingId}`).emit("cash_payment_confirmed", payload);
+    }
+  } catch {}
+
   return jsonRes(c, true, {
     booking_id: bookingId,
     status: "completed",
     booking_status: "COMPLETED",
+    detailed_status: "COMPLETED",
     payment_status: "PAID",
     final_payment_status: "PAID",
     final_payment_method: "CASH",

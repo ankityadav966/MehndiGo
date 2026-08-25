@@ -1,11 +1,26 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { FlatList, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 
 export default function TransactionsScreen({ navigation }) {
   const [selectedTab, setSelectedTab] = useState("All");
+
+  const handleBack = useCallback(() => {
+    if (navigation?.canGoBack && navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate("ArtistTabs", { screen: "Wallet" });
+    }
+    return true;
+  }, [navigation]);
+
+  useEffect(() => {
+    const { BackHandler } = require("react-native");
+    const backSub = BackHandler.addEventListener("hardwareBackPress", handleBack);
+    return () => backSub.remove();
+  }, [handleBack]);
 
   const transactions = [
     { id: "1", title: "Booking Payment", date: "24 May 2024", amount: "+₹10,000", type: "Income" },
@@ -34,7 +49,7 @@ export default function TransactionsScreen({ navigation }) {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
           <Ionicons name="chevron-back" size={22} color={Colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Transaction History</Text>

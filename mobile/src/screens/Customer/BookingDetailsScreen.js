@@ -191,7 +191,14 @@ export default function BookingDetailsScreen({ route, navigation }) {
     socket.on("checkout_otp_received", handleStatusUpdate);
     socket.on("CHECKOUT_OTP_GENERATED", handleStatusUpdate);
     socket.on("BOOKING_COMPLETED", handleStatusUpdate);
+    socket.on("booking_completed", handleStatusUpdate);
     socket.on("service_completed", handleStatusUpdate);
+    socket.on("payment_completed", handleStatusUpdate);
+    socket.on("PAYMENT_COMPLETED", handleStatusUpdate);
+    socket.on("cash_payment_confirmed", handleStatusUpdate);
+    socket.on("CASH_PAYMENT_CONFIRMED", handleStatusUpdate);
+    socket.on("settlement_completed", handleStatusUpdate);
+    socket.on("SETTLEMENT_COMPLETED", handleStatusUpdate);
 
     return () => {
       socket.off("location-update", handleLocationUpdate);
@@ -207,7 +214,14 @@ export default function BookingDetailsScreen({ route, navigation }) {
       socket.off("checkout_otp_received", handleStatusUpdate);
       socket.off("CHECKOUT_OTP_GENERATED", handleStatusUpdate);
       socket.off("BOOKING_COMPLETED", handleStatusUpdate);
+      socket.off("booking_completed", handleStatusUpdate);
       socket.off("service_completed", handleStatusUpdate);
+      socket.off("payment_completed", handleStatusUpdate);
+      socket.off("PAYMENT_COMPLETED", handleStatusUpdate);
+      socket.off("cash_payment_confirmed", handleStatusUpdate);
+      socket.off("CASH_PAYMENT_CONFIRMED", handleStatusUpdate);
+      socket.off("settlement_completed", handleStatusUpdate);
+      socket.off("SETTLEMENT_COMPLETED", handleStatusUpdate);
     };
   }, [socket, bookingId, loadDetails]);
 
@@ -320,39 +334,6 @@ export default function BookingDetailsScreen({ route, navigation }) {
     }
   };
 
-  if (loading && !booking) {
-    return (
-      <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#E91E63" />
-        <Text style={styles.loadingText}>Loading booking details...</Text>
-      </SafeAreaView>
-    );
-  }
-
-  const rawStatus = String(booking?.detailed_status || booking?.booking_status || booking?.status || "PENDING").toUpperCase();
-  const isCheckInVerified =
-    Number(booking?.checkin_otp_verified) === 1 ||
-    Number(booking?.checkin_verified) === 1 ||
-    Number(booking?.check_in_otp_verified) === 1 ||
-    booking?.check_in_otp_verified === true ||
-    ["CUSTOMER_VERIFIED", "SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS", "CHECKOUT", "COMPLETED"].includes(rawStatus);
-
-  const isPending = rawStatus === "PENDING" || rawStatus === "REQUESTED";
-  const isAccepted = ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED"].includes(rawStatus);
-  const isOnTheWay = ["ARTIST_ON_THE_WAY", "ON_THE_WAY"].includes(rawStatus);
-  const isArrived = (rawStatus === "ARTIST_ARRIVED" || rawStatus === "ARRIVED") && !isCheckInVerified;
-  const isServiceActive = (["CUSTOMER_VERIFIED", "SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS"].includes(rawStatus) || isCheckInVerified) && rawStatus !== "COMPLETED" && rawStatus !== "COMPLETED_CLOSED" && rawStatus !== "CANCELLED";
-  const isCheckout = ["CHECKOUT", "PAYMENT_REQUIRED"].includes(rawStatus) && rawStatus !== "COMPLETED";
-  const isCompleted = rawStatus === "COMPLETED" || rawStatus === "COMPLETED_CLOSED";
-  const isCancelled = rawStatus === "CANCELLED" || rawStatus === "REJECTED";
-
-  const resolvedCustomerCoords = customerCoords || (booking?.latitude && booking?.longitude ? {
-    lat: Number(booking.latitude),
-    lng: Number(booking.longitude),
-    latitude: Number(booking.latitude),
-    longitude: Number(booking.longitude)
-  } : null);
-
   const handleBack = useCallback(() => {
     if (invoiceVisible) {
       setInvoiceVisible(false);
@@ -387,6 +368,52 @@ export default function BookingDetailsScreen({ route, navigation }) {
     const backSubscription = BackHandler.addEventListener("hardwareBackPress", handleBack);
     return () => backSubscription.remove();
   }, [handleBack]);
+
+  if (loading && !booking) {
+    return (
+      <SafeAreaView style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#E91E63" />
+        <Text style={styles.loadingText}>Loading booking details...</Text>
+      </SafeAreaView>
+    );
+  }
+
+  const rawStatus = String(booking?.detailed_status || booking?.booking_status || booking?.status || "PENDING").toUpperCase();
+  const isCheckInVerified =
+    Number(booking?.checkin_otp_verified) === 1 ||
+    Number(booking?.checkin_verified) === 1 ||
+    Number(booking?.check_in_otp_verified) === 1 ||
+    booking?.check_in_otp_verified === true ||
+    ["CUSTOMER_VERIFIED", "SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS", "CHECKOUT", "COMPLETED"].includes(rawStatus);
+
+  const isPending = rawStatus === "PENDING" || rawStatus === "REQUESTED";
+  const isAccepted = ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED"].includes(rawStatus);
+  const isOnTheWay = ["ARTIST_ON_THE_WAY", "ON_THE_WAY"].includes(rawStatus);
+  const isArrived = (rawStatus === "ARTIST_ARRIVED" || rawStatus === "ARRIVED") && !isCheckInVerified;
+
+  const isCompleted =
+    rawStatus === "COMPLETED" ||
+    rawStatus === "COMPLETED_CLOSED" ||
+    rawStatus === "PAYMENT_COMPLETED" ||
+    (Number(booking?.remaining_amount) <= 0 && Number(booking?.advance_paid) >= Number(booking?.total_amount) && Number(booking?.checkout_otp_verified) === 1);
+
+  const isCheckout = ["CHECKOUT", "PAYMENT_REQUIRED"].includes(rawStatus) && !isCompleted;
+
+  const isServiceActive =
+    (["CUSTOMER_VERIFIED", "SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS"].includes(rawStatus) || isCheckInVerified) &&
+    !isCheckout &&
+    !isCompleted &&
+    rawStatus !== "CANCELLED" &&
+    rawStatus !== "REJECTED";
+
+  const isCancelled = rawStatus === "CANCELLED" || rawStatus === "REJECTED";
+
+  const resolvedCustomerCoords = customerCoords || (booking?.latitude && booking?.longitude ? {
+    lat: Number(booking.latitude),
+    lng: Number(booking.longitude),
+    latitude: Number(booking.latitude),
+    longitude: Number(booking.longitude)
+  } : null);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -494,7 +521,10 @@ export default function BookingDetailsScreen({ route, navigation }) {
             isArtistView={false}
             onViewProfile={() => {
               if (booking?.artist_id || booking?.artist?.id) {
-                navigation.navigate("ArtistProfile", { artistId: booking.artist_id || booking.artist?.id });
+                navigation.navigate("ArtistProfile", {
+                  artistId: booking.artist_id || booking.artist?.id,
+                  from: "BookingDetails"
+                });
               }
             }}
           />

@@ -1,18 +1,18 @@
 import React from "react";
-import { StyleSheet, Text, View, TouchableOpacity } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 
 export default function BookingAmountCard({ booking }) {
   if (!booking) return null;
 
   const totalAmount = Number(booking.total_amount || booking.final_amount || 0);
-  const advanceAmount = Number(booking.advance_amount || booking.advance_paid || Math.round(totalAmount * 0.10));
-  const remainingAmount = Number(booking.remaining_amount !== undefined ? booking.remaining_amount : (totalAmount - advanceAmount));
+  const remainingAmount = Number(booking.remaining_amount !== undefined && booking.remaining_amount !== null ? booking.remaining_amount : 0);
+  const advanceAmount = Number(booking.advance_paid !== undefined && booking.advance_paid !== null ? booking.advance_paid : (totalAmount - remainingAmount));
   const travelCharge = Number(booking.travel_charge || 0);
   const discountAmount = Number(booking.discount_amount || booking.coupon_discount || 0);
   const paymentStatus = String(booking.payment_status || "").toUpperCase();
 
-  const isFullyPaid = paymentStatus === "PAID" || remainingAmount === 0;
+  const isFullyPaid = paymentStatus === "PAID" || remainingAmount <= 0;
 
   return (
     <View style={styles.card}>
@@ -43,7 +43,7 @@ export default function BookingAmountCard({ booking }) {
             ]}
             numberOfLines={1}
           >
-            {isFullyPaid ? "FULLY PAID" : "10% ADVANCE PAID"}
+            {isFullyPaid ? "FULLY PAID" : "PAYMENT CONFIRMED"}
           </Text>
         </View>
       </View>
@@ -80,7 +80,7 @@ export default function BookingAmountCard({ booking }) {
 
       <View style={styles.dividerLight} />
 
-      {/* Advance Paid Deposit */}
+      {/* Paid Amount */}
       <View style={styles.row}>
         <View style={styles.advanceRow}>
           <Text style={styles.labelBold} numberOfLines={1}>10% Advance Deposit</Text>
@@ -98,7 +98,7 @@ export default function BookingAmountCard({ booking }) {
       <View style={styles.row}>
         <Text style={styles.labelBold} numberOfLines={1}>Remaining Balance (90%)</Text>
         <Text style={[styles.valueBold, { color: remainingAmount > 0 ? "#701DDB" : "#059669" }]} numberOfLines={1}>
-          ₹{remainingAmount.toLocaleString("en-IN")} {isFullyPaid ? "(Settled)" : "(Pay at Service End)"}
+          ₹{remainingAmount.toLocaleString("en-IN")} {remainingAmount <= 0 ? "(Settled ✓)" : "(Pay at Service End)"}
         </Text>
       </View>
 

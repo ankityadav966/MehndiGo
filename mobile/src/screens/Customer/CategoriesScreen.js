@@ -48,6 +48,8 @@ export default function CategoriesScreen({ navigation }) {
   const handleBack = React.useCallback(() => {
     if (navigation?.canGoBack && navigation.canGoBack()) {
       navigation.goBack();
+    } else if (route?.params?.from) {
+      navigation.navigate(route.params.from);
     } else {
       navigation.reset({
         index: 0,
@@ -55,7 +57,7 @@ export default function CategoriesScreen({ navigation }) {
       });
     }
     return true;
-  }, [navigation]);
+  }, [navigation, route?.params]);
 
   useEffect(() => {
     const { BackHandler } = require("react-native");
@@ -150,7 +152,8 @@ export default function CategoriesScreen({ navigation }) {
           navigation.navigate("ArtistListing", {
             categoryId: item.id,
             category: item.name,
-            categorySlug: item.slug
+            categorySlug: item.slug,
+            from: "Categories"
           })
         }
       >

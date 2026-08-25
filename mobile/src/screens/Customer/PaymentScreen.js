@@ -382,7 +382,7 @@ export default function PaymentScreen({ route, navigation }) {
 
   const totalAmount = Number(finalAmount || route.params?.finalAmount || booking?.total_amount || booking?.final_amount || 500);
   const advanceAmount = Number(routeAdvance !== undefined ? routeAdvance : (booking?.advance_amount || booking?.advance_paid || Math.round(totalAmount * 0.10) || 50));
-  const remainingAmount = Number(routeRemaining !== undefined ? routeRemaining : (booking?.remaining_amount !== undefined ? booking?.remaining_amount : (totalAmount - advanceAmount)));
+  const remainingAmount = Number(routeRemaining !== undefined ? routeRemaining : (booking?.remaining_amount !== undefined ? booking?.remaining_amount : Math.max(0, totalAmount - advanceAmount)));
 
   const payableNow = isSettlement ? remainingAmount : advanceAmount;
   const balanceAfter = isSettlement ? 0 : remainingAmount;
@@ -509,7 +509,7 @@ export default function PaymentScreen({ route, navigation }) {
         </TouchableOpacity>
 
         {/* Option 3: Pay Cash */}
-        <TouchableOpacity
+        {/* <TouchableOpacity
           style={[styles.methodCard, selectedMethod === "cash" && styles.methodCardActive]}
           onPress={() => setSelectedMethod("cash")}
           activeOpacity={0.8}
@@ -528,7 +528,7 @@ export default function PaymentScreen({ route, navigation }) {
             size={20}
             color={selectedMethod === "cash" ? "#059669" : "#9CA3AF"}
           />
-        </TouchableOpacity>
+        </TouchableOpacity> */}
 
         {/* 4. Escrow Security Banner */}
         <View style={styles.escrowCard}>

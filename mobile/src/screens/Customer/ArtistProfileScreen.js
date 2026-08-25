@@ -365,12 +365,36 @@ export default function ArtistProfileScreen({ route, navigation }) {
   // Confirm reservation items
   const handleBookNow = () => {
     navigation.navigate("SelectService", {
-      artistId: profile.id,
+      artistId: profile?.id || artistId,
       services: services || [],
       selectedDate,
       selectedTimeSlot
     });
   };
+
+  const handleBack = useCallback(() => {
+    if (zoomModalVisible) {
+      setZoomModalVisible(false);
+      return true;
+    }
+    if (navigation?.canGoBack && navigation.canGoBack()) {
+      navigation.goBack();
+    } else if (route?.params?.from) {
+      navigation.navigate(route.params.from);
+    } else {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "CustomerTabs", params: { screen: "Home" } }]
+      });
+    }
+    return true;
+  }, [zoomModalVisible, navigation, route?.params]);
+
+  useEffect(() => {
+    const { BackHandler } = require("react-native");
+    const backSubscription = BackHandler.addEventListener("hardwareBackPress", handleBack);
+    return () => backSubscription.remove();
+  }, [handleBack]);
 
   if (loading) {
     return (
@@ -408,28 +432,6 @@ export default function ArtistProfileScreen({ route, navigation }) {
   const artistDisplayName = profile.name || profile.full_name || profile.user?.name || "Mehndi Artist";
   const artistAvatarUri = resolveImage(profile.profile_image || profile.avatar || profile.user?.profile_image || profile.selfie_image || profile.user?.avatar)
     || `https://ui-avatars.com/api/?name=${encodeURIComponent(artistDisplayName)}&background=F3E8FF&color=7C3AED`;
-
-  const handleBack = useCallback(() => {
-    if (zoomModalVisible) {
-      setZoomModalVisible(false);
-      return true;
-    }
-    if (navigation?.canGoBack && navigation.canGoBack()) {
-      navigation.goBack();
-    } else {
-      navigation.reset({
-        index: 0,
-        routes: [{ name: "CustomerTabs", params: { screen: "Home" } }]
-      });
-    }
-    return true;
-  }, [zoomModalVisible, navigation]);
-
-  useEffect(() => {
-    const { BackHandler } = require("react-native");
-    const backSubscription = BackHandler.addEventListener("hardwareBackPress", handleBack);
-    return () => backSubscription.remove();
-  }, [handleBack]);
 
   return (
     <View style={styles.container}>

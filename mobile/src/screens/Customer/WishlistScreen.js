@@ -158,7 +158,7 @@ export default function WishlistScreen({ navigation }) {
         <TouchableOpacity
           activeOpacity={0.9}
           style={styles.cardHeaderRow}
-          onPress={() => navigation.navigate("ArtistProfile", { artistId: artist.id, artist })}
+          onPress={() => navigation.navigate("ArtistProfile", { artistId: artist.id, artist, from: "Wishlist" })}
         >
           <View style={styles.imageWrap}>
             <OptimizedImage
@@ -269,14 +269,14 @@ export default function WishlistScreen({ navigation }) {
         <View style={styles.cardActionsRow}>
           <TouchableOpacity
             style={styles.outlineBtn}
-            onPress={() => navigation.navigate("ArtistProfile", { artistId: artist.id, artist })}
+            onPress={() => navigation.navigate("ArtistProfile", { artistId: artist.id, artist, from: "Wishlist" })}
           >
             <Text style={styles.outlineBtnText}>View Full Profile</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.primaryBookBtn}
-            onPress={() => navigation.navigate("ArtistProfile", { artistId: artist.id, artist })}
+            onPress={() => navigation.navigate("ArtistProfile", { artistId: artist.id, artist, from: "Wishlist" })}
           >
             <Text style={styles.primaryBookBtnText}>Book Artist Now</Text>
             <Ionicons name="arrow-forward" size={14} color="#FFFFFF" style={{ marginLeft: 4 }} />

@@ -137,6 +137,25 @@ export default function WithdrawEarningsScreen({ navigation }) {
     }
   };
 
+  const handleBack = useCallback(() => {
+    if (showBankForm) {
+      setShowBankForm(false);
+      return true;
+    }
+    if (navigation?.canGoBack && navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate("ArtistTabs", { screen: "Wallet" });
+    }
+    return true;
+  }, [showBankForm, navigation]);
+
+  useEffect(() => {
+    const { BackHandler } = require("react-native");
+    const backSub = BackHandler.addEventListener("hardwareBackPress", handleBack);
+    return () => backSub.remove();
+  }, [handleBack]);
+
   const quickAmounts = [500, 1000, 2000, 5000];
 
   if (loading) {
@@ -159,7 +178,7 @@ export default function WithdrawEarningsScreen({ navigation }) {
           keyboardShouldPersistTaps="handled"
         >
         <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+          <TouchableOpacity style={styles.backButton} onPress={handleBack}>
             <Ionicons name="chevron-back" size={22} color={Colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Withdraw Earnings</Text>

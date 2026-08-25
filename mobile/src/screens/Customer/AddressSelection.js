@@ -290,15 +290,6 @@ export default function AddressSelection({ route, navigation }) {
     });
   };
 
-  if (loading) {
-    return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={{ marginTop: 12, color: Colors.textSecondary, fontSize: 13 }}>Resolving location...</Text>
-      </View>
-    );
-  }
-
   const handleBack = () => {
     if (navigation?.canGoBack && navigation.canGoBack()) {
       navigation.goBack();
@@ -316,6 +307,15 @@ export default function AddressSelection({ route, navigation }) {
     const backSubscription = BackHandler.addEventListener("hardwareBackPress", handleBack);
     return () => backSubscription.remove();
   }, [navigation]);
+
+  if (loading) {
+    return (
+      <View style={styles.centerContainer}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+        <Text style={{ marginTop: 12, color: Colors.textSecondary, fontSize: 13 }}>Resolving location...</Text>
+      </View>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>

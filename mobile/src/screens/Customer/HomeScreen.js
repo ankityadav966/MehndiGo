@@ -814,7 +814,7 @@ export default function HomeScreen({ navigation }) {
     return (
       <TouchableOpacity
         style={styles.categoryCard}
-        onPress={() => navigation.navigate("ArtistListing", { categoryId: item.id, category: item.name, categorySlug: item.slug })}
+        onPress={() => navigation.navigate("ArtistListing", { categoryId: item.id, category: item.name, categorySlug: item.slug, from: "Home" })}
       >
         <View style={[styles.categoryIcon, { overflow: "hidden" }]}>
           <OptimizedImage
@@ -840,7 +840,7 @@ export default function HomeScreen({ navigation }) {
     return (
       <TouchableOpacity
         style={[styles.recentArtistCard, { backgroundColor: currentCardBg, borderColor: currentBorderColor }]}
-        onPress={() => navigation.navigate("ArtistProfile", { artistId: item.id })}
+        onPress={() => navigation.navigate("ArtistProfile", { artistId: item.id, from: "Home" })}
       >
         <OptimizedImage
           source={{ uri: avatarUrl }}
@@ -887,7 +887,7 @@ export default function HomeScreen({ navigation }) {
     return (
       <TouchableOpacity
         style={[styles.horizontalArtistCard, { backgroundColor: currentCardBg, borderColor: currentBorderColor }]}
-        onPress={() => navigation.navigate("ArtistProfile", { artistId })}
+        onPress={() => navigation.navigate("ArtistProfile", { artistId, from: "Home" })}
       >
         <OptimizedImage
           source={{ uri: artistImage }}
@@ -940,7 +940,7 @@ export default function HomeScreen({ navigation }) {
     return (
       <TouchableOpacity
         style={[styles.nearbyArtistCard, { backgroundColor: currentCardBg, borderColor: currentBorderColor }]}
-        onPress={() => navigation.navigate("ArtistProfile", { artistId })}
+        onPress={() => navigation.navigate("ArtistProfile", { artistId, from: "Home" })}
       >
         <OptimizedImage
           source={{ uri: artistImage }}
@@ -1076,7 +1076,7 @@ export default function HomeScreen({ navigation }) {
       {/* 4. Categories Section (Exactly 6 unique categories on HomeScreen) */}
       <View style={styles.sectionHeader}>
         <Text style={[styles.sectionTitle, { color: currentTextColor }]}>Mehndi Categories</Text>
-        <TouchableOpacity onPress={() => navigation.navigate("Categories")}>
+        <TouchableOpacity onPress={() => navigation.navigate("Categories", { from: "Home" })}>
           <Text style={styles.viewAllText}>View All</Text>
         </TouchableOpacity>
       </View>
@@ -1098,7 +1098,7 @@ export default function HomeScreen({ navigation }) {
         <View>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: currentTextColor }]}>Featured Artists</Text>
-            <TouchableOpacity onPress={() => navigation.navigate("ArtistListing", { filter: "featured" })}>
+            <TouchableOpacity onPress={() => navigation.navigate("ArtistListing", { filter: "featured", from: "Home" })}>
               <Text style={styles.viewAllText}>View All ({featuredArtists.length})</Text>
             </TouchableOpacity>
           </View>
@@ -1122,7 +1122,7 @@ export default function HomeScreen({ navigation }) {
         <View>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: currentTextColor }]}>Trending & Popular</Text>
-            <TouchableOpacity onPress={() => navigation.navigate("ArtistListing", { filter: "popular" })}>
+            <TouchableOpacity onPress={() => navigation.navigate("ArtistListing", { filter: "popular", from: "Home" })}>
               <Text style={styles.viewAllText}>View All ({popularArtists.length})</Text>
             </TouchableOpacity>
           </View>

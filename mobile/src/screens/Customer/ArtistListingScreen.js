@@ -287,7 +287,7 @@ export default function ArtistListingScreen({ route, navigation }) {
       <TouchableOpacity
         style={styles.listCard}
         activeOpacity={0.9}
-        onPress={() => navigation.navigate("ArtistProfile", { artistId: artistId })}
+        onPress={() => navigation.navigate("ArtistProfile", { artistId: artistId, from: "ArtistListing" })}
       >
         <View style={styles.imageContainer}>
           <OptimizedImage
@@ -357,7 +357,7 @@ export default function ArtistListingScreen({ route, navigation }) {
           <View style={styles.actionRow}>
             <TouchableOpacity
               style={styles.viewProfileBtn}
-              onPress={() => navigation.navigate("ArtistProfile", { artistId: artistId })}
+              onPress={() => navigation.navigate("ArtistProfile", { artistId: artistId, from: "ArtistListing" })}
             >
               <Text style={styles.viewProfileBtnText}>View Profile</Text>
             </TouchableOpacity>
@@ -374,8 +374,18 @@ export default function ArtistListingScreen({ route, navigation }) {
   }, [favoriteArtistIds, navigation]);
 
   const handleBack = React.useCallback(() => {
+    if (filterModalVisible) {
+      setFilterModalVisible(false);
+      return true;
+    }
+    if (sortDropdownVisible) {
+      setSortDropdownVisible(false);
+      return true;
+    }
     if (navigation?.canGoBack && navigation.canGoBack()) {
       navigation.goBack();
+    } else if (route?.params?.from) {
+      navigation.navigate(route.params.from);
     } else {
       navigation.reset({
         index: 0,
@@ -383,7 +393,7 @@ export default function ArtistListingScreen({ route, navigation }) {
       });
     }
     return true;
-  }, [navigation]);
+  }, [filterModalVisible, sortDropdownVisible, navigation, route?.params]);
 
   useEffect(() => {
     const { BackHandler } = require("react-native");

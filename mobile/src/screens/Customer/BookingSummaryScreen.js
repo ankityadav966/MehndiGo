@@ -194,25 +194,20 @@ export default function BookingSummaryScreen({ route, navigation }) {
         newBooking?.booking?.booking_code ||
         `MG-${targetBookingId || Date.now()}`;
 
-      const safeAdvance = Number(
-        priceDetails?.advance_amount ||
-        newBooking?.advance_amount ||
-        Math.round((priceDetails?.final_amount || priceDetails?.total_amount || 500) * 0.10) ||
-        50
-      );
       const safeFinal = Number(
         priceDetails?.final_amount ||
         priceDetails?.total_amount ||
         newBooking?.final_amount ||
         newBooking?.total_amount ||
-        (safeAdvance * 10) ||
         500
       );
-      const safeRemaining = Number(
-        priceDetails?.remaining_amount !== undefined
-          ? priceDetails.remaining_amount
-          : (newBooking?.remaining_amount !== undefined ? newBooking.remaining_amount : (safeFinal - safeAdvance))
+      const safeAdvance = Number(
+        priceDetails?.advance_amount ||
+        newBooking?.advance_amount ||
+        Math.round(safeFinal * 0.10) ||
+        50
       );
+      const safeRemaining = Math.max(0, safeFinal - safeAdvance);
 
       // Navigate directly to secure Figma-matched Payment screen with exact pricing
       navigation.navigate("Payment", {
@@ -233,23 +228,6 @@ export default function BookingSummaryScreen({ route, navigation }) {
     }
   };
 
-  if (loading && !priceDetails) {
-    return (
-      <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#E91E63" />
-        <Text style={styles.loadingText}>Calculating pricing & booking summary...</Text>
-      </SafeAreaView>
-    );
-  }
-
-  const basePrice = Number(priceDetails?.servicePrice || priceDetails?.service_price || priceDetails?.base_amount || priceDetails?.subtotal || 0);
-  const discountAmount = Number(priceDetails?.couponDiscount || priceDetails?.coupon_discount || priceDetails?.discount_amount || 0);
-  const totalAmount = Number(priceDetails?.finalAmount || priceDetails?.final_amount || priceDetails?.total_amount || (basePrice - discountAmount));
-  const advanceAmount = Number(priceDetails?.advanceAmount || priceDetails?.advance_amount || Math.round(totalAmount * 0.10));
-  const remainingAmount = Number(priceDetails?.remainingCash !== undefined ? priceDetails?.remainingCash : (priceDetails?.remaining_amount !== undefined ? priceDetails?.remaining_amount : (totalAmount - advanceAmount)));
-
-  const artistName = artist?.user?.name || artist?.business_name || "Mehndi Artist";
-
   const handleBack = () => {
     if (navigation?.canGoBack && navigation.canGoBack()) {
       navigation.goBack();
@@ -267,6 +245,23 @@ export default function BookingSummaryScreen({ route, navigation }) {
     const backSubscription = BackHandler.addEventListener("hardwareBackPress", handleBack);
     return () => backSubscription.remove();
   }, [navigation]);
+
+  if (loading && !priceDetails) {
+    return (
+      <SafeAreaView style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#E91E63" />
+        <Text style={styles.loadingText}>Calculating pricing & booking summary...</Text>
+      </SafeAreaView>
+    );
+  }
+
+  const basePrice = Number(priceDetails?.servicePrice || priceDetails?.service_price || priceDetails?.base_amount || priceDetails?.subtotal || 0);
+  const discountAmount = Number(priceDetails?.couponDiscount || priceDetails?.coupon_discount || priceDetails?.discount_amount || 0);
+  const totalAmount = Number(priceDetails?.finalAmount || priceDetails?.final_amount || priceDetails?.total_amount || (basePrice - discountAmount));
+  const advanceAmount = Number(priceDetails?.advanceAmount || priceDetails?.advance_amount || Math.round(totalAmount * 0.10) || 50);
+  const remainingAmount = Number(priceDetails?.remainingCash !== undefined ? priceDetails?.remainingCash : (priceDetails?.remaining_amount !== undefined ? priceDetails?.remaining_amount : Math.max(0, totalAmount - advanceAmount)));
+
+  const artistName = artist?.user?.name || artist?.business_name || "Mehndi Artist";
 
   return (
     <SafeAreaView style={styles.container}>
@@ -514,9 +509,9 @@ export default function BookingSummaryScreen({ route, navigation }) {
             <View style={styles.remainingLeft}>
               <View style={styles.remainingPill}>
                 <Ionicons name="time" size={12} color="#701DDB" />
-                <Text style={styles.remainingPillText}>REMAINING BALANCE</Text>
+                <Text style={styles.remainingPillText}>REMAINING BALANCE (90%)</Text>
               </View>
-              <Text style={styles.remainingDesc}>Pay after service completion directly</Text>
+              <Text style={styles.remainingDesc}>Pay after service completion (Cash or Online)</Text>
             </View>
             <Text style={styles.remainingAmount}>₹{remainingAmount}</Text>
           </View>

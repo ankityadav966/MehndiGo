@@ -23,18 +23,18 @@ function getStepIndex(status) {
     s === "SERVICE_STARTED" ||
     s === "CUSTOMER_VERIFIED" ||
     s === "CHECKOUT" ||
-    s === "PAYMENT_REQUIRED" ||
-    s === "PAYMENT_COMPLETED"
+    s === "PAYMENT_REQUIRED"
   ) {
     return 4;
   }
-  if (s === "COMPLETED" || s === "COMPLETED_CLOSED") return 5;
+  if (s === "COMPLETED" || s === "COMPLETED_CLOSED" || s === "PAYMENT_COMPLETED") return 5;
   if (s === "CANCELLED" || s === "REJECTED") return -1;
   return 0;
 }
 
 export default function BookingTimeline({ status, isCancelled = false }) {
   const activeIndex = getStepIndex(status);
+  const isAllCompleted = activeIndex === STEPS.length - 1;
 
   if (isCancelled || String(status).toUpperCase() === "CANCELLED") {
     return (
@@ -53,15 +53,22 @@ export default function BookingTimeline({ status, isCancelled = false }) {
   }
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, isAllCompleted && styles.cardCompleted]}>
       <View style={styles.headerRow}>
         <View style={styles.titleWithIcon}>
-          <Ionicons name="git-commit-outline" size={14} color="#E91E63" style={{ marginRight: 6 }} />
-          <Text style={styles.sectionTitle} numberOfLines={1}>Service Timeline</Text>
+          <Ionicons
+            name={isAllCompleted ? "checkmark-done-circle" : "git-commit-outline"}
+            size={15}
+            color={isAllCompleted ? "#059669" : "#E91E63"}
+            style={{ marginRight: 6 }}
+          />
+          <Text style={[styles.sectionTitle, isAllCompleted && styles.sectionTitleCompleted]} numberOfLines={1}>
+            {isAllCompleted ? "Service Completed" : "Service Timeline"}
+          </Text>
         </View>
-        <View style={styles.stepCounterBadge}>
-          <Text style={styles.stepCounterText}>
-            Step {Math.min(activeIndex + 1, STEPS.length)} of {STEPS.length}
+        <View style={[styles.stepCounterBadge, isAllCompleted && styles.stepCounterBadgeCompleted]}>
+          <Text style={[styles.stepCounterText, isAllCompleted && styles.stepCounterTextCompleted]}>
+            {isAllCompleted ? "Completed ✓" : `Step ${Math.min(activeIndex + 1, STEPS.length)} of ${STEPS.length}`}
           </Text>
         </View>
       </View>
@@ -72,9 +79,9 @@ export default function BookingTimeline({ status, isCancelled = false }) {
         contentContainerStyle={styles.timelineRow}
       >
         {STEPS.map((step, idx) => {
-          const isDone = idx < activeIndex;
-          const isCurrent = idx === activeIndex;
-          const isPending = idx > activeIndex;
+          const isDone = isAllCompleted ? true : idx < activeIndex;
+          const isCurrent = isAllCompleted ? false : idx === activeIndex;
+          const isPending = isAllCompleted ? false : idx > activeIndex;
 
           return (
             <React.Fragment key={step.key}>
@@ -117,7 +124,7 @@ export default function BookingTimeline({ status, isCancelled = false }) {
                   <View
                     style={[
                       styles.connectorLine,
-                      idx < activeIndex ? styles.connectorLineDone : styles.connectorLinePending
+                      (isAllCompleted || idx < activeIndex) ? styles.connectorLineDone : styles.connectorLinePending
                     ]}
                   />
                 </View>
@@ -146,6 +153,10 @@ const styles = StyleSheet.create({
     elevation: 2,
     overflow: "hidden"
   },
+  cardCompleted: {
+    borderColor: "#A7F3D0",
+    backgroundColor: "#FFFFFF"
+  },
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -167,6 +178,9 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     flexShrink: 1
   },
+  sectionTitleCompleted: {
+    color: "#059669"
+  },
   stepCounterBadge: {
     backgroundColor: "#FFF8FA",
     paddingHorizontal: 7,
@@ -176,10 +190,17 @@ const styles = StyleSheet.create({
     borderColor: "#FCE7F3",
     flexShrink: 0
   },
+  stepCounterBadgeCompleted: {
+    backgroundColor: "#ECFDF5",
+    borderColor: "#A7F3D0"
+  },
   stepCounterText: {
     fontSize: 10,
     fontWeight: "800",
     color: "#E91E63"
+  },
+  stepCounterTextCompleted: {
+    color: "#059669"
   },
   timelineRow: {
     flexDirection: "row",

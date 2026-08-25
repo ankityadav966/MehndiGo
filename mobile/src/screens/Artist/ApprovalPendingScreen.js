@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { StyleSheet, Text, TouchableOpacity, View, ActivityIndicator, AppState } from "react-native";
+import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import Colors from "../../constants/Colors";
@@ -16,6 +17,32 @@ export default function ApprovalPendingScreen({ navigation }) {
   const hasNavigatedRef = useRef(false);
 
   if (__DEV__) console.log(`[ARTIST_APPROVAL_DEBUG] CURRENT_ROUTE: ApprovalPending | VERIFICATION_STATUS: ${verificationStatus} | ARTIST_APPROVED_CONTEXT: ${artistApproved}`);
+
+  const handleBack = useCallback(() => {
+    if (navigation?.canGoBack && navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      Alert.alert(
+        "Application Under Review",
+        "Your artist profile is currently being verified. Would you like to log out or stay on this screen?",
+        [
+          { text: "Stay", style: "cancel" },
+          {
+            text: "Log Out",
+            style: "destructive",
+            onPress: logout
+          }
+        ]
+      );
+    }
+    return true;
+  }, [navigation, logout]);
+
+  useEffect(() => {
+    const { BackHandler } = require("react-native");
+    const backSub = BackHandler.addEventListener("hardwareBackPress", handleBack);
+    return () => backSub.remove();
+  }, [handleBack]);
 
   // Transition handler when rejected
   useEffect(() => {
@@ -99,6 +126,15 @@ export default function ApprovalPendingScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      {/* Top Navigation Header */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={handleBack} activeOpacity={0.7}>
+          <Ionicons name="arrow-back" size={22} color="#1F2937" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Application Status</Text>
+        <View style={styles.headerRightPlaceholder} />
+      </View>
+
       <View style={styles.container}>
         <View style={styles.iconWrapper}>
           <Ionicons name="time-outline" size={50} color={Colors.primary || "#FF4D6D"} />
@@ -108,7 +144,7 @@ export default function ApprovalPendingScreen({ navigation }) {
           Your artist profile has been successfully submitted for verification and is currently under review by our administration team.
         </Text>
         <View style={styles.badge}>
-          <Text style={styles.badgeText}>Status: {verificationStatus}</Text>
+          <Text style={styles.badgeText}>Status: {verificationStatus || "UNDER_REVIEW"}</Text>
         </View>
 
         <View style={styles.infoCard}>
@@ -135,7 +171,7 @@ export default function ApprovalPendingScreen({ navigation }) {
       <View style={styles.footer}>
         <TouchableOpacity
           style={styles.refreshButton}
-          onPress={handleCheckStatus}
+          onPress={() => handleCheckStatus(false)}
           disabled={isRefreshing}
         >
           {isRefreshing ? (
@@ -158,7 +194,32 @@ export default function ApprovalPendingScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#FFFFFF" },
-  container: { flex: 1, alignItems: "center", paddingHorizontal: 24, paddingTop: 50 },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#F3F4F6",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  headerTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#1F2937",
+  },
+  headerRightPlaceholder: {
+    width: 40,
+  },
+  container: { flex: 1, alignItems: "center", paddingHorizontal: 24, paddingTop: 24 },
   iconWrapper: {
     width: 100,
     height: 100,
@@ -166,20 +227,20 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFE4E6",
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 25,
+    marginBottom: 20,
   },
-  title: { fontSize: 24, fontWeight: "700", color: "#1F2937", textAlign: "center" },
-  description: { marginTop: 10, fontSize: 14, color: "#4B5563", textAlign: "center", lineHeight: 22, paddingHorizontal: 10 },
-  badge: { marginTop: 20, backgroundColor: Colors.primary || "#FF4D6D", paddingHorizontal: 20, paddingVertical: 8, borderRadius: 50 },
-  badgeText: { color: "#FFFFFF", fontWeight: "600", fontSize: 13 },
-  infoCard: { width: "100%", marginTop: 26, backgroundColor: "#F9FAFB", borderRadius: 16, padding: 20, borderWidth: 1, borderColor: "#E5E7EB" },
-  infoTitle: { fontSize: 16, fontWeight: "700", marginBottom: 15, color: "#1F2937" },
-  infoRow: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
-  infoText: { marginLeft: 10, color: "#4B5563", fontSize: 14 },
-  statusNote: { marginTop: 16, fontSize: 13, color: "#059669", textAlign: "center", fontWeight: "500" },
-  footer: { paddingHorizontal: 20, paddingBottom: 25, gap: 10 },
-  refreshButton: { height: 52, backgroundColor: Colors.primary || "#FF4D6D", borderRadius: 12, justifyContent: "center", alignItems: "center" },
+  title: { fontSize: 22, fontWeight: "700", color: "#1F2937", textAlign: "center" },
+  description: { marginTop: 8, fontSize: 13.5, color: "#4B5563", textAlign: "center", lineHeight: 20, paddingHorizontal: 10 },
+  badge: { marginTop: 16, backgroundColor: Colors.primary || "#FF4D6D", paddingHorizontal: 18, paddingVertical: 6, borderRadius: 50 },
+  badgeText: { color: "#FFFFFF", fontWeight: "600", fontSize: 12.5 },
+  infoCard: { width: "100%", marginTop: 22, backgroundColor: "#F9FAFB", borderRadius: 16, padding: 18, borderWidth: 1, borderColor: "#E5E7EB" },
+  infoTitle: { fontSize: 15, fontWeight: "700", marginBottom: 12, color: "#1F2937" },
+  infoRow: { flexDirection: "row", alignItems: "center", marginBottom: 10 },
+  infoText: { marginLeft: 10, color: "#4B5563", fontSize: 13.5 },
+  statusNote: { marginTop: 14, fontSize: 12.5, color: "#059669", textAlign: "center", fontWeight: "500" },
+  footer: { paddingHorizontal: 20, paddingBottom: 20, gap: 10 },
+  refreshButton: { height: 50, backgroundColor: Colors.primary || "#FF4D6D", borderRadius: 12, justifyContent: "center", alignItems: "center" },
   refreshButtonText: { color: "#FFFFFF", fontSize: 15, fontWeight: "600" },
-  logoutButton: { height: 48, backgroundColor: "transparent", borderWidth: 1, borderColor: "#D1D5DB", borderRadius: 12, justifyContent: "center", alignItems: "center" },
+  logoutButton: { height: 46, backgroundColor: "transparent", borderWidth: 1, borderColor: "#D1D5DB", borderRadius: 12, justifyContent: "center", alignItems: "center" },
   logoutButtonText: { color: "#4B5563", fontSize: 14, fontWeight: "600" },
 });

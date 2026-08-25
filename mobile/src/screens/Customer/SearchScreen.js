@@ -125,13 +125,31 @@ export default function SearchScreen({ navigation }) {
   const handleSuggestionPress = (item) => {
     Keyboard.dismiss();
     if (item.type === "artist" && item.artistId) {
-      navigation.navigate("ArtistProfile", { artistId: item.artistId });
+      navigation.navigate("ArtistProfile", { artistId: item.artistId, from: "Search" });
     } else if (item.type === "category") {
-      navigation.navigate("ArtistListing", { category: item.text, categoryId: item.id || null });
+      navigation.navigate("ArtistListing", { category: item.text, categoryId: item.id || null, from: "Search" });
     } else {
       handleSearchSubmit(item.text);
     }
   };
+
+  const handleBack = useCallback(() => {
+    if (navigation?.canGoBack && navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "CustomerTabs", params: { screen: "Home" } }]
+      });
+    }
+    return true;
+  }, [navigation]);
+
+  useEffect(() => {
+    const { BackHandler } = require("react-native");
+    const backSubscription = BackHandler.addEventListener("hardwareBackPress", handleBack);
+    return () => backSubscription.remove();
+  }, [handleBack]);
 
   // Render suggestion list item
   const renderSuggestionItem = ({ item }) => {
@@ -180,7 +198,7 @@ export default function SearchScreen({ navigation }) {
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backBtn}
-          onPress={() => navigation.goBack()}
+          onPress={handleBack}
         >
           <Ionicons name="arrow-back" size={22} color={Colors.text} />
         </TouchableOpacity>
