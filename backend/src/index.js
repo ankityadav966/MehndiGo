@@ -330,7 +330,7 @@ const sendCustomSmtpDirect = async (c, toEmail, subject, textBody, htmlBody) => 
     const msgId = `<mail.${Date.now()}.${Math.floor(Math.random() * 10000)}@mehndigo.in>`;
 
     const mimeMessage = [
-      `From: MehndiGo <donotreply@mehndigo.in>`,
+      `From: "MehndiGo" <${user}>`,
       `Reply-To: MehndiGo Support <support@mehndigo.in>`,
       `To: <${targetEmail}>`,
       `Subject: ${subject}`,
@@ -7721,8 +7721,13 @@ const handleGetArtistBookings = async (c) => {
   const path = c.req.path.toLowerCase();
   const statusParam = (c.req.query("status") || c.req.query("type") || "").toLowerCase().trim();
 
-  const artist = await db.first("SELECT id, user_id FROM artist_profiles WHERE user_id = ? OR CAST(user_id AS TEXT) = CAST(? AS TEXT)", [u.id, String(u.id)]).catch(() => null);
-  const artistId = artist ? artist.id : u.id;
+  const artist = await db.first(
+    "SELECT id, user_id FROM artist_profiles WHERE user_id = ? OR CAST(user_id AS TEXT) = CAST(? AS TEXT) OR id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+    [u.id, String(u.id), u.id, String(u.id)]
+  ).catch(() => null);
+
+  const artistProfileId = artist ? artist.id : u.id;
+  const artistUserId = artist ? (artist.user_id || u.id) : u.id;
 
   let sql = `
     SELECT b.*,
@@ -7732,23 +7737,15 @@ const handleGetArtistBookings = async (c) => {
     LEFT JOIN users c ON (b.customer_id = c.id OR CAST(b.customer_id AS TEXT) = CAST(c.id AS TEXT))
     LEFT JOIN services s ON (b.service_id = s.id OR CAST(b.service_id AS TEXT) = CAST(s.id AS TEXT))
     WHERE (
-      (
-        b.artist_id = ? OR CAST(b.artist_id AS TEXT) = CAST(? AS TEXT)
-        OR b.artist_id = ? OR CAST(b.artist_id AS TEXT) = CAST(? AS TEXT)
-        OR ( (b.artist_id IS NULL OR b.artist_id = 0) AND LOWER(b.status) IN ('pending', 'requested', 'confirmed') )
-      )
-      AND (
-        LOWER(COALESCE(b.payment_status, '')) IN ('paid', 'advance_paid', 'partial', 'completed')
-        OR b.advance_paid > 0
-        OR (LOWER(b.status) IN ('confirmed', 'artist_accepted', 'accepted', 'on_the_way', 'arrived', 'service_started', 'completed') AND LOWER(COALESCE(b.payment_status, '')) != 'pending')
-      )
-      AND LOWER(b.status) NOT IN ('pending_payment', 'draft')
+      b.artist_id = ? OR CAST(b.artist_id AS TEXT) = CAST(? AS TEXT)
+      OR b.artist_id = ? OR CAST(b.artist_id AS TEXT) = CAST(? AS TEXT)
+      OR ( (b.artist_id IS NULL OR b.artist_id = 0) AND LOWER(b.status) IN ('pending', 'requested', 'confirmed') )
     )
   `;
-  const params = [artistId, String(artistId), u.id, String(u.id)];
+  const params = [u.id, String(u.id), artistProfileId, String(artistProfileId)];
 
   if (statusParam === "pending" || path.includes("pending")) {
-    sql += " AND LOWER(b.status) IN ('pending', 'requested', 'confirmed') AND LOWER(COALESCE(b.detailed_status, '')) NOT IN ('accepted', 'artist_accepted', 'rejected', 'cancelled', 'completed')";
+    sql += " AND LOWER(b.status) IN ('pending', 'requested', 'confirmed', 'pending_payment') AND LOWER(COALESCE(b.detailed_status, '')) NOT IN ('accepted', 'artist_accepted', 'rejected', 'cancelled', 'completed')";
   } else if (statusParam === "accepted" || statusParam === "upcoming" || path.includes("accepted") || path.includes("upcoming")) {
     sql += " AND (LOWER(b.status) IN ('accepted', 'confirmed', 'artist_accepted', 'on_the_way', 'arrived', 'service_started', 'in_progress') OR LOWER(COALESCE(b.detailed_status, '')) IN ('artist_accepted', 'accepted', 'artist_on_the_way', 'artist_arrived', 'service_started', 'service_in_progress', 'in_progress')) AND LOWER(b.status) NOT IN ('cancelled', 'rejected')";
   } else if (statusParam === "completed" || path.includes("completed")) {
@@ -7757,14 +7754,17 @@ const handleGetArtistBookings = async (c) => {
 
   sql += " ORDER BY b.id DESC";
 
-  const bookings = await db.all(sql, params).catch(() => []);
+  const bookings = await db.all(sql, params).catch(err => {
+    console.error("[handleGetArtistBookings SQL Error]:", err);
+    return [];
+  });
 
   const formatted = (bookings || []).map(item => {
     const rawStatus = (item.status || "PENDING").toUpperCase();
     let normDetailed = (item.detailed_status || item.status || "PENDING").toUpperCase();
     if (normDetailed === "ACCEPTED") normDetailed = "ARTIST_ACCEPTED";
 
-    const isCheckInVerified = Number(item.checkin_otp_verified) === 1;
+    const isCheckInVerified = Number(item.checkin_otp_verified) === 1 || Number(item.checkin_verified) === 1;
     if (isCheckInVerified || rawStatus === "IN_PROGRESS" || normDetailed === "IN_PROGRESS") {
       if (normDetailed !== "COMPLETED" && normDetailed !== "CANCELLED") {
         normDetailed = "SERVICE_IN_PROGRESS";
@@ -7774,12 +7774,13 @@ const handleGetArtistBookings = async (c) => {
     const normBookingStatus = (isCheckInVerified || rawStatus === "IN_PROGRESS" || normDetailed === "SERVICE_IN_PROGRESS")
       ? "IN_PROGRESS"
       : (normDetailed === "ARTIST_ACCEPTED" || rawStatus === "ACCEPTED" || rawStatus === "ARTIST_ACCEPTED")
-        ? "CONFIRMED"
+        ? "ACCEPTED"
         : rawStatus;
 
-    const custName = item.customer_name || "Customer";
+    const custName = item.customer_name || "Valued Customer";
     const custPhone = item.customer_phone || "";
     const custAvatar = item.customer_avatar || null;
+    const finalAmount = Number(item.total_amount || item.final_amount || item.total_price || item.price || 0);
 
     return {
       ...item,
@@ -7787,10 +7788,15 @@ const handleGetArtistBookings = async (c) => {
       booking_id: item.id,
       bookingId: item.id,
       booking_code: item.booking_number || item.booking_code || ("MG-" + String(item.id).padStart(6, "0")),
+      booking_number: item.booking_number || item.booking_code || ("MG-" + String(item.id).padStart(6, "0")),
+      status: rawStatus,
       booking_status: normBookingStatus,
       bookingStatus: normBookingStatus,
       detailed_status: normDetailed,
       detailedStatus: normDetailed,
+      final_amount: finalAmount,
+      total_amount: finalAmount,
+      total_price: finalAmount,
       checkin_otp_verified: isCheckInVerified ? 1 : 0,
       check_in_otp_verified: isCheckInVerified ? 1 : 0,
       checkin_verified: isCheckInVerified ? true : false,
@@ -7799,8 +7805,10 @@ const handleGetArtistBookings = async (c) => {
       customer_name: custName,
       customer_phone: custPhone,
       customer_avatar: custAvatar,
+      client_name: custName,
+      client_phone: custPhone,
       user: {
-        id: item.customer_id,
+        id: item.customer_id || item.user_id,
         name: custName,
         full_name: custName,
         phone: custPhone,
@@ -7809,7 +7817,7 @@ const handleGetArtistBookings = async (c) => {
         avatar: custAvatar
       },
       customer: {
-        id: item.customer_id,
+        id: item.customer_id || item.user_id,
         name: custName,
         full_name: custName,
         phone: custPhone,
@@ -7820,12 +7828,13 @@ const handleGetArtistBookings = async (c) => {
       service: {
         id: item.service_id,
         specialization_name: item.service_specialization || item.service_title || "Mehndi Service",
-        title: item.service_title || "Mehndi Service",
+        title: item.service_title || item.service_specialization || "Mehndi Service",
         category: item.service_category || "Bridal Mehndi"
       },
       slot: {
         date: item.booking_date || null,
         start_time: item.booking_time || null,
+        end_time: item.booking_time || null,
         time_label: item.booking_time || null
       }
     };
@@ -11676,11 +11685,26 @@ const handleAcceptBooking = async (c) => {
 
   const updated = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
 
-  if (booking.customer_id) {
+  const customerIdAccept = booking.customer_id || booking.user_id;
+  let customerUserAccept = null;
+  if (customerIdAccept) {
+    customerUserAccept = await db.first("SELECT id, full_name, name, email, phone FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [customerIdAccept, String(customerIdAccept)]).catch(() => null);
+  }
+  const customerEmailAccept = customerUserAccept?.email || booking.customer_email || booking.email || booking.user_email;
+  const customerNameAccept = customerUserAccept?.full_name || customerUserAccept?.name || booking.customer_name || booking.user_name || "Valued Customer";
+
+  if (customerEmailAccept && checkinOtp) {
+    console.log(`[handleAcceptBooking] Dispatching Check-In PIN to customer email: ${customerEmailAccept}`);
+    sendCheckInOtpEmail(c, customerEmailAccept, checkinOtp, customerNameAccept, booking.booking_number || booking.booking_code || String(bookingId)).catch((e) => {
+      console.error(`[handleAcceptBooking sendCheckInOtpEmail Error]:`, e.message);
+    });
+  }
+
+  if (customerIdAccept) {
     dispatchNotification(db, {
-      userId: booking.customer_id,
+      userId: customerIdAccept,
       title: "Booking Confirmed! 🎉",
-      body: "Your mehndi artist has accepted your booking request.",
+      body: "Your mehndi artist has accepted your booking request. Your Check-In PIN has been sent to your email.",
       type: "BOOKING_ACCEPTED",
       entityId: bookingId,
       entityType: "booking",
@@ -12312,7 +12336,7 @@ const handleValidateArrival = async (c) => {
   const isWithinRadius = (distanceMeters !== null) ? distanceMeters <= ARRIVAL_RADIUS_METERS : true;
 
   if (isWithinRadius || body.force === true) {
-    const checkinOtp = booking.checkin_otp || generateSecure4DigitOtp();
+    const checkinOtp = generateSecure4DigitOtp();
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
     await db.run(
@@ -12375,7 +12399,7 @@ const handleValidateArrival = async (c) => {
 const handleSendCheckInOtp = async (c) => {
   const db = getDb(c.env);
   const body = await c.req.json().catch(() => ({}));
-  const bookingId = parseInt(body.bookingId || body.booking_id || 0, 10);
+  const bookingId = parseInt(body.bookingId || body.booking_id || body.id || c.req.param("id") || c.req.param("bookingId") || c.req.query("bookingId") || c.req.query("id") || 0, 10);
 
   console.log(`[CHECKIN EMAIL TRACE] handler entered | bookingId=${bookingId}`);
 
@@ -12402,7 +12426,8 @@ const handleSendCheckInOtp = async (c) => {
     return jsonRes(c, false, null, "Check-in has already been verified. Service is in progress.", 400);
   }
 
-  const otp = booking.checkin_otp || generateSecure4DigitOtp();
+  // Always generate a fresh new 4-digit Check-In OTP on resend/send
+  const otp = generateSecure4DigitOtp();
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
   await db.run("UPDATE bookings SET checkin_otp = ?, check_in_otp = ?, checkin_otp_expires_at = ? WHERE id = ?", [otp, otp, expiresAt, bookingId]).catch(() => { });
@@ -12555,7 +12580,10 @@ const handleVerifyCheckInOtp = async (c) => {
   }
 
   if (customerEmailVerify && checkoutOtp) {
-    sendCheckOutOtpEmail(c, customerEmailVerify, checkoutOtp, customerNameVerify, booking.booking_number || booking.booking_code || String(bookingId)).catch(() => null);
+    console.log(`[handleVerifyCheckInOtp] Dispatching Completion PIN to customer email: ${customerEmailVerify}`);
+    sendCheckOutOtpEmail(c, customerEmailVerify, checkoutOtp, customerNameVerify, booking.booking_number || booking.booking_code || String(bookingId)).catch((e) => {
+      console.error(`[handleVerifyCheckInOtp sendCheckOutOtpEmail Error]:`, e.message);
+    });
   }
 
   const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
@@ -12586,7 +12614,7 @@ const handleVerifyCheckInOtp = async (c) => {
 const handleSendCheckOutOtp = async (c) => {
   const db = getDb(c.env);
   const body = await c.req.json().catch(() => ({}));
-  const bookingId = parseInt(body.bookingId || body.booking_id || 0, 10);
+  const bookingId = parseInt(body.bookingId || body.booking_id || body.id || c.req.param("id") || c.req.param("bookingId") || c.req.query("bookingId") || c.req.query("id") || 0, 10);
 
   if (!bookingId) {
     return jsonRes(c, false, null, "Booking ID is required", 400);
@@ -12617,17 +12645,13 @@ const handleSendCheckOutOtp = async (c) => {
     return jsonRes(c, false, null, "Cannot generate Check-Out OTP for a completed or cancelled booking", 400);
   }
 
-  const isForceRefresh = Boolean(body.force || body.refresh || body.regenerate);
-
-  // Preserve existing 4-digit PIN if valid, or generate new 4-digit Check-Out OTP
-  let existingPin = String(booking.checkout_otp || booking.check_out_otp || booking.completion_pin || "").trim();
-  let otp = (existingPin && existingPin.length === 4 && !isForceRefresh) ? existingPin : generateSecure4DigitOtp();
-
+  // Always generate a fresh new 4-digit Completion PIN on resend/send
+  let otp = generateSecure4DigitOtp();
   const checkinPin = String(booking.checkin_otp || booking.check_in_otp || "").trim();
-  if (checkinPin && otp === checkinPin) {
+  while (checkinPin && otp === checkinPin) {
     otp = generateSecure4DigitOtp();
   }
-  const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
   // Reset checkout failed attempts on OTP request
   checkOutFailedAttemptsMap.delete(bookingId);
@@ -12967,9 +12991,9 @@ const handleGetBookingDetails = async (c) => {
     advancePaid: advPaid,
     remaining_amount: remAmt,
     remainingAmount: remAmt,
-    checkin_otp: booking.checkin_otp || null,
-    checkout_otp: booking.checkout_otp || booking.completion_pin || null,
-    completion_pin: booking.checkout_otp || booking.completion_pin || null,
+    checkin_otp: isCheckInVerified ? null : (booking.checkin_otp || booking.check_in_otp || null),
+    checkout_otp: isCheckInVerified ? (booking.checkout_otp || booking.completion_pin || null) : null,
+    completion_pin: isCheckInVerified ? (booking.checkout_otp || booking.completion_pin || null) : null,
     checkin_otp_verified: Number(booking.checkin_otp_verified) || 0,
     checkout_otp_verified: Number(booking.checkout_otp_verified) || 0,
     address: booking.address || "Customer Location",
@@ -13251,18 +13275,23 @@ const handleCancelBooking = async (c) => {
 const handleCheckRestrictedBooking = async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c);
-  if (!u || !u.id) return jsonRes(c, true, { hasRestricted: false, activeBooking: null });
+  if (!u || !u.id) return jsonRes(c, true, { hasRestricted: false, bookingId: null, booking_id: null, activeBooking: null });
 
   const activeBooking = await db.first(`
-    SELECT id, booking_number, status, detailed_status, booking_date, booking_time, artist_id, total_amount
+    SELECT id, booking_number, status, detailed_status, booking_date, booking_time, artist_id, total_amount, remaining_amount, advance_paid
     FROM bookings
     WHERE (customer_id = ? OR CAST(customer_id AS TEXT) = CAST(? AS TEXT))
       AND LOWER(status) IN ('accepted', 'confirmed', 'in_progress', 'on_the_way', 'arrived', 'service_started')
     ORDER BY id DESC LIMIT 1
   `, [u.id, String(u.id)]).catch(() => null);
 
+  const bId = activeBooking ? activeBooking.id : null;
+
   return jsonRes(c, true, {
     hasRestricted: Boolean(activeBooking),
+    bookingId: bId,
+    booking_id: bId,
+    id: bId,
     activeBooking: activeBooking || null
   }, "Restricted booking check completed");
 };
@@ -13658,11 +13687,26 @@ addRoute("put", "/artist/booking/start", handleStartService);
 addRoute("post", "/api/v1/booking/start-service", handleStartService);
 
 addRoute("post", "/booking/send-checkin-otp", handleSendCheckInOtp);
+addRoute("post", "/booking/checkin-otp/send", handleSendCheckInOtp);
+addRoute("post", "/booking/checkin-otp/resend", handleSendCheckInOtp);
+addRoute("post", "/customer/booking/send-checkin-otp", handleSendCheckInOtp);
+addRoute("post", "/artist/booking/send-checkin-otp", handleSendCheckInOtp);
+addRoute("post", "/artist/booking/resend-checkin-pin", handleSendCheckInOtp);
+addRoute("post", "/api/v1/booking/send-checkin-otp", handleSendCheckInOtp);
+
 addRoute("post", "/booking/send-checkout-otp", handleSendCheckOutOtp);
+addRoute("post", "/booking/checkout-otp/send", handleSendCheckOutOtp);
+addRoute("post", "/booking/checkout-otp/resend", handleSendCheckOutOtp);
+addRoute("post", "/customer/booking/send-checkout-otp", handleSendCheckOutOtp);
+addRoute("post", "/artist/booking/send-checkout-otp", handleSendCheckOutOtp);
+addRoute("post", "/artist/booking/resend-checkout-pin", handleSendCheckOutOtp);
+addRoute("post", "/api/v1/booking/send-checkout-otp", handleSendCheckOutOtp);
+
 addRoute("post", "/booking/complete", handleVerifyCheckOutOtp);
 addRoute("put", "/booking/complete", handleVerifyCheckOutOtp);
 addRoute("post", "/booking/verify-checkout-otp", handleVerifyCheckOutOtp);
 addRoute("post", "/artist/booking/complete", handleVerifyCheckOutOtp);
+addRoute("post", "/artist/booking/verify-checkout-otp", handleVerifyCheckOutOtp);
 addRoute("post", "/api/v1/booking/complete", handleVerifyCheckOutOtp);
 
 addRoute("get", "/booking/invoice", handleGetInvoice);

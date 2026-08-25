@@ -249,24 +249,6 @@ export default function BookingDetailsScreen({ route, navigation }) {
     }
   };
 
-  const handlePayAdvance = () => {
-    if (!booking) return;
-    const totalAmount = Number(booking.total_amount || booking.final_amount || 0);
-    const advanceAmount = Number(booking.advance_amount || booking.advance_paid || Math.round(totalAmount * 0.10));
-    const remainingAmount = Number(booking.remaining_amount !== undefined ? booking.remaining_amount : (totalAmount - advanceAmount));
-
-    navigation.navigate("Payment", {
-      bookingId: booking.id,
-      bookingCode: booking.booking_code,
-      finalAmount: totalAmount,
-      advanceAmount: advanceAmount,
-      remainingAmount: remainingAmount,
-      artistName: booking.artist_name || booking.artist?.user?.name || "Mehndi Specialist",
-      serviceTitle: booking.service_name || booking.package_name || "Bridal Mehndi Service",
-      isSettlement: false
-    });
-  };
-
   const handlePayRemainingOnline = () => {
     if (!booking) return;
     navigation.navigate("Payment", {
@@ -420,24 +402,18 @@ export default function BookingDetailsScreen({ route, navigation }) {
             />
           )}
 
-          {/* 4. Check-In OTP Card (Visible ONLY before check-in is verified and service has NOT started) */}
-          {/* 4. Check-In OTP Card (Visible ONLY before check-in is verified and service has NOT started) */}
-          {!isCheckInVerified && !isServiceActive && !isCheckout && !isCompleted && !isCancelled && !isPending && (
+          {/* 4. Booking Security PINs Card (Pending, CheckIn, or Completion depending on lifecycle stage) */}
+          {!isCompleted && !isCancelled && (
             <OtpVerificationCard
-              otpCode={booking?.checkin_otp || booking?.check_in_otp}
               customerEmail={booking?.customer_email || booking?.user?.email || booking?.customer?.email}
               isArtist={false}
-              otpType="CHECKIN"
-            />
-          )}
-
-          {/* 4b. Check-Out Completion PIN Card (Shown when checkout OTP is generated/requested) */}
-          {Boolean(booking?.checkout_otp || booking?.check_out_otp || isCheckout) && !isCompleted && !isCancelled && (
-            <OtpVerificationCard
-              otpCode={booking?.checkout_otp || booking?.check_out_otp || booking?.completion_pin || booking?.completionPin}
-              customerEmail={booking?.customer_email || booking?.user?.email || booking?.customer?.email}
-              isArtist={false}
-              otpType="CHECKOUT"
+              checkinOtp={booking?.checkin_otp || booking?.check_in_otp}
+              checkoutOtp={booking?.checkout_otp || booking?.completion_pin}
+              isCheckInVerified={isCheckInVerified}
+              isServiceActive={isServiceActive}
+              isCheckout={isCheckout}
+              isPending={isPending}
+              isAccepted={isAccepted || isOnTheWay || isArrived}
             />
           )}
 
@@ -501,7 +477,6 @@ export default function BookingDetailsScreen({ route, navigation }) {
           {/* 10. Financial Amount Breakdown */}
           <BookingAmountCard
             booking={booking}
-            onPayAdvance={handlePayAdvance}
           />
 
           {/* 11. Completed State Actions: Invoice & Review */}

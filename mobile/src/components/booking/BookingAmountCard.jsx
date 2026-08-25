@@ -2,7 +2,7 @@ import React from "react";
 import { StyleSheet, Text, View, TouchableOpacity } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 
-export default function BookingAmountCard({ booking, onPayAdvance }) {
+export default function BookingAmountCard({ booking }) {
   if (!booking) return null;
 
   const totalAmount = Number(booking.total_amount || booking.final_amount || 0);
@@ -10,11 +10,9 @@ export default function BookingAmountCard({ booking, onPayAdvance }) {
   const remainingAmount = Number(booking.remaining_amount !== undefined ? booking.remaining_amount : (totalAmount - advanceAmount));
   const travelCharge = Number(booking.travel_charge || 0);
   const discountAmount = Number(booking.discount_amount || booking.coupon_discount || 0);
-  const paymentStatus = String(booking.payment_status || "PENDING").toUpperCase();
-  const bookingStatus = String(booking.booking_status || booking.status || "").toUpperCase();
+  const paymentStatus = String(booking.payment_status || "").toUpperCase();
 
   const isFullyPaid = paymentStatus === "PAID" || remainingAmount === 0;
-  const isAdvancePending = !isFullyPaid && (paymentStatus === "PENDING" || paymentStatus === "UNPAID" || !booking.advance_paid) && bookingStatus !== "CANCELLED" && bookingStatus !== "REJECTED";
 
   return (
     <View style={styles.card}>
@@ -29,23 +27,23 @@ export default function BookingAmountCard({ booking, onPayAdvance }) {
         <View
           style={[
             styles.statusPill,
-            isFullyPaid ? styles.statusPillPaid : styles.statusPillPending
+            styles.statusPillPaid
           ]}
         >
           <View
             style={[
               styles.statusDot,
-              { backgroundColor: isFullyPaid ? "#059669" : "#D97706" }
+              { backgroundColor: "#059669" }
             ]}
           />
           <Text
             style={[
               styles.statusPillText,
-              isFullyPaid ? styles.statusPillTextPaid : styles.statusPillTextPending
+              styles.statusPillTextPaid
             ]}
             numberOfLines={1}
           >
-            {isFullyPaid ? "FULLY PAID" : paymentStatus === "PARTIAL" ? "10% ADVANCE PAID" : "PENDING"}
+            {isFullyPaid ? "FULLY PAID" : "10% ADVANCE PAID"}
           </Text>
         </View>
       </View>
@@ -85,22 +83,22 @@ export default function BookingAmountCard({ booking, onPayAdvance }) {
       {/* Advance Paid Deposit */}
       <View style={styles.row}>
         <View style={styles.advanceRow}>
-          <Text style={styles.labelBold} numberOfLines={1}>10% Advance</Text>
+          <Text style={styles.labelBold} numberOfLines={1}>10% Advance Deposit</Text>
           <View style={styles.escrowBadge}>
             <Ionicons name="shield-checkmark" size={9} color="#059669" />
             <Text style={styles.escrowBadgeText}>Escrow</Text>
           </View>
         </View>
         <Text style={[styles.valueBold, { color: "#059669" }]} numberOfLines={1}>
-          ₹{advanceAmount.toLocaleString("en-IN")} {paymentStatus !== "PENDING" ? "(Paid)" : "(Due)"}
+          ₹{advanceAmount.toLocaleString("en-IN")} (Paid ✓)
         </Text>
       </View>
 
       {/* Remaining Balance */}
       <View style={styles.row}>
-        <Text style={styles.labelBold} numberOfLines={1}>Remaining Balance</Text>
-        <Text style={[styles.valueBold, { color: remainingAmount > 0 ? "#DC2626" : "#059669" }]} numberOfLines={1}>
-          ₹{remainingAmount.toLocaleString("en-IN")} {isFullyPaid ? "(Settled)" : "(Pay at End)"}
+        <Text style={styles.labelBold} numberOfLines={1}>Remaining Balance (90%)</Text>
+        <Text style={[styles.valueBold, { color: remainingAmount > 0 ? "#701DDB" : "#059669" }]} numberOfLines={1}>
+          ₹{remainingAmount.toLocaleString("en-IN")} {isFullyPaid ? "(Settled)" : "(Pay at Service End)"}
         </Text>
       </View>
 
@@ -108,40 +106,20 @@ export default function BookingAmountCard({ booking, onPayAdvance }) {
 
       {/* Final Total */}
       <View style={styles.totalRow}>
-        <Text style={styles.totalLabel} numberOfLines={1}>Total Amount</Text>
+        <Text style={styles.totalLabel} numberOfLines={1}>Total Booking Amount</Text>
         <View style={styles.totalValueContainer}>
           <Text style={styles.totalCurrency}>₹</Text>
           <Text style={styles.totalValue}>{totalAmount.toLocaleString("en-IN")}</Text>
         </View>
       </View>
 
-      {/* 10% Advance Due Action Button */}
-      {Boolean(onPayAdvance) && isAdvancePending && (
-        <View style={styles.payActionContainer}>
-          <TouchableOpacity
-            style={styles.payAdvanceBtn}
-            onPress={onPayAdvance}
-            activeOpacity={0.88}
-          >
-            <View style={styles.btnContent}>
-              <View style={styles.btnIconBox}>
-                <Ionicons name="card" size={15} color="#FFFFFF" />
-              </View>
-              <Text style={styles.payAdvanceBtnText}>
-                Pay 10% Advance Deposit • ₹{advanceAmount.toLocaleString("en-IN")}
-              </Text>
-            </View>
-            <Ionicons name="arrow-forward" size={17} color="#FFFFFF" />
-          </TouchableOpacity>
-
-          <View style={styles.escrowNoticeRow}>
-            <Ionicons name="shield-checkmark" size={12} color="#059669" style={{ marginRight: 4 }} />
-            <Text style={styles.escrowNoticeText}>
-              100% Protected by MehndiGo Escrow Guarantee
-            </Text>
-          </View>
-        </View>
-      )}
+      {/* Escrow Guarantee Footer */}
+      <View style={styles.escrowNoticeRow}>
+        <Ionicons name="shield-checkmark" size={12} color="#059669" style={{ marginRight: 4 }} />
+        <Text style={styles.escrowNoticeText}>
+          10% Advance Deposit is 100% Protected in MehndiGo Escrow
+        </Text>
+      </View>
     </View>
   );
 }

@@ -35,14 +35,18 @@ export default function BookingRequestsScreen({ route, navigation }) {
   };
 
   useEffect(() => {
+    if (route.params?.initialTab) {
+      setActiveTab(route.params.initialTab);
+    }
+  }, [route.params?.initialTab]);
+
+  useEffect(() => {
+    fetchHistory();
     const unsubscribe = navigation.addListener("focus", () => {
-      if (bookings.length === 0) {
-        setLoading(true);
-      }
       fetchHistory();
     });
     return unsubscribe;
-  }, [navigation, bookings]);
+  }, [navigation]);
 
   const handleRefresh = () => {
     setRefreshing(true);
@@ -211,18 +215,26 @@ export default function BookingRequestsScreen({ route, navigation }) {
       const rawDetailed = String(item.detailed_status || item.detailedStatus || "").toUpperCase();
 
       let status = "PENDING";
-      if (rawStatus === "ACCEPTED" || rawDetailed === "ARTIST_ACCEPTED" || rawDetailed === "ACCEPTED") {
+      if (
+        rawStatus === "ACCEPTED" ||
+        rawStatus === "CONFIRMED" ||
+        rawStatus === "ARTIST_ACCEPTED" ||
+        rawDetailed === "ARTIST_ACCEPTED" ||
+        rawDetailed === "ACCEPTED" ||
+        rawDetailed === "CONFIRMED"
+      ) {
         status = "ARTIST_ACCEPTED";
-      } else if (rawStatus === "ON_THE_WAY" || rawDetailed === "ARTIST_ON_THE_WAY") {
+      } else if (rawStatus === "ON_THE_WAY" || rawDetailed === "ARTIST_ON_THE_WAY" || rawDetailed === "ON_THE_WAY") {
         status = "ARTIST_ON_THE_WAY";
-      } else if (rawStatus === "ARRIVED" || rawDetailed === "ARTIST_ARRIVED") {
+      } else if (rawStatus === "ARRIVED" || rawDetailed === "ARTIST_ARRIVED" || rawDetailed === "ARRIVED") {
         status = "ARTIST_ARRIVED";
       } else if (
         rawStatus === "IN_PROGRESS" ||
         rawDetailed === "SERVICE_IN_PROGRESS" ||
         rawDetailed === "SERVICE_STARTED" ||
         rawDetailed === "IN_PROGRESS" ||
-        rawDetailed === "PROCESSING"
+        rawDetailed === "PROCESSING" ||
+        rawDetailed === "CHECKOUT"
       ) {
         status = "SERVICE_IN_PROGRESS";
       } else if (
@@ -242,7 +254,7 @@ export default function BookingRequestsScreen({ route, navigation }) {
         rawDetailed === "COMPLETED_CLOSED"
       ) {
         status = "COMPLETED";
-      } else if (rawDetailed && rawDetailed !== "PENDING" && rawDetailed !== "CONFIRMED" && rawDetailed !== "VIEWED" && rawDetailed !== "REQUESTED") {
+      } else if (rawDetailed && !["PENDING", "REQUESTED", "CREATED", "PENDING_PAYMENT", "VIEWED"].includes(rawDetailed)) {
         status = rawDetailed;
       } else {
         status = "PENDING";
@@ -252,16 +264,19 @@ export default function BookingRequestsScreen({ route, navigation }) {
         return (
           status === "PENDING" ||
           rawStatus === "PENDING" ||
+          rawStatus === "REQUESTED" ||
+          rawStatus === "PENDING_PAYMENT" ||
           rawDetailed === "PENDING" ||
           rawDetailed === "REQUESTED" ||
-          (!["ARTIST_ACCEPTED", "ACCEPTED", "CANCELLED", "REJECTED", "DECLINED", "COMPLETED"].includes(rawDetailed) && !["ACCEPTED", "CANCELLED", "REJECTED", "COMPLETED"].includes(rawStatus))
-        );
+          rawDetailed === "PENDING_PAYMENT"
+        ) && !["ARTIST_ACCEPTED", "ACCEPTED", "CONFIRMED", "ARTIST_ON_THE_WAY", "ON_THE_WAY", "ARTIST_ARRIVED", "ARRIVED", "SERVICE_IN_PROGRESS", "SERVICE_STARTED", "IN_PROGRESS", "CHECKOUT", "COMPLETED", "CANCELLED", "REJECTED", "DECLINED"].includes(status);
       }
 
       if (activeTab === "Accepted") {
         return [
           "ARTIST_ACCEPTED",
           "ACCEPTED",
+          "CONFIRMED",
           "ARTIST_ON_THE_WAY",
           "ON_THE_WAY",
           "ARTIST_ARRIVED",

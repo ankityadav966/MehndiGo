@@ -42,6 +42,7 @@ export default function SelectDateScreen({ route, navigation }) {
         ]);
 
         if (check?.hasRestricted) {
+          const restrictedBookingId = check.bookingId || check.booking_id || check.id || check.activeBooking?.id || check.activeBooking?.booking_id;
           Alert.alert(
             "Pending Booking Payment",
             "You have a previous booking that still requires payment completion or artist confirmation.\n\nPlease complete that booking before creating a new one.",
@@ -49,13 +50,21 @@ export default function SelectDateScreen({ route, navigation }) {
               {
                 text: "Complete Payment",
                 onPress: () => {
-                  navigation.navigate("BookingSettlement", { bookingId: check.bookingId });
+                  if (restrictedBookingId) {
+                    navigation.navigate("BookingSettlement", { bookingId: restrictedBookingId, id: restrictedBookingId });
+                  } else {
+                    navigation.navigate("CustomerBookings");
+                  }
                 }
               },
               {
                 text: "View Booking",
                 onPress: () => {
-                  navigation.navigate("BookingDetails", { bookingId: check.bookingId });
+                  if (restrictedBookingId) {
+                    navigation.navigate("BookingDetails", { bookingId: restrictedBookingId, id: restrictedBookingId });
+                  } else {
+                    navigation.navigate("CustomerBookings");
+                  }
                 }
               },
               {
