@@ -197,50 +197,43 @@ export default function PaymentScreen({ route, navigation }) {
       return;
     }
 
-    Alert.alert(
-      "Confirm Cash Booking 💵",
-      "Would you like to send this booking request with Cash on Arrival to the artist for confirmation?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Send Request",
-          onPress: async () => {
-            setLoading(true);
-            try {
-              const res = await selectCashPayment({
-                checkoutData,
-                bookingId: activeBookingId || rawBookingId || booking?.id
-              });
-              setLoading(false);
-              const createdId = res?.data?.bookingId || res?.data?.id || res?.bookingId || res?.id || activeBookingId;
-              Alert.alert(
-                "Request Sent 🌸",
-                "Your booking request has been sent to the artist for confirmation. You will be notified once accepted.",
-                [
+    setLoading(true);
+    setProcessingModalVisible(true);
+    try {
+      const res = await selectCashPayment({
+        checkoutData,
+        bookingId: activeBookingId || rawBookingId || booking?.id
+      });
+      setLoading(false);
+      setProcessingModalVisible(false);
+      const createdId = res?.data?.bookingId || res?.data?.id || res?.bookingId || res?.id || activeBookingId;
+
+      Alert.alert(
+        "Cash Booking Request Placed! 🎉",
+        "Your booking request with Cash on Arrival has been successfully created and sent to the artist.",
+        [
+          {
+            text: "View Booking Details",
+            onPress: () => {
+              navigation.reset({
+                index: 0,
+                routes: [
                   {
-                    text: "View Booking Details",
-                    onPress: () => {
-                      navigation.reset({
-                        index: 0,
-                        routes: [
-                          {
-                            name: "BookingDetails",
-                            params: { bookingId: createdId }
-                          }
-                        ]
-                      });
-                    }
+                    name: "BookingDetails",
+                    params: { bookingId: createdId }
                   }
                 ]
-              );
-            } catch (err) {
-              setLoading(false);
-              Alert.alert("Error", err.message || "Failed to select cash payment.");
+              });
             }
           }
-        }
-      ]
-    );
+        ],
+        { cancelable: false }
+      );
+    } catch (err) {
+      setLoading(false);
+      setProcessingModalVisible(false);
+      Alert.alert("Error", err.message || "Failed to place cash booking request.");
+    }
   };
 
   const handlePay = async () => {

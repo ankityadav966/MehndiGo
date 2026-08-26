@@ -42,6 +42,7 @@ import ServiceProgressCard from "../../components/booking/ServiceProgressCard";
 import CheckoutCard from "../../components/booking/CheckoutCard";
 import InvoiceCard from "../../components/booking/InvoiceCard";
 import ReviewCard from "../../components/booking/ReviewCard";
+import OtpVerificationCard from "../../components/booking/OtpVerificationCard";
 
 export default function BookingDetailsScreen({ route, navigation }) {
   const bookingId = route.params?.bookingId || route.params?.id;
@@ -437,6 +438,35 @@ export default function BookingDetailsScreen({ route, navigation }) {
         >
           {/* 2. Step Progression Timeline */}
           <BookingTimeline status={rawStatus} isCancelled={isCancelled} />
+
+          {/* 2.5 Security PIN / OTP Card */}
+          {!isCancelled && !isCompleted && (
+            <OtpVerificationCard
+              otpCode={isCheckInVerified ? (booking?.checkout_otp || booking?.completion_pin) : (booking?.checkin_otp || booking?.checkin_pin)}
+              checkinOtp={booking?.checkin_otp || booking?.checkin_pin}
+              checkoutOtp={booking?.checkout_otp || booking?.completion_pin}
+              customerEmail={booking?.customer_email || booking?.user?.email}
+              isArtist={false}
+              otpType={isCheckInVerified ? "CHECKOUT" : "CHECKIN"}
+              isCheckInVerified={isCheckInVerified}
+              isServiceActive={isServiceActive}
+              isCheckout={isCheckout}
+              isPending={isPending}
+              isAccepted={isAccepted || isOnTheWay || isArrived}
+              onResend={async () => {
+                try {
+                  if (isCheckInVerified) {
+                    await sendCheckOutOtp(booking.id);
+                  } else {
+                    await sendCheckInOtp(booking.id);
+                  }
+                  Alert.alert("Success", "Security PIN resent successfully to your registered email.");
+                } catch (e) {
+                  Alert.alert("Error", e.message || "Failed to resend PIN.");
+                }
+              }}
+            />
+          )}
 
           {/* 3. Live Tracking Card (Only when ARTIST_ON_THE_WAY) */}
           {isOnTheWay && (
