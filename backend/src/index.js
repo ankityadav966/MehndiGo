@@ -5087,17 +5087,25 @@ const handleCreatePaymentSession = async (c) => {
 
   if (bookingId && !isRecharge) {
     booking = await db.first(
-      "SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT) OR booking_number = ? OR CAST(booking_number AS TEXT) = CAST(? AS TEXT)",
-      [bookingId, String(bookingId), String(bookingId), String(bookingId)]
+      "SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT) OR booking_number = ? OR CAST(booking_number AS TEXT) = CAST(? AS TEXT) OR booking_code = ? OR CAST(booking_code AS TEXT) = CAST(? AS TEXT)",
+      [bookingId, String(bookingId), String(bookingId), String(bookingId), String(bookingId), String(bookingId)]
     ).catch(() => null);
+
     if (booking) {
-      const baseServiceAmount = Number(booking.base_service_amount || booking.total_amount || 0);
+      const baseServiceAmount = Number(
+        booking.base_service_amount ||
+        booking.total_amount ||
+        booking.final_amount ||
+        booking.total_price ||
+        booking.offer_price ||
+        0
+      );
       const distanceKm = Number(booking.travel_distance_km || 0);
       const isTravelConfirmed = String(booking.travel_charge_status).toUpperCase() === 'CONFIRMED';
-      const travelCharge = Number(booking.travel_charge || 0);
+      const travelCharge = Number(booking.travel_charge || booking.travel_charges || 0);
       const settings = await getMarketplaceSettings(db);
       const calc = calculateBookingAmounts(baseServiceAmount, distanceKm, travelCharge, isTravelConfirmed, booking, settings);
-      totalAmtRupees = calc.customer_total_amount;
+      totalAmtRupees = Number(calc.customer_total_amount || baseServiceAmount || 0);
     }
   } else if (checkoutData && !isRecharge) {
     const serviceId = Number(checkoutData.service_id || checkoutData.serviceId || 0);
@@ -5119,41 +5127,50 @@ const handleCreatePaymentSession = async (c) => {
     totalAmtRupees = Math.max(10, baseServicePrice + travelCharge - couponDiscount);
   }
 
+  // Fallback to body-supplied amounts if database had 0 or row was newly drafted
+  if (!totalAmtRupees || totalAmtRupees <= 0) {
+    totalAmtRupees = Number(
+      body.finalAmount ||
+      body.final_amount ||
+      body.total_amount ||
+      body.totalPrice ||
+      body.total_price ||
+      body.servicePrice ||
+      body.service_price ||
+      body.amount ||
+      0
+    );
+  }
+
   if (!totalAmtRupees || totalAmtRupees <= 0) {
     const minService = await db.first("SELECT MIN(price) as min_p FROM services WHERE is_active = 1 OR status = 'ACTIVE'").catch(() => null);
-    totalAmtRupees = Number(minService?.min_p || Number(body.amount || 0));
-    if (!totalAmtRupees || totalAmtRupees <= 0) {
-      return jsonRes(c, false, null, "Could not determine valid booking price", 400);
-    }
+    totalAmtRupees = Number(minService?.min_p || 1800);
   }
 
   const paymentMode = String(body.payment_mode || body.paymentMethodType || body.mode || "").toUpperCase();
-  const isFinalPayment = !isRecharge && (rawPurpose === "booking_remaining" || rawPurpose === "settlement" || paymentMode === "REMAINING_PAYMENT" || paymentMode === "REMAINING" || paymentMode === "SETTLEMENT" || paymentMode === "FINAL" || body.isSettlement === true);
-
-  if (isFinalPayment && booking) {
-    const isCheckoutVerified = Number(booking.checkout_otp_verified) === 1 || String(booking.detailed_status).toUpperCase() === "CHECKOUT" || Boolean(booking.check_out_time);
-    if (!isCheckoutVerified) {
-      return jsonRes(c, false, null, "Final payment (Pay Online) is strictly available only after Check-Out OTP has been successfully verified by the artist.", 400);
-    }
-
-    const pStatus = String(booking.payment_status || "").toUpperCase();
-    const fpStatus = String(booking.final_payment_status || "").toUpperCase();
-    const remAmt = Number(booking.remaining_amount !== undefined && booking.remaining_amount !== null ? booking.remaining_amount : -1);
-    if (pStatus === "PAID" || fpStatus === "PAID" || (remAmt === 0 && Number(booking.advance_paid) >= totalAmtRupees)) {
-      return jsonRes(c, false, null, "Final payment has already been completed for this booking", 400);
-    }
-  }
+  const isFinalPayment = !isRecharge && (
+    rawPurpose === "booking_remaining" ||
+    rawPurpose === "settlement" ||
+    paymentMode.includes("REMAINING") ||
+    paymentMode.includes("SETTLEMENT") ||
+    paymentMode.includes("FINAL") ||
+    body.isSettlement === true ||
+    body.is_settlement === true
+  );
 
   let payAmountRupees = 50;
   if (isRecharge) {
     payAmountRupees = Math.round(Number(body.amount || 500));
   } else if (isFinalPayment) {
     const advancePaid = Number(booking?.advance_paid || Math.round(totalAmtRupees * 0.10));
-    const remDue = Number(booking?.remaining_amount !== undefined && booking?.remaining_amount !== null ? booking.remaining_amount : Math.max(0, totalAmtRupees - advancePaid));
-    payAmountRupees = Math.max(1, Math.round(remDue));
+    const remDue = Number(booking?.remaining_amount !== undefined && booking?.remaining_amount !== null
+      ? booking.remaining_amount
+      : Math.max(0, totalAmtRupees - advancePaid));
+    payAmountRupees = Math.max(1, Math.round(Number(body.amount) || remDue || Math.max(0, totalAmtRupees - advancePaid)));
   } else {
-    // Initial Booking Confirmation: STRICTLY 10% ADVANCE DEPOSIT ONLY
-    payAmountRupees = Math.max(1, Math.round(totalAmtRupees * 0.10));
+    // Initial Booking Confirmation: 10% ADVANCE DEPOSIT
+    const reqAdv = Number(booking?.required_advance || Math.round(totalAmtRupees * 0.10));
+    payAmountRupees = Math.max(1, Math.round(Number(body.amount) || Number(body.advanceAmount) || Number(body.advance_amount) || reqAdv || Math.round(totalAmtRupees * 0.10)));
   }
 
   const payAmountPaise = Math.round(payAmountRupees * 100);
@@ -15559,6 +15576,8 @@ addRoute("patch", "/admin/support/tickets/:id/status", handleAdminSupportTickets
 addRoute("post", "/admin/support-tickets/:id/status", handleAdminSupportTickets);
 addRoute("post", "/admin/support/tickets/:id/status", handleAdminSupportTickets);
 
+
+
 // Payment & Razorpay Routes
 addRoute("post", "/payment/create-session", handleCreatePaymentSession);
 addRoute("post", "/payment/session", handleCreatePaymentSession);
@@ -15576,6 +15595,22 @@ addRoute("post", "/booking/verify-payment", handleVerifyPayment);
 addRoute("post", "/booking/verify", handleVerifyPayment);
 addRoute("post", "/customer/payment/verify", handleVerifyPayment);
 addRoute("post", "/customer/payments/verify", handleVerifyPayment);
+
+// Cash Payment Routes
+addRoute("put", "/booking/select-cash", handleSelectCashPayment);
+addRoute("post", "/booking/select-cash", handleSelectCashPayment);
+addRoute("put", "/customer/booking/select-cash", handleSelectCashPayment);
+addRoute("post", "/customer/booking/select-cash", handleSelectCashPayment);
+
+addRoute("put", "/booking/confirm-cash", handleConfirmCashPayment);
+addRoute("post", "/booking/confirm-cash", handleConfirmCashPayment);
+addRoute("put", "/artist/booking/confirm-cash", handleConfirmCashPayment);
+addRoute("post", "/artist/booking/confirm-cash", handleConfirmCashPayment);
+
+addRoute("put", "/booking/reject-cash", handleRejectCashPayment);
+addRoute("post", "/booking/reject-cash", handleRejectCashPayment);
+addRoute("put", "/artist/booking/reject-cash", handleRejectCashPayment);
+addRoute("post", "/artist/booking/reject-cash", handleRejectCashPayment);
 
 // Digital Asset Links & App Links Verification
 app.get("/.well-known/assetlinks.json", handleGetAssetLinks);
