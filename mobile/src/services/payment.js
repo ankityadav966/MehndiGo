@@ -1,6 +1,6 @@
 import apiRequest from "./api";
 
-export async function createPaymentSession(bookingIdOrPayload, paymentMethodOrAmount, purpose) {
+export async function createPaymentSession(bookingIdOrPayload, paymentMethodOrAmount, purpose, isSettlement = false) {
   let payload = {};
   if (typeof bookingIdOrPayload === "object" && bookingIdOrPayload !== null) {
     payload = {
@@ -12,23 +12,29 @@ export async function createPaymentSession(bookingIdOrPayload, paymentMethodOrAm
   } else {
     const bookingId = bookingIdOrPayload;
     const isNumber = typeof paymentMethodOrAmount === "number";
-    const isSettlementMode = paymentMethodOrAmount === "SETTLEMENT" || paymentMethodOrAmount === "REMAINING_PAYMENT" || paymentMethodOrAmount === "FINAL" || purpose === "settlement" || purpose === "booking_remaining";
+    const isSet = isSettlement || paymentMethodOrAmount === "SETTLEMENT" || paymentMethodOrAmount === "REMAINING_PAYMENT" || paymentMethodOrAmount === "FINAL" || purpose === "settlement" || purpose === "booking_remaining";
     payload = isNumber
-      ? { bookingId, amount: paymentMethodOrAmount, payment_mode: "FULL_ONLINE", purpose: purpose || (!bookingId ? "recharge" : "booking") }
+      ? {
+          bookingId,
+          amount: paymentMethodOrAmount,
+          payment_mode: isSet ? "SETTLEMENT" : "FULL_ONLINE",
+          purpose: purpose || (isSet ? "booking_remaining" : (!bookingId ? "recharge" : "booking")),
+          isSettlement: Boolean(isSet)
+        }
       : {
           bookingId,
-          payment_mode: paymentMethodOrAmount || (isSettlementMode ? "SETTLEMENT" : "ADVANCE_CASH"),
-          purpose: purpose || (isSettlementMode ? "booking_remaining" : "booking_advance"),
-          isSettlement: isSettlementMode,
-          is_settlement: isSettlementMode
+          payment_mode: paymentMethodOrAmount || (isSet ? "SETTLEMENT" : "ADVANCE_CASH"),
+          purpose: purpose || (isSet ? "booking_remaining" : "booking"),
+          isSettlement: Boolean(isSet),
+          is_settlement: Boolean(isSet)
         };
   }
   const res = await apiRequest("POST", "/payment/create-session", payload, true);
   return res?.data || res;
 }
 
-export async function createPaymentOrder(bookingId, paymentMethodOrAmount) {
-  return await createPaymentSession(bookingId, paymentMethodOrAmount);
+export async function createPaymentOrder(bookingId, paymentMethodOrAmount, purpose, isSettlement = false) {
+  return await createPaymentSession(bookingId, paymentMethodOrAmount, purpose, isSettlement);
 }
 
 export async function verifyPaymentSignature(paymentDetails) {

@@ -258,12 +258,19 @@ export default function PaymentScreen({ route, navigation }) {
     setProcessingModalVisible(true);
     let sessionData = null;
     try {
-      sessionData = await createPaymentSession({
-        bookingId: targetBookingId,
-        checkoutData: checkoutData,
-        isSettlement: Boolean(isSettlement),
-        paymentMethodType
-      }).catch(() => null);
+      sessionData = await createPaymentSession(
+        targetBookingId,
+        {
+          bookingId: targetBookingId,
+          checkoutData: checkoutData,
+          payment_mode: paymentMethodType,
+          isSettlement: Boolean(isSettlement),
+          purpose: isSettlement ? "booking_remaining" : "booking_advance",
+          amount: isSettlement ? remainingAmount : advanceAmount
+        },
+        isSettlement ? "booking_remaining" : "booking_advance",
+        Boolean(isSettlement)
+      );
 
       // If backend session did not return an authentic Razorpay order, generate a genuine Razorpay order directly
       if (!sessionData?.order_id || !sessionData.order_id.startsWith("order_") || sessionData.order_id.includes("order_178")) {
