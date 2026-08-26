@@ -509,7 +509,7 @@ export default function PaymentScreen({ route, navigation }) {
         </TouchableOpacity>
 
         {/* Option 3: Pay Cash */}
-        <TouchableOpacity
+        {/* <TouchableOpacity
           style={[styles.methodCard, selectedMethod === "cash" && styles.methodCardActive]}
           onPress={() => setSelectedMethod("cash")}
           activeOpacity={0.8}
@@ -528,7 +528,7 @@ export default function PaymentScreen({ route, navigation }) {
             size={20}
             color={selectedMethod === "cash" ? "#059669" : "#9CA3AF"}
           />
-        </TouchableOpacity>
+        </TouchableOpacity> */}
 
         {/* 4. Escrow Security Banner */}
         <View style={styles.escrowCard}>
