@@ -22,6 +22,86 @@ import { confirmCashPayment, rejectCashPayment, acceptBooking, rejectBooking } f
 import Alert from "../../utils/Alert";
 import OptimizedImage from "../../components/OptimizedImage";
 
+function formatBookingDateTime(item) {
+  if (!item) return { dateStr: "Today", timeStr: "Flexible" };
+
+  let dateStr = "";
+  const rawDate =
+    item.booking_date ||
+    item.date ||
+    item.bookingDate ||
+    item.event_date ||
+    item.slot?.date ||
+    item.reschedule_date ||
+    item.created_at ||
+    item.createdAt;
+
+  if (rawDate) {
+    const rawStr = String(rawDate).trim();
+    if (/^\d{1,2}\s+[A-Za-z]{3}\s+\d{4}$/.test(rawStr)) {
+      dateStr = rawStr;
+    } else {
+      try {
+        const d = new Date(rawDate);
+        if (!isNaN(d.getTime())) {
+          dateStr = d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+        } else {
+          const parts = rawStr.split(/[-/]/);
+          if (parts.length === 3) {
+            const parsed = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+            if (!isNaN(parsed.getTime())) {
+              dateStr = parsed.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+            } else {
+              dateStr = rawStr;
+            }
+          } else {
+            dateStr = rawStr;
+          }
+        }
+      } catch {
+        dateStr = rawStr;
+      }
+    }
+  }
+
+  if (!dateStr || dateStr.toLowerCase().includes("invalid")) {
+    if (item.created_at || item.createdAt) {
+      try {
+        const cd = new Date(item.created_at || item.createdAt);
+        if (!isNaN(cd.getTime())) {
+          dateStr = cd.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+        }
+      } catch (_) {}
+    }
+    if (!dateStr || dateStr.toLowerCase().includes("invalid")) {
+      dateStr = "Today";
+    }
+  }
+
+  let timeStr =
+    item.booking_time ||
+    item.time ||
+    item.bookingTime ||
+    item.slot_time ||
+    item.reschedule_time ||
+    item.slot?.slot_window ||
+    "";
+
+  if (!timeStr && item.slot) {
+    if (typeof item.slot.start_time === "string") {
+      const st = item.slot.start_time;
+      const et = item.slot.end_time;
+      timeStr = et ? `${st} - ${et}` : st;
+    }
+  }
+
+  if (!timeStr || timeStr.toLowerCase().includes("invalid")) {
+    timeStr = "Flexible / Scheduled Slot";
+  }
+
+  return { dateStr, timeStr };
+}
+
 // --- Greeting Header Component ---
 function GreetingHeader({ artist, isVerified, unreadCount, onProfilePress, onNotificationPress }) {
   const getGreeting = () => {
@@ -205,14 +285,22 @@ export default function ArtistDashboardScreen({ navigation }) {
       const handleBookingUpdate = () => {
         fetchDashboardDetails();
       };
+      socket.on("BOOKING_CREATED", handleBookingUpdate);
+      socket.on("NEW_BOOKING_REQUEST", handleBookingUpdate);
+      socket.on("BOOKING_UPDATED", handleBookingUpdate);
+      socket.on("PAYMENT_RECEIVED", handleBookingUpdate);
       socket.on("booking_created", handleBookingUpdate);
       socket.on("new_notification", handleBookingUpdate);
       return () => {
+        socket.off("BOOKING_CREATED", handleBookingUpdate);
+        socket.off("NEW_BOOKING_REQUEST", handleBookingUpdate);
+        socket.off("BOOKING_UPDATED", handleBookingUpdate);
+        socket.off("PAYMENT_RECEIVED", handleBookingUpdate);
         socket.off("booking_created", handleBookingUpdate);
         socket.off("new_notification", handleBookingUpdate);
       };
     }
-  }, [socket]);
+  }, [socket, fetchDashboardDetails]);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -424,7 +512,22 @@ export default function ArtistDashboardScreen({ navigation }) {
         {dashboard?.recentBookings?.filter(b => {
           const st = String(b.booking_status || b.status || "").toUpperCase();
           const det = String(b.detailed_status || b.detailedStatus || "").toUpperCase();
-          return (st === "PENDING" || det === "PENDING") && det !== "ARTIST_ACCEPTED" && det !== "ACCEPTED" && det !== "CONFIRMED" && det !== "CANCELLED" && det !== "REJECTED" && det !== "COMPLETED";
+          const pStatus = String(b.payment_status || "").toUpperCase();
+          const pMode = String(b.payment_mode || "").toUpperCase();
+          const advance = Number(b.advance_paid || 0);
+
+          const isCash = pMode === "CASH";
+          const isPaidAdvance = advance > 0 || pStatus === "PAID" || pStatus === "PARTIAL" || pStatus === "ADVANCE_PAID";
+          const isUnpaidOnlineDraft = det === "PENDING_PAYMENT" || (!isCash && pStatus === "PENDING" && advance <= 0);
+
+          if (isUnpaidOnlineDraft) return false;
+          if (!isCash && !isPaidAdvance) return false;
+
+          const isAccepted = st === "ACCEPTED" || st === "CONFIRMED" || det === "ARTIST_ACCEPTED" || det === "ACCEPTED" || det === "CONFIRMED" || det === "ARTIST_ON_THE_WAY" || det === "ARTIST_ARRIVED" || det === "SERVICE_STARTED" || det === "IN_PROGRESS";
+          const isCancelled = st === "CANCELLED" || st === "REJECTED" || st === "DECLINED" || det === "CANCELLED" || det === "REJECTED" || det === "DECLINED";
+          const isCompleted = st === "COMPLETED" || det === "COMPLETED";
+
+          return !isAccepted && !isCancelled && !isCompleted;
         }).length > 0 && (
           <View style={styles.cashSection}>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
@@ -434,15 +537,26 @@ export default function ArtistDashboardScreen({ navigation }) {
               </Pressable>
             </View>
             {dashboard.recentBookings.filter(b => {
-              const st = String(b.status || b.booking_status || "").toUpperCase();
+              const st = String(b.booking_status || b.status || "").toUpperCase();
               const det = String(b.detailed_status || b.detailedStatus || "").toUpperCase();
-              const isAccepted = st === "ACCEPTED" || det === "ARTIST_ACCEPTED" || det === "ACCEPTED" || det === "ARTIST_ON_THE_WAY" || det === "ARTIST_ARRIVED" || det === "SERVICE_STARTED";
-              const isCancelled = st === "CANCELLED" || st === "REJECTED" || det === "CANCELLED" || det === "REJECTED";
+              const pStatus = String(b.payment_status || "").toUpperCase();
+              const pMode = String(b.payment_mode || "").toUpperCase();
+              const advance = Number(b.advance_paid || 0);
+
+              const isCash = pMode === "CASH";
+              const isPaidAdvance = advance > 0 || pStatus === "PAID" || pStatus === "PARTIAL" || pStatus === "ADVANCE_PAID";
+              const isUnpaidOnlineDraft = det === "PENDING_PAYMENT" || (!isCash && pStatus === "PENDING" && advance <= 0);
+
+              if (isUnpaidOnlineDraft) return false;
+              if (!isCash && !isPaidAdvance) return false;
+
+              const isAccepted = st === "ACCEPTED" || st === "CONFIRMED" || det === "ARTIST_ACCEPTED" || det === "ACCEPTED" || det === "CONFIRMED" || det === "ARTIST_ON_THE_WAY" || det === "ARTIST_ARRIVED" || det === "SERVICE_STARTED" || det === "IN_PROGRESS";
+              const isCancelled = st === "CANCELLED" || st === "REJECTED" || st === "DECLINED" || det === "CANCELLED" || det === "REJECTED" || det === "DECLINED";
               const isCompleted = st === "COMPLETED" || det === "COMPLETED";
-              return !isAccepted && !isCancelled && !isCompleted && (st === "PENDING" || st === "CONFIRMED" || det === "PENDING");
+
+              return !isAccepted && !isCancelled && !isCompleted;
             }).slice(0, 3).map((item) => {
-              const slotDate = item.slot?.start_time ? new Date(item.slot.start_time).toLocaleDateString() : (item.reschedule_date || "TBD");
-              const slotTime = item.slot ? `${new Date(item.slot.start_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - ${new Date(item.slot.end_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` : (item.reschedule_time || "TBD");
+              const { dateStr, timeStr } = formatBookingDateTime(item);
 
               return (
                 <View key={item.id} style={styles.cashConfirmCard}>
@@ -458,15 +572,15 @@ export default function ArtistDashboardScreen({ navigation }) {
                   </View>
                   <View style={styles.itemMetaRow}>
                     <Text style={styles.metaLabel}>Booking ID:</Text>
-                    <Text style={styles.metaValue}>#{item.booking_code}</Text>
+                    <Text style={styles.metaValue}>#{item.booking_code || item.booking_number || item.id}</Text>
                   </View>
                   <View style={styles.itemMetaRow}>
                     <Text style={styles.metaLabel}>Date & Time:</Text>
-                    <Text style={styles.metaValue}>{slotDate} • {slotTime}</Text>
+                    <Text style={[styles.metaValue, { fontWeight: "700", color: "#1F2937" }]}>{dateStr} • {timeStr}</Text>
                   </View>
                   <View style={styles.itemMetaRow}>
                     <Text style={styles.metaLabel}>Amount:</Text>
-                    <Text style={[styles.metaValue, { fontWeight: "800", color: Colors.primary }]}>₹{item.final_amount}</Text>
+                    <Text style={[styles.metaValue, { fontWeight: "800", color: Colors.primary }]}>₹{item.final_amount || item.total_amount || 0}</Text>
                   </View>
 
                   <View style={styles.cashActionsRow}>
@@ -602,6 +716,7 @@ export default function ArtistDashboardScreen({ navigation }) {
           const customerName = item.user?.name || item.customer_name || item.client_name || item.customer?.name || "Client";
           const customerPhone = item.user?.phone || item.customer_phone || "";
           const customerAvatar = resolveImage(item.user?.profile_image || item.customer_avatar || item.customer?.profile_image);
+          const { dateStr, timeStr } = formatBookingDateTime(item);
           
           return (
             <Pressable
@@ -621,9 +736,12 @@ export default function ArtistDashboardScreen({ navigation }) {
                       📞 {customerPhone}
                     </Text>
                   ) : null}
-                  <Text style={styles.serviceName}>{item.service?.specialization_name || "Mehndi Booking"}</Text>
+                  <Text style={styles.serviceName}>{item.service?.specialization_name || item.service_title || "Mehndi Booking"}</Text>
+                  <Text style={[styles.bookingDate, { color: "#374151", fontWeight: "600" }]}>
+                    📅 {dateStr} • ⏰ {timeStr}
+                  </Text>
                   <Text style={styles.bookingDate}>
-                    Status: {item.detailed_status || item.booking_status} • Value: ₹{item.final_amount || item.total_price}
+                    Status: {item.detailed_status || item.booking_status} • Value: ₹{item.final_amount || item.total_price || item.total_amount || 0}
                   </Text>
                 </View>
               </View>

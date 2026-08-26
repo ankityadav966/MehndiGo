@@ -21,8 +21,8 @@ const AZURE_EMAIL_FROM = (
   "donotreply@mehndigo.in"
 ).trim();
 
-const EMAIL_USER = (process.env.EMAIL_USER || "sonudonyadav87@gmail.com").trim();
-const EMAIL_PASS = (process.env.EMAIL_PASS || "kwemkkniwxyohmvm").replace(/\s+/g, "");
+const EMAIL_USER = (process.env.EMAIL_USER || "mehendigo@gmail.com").trim();
+const EMAIL_PASS = (process.env.EMAIL_PASS || "zgibsuiprjnapudd").replace(/\s+/g, "");
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
 
@@ -30,7 +30,7 @@ const EMAIL_FROM =
   process.env.EMAIL_FROM || "MehndiGo <donotreply@mehndigo.in>";
 
 const EMAIL_REPLY_TO =
-  process.env.EMAIL_REPLY_TO || "support@mehndigo.in";
+  process.env.EMAIL_REPLY_TO || "mehendigo@gmail.com";
 
 const EMAIL_PROVIDER =
   (process.env.EMAIL_PROVIDER || "gmail").toLowerCase().trim();
@@ -366,10 +366,9 @@ async function sendUsingGmail(
   );
 
   console.log(
-    `Accepted: ${
-      Array.isArray(info.accepted)
-        ? info.accepted.join(", ")
-        : "yes"
+    `Accepted: ${Array.isArray(info.accepted)
+      ? info.accepted.join(", ")
+      : "yes"
     }`
   );
 
@@ -455,10 +454,9 @@ async function sendUsingResend(
 
   if (!response.ok) {
     throw new Error(
-      `Resend API ${response.status}: ${
-        data?.message ||
-        data?.error ||
-        responseText
+      `Resend API ${response.status}: ${data?.message ||
+      data?.error ||
+      responseText
       }`
     );
   }

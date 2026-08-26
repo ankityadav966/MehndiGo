@@ -78,14 +78,23 @@ class WalletService {
   }
 
   async initiateWithdrawal(userId, amount) {
+    // 1. Strictly Validate Day of Week (Wednesday and Saturday in IST only)
+    const now = new Date();
+    const istOffset = 5.5 * 60 * 60 * 1000;
+    const istDate = new Date(now.getTime() + istOffset);
+    const day = istDate.getUTCDay(); // 0 = Sun, 1 = Mon, 2 = Tue, 3 = Wed, 4 = Thu, 5 = Fri, 6 = Sat
+    if (day !== 3 && day !== 6) {
+      throw new AppError("Withdrawals are available only on Wednesday and Saturday.", 400);
+    }
+
     const numAmount = Number(amount);
     if (isNaN(numAmount) || numAmount < 100) {
       throw new AppError("Minimum withdrawal amount is ₹100", 400);
     }
 
     const bankAccount = await db.BankAccount.findOne({ where: { user_id: userId } });
-    if (!bankAccount || (!bankAccount.account_number && !bankAccount.upi_id)) {
-      throw new AppError("Please link your bank account or UPI ID before requesting a withdrawal.", 400);
+    if (!bankAccount || (!bankAccount.account_number && !bankAccount.upi_id) || !bankAccount.account_holder_name || !bankAccount.ifsc_code) {
+      throw new AppError("Please add and verify your bank details before requesting withdrawal.", 400);
     }
 
     const t = await db.sequelize.transaction();
@@ -108,7 +117,7 @@ class WalletService {
         lock: t.LOCK.UPDATE
       });
       if (existingPending) {
-        throw new AppError("You already have a pending withdrawal request (WR-" + existingPending.id + ") being processed. Please wait for it to complete.", 400);
+        throw new AppError("You already have a pending withdrawal request. Please wait until it is processed.", 400);
       }
 
       // Get or create wallet row safely with row update lock

@@ -989,6 +989,8 @@ export default function ChatRoomScreen({ route, navigation }) {
               maxToRenderPerBatch={12}
               windowSize={9}
               removeClippedSubviews={true}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
               contentContainerStyle={styles.listContent}
               onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
             />

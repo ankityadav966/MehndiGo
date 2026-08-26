@@ -7,12 +7,29 @@ export const Alert = {
 
     if (needsModal) {
       // Find confirm and cancel button structures
-      const cancelBtn =
-        buttons.find((b) => b.style === "cancel") ||
-        (buttons.length > 1 ? buttons[0] : null);
-      const confirmBtn =
-        buttons.find((b) => b.style !== "cancel") ||
-        (buttons.length > 1 ? buttons[1] : buttons[0]);
+
+
+      let cancelBtn = null;
+      let confirmBtn = null;
+
+      if (buttons && buttons.length === 1) {
+        confirmBtn = buttons[0];
+      } else if (buttons && buttons.length > 1) {
+        const cancelIndex = buttons.findIndex(
+          (b) =>
+            b.style === "cancel" ||
+            String(b.text || "").trim().toLowerCase() === "cancel" ||
+            String(b.text || "").trim().toLowerCase() === "no"
+        );
+
+        if (cancelIndex !== -1) {
+          cancelBtn = buttons[cancelIndex];
+          confirmBtn = buttons.find((_, idx) => idx !== cancelIndex) || buttons[cancelIndex === 0 ? 1 : 0];
+        } else {
+          cancelBtn = buttons[0];
+          confirmBtn = buttons[1];
+        }
+      }
 
       // Determine modal theme/type based on title & text keywords
       let type = "info";

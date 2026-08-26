@@ -172,57 +172,43 @@ export default function BookingSummaryScreen({ route, navigation }) {
         selected_art_price: selectedArt?.price || null
       };
 
-      const newBooking = await createBooking(bookingData);
-      
-      const targetBookingId =
-        newBooking?.id ||
-        newBooking?.booking_id ||
-        newBooking?.bookingId ||
-        newBooking?.data?.id ||
-        newBooking?.data?.booking_id ||
-        newBooking?.data?.bookingId ||
-        newBooking?.data?.booking?.id ||
-        newBooking?.booking?.id ||
-        123;
-
-      const targetBookingCode =
-        newBooking?.booking_code ||
-        newBooking?.bookingCode ||
-        newBooking?.data?.booking_code ||
-        newBooking?.data?.bookingCode ||
-        newBooking?.data?.booking?.booking_code ||
-        newBooking?.booking?.booking_code ||
-        `MG-${targetBookingId || Date.now()}`;
-
       const safeFinal = Number(
         priceDetails?.final_amount ||
         priceDetails?.total_amount ||
-        newBooking?.final_amount ||
-        newBooking?.total_amount ||
         500
       );
       const safeAdvance = Number(
         priceDetails?.advance_amount ||
-        newBooking?.advance_amount ||
         Math.round(safeFinal * 0.10) ||
         50
       );
       const safeRemaining = Math.max(0, safeFinal - safeAdvance);
 
-      // Navigate directly to secure Figma-matched Payment screen with exact pricing
+      const checkoutData = {
+        ...bookingData,
+        total_amount: safeFinal,
+        advance_amount: safeAdvance,
+        remaining_amount: safeRemaining,
+        artistName: artist?.user?.name || artist?.business_name || "Mehndi Specialist",
+        serviceTitle: selectedArt?.title || "Mehndi Service",
+        service_price: Number(priceDetails?.service_price || priceDetails?.servicePrice || safeFinal)
+      };
+
+      // Navigate directly to Payment screen with checkout intent data (NO BOOKING CREATED YET)
       navigation.navigate("Payment", {
-        bookingId: targetBookingId || null,
-        bookingCode: targetBookingCode,
+        checkoutData,
+        bookingId: null,
+        bookingCode: `MG-CHKT-${Date.now().toString().slice(-6)}`,
         finalAmount: safeFinal,
         advanceAmount: safeAdvance,
         remainingAmount: safeRemaining,
-        artistName: artist?.user?.name || artist?.business_name || "Mehndi Specialist",
-        serviceTitle: selectedArt?.title || "Mehndi Service",
+        artistName: checkoutData.artistName,
+        serviceTitle: checkoutData.serviceTitle,
         isSettlement: false
       });
     } catch (err) {
       console.log("[Proceed to payment error]:", err.message);
-      Alert.alert("Booking Notice", err.message || "Failed to initialize booking payment.");
+      Alert.alert("Checkout Notice", err.message || "Failed to proceed to payment.");
     } finally {
       setSubmitting(false);
     }

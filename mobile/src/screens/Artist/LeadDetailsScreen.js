@@ -223,7 +223,17 @@ export default function LeadDetailsScreen({ route, navigation }) {
           <View style={styles.infoField}>
             <Text style={styles.fieldLabel}>Preferred Date & Time</Text>
             <Text style={styles.fieldValue}>
-              {new Date(lead.booking_date).toLocaleDateString("en-IN", { weekday: "long", year: "numeric", month: "long", day: "numeric" })} at {lead.booking_time}
+              {(() => {
+                try {
+                  const d = new Date(lead.booking_date || lead.date || lead.created_at);
+                  if (!isNaN(d.getTime())) {
+                    return d.toLocaleDateString("en-IN", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+                  }
+                  return lead.booking_date || "Today";
+                } catch {
+                  return lead.booking_date || "Today";
+                }
+              })()} at {lead.booking_time || lead.time || "Scheduled Time"}
             </Text>
           </View>
           <View style={styles.infoField}>

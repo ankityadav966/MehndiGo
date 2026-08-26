@@ -79,8 +79,8 @@ Using default fallback configurations...
 }
 
 process.env.JWT_SECRET = process.env.JWT_SECRET || "Live credentials";
-process.env.EMAIL_USER = process.env.EMAIL_USER || "sonudonyadav87@gmail.com";
-process.env.EMAIL_PASS = process.env.EMAIL_PASS || "kwem kkni wxyo hmvm";
+process.env.EMAIL_USER = process.env.EMAIL_USER || "mehendigo@gmail.com";
+process.env.EMAIL_PASS = process.env.EMAIL_PASS || "zgibsuiprjnapudd";
 
 module.exports = {
   JWT_SECRET: process.env.JWT_SECRET,

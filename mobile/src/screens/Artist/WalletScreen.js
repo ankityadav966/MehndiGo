@@ -109,9 +109,16 @@ export default function WalletScreen({ route, navigation }) {
       if (txList.length === 0 && Array.isArray(wObj?.transactions)) {
         txList = wObj.transactions;
       }
-      if (txList.length > 0) {
-        setTransactions(txList);
-      }
+      
+      // Filter out cash payments and zero-amount entries because Cash has no wallet balance / withdrawal history
+      const onlineTxList = (txList || []).filter((tx) => {
+        const rawType = String(tx.type || tx.transaction_type || "").toUpperCase();
+        const desc = String(tx.description || "").toLowerCase();
+        const isCash = rawType === "CASH" || rawType === "CASH_COLLECTED" || desc.includes("cash in hand") || desc.includes("cash collected");
+        const amt = Number(tx.amount || 0);
+        return !isCash && amt > 0;
+      });
+      setTransactions(onlineTxList);
 
       // Extract withdrawal requests
       if (requestsRes.status === "fulfilled" && requestsRes.value) {
@@ -138,10 +145,19 @@ export default function WalletScreen({ route, navigation }) {
     } catch (err) {
       if (__DEV__) console.log("Failed to load artist wallet info:", err.message);
     } finally {
-      setLoading(false);
       setRefreshing(false);
+      setLoading(false);
     }
   }, [refreshing, walletData]);
+
+  useEffect(() => {
+    loadWalletDataset();
+  }, []);
+
+  const handleRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadWalletDataset(false);
+  }, [loadWalletDataset]);
 
   // Initial & Focus load + Back handling
   useFocusEffect(
@@ -193,23 +209,18 @@ export default function WalletScreen({ route, navigation }) {
     };
   }, [socket, loadWalletDataset]);
 
-  const handleRefresh = () => {
-    setRefreshing(true);
-    loadWalletDataset();
-  };
-
   const handleWithdrawalRequest = async () => {
-    const amt = Number(withdrawAmount);
-    if (isNaN(amt) || amt <= 0) {
-      Alert.alert("Invalid Amount", "Please enter a valid amount to withdraw.");
+    const numAmt = Number(withdrawAmount);
+    if (!numAmt || isNaN(numAmt) || numAmt < 100) {
+      Alert.alert("Invalid Amount", "Minimum withdrawal amount is ₹100.");
       return;
     }
-    if (amt > balance) {
-      Alert.alert("Insufficient Balance", "Your payout request exceeds your current available balance.");
+    if (numAmt > balance) {
+      Alert.alert("Insufficient Balance", `Your available balance is ₹${balance.toLocaleString("en-IN")}.`);
       return;
     }
     if (!bankAccount) {
-      Alert.alert("Bank Details Required", "Please link your bank account details first before requesting payout.");
+      Alert.alert("Bank Account Missing", "Please add your bank account details before requesting a payout.");
       setWithdrawModalVisible(false);
       setBankModalVisible(true);
       return;
@@ -217,13 +228,13 @@ export default function WalletScreen({ route, navigation }) {
 
     setWithdrawLoading(true);
     try {
-      await requestWithdrawal(amt);
-      Alert.alert("Request Submitted 🎉", `Withdrawal request of ₹${amt} has been submitted for bank transfer.`);
+      await requestWithdrawal(numAmt);
       setWithdrawModalVisible(false);
       setWithdrawAmount("");
-      loadWalletDataset();
+      Alert.alert("Request Submitted 🎉", `Payout request for ₹${numAmt} submitted successfully.`);
+      loadWalletDataset(true);
     } catch (err) {
-      Alert.alert("Payout Error", err.message || "Withdrawal request failed.");
+      Alert.alert("Payout Error", err.message || "Failed to submit withdrawal request.");
     } finally {
       setWithdrawLoading(false);
     }
@@ -232,17 +243,18 @@ export default function WalletScreen({ route, navigation }) {
   const handleSaveBankDetails = async () => {
     const { accountHolderName, accountNumber, ifscCode, bankName } = bankForm;
     if (!accountHolderName || !accountNumber || !ifscCode || !bankName) {
-      Alert.alert("Incomplete Details", "Please fill in Account Name, Account Number, IFSC, and Bank Name.");
+      Alert.alert("Validation Error", "Please fill in all required bank details.");
       return;
     }
+
     setBankLoading(true);
     try {
       await saveBankAccountDetails(bankForm);
-      Alert.alert("Bank Linked Success", "Your payout bank credentials have been updated.");
       setBankModalVisible(false);
-      loadWalletDataset();
+      Alert.alert("Success", "Bank credentials updated successfully.");
+      loadWalletDataset(true);
     } catch (err) {
-      Alert.alert("Save Error", "Failed to save bank credentials.");
+      Alert.alert("Error", err.message || "Failed to save bank credentials.");
     } finally {
       setBankLoading(false);
     }
@@ -250,15 +262,13 @@ export default function WalletScreen({ route, navigation }) {
 
   const renderTransaction = ({ item }) => {
     const rawType = String(item.type || item.transaction_type || "").toUpperCase();
-    const isCash = rawType === "CASH_COLLECTED" || rawType === "CASH" || String(item.description || "").toLowerCase().includes("cash collected");
-    const isInfo = rawType === "INFO";
     const isCredit = rawType === "CREDIT" || ["RECHARGE", "REFUND", "CASHBACK", "SETTLEMENT", "MANUAL_CREDIT", "EARNING"].includes(rawType);
 
-    let iconBg = isCredit ? "#ECFDF5" : (isCash ? "#EFF6FF" : (isInfo ? "#F3F4F6" : "#FEF2F2"));
-    let iconName = isCredit ? "arrow-down" : (isCash ? "cash-outline" : (isInfo ? "information-circle-outline" : "arrow-up"));
-    let iconColor = isCredit ? Colors.success : (isCash ? "#2563EB" : (isInfo ? "#6B7280" : Colors.error));
-    let amountColor = isCredit ? Colors.success : (isCash ? "#2563EB" : (isInfo ? "#6B7280" : Colors.error));
-    let sign = isCredit ? "+" : (isCash ? "✓ " : (isInfo ? "" : "-"));
+    let iconBg = isCredit ? "#ECFDF5" : "#FEF2F2";
+    let iconName = isCredit ? "arrow-down" : "arrow-up";
+    let iconColor = isCredit ? Colors.success : Colors.error;
+    let amountColor = isCredit ? Colors.success : Colors.error;
+    let sign = isCredit ? "+" : "-";
 
     return (
       <TouchableOpacity 
@@ -276,9 +286,14 @@ export default function WalletScreen({ route, navigation }) {
 
         <View style={styles.cardInfo}>
           <Text style={styles.cardTitle} numberOfLines={1}>
-            {item.description || item.transaction_type?.replace(/_/g, " ") || (isCredit ? "Credit" : (isCash ? "Cash Collected" : "Debit"))}
+            {item.description || (isCredit ? "Online Booking Payment" : "Payout Withdrawal")}
           </Text>
-          <Text style={styles.cardSubtitle}>{moment(item.created_at || item.createdAt || item.date || new Date()).format("DD MMM YYYY, hh:mm A")}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
+            <View style={{ backgroundColor: "#E0F2FE", paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4, marginRight: 6 }}>
+              <Text style={{ fontSize: 9, color: "#0369A1", fontWeight: "700" }}>ONLINE</Text>
+            </View>
+            <Text style={styles.cardSubtitle}>{moment(item.created_at || item.createdAt || item.date || new Date()).format("DD MMM YYYY, hh:mm A")}</Text>
+          </View>
         </View>
 
         <Text style={[styles.cardAmount, { color: amountColor }]}>
@@ -377,8 +392,10 @@ export default function WalletScreen({ route, navigation }) {
                   style={styles.payoutBtn} 
                   activeOpacity={0.85}
                   onPress={() => {
-                    if (!bankAccount) {
-                      Alert.alert("Link Bank Account", "Please link your bank credentials before requesting withdrawal.", [
+                    if (navigation?.navigate) {
+                      navigation.navigate("WithdrawEarnings");
+                    } else if (!bankAccount) {
+                      Alert.alert("Link Bank Account", "Please add and verify your bank details before requesting withdrawal.", [
                         { text: "Cancel" },
                         { text: "Link Now", onPress: () => setBankModalVisible(true) }
                       ]);
@@ -417,7 +434,7 @@ export default function WalletScreen({ route, navigation }) {
                   <Ionicons name="lock-closed-outline" size={16} color={Colors.warning} />
                 </View>
                 <Text style={styles.statMiniLabel}>In Escrow</Text>
-                <Text style={styles.statMiniValue}>₹{Number(walletData?.escrow_balance || walletData?.pending_balance || 0).toLocaleString("en-IN")}</Text>
+                <Text style={styles.statMiniValue}>₹{Number(walletData?.escrow_balance || walletData?.pending_settlement || walletData?.pending_balance || 0).toLocaleString("en-IN")}</Text>
               </View>
             </View>
 
@@ -599,16 +616,22 @@ export default function WalletScreen({ route, navigation }) {
             <View style={styles.detailDivider} />
 
             <View style={styles.detailRow}>
+              <Text style={styles.detailKey}>Payment Channel</Text>
+              <Text style={[styles.detailVal, { color: "#0284C7", fontWeight: "700" }]}>
+                {selectedItem?.transaction_type === "WITHDRAWAL" || selectedItem?.status === "PENDING" ? "Bank Transfer Payout" : "Online (Escrow Settled)"}
+              </Text>
+            </View>
+            <View style={styles.detailRow}>
               <Text style={styles.detailKey}>Status</Text>
               <Text style={[styles.detailVal, { color: Colors.primary, fontWeight: "700" }]}>{selectedItem?.status || "SUCCESS"}</Text>
             </View>
             <View style={styles.detailRow}>
               <Text style={styles.detailKey}>Date & Time</Text>
-              <Text style={styles.detailVal}>{moment(selectedItem?.createdAt).format("DD MMM YYYY, hh:mm A")}</Text>
+              <Text style={styles.detailVal}>{moment(selectedItem?.createdAt || selectedItem?.created_at || selectedItem?.date).format("DD MMM YYYY, hh:mm A")}</Text>
             </View>
             <View style={styles.detailRow}>
               <Text style={styles.detailKey}>Reference ID</Text>
-              <Text style={styles.detailVal}>REF-{selectedItem?.id}</Text>
+              <Text style={styles.detailVal}>REF-{selectedItem?.id || selectedItem?.reference_id || Date.now()}</Text>
             </View>
 
             <TouchableOpacity style={styles.closeDetailBtn} onPress={() => setSelectedItem(null)}>

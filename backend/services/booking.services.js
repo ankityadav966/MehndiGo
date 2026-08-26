@@ -1318,25 +1318,32 @@ class BookingService {
       await payment.update({ payment_method: "CASH" });
     }
 
+    const isCheckoutStage = booking.booking_status === "PENDING" || booking.detailed_status === "PENDING_PAYMENT" || booking.detailed_status === "PENDING";
+    const targetBookingStatus = isCheckoutStage ? "PENDING" : "COMPLETED";
+    const targetDetailedStatus = isCheckoutStage ? "PENDING_ARTIST_CONFIRMATION" : "AWAITING_CASH_CONFIRMATION";
+
     await booking.update({
-      booking_status: "COMPLETED",
-      detailed_status: "AWAITING_CASH_CONFIRMATION"
+      booking_status: targetBookingStatus,
+      detailed_status: targetDetailedStatus,
+      payment_mode: "CASH"
     });
 
     await db.BookingStatusHistory.create({
       booking_id: bookingId,
-      status: "AWAITING_CASH_CONFIRMATION",
+      status: targetDetailedStatus,
       changed_by: userId,
-      notes: "Customer selected Cash Payment method."
+      notes: isCheckoutStage ? "Customer requested Cash on Arrival booking." : "Customer selected Cash Payment method upon service completion."
     });
 
     const artistProfile = await db.ArtistProfile.findByPk(booking.artist_id);
     if (artistProfile) {
       await db.Notification.create({
         user_id: artistProfile.user_id,
-        title: "Cash Payment Approval Required",
-        message: "Customer has marked this booking as Cash Payment. Please approve or reject the payment.",
-        type: "PAYMENT",
+        title: isCheckoutStage ? "New Cash Booking Request 💵" : "Cash Payment Approval Required",
+        message: isCheckoutStage 
+          ? `Customer selected Cash on Arrival for booking #${booking.booking_code || booking.id}. Please confirm request.`
+          : "Customer has marked this booking as Cash Payment. Please approve or reject the payment.",
+        type: isCheckoutStage ? "NEW_BOOKING_REQUEST" : "PAYMENT",
         data: JSON.stringify({ bookingId: bookingId, booking_id: bookingId })
       });
     }
