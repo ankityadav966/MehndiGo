@@ -47,6 +47,7 @@ import WishlistScreen from "../screens/Customer/WishlistScreen";
 import CompareArtistsScreen from "../screens/Customer/CompareArtistsScreen";
 import FiltersScreen from "../screens/Customer/FiltersScreen";
 import CustomerProfileScreen from "../screens/Customer/CustomerProfileScreen";
+import InitialLocationSetupScreen from "../screens/Customer/InitialLocationSetupScreen";
 
 import BottomTab from "./BottomTab";
 import ChatListScreen from "../screens/Common/ChatListScreen";
@@ -106,6 +107,8 @@ export default function CustomerStack() {
       <Stack.Screen name="Filters" component={FiltersScreen} />
       <Stack.Screen name="CustomerProfile" component={CustomerProfileScreen} />
       <Stack.Screen name="VideoPlayer" component={VideoPlayerScreen} />
+      <Stack.Screen name="InitialLocationSetup" component={InitialLocationSetupScreen} />
+      <Stack.Screen name="InitialLocationSetupScreen" component={InitialLocationSetupScreen} />
     </Stack.Navigator>
   );
 }

@@ -38,7 +38,6 @@ import BookingAmountCard from "../../components/booking/BookingAmountCard";
 import BookingLocationCard from "../../components/booking/BookingLocationCard";
 import LiveTrackingCard from "../../components/booking/LiveTrackingCard";
 import BookingChatCard from "../../components/booking/BookingChatCard";
-import OtpVerificationCard from "../../components/booking/OtpVerificationCard";
 import ServiceProgressCard from "../../components/booking/ServiceProgressCard";
 import CheckoutCard from "../../components/booking/CheckoutCard";
 import InvoiceCard from "../../components/booking/InvoiceCard";
@@ -109,7 +108,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
             if (locData.distance_text || locData.distanceText) setDistanceText(locData.distance_text || locData.distanceText);
             if (locData.eta_text || locData.etaText) setEtaText(locData.eta_text || locData.etaText);
           }
-        } catch (_) {}
+        } catch (_) { }
       }
     } catch (err) {
       if (__DEV__) console.log("Failed to load booking details:", err.message);
@@ -464,22 +463,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
             />
           )}
 
-          {/* 4. Booking Security PINs Card (Pending, CheckIn, or Completion depending on lifecycle stage) */}
-          {!isCompleted && !isCancelled && (
-            <OtpVerificationCard
-              customerEmail={booking?.customer_email || booking?.user?.email || booking?.customer?.email}
-              isArtist={false}
-              checkinOtp={booking?.checkin_otp || booking?.check_in_otp}
-              checkoutOtp={booking?.checkout_otp || booking?.completion_pin}
-              isCheckInVerified={isCheckInVerified}
-              isServiceActive={isServiceActive}
-              isCheckout={isCheckout}
-              isPending={isPending}
-              isAccepted={isAccepted || isOnTheWay || isArrived}
-            />
-          )}
-
-          {/* 5. Service Active / Completed Dashboard with Live/Frozen Timer */}
+          {/* 4. Service Active / Completed Dashboard with Live/Frozen Timer */}
           {(isServiceActive || (isCompleted && (booking?.service_started_at || booking?.check_in_time))) && (
             <ServiceProgressCard
               startTime={booking?.service_started_at || booking?.check_in_time || booking?.checked_in_at || booking?.service_start_time}

@@ -264,7 +264,7 @@ export default function PaymentScreen({ route, navigation }) {
           // Direct native REST call to Razorpay Order API
           const authString = `${liveKeyId}:${liveKeySecret}`;
           const base64Auth = typeof btoa !== "undefined" ? btoa(authString) : Buffer.from(authString).toString("base64");
-          
+
           const rzpRes = await fetch("https://api.razorpay.com/v1/orders", {
             method: "POST",
             headers: {
@@ -509,7 +509,7 @@ export default function PaymentScreen({ route, navigation }) {
         </TouchableOpacity>
 
         {/* Option 3: Pay Cash */}
-        {/* <TouchableOpacity
+        <TouchableOpacity
           style={[styles.methodCard, selectedMethod === "cash" && styles.methodCardActive]}
           onPress={() => setSelectedMethod("cash")}
           activeOpacity={0.8}
@@ -528,7 +528,7 @@ export default function PaymentScreen({ route, navigation }) {
             size={20}
             color={selectedMethod === "cash" ? "#059669" : "#9CA3AF"}
           />
-        </TouchableOpacity> */}
+        </TouchableOpacity>
 
         {/* 4. Escrow Security Banner */}
         <View style={styles.escrowCard}>

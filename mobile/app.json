@@ -2,7 +2,7 @@
   "expo": {
     "name": "MehndiGo",
     "slug": "sonu-yadav",
-    "version": "1.0.7",
+    "version": "1.0.9",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "mehendigoo",
@@ -12,7 +12,7 @@
     },
     "android": {
       "largeHeap": true,
-      "versionCode": 8,
+      "versionCode": 9,
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/images/icon.png"

@@ -7,7 +7,9 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
+  KeyboardAvoidingView,
+  Platform
 } from "react-native";
 import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -81,172 +83,179 @@ export default function BankAccountManagementScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-            <Ionicons name="chevron-back" size={22} color="#111" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Bank & Payout Details</Text>
-          <View style={styles.empty} />
-        </View>
-
-        {loading ? (
-          <View style={styles.centerContainer}>
-            <ActivityIndicator size="large" color={PRIMARY} />
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1 }}
+      >
+        <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <View style={styles.header}>
+            <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+              <Ionicons name="chevron-back" size={22} color="#111" />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Bank & Payout Details</Text>
+            <View style={styles.empty} />
           </View>
-        ) : bankAccount ? (
-          <View style={styles.bankCard}>
-            <View style={styles.bankCardHeader}>
-              <View style={styles.bankIcon}>
-                <Ionicons name="business-outline" size={24} color={PRIMARY} />
-              </View>
-              <View style={styles.bankInfo}>
-                <Text style={styles.bankName}>{bankAccount.bank_name || bankAccount.bankName || "Linked Bank Account"}</Text>
-                <View style={styles.defaultBadge}>
-                  <Text style={styles.defaultBadgeText}>Active</Text>
+
+          {loading ? (
+            <View style={styles.centerContainer}>
+              <ActivityIndicator size="large" color={PRIMARY} />
+            </View>
+          ) : bankAccount ? (
+            <View style={styles.bankCard}>
+              <View style={styles.bankCardHeader}>
+                <View style={styles.bankIcon}>
+                  <Ionicons name="business-outline" size={24} color={PRIMARY} />
                 </View>
+                <View style={styles.bankInfo}>
+                  <Text style={styles.bankName}>{bankAccount.bank_name || bankAccount.bankName || "Linked Bank Account"}</Text>
+                  <View style={styles.defaultBadge}>
+                    <Text style={styles.defaultBadgeText}>Active</Text>
+                  </View>
+                </View>
+              </View>
+
+              {bankAccount.account_number || bankAccount.accountNumber ? (
+                <>
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Account Number</Text>
+                    <Text style={styles.detailValue}>
+                      •••• •••• {String(bankAccount.account_number || bankAccount.accountNumber).slice(-4)}
+                    </Text>
+                  </View>
+
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>IFSC Code</Text>
+                    <Text style={styles.detailValue}>{bankAccount.ifsc_code || bankAccount.ifscCode || "N/A"}</Text>
+                  </View>
+
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Account Holder</Text>
+                    <Text style={styles.detailValue}>{bankAccount.account_holder_name || bankAccount.accountHolderName || "N/A"}</Text>
+                  </View>
+                </>
+              ) : null}
+
+              {bankAccount.upi_id || bankAccount.upiId ? (
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>UPI ID</Text>
+                  <Text style={styles.detailValue}>{bankAccount.upi_id || bankAccount.upiId}</Text>
+                </View>
+              ) : null}
+
+              <View style={styles.bankCardActions}>
+                <TouchableOpacity
+                  style={styles.actionBtn}
+                  onPress={() => {
+                    setHolderName(bankAccount.account_holder_name || bankAccount.accountHolderName || "");
+                    setBankName(bankAccount.bank_name || bankAccount.bankName || "");
+                    setIfscCode(bankAccount.ifsc_code || bankAccount.ifscCode || "");
+                    setUpiId(bankAccount.upi_id || bankAccount.upiId || "");
+                    setShowAddForm(true);
+                  }}
+                >
+                  <Ionicons name="create-outline" size={18} color={PRIMARY} />
+                  <Text style={[styles.actionText, { color: PRIMARY }]}>Edit Details</Text>
+                </TouchableOpacity>
               </View>
             </View>
+          ) : (
+            <View style={styles.emptyCard}>
+              <Ionicons name="card-outline" size={48} color="#9CA3AF" />
+              <Text style={styles.emptyTitle}>No Bank Account Linked</Text>
+              <Text style={styles.emptySubtitle}>
+                Link your bank account or UPI ID to receive direct withdrawal payouts for completed customer bookings.
+              </Text>
+            </View>
+          )}
 
-            {bankAccount.account_number || bankAccount.accountNumber ? (
-              <>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Account Number</Text>
-                  <Text style={styles.detailValue}>{bankAccount.account_number || bankAccount.accountNumber}</Text>
-                </View>
+          {showAddForm ? (
+            <View style={styles.formCard}>
+              <Text style={styles.formTitle}>Add / Update Bank Account</Text>
 
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>IFSC Code</Text>
-                  <Text style={styles.detailValue}>{bankAccount.ifsc_code || bankAccount.ifscCode || "N/A"}</Text>
-                </View>
+              <Text style={styles.inputLabel}>Account Holder Name</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. Rahul Sharma"
+                value={holderName}
+                onChangeText={setHolderName}
+              />
 
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Account Holder</Text>
-                  <Text style={styles.detailValue}>{bankAccount.account_holder_name || bankAccount.accountHolderName || "N/A"}</Text>
-                </View>
-              </>
-            ) : null}
+              <Text style={styles.inputLabel}>Bank Name</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. State Bank of India"
+                value={bankName}
+                onChangeText={setBankName}
+              />
 
-            {bankAccount.upi_id || bankAccount.upiId ? (
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>UPI ID</Text>
-                <Text style={styles.detailValue}>{bankAccount.upi_id || bankAccount.upiId}</Text>
+              <Text style={styles.inputLabel}>Account Number</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. 123456789012"
+                keyboardType="number-pad"
+                value={accountNumber}
+                onChangeText={setAccountNumber}
+              />
+
+              <Text style={styles.inputLabel}>IFSC Code</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. SBIN0001234"
+                autoCapitalize="characters"
+                value={ifscCode}
+                onChangeText={setIfscCode}
+              />
+
+              <Text style={styles.inputLabel}>UPI ID (Optional)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. rahul@upi"
+                autoCapitalize="none"
+                value={upiId}
+                onChangeText={setUpiId}
+              />
+
+              <View style={styles.formActions}>
+                <TouchableOpacity
+                  style={styles.cancelBtn}
+                  onPress={() => setShowAddForm(false)}
+                >
+                  <Text style={styles.cancelBtnText}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.saveBtn}
+                  onPress={handleSaveBankAccount}
+                  disabled={saving}
+                >
+                  {saving ? (
+                    <ActivityIndicator size="small" color="#FFF" />
+                  ) : (
+                    <Text style={styles.saveBtnText}>Save Account</Text>
+                  )}
+                </TouchableOpacity>
               </View>
-            ) : null}
-
-            <View style={styles.bankCardActions}>
-              <TouchableOpacity
-                style={styles.actionBtn}
-                onPress={() => {
-                  setHolderName(bankAccount.account_holder_name || bankAccount.accountHolderName || "");
-                  setBankName(bankAccount.bank_name || bankAccount.bankName || "");
-                  setIfscCode(bankAccount.ifsc_code || bankAccount.ifscCode || "");
-                  setUpiId(bankAccount.upi_id || bankAccount.upiId || "");
-                  setShowAddForm(true);
-                }}
-              >
-                <Ionicons name="create-outline" size={18} color={PRIMARY} />
-                <Text style={[styles.actionText, { color: PRIMARY }]}>Edit Details</Text>
-              </TouchableOpacity>
             </View>
-          </View>
-        ) : (
-          <View style={styles.emptyCard}>
-            <Ionicons name="card-outline" size={48} color="#9CA3AF" />
-            <Text style={styles.emptyTitle}>No Bank Account Linked</Text>
-            <Text style={styles.emptySubtitle}>
-              Link your bank account or UPI ID to receive direct withdrawal payouts for completed customer bookings.
-            </Text>
-          </View>
-        )}
-
-        {showAddForm ? (
-          <View style={styles.formCard}>
-            <Text style={styles.formTitle}>Add / Update Bank Account</Text>
-
-            <Text style={styles.inputLabel}>Account Holder Name</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. Rahul Sharma"
-              value={holderName}
-              onChangeText={setHolderName}
-            />
-
-            <Text style={styles.inputLabel}>Bank Name</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. State Bank of India"
-              value={bankName}
-              onChangeText={setBankName}
-            />
-
-            <Text style={styles.inputLabel}>Account Number</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter bank account number"
-              keyboardType="number-pad"
-              value={accountNumber}
-              onChangeText={setAccountNumber}
-            />
-
-            <Text style={styles.inputLabel}>IFSC Code</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. SBIN0001234"
-              autoCapitalize="characters"
-              value={ifscCode}
-              onChangeText={setIfscCode}
-            />
-
-            <Text style={styles.inputLabel}>UPI ID (Optional)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. user@okhdfcbank"
-              autoCapitalize="none"
-              value={upiId}
-              onChangeText={setUpiId}
-            />
-
-            <View style={styles.formActions}>
-              <TouchableOpacity
-                style={styles.cancelBtn}
-                onPress={() => setShowAddForm(false)}
-              >
-                <Text style={styles.cancelBtnText}>Cancel</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.saveBtn}
-                onPress={handleSaveBankAccount}
-                disabled={saving}
-              >
-                {saving ? (
-                  <ActivityIndicator color="#FFF" size="small" />
-                ) : (
-                  <Text style={styles.saveBtnText}>Save Account</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        ) : (
-          <TouchableOpacity
-            style={styles.addCard}
-            onPress={() => {
-              setHolderName("");
-              setAccountNumber("");
-              setIfscCode("");
-              setBankName("");
-              setUpiId("");
-              setShowAddForm(true);
-            }}
-          >
-            <Ionicons name="add" size={24} color={PRIMARY} />
-            <Text style={styles.addCardText}>
-              {bankAccount ? "Update Bank Account" : "Add Bank Account"}
-            </Text>
-          </TouchableOpacity>
-        )}
-      </ScrollView>
+          ) : (
+            <TouchableOpacity
+              style={styles.addCard}
+              onPress={() => {
+                setHolderName("");
+                setAccountNumber("");
+                setIfscCode("");
+                setBankName("");
+                setUpiId("");
+                setShowAddForm(true);
+              }}
+            >
+              <Ionicons name="add" size={24} color={PRIMARY} />
+              <Text style={styles.addCardText}>
+                {bankAccount ? "Update Bank Account" : "Add Bank Account"}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

@@ -65,12 +65,7 @@ app.get("/api/health", (c) => c.json({ success: true, status: "UP", engine: "Clo
 app.get("/api/v1/debug/schema", async (c) => {
   const db = getDb(c.env);
   const tableInfo = await db.all("PRAGMA table_info(bookings)").catch((e) => ({ error: e.message }));
-  const walletsInfo = await db.all("PRAGMA table_info(wallets)").catch((e) => ({ error: e.message }));
-  const paymentsInfo = await db.all("PRAGMA table_info(payments)").catch((e) => ({ error: e.message }));
-  const txsInfo = await db.all("PRAGMA table_info(wallet_transactions)").catch((e) => ({ error: e.message }));
-  const allTxs = await db.all("SELECT * FROM wallet_transactions ORDER BY id DESC LIMIT 10").catch((e) => ({ error: e.message }));
-  const lastBookings = await db.all("SELECT * FROM bookings ORDER BY id DESC LIMIT 3").catch((e) => ({ error: e.message }));
-  return c.json({ success: true, tableInfo, walletsInfo, paymentsInfo, txsInfo, allTxs, lastBookings });
+  return c.json({ success: true, tableInfo });
 });
 app.post("/api/v1/debug/reset-wallet", async (c) => {
   const db = getDb(c.env);
@@ -732,7 +727,7 @@ const sendRealOtpEmail = async (c, toEmail, otp, name = "User") => {
 
   // 2. Fallback: Gmail Direct Socket SMTP
   try {
-    const directSmtpSent = await sendGmailSmtpDirect(c, targetEmail, targetOtp, name);
+    const directSmtpSent = await sendCustomSmtpDirect(c, targetEmail, otpSubject, `Your MehndiGo OTP code is: ${targetOtp}`, otpHtml);
     if (directSmtpSent) {
       console.log(`[SMTP DELIVERED INBOX] Real OTP delivered to ${targetEmail}`);
       return true;
@@ -953,20 +948,40 @@ const handleRegisterVerifyOtp = async (c) => {
 const handleSendOtp = async (c) => {
   const db = getDb(c.env);
   const body = await c.req.json().catch(() => ({}));
-  const loginVal = (body.email || body.phone || body.identifier || "").trim().toLowerCase();
+  const rawInput = (body.email || body.phone || body.identifier || "").trim();
+  const loginVal = rawInput.toLowerCase();
 
-  if (!loginVal) {
+  if (!rawInput) {
     return jsonRes(c, false, null, "Email or Mobile Number is required for login", 400);
   }
 
-  if (body.email && typeof body.email === "string" && body.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email.trim())) {
-    return jsonRes(c, false, null, "Please enter a valid email address.", 400);
+  let user = null;
+  const isEmail = loginVal.includes("@");
+  if (isEmail) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(loginVal)) {
+      return jsonRes(c, false, null, "Please enter a valid email address.", 400);
+    }
+    user = await db.first("SELECT * FROM users WHERE LOWER(email) = ?", [loginVal]).catch(() => null);
+  } else {
+    const cleanDigits = rawInput.replace(/[^0-9]/g, "");
+    const last10 = cleanDigits.slice(-10);
+    if (last10.length < 10) {
+      return jsonRes(c, false, null, "Please enter a valid 10-digit mobile number or email.", 400);
+    }
+    user = await db.first(
+      "SELECT * FROM users WHERE phone = ? OR phone = ? OR phone LIKE ?",
+      [cleanDigits, `+91${last10}`, `%${last10}`]
+    ).catch(() => null);
   }
 
-  let user = await db.first("SELECT * FROM users WHERE LOWER(email) = ? OR phone = ?", [loginVal, loginVal]).catch(() => null);
+  if (!user) {
+    return jsonRes(c, false, { isNewUser: true, identifier: rawInput }, "User not found. Please register first.", 404);
+  }
 
-  // Invalidate previous OTPs for this identifier
-  await db.run("DELETE FROM otps WHERE LOWER(identifier) = ?", [loginVal]).catch(() => { });
+  const targetEmail = user.email ? user.email.toLowerCase().trim() : (isEmail ? loginVal : null);
+
+  // Invalidate previous OTPs for this identifier and user's email/phone
+  await db.run("DELETE FROM otps WHERE LOWER(identifier) = ? OR LOWER(identifier) = ? OR identifier = ?", [loginVal, targetEmail || "", user.phone || ""]).catch(() => { });
 
   const otp = generate6DigitOtp();
 
@@ -975,13 +990,13 @@ const handleSendOtp = async (c) => {
       "INSERT INTO otps (identifier, code, expires_at) VALUES (?, ?, datetime('now', '+15 minutes'))",
       [loginVal, otp]
     );
-    if (user && user.email && user.email.toLowerCase() !== loginVal) {
+    if (targetEmail && targetEmail !== loginVal) {
       await db.run(
         "INSERT INTO otps (identifier, code, expires_at) VALUES (?, ?, datetime('now', '+15 minutes'))",
-        [user.email.toLowerCase(), otp]
+        [targetEmail, otp]
       );
     }
-    if (user && user.phone && user.phone !== loginVal) {
+    if (user.phone && user.phone !== loginVal) {
       await db.run(
         "INSERT INTO otps (identifier, code, expires_at) VALUES (?, ?, datetime('now', '+15 minutes'))",
         [user.phone, otp]
@@ -992,16 +1007,10 @@ const handleSendOtp = async (c) => {
   }
 
   let sent = false;
-  if (loginVal && loginVal.includes("@")) {
-    sent = await sendRealOtpEmail(c, loginVal, otp, user?.full_name || "User");
-  } else if (user && user.email && user.email.includes("@")) {
-    sent = await sendRealOtpEmail(c, user.email, otp, user.full_name || "User");
+  if (targetEmail && targetEmail.includes("@")) {
+    sent = await sendRealOtpEmail(c, targetEmail, otp, user.full_name || "User");
   } else {
     sent = true;
-  }
-
-  if (!user) {
-    return jsonRes(c, false, { isNewUser: true, identifier: loginVal }, "User not found. Please register first.", 404);
   }
 
   if (!sent) {
@@ -2603,7 +2612,7 @@ const processBookingSettlement = async (db, bookingId, options = {}) => {
 
   // Query actual payment records for this booking
   const paymentRows = await db.all("SELECT * FROM payments WHERE booking_id = ? AND (status = 'captured' OR status = 'completed')", [realBookingId]).catch(() => []) || [];
-  
+
   let onlinePaid = 0;
   let cashPaid = 0;
   (paymentRows || []).forEach(p => {
@@ -3797,7 +3806,7 @@ const getNowIST = () => {
 // Check if a date interval is active, upcoming, or expired based on IST
 const evaluateFestivalStatus = (startDate, endDate, istDateStr) => {
   if (!startDate || !endDate) return { isActive: true, isUpcoming: false, isExpired: false };
-  
+
   let start = String(startDate).trim();
   let end = String(endDate).trim();
 
@@ -3894,7 +3903,7 @@ const getActiveFestivalBannersList = async (db) => {
 
   for (const fest of allFestivals) {
     const status = evaluateFestivalStatus(fest.start_date, fest.end_date, ist.dateStr);
-    
+
     // Completely exclude expired festivals
     if (status.isExpired) continue;
 
@@ -4033,23 +4042,23 @@ const handleHomeDashboard = async (c) => {
 
   const categories = (rawCategories && rawCategories.length > 0)
     ? rawCategories.map(cat => ({
-        id: cat.id,
-        name: cat.name,
-        title: cat.name,
-        slug: cat.slug || "",
-        image: cat.image_url || cat.image || "",
-        image_url: cat.image_url || cat.image || "",
-        description: cat.description || "",
-        is_active: cat.is_active !== undefined ? Boolean(cat.is_active) : true
-      }))
+      id: cat.id,
+      name: cat.name,
+      title: cat.name,
+      slug: cat.slug || "",
+      image: cat.image_url || cat.image || "",
+      image_url: cat.image_url || cat.image || "",
+      description: cat.description || "",
+      is_active: cat.is_active !== undefined ? Boolean(cat.is_active) : true
+    }))
     : [
-        { id: 1, name: "Bridal Mehndi", slug: "bridal-mehndi", description: "Full arm & leg luxury traditional bridal henna.", image: "asset://categories/bridal.png", image_url: "asset://categories/bridal.png" },
-        { id: 2, name: "Arabic Mehndi", slug: "arabic-mehndi", description: "Bold flowing floral vines & shaded mandalas.", image: "asset://categories/arabic.png", image_url: "asset://categories/arabic.png" },
-        { id: 3, name: "Rajasthani & Marwari", slug: "rajasthani-marwari", description: "Authentic Marwari, peacock & doli heritage patterns.", image: "asset://categories/rajasthani.png", image_url: "asset://categories/rajasthani.png" },
-        { id: 4, name: "Indo-Western Fusion", slug: "indo-western", description: "Modern contemporary motifs & floral lace.", image: "asset://categories/indo_western.png", image_url: "asset://categories/indo_western.png" },
-        { id: 5, name: "Floral & Mandala", slug: "floral-mandala", description: "Delicate blossoms & symmetrical centerpieces.", image: "asset://categories/floral.png", image_url: "asset://categories/floral.png" },
-        { id: 6, name: "Traditional Indian", slug: "traditional-indian", description: "Classic paisley & festive mehndi for all celebrations.", image: "asset://categories/traditional.png", image_url: "asset://categories/traditional.png" }
-      ];
+      { id: 1, name: "Bridal Mehndi", slug: "bridal-mehndi", description: "Full arm & leg luxury traditional bridal henna.", image: "asset://categories/bridal.png", image_url: "asset://categories/bridal.png" },
+      { id: 2, name: "Arabic Mehndi", slug: "arabic-mehndi", description: "Bold flowing floral vines & shaded mandalas.", image: "asset://categories/arabic.png", image_url: "asset://categories/arabic.png" },
+      { id: 3, name: "Rajasthani & Marwari", slug: "rajasthani-marwari", description: "Authentic Marwari, peacock & doli heritage patterns.", image: "asset://categories/rajasthani.png", image_url: "asset://categories/rajasthani.png" },
+      { id: 4, name: "Indo-Western Fusion", slug: "indo-western", description: "Modern contemporary motifs & floral lace.", image: "asset://categories/indo_western.png", image_url: "asset://categories/indo_western.png" },
+      { id: 5, name: "Floral & Mandala", slug: "floral-mandala", description: "Delicate blossoms & symmetrical centerpieces.", image: "asset://categories/floral.png", image_url: "asset://categories/floral.png" },
+      { id: 6, name: "Traditional Indian", slug: "traditional-indian", description: "Classic paisley & festive mehndi for all celebrations.", image: "asset://categories/traditional.png", image_url: "asset://categories/traditional.png" }
+    ];
 
   await Promise.all([
     enrichArtistRecords(db, featuredArtists),
@@ -4255,7 +4264,7 @@ const handleRecentSearch = async (c) => {
   const u = getUserFromHeader(c);
   const method = c.req.method.toUpperCase();
   await db.run("CREATE TABLE IF NOT EXISTS recent_searches (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, query TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)").catch(() => { });
-  
+
   if (!u || !u.id) return jsonRes(c, true, []);
 
   if (method === "GET") {
@@ -4490,7 +4499,7 @@ const handleUpdateArtistAvailability = async (c) => {
   }
 
   const isAvailVal = body.is_available !== undefined ? (body.is_available ? 1 : 0) : (artist.is_available !== undefined ? (artist.is_available ? 1 : 0) : 1);
-  
+
   let workingDaysJson = null;
   if (body.working_days !== undefined) {
     if (Array.isArray(body.working_days)) {
@@ -4503,11 +4512,11 @@ const handleUpdateArtistAvailability = async (c) => {
 
   const startTime = body.working_start_time || body.startTime || artist.working_start_time || "09:00";
   // Defensively ensure columns exist in artist_profiles
-  await db.run("ALTER TABLE artist_profiles ADD COLUMN working_days TEXT").catch(() => {});
-  await db.run("ALTER TABLE artist_profiles ADD COLUMN working_start_time TEXT").catch(() => {});
-  await db.run("ALTER TABLE artist_profiles ADD COLUMN working_end_time TEXT").catch(() => {});
-  await db.run("ALTER TABLE artist_profiles ADD COLUMN break_start_time TEXT").catch(() => {});
-  await db.run("ALTER TABLE artist_profiles ADD COLUMN break_end_time TEXT").catch(() => {});
+  await db.run("ALTER TABLE artist_profiles ADD COLUMN working_days TEXT").catch(() => { });
+  await db.run("ALTER TABLE artist_profiles ADD COLUMN working_start_time TEXT").catch(() => { });
+  await db.run("ALTER TABLE artist_profiles ADD COLUMN working_end_time TEXT").catch(() => { });
+  await db.run("ALTER TABLE artist_profiles ADD COLUMN break_start_time TEXT").catch(() => { });
+  await db.run("ALTER TABLE artist_profiles ADD COLUMN break_end_time TEXT").catch(() => { });
 
   const updateWorkingDays = workingDaysJson !== null ? workingDaysJson : (artist.working_days || null);
 
@@ -4528,7 +4537,7 @@ const handleUpdateArtistAvailability = async (c) => {
     await db.run(
       `UPDATE artist_profiles SET is_available = ? WHERE id = ? OR user_id = ?`,
       [isAvailVal, artist.id, artist.user_id]
-    ).catch(() => {});
+    ).catch(() => { });
   }
 
   return handleGetArtistAvailability(c);
@@ -7004,7 +7013,7 @@ const handleWebFallbackArtist = async (c) => {
   try {
     const db = getDb(c.env);
     const id = Number(c.req.param("id") || c.req.param("artistId") || c.req.query("id") || c.req.path.split("/").filter(Boolean).pop());
-    
+
     let artist = null;
     if (id && !isNaN(id)) {
       artist = await db.first(`
@@ -7062,7 +7071,7 @@ const handleWebFallbackService = async (c) => {
   try {
     const db = getDb(c.env);
     const id = Number(c.req.param("id") || c.req.param("serviceId") || c.req.query("id") || c.req.path.split("/").filter(Boolean).pop());
-    
+
     let service = null;
     if (id && !isNaN(id)) {
       service = await db.first(`
@@ -8883,7 +8892,7 @@ const handleAdminCreateFestival = async (c) => {
   const db = getDb(c.env);
   const body = await c.req.json().catch(() => ({}));
   const { name, code, tagline, description, start_date, end_date, banner_image, theme_color, badge_text, priority, is_active } = body;
-  
+
   if (!name || !start_date || !end_date) {
     return jsonRes(c, false, null, "Name, start_date, and end_date are required", 400);
   }
@@ -8893,7 +8902,7 @@ const handleAdminCreateFestival = async (c) => {
     INSERT INTO festivals (name, code, tagline, description, start_date, end_date, banner_image, theme_color, badge_text, priority, is_active)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, [
-    name, festCode, tagline || null, description || null, start_date, end_date, 
+    name, festCode, tagline || null, description || null, start_date, end_date,
     banner_image || 'https://images.unsplash.com/photo-1596461404969-9ae70f2830c1?auto=format&fit=crop&w=1200&q=85',
     theme_color || '#800020', badge_text || 'FESTIVAL SPECIAL', Number(priority) || 50, is_active !== false ? 1 : 0
   ]).catch(err => ({ error: err.message }));
@@ -8912,7 +8921,7 @@ const handleAdminUpdateFestival = async (c) => {
   const db = getDb(c.env);
   const id = c.req.param("id");
   const body = await c.req.json().catch(() => ({}));
-  
+
   const existing = await db.first("SELECT * FROM festivals WHERE id = ?", [id]).catch(() => null);
   if (!existing) return jsonRes(c, false, null, "Festival not found", 404);
 
@@ -8932,7 +8941,7 @@ const handleAdminUpdateFestival = async (c) => {
     UPDATE festivals 
     SET name = ?, code = ?, tagline = ?, description = ?, start_date = ?, end_date = ?, banner_image = ?, theme_color = ?, badge_text = ?, priority = ?, is_active = ?
     WHERE id = ?
-  `, [name, code, tagline, description, start_date, end_date, banner_image, theme_color, badge_text, priority, is_active, id]).catch(() => {});
+  `, [name, code, tagline, description, start_date, end_date, banner_image, theme_color, badge_text, priority, is_active, id]).catch(() => { });
 
   const updated = await db.first("SELECT * FROM festivals WHERE id = ?", [id]).catch(() => null);
   return jsonRes(c, true, updated, "Festival updated successfully");
@@ -8943,9 +8952,9 @@ const handleAdminDeleteFestival = async (c) => {
   if (adminCheck) return adminCheck;
   const db = getDb(c.env);
   const id = c.req.param("id");
-  
-  await db.run("DELETE FROM festival_offers WHERE festival_id = ?", [id]).catch(() => {});
-  await db.run("DELETE FROM festivals WHERE id = ?", [id]).catch(() => {});
+
+  await db.run("DELETE FROM festival_offers WHERE festival_id = ?", [id]).catch(() => { });
+  await db.run("DELETE FROM festivals WHERE id = ?", [id]).catch(() => { });
   return jsonRes(c, true, null, "Festival and associated offers deleted successfully");
 };
 
@@ -8953,7 +8962,7 @@ const handleAdminGetFestivalOffers = async (c) => {
   const adminCheck = requireAdminAuth(c);
   if (adminCheck) return adminCheck;
   const db = getDb(c.env);
-  
+
   const offers = await db.all(`
     SELECT fo.*, f.name as festival_name, f.code as festival_code, f.badge_text as festival_badge
     FROM festival_offers fo
@@ -9210,7 +9219,7 @@ const handleAdminReconcileLegacyCashWallets = async (c) => {
 
 const handleAdminWalletDashboardSummary = async (c) => {
   const db = getDb(c.env);
-  
+
   const todayRow = await db.first(`
     SELECT SUM(amount) as total FROM wallet_transactions 
     WHERE (user_id = 0 OR type = 'PLATFORM_COMMISSION' OR description LIKE '%Platform Revenue%')
@@ -9335,58 +9344,53 @@ const handleGetChatList = async (c) => {
   `, [u.id, u.id, u.id]).catch(() => []);
 
   const chatList = [];
-  for (const cRow of (convos || [])) {
-    const peerId = cRow.peer_id;
+  for (const row of (convos || [])) {
     const peerUser = await db.first(
-      "SELECT id, full_name, name, email, phone, role, profile_image FROM users WHERE id = ? OR CAST(id AS TEXT) = ?",
-      [peerId, String(peerId)]
+      "SELECT id, full_name, profile_image, role FROM users WHERE id = ?",
+      [row.peer_id]
     ).catch(() => null);
 
     const lastMsg = await db.first(
-      "SELECT * FROM messages WHERE id = ?",
-      [cRow.last_msg_id]
+      "SELECT message, message_type, is_read, sender_id, created_at FROM messages WHERE id = ?",
+      [row.last_msg_id]
     ).catch(() => null);
 
-    const unreadCountRow = await db.first(
-      "SELECT COUNT(*) as count FROM messages WHERE sender_id = ? AND receiver_id = ? AND is_read = 0",
-      [peerId, u.id]
-    ).catch(() => ({ count: 0 }));
+    const unreadRow = await db.first(
+      "SELECT COUNT(*) as unread FROM messages WHERE sender_id = ? AND receiver_id = ? AND is_read = 0",
+      [row.peer_id, u.id]
+    ).catch(() => ({ unread: 0 }));
 
-    chatList.push({
-      id: peerId,
-      bookingId: lastMsg?.booking_id || null,
-      bookingCode: peerUser?.role === 'admin' || peerUser?.role === 'ADMIN' ? 'ADMIN' : (lastMsg?.booking_id ? `BK-${lastMsg.booking_id}` : 'DIRECT'),
-      name: peerUser?.full_name || peerUser?.name || (peerId === 1 ? "Support Admin" : `User #${peerId}`),
-      recipient: {
-        id: peerId,
-        name: peerUser?.full_name || peerUser?.name || (peerId === 1 ? "Support Admin" : `User #${peerId}`),
-        role: (peerUser?.role || (peerId === 1 ? "ADMIN" : "CUSTOMER")).toUpperCase(),
-        profile_image: peerUser?.profile_image || null,
-        phone: peerUser?.phone || null
-      },
-      lastMessage: lastMsg?.message || "",
-      lastMessageTime: lastMsg?.created_at || new Date().toISOString(),
-      unreadCount: Number(unreadCountRow?.count || 0)
-    });
+    if (peerUser) {
+      chatList.push({
+        id: row.peer_id,
+        participantId: row.peer_id,
+        participant_id: row.peer_id,
+        name: peerUser.full_name || `User #${row.peer_id}`,
+        avatar: peerUser.profile_image || `https://ui-avatars.com/api/?name=${encodeURIComponent(peerUser.full_name || 'User')}&background=800020&color=fff`,
+        role: peerUser.role,
+        lastMessage: lastMsg?.message || "No messages yet",
+        lastMessageType: lastMsg?.message_type || "TEXT",
+        lastMessageTime: lastMsg?.created_at || new Date().toISOString(),
+        unreadCount: Number(unreadRow?.unread || 0),
+        isLastMessageMine: lastMsg?.sender_id === u.id
+      });
+    }
   }
 
   // If chat list is empty, provide Support Chat channel as a default option
   if (chatList.length === 0) {
     chatList.push({
       id: 1,
-      bookingId: null,
-      bookingCode: 'SUPPORT',
-      name: 'MehndiGo Support Admin',
-      recipient: {
-        id: 1,
-        name: 'MehndiGo Support Admin',
-        role: 'ADMIN',
-        profile_image: null,
-        phone: '+91 98765 43210'
-      },
-      lastMessage: 'Hello! How can we assist you with your Mehndi bookings today?',
+      participantId: 1,
+      participant_id: 1,
+      name: "MehndiGo Official Support",
+      avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200",
+      role: "admin",
+      lastMessage: "Hello! Need assistance with your bookings or services? Chat with us anytime.",
+      lastMessageType: "TEXT",
       lastMessageTime: new Date().toISOString(),
-      unreadCount: 0
+      unreadCount: 0,
+      isLastMessageMine: false
     });
   }
 
@@ -9400,62 +9404,109 @@ const handleGetChatHistory = async (c) => {
   if (!u || !u.id) return jsonRes(c, false, null, "Authentication required", 401);
   await ensureChatTables(db);
 
-  const rawTarget = c.req.param("id") || c.req.param("receiverId") || c.req.query("receiverId") || c.req.query("bookingId") || "1";
-  const targetId = Number(rawTarget) || 1;
-  const bookingIdParam = Number(c.req.query("bookingId") || 0);
+  const pathParts = c.req.path.split("/").filter(Boolean);
+  const lastSegment = pathParts[pathParts.length - 1];
+  const lastNum = !isNaN(Number(lastSegment)) ? Number(lastSegment) : 0;
+
+  const rawTarget = c.req.param("id") || c.req.param("bookingId") || c.req.param("receiverId") || c.req.query("receiverId") || c.req.query("bookingId") || lastNum || 0;
+  const targetId = Number(rawTarget) || 0;
+  const bookingIdParam = Number(c.req.query("bookingId") || c.req.param("bookingId") || 0);
+
+  let booking = null;
+  const maybeBookingId = bookingIdParam || targetId;
+  if (maybeBookingId > 0) {
+    booking = await db.first(
+      "SELECT id, customer_id, artist_id FROM bookings WHERE id = ? OR CAST(id AS TEXT) = ?",
+      [maybeBookingId, String(maybeBookingId)]
+    ).catch(() => null);
+  }
 
   let messages = [];
-  if (bookingIdParam > 0) {
+  if (booking) {
+    const custId = Number(booking.customer_id || 0);
+    const artId = Number(booking.artist_id || 0);
+
+    // Retrieve messages for this booking or between the customer and artist
     messages = await db.all(`
       SELECT m.*, 
-        u_sender.full_name as sender_name, u_sender.role as sender_role, u_sender.profile_image as sender_avatar,
+        u_sender.full_name as sender_name, u_sender.role as sender_role,
         u_recv.full_name as receiver_name, u_recv.role as receiver_role
       FROM messages m
       LEFT JOIN users u_sender ON m.sender_id = u_sender.id
       LEFT JOIN users u_recv ON m.receiver_id = u_recv.id
-      WHERE m.booking_id = ?
+      WHERE m.booking_id = ? OR CAST(m.booking_id AS TEXT) = ?
+         OR (m.sender_id = ? AND m.receiver_id = ?)
+         OR (m.sender_id = ? AND m.receiver_id = ?)
       ORDER BY m.id ASC
-    `, [bookingIdParam]).catch(() => []);
-  } else {
+    `, [booking.id, String(booking.id), custId, artId, artId, custId]).catch((err) => {
+      console.error("[GET CHAT HISTORY BOOKING ERROR]:", err.message);
+      return [];
+    });
+
+    // Mark incoming messages as read for current user
+    await db.run(
+      "UPDATE messages SET is_read = 1 WHERE (booking_id = ? OR CAST(booking_id AS TEXT) = ?) AND receiver_id = ? AND is_read = 0",
+      [booking.id, String(booking.id), u.id]
+    ).catch(() => { });
+  } else if (targetId > 0) {
     messages = await db.all(`
       SELECT m.*, 
-        u_sender.full_name as sender_name, u_sender.role as sender_role, u_sender.profile_image as sender_avatar,
+        u_sender.full_name as sender_name, u_sender.role as sender_role,
         u_recv.full_name as receiver_name, u_recv.role as receiver_role
       FROM messages m
       LEFT JOIN users u_sender ON m.sender_id = u_sender.id
       LEFT JOIN users u_recv ON m.receiver_id = u_recv.id
       WHERE (m.sender_id = ? AND m.receiver_id = ?) OR (m.sender_id = ? AND m.receiver_id = ?)
       ORDER BY m.id ASC
-    `, [u.id, targetId, targetId, u.id]).catch(() => []);
+    `, [u.id, targetId, targetId, u.id]).catch((err) => {
+      console.error("[GET CHAT HISTORY PEER ERROR]:", err.message);
+      return [];
+    });
+
+    // Mark all incoming messages from this target as read
+    await db.run(
+      "UPDATE messages SET is_read = 1 WHERE sender_id = ? AND receiver_id = ? AND is_read = 0",
+      [targetId, u.id]
+    ).catch(() => { });
   }
 
-  // Mark all incoming messages from this target as read
-  await db.run(
-    "UPDATE messages SET is_read = 1 WHERE sender_id = ? AND receiver_id = ? AND is_read = 0",
-    [targetId, u.id]
-  ).catch(() => { });
+  const formattedMessages = (messages || []).map((m) => {
+    const isMe = Number(m.sender_id) === Number(u.id);
+    const mediaUrl = m.media_url || null;
+    const mediaType = (m.message_type || (mediaUrl ? "IMAGE" : "TEXT")).toUpperCase();
+    const mediaObj = mediaUrl ? {
+      file_url: mediaUrl,
+      fileUrl: mediaUrl,
+      url: mediaUrl,
+      file_type: mediaType.toLowerCase(),
+      fileType: mediaType.toLowerCase()
+    } : null;
 
-  const formattedMessages = (messages || []).map((m) => ({
-    id: m.id,
-    senderId: m.sender_id,
-    sender_id: m.sender_id,
-    receiverId: m.receiver_id,
-    receiver_id: m.receiver_id,
-    bookingId: m.booking_id,
-    booking_id: m.booking_id,
-    message: m.message,
-    text: m.message,
-    messageType: m.message_type || 'TEXT',
-    message_type: m.message_type || 'TEXT',
-    mediaUrl: m.media_url,
-    media_url: m.media_url,
-    isRead: Boolean(m.is_read),
-    is_read: Boolean(m.is_read),
-    isMe: m.sender_id === u.id,
-    timestamp: m.created_at || new Date().toISOString(),
-    created_at: m.created_at || new Date().toISOString(),
-    senderName: m.sender_name || (m.sender_id === 1 ? "Admin" : `User #${m.sender_id}`)
-  }));
+    return {
+      id: m.id,
+      senderId: m.sender_id,
+      sender_id: m.sender_id,
+      receiverId: m.receiver_id,
+      receiver_id: m.receiver_id,
+      bookingId: m.booking_id,
+      booking_id: m.booking_id,
+      message: m.message,
+      text: m.message,
+      content: m.message,
+      messageType: mediaType,
+      message_type: mediaType,
+      mediaUrl: mediaUrl,
+      media_url: mediaUrl,
+      media: mediaObj,
+      isRead: Boolean(m.is_read),
+      is_read: Boolean(m.is_read),
+      isMe,
+      timestamp: m.created_at || new Date().toISOString(),
+      created_at: m.created_at || new Date().toISOString(),
+      createdAt: m.created_at || new Date().toISOString(),
+      senderName: isMe ? "Me" : (m.sender_name || (m.sender_id === 1 ? "Admin" : `User #${m.sender_id}`))
+    };
+  });
 
   return jsonRes(c, true, formattedMessages, "Chat history retrieved");
 };
@@ -9468,16 +9519,37 @@ const handleSendChatMessage = async (c) => {
   await ensureChatTables(db);
 
   const body = await c.req.json().catch(() => ({}));
-  const rawReceiver = body.receiver_id || body.receiverId || body.toUserId || body.targetId || (body.bookingCode === 'ADMIN' ? 1 : 1);
-  const receiverId = Number(rawReceiver) || 1;
+  let receiverId = Number(body.receiver_id || body.receiverId || body.toUserId || body.targetId || 0);
   const bookingId = Number(body.booking_id || body.bookingId || 0) || null;
   const message = String(body.message || body.text || body.content || "").trim();
   const messageType = String(body.message_type || body.messageType || (body.media_url || body.mediaUrl ? "IMAGE" : "TEXT")).toUpperCase();
-  const mediaUrl = body.media_url || body.mediaUrl || body.file_url || body.url || null;
+  const mediaUrl = body.media_url || body.mediaUrl || (body.media?.file_url || body.media?.url) || body.file_url || body.url || null;
 
   if (!message && !mediaUrl) {
     return jsonRes(c, false, null, "Message text or media is required", 400);
   }
+
+  // Auto-resolve receiverId from booking if bookingId is provided
+  if (bookingId) {
+    const booking = await db.first(
+      "SELECT id, customer_id, artist_id FROM bookings WHERE id = ? OR CAST(id AS TEXT) = ?",
+      [bookingId, String(bookingId)]
+    ).catch(() => null);
+
+    if (booking) {
+      const custId = Number(booking.customer_id || 0);
+      const artId = Number(booking.artist_id || 0);
+      if (Number(u.id) === custId) {
+        receiverId = artId;
+      } else if (Number(u.id) === artId) {
+        receiverId = custId;
+      } else if (!receiverId || receiverId === 1) {
+        receiverId = custId || artId || 1;
+      }
+    }
+  }
+
+  if (!receiverId) receiverId = 1;
 
   const result = await db.run(`
     INSERT INTO messages (sender_id, receiver_id, booking_id, message, message_type, media_url, is_read, created_at, updated_at)
@@ -9485,6 +9557,14 @@ const handleSendChatMessage = async (c) => {
   `, [u.id, receiverId, bookingId, message || (messageType === 'IMAGE' ? '[Photo Attachment]' : '[Attachment]'), messageType, mediaUrl]);
 
   const insertedId = result?.lastInsertRowid || result?.meta?.last_row_id || Date.now();
+
+  const mediaObj = mediaUrl ? {
+    file_url: mediaUrl,
+    fileUrl: mediaUrl,
+    url: mediaUrl,
+    file_type: messageType.toLowerCase(),
+    fileType: messageType.toLowerCase()
+  } : null;
 
   const newMsg = {
     id: insertedId,
@@ -9496,15 +9576,18 @@ const handleSendChatMessage = async (c) => {
     booking_id: bookingId,
     message: message || (messageType === 'IMAGE' ? '[Photo Attachment]' : '[Attachment]'),
     text: message || (messageType === 'IMAGE' ? '[Photo Attachment]' : '[Attachment]'),
+    content: message || (messageType === 'IMAGE' ? '[Photo Attachment]' : '[Attachment]'),
     messageType,
     message_type: messageType,
     mediaUrl,
     media_url: mediaUrl,
+    media: mediaObj,
     isRead: false,
     is_read: false,
     isMe: true,
     timestamp: new Date().toISOString(),
     created_at: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
     senderName: u.full_name || u.name || "Me"
   };
 
@@ -10486,7 +10569,7 @@ const handleCreateReview = async (c) => {
     const isCheckoutVerified = Number(booking.checkout_otp_verified) === 1 || Boolean(booking.check_out_time);
     const isPaymentPaid = String(booking.payment_status || "").toUpperCase() === 'PAID' || String(booking.final_payment_status || "").toUpperCase() === 'PAID';
     const isBookingCompleted = String(booking.status || "").toLowerCase() === 'completed' || String(booking.detailed_status || "").toUpperCase() === 'COMPLETED';
-    
+
     if (!isBookingCompleted) {
       return jsonRes(c, false, null, "Review is strictly available only after a booking is marked COMPLETED.", 400);
     }
@@ -10538,7 +10621,7 @@ const handleCreateReview = async (c) => {
         UPDATE artist_profiles
         SET rating = ?, total_reviews = ?
         WHERE id = ? OR user_id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT) OR CAST(user_id AS TEXT) = CAST(? AS TEXT)
-      `, [avgRating, totalReviews, artistId, artistId, String(artistId), String(artistId)]).catch(() => {});
+      `, [avgRating, totalReviews, artistId, artistId, String(artistId), String(artistId)]).catch(() => { });
     }
 
     const savedReview = {
@@ -10598,12 +10681,26 @@ const handleGetArtistReviews = async (c) => {
     resolvedArtistId = Number(u.id);
   }
 
+  const page = Math.max(1, parseInt(c.req.query("page") || "1", 10));
+  const limit = Math.max(1, Math.min(50, parseInt(c.req.query("limit") || "6", 10)));
+  const offset = (page - 1) * limit;
+
   let reviews = [];
+  let statsRows = [];
+
   if (resolvedArtistId > 0) {
     const artistProfile = await db.first("SELECT id, user_id FROM artist_profiles WHERE id = ? OR user_id = ?", [resolvedArtistId, resolvedArtistId]).catch(() => null);
     const pId = artistProfile ? Number(artistProfile.id) : resolvedArtistId;
     const uId = artistProfile ? Number(artistProfile.user_id) : resolvedArtistId;
 
+    // Aggregate statistics across ALL approved reviews for this artist
+    statsRows = await db.all(`
+      SELECT rating FROM reviews r
+      WHERE (r.artist_id = ? OR r.artist_id = ? OR CAST(r.artist_id AS TEXT) = ? OR CAST(r.artist_id AS TEXT) = ?)
+        AND (r.status = 'APPROVED' OR r.is_approved = 1)
+    `, [pId, uId, String(pId), String(uId)]).catch(() => []);
+
+    // Fetch the paginated page slice with LIMIT and OFFSET
     reviews = await db.all(`
       SELECT r.*, 
         COALESCE(u.full_name, 'Verified Customer') as customer_name,
@@ -10613,8 +10710,14 @@ const handleGetArtistReviews = async (c) => {
       WHERE (r.artist_id = ? OR r.artist_id = ? OR CAST(r.artist_id AS TEXT) = ? OR CAST(r.artist_id AS TEXT) = ?)
         AND (r.status = 'APPROVED' OR r.is_approved = 1)
       ORDER BY r.id DESC
-    `, [pId, uId, String(pId), String(uId)]).catch(() => []);
+      LIMIT ? OFFSET ?
+    `, [pId, uId, String(pId), String(uId), limit, offset]).catch(() => []);
   } else {
+    statsRows = await db.all(`
+      SELECT rating FROM reviews r
+      WHERE (r.status = 'APPROVED' OR r.is_approved = 1)
+    `, []).catch(() => []);
+
     reviews = await db.all(`
       SELECT r.*, 
         COALESCE(u.full_name, 'Verified Customer') as customer_name,
@@ -10622,18 +10725,24 @@ const handleGetArtistReviews = async (c) => {
       FROM reviews r
       LEFT JOIN users u ON (r.customer_id = u.id OR r.user_id = u.id)
       WHERE (r.status = 'APPROVED' OR r.is_approved = 1)
-      ORDER BY r.id DESC LIMIT 50
-    `, [])
+      ORDER BY r.id DESC 
+      LIMIT ? OFFSET ?
+    `, [limit, offset]).catch(() => []);
   }
 
   const distribution = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
   let sumRating = 0;
 
-  const formattedReviews = (reviews || []).map((r) => {
-    const starVal = Math.min(5, Math.max(1, Math.round(Number(r.rating || 5))));
+  (statsRows || []).forEach((row) => {
+    const starVal = Math.min(5, Math.max(1, Math.round(Number(row.rating || 5))));
     distribution[starVal] = (distribution[starVal] || 0) + 1;
-    sumRating += Number(r.rating || 5);
+    sumRating += Number(row.rating || 5);
+  });
 
+  const totalReviews = (statsRows || []).length;
+  const avgRating = totalReviews > 0 ? Number((sumRating / totalReviews).toFixed(1)) : 0;
+
+  const formattedReviews = (reviews || []).map((r) => {
     let photos = [];
     try {
       photos = typeof r.photos === 'string' ? JSON.parse(r.photos || '[]') : (r.photos || []);
@@ -10671,14 +10780,18 @@ const handleGetArtistReviews = async (c) => {
     };
   });
 
-  const totalReviews = formattedReviews.length;
-  const avgRating = totalReviews > 0 ? Number((sumRating / totalReviews).toFixed(1)) : 0;
+  const totalPages = Math.ceil(totalReviews / limit) || 1;
+  const hasMore = offset + formattedReviews.length < totalReviews;
 
   return jsonRes(c, true, {
     reviews: formattedReviews,
     avg_rating: avgRating,
     total_reviews: totalReviews,
-    distribution
+    distribution,
+    page,
+    limit,
+    total_pages: totalPages,
+    has_more: hasMore
   }, "Artist reviews fetched");
 };
 
@@ -11470,7 +11583,7 @@ const handleGetCouponsPublic = async (c) => {
   const db = getDb(c.env);
   const ist = getNowIST();
   await db.run("CREATE TABLE IF NOT EXISTS coupons (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE, title TEXT, description TEXT, discount_type TEXT, discount_value REAL, min_order_amount REAL, max_discount REAL, usage_limit INTEGER DEFAULT 10000, per_user_limit INTEGER DEFAULT 1, used_count INTEGER DEFAULT 0, auto_apply INTEGER DEFAULT 0, is_active INTEGER DEFAULT 1, expires_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)").catch(() => { });
-  
+
   const coupons = await db.all("SELECT * FROM coupons WHERE is_active = 1 OR is_active = 'true' ORDER BY id DESC").catch(() => []);
   const festivalOffers = await db.all("SELECT * FROM festival_offers WHERE is_active = 1 OR is_active = 'true' ORDER BY id DESC").catch(() => []);
 
@@ -12072,6 +12185,10 @@ const handleCreateBookingExplicit = async (c) => {
 };
 
 const handleUploadChatMedia = async (c) => {
+  const cloudName = (c.env?.CLOUDINARY_CLOUD_NAME || "").trim();
+  const apiKey = (c.env?.CLOUDINARY_API_KEY || "").trim();
+  const apiSecret = (c.env?.CLOUDINARY_API_SECRET || "").trim();
+
   let fileUrl = null;
   let fileType = "image";
 
@@ -12101,20 +12218,62 @@ const handleUploadChatMedia = async (c) => {
 
   if (!fileUrl) {
     const body = await c.req.json().catch(() => ({}));
-    fileUrl = body.file_url || body.url || body.image || body.uri;
+    fileUrl = body.file_url || body.url || body.image || body.uri || body.media || body.file;
     fileType = body.file_type || body.type || fileType;
   }
 
   if (!fileUrl) {
-    fileUrl = "https://res.cloudinary.com/dair21jov/image/upload/v1786090367/mehndigo/portfolio/hak4jaaduryilavoprxr.jpg";
+    return jsonRes(c, false, null, "No file provided for upload", 400);
+  }
+
+  let finalUrl = fileUrl;
+
+  // If base64/data URI and Cloudinary is configured, upload to Cloudinary for permanent hosting
+  if (fileUrl.startsWith("data:") && cloudName && apiKey && apiSecret) {
+    try {
+      const isVideo = fileType === "video";
+      const isVoice = fileType === "voice" || fileType === "audio";
+      // Note: Cloudinary treats all audio formats (m4a, mp3, wav, aac) under the 'video' resource type endpoint
+      const resourceType = (isVideo || isVoice) ? "video" : (fileType === "pdf" ? "raw" : "image");
+      const timestamp = Math.floor(Date.now() / 1000);
+      const folder = "mehndigo/chat";
+
+      const toSign = `folder=${folder}&timestamp=${timestamp}${apiSecret}`;
+      const msgUint8 = new TextEncoder().encode(toSign);
+      const hashBuffer = await crypto.subtle.digest("SHA-1", msgUint8);
+      const signature = Array.from(new Uint8Array(hashBuffer)).map((b) => b.toString(16).padStart(2, "0")).join("");
+
+      const formData = new FormData();
+      formData.append("file", fileUrl);
+      formData.append("api_key", apiKey);
+      formData.append("timestamp", String(timestamp));
+      formData.append("folder", folder);
+      formData.append("signature", signature);
+
+      const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`, {
+        method: "POST",
+        body: formData,
+      });
+
+      const uploadData = await uploadRes.json().catch(() => ({}));
+      if (uploadRes.ok && (uploadData.secure_url || uploadData.url)) {
+        finalUrl = uploadData.secure_url || uploadData.url;
+      } else {
+        console.error("[CLOUDINARY CHAT UPLOAD NON-OK]", uploadRes.status, JSON.stringify(uploadData));
+      }
+    } catch (e) {
+      console.error("[CLOUDINARY CHAT UPLOAD ERR]", e.message);
+    }
   }
 
   return jsonRes(c, true, {
-    file_url: fileUrl,
-    url: fileUrl,
-    secure_url: fileUrl,
-    thumbnail: fileUrl,
-    file_type: fileType
+    file_url: finalUrl,
+    fileUrl: finalUrl,
+    url: finalUrl,
+    secure_url: finalUrl,
+    thumbnail: finalUrl,
+    file_type: fileType,
+    fileType: fileType
   }, "Media uploaded successfully");
 };
 
@@ -13855,7 +14014,7 @@ const handleCancelBooking = async (c) => {
     }
 
     if (["ARRIVED", "ARTIST_ARRIVED", "SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS", "CHECKOUT", "COMPLETED", "COMPLETED_CLOSED"].includes(currentSt) ||
-        ["ARRIVED", "ARTIST_ARRIVED", "SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS", "CHECKOUT", "COMPLETED", "COMPLETED_CLOSED"].includes(currentDet)) {
+      ["ARRIVED", "ARTIST_ARRIVED", "SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS", "CHECKOUT", "COMPLETED", "COMPLETED_CLOSED"].includes(currentDet)) {
       return jsonRes(c, false, null, "Booking cannot be cancelled after specialist arrival or service start", 400);
     }
 
@@ -14087,7 +14246,7 @@ const handleConfirmCashPayment = async (c) => {
       io.to(`booking_room_${bookingId}`).emit("BOOKING_COMPLETED", payload);
       io.to(`booking_room_${bookingId}`).emit("cash_payment_confirmed", payload);
     }
-  } catch {}
+  } catch { }
 
   return jsonRes(c, true, {
     booking_id: bookingId,
@@ -14481,6 +14640,25 @@ addRoute("post", "/customer/reviews/upload", handleFileUpload);
 addRoute("post", "/customer/review/upload", handleFileUpload);
 addRoute("post", "/chat/upload", handleUploadChatMedia);
 addRoute("post", "/chat/media", handleUploadChatMedia);
+
+// Chat System Routes (Customer <-> Artist <-> Admin)
+addRoute("get", "/chat/list", handleGetChatList);
+addRoute("get", "/customer/chat/list", handleGetChatList);
+addRoute("get", "/artist/chat/list", handleGetChatList);
+addRoute("get", "/chat/unread", handleGetUnreadCounts);
+addRoute("get", "/customer/chat/unread", handleGetUnreadCounts);
+addRoute("get", "/artist/chat/unread", handleGetUnreadCounts);
+addRoute("post", "/chat/send", handleSendChatMessage);
+addRoute("post", "/chat/message", handleSendChatMessage);
+addRoute("post", "/customer/chat/send", handleSendChatMessage);
+addRoute("post", "/artist/chat/send", handleSendChatMessage);
+addRoute("post", "/chat/seen", handleMarkChatSeen);
+addRoute("post", "/chat/mark-seen", handleMarkChatSeen);
+addRoute("get", "/chat/:id", handleGetChatHistory);
+addRoute("get", "/chat/history/:id", handleGetChatHistory);
+addRoute("get", "/customer/chat/:id", handleGetChatHistory);
+addRoute("get", "/artist/chat/:id", handleGetChatHistory);
+addRoute("get", "/chat", handleGetChatHistory);
 
 // Support Tickets Routes (Artist & Customer)
 addRoute("post", "/customer/support/ticket", handleCustomerSupportTicket);

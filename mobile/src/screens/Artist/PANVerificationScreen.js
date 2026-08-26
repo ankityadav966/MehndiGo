@@ -1,7 +1,7 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as ImagePicker from "expo-image-picker";
 import { useState } from "react";
-import { Image, StyleSheet, Text, TextInput, TouchableOpacity, View, ScrollView } from "react-native";
+import { Image, StyleSheet, Text, TextInput, TouchableOpacity, View, ScrollView, KeyboardAvoidingView, Platform } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import CustomButton from "../../components/CustomButton";
@@ -46,7 +46,15 @@ export default function PANVerificationScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1 }}
+      >
+        <ScrollView
+          contentContainerStyle={styles.container}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
         <Text style={styles.heading}>Verify your PAN Card</Text>
         <Text style={styles.subHeading}>Upload clear photo of your PAN card (Optional for initial onboarding)</Text>
 
@@ -83,11 +91,12 @@ export default function PANVerificationScreen({ navigation }) {
 
         {error ? (
           <View style={styles.errorBox}>
-            <Ionicons name="alert-circle" size={18} color="#EF4444" />
+            <Ionicons name="alert-circle-outline" size={18} color="#EF4444" />
             <Text style={styles.errorText}>{error}</Text>
           </View>
         ) : null}
       </ScrollView>
+      </KeyboardAvoidingView>
 
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 20) }]}>
         <CustomButton title="Continue" onPress={handleContinue} />

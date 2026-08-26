@@ -1,7 +1,7 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as ImagePicker from "expo-image-picker";
 import { useState } from "react";
-import { Image, StyleSheet, Text, TextInput, TouchableOpacity, View, ScrollView } from "react-native";
+import { Image, StyleSheet, Text, TextInput, TouchableOpacity, View, ScrollView, KeyboardAvoidingView, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import CustomButton from "../../components/CustomButton";
@@ -68,7 +68,15 @@ export default function AadhaarVerificationScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1 }}
+      >
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+        >
         <View style={styles.container}>
           <Text style={styles.heading}>Verify your Aadhaar</Text>
           <Text style={styles.subHeading}>Provide your 12-digit Aadhaar number and clear photos for identity verification.</Text>
@@ -125,6 +133,7 @@ export default function AadhaarVerificationScreen({ navigation }) {
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
 
       <View style={styles.footer}>
         <CustomButton title="Continue" onPress={handleValidateAndContinue} />

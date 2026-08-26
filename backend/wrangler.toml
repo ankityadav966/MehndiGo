@@ -10,10 +10,11 @@ routes = [
 ENVIRONMENT = "production"
 JWT_SECRET = "mehndigo-super-secret-jwt-token-key-2026"
 RAZORPAY_KEY_ID = "rzp_live_TSIrGnJIllkt0H"
-RAZORPAY_KEY_SECRET = "AJSFmZyxn471PmOT8OGRB768"
-EMAIL_USER = "sonudonyadav87@gmail.com"
-EMAIL_PASS = "kwemkkniwxyohmvm"
+RAZORPAY_KEY_SECRET = ""
+EMAIL_USER = "mehendigo@gmail.com"
+EMAIL_PASS = ""
 AZURE_EMAIL_FROM = "donotreply@mehndigo.in"
+EMAIL_FROM = "donotreply@mehndigo.in"
 RESEND_API_KEY = ""
 
 [[d1_databases]]

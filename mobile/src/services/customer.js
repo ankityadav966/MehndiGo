@@ -157,8 +157,9 @@ export async function fetchArtistPortfolio(id) {
   return res?.data || res;
 }
 
-export async function fetchArtistReviews(id) {
-  const res = await apiRequest("GET", `/customer/artist/${id}/reviews`, null, true);
+export async function fetchArtistReviews(id, page = 1, limit = 6) {
+  const query = `?page=${page}&limit=${limit}`;
+  const res = await apiRequest("GET", `/customer/artist/${id}/reviews${query}`, null, true);
   return res?.data || res;
 }
 

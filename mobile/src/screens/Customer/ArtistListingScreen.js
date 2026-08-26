@@ -14,7 +14,8 @@ import {
   ScrollView,
   Dimensions,
   Share,
-  Platform
+  Platform,
+  KeyboardAvoidingView
 } from "react-native";
 import Colors from "../../constants/Colors";
 import LoadingSkeleton from "../../components/LoadingSkeleton";
@@ -654,20 +655,24 @@ export default function ArtistListingScreen({ route, navigation }) {
         transparent={true}
         onRequestClose={() => setFilterModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Advanced Filters</Text>
-              <TouchableOpacity onPress={() => setFilterModalVisible(false)}>
-                <Ionicons name="close" size={24} color={Colors.text} />
-              </TouchableOpacity>
-            </View>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={{ flex: 1, justifyContent: "flex-end" }}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Advanced Filters</Text>
+                <TouchableOpacity onPress={() => setFilterModalVisible(false)}>
+                  <Ionicons name="close" size={24} color={Colors.text} />
+                </TouchableOpacity>
+              </View>
 
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 20 }}
-              keyboardShouldPersistTaps="handled"
-            >
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: 20 }}
+                keyboardShouldPersistTaps="handled"
+              >
               {/* Category selector */}
               <Text style={styles.filterTitle}>Mehendi Styling Category</Text>
               <View style={styles.filterGrid}>
@@ -867,7 +872,8 @@ export default function ArtistListingScreen({ route, navigation }) {
             </View>
           </View>
         </View>
-      </Modal>
+      </KeyboardAvoidingView>
+    </Modal>
     </View>
   );
 }

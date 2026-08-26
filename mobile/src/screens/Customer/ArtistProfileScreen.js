@@ -67,6 +67,9 @@ export default function ArtistProfileScreen({ route, navigation }) {
     reviews: initialArtist?.reviews || [],
     distribution: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 }
   });
+  const [reviewsPage, setReviewsPage] = useState(1);
+  const [reviewsHasMore, setReviewsHasMore] = useState(false);
+  const [loadingMoreReviews, setLoadingMoreReviews] = useState(false);
   const [availability, setAvailability] = useState([]);
   const [similar, setSimilar] = useState([]);
   const [isFav, setIsFav] = useState(false);
@@ -155,26 +158,37 @@ export default function ArtistProfileScreen({ route, navigation }) {
 
       setServices(servs || []);
       setPortfolio(Array.isArray(port) ? port : (port?.portfolios || port?.data || []));
+      
       const reviewsList = Array.isArray(revs) ? revs : (revs?.reviews || []);
-      const reviewsDist = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
-      let sumRating = 0;
-      reviewsList.forEach((r) => {
-        const rVal = Math.min(5, Math.max(1, Math.round(Number(r.rating || 5))));
-        reviewsDist[rVal] = (reviewsDist[rVal] || 0) + 1;
-        sumRating += Number(r.rating || 5);
-      });
-      if (reviewsList.length > 0) {
+      const reviewsDist = (revs && typeof revs === 'object' && revs.distribution) ? revs.distribution : { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+      
+      if (!revs?.distribution) {
+        reviewsList.forEach((r) => {
+          const rVal = Math.min(5, Math.max(1, Math.round(Number(r.rating || 5))));
+          reviewsDist[rVal] = (reviewsDist[rVal] || 0) + 1;
+        });
+      }
+
+      if (revs?.total_reviews !== undefined) {
+        prof.total_reviews = Number(revs.total_reviews);
+        prof.avg_rating = Number(revs.avg_rating || prof.avg_rating || 0);
+      } else if (reviewsList.length > 0) {
+        let sumRating = 0;
+        reviewsList.forEach((r) => { sumRating += Number(r.rating || 5); });
         prof.avg_rating = Number((sumRating / reviewsList.length).toFixed(1));
         prof.total_reviews = reviewsList.length;
       } else {
         prof.avg_rating = 0;
         prof.total_reviews = 0;
       }
-      const calculatedReviewsData = {
+
+      setReviewsData({
         reviews: reviewsList,
         distribution: reviewsDist
-      };
-      setReviewsData(calculatedReviewsData);
+      });
+      setReviewsPage(1);
+      setReviewsHasMore(Boolean(revs?.has_more !== undefined ? revs.has_more : reviewsList.length >= 6));
+
       const slots = Array.isArray(avail) ? avail : (avail?.slots || []);
       setAvailability(slots);
       setSimilar([]);
@@ -267,6 +281,37 @@ export default function ArtistProfileScreen({ route, navigation }) {
       });
     } catch (e) {
       if (__DEV__) console.log("Failed to share profile:", e.message);
+    }
+  };
+
+  // Load more reviews with pagination
+  const handleLoadMoreReviews = async () => {
+    if (loadingMoreReviews || !reviewsHasMore) return;
+    try {
+      setLoadingMoreReviews(true);
+      const nextPage = reviewsPage + 1;
+      const res = await fetchArtistReviews(artistId, nextPage, 6);
+      const newReviews = Array.isArray(res) ? res : (res?.reviews || []);
+
+      setReviewsData((prev) => {
+        const existingIds = new Set((prev.reviews || []).map((r) => r.id));
+        const filteredNew = newReviews.filter((r) => !existingIds.has(r.id));
+        return {
+          ...prev,
+          reviews: [...(prev.reviews || []), ...filteredNew]
+        };
+      });
+
+      setReviewsPage(nextPage);
+      if (res?.has_more !== undefined) {
+        setReviewsHasMore(Boolean(res.has_more));
+      } else {
+        setReviewsHasMore(newReviews.length >= 6);
+      }
+    } catch (err) {
+      if (__DEV__) console.log("Load more reviews error:", err.message);
+    } finally {
+      setLoadingMoreReviews(false);
     }
   };
 
@@ -929,6 +974,25 @@ export default function ArtistProfileScreen({ route, navigation }) {
               </View>
             ))
           )}
+
+          {/* Controlled Load More Reviews Button */}
+          {reviewsHasMore && (
+            <TouchableOpacity
+              style={styles.loadMoreReviewsBtn}
+              onPress={handleLoadMoreReviews}
+              disabled={loadingMoreReviews}
+              activeOpacity={0.8}
+            >
+              {loadingMoreReviews ? (
+                <ActivityIndicator size="small" color="#7C3AED" />
+              ) : (
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <Text style={styles.loadMoreReviewsText}>Load More Reviews</Text>
+                  <Ionicons name="chevron-down" size={16} color="#7C3AED" style={{ marginLeft: 4 }} />
+                </View>
+              )}
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Section: Related Artists */}
@@ -1498,4 +1562,21 @@ const styles = StyleSheet.create({
   similarImage: { width: "100%", height: 100, borderRadius: 10 },
   similarName: { fontSize: 12, fontWeight: "700", color: Colors.text, marginTop: 6 },
   similarRating: { fontSize: 11, fontWeight: "600", color: Colors.text, marginLeft: 2 },
+  loadMoreReviewsBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F5F3FF",
+    borderWidth: 1,
+    borderColor: "#DDD6FE",
+    borderRadius: 12,
+    paddingVertical: 12,
+    marginTop: 12,
+    marginHorizontal: 4
+  },
+  loadMoreReviewsText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#7C3AED"
+  }
 });

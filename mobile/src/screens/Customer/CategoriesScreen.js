@@ -16,7 +16,7 @@ import Colors from "../../constants/Colors";
 import { getLiveCategories } from "../../services/category";
 import { SkeletonGrid } from "../../components/LoadingSkeleton";
 
-export default function CategoriesScreen({ navigation }) {
+export default function CategoriesScreen({ navigation, route }) {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);

@@ -10,7 +10,9 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  ScrollView
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform
 } from "react-native";
 import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -467,114 +469,124 @@ export default function WalletScreen({ route, navigation }) {
 
       {/* 1. Request Payout Modal */}
       <Modal visible={withdrawModalVisible} transparent animationType="slide">
-        <View style={styles.modalBg}>
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalSheetTitle}>Request Payout Transfer</Text>
-            <Text style={styles.modalSheetSubtitle}>Available Balance: ₹{Number(balance).toLocaleString("en-IN")}</Text>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={{ flex: 1, justifyContent: "flex-end" }}
+        >
+          <View style={styles.modalBg}>
+            <View style={styles.modalSheet}>
+              <View style={styles.modalHandle} />
+              <Text style={styles.modalSheetTitle}>Request Payout Transfer</Text>
+              <Text style={styles.modalSheetSubtitle}>Available Balance: ₹{Number(balance).toLocaleString("en-IN")}</Text>
 
-            <Text style={styles.inputLabel}>Enter Amount (₹)</Text>
-            <View style={styles.inputWrapper}>
-              <Text style={styles.currencyPrefix}>₹</Text>
-              <TextInput
-                keyboardType="number-pad"
-                value={withdrawAmount}
-                onChangeText={setWithdrawAmount}
-                placeholder="e.g. 1000"
-                placeholderTextColor={Colors.placeholder}
-                style={styles.amountInput}
-                autoFocus
-              />
-            </View>
-
-            <View style={styles.chipsRow}>
-              {[500, 1000, 2500, 5000].map((amt) => (
-                <TouchableOpacity
-                  key={amt}
-                  style={styles.chipBtn}
-                  onPress={() => setWithdrawAmount(String(amt))}
-                >
-                  <Text style={styles.chipText}>₹{amt}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {withdrawLoading ? (
-              <ActivityIndicator color={Colors.primary} style={{ marginVertical: 16 }} />
-            ) : (
-              <View style={styles.modalActionRow}>
-                <TouchableOpacity style={styles.cancelBtn} onPress={() => setWithdrawModalVisible(false)}>
-                  <Text style={styles.cancelText}>Cancel</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity style={styles.confirmBtn} onPress={handleWithdrawalRequest}>
-                  <Text style={styles.confirmText}>Submit Request</Text>
-                </TouchableOpacity>
+              <Text style={styles.inputLabel}>Enter Amount (₹)</Text>
+              <View style={styles.inputWrapper}>
+                <Text style={styles.currencyPrefix}>₹</Text>
+                <TextInput
+                  keyboardType="number-pad"
+                  value={withdrawAmount}
+                  onChangeText={setWithdrawAmount}
+                  placeholder="e.g. 1000"
+                  placeholderTextColor={Colors.placeholder}
+                  style={styles.amountInput}
+                  autoFocus
+                />
               </View>
-            )}
+
+              <View style={styles.chipsRow}>
+                {[500, 1000, 2500, 5000].map((amt) => (
+                  <TouchableOpacity
+                    key={amt}
+                    style={styles.chipBtn}
+                    onPress={() => setWithdrawAmount(String(amt))}
+                  >
+                    <Text style={styles.chipText}>₹{amt}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {withdrawLoading ? (
+                <ActivityIndicator color={Colors.primary} style={{ marginVertical: 16 }} />
+              ) : (
+                <View style={styles.modalActionRow}>
+                  <TouchableOpacity style={styles.cancelBtn} onPress={() => setWithdrawModalVisible(false)}>
+                    <Text style={styles.cancelText}>Cancel</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity style={styles.confirmBtn} onPress={handleWithdrawalRequest}>
+                    <Text style={styles.confirmText}>Submit Request</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* 2. Link/Edit Bank Account Modal */}
       <Modal visible={bankModalVisible} transparent animationType="slide">
-        <View style={styles.modalBg}>
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalSheetTitle}>Bank Account Credentials</Text>
-            <Text style={styles.modalSheetSubtitle}>Enter your official bank details for automatic payout transfers.</Text>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={{ flex: 1, justifyContent: "flex-end" }}
+        >
+          <View style={styles.modalBg}>
+            <View style={styles.modalSheet}>
+              <View style={styles.modalHandle} />
+              <Text style={styles.modalSheetTitle}>Bank Account Credentials</Text>
+              <Text style={styles.modalSheetSubtitle}>Enter your official bank details for automatic payout transfers.</Text>
 
-            <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
-              <Text style={styles.inputLabel}>Account Holder Name</Text>
-              <TextInput
-                value={bankForm.accountHolderName}
-                onChangeText={(val) => setBankForm({ ...bankForm, accountHolderName: val })}
-                placeholder="Name as registered with Bank"
-                style={styles.fieldInput}
-              />
+              <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
+                <Text style={styles.inputLabel}>Account Holder Name</Text>
+                <TextInput
+                  value={bankForm.accountHolderName}
+                  onChangeText={(val) => setBankForm({ ...bankForm, accountHolderName: val })}
+                  placeholder="Name as registered with Bank"
+                  style={styles.fieldInput}
+                />
 
-              <Text style={styles.inputLabel}>Account Number</Text>
-              <TextInput
-                value={bankForm.accountNumber}
-                keyboardType="number-pad"
-                onChangeText={(val) => setBankForm({ ...bankForm, accountNumber: val })}
-                placeholder="e.g. 987654321012"
-                style={styles.fieldInput}
-              />
+                <Text style={styles.inputLabel}>Account Number</Text>
+                <TextInput
+                  value={bankForm.accountNumber}
+                  keyboardType="number-pad"
+                  onChangeText={(val) => setBankForm({ ...bankForm, accountNumber: val })}
+                  placeholder="e.g. 987654321012"
+                  style={styles.fieldInput}
+                />
 
-              <Text style={styles.inputLabel}>IFSC Code</Text>
-              <TextInput
-                value={bankForm.ifscCode}
-                autoCapitalize="characters"
-                onChangeText={(val) => setBankForm({ ...bankForm, ifscCode: val })}
-                placeholder="e.g. SBIN0001234"
-                style={styles.fieldInput}
-              />
+                <Text style={styles.inputLabel}>IFSC Code</Text>
+                <TextInput
+                  value={bankForm.ifscCode}
+                  autoCapitalize="characters"
+                  onChangeText={(val) => setBankForm({ ...bankForm, ifscCode: val })}
+                  placeholder="e.g. SBIN0001234"
+                  style={styles.fieldInput}
+                />
 
-              <Text style={styles.inputLabel}>Bank Name</Text>
-              <TextInput
-                value={bankForm.bankName}
-                onChangeText={(val) => setBankForm({ ...bankForm, bankName: val })}
-                placeholder="e.g. State Bank of India / HDFC"
-                style={styles.fieldInput}
-              />
-            </ScrollView>
+                <Text style={styles.inputLabel}>Bank Name</Text>
+                <TextInput
+                  value={bankForm.bankName}
+                  onChangeText={(val) => setBankForm({ ...bankForm, bankName: val })}
+                  placeholder="e.g. State Bank of India / HDFC"
+                  style={styles.fieldInput}
+                />
+              </ScrollView>
 
-            {bankLoading ? (
-              <ActivityIndicator color={Colors.primary} style={{ marginVertical: 16 }} />
-            ) : (
-              <View style={styles.modalActionRow}>
-                <TouchableOpacity style={styles.cancelBtn} onPress={() => setBankModalVisible(false)}>
-                  <Text style={styles.cancelText}>Cancel</Text>
-                </TouchableOpacity>
+              {bankLoading ? (
+                <ActivityIndicator color={Colors.primary} style={{ marginVertical: 16 }} />
+              ) : (
+                <View style={styles.modalActionRow}>
+                  <TouchableOpacity style={styles.cancelBtn} onPress={() => setBankModalVisible(false)}>
+                    <Text style={styles.cancelText}>Cancel</Text>
+                  </TouchableOpacity>
 
-                <TouchableOpacity style={styles.confirmBtn} onPress={handleSaveBankDetails}>
-                  <Text style={styles.confirmText}>Save Credentials</Text>
-                </TouchableOpacity>
-              </View>
-            )}
+                  <TouchableOpacity style={styles.confirmBtn} onPress={handleSaveBankDetails}>
+                    <Text style={styles.confirmText}>Save Credentials</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* 3. Item Detail Modal */}

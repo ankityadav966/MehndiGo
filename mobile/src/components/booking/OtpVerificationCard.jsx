@@ -105,36 +105,26 @@ export default function OtpVerificationCard({
                 </View>
               </View>
               <Text style={[styles.customerSubtitle, styles.customerSubtitleCheckout]} numberOfLines={2}>
-                Share this 4-digit PIN with your specialist ONLY AFTER mehndi application is fully finished.
+                Share the 4-digit PIN sent to your email with your specialist ONLY AFTER mehndi application is fully finished.
               </Text>
             </View>
           </View>
 
-          {/* Prominent 4-Digit Completion PIN Box */}
-          {resolvedCheckoutOtp ? (
-            <View style={styles.pinDisplayCardPurple}>
-              <Text style={styles.pinDisplayLabelPurple}>YOUR SERVICE COMPLETION PIN</Text>
-              <View style={styles.pinDigitsRow}>
-                {String(resolvedCheckoutOtp).split("").map((digit, idx) => (
-                  <View key={idx} style={styles.pinDigitTilePurple}>
-                    <Text style={styles.pinDigitTextPurple}>{digit}</Text>
-                  </View>
-                ))}
-              </View>
-              <Text style={styles.pinInstructionPurple}>
-                Keep this private until you are 100% satisfied with the finished design.
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.emailInfoBoxPurple}>
-              <View style={styles.emailRow}>
-                <Ionicons name="mail" size={15} color="#701DDB" style={{ marginRight: 6 }} />
+          {/* Secure Email Delivery Info Box */}
+          <View style={styles.emailInfoBoxPurple}>
+            <View style={styles.emailRow}>
+              <Ionicons name="mail-unread" size={18} color="#701DDB" style={{ marginRight: 8 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.emailTitleTextPurple}>Completion PIN Sent to Email ✉️</Text>
                 <Text style={styles.emailAddressTextPurple} numberOfLines={1}>
-                  Completion PIN sent to: {masked}
+                  Dispatched to: {masked}
                 </Text>
               </View>
             </View>
-          )}
+            <Text style={styles.pinInstructionPurple}>
+              Check your inbox for the 4-digit completion code. Keep it private until you are 100% satisfied with the finished design.
+            </Text>
+          </View>
 
           {/* Step 1 Completed Status Bar */}
           <View style={styles.completedStepBar}>
@@ -166,36 +156,26 @@ export default function OtpVerificationCard({
               </View>
             </View>
             <Text style={styles.customerSubtitle} numberOfLines={2}>
-              Share this 4-digit PIN with your artist when they arrive at your location to begin service.
+              Share the 4-digit Check-In PIN sent to your email with your artist when they arrive at your location.
             </Text>
           </View>
         </View>
 
-        {/* Prominent 4-Digit Check-In PIN Box */}
-        {resolvedCheckinOtp ? (
-          <View style={styles.pinDisplayCardGreen}>
-            <Text style={styles.pinDisplayLabelGreen}>YOUR DOORSTEP CHECK-IN PIN</Text>
-            <View style={styles.pinDigitsRow}>
-              {String(resolvedCheckinOtp).split("").map((digit, idx) => (
-                <View key={idx} style={styles.pinDigitTileGreen}>
-                  <Text style={styles.pinDigitTextGreen}>{digit}</Text>
-                </View>
-              ))}
-            </View>
-            <Text style={styles.pinInstructionGreen}>
-              Specialist will enter this PIN on their app to verify arrival and start service.
-            </Text>
-          </View>
-        ) : (
-          <View style={styles.emailInfoBox}>
-            <View style={styles.emailRow}>
-              <Ionicons name="mail" size={15} color="#059669" style={{ marginRight: 6 }} />
+        {/* Secure Email Delivery Info Box */}
+        <View style={styles.emailInfoBox}>
+          <View style={styles.emailRow}>
+            <Ionicons name="mail-unread" size={18} color="#059669" style={{ marginRight: 8 }} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.emailTitleTextGreen}>Doorstep Check-In PIN Sent to Email ✉️</Text>
               <Text style={styles.emailAddressText} numberOfLines={1}>
-                Check-In PIN sent to: {masked}
+                Dispatched to: {masked}
               </Text>
             </View>
           </View>
-        )}
+          <Text style={styles.pinInstructionGreen}>
+            Check your inbox for the 4-digit code and share in person when the specialist arrives at your doorstep.
+          </Text>
+        </View>
 
         {/* Locked Upcoming Step 2 */}
         <View style={styles.lockedStepBar}>
@@ -269,8 +249,8 @@ export default function OtpVerificationCard({
           <Ionicons name="mail-outline" size={12} color="#64748B" />
           <Text style={styles.pinHelperText}>
             {isCheckIn
-              ? "Customer can view PIN on their booking screen & email"
-              : "Customer can view Completion PIN on their app & email"}
+              ? "Customer received 4-digit PIN in their registered email inbox"
+              : "Customer received 4-digit Completion PIN in their registered email inbox"}
           </Text>
         </View>
       </View>
@@ -594,15 +574,27 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center"
   },
+  emailTitleTextGreen: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#065F46",
+    marginBottom: 2
+  },
+  emailTitleTextPurple: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#5B21B6",
+    marginBottom: 2
+  },
   emailAddressText: {
     fontSize: 12,
-    fontWeight: "700",
-    color: "#065F46"
+    fontWeight: "600",
+    color: "#047857"
   },
   emailAddressTextPurple: {
     fontSize: 12,
-    fontWeight: "700",
-    color: "#5B21B6"
+    fontWeight: "600",
+    color: "#6D28D9"
   },
   completedStepBar: {
     flexDirection: "row",

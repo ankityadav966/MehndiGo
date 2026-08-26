@@ -250,7 +250,6 @@ export default function LiveTrackingScreen({ route, navigation }) {
     ["SERVICE_IN_PROGRESS", "SERVICE_STARTED", "CUSTOMER_VERIFIED", "IN_PROGRESS", "COMPLETED"].includes(
       String(booking?.detailed_status || booking?.status || "").toUpperCase()
     );
-  const checkinOtp = booking?.checkin_otp || booking?.check_in_otp;
 
   const originCoords = customerCoords || (booking?.latitude ? { lat: Number(booking.latitude), lng: Number(booking.longitude) } : null);
   const destinationCoords = artistCoords || (booking?.artist?.latitude ? { lat: Number(booking.artist.latitude), lng: Number(booking.artist.longitude) } : null);
