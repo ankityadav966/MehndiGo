@@ -121,3 +121,28 @@ export async function pinOrArchiveRoom(bookingId, action, value) {
   const res = await apiRequest("PUT", "/chat/room/pin-archive", { bookingId, action, value }, true);
   return res?.data || res;
 }
+
+export const chatService = {
+  getChatList,
+  getChatHistory,
+  getHistory: async (receiverId) => {
+    const res = await apiRequest("GET", `/chat/history/${receiverId}`, null, true).catch(() => ({ data: [] }));
+    return res?.data || res;
+  },
+  markChatAsSeen: async (senderId) => {
+    return await apiRequest("POST", "/chat/seen", { sender_id: senderId }, true).catch(() => {});
+  },
+  getUnreadCounts: async () => {
+    const res = await apiRequest("GET", "/chat/unread", null, true).catch(() => ({ data: [] }));
+    return res?.data || res;
+  },
+  editMessage,
+  deleteMessage,
+  uploadChatMedia,
+  getMediaHistory,
+  reportUser,
+  blockUser,
+  pinOrArchiveRoom
+};
+
+export default chatService;

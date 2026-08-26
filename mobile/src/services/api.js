@@ -126,6 +126,5 @@ async function apiRequest(method, endpoint, body = null, auth = false, customTim
   }
 }
 
-export { adminService } from "./admin";
 export { apiRequest };
 export default apiRequest;
