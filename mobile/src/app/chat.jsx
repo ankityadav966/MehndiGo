@@ -6,6 +6,9 @@ import { useAuth } from '../context/AuthContext';
 import { getGlobalStyles } from '../theme/globalStyles';
 import { Colors } from '../theme/colors';
 import { SOCKET_URL } from '../services/api';
+import { adminService } from '../services/admin';
+import { chatService } from '../services/chat';
+import { artistService } from '../services/artist';
 import { Send, User, ChevronLeft, MessageSquare } from 'lucide-react-native';
 
 export default function ChatScreen() {

@@ -556,3 +556,16 @@ export async function deleteServicePackage(packageId) {
   const res = await apiRequest("DELETE", `/artist/packages/${packageId}`, null, true);
   return res?.data || res;
 }
+
+export const artistService = {
+  getArtistDetails,
+  getArtistVerificationStatus,
+  getArtists: async () => {
+    const res = await apiRequest("GET", "/customer/nearby-artists", null, true).catch(() => ({ data: [] }));
+    return res?.data || res;
+  },
+  getArtistsNearby: async () => {
+    const res = await apiRequest("GET", "/customer/nearby-artists", null, true).catch(() => ({ data: [] }));
+    return res?.data || res;
+  }
+};

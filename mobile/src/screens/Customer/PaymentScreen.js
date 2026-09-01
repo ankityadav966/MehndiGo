@@ -197,50 +197,43 @@ export default function PaymentScreen({ route, navigation }) {
       return;
     }
 
-    Alert.alert(
-      "Confirm Cash Booking 💵",
-      "Would you like to send this booking request with Cash on Arrival to the artist for confirmation?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Send Request",
-          onPress: async () => {
-            setLoading(true);
-            try {
-              const res = await selectCashPayment({
-                checkoutData,
-                bookingId: activeBookingId || rawBookingId || booking?.id
-              });
-              setLoading(false);
-              const createdId = res?.data?.bookingId || res?.data?.id || res?.bookingId || res?.id || activeBookingId;
-              Alert.alert(
-                "Request Sent 🌸",
-                "Your booking request has been sent to the artist for confirmation. You will be notified once accepted.",
-                [
+    setLoading(true);
+    setProcessingModalVisible(true);
+    try {
+      const res = await selectCashPayment({
+        checkoutData,
+        bookingId: activeBookingId || rawBookingId || booking?.id
+      });
+      setLoading(false);
+      setProcessingModalVisible(false);
+      const createdId = res?.data?.bookingId || res?.data?.id || res?.bookingId || res?.id || activeBookingId;
+
+      Alert.alert(
+        "Cash Booking Request Placed! 🎉",
+        "Your booking request with Cash on Arrival has been successfully created and sent to the artist.",
+        [
+          {
+            text: "View Booking Details",
+            onPress: () => {
+              navigation.reset({
+                index: 0,
+                routes: [
                   {
-                    text: "View Booking Details",
-                    onPress: () => {
-                      navigation.reset({
-                        index: 0,
-                        routes: [
-                          {
-                            name: "BookingDetails",
-                            params: { bookingId: createdId }
-                          }
-                        ]
-                      });
-                    }
+                    name: "BookingDetails",
+                    params: { bookingId: createdId }
                   }
                 ]
-              );
-            } catch (err) {
-              setLoading(false);
-              Alert.alert("Error", err.message || "Failed to select cash payment.");
+              });
             }
           }
-        }
-      ]
-    );
+        ],
+        { cancelable: false }
+      );
+    } catch (err) {
+      setLoading(false);
+      setProcessingModalVisible(false);
+      Alert.alert("Error", err.message || "Failed to place cash booking request.");
+    }
   };
 
   const handlePay = async () => {
@@ -258,18 +251,35 @@ export default function PaymentScreen({ route, navigation }) {
     setProcessingModalVisible(true);
     let sessionData = null;
     try {
-      sessionData = await createPaymentSession({
-        bookingId: targetBookingId,
-        checkoutData: checkoutData,
-        isSettlement: Boolean(isSettlement),
-        paymentMethodType
-      }).catch(() => null);
+      try {
+        sessionData = await createPaymentSession(
+          targetBookingId,
+          {
+            bookingId: targetBookingId,
+            checkoutData: checkoutData,
+            payment_mode: paymentMethodType,
+            isSettlement: Boolean(isSettlement),
+            purpose: isSettlement ? "booking_remaining" : "booking_advance",
+            amount: isSettlement ? remainingAmount : (advanceAmount || payableNow),
+            finalAmount: finalAmount || totalAmount || payableNow,
+            total_amount: finalAmount || totalAmount || payableNow,
+            advanceAmount: advanceAmount || payableNow,
+            remainingAmount: remainingAmount,
+            bookingCode: bookingCode || booking?.booking_code || null
+          },
+          isSettlement ? "booking_remaining" : "booking_advance",
+          Boolean(isSettlement)
+        );
+      } catch (sessionErr) {
+        console.warn("[PaymentScreen] Backend createPaymentSession notice, generating authentic order:", sessionErr.message);
+      }
 
       // If backend session did not return an authentic Razorpay order, generate a genuine Razorpay order directly
       if (!sessionData?.order_id || !sessionData.order_id.startsWith("order_") || sessionData.order_id.includes("order_178")) {
         const liveKeyId = process.env.EXPO_PUBLIC_RAZORPAY_KEY_ID || "rzp_live_TSIrGnJIllkt0H";
         const liveKeySecret = "AJSFmZyxn471PmOT8OGRB768";
-        const amountInPaise = Math.round(Number(payableNow || 50) * 100);
+        const targetRupees = isSettlement ? (remainingAmount || payableNow) : (advanceAmount || payableNow || Math.round(Number(totalAmount || 500) * 0.10));
+        const amountInPaise = Math.round(Number(targetRupees || 50) * 100);
 
         try {
           // Direct native REST call to Razorpay Order API
@@ -285,7 +295,7 @@ export default function PaymentScreen({ route, navigation }) {
             body: JSON.stringify({
               amount: amountInPaise,
               currency: "INR",
-              receipt: `rcpt_${targetBookingId || Date.now()}`,
+              receipt: `rcpt_${targetBookingId || Date.now()}`.slice(0, 32),
               notes: {
                 booking_id: String(targetBookingId || ""),
                 purpose: isSettlement ? "settlement" : "advance"
@@ -295,7 +305,7 @@ export default function PaymentScreen({ route, navigation }) {
 
           const rzpData = await rzpRes.json();
           if (rzpData?.id) {
-            console.log("[PaymentScreen] Razorpay Order generated on server:", rzpData.id);
+            console.log("[PaymentScreen] Razorpay Order generated directly:", rzpData.id);
             sessionData = {
               key_id: liveKeyId,
               order_id: rzpData.id,

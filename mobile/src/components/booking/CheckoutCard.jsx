@@ -15,9 +15,9 @@ export default function CheckoutCard({
   const totalAmount = Number(booking.total_amount || booking.final_amount || 0);
   const advanceAmount = Number(booking.advance_amount || booking.advance_paid || Math.round(totalAmount * 0.10));
   const remainingAmount = Number(booking.remaining_amount !== undefined ? booking.remaining_amount : (totalAmount - advanceAmount));
-  const paymentMethod = String(booking?.payment_mode || booking?.payment_method || "").toLowerCase();
-  const isAwaitingCashStatus = String(booking.detailed_status || "").toUpperCase() === "AWAITING_CASH_CONFIRMATION";
-  const isAwaitingCashCustomer = !isArtist && isAwaitingCashStatus;
+  const rawMode = String(booking.payment_mode || booking.payment_method || "").toUpperCase();
+  const isCashChosen = rawMode === "CASH" || rawMode === "CASH_ON_DELIVERY";
+  const isFullyPaid = String(booking.payment_status || "").toUpperCase() === "PAID" || remainingAmount <= 0;
 
   return (
     <View style={styles.card}>
@@ -31,10 +31,10 @@ export default function CheckoutCard({
           </Text>
           <Text style={styles.subtitleText} numberOfLines={2}>
             {isArtist
-              ? (isAwaitingCashStatus ? "Customer selected Cash. Please collect and confirm." : "Awaiting customer to select payment method.")
-              : isAwaitingCashCustomer
-              ? "Hand over cash to the artist. The artist will confirm and complete the booking."
-              : "Please complete remaining balance payment to finalize appointment."}
+              ? (isCashChosen
+                  ? "Customer selected Cash. Confirm receipt after taking physical cash."
+                  : "Customer can pay online via UPI/Card or hand over physical cash.")
+              : "Please choose your preferred method to pay the remaining balance."}
           </Text>
         </View>
       </View>
@@ -62,7 +62,11 @@ export default function CheckoutCard({
         <View style={{ flex: 1, marginRight: 8 }}>
           <Text style={styles.dueLabel} numberOfLines={1}>Remaining Balance</Text>
           <Text style={styles.dueSublabel} numberOfLines={1}>
-            {isAwaitingCashStatus ? "Status: Awaiting Artist Cash Receipt" : (paymentMethod === "cash" ? "Mode: Direct Cash Collection" : "Mode: Online / Cash Payment")}
+            {isFullyPaid
+              ? "Status: Fully Paid ✓"
+              : isCashChosen
+                ? "Status: Customer Selected Cash"
+                : "Status: Awaiting Payment Selection"}
           </Text>
         </View>
         <View style={styles.dueValueContainer}>
@@ -73,7 +77,7 @@ export default function CheckoutCard({
 
       {/* Customer Action Buttons */}
       {!isArtist && remainingAmount > 0 && (
-        isAwaitingCashCustomer ? (
+        isCashChosen ? (
           <View style={styles.awaitingCashContainer}>
             <View style={styles.awaitingCashBadge}>
               <Ionicons name="hourglass-outline" size={16} color="#D97706" style={{ marginRight: 6 }} />
@@ -123,29 +127,31 @@ export default function CheckoutCard({
       )}
 
       {/* Artist Action Buttons */}
-      {isArtist && (
+      {isArtist && remainingAmount > 0 && (
         <View style={styles.artistActionContainer}>
-          {isAwaitingCashStatus ? (
-            onConfirmCash && (
-              <TouchableOpacity
-                style={styles.confirmCashBtn}
-                onPress={onConfirmCash}
-                disabled={loading}
-                activeOpacity={0.85}
-              >
-                <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-                <Text style={styles.confirmCashBtnText} numberOfLines={1} ellipsizeMode="tail">
-                  Confirm Cash Received (₹{remainingAmount.toLocaleString("en-IN")})
-                </Text>
-              </TouchableOpacity>
-            )
-          ) : (
-            <View style={styles.awaitingCashBadge}>
-              <Ionicons name="time-outline" size={16} color="#D97706" style={{ marginRight: 6 }} />
-              <Text style={styles.awaitingCashText}>
-                Awaiting customer to select payment method...
+          {!isCashChosen && (
+            <View style={styles.awaitingNoticeBox}>
+              <Ionicons name="time-outline" size={14} color="#6B7280" style={{ marginRight: 4 }} />
+              <Text style={styles.awaitingNoticeText}>
+                Awaiting customer payment (Online UPI or Cash Handover)
               </Text>
             </View>
+          )}
+
+          {onConfirmCash && (
+            <TouchableOpacity
+              style={[styles.confirmCashBtn, !isCashChosen && { backgroundColor: "#059669" }]}
+              onPress={onConfirmCash}
+              disabled={loading}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+              <Text style={styles.confirmCashBtnText} numberOfLines={1} ellipsizeMode="tail">
+                {isCashChosen
+                  ? `Confirm Cash Received (₹${remainingAmount.toLocaleString("en-IN")})`
+                  : `Customer Paid Cash? Confirm Receipt (₹${remainingAmount.toLocaleString("en-IN")})`}
+              </Text>
+            </TouchableOpacity>
           )}
         </View>
       )}
@@ -306,6 +312,21 @@ const styles = StyleSheet.create({
   },
   artistActionContainer: {
     marginTop: 12
+  },
+  awaitingNoticeBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F3F4F6",
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    marginBottom: 10
+  },
+  awaitingNoticeText: {
+    fontSize: 11.5,
+    fontWeight: "600",
+    color: "#4B5563"
   },
   confirmCashBtn: {
     flexDirection: "row",
