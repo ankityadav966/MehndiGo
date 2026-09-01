@@ -4,6 +4,8 @@ import Constants, { ExecutionEnvironment } from "expo-constants";
 import Colors from "../constants/Colors";
 import { secureStorage } from "../utils/storage";
 
+import apiRequest from "./api";
+
 let Notifications = null;
 try {
   Notifications = require("expo-notifications");
@@ -162,8 +164,6 @@ export async function registerForPushNotificationsAsync() {
     return null;
   }
 }
-
-import apiRequest from "./api";
 
 export async function sendNotificationTokenToServer(token) {
   if (!token) return;

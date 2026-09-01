@@ -331,32 +331,32 @@ export default function ReviewSubmissionScreen({ route, navigation }) {
             />
           </View>
         </ScrollView>
-      </KeyboardAvoidingView>
 
-      <View style={styles.footer}>
-        {loading ? (
-          <View style={{ alignItems: "center" }}>
-            <ActivityIndicator size="large" color={Colors.primary} />
-            <Text style={{ marginTop: 6, fontSize: 12, color: Colors.textSecondary }}>{uploadStatusText || "Submitting..."}</Text>
-          </View>
-        ) : (
-          <View style={styles.actionButtons}>
-            <TouchableOpacity style={styles.skipBtn} onPress={handleSkip}>
-              <Text style={styles.skipBtnLabel}>Skip Review</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit}>
-              <Text style={styles.submitBtnText}>Submit Review</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      </View>
+        <View style={styles.footer}>
+          {loading ? (
+            <View style={{ alignItems: "center" }}>
+              <ActivityIndicator size="large" color={Colors.primary} />
+              <Text style={{ marginTop: 6, fontSize: 12, color: Colors.textSecondary }}>{uploadStatusText || "Submitting..."}</Text>
+            </View>
+          ) : (
+            <View style={styles.actionButtons}>
+              <TouchableOpacity style={styles.skipBtn} onPress={handleSkip}>
+                <Text style={styles.skipBtnLabel}>Skip Review</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit}>
+                <Text style={styles.submitBtnText}>Submit Review</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  scrollContent: { paddingBottom: 40 },
+  scrollContent: { paddingBottom: 120 },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12, backgroundColor: Colors.white, borderBottomWidth: 1, borderBottomColor: Colors.border },
   backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.background, justifyContent: "center", alignItems: "center" },
   headerTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },

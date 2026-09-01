@@ -1,8 +1,19 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { connect } from "cloudflare:sockets";
 import { getDb } from "./db.js";
 import { ensurePushNotificationTables, sendExpoPushNotification, dispatchNotification } from "./notification_service.js";
+
+let _cloudflareConnect = null;
+async function getCloudflareConnect() {
+  if (_cloudflareConnect) return _cloudflareConnect;
+  try {
+    const mod = await import("cloudflare:sockets");
+    _cloudflareConnect = mod.connect || mod.default?.connect;
+    return _cloudflareConnect;
+  } catch {
+    return null;
+  }
+}
 
 const app = new Hono();
 
@@ -12,6 +23,9 @@ app.use("*", cors({
   allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
 }));
+
+// Global Configuration Flags
+const ARTIST_APPROVAL_REQUIRED = false; // Toggle to true when manual Admin approval is required for artists before dashboard access
 
 // Helper: JSON response wrapper
 const jsonRes = (c, success, data = {}, message = "", status = 200) => {
@@ -34,6 +48,9 @@ const getUserFromHeader = (c) => {
     let b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
     while (b64.length % 4) b64 += '=';
     const payload = JSON.parse(atob(b64));
+    if (payload.exp && Math.floor(Date.now() / 1000) > payload.exp) {
+      return null;
+    }
     const rawId = payload.id || payload.userId || payload.user_id || payload.sub;
     const id = Number(rawId) || rawId;
     return { ...payload, id };
@@ -64,58 +81,30 @@ function generateSecure4DigitOtp() {
  * Distinguishes PER_PERSON vs FIXED services strictly from service configuration.
  */
 function isPerPersonService(service, customArtPrice = null, baseRate = null) {
+  if (customArtPrice !== null && !isNaN(customArtPrice) && Number(customArtPrice) > 0) {
+    return true;
+  }
+
   if (!service) {
-    const rate = (customArtPrice !== null && !isNaN(customArtPrice) && Number(customArtPrice) > 0)
-      ? Number(customArtPrice)
-      : (baseRate !== null && !isNaN(baseRate) ? Number(baseRate) : 0);
-    return rate > 0 && rate <= 1000;
+    return true;
   }
 
   // 1. Explicit database column (if defined)
   if (service.pricing_type) {
     const pt = String(service.pricing_type).trim().toUpperCase();
-    if (pt === "PER_PERSON" || pt === "PER_HAND" || pt === "PER_GUEST") return true;
-    if (pt === "FIXED" || pt === "PACKAGE" || pt === "BRIDAL") return false;
+    if (pt === "PER_PERSON" || pt === "PER_HAND" || pt === "PER_GUEST" || pt === "PER_SIDE") return true;
+    if (pt === "FIXED_PACKAGE" || pt === "COMBO_PACKAGE") return false;
   }
 
-  const category = String(service.category || "").toLowerCase().trim();
   const title = String(service.title || "").toLowerCase().trim();
-  const spec = String(service.specialization_name || "").toLowerCase().trim();
 
-  // 2. Strict FIXED classification: Bridal, Wedding, Full Bridal Packages
-  if (
-    category.includes("bridal") ||
-    title.includes("bridal") ||
-    title.includes("bridel") ||
-    spec.includes("bridal") ||
-    spec.includes("bridel") ||
-    category.includes("wedding") ||
-    title.includes("wedding") ||
-    title.includes("package")
-  ) {
+  // 2. Multi-person combo packages that include multiple people fixed
+  if (title.includes("full combo package") || title.includes("multi-person combo")) {
     return false;
   }
 
-  // 3. Strict PER_PERSON classification: Party, Guest, Group, Per Person
-  if (
-    category.includes("party") ||
-    title.includes("party") ||
-    spec.includes("party") ||
-    category.includes("guest") ||
-    title.includes("guest") ||
-    title.includes("per person") ||
-    title.includes("per hand")
-  ) {
-    return true;
-  }
-
-  // 4. Default: If not bridal/package, traditional/arabic art designs under ₹1000 unit rate are per-person
-  const unitRate = Number(service.price || service.minimum_price || 0);
-  if (unitRate > 0 && unitRate <= 1000) {
-    return true;
-  }
-
-  return false;
+  // 3. In MehndiGo, booking for N persons scales per person
+  return true;
 }
 
 // Health Check
@@ -194,7 +183,7 @@ const handleLogin = async (c) => {
 
   // Construct fake token for Cloudflare Workers demo / secret auth
   const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-  const payload = btoa(JSON.stringify({ id: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1000) + (86400 * 7) }));
+  const payload = btoa(JSON.stringify({ id: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1000) + 86400 }));
   const token = `${header}.${payload}.sig`;
 
   return jsonRes(c, true, {
@@ -257,22 +246,27 @@ const generate6DigitOtp = () => {
   return String(100000 + (val % range));
 };
 
-const sendCustomSmtpDirect = async (c, toEmail, subject, textBody, htmlBody) => {
+const sendCustomSmtpDirect = async (c, toEmail, subject, textBody, htmlBody, optUser, optPass) => {
   const targetEmail = String(toEmail || "").trim().toLowerCase();
   if (!targetEmail || !targetEmail.includes("@")) return false;
 
-  let user = ((c && c.env && c.env.EMAIL_USER) || "").trim();
-  let pass = ((c && c.env && c.env.EMAIL_PASS) || "").replace(/\s+/g, "");
+  let user = optUser || ((c && c.env && c.env.EMAIL_USER) || "").trim();
+  let pass = optPass || ((c && c.env && c.env.EMAIL_PASS) || "").replace(/\s+/g, "");
 
-  if (!user || !pass || (user === "mehendigo@gmail.com" && !c?.env?.EMAIL_PASS)) {
+  if (!user || !pass) {
     user = "mehendigo@gmail.com";
-    pass = "zgibsuiprjnapudd";
+    pass = "kwemkkniwxyohmvm";
   }
 
   let socket = null;
   try {
+    const connectFn = await getCloudflareConnect();
+    if (!connectFn) {
+      console.log("[SMTP] cloudflare:sockets not available in current runtime, skipping direct socket.");
+      return false;
+    }
     console.log(`[CLOUDFLARE SOCKETS SMTP] Connecting to smtp.gmail.com:465 for recipient: ${targetEmail}...`);
-    socket = connect({ hostname: "smtp.gmail.com", port: 465 }, { secureTransport: "on" });
+    socket = connectFn({ hostname: "smtp.gmail.com", port: 465 }, { secureTransport: "on" });
     const writer = socket.writable.getWriter();
     const reader = socket.readable.getReader();
     const encoder = new TextEncoder();
@@ -501,17 +495,30 @@ const sendCheckInOtpEmail = async (c, toEmail, otp, customerName = "Valued Custo
   // 2. Azure Email Communication Service (If configured)
   if (c?.env?.AZURE_EMAIL_CONNECTION_STRING) {
     try {
-      const azureSent = await sendAzureEmailWorkerDirect(c, targetEmail, subject, htmlBody, textBody);
-      if (azureSent) {
+      const azureResult = await sendAzureEmailWorkerDirect(c, targetEmail, subject, htmlBody, textBody);
+      if (azureResult && azureResult.success) {
         console.log(`[AZURE CHECK-IN EMAIL DELIVERED] PIN delivered to ${targetEmail}`);
         return true;
+      } else {
+        console.log(`[Azure Check-In Email notice]:`, azureResult?.error);
       }
     } catch (err) {
       console.log(`[Azure Check-In Email notice]:`, err.message);
     }
   }
 
-  // 3. Resend fallback
+  // 3. Fallback: Secondary Gmail (Sanaya)
+  try {
+    const smtpSent2 = await sendCustomSmtpDirect(c, targetEmail, subject, textBody, htmlBody, "sanayayadav2002@gmail.com", "omvjufhcacytodkc");
+    if (smtpSent2) {
+      console.log(`[SMTP2 CHECK-IN EMAIL DELIVERED] PIN delivered to ${targetEmail}`);
+      return true;
+    }
+  } catch (err) {
+    console.log(`[SMTP2 Check-In Email notice]:`, err.message);
+  }
+
+  // 4. Resend fallback
   const resendApiKey = (c && c.env && c.env.RESEND_API_KEY) || "";
   if (resendApiKey) {
     try {
@@ -588,17 +595,30 @@ const sendCheckOutOtpEmail = async (c, toEmail, otp, customerName = "Valued Cust
   // 2. Azure Email Communication Service (If configured)
   if (c?.env?.AZURE_EMAIL_CONNECTION_STRING) {
     try {
-      const azureSent = await sendAzureEmailWorkerDirect(c, targetEmail, subject, htmlBody, textBody);
-      if (azureSent) {
+      const azureResult = await sendAzureEmailWorkerDirect(c, targetEmail, subject, htmlBody, textBody);
+      if (azureResult && azureResult.success) {
         console.log(`[AZURE CHECK-OUT EMAIL DELIVERED] PIN delivered to ${targetEmail}`);
         return true;
+      } else {
+        console.log(`[Azure Check-Out Email notice]:`, azureResult?.error);
       }
     } catch (err) {
       console.log(`[Azure Check-Out Email notice]:`, err.message);
     }
   }
 
-  // 3. Resend fallback
+  // 3. Fallback: Secondary Gmail (Sanaya)
+  try {
+    const smtpSent2 = await sendCustomSmtpDirect(c, targetEmail, subject, textBody, htmlBody, "sanayayadav2002@gmail.com", "omvjufhcacytodkc");
+    if (smtpSent2) {
+      console.log(`[SMTP2 CHECK-OUT EMAIL DELIVERED] PIN delivered to ${targetEmail}`);
+      return true;
+    }
+  } catch (err) {
+    console.log(`[SMTP2 Check-Out Email notice]:`, err.message);
+  }
+
+  // 4. Resend fallback
   const resendApiKey = (c && c.env && c.env.RESEND_API_KEY) || "";
   if (resendApiKey) {
     try {
@@ -735,15 +755,15 @@ const sendAzureEmailWorkerDirect = async (c, toEmail, subject, htmlBody, plainTe
     if (res.ok || res.status === 202) {
       const resJson = await res.json().catch(() => ({}));
       console.log(`[AZURE EMAIL DELIVERED] Recipient: ${targetEmail} | ID: ${resJson?.id || "azure-ok"}`);
-      return true;
+      return { success: true };
     } else {
       const errText = await res.text().catch(() => "");
       console.warn(`[AZURE EMAIL ERROR] Status: ${res.status} | Body:`, errText);
-      return false;
+      return { success: false, error: `Status ${res.status}: ${errText}` };
     }
   } catch (err) {
     console.error("[AZURE EMAIL EXCEPTION]:", err.message);
-    return false;
+    return { success: false, error: err.message };
   }
 };
 
@@ -773,29 +793,54 @@ const sendRealOtpEmail = async (c, toEmail, otp, name = "User") => {
 </div>
 `.trim();
 
+  const errors = [];
+
   // 1. Primary: Azure Email Communication Service
   try {
-    const azureSent = await sendAzureEmailWorkerDirect(c, targetEmail, otpSubject, otpHtml, `Your MehndiGo OTP code is: ${targetOtp}`);
-    if (azureSent) {
-      console.log(`[AZURE DELIVERED INBOX] Real OTP delivered to ${targetEmail}`);
-      return true;
+    const azureResult = await sendAzureEmailWorkerDirect(c, targetEmail, otpSubject, otpHtml, `Your MehndiGo OTP code is: ${targetOtp}`);
+    if (azureResult && azureResult.success) {
+      console.log(`EMAIL_PROVIDER=AZURE SUCCESS [Target: ${targetEmail}]`);
+      return { success: true };
+    } else {
+      errors.push(`Azure failed: ${azureResult?.error || 'Unknown error'}`);
+      console.log(`[Azure Email notice]: ${azureResult?.error || 'Unknown error'}`);
     }
   } catch (err) {
-    console.log(`[Azure Email notice]:`, err.message);
+    errors.push(`Azure exception: ${err.message}`);
+    console.log(`[Azure Email notice]: ${err.message}`);
   }
 
   // 2. Fallback: Gmail Direct Socket SMTP
   try {
     const directSmtpSent = await sendCustomSmtpDirect(c, targetEmail, otpSubject, `Your MehndiGo OTP code is: ${targetOtp}`, otpHtml);
     if (directSmtpSent) {
-      console.log(`[SMTP DELIVERED INBOX] Real OTP delivered to ${targetEmail}`);
-      return true;
+      console.log(`EMAIL_PROVIDER=AZURE FAILED -> GMAIL FALLBACK SUCCESS [Target: ${targetEmail}]`);
+      return { success: true };
+    } else {
+      errors.push("Gmail SMTP failed to return success");
+      console.log(`[SMTP notice]: Failed to send`);
     }
   } catch (err) {
-    console.log(`[SMTP notice]:`, err.message);
+    errors.push(`Gmail exception: ${err.message}`);
+    console.log(`[SMTP notice]: ${err.message}`);
   }
 
-  // 3. Fallback: Resend
+  // 3. Fallback: Secondary Gmail (Sanaya)
+  try {
+    const directSmtpSent2 = await sendCustomSmtpDirect(c, targetEmail, otpSubject, `Your MehndiGo OTP code is: ${targetOtp}`, otpHtml, "sanayayadav2002@gmail.com", "omvjufhcacytodkc");
+    if (directSmtpSent2) {
+      console.log(`EMAIL_PROVIDER=GMAIL1 FAILED -> GMAIL2 FALLBACK SUCCESS [Target: ${targetEmail}]`);
+      return { success: true };
+    } else {
+      errors.push("Gmail2 SMTP failed to return success");
+      console.log(`[SMTP2 notice]: Failed to send`);
+    }
+  } catch (err) {
+    errors.push(`Gmail2 exception: ${err.message}`);
+    console.log(`[SMTP2 notice]: ${err.message}`);
+  }
+
+  // 4. Fallback: Resend
   const resendApiKey = (c && c.env && c.env.RESEND_API_KEY) || "";
   if (resendApiKey) {
     try {
@@ -814,16 +859,20 @@ const sendRealOtpEmail = async (c, toEmail, otp, name = "User") => {
       }).catch(() => null);
 
       if (resendRes && resendRes.ok) {
-        console.log(`[RESEND DELIVERED INBOX] Delivered OTP ${targetOtp} to ${targetEmail}`);
-        return true;
+        console.log(`EMAIL_PROVIDER=GMAIL FAILED -> RESEND FALLBACK SUCCESS [Target: ${targetEmail}]`);
+        return { success: true };
+      } else {
+        const resendErr = resendRes ? await resendRes.text().catch(() => "") : "Network error";
+        errors.push(`Resend failed: ${resendErr}`);
       }
     } catch (err) {
+      errors.push(`Resend exception: ${err.message}`);
       console.log("Resend dispatch notice:", err.message);
     }
   }
 
-  console.log(`[OTP DISPATCH COMPLETED] Target: ${targetEmail}`);
-  return true;
+  console.log(`EMAIL_PROVIDER=ALL FAILED [Target: ${targetEmail}] | Errors: ${errors.join(" | ")}`);
+  return { success: false, error: errors.join(" | ") };
 };
 
 const handleRegisterSendOtp = async (c) => {
@@ -883,15 +932,15 @@ const handleRegisterSendOtp = async (c) => {
     console.log("OTP DB insert notice:", e.message);
   }
 
-  let sent = false;
+  let sendResult = { success: false };
   if (cleanEmail && cleanEmail.includes("@")) {
-    sent = await sendRealOtpEmail(c, cleanEmail, otp, name || "User");
+    sendResult = await sendRealOtpEmail(c, cleanEmail, otp, name || "User");
   } else {
-    sent = true; // Fallback for pure phone testing
+    sendResult = { success: true }; // Fallback for pure phone testing
   }
 
-  if (!sent) {
-    return jsonRes(c, false, null, "Unable to deliver OTP email. Please check your email address and try again.", 502);
+  if (!sendResult.success) {
+    return jsonRes(c, false, null, `Unable to deliver OTP email. Error: ${sendResult.error || "Unknown"}`, 502);
   }
 
   return jsonRes(c, true, {
@@ -967,23 +1016,26 @@ const handleRegisterVerifyOtp = async (c) => {
       }
     }
 
+    const isArtist = targetRole === "artist";
+    const initialVerified = isArtist ? 0 : 1;
+
     const res = await db.run(
-      "INSERT INTO users (full_name, email, phone, password_hash, role, is_verified) VALUES (?, ?, ?, ?, ?, 1)",
-      [targetName, targetEmail, targetPhone, password || "secret123", targetRole]
+      "INSERT INTO users (full_name, email, phone, password_hash, role, is_verified) VALUES (?, ?, ?, ?, ?, ?)",
+      [targetName, targetEmail, targetPhone, password || "secret123", targetRole, initialVerified]
     );
     const newUserId = res.meta?.last_row_id || Date.now();
 
-    if (targetRole === "artist") {
+    if (isArtist) {
       await db.run(
-        "INSERT INTO artist_profiles (user_id, bio, city, status, verification_status, is_available) VALUES (?, ?, ?, 'pending', 'PENDING', 0)",
-        [newUserId, "", "Jaipur"]
+        "INSERT INTO artist_profiles (user_id, bio, city, status, verification_status, is_available) VALUES (?, ?, ?, 'not_submitted', 'NOT_SUBMITTED', 0)",
+        [newUserId, "", ""]
       ).catch(() => { });
     }
 
-    const user = { id: newUserId, full_name: targetName, email: targetEmail, phone: targetPhone, role: targetRole, is_verified: 1 };
+    const user = { id: newUserId, full_name: targetName, email: targetEmail, phone: targetPhone, role: targetRole, is_verified: initialVerified };
 
     const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-    const payload = btoa(JSON.stringify({ id: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1000) + (86400 * 7) }));
+    const payload = btoa(JSON.stringify({ id: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1000) + 86400 }));
     const token = `${header}.${payload}.sig`;
 
     return jsonRes(c, true, {
@@ -995,7 +1047,7 @@ const handleRegisterVerifyOtp = async (c) => {
         email: user.email,
         phone: user.phone,
         role: user.role,
-        is_verified: 1
+        is_verified: initialVerified
       }
     }, "Account Created Successfully");
   } catch (err) {
@@ -1065,15 +1117,15 @@ const handleSendOtp = async (c) => {
     console.log("OTP DB insert notice:", e.message);
   }
 
-  let sent = false;
+  let sendResult = { success: false };
   if (targetEmail && targetEmail.includes("@")) {
-    sent = await sendRealOtpEmail(c, targetEmail, otp, user.full_name || "User");
+    sendResult = await sendRealOtpEmail(c, targetEmail, otp, user.full_name || "User");
   } else {
-    sent = true;
+    sendResult = { success: true };
   }
 
-  if (!sent) {
-    return jsonRes(c, false, null, "Unable to deliver OTP email. Please check your email address and try again.", 502);
+  if (!sendResult.success) {
+    return jsonRes(c, false, null, `Unable to deliver OTP email. Error: ${sendResult.error || "Unknown"}`, 502);
   }
 
   return jsonRes(c, true, {
@@ -1153,7 +1205,7 @@ const handleVerifyOtp = async (c) => {
     }
 
     const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-    const payload = btoa(JSON.stringify({ id: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1000) + (86400 * 7) }));
+    const payload = btoa(JSON.stringify({ id: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1000) + 86400 }));
     const token = `${header}.${payload}.sig`;
 
     return jsonRes(c, true, {
@@ -1182,7 +1234,7 @@ const handleAdminSendOtp = async (c) => {
 
 const handleAdminVerifyOtp = async (c) => {
   const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-  const payload = btoa(JSON.stringify({ id: 1, email: "admin@mehndigo.com", role: "admin", exp: Math.floor(Date.now() / 1000) + (86400 * 7) }));
+  const payload = btoa(JSON.stringify({ id: 1, email: "admin@mehndigo.com", role: "admin", exp: Math.floor(Date.now() / 1000) + 86400 }));
   const token = `${header}.${payload}.sig`;
 
   return jsonRes(c, true, {
@@ -1351,11 +1403,15 @@ const handleGetArtistDashboard = async (c) => {
 
   const rawStatus = profile?.verification_status || profile?.status || "PENDING";
   const canonicalVerificationStatus = String(rawStatus).toUpperCase();
-  if (canonicalVerificationStatus !== "APPROVED") {
-    const errorMsg = canonicalVerificationStatus === "REJECTED"
-      ? (profile.rejection_reason ? `Your artist application has been rejected by the admin. Reason: ${profile.rejection_reason}` : "Your artist application has been rejected by the admin.")
-      : "Your artist account is pending admin approval. You will be able to access your dashboard after approval.";
+  if (canonicalVerificationStatus === "REJECTED") {
+    const errorMsg = profile.rejection_reason
+      ? `Your artist application has been rejected by the admin. Reason: ${profile.rejection_reason}`
+      : "Your artist application has been rejected by the admin.";
     return jsonRes(c, false, null, errorMsg, 403);
+  }
+
+  if (ARTIST_APPROVAL_REQUIRED && canonicalVerificationStatus !== "APPROVED") {
+    return jsonRes(c, false, null, "Your artist account is pending admin approval. You will be able to access your dashboard after approval.", 403);
   }
 
   const artistName = user?.full_name || user?.name || "Artist";
@@ -1470,6 +1526,27 @@ const handleGetArtistDashboard = async (c) => {
     [u.id, String(u.id)]
   ).then(r => r?.count || 0).catch(() => 0);
 
+  // Cash In Hand Earnings (separate from digital wallet balance)
+  const cashEarningsRow = await db.first(`
+    SELECT SUM(COALESCE(artist_total_payable, base_service_amount * 0.9 + travel_charge, total_amount * 0.9)) as total, COUNT(*) as count
+    FROM bookings
+    WHERE (artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT))
+      AND LOWER(status) IN ('completed', 'completed_closed')
+      AND (UPPER(COALESCE(final_payment_method, '')) = 'CASH' OR UPPER(COALESCE(payment_mode, '')) = 'CASH')
+  `, [u.id, String(u.id)]).catch(() => ({ total: 0, count: 0 }));
+
+  const cashTodayRow = await db.first(`
+    SELECT SUM(COALESCE(artist_total_payable, base_service_amount * 0.9 + travel_charge, total_amount * 0.9)) as total
+    FROM bookings
+    WHERE (artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT))
+      AND LOWER(status) IN ('completed', 'completed_closed')
+      AND (UPPER(COALESCE(final_payment_method, '')) = 'CASH' OR UPPER(COALESCE(payment_mode, '')) = 'CASH')
+      AND DATE(updated_at) = DATE('now')
+  `, [u.id, String(u.id)]).catch(() => ({ total: 0 }));
+
+  const totalCashVal = Math.round(Number(cashEarningsRow?.total || 0) * 100) / 100;
+  const todayCashVal = Math.round(Number(cashTodayRow?.total || 0) * 100) / 100;
+
   const upcomingCount = await db.first(
     "SELECT COUNT(*) as count FROM bookings WHERE (artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT)) AND booking_date >= ? AND LOWER(status) IN ('accepted', 'confirmed')",
     [u.id, String(u.id), istDateStr]
@@ -1495,6 +1572,13 @@ const handleGetArtistDashboard = async (c) => {
     [u.id, String(u.id)]
   ).then(r => r?.count || 0).catch(() => 0);
 
+  const reviewStats = await db.first(
+    "SELECT COUNT(*) as count, AVG(rating) as avg_rating FROM reviews WHERE (artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT))",
+    [u.id, String(u.id)]
+  ).catch(() => null);
+  const realReviewsCount = Number(reviewStats?.count || 0);
+  const realRating = realReviewsCount > 0 ? Number(Number(reviewStats?.avg_rating || 0).toFixed(1)) : 0;
+
   return jsonRes(c, true, {
     artist: {
       id: u.id,
@@ -1502,8 +1586,9 @@ const handleGetArtistDashboard = async (c) => {
       full_name: artistName,
       profile_image: artistAvatar,
       verification_status: canonicalVerificationStatus,
-      avg_rating: String(profile?.rating || 0),
-      total_reviews: profile?.total_reviews || 0,
+      avg_rating: realRating > 0 ? String(realRating) : "0",
+      rating: realRating,
+      total_reviews: realReviewsCount,
       experience_years: profile?.experience_years || 0,
       city: profile?.city || ""
     },
@@ -1512,6 +1597,12 @@ const handleGetArtistDashboard = async (c) => {
     totalBookings: bookingsCount,
     todayBookings: todayBookingsCount,
     todayEarnings: todayEarningsVal,
+    todayOnlineEarnings: todayEarningsVal,
+    todayCashEarnings: todayCashVal,
+    todayCash: todayCashVal,
+    cashEarnings: totalCashVal,
+    cashCollected: totalCashVal,
+    totalCash: totalCashVal,
     pendingRequests: pendingRequestsCount,
     walletBalance,
     availableBalance: walletBalance,
@@ -1703,8 +1794,9 @@ const handleGetArtistDetails = async (c) => {
   const profile = await db.first("SELECT * FROM artist_profiles WHERE user_id = ?", [u.id]).catch(() => null);
 
   const artistName = user?.full_name || user?.name || "Artist";
+  const artistBanner = profile?.banner_image || profile?.cover_image || "";
   const artistAvatar = profile?.profile_image || profile?.selfie_image || user?.avatar || "";
-  const rawStatus = profile?.verification_status || profile?.status || "PENDING";
+  const rawStatus = profile ? (profile.verification_status || profile.status || "PENDING") : "NOT_SUBMITTED";
   const canonicalVerificationStatus = String(rawStatus).toUpperCase();
 
   const canonicalLocation = profile?.location || profile?.locality || "";
@@ -1714,13 +1806,15 @@ const handleGetArtistDetails = async (c) => {
   const canonicalPincode = profile?.pincode || "";
   const canonicalBio = profile?.bio || "";
   const canonicalExp = profile?.experience_years !== undefined && profile?.experience_years !== null ? Number(profile.experience_years) : 0;
-  const canonicalPrice = profile?.starting_price ? Number(profile.starting_price) : 1500;
+  const canonicalPrice = profile?.starting_price ? Number(profile.starting_price) : 0;
   const canonicalHomeSvc = profile?.home_service !== undefined ? Boolean(profile.home_service !== false && profile.home_service !== 0) : true;
   const canonicalSalonSvc = Boolean(profile?.salon_service);
   const canonicalLanguages = profile?.languages || "English, Hindi";
   const canonicalIsAvailable = profile?.is_available !== undefined ? Boolean(profile.is_available !== false && profile.is_available !== 0) : true;
 
+  const hasProfile = Boolean(profile && profile.id);
   const isProfileComplete = Boolean(
+    hasProfile &&
     canonicalBio &&
     canonicalBio.trim() !== "" &&
     canonicalExp !== null &&
@@ -1728,8 +1822,23 @@ const handleGetArtistDetails = async (c) => {
     (profile?.aadhaar_front || profile?.aadhaar_number)
   );
 
+  const reviewStats = await db.first(
+    "SELECT COUNT(*) as count, AVG(rating) as avg_rating FROM reviews WHERE (artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT))",
+    [u.id, String(u.id)]
+  ).catch(() => null);
+  const realReviewsCount = Number(reviewStats?.count || 0);
+  const realRating = realReviewsCount > 0 ? Number(Number(reviewStats?.avg_rating || 0).toFixed(1)) : 0;
+
+  let effectiveStatus = canonicalVerificationStatus;
+  if (!ARTIST_APPROVAL_REQUIRED) {
+    if (canonicalVerificationStatus !== "REJECTED" && isProfileComplete) {
+      effectiveStatus = "APPROVED";
+    }
+  }
+
   return jsonRes(c, true, {
-    id: profile?.id || user?.id || u.id,
+    id: profile?.id || null,
+    has_profile: hasProfile,
     user_id: user?.id || u.id,
     user: {
       id: user?.id || u.id,
@@ -1739,6 +1848,8 @@ const handleGetArtistDetails = async (c) => {
       phone: user?.phone || "",
       profile_image: artistAvatar,
       avatar: artistAvatar,
+      banner_image: artistBanner,
+      cover_image: artistBanner,
       role: user?.role || "artist",
       is_verified: Boolean(user?.is_verified),
       is_active: user?.is_active !== 0
@@ -1765,11 +1876,18 @@ const handleGetArtistDetails = async (c) => {
     selfie_image: profile?.selfie_image || artistAvatar || "",
     profile_image: artistAvatar,
     avatar: artistAvatar,
-    cover_image: profile?.cover_image || "",
-    rating: profile?.rating || 0,
-    total_reviews: profile?.total_reviews || 0,
-    status: canonicalVerificationStatus.toLowerCase(),
-    verification_status: canonicalVerificationStatus,
+    banner_image: artistBanner,
+    cover_image: artistBanner,
+    banner: artistBanner,
+    rating: realRating,
+    avg_rating: realRating > 0 ? String(realRating) : "0",
+    total_reviews: realReviewsCount,
+    reviews_count: realReviewsCount,
+    status: effectiveStatus.toLowerCase(),
+    verification_status: effectiveStatus,
+    raw_verification_status: canonicalVerificationStatus,
+    is_approved: effectiveStatus === "APPROVED",
+    is_approval_required: ARTIST_APPROVAL_REQUIRED,
     is_available: canonicalIsAvailable,
     rejection_reason: profile?.rejection_reason || null,
     isProfileComplete: isProfileComplete
@@ -1886,6 +2004,9 @@ const handleUpdateArtistProfile = async (c) => {
     return jsonRes(c, false, null, "Unauthorized access", 401);
   }
 
+  await db.run("ALTER TABLE artist_profiles ADD COLUMN banner_image TEXT").catch(() => {});
+  await db.run("ALTER TABLE artist_profiles ADD COLUMN cover_image TEXT").catch(() => {});
+
   let body = {};
   try {
     body = await c.req.json();
@@ -1920,7 +2041,7 @@ const handleUpdateArtistProfile = async (c) => {
   const state = body.state;
   const pincode = body.pincode;
   const languages = body.languages;
-  const rawCover = body.cover_image || body.coverImage;
+  const rawCover = body.banner_image || body.bannerImage || body.cover_image || body.coverImage;
   const coverImage = sanitizeStorageUrl(await resolveFileValue(rawCover));
   const rawFront = body.aadhaar_front || body.aadhaarFront;
   const aadhaarFront = sanitizeStorageUrl(await resolveFileValue(rawFront));
@@ -1937,6 +2058,21 @@ const handleUpdateArtistProfile = async (c) => {
     if (digits.length === 12) {
       cleanAadhaar = digits;
     }
+  }
+
+  const rawAadhaarFront = body.aadhaar_front || body.aadhaarFront;
+  const isSubmissionComplete = Boolean(
+    (bio && String(bio).trim().length > 0) ||
+    (city && String(city).trim().length > 0) ||
+    (location && String(location).trim().length > 0) ||
+    (rawAadhaarFront || cleanAadhaar || body.aadhaar_number || body.aadhaarNumber)
+  );
+
+  const targetVerificationStatus = (!ARTIST_APPROVAL_REQUIRED && isSubmissionComplete) ? 'APPROVED' : (isSubmissionComplete ? 'PENDING' : 'NOT_SUBMITTED');
+  const targetDbStatus = (!ARTIST_APPROVAL_REQUIRED && isSubmissionComplete) ? 'approved' : (isSubmissionComplete ? 'pending' : 'not_submitted');
+
+  if (!ARTIST_APPROVAL_REQUIRED && isSubmissionComplete) {
+    await db.run("UPDATE users SET is_verified = 1 WHERE id = ?", [u.id]).catch(() => {});
   }
 
   const existingProfile = await db.first("SELECT id FROM artist_profiles WHERE user_id = ?", [u.id]).catch(() => null);
@@ -1956,6 +2092,7 @@ const handleUpdateArtistProfile = async (c) => {
         pincode = COALESCE(?, pincode),
         languages = COALESCE(?, languages),
         cover_image = COALESCE(?, cover_image),
+        banner_image = COALESCE(?, banner_image, cover_image),
         selfie_image = COALESCE(?, selfie_image),
         profile_image = COALESCE(?, profile_image, selfie_image),
         aadhaar_number = COALESCE(?, aadhaar_number),
@@ -1963,6 +2100,8 @@ const handleUpdateArtistProfile = async (c) => {
         aadhaar_back = COALESCE(?, aadhaar_back),
         latitude = COALESCE(?, latitude),
         longitude = COALESCE(?, longitude),
+        status = ?,
+        verification_status = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE user_id = ?
     `, [
@@ -1979,6 +2118,7 @@ const handleUpdateArtistProfile = async (c) => {
       pincode !== undefined ? pincode : null,
       languages !== undefined ? languages : null,
       coverImage !== undefined ? coverImage : null,
+      coverImage !== undefined ? coverImage : null,
       avatar !== undefined ? avatar : null,
       avatar !== undefined ? avatar : null,
       cleanAadhaar !== undefined ? cleanAadhaar : null,
@@ -1986,20 +2126,22 @@ const handleUpdateArtistProfile = async (c) => {
       aadhaarBack !== undefined ? aadhaarBack : null,
       latitude !== undefined ? latitude : null,
       longitude !== undefined ? longitude : null,
+      targetDbStatus,
+      targetVerificationStatus,
       u.id
     ]).catch((err) => console.warn("Artist profile update err:", err.message));
   } else {
     await db.run(`
       INSERT INTO artist_profiles (
         user_id, bio, experience_years, starting_price, home_service, salon_service, is_available,
-        location, locality, city, state, pincode, languages, cover_image, selfie_image, profile_image,
-        aadhaar_number, aadhaar_front, aadhaar_back, latitude, longitude, verification_status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')
+        location, locality, city, state, pincode, languages, cover_image, banner_image, selfie_image, profile_image,
+        aadhaar_number, aadhaar_front, aadhaar_back, latitude, longitude, status, verification_status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       u.id,
       bio || "",
       experienceYears || 0,
-      startingPrice || 1500,
+      startingPrice || 0,
       homeService !== undefined ? homeService : 1,
       salonService !== undefined ? salonService : 0,
       isAvailable !== undefined ? isAvailable : 1,
@@ -2010,13 +2152,16 @@ const handleUpdateArtistProfile = async (c) => {
       pincode || "",
       languages || "English, Hindi",
       coverImage || "",
+      coverImage || "",
       avatar || "",
       avatar || "",
       cleanAadhaar || "",
       aadhaarFront || "",
       aadhaarBack || "",
       latitude || "26.912434",
-      longitude || "75.787270"
+      longitude || "75.787270",
+      targetDbStatus,
+      targetVerificationStatus
     ]).catch((err) => console.warn("Artist profile insert err:", err.message));
   }
 
@@ -2605,6 +2750,20 @@ const processBookingEscrow = async (db, bookingId, paymentId, paidAmount) => {
     realBookingId
   ]).catch(() => { });
 
+  const paymentRows = await db.all("SELECT * FROM payments WHERE booking_id = ? AND (status = 'captured' OR status = 'completed')", [realBookingId]).catch(() => []) || [];
+  let onlinePaid = 0;
+  (paymentRows || []).forEach(p => {
+    if (String(p.payment_method || '').toUpperCase() !== 'CASH') {
+      onlinePaid += Number(p.amount || 0);
+    }
+  });
+  if (onlinePaid === 0 && Number(booking.advance_paid || 0) > 0) {
+    onlinePaid = Number(booking.advance_paid || 0);
+  }
+
+  // Calculate actual digital credit that belongs to artist (excluding commission)
+  const artistDigitalWalletCredit = Math.max(0, Math.round((onlinePaid - commission) * 100) / 100);
+
   let wallet = await db.first("SELECT * FROM wallets WHERE user_id = ? OR artist_id = ?", [artistId, artistId]).catch(() => null);
   if (!wallet) {
     await db.run(
@@ -2616,20 +2775,31 @@ const processBookingEscrow = async (db, bookingId, paymentId, paidAmount) => {
 
   const walletId = wallet?.id || 1;
   const currentEscrow = Number(wallet?.escrow_balance || wallet?.pending_settlement || 0);
-  const newEscrow = Math.round((currentEscrow + artistEarning) * 100) / 100;
+  // Escrow should only hold the online digital credit (cash should not be in escrow)
+  const newEscrow = Math.round((currentEscrow + artistDigitalWalletCredit) * 100) / 100;
 
   await db.run(
     "UPDATE wallets SET escrow_balance = ?, pending_settlement = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
     [newEscrow, newEscrow, walletId]
   ).catch(() => { });
 
-  const desc = `Booking #${booking.booking_number || realBookingId} Earning held in Pending (Commission ${(calc.commission_rate_snapshot * 100).toFixed(0)}%: ₹${commission.toFixed(2)})`;
+  const desc = `Booking #${booking.booking_number || realBookingId} Online Payment held in Escrow (Advance Paid: ₹${onlinePaid.toFixed(2)}, Commission: ₹${commission.toFixed(2)})`;
 
-  await db.run(
-    `INSERT INTO wallet_transactions (wallet_id, user_id, booking_id, type, amount, description, status, reference_id)
-     VALUES (?, ?, ?, 'credit', ?, ?, 'escrow_held', ?)`,
-    [walletId, artistId, realBookingId, artistEarning, desc, refCode]
-  ).catch((e) => console.log("Insert escrow tx error:", e.message));
+  // Only insert escrow transaction if there is actual digital credit
+  if (artistDigitalWalletCredit > 0) {
+    await db.run(
+      `INSERT INTO wallet_transactions (wallet_id, user_id, booking_id, type, amount, description, status, reference_id)
+       VALUES (?, ?, ?, 'credit', ?, ?, 'escrow_held', ?)`,
+      [walletId, artistId, realBookingId, artistDigitalWalletCredit, desc, refCode]
+    ).catch((e) => console.log("Insert escrow tx error:", e.message));
+  } else {
+    // Record explicit non-credit escrow marker for online history
+    await db.run(
+      `INSERT INTO wallet_transactions (wallet_id, user_id, booking_id, type, amount, description, status, reference_id)
+       VALUES (?, ?, ?, 'credit', 0, ?, 'completed', ?)`,
+      [walletId, artistId, realBookingId, desc, refCode]
+    ).catch(() => { });
+  }
 
   // Record entry into Master Financial Ledger
   await recordMasterFinancialLedger(db, booking, calc, {
@@ -2730,10 +2900,10 @@ const processBookingSettlement = async (db, bookingId, options = {}) => {
 
   // Available balance increases ONLY by the actual digital credit (Online collected - Commission)
   const newAvailable = Math.round((currentAvailable + artistDigitalWalletCredit) * 100) / 100;
-  // Escrow balance held is released (reduced by the gross earning)
-  const newEscrow = Math.max(0, Math.round((currentEscrow - artistGrossEarning) * 100) / 100);
-  // Total career lifetime earnings increases by full gross earning (both cash + online)
-  const newLifetime = Math.round((currentLifetime + artistGrossEarning) * 100) / 100;
+  // Escrow balance held is released (reduced by the digital credit only)
+  const newEscrow = Math.max(0, Math.round((currentEscrow - artistDigitalWalletCredit) * 100) / 100);
+  // Total career lifetime earnings increases ONLY by digital earnings (User requested cash not to be added to total)
+  const newLifetime = Math.round((currentLifetime + artistDigitalWalletCredit) * 100) / 100;
 
   await db.run(
     "UPDATE wallets SET balance = ?, available_balance = ?, escrow_balance = ?, pending_settlement = ?, total_earnings = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
@@ -2745,7 +2915,7 @@ const processBookingSettlement = async (db, bookingId, options = {}) => {
 
   // Record Transaction for Digital Credit (if any)
   if (artistDigitalWalletCredit > 0) {
-    const desc = `Settlement Released for Online Booking #${booking.booking_number || realBookingId} (₹${artistDigitalWalletCredit.toFixed(2)})`;
+    const desc = `Settlement for Booking #${booking.booking_number || realBookingId}`;
     await db.run(
       `INSERT INTO wallet_transactions (wallet_id, user_id, booking_id, type, amount, description, status, reference_id, created_at)
        VALUES (?, ?, ?, 'credit', ?, ?, 'completed', ?, CURRENT_TIMESTAMP)`,
@@ -2756,17 +2926,17 @@ const processBookingSettlement = async (db, bookingId, options = {}) => {
     await db.run(
       `INSERT INTO wallet_transactions (wallet_id, user_id, booking_id, type, amount, description, status, reference_id, created_at)
        VALUES (?, ?, ?, 'credit', 0, ?, 'completed', ?, CURRENT_TIMESTAMP)`,
-      [walletId, artistId, realBookingId, `Settlement Settled for Cash Booking #${booking.booking_number || realBookingId} (Cash in Hand: ₹${artistCashEarning.toFixed(2)} - No Digital Credit Due)`, refCode]
+      [walletId, artistId, realBookingId, `Settlement for Booking #${booking.booking_number || realBookingId}`, refCode]
     ).catch(() => { });
   }
 
-  // Record Transaction for Cash Collection (type = 'credit', amount = 0, recorded in description)
+  // Record Transaction for Cash Collection (type = 'credit', amount = artistCashEarning, recorded in description)
   if (artistCashEarning > 0) {
-    const cashDesc = `Cash Collected in Hand for Booking #${booking.booking_number || realBookingId} (₹${artistCashEarning.toFixed(2)}) — Direct Payout`;
+    const cashDesc = `Cash Collected in Hand for Booking #${booking.booking_number || realBookingId} (₹${artistCashEarning.toFixed(2)})`;
     await db.run(
       `INSERT INTO wallet_transactions (wallet_id, user_id, booking_id, type, amount, description, status, reference_id, created_at)
-       VALUES (?, ?, ?, 'credit', 0, ?, 'completed', ?, CURRENT_TIMESTAMP)`,
-      [walletId, artistId, realBookingId, cashDesc, cashRefCode]
+       VALUES (?, ?, ?, 'credit', ?, ?, 'completed', ?, CURRENT_TIMESTAMP)`,
+      [walletId, artistId, realBookingId, artistCashEarning, cashDesc, cashRefCode]
     ).catch((e) => console.log("Insert cash tx error:", e.message));
   }
 
@@ -2944,14 +3114,19 @@ const handleGetWallet = async (c) => {
       wallet = await db.first("SELECT * FROM wallets WHERE user_id = ? OR artist_id = ?", [u.id, u.id]).catch(() => null);
     }
 
+    // Pure actual digital wallet balance (excludes cash collected)
     const availBal = Math.round(Number(wallet?.balance || wallet?.available_balance || 0) * 100) / 100;
     const escrowBal = Math.round(Number(wallet?.escrow_balance || wallet?.pending_settlement || 0) * 100) / 100;
     const totalEar = Math.round(Number(wallet?.total_earnings || 0) * 100) / 100;
     const withAmt = Math.round(Number(wallet?.withdrawn_amount || 0) * 100) / 100;
 
+    // 1. Online Ledger Transactions (Transactions that affect digital wallet balance)
     const walletId = wallet?.id || 0;
     const txs = await db.all(
-      "SELECT * FROM wallet_transactions WHERE user_id = ? OR wallet_id = ? ORDER BY id DESC LIMIT 20",
+      `SELECT * FROM wallet_transactions 
+       WHERE (user_id = ? OR wallet_id = ?) 
+         AND (reference_id NOT LIKE 'CASH_BK_%' AND description NOT LIKE 'Cash Collected%')
+       ORDER BY id DESC LIMIT 50`,
       [u.id, walletId]
     ).catch(() => []);
 
@@ -2964,6 +3139,8 @@ const handleGetWallet = async (c) => {
         booking_id: t.booking_id || null,
         type: t.type || "credit",
         transaction_type: String(t.type || "credit").toUpperCase(),
+        payment_mode: "ONLINE",
+        is_cash: false,
         amount: Number(t.amount || 0),
         description: t.description || (t.type === "debit" ? "Payment / Withdrawal" : "Amount Credited"),
         status: t.status || "completed",
@@ -2972,6 +3149,67 @@ const handleGetWallet = async (c) => {
         createdAt: isoCreated,
         date: isoCreated,
         timestamp: isoCreated
+      };
+    });
+
+    // 2. Separate Cash Collection Entries (Completed Cash Bookings - In-Hand Direct Payout)
+    const cashEarningsRow = await db.first(`
+      SELECT SUM(COALESCE(artist_total_payable, base_service_amount * 0.9 + travel_charge, total_amount * 0.9)) as total, COUNT(*) as count
+      FROM bookings
+      WHERE (artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT))
+        AND LOWER(status) IN ('completed', 'completed_closed')
+        AND (UPPER(COALESCE(final_payment_method, '')) = 'CASH' OR UPPER(COALESCE(payment_mode, '')) = 'CASH')
+    `, [u.id, String(u.id)]).catch(() => ({ total: 0, count: 0 }));
+
+    const cashTodayRow = await db.first(`
+      SELECT SUM(COALESCE(artist_total_payable, base_service_amount * 0.9 + travel_charge, total_amount * 0.9)) as total
+      FROM bookings
+      WHERE (artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT))
+        AND LOWER(status) IN ('completed', 'completed_closed')
+        AND (UPPER(COALESCE(final_payment_method, '')) = 'CASH' OR UPPER(COALESCE(payment_mode, '')) = 'CASH')
+        AND DATE(updated_at) = DATE('now')
+    `, [u.id, String(u.id)]).catch(() => ({ total: 0 }));
+
+    const totalCash = Math.round(Number(cashEarningsRow?.total || 0) * 100) / 100;
+    const todayCash = Math.round(Number(cashTodayRow?.total || 0) * 100) / 100;
+
+    const cashBookings = await db.all(`
+      SELECT b.id, b.booking_number, b.booking_date, b.booking_time, b.created_at, b.updated_at,
+             COALESCE(b.artist_total_payable, b.base_service_amount * 0.9 + b.travel_charge, b.total_amount * 0.9) as cash_amount,
+             b.total_amount, b.remaining_amount,
+             u_c.full_name as customer_name,
+             s.title as service_title
+      FROM bookings b
+      LEFT JOIN users u_c ON (b.customer_id = u_c.id OR CAST(b.customer_id AS TEXT) = CAST(u_c.id AS TEXT))
+      LEFT JOIN services s ON (b.service_id = s.id OR CAST(b.service_id AS TEXT) = CAST(s.id AS TEXT))
+      WHERE (b.artist_id = ? OR CAST(b.artist_id AS TEXT) = CAST(? AS TEXT))
+        AND LOWER(b.status) IN ('completed', 'completed_closed')
+        AND (UPPER(COALESCE(b.final_payment_method, '')) = 'CASH' OR UPPER(COALESCE(b.payment_mode, '')) = 'CASH')
+      ORDER BY b.id DESC
+      LIMIT 50
+    `, [u.id, String(u.id)]).catch(() => []);
+
+    const formattedCashEntries = (cashBookings || []).map(cb => {
+      const isoDate = normalizeIsoDate(cb.updated_at || cb.created_at || cb.booking_date);
+      const bCode = cb.booking_number || ("MG-" + String(cb.id).padStart(6, "0"));
+      const amt = Number(cb.cash_amount || cb.total_amount || 0);
+      return {
+        id: `cash_${cb.id}`,
+        booking_id: cb.id,
+        booking_number: bCode,
+        customer_name: cb.customer_name || "Customer",
+        service_title: cb.service_title || "Mehndi Service",
+        amount: Math.round(amt * 100) / 100,
+        type: "cash_collected",
+        transaction_type: "CASH_COLLECTED",
+        payment_mode: "CASH",
+        is_cash: true,
+        status: "completed",
+        description: `Cash Collected in Hand for Booking #${bCode} (${cb.customer_name || "Customer"})`,
+        created_at: isoDate,
+        createdAt: isoDate,
+        date: isoDate,
+        timestamp: isoDate
       };
     });
 
@@ -2993,6 +3231,13 @@ const handleGetWallet = async (c) => {
       pending_settlement: escrowBal,
       withdrawn_amount: withAmt,
       withdrawnAmount: withAmt,
+      cash_collected: totalCash,
+      cashCollected: totalCash,
+      total_cash_earnings: totalCash,
+      today_cash: todayCash,
+      todayCash: todayCash,
+      cash_entries: formattedCashEntries,
+      cashEntries: formattedCashEntries,
       transactions: formattedTxs,
       updated_at: wallet?.updated_at || new Date().toISOString()
     };
@@ -3040,12 +3285,16 @@ const handleGetWalletTransactions = async (c) => {
 
     const formatted = (txs || []).map(t => {
       const isoCreated = normalizeIsoDate(t.created_at || t.createdAt);
+      const isCash = Boolean(Number(t.is_cash) === 1 || String(t.is_cash) === 'true' || String(t.reference_id || '').startsWith('CASH_BK_') || String(t.description || '').toLowerCase().includes('cash collected') || String(t.type || '').toUpperCase() === 'CASH_COLLECTED');
       return {
         id: t.id,
         wallet_id: t.wallet_id,
         user_id: u.id,
         booking_id: t.booking_id || null,
-        type: t.type || "credit",
+        type: isCash ? "cash_collected" : (t.type || "credit"),
+        transaction_type: isCash ? "CASH_COLLECTED" : String(t.type || "credit").toUpperCase(),
+        payment_mode: isCash ? "CASH" : "ONLINE",
+        is_cash: isCash,
         amount: Number(t.amount || 0),
         description: t.description || (t.type === "debit" ? "Payment / Withdrawal" : "Amount Credited"),
         status: t.status || "completed",
@@ -3758,10 +4007,14 @@ const handleAddWalletMoney = async (c) => {
   });
 });
 
-["/customer/addresses", "/api/v1/customer/addresses", "/api/v1/mehndigo/customer/addresses", "/mehndigo/customer/addresses"].forEach(p => {
-  app.get(p, handleGetAddresses);
-  app.post(p, handleSaveAddress);
-  app.put(p, handleSaveAddress);
+[
+  "/customer/addresses", "/customer/addresses/*",
+  "/api/customer/addresses", "/api/customer/addresses/*",
+  "/api/v1/customer/addresses", "/api/v1/customer/addresses/*",
+  "/api/v1/mehndigo/customer/addresses", "/api/v1/mehndigo/customer/addresses/*",
+  "/mehndigo/customer/addresses", "/mehndigo/customer/addresses/*"
+].forEach(p => {
+  app.all(p, async (c) => handleCustomerDynamic(c));
 });
 
 ["/user/profile", "/customer/profile", "/api/v1/mehndigo/user/profile", "/api/v1/customer/profile", "/mehndigo/user/profile"].forEach(p => {
@@ -4700,7 +4953,11 @@ const handleUpdateArtistAvailability = async (c) => {
     body = await c.req.parseBody().catch(() => ({}));
   }
 
-  const artist = await db.first("SELECT id, user_id, working_days, is_available, working_start_time, working_end_time, break_start_time, break_end_time FROM artist_profiles WHERE user_id = ? OR id = ? OR CAST(user_id AS TEXT) = ? OR CAST(id AS TEXT) = ?", [u.id, u.id, String(u.id), String(u.id)]).catch(() => null);
+  const artist = await db.first(
+    "SELECT * FROM artist_profiles WHERE user_id = ? OR id = ? OR CAST(user_id AS TEXT) = ? OR CAST(id AS TEXT) = ?",
+    [u.id, u.id, String(u.id), String(u.id)]
+  ).catch(() => null);
+
   if (!artist) {
     return jsonRes(c, false, null, "Artist profile not found", 404);
   }
@@ -4718,12 +4975,9 @@ const handleUpdateArtistAvailability = async (c) => {
   }
 
   const startTime = body.working_start_time || body.startTime || artist.working_start_time || "09:00";
-  // Defensively ensure columns exist in artist_profiles
-  await db.run("ALTER TABLE artist_profiles ADD COLUMN working_days TEXT").catch(() => { });
-  await db.run("ALTER TABLE artist_profiles ADD COLUMN working_start_time TEXT").catch(() => { });
-  await db.run("ALTER TABLE artist_profiles ADD COLUMN working_end_time TEXT").catch(() => { });
-  await db.run("ALTER TABLE artist_profiles ADD COLUMN break_start_time TEXT").catch(() => { });
-  await db.run("ALTER TABLE artist_profiles ADD COLUMN break_end_time TEXT").catch(() => { });
+  const endTime = body.working_end_time || body.endTime || artist.working_end_time || "20:00";
+  const breakStart = body.break_start_time || body.breakStart || artist.break_start_time || "14:00";
+  const breakEnd = body.break_end_time || body.breakEnd || artist.break_end_time || "15:00";
 
   const updateWorkingDays = workingDaysJson !== null ? workingDaysJson : (artist.working_days || null);
 
@@ -4866,9 +5120,9 @@ const finalizePaidBooking = async (db, { paymentId, orderId, paidAmount, checkou
     customerId = fallbackCust?.id || 1;
   }
 
-  let artistId = Number(rawArtistId);
-  const artCheck = await db.first("SELECT id FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [artistId, String(artistId)]).catch(() => null);
-  if (!artCheck) {
+  const artistEntity = await resolveArtistEntity(db, rawArtistId);
+  let artistId = artistEntity ? artistEntity.canonicalUserId : Number(rawArtistId);
+  if (!artistId) {
     const fallbackArt = await db.first("SELECT user_id as id FROM artist_profiles LIMIT 1").catch(() => null);
     artistId = fallbackArt?.id || 240;
   }
@@ -4947,7 +5201,7 @@ const finalizePaidBooking = async (db, { paymentId, orderId, paidAmount, checkou
       ?, ?, ?, ?,
       ?, ?, ?,
       ?, ?, ?, ?, ?,
-      'confirmed', 'CONFIRMED', 'CONFIRMED',
+      'pending', 'PENDING', 'PENDING_ARTIST_CONFIRMATION',
       'PARTIAL', 'ONLINE',
       ?, ?, ?, ?,
       CURRENT_TIMESTAMP
@@ -4983,7 +5237,7 @@ const finalizePaidBooking = async (db, { paymentId, orderId, paidAmount, checkou
   await db.run("UPDATE bookings SET booking_number = ? WHERE id = ?", [bookingNumber, newBookingId]).catch(() => { });
 
   const newBooking = await db.first("SELECT * FROM bookings WHERE id = ?", [newBookingId]).catch(() => null);
-  console.log("[BOOKING_FINALIZED]", JSON.stringify({ newBookingId, bookingNumber, status: "confirmed", totalAmount, advancePaid, remainingAmount }));
+  console.log("[BOOKING_FINALIZED]", JSON.stringify({ newBookingId, bookingNumber, status: "pending", totalAmount, advancePaid, remainingAmount }));
 
   // 7. Update payments record linked to the new booking
   await db.run(`
@@ -5354,9 +5608,9 @@ const handleVerifyPayment = async (c) => {
       booking_id: finalizationResult.booking?.id,
       bookingId: finalizationResult.booking?.id,
       payment_status: "PAID",
-      status: "confirmed",
-      detailed_status: "CONFIRMED"
-    }, "Payment verified and booking confirmed successfully");
+      status: isSettlement ? "completed" : "confirmed",
+      detailed_status: isSettlement ? "COMPLETED" : "CONFIRMED"
+    }, isSettlement ? "Settlement payment verified and booking completed successfully" : "Payment verified and booking confirmed successfully");
   } catch (uncaughtErr) {
     console.error("handleVerifyPayment uncaught exception:", uncaughtErr);
     return jsonRes(c, false, null, uncaughtErr.message || "Payment verification failed", 400);
@@ -5364,7 +5618,7 @@ const handleVerifyPayment = async (c) => {
 };
 
 // Catch-All Dynamic Customer Router
-const handleCustomerDynamic = async (c) => {
+async function handleCustomerDynamic(c) {
   const db = getDb(c.env);
   const path = c.req.path;
   const method = c.req.method.toUpperCase();
@@ -5658,9 +5912,17 @@ const handleCustomerDynamic = async (c) => {
     // 4. CREATE / UPDATE ADDRESS (POST / PUT)
     if (method === "POST" || method === "PUT" || method === "PATCH") {
       const body = await c.req.json().catch(() => ({}));
-      const fullAddress = String(body.full_address || body.address || "").trim();
-      const label = String(body.label || "Home").trim();
-      const houseFlat = String(body.house_flat || "").trim();
+      const fullAddress = String(
+        body.full_address ||
+        body.fullAddress ||
+        body.address ||
+        body.address_line_1 ||
+        body.addressLine1 ||
+        [body.house_flat || body.houseFlat, body.landmark, body.city, body.state, body.pincode].filter(Boolean).join(", ") ||
+        ""
+      ).trim();
+      const label = String(body.label || body.name || "Home").trim();
+      const houseFlat = String(body.house_flat || body.houseFlat || "").trim();
       const landmark = String(body.landmark || "").trim();
       const city = String(body.city || "").trim();
       const state = String(body.state || "").trim();
@@ -6385,51 +6647,33 @@ const handleCustomerDynamic = async (c) => {
     const targetId = parseInt(lastSeg, 10);
 
     // Sub-resources for single artist
+    if (path.includes("/catalog")) {
+      return handleGetArtistServiceCatalog(c);
+    }
     if (path.includes("/services")) {
-      const artistId = parseInt(parts[parts.length - 2], 10) || targetId || 6;
-      const rawServices = await db.all("SELECT * FROM services WHERE artist_id = ? OR user_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT)", [artistId, artistId, artistId]).catch(() => []);
-      let services = Array.isArray(rawServices) ? rawServices : (rawServices?.results || []);
-
-      if (!services || services.length === 0) {
-        services = [
-          { id: 101, artist_id: artistId, user_id: artistId, title: "Royal Bridal Grand Mehndi Package", name: "Royal Bridal Grand Mehndi Package", specialization_name: "Royal Bridal Grand Mehndi Package", price: 5500, amount: 5500, minimum_price: 5500, starting_price: 5500, category: "Bridal Mehndi", duration: "4 Hours", duration_minutes: 240, description: "Full hand intricacy up to elbows with dulha-dulhan motifs." },
-          { id: 102, artist_id: artistId, user_id: artistId, title: "Arabic Floral & Peacock Design", name: "Arabic Floral & Peacock Design", specialization_name: "Arabic Floral & Peacock Design", price: 1800, amount: 1800, minimum_price: 1800, starting_price: 1800, category: "Arabic Design", duration: "1.5 Hours", duration_minutes: 90, description: "Elegant flowing Arabic floral patterns." },
-          { id: 103, artist_id: artistId, user_id: artistId, title: "Engagement & Party Special", name: "Engagement & Party Special", specialization_name: "Engagement & Party Special", price: 2500, amount: 2500, minimum_price: 2500, starting_price: 2500, category: "Engagement / Party", duration: "2 Hours", duration_minutes: 120, description: "Chic modern designs tailored for engagement ceremonies." },
-          { id: 104, artist_id: artistId, user_id: artistId, title: "Rajasthani Marwari Traditional Henna", name: "Rajasthani Marwari Traditional Henna", specialization_name: "Rajasthani Marwari Traditional Henna", price: 3200, amount: 3200, minimum_price: 3200, starting_price: 3200, category: "Rajasthani Mehndi", duration: "3 Hours", duration_minutes: 180, description: "Authentic Marwari jaali patterns & lotus motifs." }
-        ];
-      } else {
-        services = services.map(s => ({
-          ...s,
-          specialization_name: s.specialization_name || s.title || s.name || "Henna Service",
-          title: s.title || s.specialization_name || s.name || "Henna Service",
-          name: s.name || s.specialization_name || s.title || "Henna Service",
-          minimum_price: Number(s.minimum_price || s.price || s.starting_price || s.amount || 1800),
-          price: Number(s.price || s.minimum_price || s.starting_price || s.amount || 1800),
-          starting_price: Number(s.starting_price || s.price || s.minimum_price || s.amount || 1800),
-          amount: Number(s.amount || s.price || s.minimum_price || s.starting_price || 1800),
-          duration_minutes: Number(s.duration_minutes || (s.duration ? parseInt(s.duration, 10) * 60 : 60)) || 60
-        }));
-      }
-
-      return jsonRes(c, true, services, "Services retrieved successfully");
+      return handleGetArtistServicesById(c);
     }
-
     if (path.includes("/portfolio")) {
-      const artistId = parseInt(parts[parts.length - 2], 10) || targetId;
-      const portfolio = await db.all("SELECT * FROM artist_portfolios WHERE artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT) ORDER BY id DESC", [artistId, artistId]).catch(() => []);
-      return jsonRes(c, true, portfolio || []);
+      return handleGetArtistPortfolioById(c);
     }
-
     if (path.includes("/reviews") || path.includes("review")) {
       return handleGetArtistReviews(c);
     }
-
     if (path.includes("/availability")) {
       return handleGetArtistAvailabilityById(c);
     }
+    if (path.includes("/faqs")) {
+      return handleGetArtistFaqs(c);
+    }
+    if (path.includes("/offers")) {
+      return handleGetArtistOffers(c);
+    }
+    if (path.includes("/custom-design")) {
+      return handleCreateCustomDesignRequest(c);
+    }
 
     // Single Artist Details Lookup
-    if (!isNaN(targetId)) {
+    if (!isNaN(targetId) || path.includes("/artist/")) {
       return handleGetArtistProfileById(c);
     }
 
@@ -8600,7 +8844,7 @@ const handleGetArtistLeads = async (c) => {
     const custName = b.customer_name || "Valued Customer";
     const custAvatar = b.customer_avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(custName)}&background=800020&color=fff`;
     const sName = b.service_title || b.service_specialization || "Bridal Mehndi Service";
-    const priceVal = Number(b.total_amount || b.final_amount || b.price || b.service_price || 1500);
+    const priceVal = Number(b.total_amount || b.final_amount || b.price || b.service_price || 0);
     const bookingCode = b.booking_number || b.booking_code || `BK-${b.id}`;
     const bDate = b.booking_date || b.date || new Date().toISOString().split("T")[0];
     const bTime = b.booking_time || b.time_slot || "11:00 AM";
@@ -8738,7 +8982,7 @@ const handleGetArtistLeadById = async (c) => {
   const custName = b.customer_name || "Valued Customer";
   const custAvatar = b.customer_avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(custName)}&background=800020&color=fff`;
   const sName = b.service_title || b.service_specialization || "Bridal Mehndi Service";
-  const priceVal = Number(b.total_amount || b.final_amount || b.price || b.service_price || 1500);
+  const priceVal = Number(b.total_amount || b.final_amount || b.price || b.service_price || 0);
   const bookingCode = b.booking_number || b.booking_code || `BK-${b.id}`;
 
   const formattedLead = {
@@ -8788,6 +9032,20 @@ const handleGetArtistLeadById = async (c) => {
   };
 
   return jsonRes(c, true, formattedLead, "Lead details retrieved");
+};
+
+const handleMarkLeadViewed = async (c) => {
+  const db = getDb(c.env);
+  const body = await c.req.json().catch(() => ({}));
+  const bookingId = body.booking_id || body.id || body.leadId;
+  if (!bookingId) return jsonRes(c, false, null, "Booking ID is required", 400);
+
+  await db.run(
+    "UPDATE bookings SET detailed_status = 'VIEWED', updated_at = CURRENT_TIMESTAMP WHERE (id = ? OR booking_number = ?) AND (detailed_status IS NULL OR detailed_status = '' OR detailed_status = 'PENDING' OR status = 'pending')",
+    [bookingId, bookingId]
+  ).catch(() => {});
+
+  return jsonRes(c, true, { booking_id: bookingId, status: "Viewed" }, "Lead marked as viewed");
 };
 
 app.get("/api/v1/debug/bookings-coords", async (c) => {
@@ -9479,8 +9737,8 @@ const handleAdminReconcileLegacyCashWallets = async (c) => {
           const cashDesc = `Cash Collected in Hand for Booking #${b.booking_number || realBookingId} (₹${wrongCreditAmount.toFixed(2)}) — Direct Payout`;
           await db.run(
             `INSERT INTO wallet_transactions (wallet_id, user_id, booking_id, type, amount, description, status, reference_id)
-             VALUES (?, ?, ?, 'credit', 0, ?, 'completed', ?)`,
-            [walletId, artistId, realBookingId, cashDesc, cashRef]
+             VALUES (?, ?, ?, 'credit', ?, ?, 'completed', ?)`,
+            [walletId, artistId, realBookingId, wrongCreditAmount, cashDesc, cashRef]
           );
         }
 
@@ -9714,10 +9972,18 @@ const handleGetChatHistory = async (c) => {
     ).catch(() => null);
   }
 
+  const userId = Number(u.id);
+  const isAdmin = u.role === "admin" || userId === 1;
+
   let messages = [];
   if (booking) {
     const custId = Number(booking.customer_id || 0);
     const artId = Number(booking.artist_id || 0);
+
+    // Strict BOLA / IDOR Verification: User must be customer, artist, or admin
+    if (!isAdmin && userId !== custId && userId !== artId) {
+      return jsonRes(c, false, null, "Unauthorized: You do not have permission to access chat for this booking", 403);
+    }
 
     // Retrieve messages for this booking or between the customer and artist
     messages = await db.all(`
@@ -9742,6 +10008,19 @@ const handleGetChatHistory = async (c) => {
       [booking.id, String(booking.id), u.id]
     ).catch(() => { });
   } else if (targetId > 0) {
+    // If not support chat, verify at least one booking exists between these users
+    if (!isAdmin && targetId !== 1) {
+      const hasBooking = await db.first(`
+        SELECT id FROM bookings 
+        WHERE (customer_id = ? AND artist_id = ?) OR (customer_id = ? AND artist_id = ?)
+        LIMIT 1
+      `, [userId, targetId, targetId, userId]).catch(() => null);
+
+      if (!hasBooking) {
+        return jsonRes(c, false, [], "Booking required to start conversation with artist", 403);
+      }
+    }
+
     messages = await db.all(`
       SELECT m.*, 
         u_sender.full_name as sender_name, u_sender.role as sender_role,
@@ -9822,27 +10101,69 @@ const handleSendChatMessage = async (c) => {
     return jsonRes(c, false, null, "Message text or media is required", 400);
   }
 
-  // Auto-resolve receiverId from booking if bookingId is provided
+  const userId = Number(u.id);
+  const isAdmin = u.role === "admin" || userId === 1;
+
+  // Auto-resolve & authorize receiverId from booking if bookingId is provided
   if (bookingId) {
     const booking = await db.first(
       "SELECT id, customer_id, artist_id FROM bookings WHERE id = ? OR CAST(id AS TEXT) = ?",
       [bookingId, String(bookingId)]
     ).catch(() => null);
 
-    if (booking) {
-      const custId = Number(booking.customer_id || 0);
-      const artId = Number(booking.artist_id || 0);
-      if (Number(u.id) === custId) {
-        receiverId = artId;
-      } else if (Number(u.id) === artId) {
-        receiverId = custId;
-      } else if (!receiverId || receiverId === 1) {
-        receiverId = custId || artId || 1;
+    if (!booking) {
+      return jsonRes(c, false, null, "Booking not found", 404);
+    }
+
+    const custId = Number(booking.customer_id || 0);
+    const artId = Number(booking.artist_id || 0);
+
+    // Strict IDOR Check
+    if (!isAdmin && userId !== custId && userId !== artId) {
+      return jsonRes(c, false, null, "Unauthorized: You cannot message on a booking that does not belong to you", 403);
+    }
+
+    if (userId === custId) {
+      receiverId = artId;
+    } else if (userId === artId) {
+      receiverId = custId;
+    }
+  } else {
+    // If direct chat without bookingId, verify booking relationship unless it is support
+    if (!isAdmin && receiverId !== 1 && receiverId > 0) {
+      const hasBooking = await db.first(`
+        SELECT id FROM bookings 
+        WHERE (customer_id = ? AND artist_id = ?) OR (customer_id = ? AND artist_id = ?)
+        LIMIT 1
+      `, [userId, receiverId, receiverId, userId]).catch(() => null);
+
+      if (!hasBooking) {
+        return jsonRes(c, false, null, "Booking required: You can only chat with an artist after creating a booking.", 403);
       }
     }
   }
 
   if (!receiverId) receiverId = 1;
+
+  // Idempotency: Prevent duplicate identical message sent within 2 seconds
+  const recentDuplicate = await db.first(`
+    SELECT id, message, created_at FROM messages 
+    WHERE sender_id = ? AND receiver_id = ? AND (booking_id = ? OR (booking_id IS NULL AND ? IS NULL)) AND message = ?
+      AND created_at >= datetime('now', '-2 seconds')
+    ORDER BY id DESC LIMIT 1
+  `, [u.id, receiverId, bookingId, bookingId, message || (messageType === 'IMAGE' ? '[Photo Attachment]' : '[Attachment]')]).catch(() => null);
+
+  if (recentDuplicate) {
+    return jsonRes(c, true, {
+      id: recentDuplicate.id,
+      senderId: u.id,
+      receiverId,
+      bookingId,
+      message: recentDuplicate.message,
+      isMe: true,
+      timestamp: recentDuplicate.created_at
+    }, "Message already sent (idempotent)");
+  }
 
   const result = await db.run(`
     INSERT INTO messages (sender_id, receiver_id, booking_id, message, message_type, media_url, is_read, created_at, updated_at)
@@ -11279,6 +11600,9 @@ addRoute("post", "/admin/review/:id/approve", handleAdminApproveReview);
 addRoute("patch", "/admin/review/:id/reject", handleAdminRejectReview);
 addRoute("post", "/admin/review/:id/reject", handleAdminRejectReview);
 addRoute("get", "/artist/services", handleGetArtistServices);
+addRoute("post", "/artist/services", handleCreateArtistService);
+addRoute("put", "/artist/services/:id", handleUpdateArtistService);
+addRoute("delete", "/artist/services/:id", handleDeleteArtistService);
 
 const handleGetNotifications = async (c) => {
   const db = getDb(c.env);
@@ -11481,9 +11805,59 @@ const handleGetCategories = async (c) => {
 
 app.get("/category", handleGetCategories);
 app.get("/categories", handleGetCategories);
-const handleGetArtistProfileById = async (c) => {
+
+async function resolveArtistEntity(db, inputId) {
+  const idNum = parseInt(inputId, 10);
+  if (isNaN(idNum) || !idNum) return null;
+
+  // 1. Check if inputId is artist_profiles.id
+  let profile = await db.first(
+    "SELECT * FROM artist_profiles WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+    [idNum, String(idNum)]
+  ).catch(() => null);
+
+  let user = null;
+  if (profile) {
+    user = await db.first(
+      "SELECT id, full_name, email, phone, role, is_verified, created_at, avatar FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+      [profile.user_id, String(profile.user_id)]
+    ).catch(() => null);
+  }
+
+  // 2. If not found by profile.id or user missing, check if inputId is users.id
+  if (!user) {
+    user = await db.first(
+      "SELECT id, full_name, email, phone, role, is_verified, created_at, avatar FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+      [idNum, String(idNum)]
+    ).catch(() => null);
+
+    if (user && !profile) {
+      profile = await db.first(
+        "SELECT * FROM artist_profiles WHERE user_id = ? OR CAST(user_id AS TEXT) = CAST(? AS TEXT)",
+        [user.id, String(user.id)]
+      ).catch(() => null);
+    }
+  }
+
+  if (!user && !profile) return null;
+
+  const canonicalUserId = user ? user.id : (profile ? profile.user_id : idNum);
+  const profileId = profile ? profile.id : null;
+  const matchIds = profileId ? [canonicalUserId, profileId] : [canonicalUserId];
+
+  return {
+    user,
+    profile,
+    canonicalUserId,
+    profileId,
+    matchIds
+  };
+};
+
+async function handleGetArtistProfileById(c) {
   const db = getDb(c.env);
-  const idStr = c.req.param("id") || c.req.param("artistId") || c.req.path.split("/").pop();
+  const idMatch = c.req.path.match(/\/artists?\/(\d+)/i);
+  const idStr = c.req.param("id") || c.req.param("artistId") || (idMatch ? idMatch[1] : c.req.path.split("/").pop());
 
   if (idStr === "portfolio") return handleGetArtistPortfolio(c);
   if (idStr === "services" || idStr === "getallservicesdata") return handleGetArtistServices(c);
@@ -11494,8 +11868,8 @@ const handleGetArtistProfileById = async (c) => {
   if (idStr === "leads" || idStr === "lead") return handleGetArtistLeads(c);
   if (idStr === "reviews" || idStr === "review") return handleGetArtistReviews(c);
 
-  const id = parseInt(idStr, 10);
-  if (isNaN(id)) {
+  const artistEntity = await resolveArtistEntity(db, idStr);
+  if (!artistEntity) {
     if (c.req.header("accept")?.includes("text/html") && !c.req.path.startsWith("/api")) {
       return c.html(renderWebFallbackHtml({
         title: "Discover Mehndi Artists on MehndiGo",
@@ -11509,17 +11883,8 @@ const handleGetArtistProfileById = async (c) => {
     return jsonRes(c, false, null, "Invalid Artist ID", 400);
   }
 
-  // 1. Fetch user from users table
-  const user = await db.first(
-    "SELECT id, full_name, email, phone, role, is_verified, created_at FROM users WHERE (id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT))",
-    [id, id]
-  ).catch(() => null);
-
-  // 2. Fetch profile from artist_profiles if exists
-  const profile = await db.first(
-    "SELECT * FROM artist_profiles WHERE user_id = ? OR CAST(user_id AS TEXT) = CAST(? AS TEXT) OR id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
-    [id, id, id, id]
-  ).catch(() => null);
+  const { user, profile, canonicalUserId, profileId, matchIds } = artistEntity;
+  const id = canonicalUserId;
 
   const isHtmlRequest = c.req.header("accept")?.includes("text/html") && !c.req.path.startsWith("/api");
   if (isHtmlRequest) {
@@ -11552,21 +11917,18 @@ const handleGetArtistProfileById = async (c) => {
     }));
   }
 
-  if (!user) {
-    return jsonRes(c, false, null, "Artist not found", 404);
-  }
-
   // 3. Fetch real approved reviews and calculate actual statistics
+  const placeholders = matchIds.map(() => "?").join(",");
   const rawReviews = await db.all(`
     SELECT r.*,
            COALESCE(u.full_name, 'Verified Customer') as customer_name,
            u.avatar as customer_avatar
     FROM reviews r
     LEFT JOIN users u ON (r.customer_id = u.id OR r.user_id = u.id)
-    WHERE (r.artist_id = ? OR CAST(r.artist_id AS TEXT) = CAST(? AS TEXT))
+    WHERE (r.artist_id IN (${placeholders}) OR CAST(r.artist_id AS TEXT) IN (${placeholders}))
       AND (r.status = 'APPROVED' OR r.is_approved = 1)
     ORDER BY r.id DESC LIMIT 50
-  `, [id, id]).catch(() => []);
+  `, [...matchIds, ...matchIds.map(String)]).catch(() => []);
 
   let sumRating = 0;
   const reviews = (rawReviews || []).map(r => {
@@ -11581,7 +11943,7 @@ const handleGetArtistProfileById = async (c) => {
       id: r.id,
       customer_id: r.customer_id || r.user_id,
       user_id: r.customer_id || r.user_id,
-      artist_id: r.artist_id,
+      artist_id: canonicalUserId,
       booking_id: r.booking_id,
       rating: Number(r.rating || 5),
       comment: r.comment || "",
@@ -11611,30 +11973,41 @@ const handleGetArtistProfileById = async (c) => {
   const avgRating = totalReviews > 0 ? Number((sumRating / totalReviews).toFixed(1)) : 0;
 
   const artist = {
-    id: user.id,
-    user_id: user.id,
-    name: user.full_name || "Mehndi Specialist",
-    full_name: user.full_name || "Mehndi Specialist",
-    email: user.email || "",
-    phone: user.phone || "",
-    bio: profile?.bio || "Professional Mehndi & Henna Artist specializing in bridal, arabic, and contemporary designs.",
-    experience_years: Number(profile?.experience_years || 5),
-    starting_price: Number(profile?.starting_price || 500),
-    city: profile?.city || "Jaipur",
-    locality: profile?.locality || "Mansarovar",
-    state: profile?.state || "Rajasthan",
-    pincode: profile?.pincode || "302020",
+    id: canonicalUserId,
+    user_id: canonicalUserId,
+    artist_id: canonicalUserId,
+    profile_id: profileId,
+    artist_profile_id: profileId,
+    name: user?.full_name || "Mehndi Artist",
+    full_name: user?.full_name || "Mehndi Artist",
+    email: user?.email || "",
+    phone: user?.phone || "",
+    bio: profile?.bio || "",
+    experience_years: Number(profile?.experience_years || 0),
+    experience: Number(profile?.experience_years || 0),
+    starting_price: Number(profile?.starting_price || 0),
+    city: profile?.city || "",
+    locality: profile?.locality || profile?.location || "",
+    state: profile?.state || "",
+    pincode: profile?.pincode || "",
     rating: avgRating,
     avg_rating: avgRating,
     total_reviews: totalReviews,
     reviews_count: totalReviews,
-    status: profile?.status || "APPROVED",
-    profile_image: profile?.profile_image || profile?.avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500",
-    cover_image: profile?.cover_image || "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=800",
+    status: profile?.status || "approved",
+    is_available: profile?.is_available !== undefined ? Number(profile.is_available) : 1,
+    profile_image: profile?.profile_image || profile?.selfie_image || profile?.avatar || user?.avatar || null,
+    avatar: profile?.profile_image || profile?.selfie_image || profile?.avatar || user?.avatar || null,
+    banner_image: profile?.banner_image || profile?.cover_image || null,
+    cover_image: profile?.banner_image || profile?.cover_image || null,
     categories: profile?.categories || '["Bridal Mehndi", "Arabic Design", "Rajasthani Mehndi"]'
   };
 
-  const rawServices = await db.all("SELECT * FROM services WHERE artist_id = ? OR user_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT)", [id, id, id]).catch(() => []);
+  const rawServices = await db.all(
+    `SELECT * FROM services WHERE artist_id IN (${placeholders}) OR user_id IN (${placeholders}) OR CAST(artist_id AS TEXT) IN (${placeholders})`,
+    [...matchIds, ...matchIds, ...matchIds.map(String)]
+  ).catch(() => []);
+
   let services = Array.isArray(rawServices) ? rawServices : (rawServices?.results || []);
   if (!services || !Array.isArray(services)) {
     services = [];
@@ -11655,6 +12028,7 @@ const handleGetArtistProfileById = async (c) => {
       }
       return {
         ...s,
+        artist_id: canonicalUserId,
         specialization_name: s.specialization_name || s.title || s.name || "Henna Service",
         title: s.title || s.specialization_name || s.name || "Henna Service",
         name: s.name || s.specialization_name || s.title || "Henna Service",
@@ -11677,7 +12051,17 @@ const handleGetArtistProfileById = async (c) => {
     ? Math.min(...services.map(s => Number(s.price || s.minimum_price || 0)).filter(p => p > 0))
     : 0;
 
-  const rawPortfolio = await db.all("SELECT id, artist_id, title, description, category, image_url, video_url, likes_count, views_count, created_at FROM artist_portfolios WHERE artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT) ORDER BY id DESC LIMIT 50", [id, id]).catch(() => []);
+  let rawPortfolio = await db.all(
+    `SELECT id, artist_id, title, description, category, image_url, video_url, likes_count, views_count, created_at FROM portfolios WHERE artist_id IN (${placeholders}) OR CAST(artist_id AS TEXT) IN (${placeholders}) ORDER BY id DESC LIMIT 50`,
+    [...matchIds, ...matchIds.map(String)]
+  ).catch(() => []);
+
+  if (!rawPortfolio || rawPortfolio.length === 0) {
+    rawPortfolio = await db.all(
+      `SELECT id, artist_id, title, description, category, image_url, video_url, likes_count, views_count, created_at FROM artist_portfolios WHERE artist_id IN (${placeholders}) OR CAST(artist_id AS TEXT) IN (${placeholders}) ORDER BY id DESC LIMIT 50`,
+      [...matchIds, ...matchIds.map(String)]
+    ).catch(() => []);
+  }
 
   const portfolio = (rawPortfolio || []).map(p => {
     const isVideo = Boolean(
@@ -11695,6 +12079,7 @@ const handleGetArtistProfileById = async (c) => {
     }
     return {
       ...p,
+      artist_id: canonicalUserId,
       media_type: isVideo ? "video" : "image",
       is_video: isVideo,
       video_url: videoUrl,
@@ -11713,20 +12098,28 @@ const handleGetArtistProfileById = async (c) => {
 };
 
 // Dedicated handler for /customer/artist/:id/portfolio
-const handleGetArtistPortfolioById = async (c) => {
+async function handleGetArtistPortfolioById(c) {
   const db = getDb(c.env);
-  const matches = c.req.path.match(/\/artists?\/(\d+)\/portfolio/i) || c.req.path.match(/\/portfolio\/(\d+)/i);
-  let id = matches ? parseInt(matches[1], 10) : 0;
-  if (!id) {
-    const raw = c.req.param("id") || c.req.param("artistId") || c.req.query("artist_id") || c.req.query("artistId");
-    id = parseInt(raw, 10) || 0;
-  }
-  if (isNaN(id) || !id) return jsonRes(c, true, [], "Artist portfolio retrieved");
+  const matches = c.req.path.match(/\/artists?\/(\d+)/i) || c.req.path.match(/\/portfolio\/(\d+)/i);
+  let rawId = matches ? matches[1] : (c.req.param("id") || c.req.param("artistId") || c.req.query("artist_id") || c.req.query("artistId"));
+  
+  const artistEntity = await resolveArtistEntity(db, rawId);
+  if (!artistEntity) return jsonRes(c, true, [], "Artist portfolio retrieved");
 
-  const rawPortfolio = await db.all(
-    "SELECT id, artist_id, title, description, category, image_url, video_url, likes_count, views_count, created_at FROM artist_portfolios WHERE artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT) ORDER BY id DESC LIMIT 50",
-    [id, id]
+  const { canonicalUserId, matchIds } = artistEntity;
+  const placeholders = matchIds.map(() => "?").join(",");
+
+  let rawPortfolio = await db.all(
+    `SELECT id, artist_id, title, description, category, image_url, video_url, likes_count, views_count, created_at FROM portfolios WHERE artist_id IN (${placeholders}) OR CAST(artist_id AS TEXT) IN (${placeholders}) ORDER BY id DESC LIMIT 50`,
+    [...matchIds, ...matchIds.map(String)]
   ).catch(() => []);
+
+  if (!rawPortfolio || rawPortfolio.length === 0) {
+    rawPortfolio = await db.all(
+      `SELECT id, artist_id, title, description, category, image_url, video_url, likes_count, views_count, created_at FROM artist_portfolios WHERE artist_id IN (${placeholders}) OR CAST(artist_id AS TEXT) IN (${placeholders}) ORDER BY id DESC LIMIT 50`,
+      [...matchIds, ...matchIds.map(String)]
+    ).catch(() => []);
+  }
 
   const portfolio = (rawPortfolio || []).map(p => {
     const isVideo = Boolean(
@@ -11744,6 +12137,7 @@ const handleGetArtistPortfolioById = async (c) => {
     }
     return {
       ...p,
+      artist_id: canonicalUserId,
       media_type: isVideo ? "video" : "image",
       is_video: isVideo,
       video_url: videoUrl,
@@ -11753,17 +12147,22 @@ const handleGetArtistPortfolioById = async (c) => {
   });
 
   return jsonRes(c, true, portfolio, "Artist portfolio retrieved");
-};
+}
 
-const handleGetArtistServicesById = async (c) => {
+async function handleGetArtistServicesById(c) {
   const db = getDb(c.env);
-  const matches = c.req.path.match(/\/artists?\/(\d+)\/services/i) || c.req.path.match(/\/services\/(\d+)/i);
-  let id = matches ? parseInt(matches[1], 10) : 0;
-  if (isNaN(id) || !id) return jsonRes(c, true, [], "Artist services retrieved");
+  const matches = c.req.path.match(/\/artists?\/(\d+)/i) || c.req.path.match(/\/services\/(\d+)/i);
+  let rawId = matches ? matches[1] : (c.req.param("id") || c.req.param("artistId") || c.req.query("artist_id") || c.req.query("artistId"));
+
+  const artistEntity = await resolveArtistEntity(db, rawId);
+  if (!artistEntity) return jsonRes(c, true, [], "Artist services retrieved");
+
+  const { canonicalUserId, matchIds } = artistEntity;
+  const placeholders = matchIds.map(() => "?").join(",");
 
   const rawServices = await db.all(
-    "SELECT * FROM services WHERE artist_id = ? OR user_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT)",
-    [id, id, id]
+    `SELECT * FROM services WHERE artist_id IN (${placeholders}) OR user_id IN (${placeholders}) OR CAST(artist_id AS TEXT) IN (${placeholders})`,
+    [...matchIds, ...matchIds, ...matchIds.map(String)]
   ).catch(() => []);
 
   let servicesList = Array.isArray(rawServices) ? rawServices : (rawServices?.results || []);
@@ -11773,6 +12172,7 @@ const handleGetArtistServicesById = async (c) => {
   } else {
     servicesList = servicesList.map(s => ({
       ...s,
+      artist_id: canonicalUserId,
       specialization_name: s.specialization_name || s.title || s.name || "Henna Service",
       title: s.title || s.specialization_name || s.name || "Henna Service",
       name: s.name || s.specialization_name || s.title || "Henna Service",
@@ -11785,9 +12185,305 @@ const handleGetArtistServicesById = async (c) => {
   }
 
   return jsonRes(c, true, servicesList, "Artist services retrieved");
+}
+
+async function handleGetServiceById(c) {
+  const db = getDb(c.env);
+  const serviceIdMatch = c.req.path.match(/\/services\/(\d+)/i);
+  const serviceId = serviceIdMatch ? parseInt(serviceIdMatch[1], 10) : Number(c.req.param("id") || 0);
+
+  if (!serviceId) return jsonRes(c, false, null, "Service ID is required", 400);
+
+  const rawService = await db.first("SELECT * FROM services WHERE id = ?", [serviceId]).catch(() => null);
+
+  if (!rawService) {
+    // If not found, return an empty object to avoid crashes, but ideally return a 404
+    return jsonRes(c, false, null, "Service not found", 404);
+  }
+
+  const formattedService = {
+    ...rawService,
+    artist_id: rawService.artist_id || rawService.user_id,
+    specialization_name: rawService.specialization_name || rawService.title || rawService.name || "Henna Service",
+    title: rawService.title || rawService.specialization_name || rawService.name || "Henna Service",
+    name: rawService.name || rawService.specialization_name || rawService.title || "Henna Service",
+    minimum_price: Number(rawService.minimum_price || rawService.price || rawService.starting_price || rawService.amount || 0),
+    price: Number(rawService.price || rawService.minimum_price || rawService.starting_price || rawService.amount || 0),
+    starting_price: Number(rawService.starting_price || rawService.price || rawService.minimum_price || rawService.amount || 0),
+    amount: Number(rawService.amount || rawService.price || rawService.minimum_price || rawService.starting_price || 0),
+    duration_minutes: Number(rawService.duration_minutes || rawService.duration_mins || (rawService.duration ? parseInt(rawService.duration, 10) * 60 : 60)) || 60
+  };
+
+  const packages = await db.all("SELECT * FROM service_packages WHERE service_id = ?", [serviceId]).catch(() => []);
+  formattedService.packages = packages || [];
+
+  return jsonRes(c, true, formattedService, "Service retrieved successfully");
+}
+
+async function handleGetArtistFaqs(c) {
+  const db = getDb(c.env);
+  const idMatch = c.req.path.match(/\/artists?\/(\d+)/i);
+  let id = Number(c.req.param("id") || c.req.param("artistId") || (idMatch ? idMatch[1] : 0));
+  
+  const artistEntity = await resolveArtistEntity(db, id);
+  const matchIds = artistEntity ? artistEntity.matchIds : (id ? [id] : []);
+  const placeholders = matchIds.length > 0 ? matchIds.map(() => "?").join(",") : "?";
+
+  const customFaqs = matchIds.length > 0 ? await db.all(
+    `SELECT * FROM faqs WHERE artist_id IN (${placeholders}) OR CAST(artist_id AS TEXT) IN (${placeholders})`,
+    [...matchIds, ...matchIds.map(String)]
+  ).catch(() => []) : [];
+
+  const defaultFaqs = [
+    {
+      id: "faq_1",
+      question: "Do you bring 100% natural, chemical-free henna cones?",
+      answer: "Yes! All MehndiGo verified artists exclusively use certified 100% organic, chemical-free henna cones freshly prepared with essential eucalyptus and tea tree oils."
+    },
+    {
+      id: "faq_2",
+      question: "How do doorstep travel charges and home visits work?",
+      answer: "Doorstep service is free within 10 km. For travel beyond 10 km, transparent travel charges of ₹5/km are automatically computed in your booking summary."
+    },
+    {
+      id: "faq_3",
+      question: "How is my payment protected?",
+      answer: "Your 10% advance deposit is held in a 100% secure escrow account. The remaining 90% balance is settled only after the artist finishes your design and you verify the Check-Out OTP."
+    },
+    {
+      id: "faq_4",
+      question: "Can I customize the bridal design or add couple portraits?",
+      answer: "Absolutely! You can choose any design from the catalog or submit a Custom Design Request with your reference images and wedding hashtag."
+    },
+    {
+      id: "faq_5",
+      question: "What is the cancellation and rescheduling policy?",
+      answer: "You can reschedule your appointment free of charge up to 12 hours before your slot. Free cancellation is supported before artist dispatch."
+    }
+  ];
+
+  const results = (customFaqs && customFaqs.length > 0) ? customFaqs : defaultFaqs;
+  return jsonRes(c, true, results, "Artist FAQs retrieved successfully");
 };
 
-const handleGetArtistAvailabilityById = async (c) => {
+async function handleGetArtistServiceCatalog(c) {
+  const db = getDb(c.env);
+  const artistIdMatches = c.req.path.match(/\/artists?\/(\d+)/i);
+  const serviceIdMatches = c.req.path.match(/\/service[s]?\/(\d+)/i);
+  
+  const rawArtistId = artistIdMatches ? parseInt(artistIdMatches[1], 10) : Number(c.req.param("id") || c.req.param("artistId") || 0);
+  const serviceId = serviceIdMatches ? parseInt(serviceIdMatches[1], 10) : Number(c.req.param("serviceId") || 0);
+
+  const complexity = c.req.query("complexity") || c.req.query("complexity_level");
+  const tier = c.req.query("tier") || c.req.query("art_tier");
+  const sort = c.req.query("sort") || "popular";
+
+  const artistEntity = await resolveArtistEntity(db, rawArtistId);
+  const canonicalUserId = artistEntity ? artistEntity.canonicalUserId : rawArtistId;
+  const matchIds = artistEntity ? artistEntity.matchIds : [rawArtistId];
+  const user = artistEntity ? artistEntity.user : null;
+  const profile = artistEntity ? artistEntity.profile : null;
+
+  // 1. Resolve artist details
+  const artistObj = {
+    id: canonicalUserId,
+    user_id: canonicalUserId,
+    artist_id: canonicalUserId,
+    profile_id: artistEntity?.profileId || null,
+    name: user?.full_name || "Mehndi Specialist",
+    profile_image: profile?.profile_image || profile?.avatar || user?.avatar,
+    avg_rating: Number(profile?.rating || 5.0),
+    total_reviews: Number(profile?.total_reviews || 0),
+    experience_years: Number(profile?.experience_years || 2),
+    city: profile?.city || "Jaipur"
+  };
+
+  // 2. Fetch service
+  const placeholders = matchIds.map(() => "?").join(",");
+  const service = await db.first(
+    `SELECT * FROM services WHERE id = ? OR ((artist_id IN (${placeholders}) OR user_id IN (${placeholders})) AND id = ?)`,
+    [serviceId, ...matchIds, ...matchIds, serviceId]
+  ).catch(() => null);
+
+  // 3. Fetch packages for this service
+  const packages = await db.all(
+    "SELECT * FROM service_packages WHERE service_id = ?",
+    [serviceId]
+  ).catch(() => []);
+
+  // 4. Fetch portfolio designs for this artist
+  let designs = await db.all(
+    `SELECT id, artist_id, title, description, category, image_url, video_url, likes_count, views_count, created_at FROM portfolios WHERE artist_id IN (${placeholders}) OR CAST(artist_id AS TEXT) IN (${placeholders}) ORDER BY id DESC LIMIT 50`,
+    [...matchIds, ...matchIds.map(String)]
+  ).catch(() => []);
+
+  if (!designs || designs.length === 0) {
+    designs = await db.all(
+      `SELECT id, artist_id, title, description, category, image_url, video_url, likes_count, views_count, created_at FROM artist_portfolios WHERE artist_id IN (${placeholders}) OR CAST(artist_id AS TEXT) IN (${placeholders}) ORDER BY id DESC LIMIT 50`,
+      [...matchIds, ...matchIds.map(String)]
+    ).catch(() => []);
+  }
+
+  const basePrice = Number(service?.price || service?.minimum_price || profile?.starting_price || 300);
+  const baseDuration = Number(service?.duration_minutes || service?.duration_mins || 60);
+
+  return jsonRes(c, true, {
+    artist: artistObj,
+    service: service ? {
+      ...service,
+      artist_id: canonicalUserId,
+      title: service.title || service.specialization_name || "Mehndi Service",
+      price: basePrice,
+      duration_minutes: baseDuration
+    } : null,
+    packages: Array.isArray(packages) ? packages : [],
+    designs: Array.isArray(designs) ? designs.map(d => ({
+      ...d,
+      artist_id: canonicalUserId,
+      price: basePrice,
+      duration_minutes: baseDuration,
+      likes_count: Number(d.likes_count || 0),
+      complexity_level: d.complexity_level || "MEDIUM",
+      art_tier: d.art_tier || "STANDARD"
+    })) : []
+  }, "Artist service catalog retrieved successfully");
+}
+
+async function handleCreateCustomDesignRequest(c) {
+  const db = getDb(c.env);
+  const u = getUserFromHeader(c);
+  const body = await c.req.json().catch(() => ({}));
+
+  const artistIdMatches = c.req.path.match(/\/artists?\/(\d+)/i);
+  const rawArtistId = Number(body.artist_id || body.artistId || (artistIdMatches ? parseInt(artistIdMatches[1], 10) : 0));
+  const artistEntity = await resolveArtistEntity(db, rawArtistId);
+  const artistId = artistEntity ? artistEntity.canonicalUserId : rawArtistId;
+
+  const serviceId = Number(body.service_id || body.serviceId || 0);
+  const userId = (u && u.id) ? u.id : Number(body.user_id || body.userId || 1);
+
+  const occasion = body.occasion || "Wedding";
+  const preferredStyle = body.preferred_style || body.preferredStyle || "Bridal Traditional";
+  const description = body.description || body.notes || "";
+  const groupSize = Number(body.group_size || body.groupSize || 1);
+  const serviceCoverage = body.service_coverage || body.serviceCoverage || "BOTH_HANDS";
+  const budgetPreference = Number(body.budget_preference || body.budgetPreference || body.budget || 0);
+  const preferredDate = body.preferred_date || body.preferredDate || new Date().toISOString().split("T")[0];
+  const preferredTime = body.preferred_time || body.preferredTime || "10:00 AM";
+  const address = body.address || "";
+  const referenceImagesJson = JSON.stringify(body.reference_images || body.referenceImages || body.photos || []);
+
+  await db.run(`
+    CREATE TABLE IF NOT EXISTS custom_design_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER,
+      artist_id INTEGER,
+      service_id INTEGER,
+      occasion TEXT,
+      preferred_style TEXT,
+      description TEXT,
+      reference_images TEXT,
+      group_size INTEGER DEFAULT 1,
+      service_coverage TEXT DEFAULT 'BOTH_HANDS',
+      budget_preference REAL DEFAULT 0,
+      preferred_date TEXT,
+      preferred_time TEXT,
+      address TEXT,
+      status TEXT DEFAULT 'PENDING',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).catch(() => {});
+
+  const insertRes = await db.run(`
+    INSERT INTO custom_design_requests (
+      user_id, artist_id, service_id, occasion, preferred_style, description,
+      reference_images, group_size, service_coverage, budget_preference,
+      preferred_date, preferred_time, address, status, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+  `, [
+    userId, artistId, serviceId, occasion, preferredStyle, description,
+    referenceImagesJson, groupSize, serviceCoverage, budgetPreference,
+    preferredDate, preferredTime, address
+  ]).catch((err) => {
+    console.error("Custom design insert error:", err.message);
+    return null;
+  });
+
+  const requestId = insertRes?.lastInsertRowid || insertRes?.meta?.last_row_id || Date.now();
+
+  if (artistId) {
+    dispatchNotification(db, {
+      userId: artistId,
+      title: "New Custom Mehndi Request 🎨",
+      body: `Customer submitted a bespoke design request for ${occasion} (Budget: ₹${budgetPreference || 'Flexible'}).`,
+      type: "CUSTOM_DESIGN_REQUEST",
+      entityId: requestId,
+      entityType: "custom_design",
+      channelId: "bookings",
+      deepLink: `mehendigoo://artist/custom-request/${requestId}`
+    }).catch(() => null);
+  }
+
+  return jsonRes(c, true, {
+    id: requestId,
+    user_id: userId,
+    artist_id: artistId,
+    service_id: serviceId,
+    occasion,
+    preferred_style: preferredStyle,
+    description,
+    group_size: groupSize,
+    service_coverage: serviceCoverage,
+    budget_preference: budgetPreference,
+    preferred_date: preferredDate,
+    preferred_time: preferredTime,
+    status: "PENDING"
+  }, "Custom design request submitted successfully!");
+}
+
+async function handleGetArtistOffers(c) {
+  const db = getDb(c.env);
+  const paramId = c.req.param("id") || c.req.param("artistId");
+  let id = Number(paramId);
+  if (!id || isNaN(id)) {
+    const matches = c.req.path.match(/\/artists?\/(\d+)/i);
+    id = matches ? parseInt(matches[1], 10) : 0;
+  }
+
+  const artistEntity = await resolveArtistEntity(db, id);
+  const matchIds = artistEntity ? artistEntity.matchIds : (id ? [id] : []);
+  const placeholders = matchIds.length > 0 ? matchIds.map(() => "?").join(",") : "?";
+
+  const coupons = matchIds.length > 0 ? await db.all(
+    `SELECT * FROM coupons WHERE (artist_id IN (${placeholders}) OR artist_id IS NULL OR is_global = 1) AND is_active = 1`,
+    [...matchIds]
+  ).catch(() => []) : await db.all("SELECT * FROM coupons WHERE (artist_id IS NULL OR is_global = 1) AND is_active = 1").catch(() => []);
+
+  const results = Array.isArray(coupons) && coupons.length > 0 ? coupons : [
+    {
+      id: 1,
+      code: "MEHNDI100",
+      discount_type: "FLAT",
+      discount_value: 100,
+      description: "Flat ₹100 OFF on your first artist booking",
+      min_booking_value: 500
+    },
+    {
+      id: 2,
+      code: "FESTIVE10",
+      discount_type: "PERCENTAGE",
+      discount_percentage: 10,
+      max_discount: 300,
+      description: "10% OFF on Festive and Party Mehndi bookings",
+      min_booking_value: 1000
+    }
+  ];
+
+  return jsonRes(c, true, results, "Artist offers retrieved successfully");
+}
+
+async function handleGetArtistAvailabilityById(c) {
   const db = getDb(c.env);
   const paramId = c.req.param("id") || c.req.param("artistId");
   let id = Number(paramId);
@@ -11800,12 +12496,17 @@ const handleGetArtistAvailabilityById = async (c) => {
   }
   if (isNaN(id) || !id) id = 2;
 
+  const artistEntity = await resolveArtistEntity(db, id);
+  const canonicalUserId = artistEntity ? artistEntity.canonicalUserId : id;
+  const matchIds = artistEntity ? artistEntity.matchIds : [id];
+  const placeholders = matchIds.map(() => "?").join(",");
+
   const queryDate = c.req.query("date") || c.req.query("booking_date") || null;
   const numDays = Math.min(120, Math.max(1, Number(c.req.query("days")) || 90));
 
   const bookedRows = await db.all(
-    "SELECT booking_date, booking_time FROM bookings WHERE (artist_id = ? OR CAST(artist_id AS TEXT) = CAST(? AS TEXT)) AND LOWER(status) NOT IN ('cancelled', 'rejected')",
-    [id, String(id)]
+    `SELECT booking_date, booking_time FROM bookings WHERE (artist_id IN (${placeholders}) OR CAST(artist_id AS TEXT) IN (${placeholders})) AND LOWER(status) NOT IN ('cancelled', 'rejected')`,
+    [...matchIds, ...matchIds.map(String)]
   ).catch(() => []);
 
   const bookedSet = new Set();
@@ -11813,7 +12514,6 @@ const handleGetArtistAvailabilityById = async (c) => {
     if (b.booking_date && b.booking_time) {
       const timeStr = String(b.booking_time).trim().toUpperCase();
       bookedSet.add(`${b.booking_date}_${timeStr}`);
-      // Also add alternative zero-padded / unpadded versions
       if (timeStr.startsWith("0")) {
         bookedSet.add(`${b.booking_date}_${timeStr.slice(1)}`);
       } else {
@@ -11835,7 +12535,6 @@ const handleGetArtistAvailabilityById = async (c) => {
     const d = new Date(baseDate.getTime() + i * 24 * 60 * 60 * 1000);
     const dateStr = d.toISOString().split("T")[0];
 
-    // If a specific single date was requested, skip other dates
     if (queryDate && dateStr !== queryDate) {
       continue;
     }
@@ -11858,7 +12557,7 @@ const handleGetArtistAvailabilityById = async (c) => {
 
       slotsList.push({
         id: i * 10 + idx + 1,
-        artist_id: id,
+        artist_id: canonicalUserId,
         date: dateStr,
         time_slot: t,
         slot_time: t,
@@ -11871,6 +12570,17 @@ const handleGetArtistAvailabilityById = async (c) => {
 
   return jsonRes(c, true, slotsList, "Artist availability retrieved");
 };
+
+const getAvailableSystemCoupons = () => [
+  { id: 101, code: "RAKHI20", title: "Rakhi Special 20% OFF", description: "20% OFF on family & group mehndi bookings", discount_type: "PERCENTAGE", discount_value: 20, min_order_amount: 500, max_discount: 500, is_active: 1, expires_at: "2030-12-31 23:59:59" },
+  { id: 102, code: "WELCOME50", title: "Welcome Discount", description: "Flat ₹50 OFF on your mehndi booking", discount_type: "FLAT", discount_value: 50, min_order_amount: 299, max_discount: 50, is_active: 1, expires_at: "2030-12-31 23:59:59" },
+  { id: 103, code: "FIRST50", title: "First Order Discount", description: "Flat ₹50 OFF on first booking", discount_type: "FLAT", discount_value: 50, min_order_amount: 299, max_discount: 50, is_active: 1, expires_at: "2030-12-31 23:59:59" },
+  { id: 104, code: "MEHNDI100", title: "Mega Mehndi Saver", description: "Flat ₹100 OFF on bookings above ₹999", discount_type: "FLAT", discount_value: 100, min_order_amount: 999, max_discount: 100, is_active: 1, expires_at: "2030-12-31 23:59:59" },
+  { id: 105, code: "FESTIVE25", title: "Festive Henna Celebration", description: "25% OFF on booking above ₹1000", discount_type: "PERCENTAGE", discount_value: 25, min_order_amount: 1000, max_discount: 500, is_active: 1, expires_at: "2030-12-31 23:59:59" },
+  { id: 106, code: "SPECIAL10", title: "Special Savings", description: "10% OFF on all henna designs", discount_type: "PERCENTAGE", discount_value: 10, min_order_amount: 300, max_discount: 300, is_active: 1, expires_at: "2030-12-31 23:59:59" },
+  { id: 107, code: "KARWA500", title: "Karwa Chauth Grand Saver", description: "Flat ₹500 OFF on group & bridal bookings", discount_type: "FLAT", discount_value: 500, min_order_amount: 2000, max_discount: 500, is_active: 1, expires_at: "2030-12-31 23:59:59" },
+  { id: 108, code: "BRIDAL1000", title: "Royal Bridal Package Saver", description: "Flat ₹1000 OFF on complete bridal bookings", discount_type: "FLAT", discount_value: 1000, min_order_amount: 4000, max_discount: 1000, is_active: 1, expires_at: "2030-12-31 23:59:59" }
+];
 
 const handleGetCouponsPublic = async (c) => {
   const db = getDb(c.env);
@@ -11897,7 +12607,7 @@ const handleGetCouponsPublic = async (c) => {
   ];
 
   // Filter out expired coupons based on IST
-  const activeCoupons = allCoupons.filter(cp => {
+  let activeCoupons = allCoupons.filter(cp => {
     if (!cp.code) return false;
     if (cp.expires_at) {
       const expStr = String(cp.expires_at).trim();
@@ -11905,6 +12615,10 @@ const handleGetCouponsPublic = async (c) => {
     }
     return true;
   });
+
+  if (!activeCoupons || activeCoupons.length === 0) {
+    activeCoupons = getAvailableSystemCoupons();
+  }
 
   return jsonRes(c, true, activeCoupons, "Coupons retrieved successfully");
 };
@@ -11915,7 +12629,16 @@ const handleApplyCoupon = async (c) => {
   const body = await c.req.json().catch(() => ({}));
 
   const couponCode = String(body.couponCode || body.coupon_code || body.code || "").trim().toUpperCase();
-  const basePrice = Number(body.basePrice || body.base_price || body.amount || body.price || 0);
+  const groupSize = Math.max(1, Number(body.groupSize || body.group_size || 1));
+  let basePrice = Number(body.basePrice || body.base_price || body.amount || body.price || 0);
+  const serviceId = Number(body.serviceId || body.service_id || 0);
+  const customArtPrice = body.customArtPrice ? Number(body.customArtPrice) : null;
+
+  if (basePrice === 0 && (serviceId || customArtPrice)) {
+    const service = serviceId ? await db.first("SELECT * FROM services WHERE id = ?", [serviceId]).catch(() => null) : null;
+    const unitRate = customArtPrice || (service ? Number(service.price || service.minimum_price || 0) : 500);
+    basePrice = unitRate * groupSize;
+  }
 
   if (!couponCode) {
     return jsonRes(c, false, null, "Please enter a valid coupon code", 400);
@@ -11945,6 +12668,13 @@ const handleApplyCoupon = async (c) => {
   }
 
   if (!coupon) {
+    const sysCp = getAvailableSystemCoupons().find(s => s.code === couponCode);
+    if (sysCp) {
+      coupon = { ...sysCp };
+    }
+  }
+
+  if (!coupon) {
     return jsonRes(c, false, null, `Invalid coupon code '${couponCode}'. No matching active offer found.`, 400);
   }
 
@@ -11958,7 +12688,7 @@ const handleApplyCoupon = async (c) => {
   }
 
   // Check per-user limit
-  if (u && u.id && coupon.id) {
+  if (u && u.id && coupon.id && coupon.id < 100) {
     const usages = await db.first(
       "SELECT COUNT(*) as count FROM coupon_usages WHERE user_id = ? AND coupon_id = ?",
       [u.id, coupon.id]
@@ -12003,10 +12733,14 @@ const handleApplyCoupon = async (c) => {
     discount,
     discount_amount: discount,
     discountAmount: discount,
+    coupon_discount: discount,
+    couponDiscount: discount,
     discount_percentage: !isFlat ? val : null,
     discount_type: isFlat ? "FLAT" : "PERCENTAGE",
     basePrice,
+    base_price: basePrice,
     finalAmount,
+    final_amount: finalAmount,
     title: coupon.title || `Save ₹${discount}`,
     description: coupon.description || `Coupon ${coupon.code}`,
     message: `Coupon '${coupon.code}' applied successfully! Saved ₹${discount}`
@@ -12039,7 +12773,8 @@ const handleAutoApplyCoupon = async (c) => {
       max_discount: fo.max_discount,
       is_active: fo.is_active,
       expires_at: fo.valid_until ? `${fo.valid_until} 23:59:59` : null
-    }))
+    })),
+    ...getAvailableSystemCoupons()
   ];
 
   let bestCoupon = null;
@@ -12047,85 +12782,47 @@ const handleAutoApplyCoupon = async (c) => {
 
   for (const cp of allCoupons) {
     if (!cp.code) continue;
-    if (cp.expires_at) {
-      const expStr = String(cp.expires_at).trim();
-      if (expStr.slice(0, 10) < ist.dateStr) continue;
-    }
+    if (cp.expires_at && String(cp.expires_at).trim().slice(0, 10) < ist.dateStr) continue;
 
     const minOrder = Number(cp.min_order_amount || cp.min_booking_value || 0);
     if (basePrice > 0 && basePrice < minOrder) continue;
 
-    // Check per-user limit
-    if (u && u.id && cp.id) {
-      const usages = await db.first(
-        "SELECT COUNT(*) as count FROM coupon_usages WHERE user_id = ? AND coupon_id = ?",
-        [u.id, cp.id]
-      ).catch(() => null);
-      const perUserLimit = Number(cp.per_user_limit || 1);
-      if (Number(usages?.count || 0) >= perUserLimit) continue;
-    }
-
+    let disc = 0;
     const dType = String(cp.discount_type || "").toUpperCase();
     const isFlat = dType === "FLAT" || dType === "FIXED";
     const val = Number(cp.discount_value || cp.discount_percentage || 0);
-    const maxCap = Number(cp.max_discount || 10000);
+    const maxD = Number(cp.max_discount || 10000);
 
-    let calculatedDiscount = 0;
     if (isFlat) {
-      calculatedDiscount = val;
+      disc = val;
     } else {
-      calculatedDiscount = basePrice > 0 ? Math.round((basePrice * val) / 100) : val;
+      disc = basePrice > 0 ? Math.round((basePrice * val) / 100) : val;
     }
-    if (maxCap > 0) calculatedDiscount = Math.min(calculatedDiscount, maxCap);
-    if (basePrice > 0) calculatedDiscount = Math.min(calculatedDiscount, basePrice);
+    if (maxD > 0) disc = Math.min(disc, maxD);
+    if (basePrice > 0) disc = Math.min(disc, basePrice);
 
-    if (calculatedDiscount > maxDiscount) {
-      maxDiscount = calculatedDiscount;
+    if (disc > maxDiscount) {
+      maxDiscount = disc;
       bestCoupon = {
-        ...cp,
-        calculatedDiscount,
-        isFlat
+        coupon_id: cp.id,
+        coupon_code: cp.code,
+        couponCode: cp.code,
+        discount_amount: disc,
+        discountAmount: disc,
+        title: cp.title,
+        final_amount: Math.max(0, basePrice - disc)
       };
     }
   }
 
-  if (!bestCoupon || maxDiscount <= 0) {
-    return jsonRes(c, true, null, "No eligible auto-apply coupon found for this booking amount");
+  if (bestCoupon) {
+    return jsonRes(c, true, bestCoupon, `Auto-applied coupon ${bestCoupon.coupon_code}`);
   }
-
-  const finalAmount = Math.max(0, basePrice - maxDiscount);
-
-  return jsonRes(c, true, {
-    couponId: bestCoupon.id,
-    coupon_id: bestCoupon.id,
-    couponCode: bestCoupon.code,
-    coupon_code: bestCoupon.code,
-    discount: maxDiscount,
-    discount_amount: maxDiscount,
-    discountAmount: maxDiscount,
-    discount_percentage: !bestCoupon.isFlat ? Number(bestCoupon.discount_value || 0) : null,
-    discount_type: bestCoupon.isFlat ? "FLAT" : "PERCENTAGE",
-    basePrice,
-    finalAmount,
-    title: bestCoupon.title || `Save ₹${maxDiscount}`,
-    description: bestCoupon.description || `Auto-applied coupon ${bestCoupon.code}`,
-    message: `Best coupon '${bestCoupon.code}' auto-applied! Saved ₹${maxDiscount}`
-  }, `Best coupon '${bestCoupon.code}' auto-applied! Saved ₹${maxDiscount}`);
+  return jsonRes(c, false, null, "No eligible coupon found for this amount", 404);
 };
 
 const handleRemoveCoupon = async (c) => {
-  const body = await c.req.json().catch(() => ({}));
-  const basePrice = Number(body.basePrice || body.base_price || body.amount || body.price || 0);
-
-  return jsonRes(c, true, {
-    couponCode: null,
-    coupon_code: null,
-    discount: 0,
-    discount_amount: 0,
-    basePrice,
-    finalAmount: basePrice,
-    message: "Coupon removed"
-  }, "Coupon removed successfully");
+  return jsonRes(c, true, null, "Coupon removed successfully");
 };
 
 const handleGetCouponHistory = async (c) => {
@@ -12154,10 +12851,10 @@ const handleGetPriceDetails = async (c) => {
   
   const unitRate = customArtPrice !== null && !isNaN(customArtPrice) && customArtPrice > 0
     ? customArtPrice
-    : (service ? Number(service.price || service.minimum_price || 0) : Number(c.req.query("basePrice") || c.req.query("base_price") || c.req.query("amount") || c.req.query("price") || 100));
+    : (service ? Number(service.price || service.minimum_price || 0) : Number(c.req.query("basePrice") || c.req.query("base_price") || c.req.query("amount") || c.req.query("price") || 500));
 
   const isPerPerson = isPerPersonService(service, customArtPrice, unitRate);
-  const basePrice = isPerPerson ? (unitRate * groupSize) : unitRate;
+  const basePrice = unitRate * groupSize;
 
   let couponDiscount = 0;
   if (couponCode) {
@@ -12178,6 +12875,13 @@ const handleGetPriceDetails = async (c) => {
       }
     }
 
+    if (!cp) {
+      const sysCp = getAvailableSystemCoupons().find(s => s.code === couponCode);
+      if (sysCp) {
+        cp = { ...sysCp };
+      }
+    }
+
     if (cp && cp.expires_at) {
       const expStr = String(cp.expires_at).trim();
       const ist = getNowIST();
@@ -12186,7 +12890,7 @@ const handleGetPriceDetails = async (c) => {
       }
     }
 
-    if (cp && u && u.id && cp.id) {
+    if (cp && u && u.id && cp.id && cp.id < 100) {
       const usages = await db.first(
         "SELECT COUNT(*) as count FROM coupon_usages WHERE user_id = ? AND coupon_id = ?",
         [u.id, cp.id]
@@ -12224,7 +12928,9 @@ const handleGetPriceDetails = async (c) => {
     service_id: serviceId,
     service_title: service?.title || "Mehndi Service",
     unit_rate: unitRate,
+    unitRate: unitRate,
     group_size: groupSize,
+    groupSize: groupSize,
     is_per_person: isPerPerson,
     service_price: basePrice,
     servicePrice: basePrice,
@@ -12240,8 +12946,11 @@ const handleGetPriceDetails = async (c) => {
     coupon_discount: couponDiscount,
     couponDiscount: couponDiscount,
     discount: couponDiscount,
+    discount_amount: couponDiscount,
+    discountAmount: couponDiscount,
     total_amount: grandTotal,
     finalAmount: grandTotal,
+    final_amount: grandTotal,
     totalAmount: grandTotal,
     required_advance: requiredAdvance,
     requiredAdvance: requiredAdvance,
@@ -12250,15 +12959,17 @@ const handleGetPriceDetails = async (c) => {
     advance_amount: requiredAdvance,
     advanceAmount: requiredAdvance,
     remaining_amount: remainingAmount,
-    remainingAmount: remainingAmount
+    remainingAmount: remainingAmount,
+    remainingCash: remainingAmount
   }, "Price details calculated");
 };
 
 const handleCreateBookingExplicit = async (c) => {
   const db = getDb(c.env);
   const u = getUserFromHeader(c) || { id: 1 };
-  const body = await c.req.json().catch(() => ({}));
-  const artistId = Number(body.artist_id || body.artistId || body.artist?.id || body.artist || 0);
+  const rawArtistId = Number(body.artist_id || body.artistId || body.artist?.id || body.artist || 0);
+  const artistEntity = await resolveArtistEntity(db, rawArtistId);
+  const artistId = artistEntity ? artistEntity.canonicalUserId : rawArtistId;
   const serviceId = Number(body.service_id || body.serviceId || 0);
   const bookingDate = body.booking_date || body.bookingDate || body.selectedDate || new Date().toISOString().split('T')[0];
   const bookingTime = body.booking_time || body.bookingTime || body.timeLabel || "10:00 AM";
@@ -12828,6 +13539,22 @@ const handleAcceptBooking = async (c) => {
   const artist = u ? await db.first("SELECT id, user_id FROM artist_profiles WHERE user_id = ? OR CAST(user_id AS TEXT) = CAST(? AS TEXT)", [u.id, String(u.id)]).catch(() => null) : null;
   const assignedArtistId = booking.artist_id || (artist && artist.id) || u?.id || 231;
 
+  if (curSt === "ACCEPTED" || curDet === "ARTIST_ACCEPTED" || curSt === "IN_PROGRESS" || Number(booking.checkin_otp_verified) === 1) {
+    return jsonRes(c, true, {
+      ...booking,
+      id: bookingId,
+      booking_id: bookingId,
+      bookingId: bookingId,
+      artist_id: assignedArtistId,
+      status: booking.status || "accepted",
+      booking_status: "CONFIRMED",
+      bookingStatus: "CONFIRMED",
+      detailed_status: booking.detailed_status || "ARTIST_ACCEPTED",
+      detailedStatus: booking.detailed_status || "ARTIST_ACCEPTED",
+      alreadyAccepted: true
+    }, "Booking request is already accepted");
+  }
+
   // Generate 4-digit Check-In OTP and Completion PIN if not already set
   const checkinOtp = booking.checkin_otp || generateSecure4DigitOtp();
   const checkoutOtp = booking.checkout_otp || generateSecure4DigitOtp();
@@ -12905,6 +13632,21 @@ const handleOnTheWayBooking = async (c) => {
   const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
 
+  // Assigned Artist Authorization Guard
+  if (u && u.id && String(u.role).toUpperCase() !== "ADMIN") {
+    const isArtistUser = String(booking.artist_id) === String(u.id);
+    let isArtistProfile = false;
+    if (!isArtistUser) {
+      const ap = await db.first("SELECT id FROM artist_profiles WHERE user_id = ? OR CAST(user_id AS TEXT) = CAST(? AS TEXT)", [u.id, String(u.id)]).catch(() => null);
+      if (ap && String(booking.artist_id) === String(ap.id)) {
+        isArtistProfile = true;
+      }
+    }
+    if (!isArtistUser && !isArtistProfile) {
+      return jsonRes(c, false, null, "Forbidden: Only the assigned artist can update travel status", 403);
+    }
+  }
+
   // Strict State Machine Guard:
   // If booking is already ARRIVED, IN_PROGRESS, or COMPLETED, do NOT regress status
   if (
@@ -12927,12 +13669,12 @@ const handleOnTheWayBooking = async (c) => {
   }
 
   // Ensure 4-digit checkin_otp and checkout_otp exist
-  const checkinOtp = booking.checkin_otp || generateSecure4DigitOtp();
-  const checkoutOtp = booking.checkout_otp || generateSecure4DigitOtp();
+  const checkinOtp = booking.checkin_otp || booking.check_in_otp || generateSecure4DigitOtp();
+  const checkoutOtp = booking.checkout_otp || booking.check_out_otp || generateSecure4DigitOtp();
 
   await db.run(
-    "UPDATE bookings SET status = 'accepted', booking_status = 'CONFIRMED', detailed_status = 'ARTIST_ON_THE_WAY', checkin_otp = ?, checkout_otp = ? WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
-    [checkinOtp, checkoutOtp, bookingId, String(bookingId)]
+    "UPDATE bookings SET status = 'accepted', booking_status = 'CONFIRMED', detailed_status = 'ARTIST_ON_THE_WAY', checkin_otp = ?, check_in_otp = ?, checkout_otp = ?, check_out_otp = ? WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+    [checkinOtp, checkinOtp, checkoutOtp, checkoutOtp, bookingId, String(bookingId)]
   ).catch(() => { });
 
   if (booking.customer_id) {
@@ -12974,6 +13716,22 @@ const handleStartService = async (c) => {
   const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
 
+  // Assigned Artist Authorization Guard
+  const u = getUserFromHeader(c);
+  if (u && u.id && String(u.role).toUpperCase() !== "ADMIN") {
+    const isArtistUser = String(booking.artist_id) === String(u.id);
+    let isArtistProfile = false;
+    if (!isArtistUser) {
+      const ap = await db.first("SELECT id FROM artist_profiles WHERE user_id = ? OR CAST(user_id AS TEXT) = CAST(? AS TEXT)", [u.id, String(u.id)]).catch(() => null);
+      if (ap && String(booking.artist_id) === String(ap.id)) {
+        isArtistProfile = true;
+      }
+    }
+    if (!isArtistUser && !isArtistProfile) {
+      return jsonRes(c, false, null, "Forbidden: Only the assigned artist can start service", 403);
+    }
+  }
+
   // Verify that Check-In was completed before starting service
   const isCheckedIn = Number(booking.checkin_otp_verified) === 1 ||
     booking.detailed_status === "CUSTOMER_VERIFIED" ||
@@ -12986,7 +13744,7 @@ const handleStartService = async (c) => {
   }
 
   await db.run(
-    "UPDATE bookings SET status = 'in_progress', detailed_status = 'SERVICE_IN_PROGRESS', checkin_otp_verified = 1, check_in_time = COALESCE(check_in_time, CURRENT_TIMESTAMP) WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+    "UPDATE bookings SET status = 'accepted', booking_status = 'IN_PROGRESS', detailed_status = 'SERVICE_IN_PROGRESS', checkin_otp_verified = 1, check_in_time = COALESCE(check_in_time, CURRENT_TIMESTAMP) WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
     [bookingId, String(bookingId)]
   ).catch(() => { });
 
@@ -13352,8 +14110,12 @@ app.get("/coupons/history", handleGetCouponHistory);
 app.get("/api/v1/coupon/history", handleGetCouponHistory);
 app.get("/booking/price-details", handleGetPriceDetails);
 app.get("/customer/booking/price-details", handleGetPriceDetails);
+app.get("/api/v1/booking/price-details", handleGetPriceDetails);
+app.get("/api/v1/customer/booking/price-details", handleGetPriceDetails);
 app.post("/booking/create", handleCreateBookingExplicit);
 app.post("/customer/booking/create", handleCreateBookingExplicit);
+app.post("/api/v1/booking/create", handleCreateBookingExplicit);
+app.post("/api/v1/customer/booking/create", handleCreateBookingExplicit);
 app.post("/artist/booking/travel-charge/request", handleArtistTravelChargeRequest);
 app.post("/api/v1/artist/booking/travel-charge/request", handleArtistTravelChargeRequest);
 app.post("/customer/booking/travel-charge/respond", handleCustomerTravelChargeRespond);
@@ -13409,8 +14171,12 @@ addRoute("get", "/coupons/history", handleGetCouponHistory);
 addRoute("get", "/api/v1/coupon/history", handleGetCouponHistory);
 addRoute("get", "/booking/price-details", handleGetPriceDetails);
 addRoute("get", "/customer/booking/price-details", handleGetPriceDetails);
+addRoute("get", "/api/v1/booking/price-details", handleGetPriceDetails);
+addRoute("get", "/api/v1/customer/booking/price-details", handleGetPriceDetails);
 addRoute("post", "/booking/create", handleCreateBookingExplicit);
 addRoute("post", "/customer/booking/create", handleCreateBookingExplicit);
+addRoute("post", "/api/v1/booking/create", handleCreateBookingExplicit);
+addRoute("post", "/api/v1/customer/booking/create", handleCreateBookingExplicit);
 addRoute("post", "/artist/booking/travel-charge/request", handleArtistTravelChargeRequest);
 addRoute("post", "/customer/booking/travel-charge/respond", handleCustomerTravelChargeRespond);
 addRoute("get", "/customer/artist/:id{[0-9]+}", handleGetArtistProfileById);
@@ -13420,7 +14186,7 @@ addRoute("get", "/customer/artists/:id{[0-9]+}/services", handleGetArtistService
 addRoute("get", "/customer/artist/:id{[0-9]+}/availability", handleGetArtistAvailabilityById);
 addRoute("get", "/customer/artists/:id{[0-9]+}/availability", handleGetArtistAvailabilityById);
 addRoute("get", "/artist/:id{[0-9]+}/services", handleGetArtistServicesById);
-addRoute("get", "/artist/services/:id{[0-9]+}", handleGetArtistServicesById);
+addRoute("get", "/artist/services/:id{[0-9]+}", handleGetServiceById);
 addRoute("get", "/artist/:id{[0-9]+}/availability", handleGetArtistAvailabilityById);
 
 addRoute("get", "/chat/list", handleGetChatList);
@@ -13446,6 +14212,22 @@ const handleValidateArrival = async (c) => {
 
   const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
+
+  // Assigned Artist Authorization Guard
+  const u = getUserFromHeader(c);
+  if (u && u.id && String(u.role).toUpperCase() !== "ADMIN") {
+    const isArtistUser = String(booking.artist_id) === String(u.id);
+    let isArtistProfile = false;
+    if (!isArtistUser) {
+      const ap = await db.first("SELECT id FROM artist_profiles WHERE user_id = ? OR CAST(user_id AS TEXT) = CAST(? AS TEXT)", [u.id, String(u.id)]).catch(() => null);
+      if (ap && String(booking.artist_id) === String(ap.id)) {
+        isArtistProfile = true;
+      }
+    }
+    if (!isArtistUser && !isArtistProfile) {
+      return jsonRes(c, false, null, "Forbidden: Only the assigned artist can confirm arrival", 403);
+    }
+  }
 
   // Strict State Machine Guard:
   // If booking is already IN_PROGRESS or COMPLETED or check-in verified, do NOT regress to ARRIVED
@@ -13501,12 +14283,12 @@ const handleValidateArrival = async (c) => {
   const isWithinRadius = (distanceMeters !== null) ? distanceMeters <= ARRIVAL_RADIUS_METERS : true;
 
   if (isWithinRadius || body.force === true) {
-    const checkinOtp = generateSecure4DigitOtp();
+    const checkinOtp = booking.checkin_otp || booking.check_in_otp || generateSecure4DigitOtp();
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
     await db.run(
-      "UPDATE bookings SET status = 'accepted', detailed_status = 'ARTIST_ARRIVED', arrival_verified_at = CURRENT_TIMESTAMP, checkin_otp = ?, checkin_otp_expires_at = ? WHERE id = ?",
-      [checkinOtp, expiresAt, bookingId]
+      "UPDATE bookings SET status = 'accepted', detailed_status = 'ARTIST_ARRIVED', arrival_verified_at = CURRENT_TIMESTAMP, checkin_otp = ?, check_in_otp = ?, checkin_otp_expires_at = ?, check_in_otp_expires_at = ? WHERE id = ?",
+      [checkinOtp, checkinOtp, expiresAt, expiresAt, bookingId]
     ).catch(() => { });
 
     const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
@@ -13643,6 +14425,22 @@ const handleVerifyCheckInOtp = async (c) => {
   const booking = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!booking) return jsonRes(c, false, null, "Booking not found", 404);
 
+  // Assigned Artist Authorization Guard
+  const u = getUserFromHeader(c);
+  if (u && u.id && String(u.role).toUpperCase() !== "ADMIN") {
+    const isArtistUser = String(booking.artist_id) === String(u.id);
+    let isArtistProfile = false;
+    if (!isArtistUser) {
+      const ap = await db.first("SELECT id FROM artist_profiles WHERE user_id = ? OR CAST(user_id AS TEXT) = CAST(? AS TEXT)", [u.id, String(u.id)]).catch(() => null);
+      if (ap && String(booking.artist_id) === String(ap.id)) {
+        isArtistProfile = true;
+      }
+    }
+    if (!isArtistUser && !isArtistProfile) {
+      return jsonRes(c, false, null, "Forbidden: Only the assigned artist can verify check-in PIN", 403);
+    }
+  }
+
   // Strict State Machine Guard: Validate that booking is in a valid state for Check-In
   if (booking.status === "completed" || booking.detailed_status === "COMPLETED") {
     return jsonRes(c, false, null, "Cannot check in an already completed booking", 400);
@@ -13692,8 +14490,9 @@ const handleVerifyCheckInOtp = async (c) => {
     return jsonRes(c, false, null, "Too many incorrect attempts (5/5). Verification locked for 15 minutes. Please request a new OTP.", 429);
   }
 
-  const validOtp = String(booking.checkin_otp || "").trim();
-  const isExpired = booking.checkin_otp_expires_at && new Date() > new Date(booking.checkin_otp_expires_at);
+  const validOtp = String(booking.checkin_otp || booking.check_in_otp || "").trim();
+  const isExpired = (booking.checkin_otp_expires_at && new Date() > new Date(booking.checkin_otp_expires_at)) ||
+                    (booking.check_in_otp_expires_at && new Date() > new Date(booking.check_in_otp_expires_at));
 
   if (!validOtp || inputOtp !== validOtp || isExpired) {
     checkInFailedAttemptsMap.set(bookingId, currentAttempts);
@@ -13709,10 +14508,21 @@ const handleVerifyCheckInOtp = async (c) => {
   if (!checkoutOtp || checkoutOtp.length !== 4) {
     checkoutOtp = generateSecure4DigitOtp();
   }
-  // Core atomic update with verified existing columns
+  // Core atomic update with verified existing columns complying with D1 CHECK constraint
   await db.run(
-    "UPDATE bookings SET status = 'in_progress', detailed_status = 'SERVICE_IN_PROGRESS', booking_status = 'IN_PROGRESS', checkin_otp_verified = 1, check_in_otp_verified = 1, check_in_time = CURRENT_TIMESTAMP, checkin_verified_at = CURRENT_TIMESTAMP, service_started_at = CURRENT_TIMESTAMP, checkin_otp = NULL, check_in_otp = NULL, checkin_otp_expires_at = NULL, check_in_otp_expires_at = NULL, checkout_otp = ?, check_out_otp = ? WHERE id = ?",
-    [checkoutOtp, checkoutOtp, bookingId]
+    `UPDATE bookings 
+     SET status = 'accepted', 
+         detailed_status = 'SERVICE_IN_PROGRESS', 
+         booking_status = 'IN_PROGRESS', 
+         checkin_otp_verified = 1, 
+         check_in_otp_verified = 1, 
+         check_in_time = CURRENT_TIMESTAMP, 
+         checkin_otp = NULL, 
+         check_in_otp = NULL, 
+         checkout_otp = ?, 
+         check_out_otp = ? 
+     WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)`,
+    [checkoutOtp, checkoutOtp, bookingId, String(bookingId)]
   ).catch(err => {
     console.error("[CRITICAL Check-In SQL Update Failed]", err);
   });
@@ -13822,7 +14632,7 @@ const handleSendCheckOutOtp = async (c) => {
   checkOutFailedAttemptsMap.delete(bookingId);
 
   await db.run(
-    "UPDATE bookings SET checkout_otp = ?, check_out_otp = ?, checkout_otp_expires_at = ?, check_out_otp_expires_at = ?, detailed_status = 'CHECKOUT' WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
+    "UPDATE bookings SET checkout_otp = ?, check_out_otp = ?, checkout_otp_expires_at = ?, check_out_otp_expires_at = ? WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)",
     [otp, otp, expiresAt, expiresAt, bookingId, String(bookingId)]
   ).catch(() => { });
 
@@ -13936,8 +14746,21 @@ const handleVerifyCheckOutOtp = async (c) => {
   if (isAlreadyFullyPaid) {
     // Already fully paid: Complete booking directly
     await db.run(
-      "UPDATE bookings SET status = 'completed', detailed_status = 'COMPLETED', booking_status = 'COMPLETED', checkout_otp_verified = 1, check_out_otp_verified = 1, check_out_time = CURRENT_TIMESTAMP, checkout_otp = NULL, check_out_otp = NULL, checkout_otp_expires_at = NULL, check_out_otp_expires_at = NULL, remaining_amount = 0, payment_status = 'PAID', final_payment_status = 'PAID', completed_at = CURRENT_TIMESTAMP WHERE id = ?",
-      [bookingId]
+      `UPDATE bookings 
+       SET status = 'completed', 
+           detailed_status = 'COMPLETED', 
+           booking_status = 'COMPLETED', 
+           checkout_otp_verified = 1, 
+           check_out_otp_verified = 1, 
+           check_out_time = CURRENT_TIMESTAMP, 
+           checkout_otp = NULL, 
+           check_out_otp = NULL, 
+           remaining_amount = 0, 
+           payment_status = 'PAID', 
+           final_payment_status = 'PAID', 
+           completed_at = CURRENT_TIMESTAMP 
+       WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)`,
+      [bookingId, String(bookingId)]
     );
     await db.run(
       "INSERT INTO booking_status_histories (booking_id, status, notes, created_at, updated_at) VALUES (?, 'COMPLETED', 'Check-Out OTP verified. Booking completed.', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
@@ -13947,8 +14770,18 @@ const handleVerifyCheckOutOtp = async (c) => {
   } else {
     // Remaining amount exists: Await final payment (Online / Cash)
     await db.run(
-      "UPDATE bookings SET detailed_status = 'CHECKOUT', checkout_otp_verified = 1, check_out_otp_verified = 1, check_out_time = CURRENT_TIMESTAMP, checkout_otp = NULL, check_out_otp = NULL, checkout_otp_expires_at = NULL, check_out_otp_expires_at = NULL, remaining_amount = ?, payment_status = 'PARTIAL', final_payment_status = 'PENDING' WHERE id = ?",
-      [remainingAmount, bookingId]
+      `UPDATE bookings 
+       SET detailed_status = 'CHECKOUT', 
+           checkout_otp_verified = 1, 
+           check_out_otp_verified = 1, 
+           check_out_time = CURRENT_TIMESTAMP, 
+           checkout_otp = NULL, 
+           check_out_otp = NULL, 
+           remaining_amount = ?, 
+           payment_status = 'PARTIAL', 
+           final_payment_status = 'PENDING' 
+       WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)`,
+      [remainingAmount, bookingId, String(bookingId)]
     );
     await db.run(
       "INSERT INTO booking_status_histories (booking_id, status, notes, created_at, updated_at) VALUES (?, 'CHECKOUT', 'Check-Out OTP verified. Awaiting remaining payment of ₹' || ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
@@ -14061,6 +14894,24 @@ const handleGetBookingDetails = async (c) => {
     return jsonRes(c, false, null, "Booking not found", 404);
   }
 
+  // IDOR / BOLA Authorization Guard:
+  // Validate that caller is the booking customer, assigned artist, or an admin
+  const authUser = getUserFromHeader(c);
+  if (authUser && authUser.id && String(authUser.role).toUpperCase() !== "ADMIN") {
+    const isCustomer = String(booking.customer_id) === String(authUser.id) || String(booking.user_id) === String(authUser.id);
+    const isArtistUser = String(booking.artist_id) === String(authUser.id);
+    let isArtistProfile = false;
+    if (!isArtistUser) {
+      const ap = await db.first("SELECT id FROM artist_profiles WHERE user_id = ? OR CAST(user_id AS TEXT) = CAST(? AS TEXT)", [authUser.id, String(authUser.id)]).catch(() => null);
+      if (ap && String(booking.artist_id) === String(ap.id)) {
+        isArtistProfile = true;
+      }
+    }
+    if (!isCustomer && !isArtistUser && !isArtistProfile) {
+      return jsonRes(c, false, null, "Forbidden: You do not have permission to access this booking", 403);
+    }
+  }
+
   const bId = booking.id;
   const customer = await db.first("SELECT id, full_name, email, phone, avatar FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [booking.customer_id, String(booking.customer_id)]).catch(() => null);
   const artist = await db.first(`
@@ -14108,7 +14959,7 @@ const handleGetBookingDetails = async (c) => {
   // If checkin_otp_verified is 1 or status is IN_PROGRESS, detailed_status is GUARANTEED to be SERVICE_IN_PROGRESS (unless completed/cancelled)
   const isCheckInVerified = Number(booking.checkin_otp_verified) === 1;
   if (isCheckInVerified || rawStatus === "IN_PROGRESS" || detailedStatus === "IN_PROGRESS") {
-    if (detailedStatus !== "COMPLETED" && detailedStatus !== "COMPLETED_CLOSED" && detailedStatus !== "CANCELLED" && detailedStatus !== "CHECKOUT" && detailedStatus !== "PAYMENT_REQUIRED") {
+    if (detailedStatus !== "COMPLETED" && detailedStatus !== "COMPLETED_CLOSED" && detailedStatus !== "CANCELLED" && detailedStatus !== "CHECKOUT" && detailedStatus !== "PAYMENT_REQUIRED" && detailedStatus !== "AWAITING_CASH_CONFIRMATION") {
       detailedStatus = "SERVICE_IN_PROGRESS";
     }
   }
@@ -14484,9 +15335,9 @@ const handleSelectCashPayment = async (c) => {
         customerId = fallbackCust?.id || 1;
       }
 
-      let artistId = Number(rawArtistId);
-      const artCheck = await db.first("SELECT id FROM users WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [artistId, String(artistId)]).catch(() => null);
-      if (!artCheck) {
+      const artistEntity = await resolveArtistEntity(db, rawArtistId);
+      let artistId = artistEntity ? artistEntity.canonicalUserId : Number(rawArtistId);
+      if (!artistId) {
         const fallbackArt = await db.first("SELECT user_id as id FROM artist_profiles LIMIT 1").catch(() => null);
         artistId = fallbackArt?.id || 240;
       }
@@ -14626,24 +15477,34 @@ const handleSelectCashPayment = async (c) => {
       return jsonRes(c, false, null, "Cannot select cash payment for a cancelled booking", 400);
     }
 
+    const bStatus = String(booking.booking_status || booking.status || "").toUpperCase();
+    const isInitialDraft = (bStatus === "PENDING" || bStatus === "PENDING_PAYMENT") && !booking.check_in_otp_verified;
+    const targetStatus = isInitialDraft ? "pending" : (booking.status || "confirmed");
+    const targetBookingStatus = isInitialDraft ? "PENDING" : (booking.booking_status || "CONFIRMED");
+    const targetDetailedStatus = isInitialDraft ? "PENDING_ARTIST_CONFIRMATION" : "AWAITING_CASH_CONFIRMATION";
+
     await db.run(
       `UPDATE bookings 
        SET payment_mode = 'CASH',
-           payment_status = 'pending',
-           status = 'pending',
-           booking_status = 'PENDING',
-           detailed_status = 'PENDING_ARTIST_CONFIRMATION'
+           status = ?,
+           booking_status = ?,
+           detailed_status = ?
        WHERE id = ?`,
-      [booking.id]
+      [targetStatus, targetBookingStatus, targetDetailedStatus, booking.id]
     ).catch(() => { });
 
     // Dispatch real-time notification to the artist
     if (booking.artist_id) {
+      const notifTitle = isInitialDraft ? "New Cash Booking Request 💵" : "Cash Collection Request 💵";
+      const notifBody = isInitialDraft 
+        ? `Customer requested cash booking #${booking.booking_number || booking.booking_code || booking.id}. Please review and confirm.`
+        : `Customer selected Cash payment of ₹${booking.remaining_amount || 0} for booking #${booking.booking_number || booking.booking_code || booking.id}. Please collect cash and tap Confirm Cash Received.`;
+
       dispatchNotification(db, {
         userId: booking.artist_id,
-        title: "New Cash Booking Request 💵",
-        body: `Customer requested cash booking #${booking.booking_number || booking.booking_code || booking.id}. Please review and confirm.`,
-        type: "NEW_BOOKING_REQUEST",
+        title: notifTitle,
+        body: notifBody,
+        type: isInitialDraft ? "NEW_BOOKING_REQUEST" : "PAYMENT_CONFIRMATION_REQUIRED",
         entityId: booking.id,
         entityType: "booking",
         channelId: "bookings",
@@ -14654,9 +15515,9 @@ const handleSelectCashPayment = async (c) => {
     return jsonRes(c, true, {
       bookingId: booking.id,
       payment_mode: "CASH",
-      status: "pending",
-      booking_status: "PENDING",
-      detailed_status: "PENDING_ARTIST_CONFIRMATION"
+      status: targetStatus,
+      booking_status: targetBookingStatus,
+      detailed_status: targetDetailedStatus
     }, "Cash payment selected. Request sent to artist for confirmation.");
   } catch (err) {
     console.error("[handleSelectCashPayment Critical Exception]:", err);
@@ -14675,6 +15536,26 @@ const handleConfirmCashPayment = async (c) => {
   const b = await db.first("SELECT * FROM bookings WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [bookingId, String(bookingId)]).catch(() => null);
   if (!b) return jsonRes(c, false, null, "Booking not found", 404);
 
+  // Strict Idempotency Guard: If already completed or paid, return success immediately
+  const pStatus = String(b.payment_status || "").toUpperCase();
+  const fpStatus = String(b.final_payment_status || "").toUpperCase();
+  const dStatus = String(b.detailed_status || b.status || "").toUpperCase();
+  if (pStatus === "PAID" || fpStatus === "PAID" || dStatus === "COMPLETED" || (Number(b.remaining_amount) <= 0 && Number(b.advance_paid) >= Number(b.total_amount))) {
+    const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => b);
+    return jsonRes(c, true, {
+      ...updated,
+      id: bookingId,
+      bookingId: bookingId,
+      status: "completed",
+      booking_status: "COMPLETED",
+      detailed_status: "COMPLETED",
+      payment_status: "PAID",
+      final_payment_status: "PAID",
+      remaining_amount: 0,
+      alreadyCompleted: true
+    }, "Payment has already been completed for this booking");
+  }
+
   // Strict Rule 9: Assigned Artist Authorization Guard (must be assigned artist or admin)
   if (u && u.id && u.role !== 'ADMIN' && u.role !== 'admin') {
     const isAssigned = (Number(u.id) === Number(b.artist_id)) || (Number(u.user_id) === Number(b.artist_id));
@@ -14684,16 +15565,14 @@ const handleConfirmCashPayment = async (c) => {
   }
 
   // Strict Rule 2 & 3: Check-Out OTP must be successfully verified before cash collection
-  const isCheckoutVerified = Number(b.checkout_otp_verified) === 1 || String(b.detailed_status).toUpperCase() === "CHECKOUT" || Boolean(b.check_out_time);
+  const isCheckoutVerified = Number(b.checkout_otp_verified) === 1 || String(b.detailed_status).toUpperCase() === "CHECKOUT" || Boolean(b.check_out_time) || String(b.detailed_status).toUpperCase() === "AWAITING_CASH_CONFIRMATION";
   if (!isCheckoutVerified) {
     return jsonRes(c, false, null, "Cash payment can strictly be confirmed only after Check-Out OTP has been successfully verified.", 400);
   }
 
-  // Strict Rule 17: Check if already paid online or cash
-  const pStatus = String(b.payment_status || "").toUpperCase();
-  const fpStatus = String(b.final_payment_status || "").toUpperCase();
-  if (pStatus === "PAID" || fpStatus === "PAID" || (Number(b.remaining_amount) <= 0 && Number(b.advance_paid) >= Number(b.total_amount))) {
-    return jsonRes(c, false, null, "Payment has already been completed for this booking", 400);
+  // Strict Rule: Customer must have explicitly selected Cash Payment (AWAITING_CASH_CONFIRMATION)
+  if (String(b.detailed_status).toUpperCase() !== "AWAITING_CASH_CONFIRMATION") {
+    return jsonRes(c, false, null, "Cannot confirm cash payment yet. The customer must explicitly select 'Pay Cash' on their app first.", 400);
   }
 
   const total = Number(b.total_amount || b.final_amount || 0);
@@ -14852,6 +15731,17 @@ addRoute("post", "/customer/register/verify-otp", handleRegisterVerifyOtp);
 addRoute("post", "/artist/register/send-otp", handleRegisterSendOtp);
 addRoute("post", "/artist/register/verify-otp", handleRegisterVerifyOtp);
 
+addRoute("post", "/register-send-otp", handleRegisterSendOtp);
+addRoute("post", "/register-verify-otp", handleRegisterVerifyOtp);
+addRoute("post", "/auth/register-send-otp", handleRegisterSendOtp);
+addRoute("post", "/auth/register-verify-otp", handleRegisterVerifyOtp);
+addRoute("post", "/user/register-send-otp", handleRegisterSendOtp);
+addRoute("post", "/user/register-verify-otp", handleRegisterVerifyOtp);
+addRoute("post", "/customer/register-send-otp", handleRegisterSendOtp);
+addRoute("post", "/customer/register-verify-otp", handleRegisterVerifyOtp);
+addRoute("post", "/artist/register-send-otp", handleRegisterSendOtp);
+addRoute("post", "/artist/register-verify-otp", handleRegisterVerifyOtp);
+
 addRoute("post", "/auth/login", handleLogin);
 addRoute("post", "/user/login", handleLogin);
 addRoute("post", "/customer/login", handleLogin);
@@ -14881,6 +15771,9 @@ addRoute("get", "/artist/details", handleGetArtistDetails);
 addRoute("get", "/artist/artistdetails", handleGetArtistDetails);
 addRoute("get", "/artist/profile", handleGetArtistDetails);
 addRoute("put", "/artist/profile", handleUpdateArtistProfile);
+addRoute("post", "/artist/profile", handleUpdateArtistProfile);
+addRoute("post", "/artist/profile/update", handleUpdateArtistProfile);
+addRoute("put", "/artist/profile/update", handleUpdateArtistProfile);
 addRoute("get", "/artist/dashboard", handleGetArtistDashboard);
 addRoute("get", "/artist/earnings", handleGetArtistEarnings);
 
@@ -14893,6 +15786,9 @@ addRoute("delete", "/artist/portfolio/:id", handleDeleteArtistPortfolio);
 addRoute("delete", "/portfolio/:id", handleDeleteArtistPortfolio);
 
 addRoute("get", "/artist/services", handleGetArtistServices);
+addRoute("post", "/artist/services", handleCreateArtistService);
+addRoute("put", "/artist/services/:id", handleUpdateArtistService);
+addRoute("delete", "/artist/services/:id", handleDeleteArtistService);
 addRoute("get", "/artist/getallservicesdata", handleGetArtistServices);
 addRoute("get", "/services", handleGetArtistServices);
 
@@ -14904,7 +15800,8 @@ addRoute("get", "/artist/leads", handleGetArtistLeads);
 addRoute("get", "/artist/leads/:id{[0-9]+}", handleGetArtistLeadById);
 addRoute("put", "/artist/leads/accept", handleAcceptBooking);
 addRoute("put", "/artist/leads/reject", handleRejectBooking);
-addRoute("put", "/artist/leads/view", handleGetArtistLeadById);
+addRoute("put", "/artist/leads/view", handleMarkLeadViewed);
+addRoute("post", "/artist/leads/view", handleMarkLeadViewed);
 
 addRoute("get", "/artist/availability", handleGetArtistAvailability);
 addRoute("put", "/artist/availability", handleUpdateArtistAvailability);
@@ -14944,6 +15841,36 @@ addRoute("get", "/customer/artists/:id{[0-9]+}", handleGetArtistProfileById);
 addRoute("get", "/customer/artists/:artistId{[0-9]+}", handleGetArtistProfileById);
 addRoute("get", "/artist/:id{[0-9]+}", handleGetArtistProfileById);
 addRoute("get", "/artists/:id{[0-9]+}", handleGetArtistProfileById);
+
+// Artist FAQs
+addRoute("get", "/customer/artist/:id{[0-9]+}/faqs", handleGetArtistFaqs);
+addRoute("get", "/customer/artist/:artistId{[0-9]+}/faqs", handleGetArtistFaqs);
+addRoute("get", "/customer/artists/:id{[0-9]+}/faqs", handleGetArtistFaqs);
+addRoute("get", "/artist/:id{[0-9]+}/faqs", handleGetArtistFaqs);
+addRoute("get", "/faqs/artist/:id{[0-9]+}", handleGetArtistFaqs);
+
+// Artist Service Catalog (Storefront)
+addRoute("get", "/customer/artist/:id{[0-9]+}/service/:serviceId{[0-9]+}/catalog", handleGetArtistServiceCatalog);
+addRoute("get", "/customer/artist/:artistId{[0-9]+}/service/:serviceId{[0-9]+}/catalog", handleGetArtistServiceCatalog);
+addRoute("get", "/customer/artists/:id{[0-9]+}/service/:serviceId{[0-9]+}/catalog", handleGetArtistServiceCatalog);
+addRoute("get", "/customer/artist/:id{[0-9]+}/services/:serviceId{[0-9]+}/catalog", handleGetArtistServiceCatalog);
+addRoute("get", "/artist/:id{[0-9]+}/service/:serviceId{[0-9]+}/catalog", handleGetArtistServiceCatalog);
+addRoute("get", "/artist/:id{[0-9]+}/services/:serviceId{[0-9]+}/catalog", handleGetArtistServiceCatalog);
+
+// Custom Design Requests
+addRoute("post", "/customer/custom-design-request", handleCreateCustomDesignRequest);
+addRoute("post", "/customer/custom-design", handleCreateCustomDesignRequest);
+addRoute("post", "/customer/custom-design-requests", handleCreateCustomDesignRequest);
+addRoute("post", "/customer/artist/:id{[0-9]+}/custom-design", handleCreateCustomDesignRequest);
+addRoute("post", "/customer/artist/:artistId{[0-9]+}/custom-design", handleCreateCustomDesignRequest);
+addRoute("post", "/artist/:id{[0-9]+}/custom-design", handleCreateCustomDesignRequest);
+addRoute("post", "/custom-design-request", handleCreateCustomDesignRequest);
+
+// Artist Offers & Coupons
+addRoute("get", "/customer/artist/:id{[0-9]+}/offers", handleGetArtistOffers);
+addRoute("get", "/customer/artist/:artistId{[0-9]+}/offers", handleGetArtistOffers);
+addRoute("get", "/customer/artists/:id{[0-9]+}/offers", handleGetArtistOffers);
+addRoute("get", "/artist/:id{[0-9]+}/offers", handleGetArtistOffers);
 
 const handleGetNearbyArtists = async (c) => {
   return handleSearchArtists(c);
@@ -15074,24 +16001,33 @@ addRoute("post", "/booking/validate-arrival", handleValidateArrival);
 addRoute("post", "/booking/arrived", handleValidateArrival);
 addRoute("post", "/booking/arrive", handleValidateArrival);
 addRoute("put", "/booking/arrived", handleValidateArrival);
+addRoute("post", "/artist/validate-arrival", handleValidateArrival);
+addRoute("post", "/artist/arrived", handleValidateArrival);
 addRoute("post", "/artist/booking/arrived", handleValidateArrival);
 addRoute("post", "/artist/booking/arrive", handleValidateArrival);
+addRoute("post", "/artist/booking/validate-arrival", handleValidateArrival);
 addRoute("post", "/api/v1/booking/validate-arrival", handleValidateArrival);
 
 addRoute("post", "/booking/on-the-way", handleOnTheWayBooking);
 addRoute("put", "/booking/on-the-way", handleOnTheWayBooking);
+addRoute("post", "/artist/on-the-way", handleOnTheWayBooking);
+addRoute("post", "/artist/booking-on-the-way", handleOnTheWayBooking);
 addRoute("post", "/artist/booking/on-the-way", handleOnTheWayBooking);
 addRoute("put", "/artist/booking/on-the-way", handleOnTheWayBooking);
 addRoute("post", "/api/v1/booking/on-the-way", handleOnTheWayBooking);
 
 addRoute("post", "/booking/check-in", handleVerifyCheckInOtp);
 addRoute("post", "/booking/verify-checkin-otp", handleVerifyCheckInOtp);
+addRoute("post", "/artist/check-in", handleVerifyCheckInOtp);
+addRoute("post", "/artist/verify-check-in-otp", handleVerifyCheckInOtp);
+addRoute("post", "/artist/verify-checkin-otp", handleVerifyCheckInOtp);
 addRoute("post", "/artist/booking/check-in", handleVerifyCheckInOtp);
 addRoute("post", "/api/v1/booking/check-in", handleVerifyCheckInOtp);
 
 addRoute("post", "/booking/start-service", handleStartService);
 addRoute("post", "/booking/start", handleStartService);
 addRoute("put", "/booking/start", handleStartService);
+addRoute("post", "/artist/start-service", handleStartService);
 addRoute("post", "/artist/booking/start-service", handleStartService);
 addRoute("post", "/artist/booking/start", handleStartService);
 addRoute("put", "/artist/booking/start", handleStartService);
@@ -15101,6 +16037,7 @@ addRoute("post", "/booking/send-checkin-otp", handleSendCheckInOtp);
 addRoute("post", "/booking/checkin-otp/send", handleSendCheckInOtp);
 addRoute("post", "/booking/checkin-otp/resend", handleSendCheckInOtp);
 addRoute("post", "/customer/booking/send-checkin-otp", handleSendCheckInOtp);
+addRoute("post", "/artist/send-checkin-otp", handleSendCheckInOtp);
 addRoute("post", "/artist/booking/send-checkin-otp", handleSendCheckInOtp);
 addRoute("post", "/artist/booking/resend-checkin-pin", handleSendCheckInOtp);
 addRoute("post", "/api/v1/booking/send-checkin-otp", handleSendCheckInOtp);
@@ -15109,6 +16046,7 @@ addRoute("post", "/booking/send-checkout-otp", handleSendCheckOutOtp);
 addRoute("post", "/booking/checkout-otp/send", handleSendCheckOutOtp);
 addRoute("post", "/booking/checkout-otp/resend", handleSendCheckOutOtp);
 addRoute("post", "/customer/booking/send-checkout-otp", handleSendCheckOutOtp);
+addRoute("post", "/artist/send-checkout-otp", handleSendCheckOutOtp);
 addRoute("post", "/artist/booking/send-checkout-otp", handleSendCheckOutOtp);
 addRoute("post", "/artist/booking/resend-checkout-pin", handleSendCheckOutOtp);
 addRoute("post", "/api/v1/booking/send-checkout-otp", handleSendCheckOutOtp);
@@ -15116,6 +16054,10 @@ addRoute("post", "/api/v1/booking/send-checkout-otp", handleSendCheckOutOtp);
 addRoute("post", "/booking/complete", handleVerifyCheckOutOtp);
 addRoute("put", "/booking/complete", handleVerifyCheckOutOtp);
 addRoute("post", "/booking/verify-checkout-otp", handleVerifyCheckOutOtp);
+addRoute("post", "/artist/complete", handleVerifyCheckOutOtp);
+addRoute("post", "/artist/complete-booking", handleVerifyCheckOutOtp);
+addRoute("post", "/artist/verify-check-out-otp", handleVerifyCheckOutOtp);
+addRoute("post", "/artist/verify-checkout-otp", handleVerifyCheckOutOtp);
 addRoute("post", "/artist/booking/complete", handleVerifyCheckOutOtp);
 addRoute("post", "/artist/booking/verify-checkout-otp", handleVerifyCheckOutOtp);
 addRoute("post", "/api/v1/booking/complete", handleVerifyCheckOutOtp);
@@ -15247,6 +16189,26 @@ addRoute("post", "/support/tickets/:id/reopen", handleCustomerSupportTicket);
 addRoute("post", "/support/tickets/:id/read", handleCustomerSupportTicket);
 addRoute("post", "/customer/support/tickets/:id/read", handleCustomerSupportTicket);
 addRoute("post", "/artist/support/tickets/:id/read", handleCustomerSupportTicket);
+
+// Customer Saved Addresses Routes
+addRoute("get", "/addresses", handleCustomerDynamic);
+addRoute("get", "/customer/addresses", handleCustomerDynamic);
+addRoute("get", "/addresses/:id", handleCustomerDynamic);
+addRoute("get", "/customer/addresses/:id", handleCustomerDynamic);
+addRoute("post", "/addresses", handleCustomerDynamic);
+addRoute("post", "/customer/addresses", handleCustomerDynamic);
+addRoute("put", "/addresses/:id", handleCustomerDynamic);
+addRoute("put", "/customer/addresses/:id", handleCustomerDynamic);
+addRoute("put", "/addresses", handleCustomerDynamic);
+addRoute("put", "/customer/addresses", handleCustomerDynamic);
+addRoute("patch", "/addresses/:id/default", handleCustomerDynamic);
+addRoute("patch", "/customer/addresses/:id/default", handleCustomerDynamic);
+addRoute("patch", "/addresses/:id", handleCustomerDynamic);
+addRoute("patch", "/customer/addresses/:id", handleCustomerDynamic);
+addRoute("delete", "/addresses/:id", handleCustomerDynamic);
+addRoute("delete", "/customer/addresses/:id", handleCustomerDynamic);
+addRoute("delete", "/addresses", handleCustomerDynamic);
+addRoute("delete", "/customer/addresses", handleCustomerDynamic);
 
 // Admin Support Tickets Management Routes
 addRoute("get", "/admin/support-tickets", handleAdminSupportTickets);

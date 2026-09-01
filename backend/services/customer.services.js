@@ -283,6 +283,11 @@ class CustomerService {
     let order = [];
 
     let distanceSql = null;
+    const isPostgres = db.sequelize.getDialect() === "postgres";
+    const userAlias = isPostgres ? '"user"' : '`user`';
+    const nowFunc = isPostgres ? 'NOW()' : 'DATETIME("now")';
+    const boostCheck = `CASE WHEN ${userAlias}.boost_expires_at > ${nowFunc} THEN 1 ELSE 0 END`;
+
     if (lat && lng) {
       distanceSql = `(6371 * acos(LEAST(1.0, GREATEST(-1.0, cos(radians(${Number(lat)})) * cos(radians(COALESCE(latitude::double precision, ${Number(lat)}))) * cos(radians(COALESCE(longitude::double precision, ${Number(lng)})) - radians(${Number(lng)})) + sin(radians(${Number(lat)})) * sin(radians(COALESCE(latitude::double precision, ${Number(lat)})))))))`;
       attributes.include.push([db.sequelize.literal(distanceSql), "distance"]);
@@ -296,24 +301,29 @@ class CustomerService {
     }
 
     if (sort === "nearest" && distanceSql) {
-      order.push([db.sequelize.literal(distanceSql), "ASC"]);
+      // Boosted artists appear 5km closer for ranking purposes
+      order.push([db.sequelize.literal(`(${distanceSql}) - (${boostCheck} * 5)`), "ASC"]);
       order.push(["avg_rating", "DESC"]);
     } else if (sort === "highest_rated" || sort === "rating") {
-      order.push(["avg_rating", "DESC"]);
+      // Boosted artists get an artificial +0.5 rating bump for ranking purposes
+      order.push([db.sequelize.literal(`avg_rating + (${boostCheck} * 0.5)`), "DESC"]);
       order.push(["total_reviews", "DESC"]);
     } else if (sort === "lowest_price") {
       order.push([
         db.sequelize.literal(`(
-          SELECT COALESCE(MIN(minimum_price), 0) FROM "Services" AS s 
-          WHERE s.artist_id = "ArtistProfile".id
+          SELECT COALESCE(MIN(minimum_price), 0) FROM ${isPostgres ? '"Services"' : 'Services'} AS s 
+          WHERE s.artist_id = ${isPostgres ? '"ArtistProfile"' : 'ArtistProfile'}.id
         )`), "ASC"
       ]);
     } else if (sort === "highest_experience") {
-      order.push(["experience_years", "DESC"]);
+      // Boosted artists get +2 years experience for ranking
+      order.push([db.sequelize.literal(`experience_years + (${boostCheck} * 2)`), "DESC"]);
     } else if (sort === "trending" || sort === "most_booked") {
-      order.push(["total_bookings", "DESC"]);
+      // Boosted artists get +10 virtual bookings for ranking
+      order.push([db.sequelize.literal(`total_bookings + (${boostCheck} * 10)`), "DESC"]);
       order.push(["avg_rating", "DESC"]);
     } else {
+      order.push([db.sequelize.literal(boostCheck), "DESC"]);
       order.push(["createdAt", "DESC"]);
     }
 
@@ -376,7 +386,19 @@ class CustomerService {
         {
           model: db.Service,
           as: "services",
-          required: false
+          required: false,
+          include: [
+            {
+              model: db.ServicePackage,
+              as: "packages",
+              required: false
+            },
+            {
+              model: db.ServiceAddon,
+              as: "addons",
+              required: false
+            }
+          ]
         },
         {
           model: db.Portfolio,
@@ -410,6 +432,47 @@ class CustomerService {
 
     data.response_time = artist.id % 2 === 0 ? "15 mins" : "within 2 hours";
     data.languages = data.languages || "Hindi, English, Rajasthani";
+
+    // Dynamic trust badge metrics
+    const avgRating = Number(data.avg_rating || 0);
+    const expYears = Number(data.experience_years || 0);
+    const totReviews = Number(data.total_reviews || 0);
+    const totBookings = Number(data.total_bookings || 0);
+
+    data.is_verified = data.verification_status === "APPROVED";
+    data.is_premium = Boolean(data.is_featured || (avgRating >= 4.7 && expYears >= 3));
+    data.is_top_rated = Boolean(avgRating >= 4.8 && (totReviews >= 2 || totBookings >= 3));
+
+    // Dynamic availability state
+    if (data.is_available === false || data.is_available === 0) {
+      data.availability_status = "UNAVAILABLE";
+      data.availability_label = "Unavailable / Offline";
+    } else {
+      data.availability_status = "AVAILABLE";
+      data.availability_label = "Available for Booking";
+    }
+
+    // Dynamic Trust Factors
+    data.trust_factors = [
+      { id: "verified", icon: "shield-checkmark", label: "Identity & KYC Verified" },
+      (expYears > 0) ? { id: "experience", icon: "ribbon", label: `${expYears}+ Years Experience` } : null,
+      { id: "organic", icon: "leaf", label: "100% Organic Henna Guarantee" },
+      { id: "hygiene", icon: "sparkles", label: "Sanitized & Fresh Cones" },
+      data.home_service ? { id: "home_service", icon: "home", label: "Home Service Available" } : null,
+      data.salon_service ? { id: "studio_service", icon: "business", label: "Studio Appointments Available" } : null,
+      data.custom_design_enabled ? { id: "custom", icon: "color-palette", label: "Custom Designs Welcome" } : null,
+      { id: "ontime", icon: "timer", label: "On-Time Arrival Guarantee" }
+    ].filter(Boolean);
+
+    // Starting price computation
+    if (!data.starting_price && Array.isArray(data.services) && data.services.length > 0) {
+      const prices = data.services.map(s => Number(s.minimum_price || 0)).filter(p => p > 0);
+      if (prices.length > 0) {
+        data.starting_price = Math.min(...prices);
+      }
+    }
+    if (!data.starting_price) data.starting_price = 0;
+
     return data;
   }
 
@@ -434,12 +497,24 @@ class CustomerService {
         artist_id: { [db.Sequelize.Op.in]: [artist.id, artist.user_id] },
         is_active: true
       },
+      include: [
+        {
+          model: db.ServicePackage,
+          as: "packages",
+          required: false
+        },
+        {
+          model: db.ServiceAddon,
+          as: "addons",
+          required: false
+        }
+      ],
       order: [["id", "ASC"]]
     });
     return services;
   }
 
-  async getArtistPortfolio(artistId) {
+  async getArtistPortfolio(artistId, filters = {}) {
     const artist = await db.ArtistProfile.findOne({
       where: {
         [db.Sequelize.Op.or]: [
@@ -453,17 +528,273 @@ class CustomerService {
       return [];
     }
 
+    let whereClause = {
+      artist_id: { [db.Sequelize.Op.in]: [artist.id, artist.user_id] },
+      visibility: true
+    };
+
+    if (filters.category && filters.category !== "All") {
+      whereClause.category = { [db.Sequelize.Op.iLike]: `%${filters.category}%` };
+    }
+    if (filters.art_tier) {
+      whereClause.art_tier = filters.art_tier;
+    }
+    if (filters.complexity_level) {
+      whereClause.complexity_level = filters.complexity_level;
+    }
+
+    let order = [
+      ["display_order", "ASC"],
+      ["createdAt", "DESC"]
+    ];
+
+    if (filters.sort === "popular") {
+      order = [["likes_count", "DESC"], ["views_count", "DESC"]];
+    } else if (filters.sort === "price_asc") {
+      order = [["price", "ASC"]];
+    } else if (filters.sort === "price_desc") {
+      order = [["price", "DESC"]];
+    }
+
     const portfolio = await db.Portfolio.findAll({
-      where: {
-        artist_id: { [db.Sequelize.Op.in]: [artist.id, artist.user_id] },
-        visibility: true
-      },
-      order: [
-        ["display_order", "ASC"],
-        ["createdAt", "DESC"]
-      ]
+      where: whereClause,
+      order
     });
     return portfolio;
+  }
+
+  async getArtistServiceCatalog(artistId, serviceId, filters = {}, sort = "popular") {
+    if (!artistId || isNaN(Number(artistId))) {
+      throw new AppError("Valid artist ID is required", 400);
+    }
+    if (!serviceId || isNaN(Number(serviceId))) {
+      throw new AppError("Valid service ID is required", 400);
+    }
+
+    const artist = await this.getArtistById(artistId);
+    if (!artist) {
+      throw new AppError("Artist profile not found", 404);
+    }
+
+    const service = await db.Service.findOne({
+      where: {
+        id: Number(serviceId),
+        is_active: true
+      },
+      include: [
+        {
+          model: db.ServicePackage,
+          as: "packages",
+          required: false
+        },
+        {
+          model: db.ServiceAddon,
+          as: "addons",
+          required: false
+        }
+      ]
+    });
+
+    if (!service) {
+      throw new AppError("Service not found", 404);
+    }
+
+    // Fetch portfolio designs that match this service's category/specialization or artist designs
+    const targetCategory = service.category || service.specialization_name || "";
+    let portfolioWhere = {
+      artist_id: { [db.Sequelize.Op.in]: [artist.id, artist.user_id] },
+      visibility: true
+    };
+
+    if (filters.complexity && filters.complexity !== "ALL") {
+      portfolioWhere.complexity_level = filters.complexity.toUpperCase();
+    }
+    if (filters.art_tier && filters.art_tier !== "ALL") {
+      portfolioWhere.art_tier = filters.art_tier.toUpperCase();
+    }
+
+    let portfolioOrder = [["display_order", "ASC"], ["createdAt", "DESC"]];
+    if (sort === "popular") {
+      portfolioOrder = [["likes_count", "DESC"], ["views_count", "DESC"]];
+    } else if (sort === "newest") {
+      portfolioOrder = [["createdAt", "DESC"]];
+    } else if (sort === "price_asc") {
+      portfolioOrder = [["price", "ASC"]];
+    } else if (sort === "price_desc") {
+      portfolioOrder = [["price", "DESC"]];
+    }
+
+    let designs = await db.Portfolio.findAll({
+      where: portfolioWhere,
+      order: portfolioOrder
+    });
+
+    // If designs matching category exist, prioritize them, else return all artist designs
+    if (targetCategory) {
+      const catClean = targetCategory.toLowerCase().trim();
+      const matched = designs.filter(d => (d.category || "").toLowerCase().includes(catClean) || (d.occasion || "").toLowerCase().includes(catClean) || (d.title || "").toLowerCase().includes(catClean));
+      if (matched.length > 0 && (!filters.complexity && !filters.art_tier)) {
+        designs = matched;
+      }
+    }
+
+    return {
+      artist: {
+        id: artist.id,
+        user_id: artist.user_id,
+        name: artist.user?.name || "Mehndi Artist",
+        profile_image: artist.user?.profile_image,
+        avg_rating: artist.avg_rating,
+        total_reviews: artist.total_reviews,
+        experience_years: artist.experience_years,
+        is_verified: artist.is_verified,
+        is_premium: artist.is_premium,
+        city: artist.city
+      },
+      service,
+      designs,
+      packages: service.packages || [],
+      addons: service.addons || []
+    };
+  }
+
+  async createCustomDesignRequest(userId, requestData) {
+    if (!userId) {
+      throw new AppError("Authentication required", 401);
+    }
+    const {
+      artist_id,
+      artistId,
+      service_id,
+      serviceId,
+      occasion,
+      preferred_style,
+      description,
+      reference_images,
+      group_size = 1,
+      service_coverage = "BOTH_HANDS",
+      budget_preference,
+      preferred_date,
+      preferred_time,
+      address,
+      landmark,
+      latitude,
+      longitude
+    } = requestData;
+
+    const targetArtistId = Number(artist_id || artistId);
+    if (!targetArtistId || isNaN(targetArtistId)) {
+      throw new AppError("Valid artist ID is required", 400);
+    }
+
+    const artist = await db.ArtistProfile.findByPk(targetArtistId);
+    if (!artist) {
+      throw new AppError("Artist not found", 404);
+    }
+
+    let customRequest;
+    if (db.CustomDesignRequest) {
+      customRequest = await db.CustomDesignRequest.create({
+        user_id: userId,
+        artist_id: targetArtistId,
+        service_id: service_id || serviceId || null,
+        occasion: occasion || "Special Occasion",
+        preferred_style: preferred_style || "Custom Style",
+        description: description || "Custom design requested by client.",
+        reference_images: Array.isArray(reference_images) ? reference_images : [],
+        group_size: Number(group_size || 1),
+        service_coverage: service_coverage || "BOTH_HANDS",
+        budget_preference: budget_preference ? Number(budget_preference) : null,
+        preferred_date: preferred_date || null,
+        preferred_time: preferred_time || null,
+        address: address || null,
+        landmark: landmark || null,
+        latitude: latitude ? Number(latitude) : null,
+        longitude: longitude ? Number(longitude) : null,
+        status: "PENDING"
+      });
+    }
+
+    // Also trigger in-app notification to artist
+    try {
+      const pushService = require("./push.services");
+      if (pushService && typeof pushService.sendNotification === "function") {
+        await pushService.sendNotification(
+          artist.user_id,
+          "New Custom Design Request 🎨",
+          `A client has requested a custom ${occasion || "mehndi"} design with reference photos. Tap to review.`,
+          { type: "CUSTOM_DESIGN_REQUEST", requestId: customRequest?.id }
+        );
+      }
+    } catch (e) {
+      console.log("Notification send notice:", e.message);
+    }
+
+    return customRequest || { success: true, message: "Custom design request submitted successfully" };
+  }
+
+  async getArtistFaqs(artistId) {
+    let faqs = [];
+    if (db.FAQ) {
+      try {
+        faqs = await db.FAQ.findAll({
+          where: { is_active: true },
+          order: [["id", "ASC"]]
+        });
+      } catch (e) {
+        console.log("FAQ fetch notice:", e.message);
+      }
+    }
+
+    // Default artist FAQs
+    const defaultFaqs = [
+      {
+        id: 1,
+        question: "Do you provide home service?",
+        answer: "Yes! We provide convenient doorstep mehndi services at your home, hotel, or venue across the city. Free travel within our local radius."
+      },
+      {
+        id: 2,
+        question: "How much advance payment is required?",
+        answer: "Only a nominal 10% advance is required to secure your appointment on MehndiGo. The remaining balance is payable directly after service completion."
+      },
+      {
+        id: 3,
+        question: "Can I choose or provide my own custom design?",
+        answer: "Absolutely! You can upload your own reference photos or pick from our catalog. Our artists specialize in bespoke tailoring to your preferences."
+      },
+      {
+        id: 4,
+        question: "How long does bridal mehndi application take?",
+        answer: "Full bridal mehndi typically takes 3 to 4 hours depending on intricacy, while party designs take 20 to 45 minutes per person."
+      },
+      {
+        id: 5,
+        question: "What is your cancellation and reschedule policy?",
+        answer: "You can reschedule or cancel for a full advance refund up to 24 hours before the scheduled time slot via the MehndiGo app."
+      }
+    ];
+
+    return faqs.length > 0 ? faqs : defaultFaqs;
+  }
+
+  async getArtistOffers(artistId) {
+    let coupons = [];
+    if (db.Coupon) {
+      try {
+        coupons = await db.Coupon.findAll({
+          where: {
+            is_active: true,
+            expires_at: { [db.Sequelize.Op.gt]: new Date() }
+          },
+          order: [["id", "ASC"]]
+        });
+      } catch (e) {
+        console.log("Coupons fetch notice:", e.message);
+      }
+    }
+
+    return coupons;
   }
 
   async getArtistReviews(artistId) {

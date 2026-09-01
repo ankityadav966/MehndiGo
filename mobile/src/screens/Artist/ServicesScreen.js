@@ -35,11 +35,12 @@ export default function ServicesScreen({ navigation }) {
   }, []);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
+    fetchServicesList();
+    const unsubscribe = navigation.addListener("focus", () => {
       fetchServicesList();
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [fetchServicesList]);
+    });
+    return unsubscribe;
+  }, [fetchServicesList, navigation]);
 
   const handleToggleStatus = async (item) => {
     const newStatus = !item.is_active;

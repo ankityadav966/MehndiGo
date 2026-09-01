@@ -727,7 +727,7 @@ class BookingService {
       throw new AppError("Invalid or expired coupon code", 400);
     }
 
-    const price = service.minimum_price || 1500;
+    const price = service.minimum_price || 0;
     if (price < coupon.min_booking_value) {
       throw new AppError(`Minimum booking value of ₹${coupon.min_booking_value} required for this coupon`, 400);
     }
@@ -842,7 +842,7 @@ class BookingService {
       await db.Notification.create({
         user_id: booking.user_id,
         title: "Advance Payment Verified ✨",
-        message: `Your advance payment for Booking #${booking.booking_code} has been verified successfully. Your booking is confirmed!`,
+        message: `Your advance payment for Booking #${booking.booking_code} has been verified successfully. Waiting for Artist approval.`,
         type: "PAYMENT_SUCCESS",
         data: JSON.stringify({ bookingId: booking.id, booking_id: booking.id })
       });
@@ -1318,9 +1318,9 @@ class BookingService {
       await payment.update({ payment_method: "CASH" });
     }
 
-    const isCheckoutStage = booking.booking_status === "PENDING" || booking.detailed_status === "PENDING_PAYMENT" || booking.detailed_status === "PENDING";
-    const targetBookingStatus = isCheckoutStage ? "PENDING" : "COMPLETED";
-    const targetDetailedStatus = isCheckoutStage ? "PENDING_ARTIST_CONFIRMATION" : "AWAITING_CASH_CONFIRMATION";
+    const isInitialDraft = (booking.booking_status === "PENDING" || booking.detailed_status === "PENDING_PAYMENT" || booking.detailed_status === "PENDING") && !booking.check_in_otp_verified;
+    const targetBookingStatus = isInitialDraft ? "PENDING" : "CONFIRMED";
+    const targetDetailedStatus = isInitialDraft ? "PENDING_ARTIST_CONFIRMATION" : "AWAITING_CASH_CONFIRMATION";
 
     await booking.update({
       booking_status: targetBookingStatus,
@@ -1332,18 +1332,18 @@ class BookingService {
       booking_id: bookingId,
       status: targetDetailedStatus,
       changed_by: userId,
-      notes: isCheckoutStage ? "Customer requested Cash on Arrival booking." : "Customer selected Cash Payment method upon service completion."
+      notes: isInitialDraft ? "Customer requested Cash on Arrival booking." : "Customer selected Cash Payment method upon service completion."
     });
 
     const artistProfile = await db.ArtistProfile.findByPk(booking.artist_id);
     if (artistProfile) {
       await db.Notification.create({
         user_id: artistProfile.user_id,
-        title: isCheckoutStage ? "New Cash Booking Request 💵" : "Cash Payment Approval Required",
-        message: isCheckoutStage 
+        title: isInitialDraft ? "New Cash Booking Request 💵" : "Cash Collection Request 💵",
+        message: isInitialDraft 
           ? `Customer selected Cash on Arrival for booking #${booking.booking_code || booking.id}. Please confirm request.`
-          : "Customer has marked this booking as Cash Payment. Please approve or reject the payment.",
-        type: isCheckoutStage ? "NEW_BOOKING_REQUEST" : "PAYMENT",
+          : `Customer selected Cash payment of ₹${booking.remaining_amount || 0} for booking #${booking.booking_code || booking.id}. Please collect cash and confirm receipt to complete the booking.`,
+        type: isInitialDraft ? "NEW_BOOKING_REQUEST" : "PAYMENT",
         data: JSON.stringify({ bookingId: bookingId, booking_id: bookingId })
       });
     }
@@ -1441,6 +1441,15 @@ class BookingService {
     }
 
     await artistWallet.increment("lifetime_earnings", { by: artistAmount });
+
+    await db.WalletTransaction.create({
+      wallet_id: artistWallet.id,
+      booking_id: booking.id,
+      transaction_type: "CASH_COLLECTED",
+      amount: artistAmount,
+      status: "SUCCESS",
+      description: `Cash payment collected for booking #${booking.booking_code}`
+    });
 
     // 3. Update payment and booking statuses
     const payment = await db.Payment.findOne({ where: { booking_id: bookingId } });
@@ -1940,8 +1949,7 @@ class BookingService {
     await booking.update({
       check_out_otp: otp,
       check_out_otp_expires_at: expiresAt,
-      check_out_otp_verified: false,
-      detailed_status: "CHECKOUT"
+      check_out_otp_verified: false
     });
 
     console.log(`[CHECK_OUT_OTP] OTP Generated successfully. Booking ID: ${booking.id}, Customer Email: ${booking.user?.email || "N/A"}`);
@@ -1970,8 +1978,8 @@ class BookingService {
     try {
       await db.Notification.create({
         user_id: booking.user_id,
-        title: "Service Completion Request 🌟",
-        message: "Your Mehndi service has been completed. Please share the OTP sent to your registered email address with your Artist to verify Check-Out.",
+        title: "Service Completion PIN Generated 🌟",
+        message: "Your Mehndi specialist has requested completion. Please share your 4-digit Completion PIN with the artist when you are satisfied with the finished design.",
         type: "BOOKING",
         data: {
           type: "booking",
@@ -1987,15 +1995,15 @@ class BookingService {
         bookingId: booking.id,
         bookingCode: booking.booking_code,
         booking_status: booking.booking_status,
-        detailed_status: "CHECKOUT",
-        status: "CHECKOUT",
+        detailed_status: booking.detailed_status || "SERVICE_IN_PROGRESS",
+        status: booking.detailed_status || "SERVICE_IN_PROGRESS",
         checkout_otp: otp,
         timestamp: new Date()
       };
       io.to(booking.user_id.toString()).emit("checkout_otp_received", {
         bookingId: booking.id,
         checkout_otp: otp,
-        message: "Your service has been completed. Please share the OTP sent to your registered mobile number."
+        message: "Your service completion PIN has been generated. Please share with the artist when satisfied."
       });
       io.to(booking.user_id.toString()).emit("booking_status_updated", statusPayload);
       io.to(`booking_room_${booking.id}`).emit("booking_status_updated", statusPayload);
@@ -2026,7 +2034,7 @@ class BookingService {
       return { success: true, booking };
     }
 
-    // 3. Pre-condition Guard: Must be in progress
+    // 3. Pre-condition Guard: Must be in progress or checkout
     const validCheckoutStatuses = [
       "CUSTOMER_VERIFIED",
       "SERVICE_STARTED",
@@ -2047,9 +2055,9 @@ class BookingService {
     const storedOtp = String(booking.check_out_otp || booking.checkout_otp || "").trim();
     const isExpired = booking.check_out_otp_expires_at && new Date() > new Date(booking.check_out_otp_expires_at);
 
-    // Explicit Rule: Check-In OTP CANNOT be used as Checkout OTP
+    // Explicit Rule: Check-In PIN CANNOT be used as Completion PIN
     if (booking.check_in_otp && inputOtp === String(booking.check_in_otp).trim()) {
-      throw new AppError("Invalid OTP: Check-In OTP cannot be used for Check-Out. Please ask the customer for their distinct Check-Out OTP.", 400);
+      throw new AppError("Invalid OTP: Check-In PIN cannot be used for Completion. Please ask the customer for their distinct Completion PIN.", 400);
     }
 
     if (!storedOtp || inputOtp !== storedOtp || isExpired) {
@@ -2075,7 +2083,53 @@ class BookingService {
       serviceDurationMins = Math.max(1, Math.round((completionTime.getTime() - startMs) / 60000));
     }
 
-    // Atomic completion update
+    const totalAmount = Number(booking.final_amount || booking.total_price || booking.total_amount || 0);
+    const advancePaid = Number(booking.advance_paid || 0);
+    const remainingAmount = Number(booking.remaining_amount !== undefined ? booking.remaining_amount : Math.max(0, totalAmount - advancePaid));
+
+    if (remainingAmount > 0) {
+      // Transition to CHECKOUT state where remaining balance is payable
+      await booking.update({
+        detailed_status: "CHECKOUT",
+        check_out_otp_verified: true,
+        check_out_time: completionTime,
+        service_duration: serviceDurationMins,
+        check_out_otp: null,
+        check_out_otp_expires_at: null,
+        remaining_amount: remainingAmount,
+        payment_status: "PARTIAL"
+      });
+
+      await db.BookingStatusHistory.create({
+        booking_id: booking.id,
+        status: "CHECKOUT",
+        changed_by: userId,
+        notes: "Completion PIN verified successfully. Service finished; proceeding to final settlement checkout."
+      });
+
+      // Socket & notification for checkout
+      try {
+        const { getIO } = require("../sockets/socket");
+        const io = getIO();
+        if (io) {
+          const checkoutPayload = {
+            bookingId: booking.id,
+            bookingCode: booking.booking_code,
+            booking_status: booking.booking_status,
+            detailed_status: "CHECKOUT",
+            status: "CHECKOUT",
+            remaining_amount: remainingAmount,
+            timestamp: new Date()
+          };
+          io.to(booking.user_id.toString()).emit("booking_status_updated", checkoutPayload);
+          io.to(`booking_room_${booking.id}`).emit("booking_status_updated", checkoutPayload);
+        }
+      } catch (_) {}
+
+      return { success: true, booking, isCheckout: true, remainingAmount };
+    }
+
+    // Direct completion update for 100% upfront paid bookings
     await booking.update({
       booking_status: "COMPLETED",
       detailed_status: "COMPLETED",

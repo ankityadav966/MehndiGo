@@ -190,3 +190,55 @@ export async function checkSmartLocationChange(primaryAddress, thresholdKm = 35)
   }
   return { isFar: false };
 }
+
+/**
+ * Automatically detect device GPS location and save it as active address if permission granted.
+ * Returns normalized address object or fallback.
+ */
+export async function autoDetectCurrentLocation(fallbackCity = "Jaipur") {
+  try {
+    const perm = await Location.getForegroundPermissionsAsync();
+    let hasPerm = perm.granted;
+    if (!hasPerm) {
+      const req = await Location.requestForegroundPermissionsAsync();
+      hasPerm = req.status === "granted";
+    }
+
+    if (hasPerm) {
+      const enabled = await Location.hasServicesEnabledAsync();
+      if (enabled) {
+        let pos = await Location.getLastKnownPositionAsync({});
+        if (!pos) {
+          pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        }
+        if (pos && pos.coords) {
+          const geo = await reverseGeocodeCoords(pos.coords.latitude, pos.coords.longitude);
+          const norm = await setActiveAddress({
+            label: "Current Location",
+            fullAddress: geo.fullAddress,
+            city: geo.city || fallbackCity,
+            state: geo.state || "Rajasthan",
+            pincode: geo.pincode || "302001",
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+          });
+          return norm;
+        }
+      }
+    }
+  } catch (e) {
+    if (__DEV__) console.log("Auto-detect location notice:", e.message);
+  }
+
+  // Fallback if GPS not available or denied
+  const fallback = await setActiveAddress({
+    label: "Jaipur",
+    fullAddress: `${fallbackCity}, Rajasthan`,
+    city: fallbackCity,
+    state: "Rajasthan",
+    pincode: "302001",
+    latitude: 26.9124,
+    longitude: 75.7873,
+  });
+  return fallback;
+}

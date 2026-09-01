@@ -15,6 +15,8 @@ import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { getArtistAvailability, updateArtistAvailability } from "../../services/artist";
 
+import { useAuth } from "../../context/AuthContext";
+
 const DAYS = [
   { key: "MONDAY", label: "Monday" },
   { key: "TUESDAY", label: "Tuesday" },
@@ -26,6 +28,7 @@ const DAYS = [
 ];
 
 export default function AvailabilityCalendarScreen({ navigation }) {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isAvailable, setIsAvailable] = useState(true);
@@ -35,11 +38,13 @@ export default function AvailabilityCalendarScreen({ navigation }) {
   const [breakEnd, setBreakEnd] = useState("15:00");
   const [selectedDays, setSelectedDays] = useState(["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"]);
 
+  const availabilityCacheKey = user?.id ? `@mehndigo_artist_availability_${user.id}` : "@mehndigo_artist_availability";
+
   useEffect(() => {
     async function loadSchedule() {
       try {
         // Load cached schedule immediately for 0ms restore
-        const localCache = await AsyncStorage.getItem("@mehndigo_artist_availability");
+        const localCache = await AsyncStorage.getItem(availabilityCacheKey);
         if (localCache) {
           try {
             const parsed = JSON.parse(localCache);
@@ -79,7 +84,7 @@ export default function AvailabilityCalendarScreen({ navigation }) {
           if (parsedDays && Array.isArray(parsedDays) && parsedDays.length > 0) {
             const canonical = parsedDays.map(d => String(d).toUpperCase().trim());
             setSelectedDays(canonical);
-            AsyncStorage.setItem("@mehndigo_artist_availability", JSON.stringify({
+            AsyncStorage.setItem(availabilityCacheKey, JSON.stringify({
               is_available: data.is_available,
               working_days: canonical,
               working_start_time: data.working_start_time || startTime,
@@ -96,7 +101,7 @@ export default function AvailabilityCalendarScreen({ navigation }) {
       }
     }
     loadSchedule();
-  }, []);
+  }, [user?.id, availabilityCacheKey]);
 
   const toggleDay = (dayKey) => {
     const canonicalKey = String(dayKey).toUpperCase().trim();

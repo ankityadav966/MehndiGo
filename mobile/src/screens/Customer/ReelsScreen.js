@@ -49,7 +49,53 @@ const resolveMedia = (url) => {
   return `https://api.mehndigo.in${url.startsWith("/") ? "" : "/"}${url}`;
 };
 
-const ReelItem = ({
+const ActiveReelVideoPlayer = React.memo(({ videoUri, isActive, isFocused, paused, heightStyle }) => {
+  const player = useVideoPlayer(videoUri, (p) => {
+    p.loop = true;
+    p.showsPlaybackControls = false;
+    p.muted = false;
+  });
+
+  useEffect(() => {
+    if (!player) return;
+    if (isActive && isFocused && !paused) {
+      try {
+        player.play();
+      } catch (err) {
+        if (__DEV__) console.log("Player play notice:", err.message);
+      }
+    } else {
+      try {
+        player.pause();
+      } catch (err) {
+        if (__DEV__) console.log("Player pause notice:", err.message);
+      }
+    }
+  }, [isActive, isFocused, paused, player]);
+
+  useEffect(() => {
+    return () => {
+      if (player) {
+        try {
+          player.pause();
+        } catch {}
+      }
+    };
+  }, [player]);
+
+  if (!player) return null;
+
+  return (
+    <VideoView
+      player={player}
+      style={[styles.videoSurface, heightStyle]}
+      contentFit="cover"
+      nativeControls={false}
+    />
+  );
+});
+
+const ReelItem = React.memo(({
   item,
   isActive,
   isFocused,
@@ -63,74 +109,25 @@ const ReelItem = ({
   const [likesCount, setLikesCount] = useState(Number(item.likes_count ?? item.likesCount ?? item.likes ?? 0));
   const [paused, setPaused] = useState(false);
   const likingRef = useRef(false);
+  const hasViewed = useRef(false);
 
   useEffect(() => {
     setIsLiked(Boolean(item.isLiked || item.is_liked));
     setLikesCount(Number(item.likes_count ?? item.likesCount ?? item.likes ?? 0));
   }, [item.isLiked, item.is_liked, item.likes_count, item.likesCount, item.likes]);
 
+  useEffect(() => {
+    if (isActive && isFocused && !hasViewed.current && item.id) {
+      hasViewed.current = true;
+      addViewToPortfolio(item.id).catch(() => {});
+    }
+  }, [isActive, isFocused, item.id]);
+
   const videoUri = resolveMedia(item.video_url);
   const posterUri = resolveMedia(item.thumbnail_url || item.image_url || item.artist_avatar);
 
-  // Initialize expo-video player with valid media source
-  const player = useVideoPlayer(videoUri, (p) => {
-    p.loop = true;
-    p.showsPlaybackControls = false;
-    p.muted = false;
-  });
-
-  const hasViewed = useRef(false);
-
-  // Update media source if video_url changes dynamically
-  useEffect(() => {
-    if (videoUri && player) {
-      try {
-        if (typeof player.replaceAsync === "function") {
-          player.replaceAsync(videoUri).catch((err) => {
-            if (__DEV__) console.log("Player replaceAsync notice:", err.message);
-          });
-        } else if (typeof player.replace === "function") {
-          player.replace(videoUri);
-        }
-      } catch (err) {
-        if (__DEV__) console.log("Player replace notice:", err.message);
-      }
-    }
-  }, [videoUri, player]);
-
-  // Handle active playback lifecycle
-  useEffect(() => {
-    if (!player) return;
-
-    if (isActive && isFocused && !paused) {
-      try {
-        player.play();
-      } catch (err) {
-        if (__DEV__) console.log("Player play notice:", err.message);
-      }
-
-      if (!hasViewed.current && item.id) {
-        hasViewed.current = true;
-        addViewToPortfolio(item.id).catch(() => {});
-      }
-    } else {
-      try {
-        player.pause();
-      } catch (err) {
-        if (__DEV__) console.log("Player pause notice:", err.message);
-      }
-    }
-  }, [isActive, isFocused, paused, player, item.id]);
-
   const togglePlayPause = () => {
-    if (!player) return;
-    if (player.playing) {
-      player.pause();
-      setPaused(true);
-    } else {
-      player.play();
-      setPaused(false);
-    }
+    setPaused(prev => !prev);
   };
 
   const handleLike = async () => {
@@ -202,7 +199,7 @@ const ReelItem = ({
 
   return (
     <View style={[styles.reelContainer, heightStyle]}>
-      {/* 1. Poster / Thumbnail Background (Fallback layer) */}
+      {/* 1. Poster / Thumbnail Background (Fallback & Instant Display) */}
       {posterUri ? (
         <Image
           source={{ uri: posterUri }}
@@ -215,15 +212,16 @@ const ReelItem = ({
         </View>
       )}
 
-      {/* 2. Expo Video View Layer */}
-      {videoUri && player && (
-        <VideoView
-          player={player}
-          style={[styles.videoSurface, heightStyle]}
-          contentFit="cover"
-          nativeControls={false}
+      {/* 2. Active Video Player Layer - Only rendered on active reel to prevent Android OOM */}
+      {isActive && isFocused && videoUri ? (
+        <ActiveReelVideoPlayer
+          videoUri={videoUri}
+          isActive={isActive}
+          isFocused={isFocused}
+          paused={paused}
+          heightStyle={heightStyle}
         />
-      )}
+      ) : null}
 
       {/* 3. Touch to Play / Pause layer */}
       <Pressable style={styles.touchableArea} onPress={togglePlayPause} />
@@ -338,7 +336,7 @@ const ReelItem = ({
       )}
     </View>
   );
-};
+});
 
 export default function ReelsScreen({ navigation, route }) {
   const [reels, setReels] = useState([]);
@@ -551,10 +549,11 @@ export default function ReelsScreen({ navigation, route }) {
         viewabilityConfig={VIEWABILITY_CONFIG}
         onEndReached={loadMore}
         onEndReachedThreshold={0.5}
-        initialNumToRender={2}
-        maxToRenderPerBatch={2}
-        windowSize={3}
-        removeClippedSubviews={false}
+        initialNumToRender={1}
+        maxToRenderPerBatch={1}
+        windowSize={2}
+        removeClippedSubviews={Platform.OS === "android"}
+        updateCellsBatchingPeriod={50}
         snapToInterval={containerHeight}
         snapToAlignment="start"
         decelerationRate="fast"

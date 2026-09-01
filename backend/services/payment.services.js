@@ -203,10 +203,16 @@ class PaymentService {
     if (tx.booking_id) {
       const booking = await db.Booking.findByPk(tx.booking_id);
       if (booking) {
-        const isAdvance = booking.payment_status === "PENDING";
-        const isRemaining = booking.detailed_status === "WAITING_FOR_USER_PAYMENT";
+        const isRemaining = Boolean(
+          data.isSettlement === true ||
+          data.is_settlement === true ||
+          booking.detailed_status === "CHECKOUT" ||
+          booking.detailed_status === "WAITING_FOR_USER_PAYMENT" ||
+          (booking.payment_status === "PARTIAL" && Number(booking.remaining_amount) > 0)
+        );
+        const isAdvance = !isRemaining && (booking.payment_status === "PENDING" || Number(booking.advance_paid) === 0);
 
-        console.log(`[VERIFY_PAYMENT] Booking #${booking.booking_code} status BEFORE update: booking_status=${booking.booking_status}, payment_status=${booking.payment_status}, detailed_status=${booking.detailed_status}`);
+        console.log(`[VERIFY_PAYMENT] Booking #${booking.booking_code} status BEFORE update: booking_status=${booking.booking_status}, payment_status=${booking.payment_status}, detailed_status=${booking.detailed_status}, isRemaining=${isRemaining}`);
 
         if (isAdvance) {
           const totalAmt = Number(booking.final_amount || booking.total_price || booking.total_amount || 0);
@@ -217,17 +223,17 @@ class PaymentService {
           
           await booking.update({
             payment_status: "PARTIAL",
-            booking_status: "CONFIRMED",
-            detailed_status: "CONFIRMED",
+            booking_status: "PENDING",
+            detailed_status: "PENDING",
             advance_paid: advancePaid,
             remaining_amount: remaining
           });
 
           await db.BookingStatusHistory.create({
             booking_id: booking.id,
-            status: "CONFIRMED",
+            status: "PENDING",
             changed_by: userId,
-            notes: `Advance payment of ₹${advancePaid} verified successfully via Razorpay. Booking confirmed.`
+            notes: `Advance payment of ₹${advancePaid} verified successfully via Razorpay. Waiting for Artist approval.`
           });
 
           // Create Invoice record
@@ -274,8 +280,8 @@ class PaymentService {
             if (artistProfile) {
               await db.Notification.create({
                 user_id: artistProfile.user_id,
-                title: "New Booking Confirmed 📅",
-                message: `Mehndi booking request #${booking.booking_code} has been paid and confirmed.`,
+                title: "New Booking Request 📅",
+                message: `New advance-paid booking request #${booking.booking_code} received! Tap to review and accept.`,
                 type: "SYSTEM"
               });
             }
@@ -420,8 +426,8 @@ class PaymentService {
       const remaining = Math.max(0, booking.final_amount - payableAmount);
       await booking.update({
         payment_status: "PARTIAL",
-        booking_status: "CONFIRMED",
-        detailed_status: "CONFIRMED",
+        booking_status: "PENDING",
+        detailed_status: "PENDING",
         advance_paid: payableAmount,
         remaining_amount: remaining
       });
@@ -542,8 +548,8 @@ class PaymentService {
                 const remaining = Math.max(0, totalAmt - advancePaid);
                 await booking.update({
                   payment_status: "PARTIAL",
-                  booking_status: "CONFIRMED",
-                  detailed_status: "CONFIRMED",
+                  booking_status: "PENDING",
+                  detailed_status: "PENDING",
                   advance_paid: advancePaid,
                   remaining_amount: remaining
                 });
@@ -910,8 +916,8 @@ class PaymentService {
       const totalAmt = Number(booking.final_amount || booking.total_price || 0);
       await booking.update({
         payment_status: "PARTIAL",
-        booking_status: "CONFIRMED",
-        detailed_status: "CONFIRMED",
+        booking_status: "PENDING",
+        detailed_status: "PENDING",
         advance_paid: payableAmount,
         remaining_amount: Math.max(0, totalAmt - payableAmount)
       });

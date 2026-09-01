@@ -80,27 +80,36 @@ class ReferralService {
         return null;
       }
 
-      // Look up active campaigns
+      // Look up active campaigns for future reference if needed
       const activeCampaign = await db.ReferralCampaign.findOne({
         where: { is_active: true }
       });
 
-      const rewardAmount = activeCampaign ? activeCampaign.referrer_reward : 100; // Flat ₹100 default bonus
+      const boostDays = activeCampaign ? activeCampaign.artist_boost_days : 7;
+      const customerBenefit = activeCampaign ? activeCampaign.customer_benefit : "Priority Support & Exclusive Offers";
 
       const history = await db.ReferralHistory.create({
         referrer_id: referrerId,
         referred_id: referredUserId,
         status: "PENDING",
-        reward_amount: rewardAmount,
+        boost_days_awarded: boostDays,
+        customer_benefit_awarded: customerBenefit,
         reward_status: "PENDING"
       });
 
       // Notify referrer about joining friend
       const referredUser = await db.User.findByPk(referredUserId);
+      const isCustomerReferrer = (await db.User.findByPk(referrerId))?.role === "USER";
+      
+      let rewardMessage = `You will get a ${boostDays}-Day Profile Boost once they complete their first booking!`;
+      if (isCustomerReferrer) {
+        rewardMessage = `You will unlock ${customerBenefit} once they complete their first booking!`;
+      }
+
       await db.Notification.create({
         user_id: referrerId,
         title: "Friend Joined! 🤝",
-        message: `${referredUser?.name || "A friend"} joined MehndiGo using your referral code. You will get ₹${rewardAmount} cashback once they complete their first booking!`,
+        message: `${referredUser?.name || "A friend"} joined MehndiGo using your referral code. ${rewardMessage}`,
         type: "SYSTEM"
       });
 
@@ -110,6 +119,32 @@ class ReferralService {
       console.error("[Referral] Error recording signup:", e.message);
       return null;
     }
+  }
+
+  /**
+   * Helper function to add boost days to a user
+   */
+  async grantProfileBoost(userId, daysToAdd) {
+    const user = await db.User.findByPk(userId);
+    if (!user) return;
+    
+    const now = new Date();
+    let currentExpiry = user.boost_expires_at ? new Date(user.boost_expires_at) : now;
+    
+    // If boost has already expired, reset it to now before adding
+    if (currentExpiry < now) {
+      currentExpiry = now;
+    }
+    
+    // Add days
+    currentExpiry.setDate(currentExpiry.getDate() + daysToAdd);
+    
+    await user.update({
+      boost_start_at: user.boost_start_at && new Date(user.boost_start_at) > now ? user.boost_start_at : now,
+      boost_expires_at: currentExpiry
+    });
+    
+    return currentExpiry;
   }
 
   /**
@@ -142,35 +177,40 @@ class ReferralService {
       }
 
       const referrerId = relation.referrer_id;
-      const rewardAmount = relation.reward_amount;
+      const boostDaysToAward = relation.boost_days_awarded;
+      const customerBenefitToAward = relation.customer_benefit_awarded;
 
-      // 1. Credit Referrer Wallet
-      const [referrerWallet] = await db.Wallet.findOrCreate({
-        where: { user_id: referrerId },
-        defaults: { user_id: referrerId, balance: 0 }
-      });
-
-      await referrerWallet.increment("balance", { by: rewardAmount });
-
-      await db.WalletTransaction.create({
-        wallet_id: referrerWallet.id,
-        booking_id: bookingId,
-        transaction_type: "REFERRAL",
-        amount: rewardAmount,
-        status: "SUCCESS",
-        description: `Referral bonus cashback for inviting user ID #${referredUserId}`
-      });
-
+      const referrer = await db.User.findByPk(referrerId);
+      const referredUser = await db.User.findByPk(referredUserId);
+      const isArtistReferral = referredUser?.role === "ARTIST";
+      
       // Update relation state
       await relation.update({
         status: "COMPLETED",
         reward_status: "CREDITED"
       });
 
+      // 1. Grant Reward to Referrer (Boost or Customer Benefit)
+      if (referrer?.role === "ARTIST") {
+        await this.grantProfileBoost(referrerId, boostDaysToAward);
+        await db.Notification.create({
+          user_id: referrerId,
+          title: "Referral Successful 🎉",
+          message: `Congratulations! Your friend ${referredUser?.name || ""} completed their first service. You earned a ${boostDaysToAward}-Day Profile Boost for increased visibility!`,
+          type: "SYSTEM"
+        });
+      } else {
+        // Customer Referrer gets non-cash benefit
+        await db.Notification.create({
+          user_id: referrerId,
+          title: "Referral Successful 🎉",
+          message: `Congratulations! Your friend completed their first service. You've unlocked: ${customerBenefitToAward}!`,
+          type: "SYSTEM"
+        });
+      }
+
       // Award XP & Points to Referrer & Referred Friend
       const xpService = require("./xp.services");
-      const referredUser = await db.User.findByPk(referredUserId);
-      const isArtistReferral = referredUser?.role === "ARTIST";
 
       const xpUserConf = await xpService.getSetting("XP_USER_REFERRAL", 300);
       const xpArtistConf = await xpService.getSetting("XP_ARTIST_REFERRAL", 500);
@@ -184,40 +224,26 @@ class ReferralService {
       await xpService.awardAmbassadorScore(referrerId, pointsAmount, `Referral Completed: ${referredUser?.name || "Friend"}`);
       await xpService.awardXp(referredUserId, 100, "Referral Welcome Bonus", referrerId);
 
-      // Notify Referrer
-      await db.Notification.create({
-        user_id: referrerId,
-        title: "Referral Cashback Credited! 💸",
-        message: `Congratulations! Your friend completed their first service. ₹${rewardAmount} has been credited to your wallet.`,
-        type: "SYSTEM"
-      });
-
-      // 2. Check if active campaign offers welcome cashback to the referred friend as well
+      // 2. Check if active campaign offers welcome boost to the referred artist
       const activeCampaign = await db.ReferralCampaign.findOne({ where: { is_active: true } });
-      const referredReward = activeCampaign ? activeCampaign.referred_reward : 0;
+      const welcomeBoostDays = activeCampaign ? activeCampaign.welcome_boost_days : 3;
 
-      if (referredReward > 0) {
-        const [referredWallet] = await db.Wallet.findOrCreate({
-          where: { user_id: referredUserId },
-          defaults: { user_id: referredUserId, balance: 0 }
-        });
-
-        await referredWallet.increment("balance", { by: referredReward });
-
-        await db.WalletTransaction.create({
-          wallet_id: referredWallet.id,
-          booking_id: bookingId,
-          transaction_type: "REFERRAL",
-          amount: referredReward,
-          status: "SUCCESS",
-          description: "Welcome referral sign-up bonus"
-        });
+      if (isArtistReferral && welcomeBoostDays > 0) {
+        await this.grantProfileBoost(referredUserId, welcomeBoostDays);
 
         // Notify Referred user
         await db.Notification.create({
           user_id: referredUserId,
-          title: "Welcome Cashback Credited! 🎁",
-          message: `Thanks for using a referral code! ₹${referredReward} has been credited to your wallet.`,
+          title: "Welcome Boost Activated! 🚀",
+          message: `Thanks for using a referral code! A ${welcomeBoostDays}-Day Profile Boost has been activated for your account to help you get more bookings!`,
+          type: "SYSTEM"
+        });
+      } else if (!isArtistReferral) {
+         // Customer referred gets priority access perk (optional)
+         await db.Notification.create({
+          user_id: referredUserId,
+          title: "Welcome to MehndiGo! ✨",
+          message: `Thanks for using a referral code! Enjoy priority support and exclusive early access to offers.`,
           type: "SYSTEM"
         });
       }

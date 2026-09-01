@@ -31,10 +31,12 @@ async function persistAuthData(response) {
     await secureStorage.setRefreshToken(payload.refreshToken);
   }
   if (payload.user) {
-    await secureStorage.setUserData(payload.user);
-    if (payload.user.role) {
-      await secureStorage.setUserRole(payload.user.role);
-    }
+    const rawRole = payload.user.role || payload.role;
+    const canonicalRole = (String(rawRole).toUpperCase().trim() === "ARTIST") ? "ARTIST" : "CUSTOMER";
+    const userWithRole = { ...payload.user, role: canonicalRole };
+    await secureStorage.setUserData(userWithRole);
+    await secureStorage.setUserRole(canonicalRole);
+    return { ...payload, user: userWithRole, role: canonicalRole };
   }
   return payload;
 }

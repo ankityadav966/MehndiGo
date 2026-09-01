@@ -253,7 +253,7 @@ export default function ArtistProfileScreen({ navigation }) {
         setProfileLoading(true);
         const pickedUri = result.assets[0].uri;
         const uploadResult = await uploadPortfolioMedia([{ uri: pickedUri }]);
-        
+
         if (uploadResult && uploadResult.length > 0) {
           const uploadedUrl = uploadResult[0].url;
 
@@ -293,6 +293,73 @@ export default function ArtistProfileScreen({ navigation }) {
     } catch (err) {
       if (__DEV__) console.log("Failed to upload avatar:", err);
       Alert.alert("Error", err.message || "Failed to upload avatar.");
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
+  const handleUploadBanner = async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert("Permission Required", "Please allow photo library access to change your banner image.");
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [16, 9],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setProfileLoading(true);
+        const pickedUri = result.assets[0].uri;
+        const uploadResult = await uploadPortfolioMedia([{ uri: pickedUri }]);
+
+        if (uploadResult && uploadResult.length > 0) {
+          const uploadedUrl = uploadResult[0].url;
+
+          // Save on backend
+          await updateArtistProfileDetails({
+            bannerImage: uploadedUrl,
+            coverImage: uploadedUrl,
+            banner_image: uploadedUrl,
+            cover_image: uploadedUrl,
+          });
+
+          // Update local secure storage
+          const currentStored = await secureStorage.getUserData();
+          const updatedUser = {
+            ...currentStored,
+            banner_image: uploadedUrl,
+            cover_image: uploadedUrl,
+          };
+          await secureStorage.setUserData(updatedUser);
+
+          // Dispatch updated user info to AuthContext
+          dispatch({ type: "UPDATE_USER", payload: updatedUser });
+
+          // Update local profile state
+          setProfile((prev) => ({
+            ...prev,
+            banner_image: uploadedUrl,
+            cover_image: uploadedUrl,
+            banner: uploadedUrl,
+            user: {
+              ...prev?.user,
+              banner_image: uploadedUrl,
+              cover_image: uploadedUrl,
+            },
+          }));
+
+          Alert.alert("Success", "Banner image updated successfully!");
+        }
+      }
+    } catch (err) {
+      if (__DEV__) console.log("Failed to upload banner:", err);
+      Alert.alert("Error", err.message || "Failed to upload banner.");
     } finally {
       setProfileLoading(false);
     }
@@ -442,6 +509,21 @@ export default function ArtistProfileScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.username}>{user?.name || "Artist"}</Text>
+        <View style={styles.headerIcons}>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate("Notifications")}>
+            <Ionicons
+              name="notifications-outline"
+              size={22}
+              color={Colors.text}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate("Settings")}>
+            <Ionicons name="menu-outline" size={22} color={Colors.text} />
+          </TouchableOpacity>
+        </View>
+      </View>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 120 }}
@@ -454,25 +536,40 @@ export default function ArtistProfileScreen({ navigation }) {
           />
         }
       >
-        <View style={styles.header}>
-          <Text style={styles.username}>{user?.name || "Artist"}</Text>
-          <View style={styles.headerIcons}>
-            <TouchableOpacity style={styles.iconBtn}>
-              <Ionicons
-                name="notifications-outline"
-                size={22}
-                color={Colors.text}
-              />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate("Settings")}>
-              <Ionicons name="menu-outline" size={22} color={Colors.text} />
-            </TouchableOpacity>
-          </View>
-        </View>
+
+
 
         <View style={styles.profileSection}>
+          {/* Top Banner Cover Card */}
+          <TouchableOpacity
+            activeOpacity={0.9}
+            style={styles.bannerHeaderCard}
+            onPress={handleUploadBanner}
+          >
+            <Image
+              source={
+                (() => {
+                  const bannerRaw = profile?.banner_image || profile?.cover_image || profile?.banner || user?.banner_image || user?.cover_image;
+                  const profileRaw = profile?.profile_image || profile?.selfie_image || profile?.avatar || user?.profile_image || user?.avatar;
+                  const resolvedBanner = resolveImage(bannerRaw);
+                  const resolvedProfile = resolveImage(profileRaw);
+                  if (resolvedBanner) return { uri: resolvedBanner };
+                  if (resolvedProfile) return { uri: resolvedProfile };
+                  return require("../../assets/images/o1.png");
+                })()
+              }
+              style={styles.bannerHeaderImage}
+              resizeMode="cover"
+            />
+            <View style={styles.bannerHeaderOverlay} />
+            {/* <TouchableOpacity style={styles.bannerHeaderEditBtn} onPress={handleUploadBanner}>
+            <Ionicons name="camera" size={14} color={Colors.white} />
+            <Text style={styles.bannerHeaderEditText}>Change Banner</Text>
+          </TouchableOpacity> */}
+          </TouchableOpacity>
+
           <View style={styles.profileTopHeader}>
-            <View style={styles.avatarContainer}>
+            <TouchableOpacity style={styles.avatarContainer} activeOpacity={0.8} onPress={handleUploadAvatar}>
               <Image
                 source={
                   (() => {
@@ -483,7 +580,10 @@ export default function ArtistProfileScreen({ navigation }) {
                 }
                 style={styles.avatar}
               />
-            </View>
+              <View style={styles.addAvatarBadge}>
+                <Ionicons name="camera" size={13} color={Colors.white} />
+              </View>
+            </TouchableOpacity>
 
             <View style={styles.profileMainInfo}>
               <Text style={styles.name}>
@@ -497,11 +597,9 @@ export default function ArtistProfileScreen({ navigation }) {
                   📍 {profile?.city ? `${profile.city}${profile?.state ? `, ${profile.state}` : ''}` : profile?.location}
                 </Text>
               ) : null}
-              {profile?.starting_price ? (
-                <Text style={{ fontSize: 13, color: Colors.primary, fontWeight: "700", marginTop: 3 }}>
-                  Starts at ₹{profile.starting_price}
-                </Text>
-              ) : null}
+              <Text style={{ fontSize: 13, color: Colors.primary, fontWeight: "700", marginTop: 3 }}>
+                {profile?.starting_price ? `Starts at ₹${profile.starting_price}` : "Price on Request"}
+              </Text>
               {profile?.rating ? (
                 <View style={styles.ratingRow}>
                   <Ionicons name="star" size={14} color="#F5A623" />
@@ -546,7 +644,7 @@ export default function ArtistProfileScreen({ navigation }) {
 
           {/* Stats Bar */}
           <View style={styles.statsBar}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.statsDividerItem}
               onPress={() => navigation.navigate("Bookings")}
             >
@@ -602,14 +700,12 @@ export default function ArtistProfileScreen({ navigation }) {
 
           {/* Service Badges & Pricing */}
           <View style={styles.badgeRow}>
-            {profile?.starting_price ? (
-              <View style={[styles.infoBadge, { backgroundColor: "#FFF0F0", borderColor: "#FFD0D0" }]}>
-                <Ionicons name="pricetag" size={13} color={Colors.primary} />
-                <Text style={[styles.infoBadgeText, { color: Colors.primary, fontWeight: "700" }]}>
-                  Starts at ₹{profile.starting_price}
-                </Text>
-              </View>
-            ) : null}
+            <View style={[styles.infoBadge, { backgroundColor: "#FFF0F0", borderColor: "#FFD0D0" }]}>
+              <Ionicons name="pricetag" size={13} color={Colors.primary} />
+              <Text style={[styles.infoBadgeText, { color: Colors.primary, fontWeight: "700" }]}>
+                {profile?.starting_price ? `Starts at ₹${profile.starting_price}` : "Price on Request"}
+              </Text>
+            </View>
 
             {profile?.home_service !== false ? (
               <View style={[styles.infoBadge, { backgroundColor: "#E6F4EA", borderColor: "#CEEAD6" }]}>
@@ -681,11 +777,11 @@ export default function ArtistProfileScreen({ navigation }) {
         {/* Social Connections (View-Only / Click to Open) */}
         <View style={styles.socialCard}>
           <Text style={styles.socialSectionTitle}>Social Connections</Text>
-          
+
           {/* Instagram */}
           <View style={styles.socialRow}>
-            <TouchableOpacity 
-              style={styles.socialLeft} 
+            <TouchableOpacity
+              style={styles.socialLeft}
               activeOpacity={instagramHandle ? 0.7 : 1}
               onPress={() => instagramHandle ? openSocialLink("instagram", instagramHandle) : navigation.navigate("EditProfile")}
             >
@@ -699,8 +795,8 @@ export default function ArtistProfileScreen({ navigation }) {
                 </Text>
               </View>
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.connectBtn} 
+            <TouchableOpacity
+              style={styles.connectBtn}
               onPress={() => instagramHandle ? openSocialLink("instagram", instagramHandle) : navigation.navigate("EditProfile")}
             >
               <Text style={styles.connectBtnText}>
@@ -711,8 +807,8 @@ export default function ArtistProfileScreen({ navigation }) {
 
           {/* Facebook */}
           <View style={styles.socialRow}>
-            <TouchableOpacity 
-              style={styles.socialLeft} 
+            <TouchableOpacity
+              style={styles.socialLeft}
               activeOpacity={facebookHandle ? 0.7 : 1}
               onPress={() => facebookHandle ? openSocialLink("facebook", facebookHandle) : navigation.navigate("EditProfile")}
             >
@@ -726,8 +822,8 @@ export default function ArtistProfileScreen({ navigation }) {
                 </Text>
               </View>
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.connectBtn} 
+            <TouchableOpacity
+              style={styles.connectBtn}
               onPress={() => facebookHandle ? openSocialLink("facebook", facebookHandle) : navigation.navigate("EditProfile")}
             >
               <Text style={styles.connectBtnText}>
@@ -771,7 +867,7 @@ export default function ArtistProfileScreen({ navigation }) {
 
         {renderContent()}
       </ScrollView>
-    </SafeAreaView>
+    </SafeAreaView >
   );
 }
 
@@ -806,6 +902,41 @@ const styles = StyleSheet.create({
   profileSection: {
     paddingHorizontal: 16,
     paddingBottom: 12,
+  },
+  bannerHeaderCard: {
+    height: 140,
+    borderRadius: 16,
+    overflow: "hidden",
+    marginBottom: 16,
+    position: "relative",
+    backgroundColor: Colors.primaryLight + "30",
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  bannerHeaderImage: {
+    width: "100%",
+    height: "100%",
+  },
+  bannerHeaderOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.15)",
+  },
+  bannerHeaderEditBtn: {
+    position: "absolute",
+    right: 10,
+    bottom: 10,
+    backgroundColor: "rgba(0,0,0,0.65)",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  bannerHeaderEditText: {
+    color: Colors.white,
+    fontSize: 12,
+    fontWeight: "600",
   },
   profileTopHeader: {
     flexDirection: "row",

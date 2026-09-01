@@ -253,11 +253,11 @@ export default function ArtistListingScreen({ route, navigation }) {
     try {
       const artistId = artist.id || artist.user_id || artist.artist_id;
       const artistName = artist.name || artist.full_name || artist.user?.name || "Mehndi Artist";
-      const minPrice = artist.starting_price || artist.services?.[0]?.minimum_price || 500;
+      const minPrice = artist.starting_price || artist.services?.[0]?.minimum_price || 0;
       const shareUrl = createArtistDeepLink(artistId);
       await Share.share({
         title: `${artistName} on MehndiGo`,
-        message: `Book ${artistName} on MehndiGo! Starting at ₹${minPrice}, ${artist.experience_years ? `${artist.experience_years} years experience, ` : ""}⭐ ${Number(artist.avg_rating || artist.rating || 0).toFixed(1)} rating.\n\nView Profile: ${shareUrl}`,
+        message: `Book ${artistName} on MehndiGo! ${minPrice ? `Starting at ₹${minPrice}, ` : ""}${artist.experience_years ? `${artist.experience_years} years experience, ` : ""}⭐ ${Number(artist.avg_rating || artist.rating || 0).toFixed(1)} rating.\n\nView Profile: ${shareUrl}`,
         url: shareUrl
       });
     } catch (e) {
@@ -348,7 +348,7 @@ export default function ArtistListingScreen({ route, navigation }) {
           </View>
 
           <View style={styles.footerRow}>
-            <Text style={styles.price}>{minPrice ? `₹${minPrice}+` : "Price on Profile"}</Text>
+            <Text style={styles.price}>{minPrice ? `₹${minPrice}+` : "Price on Request"}</Text>
             <View style={styles.availableTodayBadge}>
               <View style={styles.activeDot} />
               <Text style={styles.availableTodayText}>Available Today</Text>
@@ -644,7 +644,9 @@ export default function ArtistListingScreen({ route, navigation }) {
             </View>
           }
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 60 }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          contentContainerStyle={{ paddingBottom: 100 }}
         />
       )}
 
@@ -676,25 +678,30 @@ export default function ArtistListingScreen({ route, navigation }) {
               {/* Category selector */}
               <Text style={styles.filterTitle}>Mehendi Styling Category</Text>
               <View style={styles.filterGrid}>
-                {categories.map((cat) => (
-                  <TouchableOpacity
-                    key={cat.id}
-                    style={[
-                      styles.filterGridItem,
-                      selectedCategory === cat.name ? styles.activeGridItem : null
-                    ]}
-                    onPress={() => setSelectedCategory(selectedCategory === cat.name ? "" : cat.name)}
-                  >
-                    <Text
+                {categories.map((cat, idx) => {
+                  const catName = typeof cat === "string" ? cat : (cat?.name || "");
+                  const catKey = typeof cat === "string" ? `cat_str_${idx}_${cat}` : (cat?.id ? `cat_id_${cat.id}` : `cat_idx_${idx}`);
+                  if (!catName) return null;
+                  return (
+                    <TouchableOpacity
+                      key={catKey}
                       style={[
-                        styles.filterGridText,
-                        selectedCategory === cat.name ? styles.activeGridText : null
+                        styles.filterGridItem,
+                        selectedCategory === catName ? styles.activeGridItem : null
                       ]}
+                      onPress={() => setSelectedCategory(selectedCategory === catName ? "" : catName)}
                     >
-                      {cat.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                      <Text
+                        style={[
+                          styles.filterGridText,
+                          selectedCategory === catName ? styles.activeGridText : null
+                        ]}
+                      >
+                        {catName}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
 
               {/* Price range selector */}

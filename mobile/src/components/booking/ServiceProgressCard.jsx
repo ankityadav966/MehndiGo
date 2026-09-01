@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { StyleSheet, Text, View, TouchableOpacity } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
+import { parseDate } from "../../utils/date";
 
 export default function ServiceProgressCard({
   startTime,
@@ -14,10 +15,12 @@ export default function ServiceProgressCard({
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   useEffect(() => {
-    const startTimestamp = startTime ? new Date(startTime).getTime() : Date.now();
+    const parsedStart = parseDate(startTime);
+    const startTimestamp = parsedStart ? parsedStart.getTime() : Date.now();
 
     if (endTime || isCompleted) {
-      const endTimestamp = endTime ? new Date(endTime).getTime() : Date.now();
+      const parsedEnd = parseDate(endTime);
+      const endTimestamp = parsedEnd ? parsedEnd.getTime() : Date.now();
       const diff = Math.max(0, Math.floor((endTimestamp - startTimestamp) / 1000));
       setElapsedSeconds(diff);
       return;

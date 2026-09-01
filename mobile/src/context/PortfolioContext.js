@@ -1,10 +1,11 @@
-import { createContext, useContext, useMemo, useReducer, useCallback } from "react";
+import { createContext, useContext, useMemo, useReducer, useCallback, useEffect } from "react";
 import {
   createPortfolio as createPortfolioApi,
   getAllPortfolios,
   updatePortfolio as updatePortfolioApi,
   deletePortfolio as deletePortfolioApi,
 } from "../services/portfolio";
+import { useAuth } from "./AuthContext";
 
 const PortfolioContext = createContext(null);
 
@@ -23,6 +24,8 @@ function portfolioReducer(state, action) {
       return { ...state, refreshing: action.payload };
     case "SET_PORTFOLIOS":
       return { ...state, portfolios: action.payload, loading: false, refreshing: false, error: null };
+    case "RESET_PORTFOLIOS":
+      return { ...initialState };
     case "ADD_PORTFOLIO":
       return { ...state, portfolios: [action.payload, ...state.portfolios] };
     case "UPDATE_PORTFOLIO":
@@ -45,7 +48,15 @@ function portfolioReducer(state, action) {
 }
 
 export function PortfolioProvider({ children }) {
+  const { isAuthenticated, user } = useAuth();
   const [state, dispatch] = useReducer(portfolioReducer, initialState);
+
+  // Clear state when user logs out or user ID changes
+  useEffect(() => {
+    if (!isAuthenticated || !user?.id) {
+      dispatch({ type: "RESET_PORTFOLIOS" });
+    }
+  }, [isAuthenticated, user?.id]);
 
   const fetchPortfolios = useCallback(async () => {
     dispatch({ type: "SET_LOADING", payload: true });

@@ -10,6 +10,7 @@ import ArtistStack from "./ArtistStack";
 import CustomerStack from "./CustomerStack";
 import { useAuth } from "../context/AuthContext";
 import { useArtistOnboarding } from "../context/ArtistOnboardingContext";
+import { ARTIST_APPROVAL_REQUIRED } from "../constants/Config";
 import { View, ActivityIndicator } from "react-native";
 import Colors from "../constants/Colors";
 
@@ -20,7 +21,7 @@ const Stack = createNativeStackNavigator();
 
 export default function RootNavigator() {
   const { isAuthenticated, user, isLoading: isAuthLoading } = useAuth();
-  const { artistApproved, verificationStatus, isLoading: isArtistLoading } = useArtistOnboarding();
+  const { artistApproved, verificationStatus, isProfileComplete, isLoading: isArtistLoading } = useArtistOnboarding();
   const navigation = useNavigation();
 
   const isArtist = String(user?.role).toUpperCase() === "ARTIST";
@@ -40,17 +41,23 @@ export default function RootNavigator() {
     return null;
   }
 
-  const isFirstTimeOnboarding = isArtist && user?.isFirstTimeArtistSignup === true && verificationStatus !== "APPROVED";
+  const isArtistApproved = Boolean(
+    !ARTIST_APPROVAL_REQUIRED
+      ? (isProfileComplete || artistApproved || verificationStatus === "APPROVED")
+      : (artistApproved || verificationStatus === "APPROVED" || user?.verification_status === "APPROVED")
+  );
+
+  const isArtistNeedsOnboarding = isArtist && !isArtistApproved;
 
   const targetStack = !isAuthenticated
     ? "Login"
     : isArtist
-    ? isFirstTimeOnboarding
+    ? isArtistNeedsOnboarding
       ? "ArtistFlowStack"
       : "ArtistStack"
     : "CustomerStack";
 
-  if (__DEV__) console.log(`[ARTIST_APPROVAL_DEBUG] ROOT_NAV_STATE -> isAuthenticated: ${isAuthenticated} | isArtist: ${isArtist} | isArtistLoading: ${isArtistLoading} | isAuthLoading: ${isAuthLoading} | isFirstTimeOnboarding: ${isFirstTimeOnboarding} | TARGET_ROUTE: ${targetStack}`);
+  if (__DEV__) console.log(`[ARTIST_APPROVAL_DEBUG] ROOT_NAV_STATE -> isAuthenticated: ${isAuthenticated} | isArtist: ${isArtist} | isArtistLoading: ${isArtistLoading} | isAuthLoading: ${isAuthLoading} | isArtistApproved: ${isArtistApproved} | isArtistNeedsOnboarding: ${isArtistNeedsOnboarding} | TARGET_ROUTE: ${targetStack}`);
 
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName={!isAuthenticated ? "Login" : undefined}>
@@ -64,7 +71,7 @@ export default function RootNavigator() {
           <Stack.Screen name="Onboarding3" component={Onboarding3} />
         </>
       ) : isArtist ? (
-        isFirstTimeOnboarding ? (
+        isArtistNeedsOnboarding ? (
           <Stack.Screen name="ArtistFlowStack" component={ArtistFlowStack} />
         ) : (
           <Stack.Screen name="ArtistStack" component={ArtistStack} />

@@ -1,6 +1,7 @@
 import apiRequest from "./api";
 
 export async function getPriceDetails(serviceId, couponCode = null, slotCount = 1, customArtPrice = null, groupSize = 1, serviceCoverage = "BOTH_HANDS") {
+  if (!serviceId || serviceId === "undefined" || serviceId === "null") return null;
   let endpoint = `/booking/price-details?serviceId=${serviceId}&slotCount=${slotCount}`;
   if (couponCode) {
     endpoint += `&couponCode=${encodeURIComponent(couponCode)}`;

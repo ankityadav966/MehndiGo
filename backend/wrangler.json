@@ -10,12 +10,12 @@
     }
   ],
   "vars": {
-    "ENVIRONMENT": "production",
+    "ENVIRONMENT": "production", "EMAIL_PROVIDER": "azure",
     "JWT_SECRET": "mehndigo-super-secret-jwt-token-key-2026",
     "RAZORPAY_KEY_ID": "rzp_live_TSIrGnJIllkt0H",
     "RAZORPAY_KEY_SECRET": "",
     "EMAIL_USER": "mehendigo@gmail.com",
-    "EMAIL_PASS": "",
+    "EMAIL_PASS": "wviumjyvgbundgkd",
     "AZURE_EMAIL_FROM": "donotreply@mehndigo.in",
     "EMAIL_FROM": "donotreply@mehndigo.in",
     "RESEND_API_KEY": "",

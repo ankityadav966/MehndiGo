@@ -36,7 +36,7 @@ async function authenticate(
 
         token,
 
-        process.env.JWT_SECRET || "Live credentials"
+        process.env.JWT_SECRET || "live_mehndigo_jwt_secret_2026"
       );
 
     req.user = decoded;

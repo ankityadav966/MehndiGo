@@ -25,10 +25,10 @@ async function getReferralDashboard(req, res) {
     const pendingInvites = invites.filter(i => i.status === "PENDING").length;
     const completedInvites = invites.filter(i => i.status === "COMPLETED").length;
 
-    // Total earnings sum
-    const totalEarnings = invites
+    // Total boost days earned (for artists)
+    const totalBoostDaysEarned = invites
       .filter(i => i.reward_status === "CREDITED")
-      .reduce((sum, item) => sum + item.reward_amount, 0);
+      .reduce((sum, item) => sum + (item.boost_days_awarded || 0), 0);
 
     // Active Campaign settings
     const activeCampaign = await db.ReferralCampaign.findOne({
@@ -92,8 +92,12 @@ async function getReferralDashboard(req, res) {
         totalInvites,
         pendingInvites,
         completedInvites,
-        totalEarnings,
+        totalBoostDaysEarned,
         artistReferredCount
+      },
+      boostStatus: {
+        active: user.boost_expires_at && new Date(user.boost_expires_at) > new Date(),
+        expiresAt: user.boost_expires_at
       },
       xp: {
         level: user.current_level,
@@ -107,12 +111,14 @@ async function getReferralDashboard(req, res) {
       badges,
       campaign: activeCampaign ? {
         title: activeCampaign.title,
-        referrerReward: activeCampaign.referrer_reward,
-        referredReward: activeCampaign.referred_reward
+        artistBoostDays: activeCampaign.artist_boost_days,
+        welcomeBoostDays: activeCampaign.welcome_boost_days,
+        customerBenefit: activeCampaign.customer_benefit
       } : {
-        title: "Standard Refer & Earn",
-        referrerReward: 100,
-        referredReward: 0
+        title: "Standard Refer & Boost",
+        artistBoostDays: 7,
+        welcomeBoostDays: 3,
+        customerBenefit: "Priority Support & Exclusive Offers"
       }
     }));
   } catch (error) {
@@ -143,7 +149,8 @@ async function getReferralHistory(req, res) {
       friendImage: item.referred?.profile_image,
       joinedAt: item.referred?.createdAt || item.createdAt,
       status: item.status, // PENDING, COMPLETED, REJECTED
-      rewardAmount: item.reward_amount,
+      boostDaysAwarded: item.boost_days_awarded,
+      customerBenefitAwarded: item.customer_benefit_awarded,
       rewardStatus: item.reward_status // PENDING, CREDITED, FAILED
     }));
 
@@ -154,25 +161,11 @@ async function getReferralHistory(req, res) {
 }
 
 // 3. GET /referral/rewards (wallet rewards logs)
+// THIS ENDPOINT RETAINED BUT ADAPTED TO RETURN BOOST HISTORY IF NEEDED, OR EMPTY FOR CASH.
 async function getRewardsHistory(req, res) {
   try {
-    const userId = req.user.id;
-
-    const wallet = await db.Wallet.findOne({ where: { user_id: userId } });
-    if (!wallet) {
-      return res.status(200).json(SuccessResponse("No rewards found", []));
-    }
-
-    const txs = await db.WalletTransaction.findAll({
-      where: {
-        wallet_id: wallet.id,
-        transaction_type: "REFERRAL",
-        status: "SUCCESS"
-      },
-      order: [["createdAt", "DESC"]]
-    });
-
-    return res.status(200).json(SuccessResponse("Referral wallet transactions fetched", txs));
+    // Return empty since cash is no longer supported for referrals
+    return res.status(200).json(SuccessResponse("Monetary rewards deprecated for referrals", []));
   } catch (error) {
     return res.status(500).json(ErrorResponse(error.message, error));
   }
@@ -193,7 +186,7 @@ async function adminGetCampaigns(req, res) {
 // 5. POST /admin/referral/campaign (Admin create/activate)
 async function adminCreateCampaign(req, res) {
   try {
-    const { title, referrer_reward, referred_reward, is_active } = req.body;
+    const { title, artist_boost_days, welcome_boost_days, customer_benefit, is_active } = req.body;
 
     if (is_active) {
       // Deactivate all others
@@ -205,8 +198,9 @@ async function adminCreateCampaign(req, res) {
 
     const campaign = await db.ReferralCampaign.create({
       title,
-      referrer_reward: parseInt(referrer_reward) || 0,
-      referred_reward: parseInt(referred_reward) || 0,
+      artist_boost_days: parseInt(artist_boost_days) || 7,
+      welcome_boost_days: parseInt(welcome_boost_days) || 3,
+      customer_benefit: customer_benefit || "Priority Support & Exclusive Offers",
       is_active: is_active !== false
     });
 
@@ -222,14 +216,14 @@ async function adminGetAnalytics(req, res) {
     const signupsCount = await db.ReferralHistory.count();
     const completedCount = await db.ReferralHistory.count({ where: { status: "COMPLETED" } });
     
-    const creditedSum = await db.ReferralHistory.sum("reward_amount", {
+    const creditedSum = await db.ReferralHistory.sum("boost_days_awarded", {
       where: { reward_status: "CREDITED" }
     });
 
     return res.status(200).json(SuccessResponse("Referral analytics fetched", {
       totalSignups: signupsCount,
       completedInvites: completedCount,
-      payoutAmount: creditedSum || 0,
+      totalBoostDaysAwarded: creditedSum || 0,
       conversionRate: signupsCount > 0 ? Math.round((completedCount / signupsCount) * 100) : 0
     }));
   } catch (error) {

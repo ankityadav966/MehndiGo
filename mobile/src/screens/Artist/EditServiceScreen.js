@@ -65,13 +65,22 @@ export default function EditServiceScreen({ route, navigation }) {
   const fetchServiceDetail = React.useCallback(async () => {
     try {
       const data = await getArtistServiceById(id);
-      setServiceName(data.specialization_name);
-      setCategory(data.category);
-      setPrice(String(data.minimum_price));
-      setDuration(String(data.duration_minutes));
+      setServiceName(data.specialization_name || data.title || "");
+      setCategory(data.category || "Bridal");
+      setPrice(String(data.minimum_price || data.price || "0"));
+      setDuration(String(data.duration_minutes || data.duration || "60"));
       setDescription(data.description || "");
-      setPackages(data.packages || []);
-      setAddons(data.addons || []);
+      let parsedPackages = data.packages || [];
+      if (typeof parsedPackages === 'string') {
+        try { parsedPackages = JSON.parse(parsedPackages); } catch (e) { parsedPackages = []; }
+      }
+      setPackages(Array.isArray(parsedPackages) ? parsedPackages : []);
+
+      let parsedAddons = data.addons || [];
+      if (typeof parsedAddons === 'string') {
+        try { parsedAddons = JSON.parse(parsedAddons); } catch (e) { parsedAddons = []; }
+      }
+      setAddons(Array.isArray(parsedAddons) ? parsedAddons : []);
       setServiceImage(data.service_image);
     } catch (err) {
       Alert.alert("Error", "Failed to retrieve service details.");
@@ -150,7 +159,8 @@ export default function EditServiceScreen({ route, navigation }) {
   };
 
   const handleSave = async () => {
-    if (!serviceName.trim() || !price || !duration) {
+    const sName = serviceName || "";
+    if (!sName.trim() || !price || !duration) {
       Alert.alert("Validation Error", "Please fill in all required fields.");
       return;
     }
@@ -175,16 +185,17 @@ export default function EditServiceScreen({ route, navigation }) {
         }
       }
 
-      await updateArtistService(id, {
-        specialization_name: serviceName.trim(),
-        category,
+      const servicePayload = {
+        specialization_name: (serviceName || "").trim(),
+        category: category || "Bridal",
         minimum_price: Number(price),
         duration_minutes: Number(duration),
-        description: description.trim(),
+        description: (description || "").trim(),
         service_image: uploadedUrl,
-        packages,
+        packages: packages,
         addons
-      });
+      };
+      await updateArtistService(id, servicePayload);
       Alert.alert("Success 🎉", "Service details updated successfully.");
       navigation.goBack();
     } catch (err) {

@@ -46,6 +46,7 @@ import {
   subscribeActiveAddress,
   checkSmartLocationChange,
   reverseGeocodeCoords,
+  autoDetectCurrentLocation,
 } from "../../utils/locationManager";
 import { getActiveFestivalOffers, resolveFestivalBanner } from "../../utils/festivalEngine";
 import { copyAndSaveCoupon } from "../../utils/couponManager";
@@ -359,34 +360,35 @@ export default function HomeScreen({ navigation }) {
   // Smart Location Initialization & Background Distance Check
   useEffect(() => {
     const unsubscribe = subscribeActiveAddress((newAddr) => {
-      setActiveAddressState(newAddr);
+      if (newAddr) setActiveAddressState(newAddr);
     });
 
     async function initLocation() {
       try {
+        // 1. Check existing cached active address
         const cached = await getActiveAddress();
         if (cached) {
           setActiveAddressState(cached);
         }
 
-        const addresses = await getCustomerAddresses();
-        const list = addresses || [];
+        // 2. Fetch customer's saved addresses in the background
+        const addresses = await getCustomerAddresses().catch(() => []);
+        const list = Array.isArray(addresses) ? addresses : [];
         setSavedAddressesList(list);
 
         const primary = list.find((a) => a.is_default) || list[0];
 
-        // First Login Flow: If customer has NO saved primary address, navigate to InitialLocationSetup
-        if (list.length === 0) {
-          navigation.navigate("InitialLocationSetup");
-          return;
-        }
-
-        if (!cached && primary) {
+        // 3. If customer has a primary saved address, ensure it's selected as active
+        if (primary && (!cached || cached.id !== primary.id)) {
           const norm = await setActiveAddress(primary);
-          setActiveAddressState(norm);
+          if (norm) setActiveAddressState(norm);
+        } else if (!cached && !primary) {
+          // 4. No saved address & no cached address: Automatically detect GPS location or fallback
+          const autoLoc = await autoDetectCurrentLocation(user?.city || "Jaipur");
+          if (autoLoc) setActiveAddressState(autoLoc);
         }
 
-        // Run smart distance check asynchronously in background without blocking screen render
+        // 5. Run smart distance check asynchronously in background if primary address is set
         if (primary && primary.latitude && primary.longitude) {
           setTimeout(async () => {
             try {
@@ -405,7 +407,7 @@ export default function HomeScreen({ navigation }) {
 
     initLocation();
     return () => unsubscribe();
-  }, [navigation]);
+  }, [user?.city]);
 
   const handleUseCurrentGPSLocation = async () => {
     try {
@@ -918,7 +920,7 @@ export default function HomeScreen({ navigation }) {
             <Text style={[styles.experienceText, { color: currentSecTextColor }]}>• {expText}</Text>
           </View>
           <Text style={[styles.startingPriceText, { color: currentTextColor }]}>
-            {startingPrice ? `From ₹${startingPrice}` : "View Profile"}
+            {startingPrice ? `From ₹${startingPrice}` : "Price on Request"}
           </Text>
         </View>
       </TouchableOpacity>
@@ -980,7 +982,7 @@ export default function HomeScreen({ navigation }) {
 
           <View style={styles.nearbyFooter}>
             <Text style={[styles.nearbyPriceText, { color: currentTextColor }]}>
-              {startingPrice ? `Starting from ₹${startingPrice}` : "View Profile"}
+              {startingPrice ? `Starting from ₹${startingPrice}` : "Price on Request"}
             </Text>
             {(item.status === "approved" || item.status === "APPROVED" || item.verification_status === "APPROVED") && (
               <View style={styles.availableTodayBadge}>

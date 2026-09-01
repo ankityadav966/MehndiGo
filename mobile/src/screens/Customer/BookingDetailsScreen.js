@@ -38,6 +38,7 @@ import BookingAmountCard from "../../components/booking/BookingAmountCard";
 import BookingLocationCard from "../../components/booking/BookingLocationCard";
 import LiveTrackingCard from "../../components/booking/LiveTrackingCard";
 import BookingChatCard from "../../components/booking/BookingChatCard";
+import OtpVerificationCard from "../../components/booking/OtpVerificationCard";
 import ServiceProgressCard from "../../components/booking/ServiceProgressCard";
 import CheckoutCard from "../../components/booking/CheckoutCard";
 import InvoiceCard from "../../components/booking/InvoiceCard";
@@ -276,7 +277,11 @@ export default function BookingDetailsScreen({ route, navigation }) {
     try {
       setLoading(true);
       await selectCashPayment(booking.id);
-      Alert.alert("Cash Selected", "Cash payment selected. Please hand over the remaining amount to the artist.");
+      const remaining = Number(booking?.remaining_amount || 0);
+      Alert.alert(
+        "Cash Payment Selected 💵",
+        `Please hand over ₹${remaining.toLocaleString("en-IN")} in cash to the mehndi artist. The artist will confirm cash receipt to complete your booking.`
+      );
       loadDetails();
     } catch (err) {
       Alert.alert("Error", err.message || "Failed to select cash payment.");
@@ -407,6 +412,21 @@ export default function BookingDetailsScreen({ route, navigation }) {
 
   const isCancelled = rawStatus === "CANCELLED" || rawStatus === "REJECTED";
 
+  const isCheckoutVerified =
+    Number(booking?.checkout_otp_verified) === 1 ||
+    Number(booking?.checkout_verified) === 1 ||
+    booking?.checkout_otp_verified === true ||
+    isCompleted;
+
+  const activeCheckinOtp = booking?.checkin_otp || booking?.check_in_otp;
+  const activeCheckoutOtp = booking?.checkout_otp || booking?.completion_pin || booking?.check_out_otp;
+
+  // Render Check-In PIN only at arrival / on the way when PIN is active and not yet verified
+  const showCheckInOtpCard = (isArrived || (isOnTheWay && activeCheckinOtp)) && !isCheckInVerified && Boolean(activeCheckinOtp);
+
+  // Render Completion PIN only when service is active / checkout, check-in is verified, and checkout PIN is active & not verified
+  const showCompletionOtpCard = (isServiceActive || isCheckout) && isCheckInVerified && !isCheckoutVerified && Boolean(activeCheckoutOtp);
+
   const resolvedCustomerCoords = customerCoords || (booking?.latitude && booking?.longitude ? {
     lat: Number(booking.latitude),
     lng: Number(booking.longitude),
@@ -463,12 +483,34 @@ export default function BookingDetailsScreen({ route, navigation }) {
             />
           )}
 
+          {/* 4. Active Stage-Specific Customer OTP / PIN Display Card (Omitted on screen as OTP is delivered directly to customer Gmail) */}
+          {/* {(showCheckInOtpCard || showCompletionOtpCard) && (
+            <OtpVerificationCard
+              checkinOtp={showCheckInOtpCard ? activeCheckinOtp : null}
+              checkoutOtp={showCompletionOtpCard ? activeCheckoutOtp : null}
+              customerEmail={booking?.customer?.email || booking?.user?.email || booking?.customer_email || booking?.email}
+              isArtist={false}
+              isCheckInVerified={isCheckInVerified}
+              isServiceActive={isServiceActive}
+              isCheckout={isCheckout}
+              isPending={false}
+              isAccepted={isAccepted || isOnTheWay || isArrived}
+            />
+          )} */}
+
           {/* 4. Service Active / Completed Dashboard with Live/Frozen Timer */}
-          {(isServiceActive || (isCompleted && (booking?.service_started_at || booking?.check_in_time))) && (
+          {(isServiceActive || isCheckoutVerified || isCompleted) && (
             <ServiceProgressCard
-              startTime={booking?.service_started_at || booking?.check_in_time || booking?.checked_in_at || booking?.service_start_time}
+              startTime={
+                booking?.service_started_at ||
+                booking?.check_in_time ||
+                booking?.checked_in_at ||
+                booking?.service_start_time ||
+                booking?.booking_date ||
+                booking?.created_at
+              }
               endTime={booking?.check_out_time}
-              isCompleted={isCompleted}
+              isCompleted={isCompleted || isCheckoutVerified}
               isArtist={false}
               serviceName={booking?.service_name || booking?.package_name || "Mehndi Service"}
               estimatedDurationMinutes={booking?.duration_minutes || 60}
@@ -504,9 +546,12 @@ export default function BookingDetailsScreen({ route, navigation }) {
             booking={booking}
             isArtistView={false}
             onViewProfile={() => {
-              if (booking?.artist_id || booking?.artist?.id) {
+              const targetArtistId = booking?.artist_id || booking?.artist?.id || booking?.artist?.user_id;
+              if (targetArtistId) {
                 navigation.navigate("ArtistProfile", {
-                  artistId: booking.artist_id || booking.artist?.id,
+                  artistId: targetArtistId,
+                  artist_id: targetArtistId,
+                  id: targetArtistId,
                   from: "BookingDetails"
                 });
               }
@@ -587,7 +632,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
       <Modal visible={cancelModalVisible} transparent animationType="fade">
         <KeyboardAvoidingView
           style={styles.modalOverlay}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
           <View style={styles.modalBox}>
             <Text style={styles.modalTitle}>Cancel Booking?</Text>
@@ -634,7 +679,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
       <Modal visible={rescheduleModalVisible} transparent animationType="slide">
         <KeyboardAvoidingView
           style={styles.modalOverlay}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
           <View style={styles.modalBoxLarge}>
             <Text style={styles.modalTitle}>Reschedule Appointment</Text>
@@ -683,7 +728,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
       <Modal visible={disputeModalVisible} transparent animationType="fade">
         <KeyboardAvoidingView
           style={styles.modalOverlay}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
           <View style={styles.modalBox}>
             <Text style={styles.modalTitle}>Report an Issue / Dispute</Text>

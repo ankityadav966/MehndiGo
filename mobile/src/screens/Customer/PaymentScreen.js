@@ -399,8 +399,8 @@ export default function PaymentScreen({ route, navigation }) {
   const balanceAfter = isSettlement ? 0 : remainingAmount;
 
   const displayCode = booking?.booking_code || bookingCode || (activeBookingId ? `MG-${String(activeBookingId).padStart(6, "0")}` : "MG-PENDING");
-  const artistName = booking?.artist_name || booking?.artist?.user?.name || routeArtist || "Mehndi Specialist";
-  const serviceName = booking?.service_name || booking?.service_title || routeService || "Henna Application";
+  const artistName = routeArtist || checkoutData?.artistName || checkoutData?.artist_name || booking?.artist_name || booking?.artist?.full_name || booking?.artist?.name || booking?.artist?.user?.name || "Mehndi Specialist";
+  const serviceName = routeService || checkoutData?.serviceTitle || checkoutData?.service_title || booking?.service_name || booking?.service_title || "Henna Application";
 
   return (
     <SafeAreaView style={styles.container}>
@@ -485,7 +485,7 @@ export default function PaymentScreen({ route, navigation }) {
                   <Text style={styles.recommendedText}>Fastest ⚡</Text>
                 </View>
               </View>
-              <Text style={styles.methodDesc}>Directly opens PhonePe, GPay, Paytm on your phone</Text>
+              <Text style={styles.methodDesc}>Directly opens PhonePe, GPay</Text>
             </View>
           </View>
           <Ionicons
@@ -496,7 +496,7 @@ export default function PaymentScreen({ route, navigation }) {
         </TouchableOpacity>
 
         {/* Option 2: Pay Online (Cards & Gateway) */}
-        <TouchableOpacity
+        {/* <TouchableOpacity
           style={[styles.methodCard, selectedMethod === "online" && styles.methodCardActive]}
           onPress={() => setSelectedMethod("online")}
           activeOpacity={0.8}
@@ -517,10 +517,10 @@ export default function PaymentScreen({ route, navigation }) {
             size={20}
             color={selectedMethod === "online" ? "#E91E63" : "#9CA3AF"}
           />
-        </TouchableOpacity>
+        </TouchableOpacity> */}
 
         {/* Option 3: Pay Cash to Artist */}
-        {!isSettlement && (
+        {/* {!isSettlement && (
           <TouchableOpacity
             style={[styles.methodCard, selectedMethod === "cash" && styles.methodCardActive]}
             onPress={() => setSelectedMethod("cash")}
@@ -543,7 +543,7 @@ export default function PaymentScreen({ route, navigation }) {
               color={selectedMethod === "cash" ? "#059669" : "#9CA3AF"}
             />
           </TouchableOpacity>
-        )}
+        )} */}
 
         {/* 4. Escrow Security Banner */}
         <View style={styles.escrowCard}>

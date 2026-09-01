@@ -1,8 +1,9 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -150,128 +151,135 @@ export default function RegisterScreen({ navigation, route }) {
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
-        style={styles.container}
+        style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <Text style={styles.title}>Create Account</Text>
-        <Text style={styles.subtitle}>Sign up to continue</Text>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <Text style={styles.title}>Create Account</Text>
+          <Text style={styles.subtitle}>Sign up to continue</Text>
 
-        {referralCode ? (
-          <View style={styles.referralBadge}>
-            <Ionicons name="gift-outline" size={16} color={Colors.primary} style={{ marginRight: 6 }} />
-            <Text style={styles.referralBadgeText}>Referral Code Applied: {referralCode}</Text>
+          {referralCode ? (
+            <View style={styles.referralBadge}>
+              <Ionicons name="gift-outline" size={16} color={Colors.primary} style={{ marginRight: 6 }} />
+              <Text style={styles.referralBadgeText}>Referral Code Applied: {referralCode}</Text>
+            </View>
+          ) : null}
+
+          <View style={styles.inputContainer}>
+            <TextInput
+              value={name}
+              onChangeText={(text) => {
+                setName(text);
+                if (error) setError("");
+              }}
+              editable={!loading}
+              style={[styles.input, loading && styles.disabledInput]}
+              placeholder="Full Name"
+              placeholderTextColor={Colors.placeholder}
+              maxLength={50}
+            />
           </View>
-        ) : null}
 
-        <View style={styles.inputContainer}>
-          <TextInput
-            value={name}
-            onChangeText={(text) => {
-              setName(text);
-              if (error) setError("");
-            }}
-            editable={!loading}
-            style={[styles.input, loading && styles.disabledInput]}
-            placeholder="Full Name"
-            placeholderTextColor={Colors.placeholder}
-            maxLength={50}
-          />
-        </View>
+          <View style={[styles.inputContainer, { marginTop: 6 }]}>
+            <TextInput
+              value={email}
+              onChangeText={(text) => {
+                setEmail(text);
+                if (error) setError("");
+              }}
+              editable={!loading}
+              style={[styles.input, loading && styles.disabledInput]}
+              placeholder="Email Address"
+              placeholderTextColor={Colors.placeholder}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              maxLength={100}
+            />
+          </View>
 
-        <View style={[styles.inputContainer, { marginTop: 6 }]}>
-          <TextInput
-            value={email}
-            onChangeText={(text) => {
-              setEmail(text);
-              if (error) setError("");
-            }}
-            editable={!loading}
-            style={[styles.input, loading && styles.disabledInput]}
-            placeholder="Email Address"
-            placeholderTextColor={Colors.placeholder}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            maxLength={100}
-          />
-        </View>
+          <View style={[styles.inputContainer, { marginTop: 6 }]}>
+            <TextInput
+              value={phone}
+              onChangeText={(text) => {
+                setPhone(text);
+                if (error) setError("");
+              }}
+              editable={!loading}
+              style={[styles.input, loading && styles.disabledInput]}
+              placeholder="Mobile Phone Number (10 digits)"
+              placeholderTextColor={Colors.placeholder}
+              keyboardType="phone-pad"
+              maxLength={10}
+            />
+          </View>
 
-        <View style={[styles.inputContainer, { marginTop: 6 }]}>
-          <TextInput
-            value={phone}
-            onChangeText={(text) => {
-              setPhone(text);
-              if (error) setError("");
-            }}
-            editable={!loading}
-            style={[styles.input, loading && styles.disabledInput]}
-            placeholder="Mobile Phone Number (10 digits)"
-            placeholderTextColor={Colors.placeholder}
-            keyboardType="phone-pad"
-            maxLength={10}
-          />
-        </View>
+          <Text style={styles.roleLabel}>I want to register as a</Text>
+          
+          <View style={styles.roleRow}>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              disabled={loading}
+              style={[styles.roleCard, selectedRole === "CUSTOMER" && styles.selectedRoleCard]}
+              onPress={() => {
+                setSelectedRole("CUSTOMER");
+                if (error) setError("");
+              }}
+            >
+              <View style={[styles.radio, selectedRole === "CUSTOMER" && styles.selectedRadio]}>
+                {selectedRole === "CUSTOMER" && <Text style={styles.radioDot}>✓</Text>}
+              </View>
+              <Text style={[styles.roleText, selectedRole === "CUSTOMER" && styles.selectedRoleText]}>
+                Customer
+              </Text>
+            </TouchableOpacity>
 
-        <Text style={styles.roleLabel}>I want to register as a</Text>
-        
-        <View style={styles.roleRow}>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              disabled={loading}
+              style={[styles.roleCard, selectedRole === "ARTIST" && styles.selectedRoleCard]}
+              onPress={() => {
+                setSelectedRole("ARTIST");
+                if (error) setError("");
+              }}
+            >
+              <View style={[styles.radio, selectedRole === "ARTIST" && styles.selectedRadio]}>
+                {selectedRole === "ARTIST" && <Text style={styles.radioDot}>✓</Text>}
+              </View>
+              <Text style={[styles.roleText, selectedRole === "ARTIST" && styles.selectedRoleText]}>
+                Artist
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
           <TouchableOpacity
-            activeOpacity={0.8}
+            style={[styles.registerButton, loading && styles.disabledButton]}
+            onPress={handleRegister}
             disabled={loading}
-            style={[styles.roleCard, selectedRole === "CUSTOMER" && styles.selectedRoleCard]}
-            onPress={() => {
-              setSelectedRole("CUSTOMER");
-              if (error) setError("");
-            }}
           >
-            <View style={[styles.radio, selectedRole === "CUSTOMER" && styles.selectedRadio]}>
-              {selectedRole === "CUSTOMER" && <Text style={styles.radioDot}>✓</Text>}
-            </View>
-            <Text style={[styles.roleText, selectedRole === "CUSTOMER" && styles.selectedRoleText]}>
-              Customer
-            </Text>
+            {loading ? (
+              <ActivityIndicator color={Colors.white} size="small" />
+            ) : (
+              <Text style={styles.registerText}>Sign Up & Send OTP</Text>
+            )}
           </TouchableOpacity>
 
           <TouchableOpacity
-            activeOpacity={0.8}
             disabled={loading}
-            style={[styles.roleCard, selectedRole === "ARTIST" && styles.selectedRoleCard]}
+            style={{ marginTop: 16, marginBottom: 20 }}
             onPress={() => {
-              setSelectedRole("ARTIST");
-              if (error) setError("");
+              setError("");
+              navigation.navigate("Login");
             }}
           >
-            <View style={[styles.radio, selectedRole === "ARTIST" && styles.selectedRadio]}>
-              {selectedRole === "ARTIST" && <Text style={styles.radioDot}>✓</Text>}
-            </View>
-            <Text style={[styles.roleText, selectedRole === "ARTIST" && styles.selectedRoleText]}>
-              Artist
-            </Text>
+            <Text style={styles.linkText}>Already have an account? Log In</Text>
           </TouchableOpacity>
-        </View>
-
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-        <TouchableOpacity
-          disabled={loading}
-          onPress={() => {
-            setError("");
-            navigation.navigate("Login");
-          }}
-        >
-          <Text style={styles.linkText}>Already have an account? Log In</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.registerButton, loading && styles.disabledButton]}
-          onPress={handleRegister}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color={Colors.white} size="small" />
-          ) : (
-            <Text style={styles.registerText}>Sign Up & Send OTP</Text>
-          )}
-        </TouchableOpacity>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -279,7 +287,13 @@ export default function RegisterScreen({ navigation, route }) {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: Colors.white },
-  container: { flex: 1, backgroundColor: Colors.white, paddingHorizontal: 24, justifyContent: "center" },
+  scrollContent: {
+    flexGrow: 1,
+    backgroundColor: Colors.white,
+    paddingHorizontal: 24,
+    justifyContent: "center",
+    paddingVertical: 20,
+  },
   title: { fontSize: 28, fontWeight: "700", color: Colors.text, textAlign: "center" },
   subtitle: { fontSize: 13, color: Colors.textSecondary, marginTop: 4, marginBottom: 14, textAlign: "center" },
   referralBadge: {

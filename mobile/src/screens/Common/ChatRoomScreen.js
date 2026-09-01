@@ -142,7 +142,20 @@ export const formatDateSeparator = (dateStr) => {
 export default function ChatRoomScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { bookingId, receiverId, receiverName, receiverImage } = route.params || {};
+  const {
+    bookingId,
+    receiverId,
+    receiverName,
+    receiverImage,
+    artistId,
+    artistName,
+    artistAvatar,
+    initialMessage
+  } = route.params || {};
+
+  const effectiveReceiverId = receiverId || artistId;
+  const effectiveReceiverName = receiverName || artistName;
+  const effectiveReceiverImage = receiverImage || artistAvatar;
 
   const {
     connected,
@@ -157,7 +170,7 @@ export default function ChatRoomScreen({ route, navigation }) {
   } = useSocket();
 
   const [loading, setLoading] = useState(true);
-  const [inputText, setInputText] = useState("");
+  const [inputText, setInputText] = useState(initialMessage || "");
   const [booking, setBooking] = useState(null);
   const [isVoiceSupported, setIsVoiceSupported] = useState(false);
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -1336,7 +1349,7 @@ export default function ChatRoomScreen({ route, navigation }) {
       >
         <KeyboardAvoidingView
           style={styles.modalContainer}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
           <View style={styles.reportModalBox}>
             <Text style={styles.reportTitle}>Report User</Text>

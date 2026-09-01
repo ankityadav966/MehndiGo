@@ -57,6 +57,15 @@ async function getWithdrawHistory(req, res) {
   }
 }
 
+async function getWithdrawalStatus(req, res) {
+  try {
+    const response = await WalletService.getWithdrawalStatus(req.user.id);
+    return res.status(200).json(SuccessResponse("Withdrawal status fetched successfully", response));
+  } catch (error) {
+    return res.status(error.statusCode || 500).json(ErrorResponse(error.message, error));
+  }
+}
+
 async function getTransactions(req, res) {
   try {
     const response = await WalletService.getTransactions(req.user.id);
@@ -109,6 +118,7 @@ module.exports = {
   initiateWithdrawal,
   cancelWithdrawal,
   getWithdrawHistory,
+  getWithdrawalStatus,
   getTransactions,
   getTransactionById,
   getSettlements,

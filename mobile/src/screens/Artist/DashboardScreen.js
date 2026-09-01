@@ -159,10 +159,10 @@ function GreetingHeader({ artist, isVerified, unreadCount, onProfilePress, onNot
 }
 
 // --- Wallet Card Component ---
-function WalletCard({ balance, onWithdrawPress, onCardPress }) {
+function WalletCard({ balance, cashCollected, onWithdrawPress, onCardPress, onCashPress }) {
   return (
-    <Pressable onPress={onCardPress}>
-      <View style={styles.walletCardBackground}>
+    <View style={styles.walletCardBackground}>
+      <Pressable onPress={onCardPress}>
         <View style={styles.walletHeader}>
           <View style={styles.walletTitleRow}>
             <Ionicons name="wallet" size={20} color={Colors.white} style={{ marginRight: 6 }} />
@@ -171,14 +171,37 @@ function WalletCard({ balance, onWithdrawPress, onCardPress }) {
           <Text style={styles.walletSecureText}>Safe & Secure Payouts</Text>
         </View>
         <View style={styles.walletBody}>
-          <Text style={styles.walletBalance}>₹{balance.toLocaleString()}</Text>
+          <View>
+            <Text style={styles.walletBalance}>₹{Number(balance || 0).toLocaleString("en-IN")}</Text>
+            <Text style={styles.walletSubText}>Actual Withdrawable Balance</Text>
+          </View>
           <Pressable onPress={onWithdrawPress} style={styles.walletBtn}>
             <Ionicons name="arrow-up-circle-outline" size={16} color={Colors.primary} style={{ marginRight: 4 }} />
             <Text style={styles.walletBtnText}>Withdraw</Text>
           </Pressable>
         </View>
-      </View>
-    </Pressable>
+      </Pressable>
+
+      {/* Dedicated Cash Entries / Cash Collected Row */}
+      <Pressable
+        onPress={onCashPress || onCardPress}
+        style={styles.walletCashBanner}
+      >
+        <View style={styles.walletCashLeft}>
+          <View style={styles.walletCashIconWrap}>
+            <Ionicons name="cash" size={16} color="#059669" />
+          </View>
+          <View>
+            <Text style={styles.walletCashTitle}>Cash Collected (In-Hand)</Text>
+            <Text style={styles.walletCashSubtitle}>Direct Payout • Excluded from Wallet</Text>
+          </View>
+        </View>
+        <View style={{ alignItems: "flex-end" }}>
+          <Text style={styles.walletCashAmount}>₹{Number(cashCollected || 0).toLocaleString("en-IN")}</Text>
+          <Text style={styles.walletCashViewText}>View Entries →</Text>
+        </View>
+      </Pressable>
+    </View>
   );
 }
 
@@ -232,7 +255,11 @@ function DashboardCard({ count, title, description, iconName, accentColor, onPre
   );
 }
 
-let memoryCachedArtistDashboard = null;
+let memoryCachedArtistDashboard = { userId: null, data: null };
+
+export function clearArtistDashboardMemoryCache() {
+  memoryCachedArtistDashboard = { userId: null, data: null };
+}
 
 // --- Main Screen ---
 export default function ArtistDashboardScreen({ navigation }) {
@@ -242,9 +269,20 @@ export default function ArtistDashboardScreen({ navigation }) {
 
   if (__DEV__) console.log(`[ARTIST_APPROVAL_DEBUG] CURRENT_ROUTE: ArtistDashboardScreen | USER_ID: ${user?.id} | ROLE: ${user?.role}`);
 
-  const [dashboard, setDashboard] = useState(() => memoryCachedArtistDashboard);
-  const [loading, setLoading] = useState(() => !memoryCachedArtistDashboard);
+  const isCacheForCurrentUser = Boolean(user?.id && memoryCachedArtistDashboard.userId === user?.id && memoryCachedArtistDashboard.data);
+
+  const [dashboard, setDashboard] = useState(() => isCacheForCurrentUser ? memoryCachedArtistDashboard.data : null);
+  const [loading, setLoading] = useState(() => !isCacheForCurrentUser);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Reset state whenever user ID changes (account switch / new login)
+  useEffect(() => {
+    if (user?.id && memoryCachedArtistDashboard.userId !== user.id) {
+      setDashboard(null);
+      setLoading(true);
+      fetchDashboardDetails();
+    }
+  }, [user?.id]);
 
   // Root level back handler with double-back-to-exit prevention
   useFocusEffect(
@@ -264,21 +302,23 @@ export default function ArtistDashboardScreen({ navigation }) {
   const fetchDashboardDetails = React.useCallback(async () => {
     try {
       const data = await getArtistDashboardData();
-      if (data) {
-        memoryCachedArtistDashboard = data;
+      if (data && user?.id) {
+        memoryCachedArtistDashboard = { userId: user.id, data };
         setDashboard(data);
       }
     } catch (err) {
       console.log("Failed to load artist dashboard details:", err.message);
-      if (!memoryCachedArtistDashboard) {
-        Alert.alert("Error", "Something went wrong loading your dashboard. Please retry.");
+      if (!isCacheForCurrentUser) {
+        if (!err.message?.includes("complete your onboarding")) {
+          Alert.alert("Error", "Something went wrong loading your dashboard. Please retry.");
+        }
         setDashboard(null);
       }
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [user]);
+  }, [user?.id, isCacheForCurrentUser]);
 
   useEffect(() => {
     if (socket) {
@@ -345,6 +385,7 @@ export default function ArtistDashboardScreen({ navigation }) {
   const quickActions = [
     { icon: "calendar-outline", label: "My Bookings", screen: "BookingRequests" },
     { icon: "wallet-outline", label: "Wallet Ledger", screen: "Wallet" },
+    { icon: "cash-outline", label: "Cash Entries", screen: "Wallet", params: { initialTab: "Cash" } },
     { icon: "calendar-number-outline", label: "Availability", screen: "AvailabilityCalendar" },
     { icon: "list-outline", label: "Services", screen: "Services" },
     { icon: "images-outline", label: "Portfolio", screen: "Portfolio" },
@@ -376,8 +417,10 @@ export default function ArtistDashboardScreen({ navigation }) {
         {/* 2. Wallet Card Component */}
         <WalletCard
           balance={dashboard?.walletBalance || 0}
+          cashCollected={dashboard?.cashEarnings || dashboard?.totalCash || dashboard?.cashCollected || 0}
           onWithdrawPress={() => navigation.navigate("Wallet", { initialTab: "Withdraw", balance: dashboard?.walletBalance })}
           onCardPress={() => navigation.navigate("Wallet", { initialTab: "Transactions", balance: dashboard?.walletBalance })}
+          onCashPress={() => navigation.navigate("Wallet", { initialTab: "Cash", balance: dashboard?.walletBalance })}
         />
 
         {/* 3. Core Stats Widgets */}
@@ -500,7 +543,7 @@ export default function ArtistDashboardScreen({ navigation }) {
             <Pressable
               key={index}
               style={styles.actionChip}
-              onPress={() => navigation.navigate(action.screen)}
+              onPress={() => navigation.navigate(action.screen, action.params)}
             >
               <Ionicons name={action.icon} size={16} color={Colors.primary} />
               <Text style={styles.actionLabel}>{action.label}</Text>
@@ -638,72 +681,6 @@ export default function ArtistDashboardScreen({ navigation }) {
           </View>
         )}
 
-        {/* 7. Active Actions (Pending Cash Confirmations) */}
-        {dashboard?.recentBookings?.filter(b => b.detailed_status === "AWAITING_CASH_CONFIRMATION" || b.booking_status === "AWAITING_CASH_CONFIRMATION").length > 0 && (
-          <View style={styles.cashSection}>
-            <Text style={styles.sectionTitle}>Pending Cash Confirmations</Text>
-            {dashboard.recentBookings.filter(b => b.detailed_status === "AWAITING_CASH_CONFIRMATION" || b.booking_status === "AWAITING_CASH_CONFIRMATION").map((item) => (
-              <View key={item.id} style={styles.cashConfirmCard}>
-                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 12 }}>
-                  <View style={[styles.cardIconBox, { backgroundColor: "#FFF0F4", marginRight: 12 }]}>
-                    <Ionicons name="card" size={20} color={Colors.primary} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.cashCustomer}>{item.user?.name || "Client"}</Text>
-                    <Text style={styles.cashService}>Awaiting cash settlement approval</Text>
-                  </View>
-                </View>
-                <View style={styles.itemMetaRow}>
-                  <Text style={styles.metaLabel}>Booking ID:</Text>
-                  <Text style={styles.metaValue}>#{item.booking_code}</Text>
-                </View>
-                <View style={styles.itemMetaRow}>
-                  <Text style={styles.metaLabel}>Cash Amount:</Text>
-                  <Text style={[styles.metaValue, { fontWeight: "800", color: Colors.primary }]}>₹{item.final_amount}</Text>
-                </View>
-
-                <View style={styles.cashActionsRow}>
-                  <Pressable
-                    style={[styles.cashBtn, { backgroundColor: Colors.success }]}
-                    onPress={async () => {
-                      try {
-                        setLoading(true);
-                        await confirmCashPayment(item.id);
-                        Alert.alert("Success", "Cash payment approved successfully!");
-                        fetchDashboardDetails();
-                      } catch (err) {
-                        Alert.alert("Error", err.message);
-                        setLoading(true);
-                        fetchDashboardDetails();
-                      }
-                    }}
-                  >
-                    <Text style={styles.cashBtnText}>Approve Payment</Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.cashBtn, { backgroundColor: Colors.error }]}
-                    onPress={async () => {
-                      try {
-                        setLoading(true);
-                        await rejectCashPayment(item.id);
-                        Alert.alert("Success", "Cash payment rejected.");
-                        fetchDashboardDetails();
-                      } catch (err) {
-                        Alert.alert("Error", err.message);
-                        setLoading(true);
-                        fetchDashboardDetails();
-                      }
-                    }}
-                  >
-                    <Text style={styles.cashBtnText}>Reject</Text>
-                  </Pressable>
-                </View>
-              </View>
-            ))}
-          </View>
-        )}
-
-
         {/* 8. Recent Bookings List */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Recent Booking Jobs</Text>
@@ -822,9 +799,28 @@ const styles = StyleSheet.create({
   walletLabel: { fontSize: 12, color: Colors.white, opacity: 0.8 },
   walletSecureText: { fontSize: 9, color: Colors.white, opacity: 0.6, fontWeight: "600" },
   walletBody: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 14 },
-  walletBalance: { fontSize: 32, fontWeight: "800", color: Colors.white },
+  walletBalance: { fontSize: 30, fontWeight: "800", color: Colors.white },
+  walletSubText: { fontSize: 10, color: "rgba(255, 255, 255, 0.75)", marginTop: 2, fontWeight: "500" },
   walletBtn: { flexDirection: "row", alignItems: "center", backgroundColor: Colors.white, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, elevation: 1 },
   walletBtnText: { color: Colors.primary, fontWeight: "800", fontSize: 13 },
+  walletCashBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "rgba(0, 0, 0, 0.22)",
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)"
+  },
+  walletCashLeft: { flexDirection: "row", alignItems: "center", flex: 1, marginRight: 10 },
+  walletCashIconWrap: { width: 30, height: 30, borderRadius: 8, backgroundColor: "rgba(5, 150, 105, 0.2)", justifyContent: "center", alignItems: "center", marginRight: 10 },
+  walletCashTitle: { fontSize: 12, fontWeight: "700", color: Colors.white },
+  walletCashSubtitle: { fontSize: 9, color: "rgba(255, 255, 255, 0.7)", marginTop: 1 },
+  walletCashAmount: { fontSize: 15, fontWeight: "800", color: "#6EE7B7" },
+  walletCashViewText: { fontSize: 9, color: "rgba(255, 255, 255, 0.6)", fontWeight: "600", marginTop: 2 },
 
   // Section Styles
   sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 10, paddingHorizontal: 20 },

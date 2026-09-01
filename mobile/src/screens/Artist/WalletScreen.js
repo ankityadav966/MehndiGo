@@ -35,10 +35,11 @@ export default function WalletScreen({ route, navigation }) {
   const [balance, setBalance] = useState(initialPassedBalance);
   const [walletData, setWalletData] = useState(route?.params?.wallet || null);
   const [transactions, setTransactions] = useState([]);
+  const [cashEntries, setCashEntries] = useState([]);
   const [withdraws, setWithdraws] = useState([]);
   const [bankAccount, setBankAccount] = useState(null);
 
-  // Default to Transactions so data shows immediately on first load
+  // Default to Transactions or route param
   const [activeTab, setActiveTab] = useState(route?.params?.initialTab || "Transactions");
 
   useEffect(() => {
@@ -87,6 +88,7 @@ export default function WalletScreen({ route, navigation }) {
       let wObj = null;
       if (walletRes.status === "fulfilled" && walletRes.value) {
         wObj = walletRes.value?.data || walletRes.value;
+        console.log("=== WALLET DATA ===", JSON.stringify(wObj, null, 2));
         if (wObj && typeof wObj === "object") {
           setWalletData(wObj);
           const avBal = Number(
@@ -95,30 +97,69 @@ export default function WalletScreen({ route, navigation }) {
               : (wObj.balance || wObj.availableBalance || 0)
           );
           setBalance(avBal);
+
+          // Extract dedicated cash collection entries
+          if (Array.isArray(wObj.cash_entries || wObj.cashEntries)) {
+            setCashEntries(wObj.cash_entries || wObj.cashEntries);
+          }
         }
       }
 
       // Extract transaction history from historyRes OR wallet response wObj.transactions
       let txList = [];
       if (historyRes.status === "fulfilled" && historyRes.value) {
-        const hVal = historyRes.value?.data || historyRes.value;
-        if (Array.isArray(hVal)) {
-          txList = hVal;
-        }
+        txList = historyRes.value?.data || historyRes.value || [];
+        console.log("=== TRANSACTIONS DATA ===", JSON.stringify(txList, null, 2));
       }
       if (txList.length === 0 && Array.isArray(wObj?.transactions)) {
         txList = wObj.transactions;
       }
       
-      // Filter out cash payments and zero-amount entries because Cash has no wallet balance / withdrawal history
+      // Filter out cash payments and withdrawals/debits from online wallet ledger
       const onlineTxList = (txList || []).filter((tx) => {
         const rawType = String(tx.type || tx.transaction_type || "").toUpperCase();
         const desc = String(tx.description || "").toLowerCase();
-        const isCash = rawType === "CASH" || rawType === "CASH_COLLECTED" || desc.includes("cash in hand") || desc.includes("cash collected");
+        const isCash = tx.is_cash || rawType === "CASH" || rawType === "CASH_COLLECTED" || desc.includes("cash") || desc.includes("in hand");
+        const isDebit = rawType === "DEBIT" || rawType === "WITHDRAWAL" || desc.includes("withdrawal") || desc.includes("payout");
         const amt = Number(tx.amount || 0);
-        return !isCash && amt > 0;
+        return !isCash && !isDebit && amt > 0;
       });
       setTransactions(onlineTxList);
+
+      // Extract any cash transactions in txList if cashEntries is still empty
+      if ((!wObj?.cash_entries && !wObj?.cashEntries) || (wObj?.cash_entries?.length === 0 && wObj?.cashEntries?.length === 0)) {
+        const fallbackCash = (txList || []).filter(tx => {
+          const rawType = String(tx.type || tx.transaction_type || "").toUpperCase();
+          const desc = String(tx.description || "").toLowerCase();
+          return tx.is_cash || rawType === "CASH" || rawType === "CASH_COLLECTED" || desc.includes("cash") || desc.includes("in hand");
+        });
+        if (fallbackCash.length > 0) {
+          // Deduplicate by booking_id or id
+          const uniqueFallback = [];
+          const seen = new Set();
+          fallbackCash.forEach(tx => {
+            const key = tx.booking_id || tx.booking_number || tx.id;
+            if (!seen.has(key)) {
+              seen.add(key);
+              uniqueFallback.push(tx);
+            }
+          });
+          setCashEntries(uniqueFallback);
+        }
+      } else {
+         // Deduplicate wObj cash entries as well
+         const existingCash = wObj?.cash_entries || wObj?.cashEntries || [];
+         const uniqueCash = [];
+         const seen = new Set();
+         existingCash.forEach(tx => {
+            const key = tx.booking_id || tx.booking_number || tx.id;
+            if (!seen.has(key)) {
+               seen.add(key);
+               uniqueCash.push(tx);
+            }
+         });
+         setCashEntries(uniqueCash);
+      }
 
       // Extract withdrawal requests
       if (requestsRes.status === "fulfilled" && requestsRes.value) {
@@ -148,11 +189,11 @@ export default function WalletScreen({ route, navigation }) {
       setRefreshing(false);
       setLoading(false);
     }
-  }, [refreshing, walletData]);
+  }, []);
 
   useEffect(() => {
     loadWalletDataset();
-  }, []);
+  }, [loadWalletDataset]);
 
   const handleRefresh = useCallback(() => {
     setRefreshing(true);
@@ -162,7 +203,7 @@ export default function WalletScreen({ route, navigation }) {
   // Initial & Focus load + Back handling
   useFocusEffect(
     useCallback(() => {
-      loadWalletDataset();
+      loadWalletDataset(true);
       const { BackHandler } = require("react-native");
 
       const onBackPress = () => {
@@ -286,7 +327,7 @@ export default function WalletScreen({ route, navigation }) {
 
         <View style={styles.cardInfo}>
           <Text style={styles.cardTitle} numberOfLines={1}>
-            {item.description || (isCredit ? "Online Booking Payment" : "Payout Withdrawal")}
+            {(item.description || "").replace(/,?\s*Commission:\s*₹[\d,.]+/i, "").replace(/\(\s*Online Paid[^)]+deducted as Commission\s*\)/i, "").trim() || (isCredit ? "Online Booking Payment" : "Payout Withdrawal")}
           </Text>
           <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
             <View style={{ backgroundColor: "#E0F2FE", paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4, marginRight: 6 }}>
@@ -299,6 +340,51 @@ export default function WalletScreen({ route, navigation }) {
         <Text style={[styles.cardAmount, { color: amountColor }]}>
           {sign}₹{Number(item.amount || 0).toLocaleString("en-IN")}
         </Text>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderCashEntry = ({ item }) => {
+    let displayAmount = Number(item.amount || 0);
+    if (displayAmount === 0) {
+      const match = (item.description || "").match(/₹([\d.,]+)/);
+      if (match && match[1]) {
+        displayAmount = parseFloat(match[1].replace(/,/g, ''));
+      }
+    }
+
+    return (
+      <TouchableOpacity 
+        style={styles.cardItem} 
+        activeOpacity={0.7}
+        onPress={() => setSelectedItem({ ...item, is_cash_entry: true })}
+      >
+        <View style={[styles.iconCircle, { backgroundColor: "#ECFDF5" }]}>
+          <Ionicons
+            name="cash"
+            size={20}
+            color="#059669"
+          />
+        </View>
+
+        <View style={styles.cardInfo}>
+          <Text style={styles.cardTitle} numberOfLines={1}>
+            {item.description || (item.booking_number ? `Booking #${item.booking_number}` : "Cash Collected in Hand")}
+          </Text>
+          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
+            <View style={{ backgroundColor: "#D1FAE5", paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4, marginRight: 6 }}>
+              <Text style={{ fontSize: 9, color: "#047857", fontWeight: "800" }}>CASH IN-HAND</Text>
+            </View>
+            <Text style={styles.cardSubtitle}>{moment(item.created_at || item.createdAt || item.date || new Date()).format("DD MMM YYYY, hh:mm A")}</Text>
+          </View>
+        </View>
+
+        <View style={{ alignItems: "flex-end" }}>
+          <Text style={[styles.cardAmount, { color: "#059669" }]}>
+            +₹{displayAmount.toLocaleString("en-IN")}
+          </Text>
+          <Text style={{ fontSize: 9, color: Colors.textTertiary, fontWeight: "600", marginTop: 2 }}>Direct Payout</Text>
+        </View>
       </TouchableOpacity>
     );
   };
@@ -354,9 +440,9 @@ export default function WalletScreen({ route, navigation }) {
       </View>
 
       <FlatList
-        data={activeTab === "Transactions" ? transactions : withdraws}
-        renderItem={activeTab === "Transactions" ? renderTransaction : renderWithdrawItem}
-        keyExtractor={(item) => String(item.id)}
+        data={activeTab === "Transactions" ? transactions : (activeTab === "Cash" ? cashEntries : withdraws)}
+        renderItem={activeTab === "Transactions" ? renderTransaction : (activeTab === "Cash" ? renderCashEntry : renderWithdrawItem)}
+        keyExtractor={(item) => String(item.id || item.reference_id || Math.random())}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[Colors.primary]} />
         }
@@ -364,14 +450,17 @@ export default function WalletScreen({ route, navigation }) {
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={
           <>
-            {/* Hero Earnings Card */}
+            {/* Hero Earnings Card - ONLY ONLINE WITHDRAWABLE AMOUNT */}
             <View style={styles.heroCard}>
               <View style={styles.heroTopRow}>
                 <View style={{ flexDirection: "row", alignItems: "center" }}>
                   <View style={styles.walletBadgeIcon}>
-                    <Ionicons name="wallet-outline" size={18} color="#FFFFFF" />
+                    <Ionicons name="card-outline" size={18} color="#FFFFFF" />
                   </View>
-                  <Text style={styles.heroLabel}>Available Payout Balance</Text>
+                  <View style={{ marginLeft: 8 }}>
+                    <Text style={styles.heroLabel}>Online Withdrawable Balance</Text>
+                    <Text style={{ fontSize: 10, color: "rgba(255,255,255,0.75)", fontWeight: "600" }}>Online Payments Only</Text>
+                  </View>
                 </View>
                 <TouchableOpacity onPress={() => setShowBalance(!showBalance)}>
                   <Ionicons name={showBalance ? "eye-outline" : "eye-off-outline"} size={20} color="rgba(255,255,255,0.85)" />
@@ -379,7 +468,11 @@ export default function WalletScreen({ route, navigation }) {
               </View>
 
               <Text style={styles.heroBalance}>
-                {showBalance ? `₹${Number(balance).toLocaleString("en-IN")}` : "••••••••"}
+                {showBalance ? `₹${Number(
+                  (Number((walletData?.total_earnings || walletData?.lifetime_earnings || 0) - (walletData?.cash_earnings !== undefined ? walletData.cash_earnings : (walletData?.cashEarnings || cashEntries.reduce((s, i) => s + Number(i.amount || 0), 0)))))
+                  + 
+                  Number(walletData?.escrow_balance || walletData?.pending_settlement || walletData?.pending_balance || 0)
+                ).toLocaleString("en-IN")}` : "••••••••"}
               </Text>
               
               <Text style={styles.heroSubtitle}>
@@ -425,9 +518,23 @@ export default function WalletScreen({ route, navigation }) {
                 <View style={styles.statIconBadge}>
                   <Ionicons name="trending-up" size={16} color={Colors.success} />
                 </View>
-                <Text style={styles.statMiniLabel}>Lifetime Earnings</Text>
+                <Text style={styles.statMiniLabel}>Online Total</Text>
                 <Text style={styles.statMiniValue}>₹{Number(walletData?.total_earnings || walletData?.lifetime_earnings || 0).toLocaleString("en-IN")}</Text>
               </View>
+
+              <TouchableOpacity 
+                activeOpacity={0.8}
+                onPress={() => setActiveTab("Cash")}
+                style={[styles.statMiniCard, { borderColor: "#10B981", backgroundColor: activeTab === "Cash" ? "#ECFDF5" : "#FFFFFF" }]}
+              >
+                <View style={[styles.statIconBadge, { backgroundColor: "#D1FAE5" }]}>
+                  <Ionicons name="cash" size={16} color="#059669" />
+                </View>
+                <Text style={[styles.statMiniLabel, { color: "#047857", fontWeight: "700" }]}>Cash In-Hand</Text>
+                <Text style={[styles.statMiniValue, { color: "#059669", fontWeight: "800" }]}>
+                  ₹{Number(walletData?.cash_earnings !== undefined ? walletData.cash_earnings : (walletData?.cashEarnings || cashEntries.reduce((s, i) => s + Number(i.amount || 0), 0))).toLocaleString("en-IN")}
+                </Text>
+              </TouchableOpacity>
 
               <View style={styles.statMiniCard}>
                 <View style={[styles.statIconBadge, { backgroundColor: "#FFFBEB" }]}>
@@ -441,20 +548,29 @@ export default function WalletScreen({ route, navigation }) {
             {/* Tabs Bar */}
             <View style={styles.tabContainer}>
               <TouchableOpacity
-                style={[styles.tabBtn, activeTab === "Withdraw" && styles.activeTabBtn]}
-                onPress={() => setActiveTab("Withdraw")}
-              >
-                <Text style={[styles.tabBtnText, activeTab === "Withdraw" && styles.activeTabBtnText]}>
-                  Payout Requests ({withdraws.length})
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
                 style={[styles.tabBtn, activeTab === "Transactions" && styles.activeTabBtn]}
                 onPress={() => setActiveTab("Transactions")}
               >
                 <Text style={[styles.tabBtnText, activeTab === "Transactions" && styles.activeTabBtnText]}>
-                  Ledger Logs ({transactions.length})
+                  Online ({transactions.length})
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.tabBtn, activeTab === "Cash" && styles.activeTabBtn]}
+                onPress={() => setActiveTab("Cash")}
+              >
+                <Text style={[styles.tabBtnText, activeTab === "Cash" && styles.activeTabBtnText]}>
+                  Cash ({cashEntries.length})
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.tabBtn, activeTab === "Withdraw" && styles.activeTabBtn]}
+                onPress={() => setActiveTab("Withdraw")}
+              >
+                <Text style={[styles.tabBtnText, activeTab === "Withdraw" && styles.activeTabBtnText]}>
+                  Payouts ({withdraws.length})
                 </Text>
               </TouchableOpacity>
             </View>
@@ -462,7 +578,9 @@ export default function WalletScreen({ route, navigation }) {
             {/* Section Heading */}
             <View style={styles.sectionHeaderRow}>
               <Text style={styles.sectionHeaderTitle}>
-                {activeTab === "Transactions" ? "Earnings & Settlement Ledger" : "Bank Transfer History"}
+                {activeTab === "Transactions"
+                  ? "Online Earnings & Settlement Ledger"
+                  : (activeTab === "Cash" ? "Cash Collected in Hand (Booking History)" : "Bank Transfer History")}
               </Text>
             </View>
           </>
@@ -475,9 +593,17 @@ export default function WalletScreen({ route, navigation }) {
             </View>
           ) : (
             <View style={styles.emptyState}>
-              <Ionicons name="receipt-outline" size={40} color={Colors.textTertiary} />
+              <Ionicons
+                name={activeTab === "Cash" ? "cash-outline" : (activeTab === "Transactions" ? "receipt-outline" : "paper-plane-outline")}
+                size={40}
+                color={Colors.textTertiary}
+              />
               <Text style={styles.emptyText}>
-                No {activeTab === "Transactions" ? "ledger entries" : "payout requests"} recorded yet.
+                {activeTab === "Transactions"
+                  ? "No online ledger transactions recorded yet."
+                  : (activeTab === "Cash"
+                    ? "No cash collected entries recorded yet."
+                    : "No payout requests recorded yet.")}
               </Text>
             </View>
           )
@@ -610,20 +736,33 @@ export default function WalletScreen({ route, navigation }) {
       <Modal visible={!!selectedItem} transparent animationType="fade">
         <View style={styles.modalBg}>
           <View style={styles.detailCard}>
-            <Text style={styles.detailTitle}>{selectedItem?.transaction_type || "Payout Request"}</Text>
-            <Text style={styles.detailAmount}>₹{Number(selectedItem?.amount || 0).toLocaleString("en-IN")}</Text>
+            <Text style={styles.detailTitle}>
+              {selectedItem?.is_cash_entry || selectedItem?.type === "cash_collected"
+                ? "Cash Collected (In-Hand)"
+                : (selectedItem?.transaction_type || "Payout Request")}
+            </Text>
+            <Text style={[styles.detailAmount, (selectedItem?.is_cash_entry || selectedItem?.type === "cash_collected") && { color: "#059669" }]}>
+              ₹{Number(selectedItem?.amount || 0) === 0 && (selectedItem?.is_cash_entry || selectedItem?.type === "cash_collected")
+                 ? (selectedItem?.description?.match(/₹([\d.,]+)/) ? parseFloat(selectedItem.description.match(/₹([\d.,]+)/)[1].replace(/,/g, '')) : 0).toLocaleString("en-IN")
+                 : Number(selectedItem?.amount || 0).toLocaleString("en-IN")
+               }
+            </Text>
 
             <View style={styles.detailDivider} />
 
             <View style={styles.detailRow}>
               <Text style={styles.detailKey}>Payment Channel</Text>
-              <Text style={[styles.detailVal, { color: "#0284C7", fontWeight: "700" }]}>
-                {selectedItem?.transaction_type === "WITHDRAWAL" || selectedItem?.status === "PENDING" ? "Bank Transfer Payout" : "Online (Escrow Settled)"}
+              <Text style={[styles.detailVal, { color: selectedItem?.is_cash_entry || selectedItem?.type === "cash_collected" ? "#059669" : "#0284C7", fontWeight: "700", flexShrink: 1, textAlign: "right", paddingLeft: 10 }]}>
+                {selectedItem?.is_cash_entry || selectedItem?.type === "cash_collected"
+                  ? "Cash In-Hand"
+                  : (selectedItem?.transaction_type === "WITHDRAWAL" || selectedItem?.status === "PENDING" ? "Bank Transfer" : "Online Escrow")}
               </Text>
             </View>
             <View style={styles.detailRow}>
               <Text style={styles.detailKey}>Status</Text>
-              <Text style={[styles.detailVal, { color: Colors.primary, fontWeight: "700" }]}>{selectedItem?.status || "SUCCESS"}</Text>
+              <Text style={[styles.detailVal, { color: selectedItem?.is_cash_entry || selectedItem?.type === "cash_collected" ? "#059669" : Colors.primary, fontWeight: "700" }]}>
+                {selectedItem?.is_cash_entry || selectedItem?.type === "cash_collected" ? "COLLECTED IN-HAND" : (selectedItem?.status || "SUCCESS")}
+              </Text>
             </View>
             <View style={styles.detailRow}>
               <Text style={styles.detailKey}>Date & Time</Text>
@@ -633,6 +772,20 @@ export default function WalletScreen({ route, navigation }) {
               <Text style={styles.detailKey}>Reference ID</Text>
               <Text style={styles.detailVal}>REF-{selectedItem?.id || selectedItem?.reference_id || Date.now()}</Text>
             </View>
+
+            {selectedItem?.customer_name && (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailKey}>Customer</Text>
+                <Text style={styles.detailVal}>{selectedItem.customer_name}</Text>
+              </View>
+            )}
+
+            {selectedItem?.service_title && (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailKey}>Service</Text>
+                <Text style={styles.detailVal}>{selectedItem.service_title}</Text>
+              </View>
+            )}
 
             <TouchableOpacity style={styles.closeDetailBtn} onPress={() => setSelectedItem(null)}>
               <Text style={styles.closeDetailText}>Close</Text>
@@ -705,11 +858,11 @@ const styles = StyleSheet.create({
   bankManageText: { color: "#FFFFFF", fontWeight: "700", fontSize: 13, marginLeft: 6 },
 
   // Stats Grid
-  statsRow: { flexDirection: "row", paddingHorizontal: 16, gap: 12, marginBottom: 14 },
-  statMiniCard: { flex: 1, backgroundColor: Colors.white, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: "#EEF2F6", elevation: 1 },
-  statIconBadge: { width: 28, height: 28, borderRadius: 14, backgroundColor: "#ECFDF5", justifyContent: "center", alignItems: "center", marginBottom: 8 },
-  statMiniLabel: { fontSize: 11, color: Colors.textSecondary, fontWeight: "600", marginBottom: 2 },
-  statMiniValue: { fontSize: 16, fontWeight: "800", color: Colors.text },
+  statsRow: { flexDirection: "row", paddingHorizontal: 16, gap: 8, marginBottom: 14 },
+  statMiniCard: { flex: 1, backgroundColor: Colors.white, borderRadius: 14, padding: 10, borderWidth: 1, borderColor: "#EEF2F6", elevation: 1 },
+  statIconBadge: { width: 26, height: 26, borderRadius: 13, backgroundColor: "#ECFDF5", justifyContent: "center", alignItems: "center", marginBottom: 6 },
+  statMiniLabel: { fontSize: 10, color: Colors.textSecondary, fontWeight: "600", marginBottom: 2 },
+  statMiniValue: { fontSize: 13, fontWeight: "800", color: Colors.text },
 
   // Tabs Bar
   tabContainer: { flexDirection: "row", marginHorizontal: 16, backgroundColor: Colors.white, borderRadius: 14, padding: 4, borderWidth: 1, borderColor: "#EEF2F6", marginBottom: 12 },

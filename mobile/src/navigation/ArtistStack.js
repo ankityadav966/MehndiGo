@@ -47,6 +47,8 @@ export default function ArtistStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="ArtistTabs" component={BottomTab} initialParams={{ role: "artist" }} />
+      <Stack.Screen name="BookingRequests" component={BookingRequestsScreen} />
+      <Stack.Screen name="Wallet" component={WalletScreen} />
       <Stack.Screen name="ChatList" component={ChatListScreen} />
       <Stack.Screen name="ChatRoom" component={ChatRoomScreen} />
       <Stack.Screen name="LeadDetails" component={LeadDetailsScreen} />
@@ -58,19 +60,16 @@ export default function ArtistStack() {
       <Stack.Screen name="ArtistProfile" component={ArtistProfileScreen} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
       <Stack.Screen name="Kyc" component={KycScreen} />
-      <Stack.Screen name="Wallet" component={WalletScreen} />
       <Stack.Screen name="Transactions" component={TransactionsScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
       <Stack.Screen name="WithdrawEarnings" component={WithdrawEarningsScreen} />
       <Stack.Screen name="PublicProfile" component={PublicProfileScreen} />
-      <Stack.Screen name="Profile" component={ProfileScreen} />
       <Stack.Screen name="NotificationCenter" component={NotificationCenterScreen} />
       <Stack.Screen name="NotificationDetails" component={NotificationDetailsScreen} />
       <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
       <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} />
       <Stack.Screen name="TermsConditions" component={TermsConditionsScreen} />
       <Stack.Screen name="DeleteAccount" component={DeleteAccountScreen} />
-      <Stack.Screen name="BookingRequests" component={BookingRequestsScreen} />
       <Stack.Screen name="Reviews" component={ReviewsScreen} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} />
       <Stack.Screen name="Support" component={SupportScreen} />

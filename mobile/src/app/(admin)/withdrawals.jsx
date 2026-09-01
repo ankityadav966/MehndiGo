@@ -18,7 +18,7 @@ import * as Clipboard from 'expo-clipboard';
 import { useAuth } from '../../context/AuthContext';
 import { getGlobalStyles } from '../../theme/globalStyles';
 import { Colors } from '../../theme/colors';
-import { adminService } from '../../services/api';
+import { adminService } from '../../services/admin';
 import {
   Check,
   X,

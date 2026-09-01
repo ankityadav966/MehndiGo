@@ -46,6 +46,32 @@ export function createArtistDeepLink(artistId, useScheme = false) {
     : `${Config.PRIMARY_DOMAIN}/artist/${cleanId}`;
 }
 
+export function createArtistServiceDeepLink(artistId, serviceId, useScheme = false) {
+  if (!artistId || !serviceId) return getPlayStoreFallbackUrl();
+  const cleanArtistId = encodeURIComponent(String(artistId).trim());
+  const cleanServiceId = encodeURIComponent(String(serviceId).trim());
+  return useScheme
+    ? `${Config.APP_SCHEME}://artist/${cleanArtistId}/service/${cleanServiceId}`
+    : `${Config.PRIMARY_DOMAIN}/artist/${cleanArtistId}/service/${cleanServiceId}`;
+}
+
+export function createDesignDeepLink(artistId, designId, useScheme = false) {
+  if (!artistId || !designId) return getPlayStoreFallbackUrl();
+  const cleanArtistId = encodeURIComponent(String(artistId).trim());
+  const cleanDesignId = encodeURIComponent(String(designId).trim());
+  return useScheme
+    ? `${Config.APP_SCHEME}://artist/${cleanArtistId}/design/${cleanDesignId}`
+    : `${Config.PRIMARY_DOMAIN}/artist/${cleanArtistId}/design/${cleanDesignId}`;
+}
+
+export function createCustomDesignDeepLink(artistId, useScheme = false) {
+  if (!artistId) return getPlayStoreFallbackUrl();
+  const cleanArtistId = encodeURIComponent(String(artistId).trim());
+  return useScheme
+    ? `${Config.APP_SCHEME}://artist/${cleanArtistId}/custom-design`
+    : `${Config.PRIMARY_DOMAIN}/artist/${cleanArtistId}/custom-design`;
+}
+
 export function createPortfolioDeepLink(artistId, useScheme = false) {
   if (!artistId) return getPlayStoreFallbackUrl();
   const cleanId = encodeURIComponent(String(artistId).trim());
@@ -252,18 +278,59 @@ export function resolveDeepLink(rawUrl) {
     };
   }
 
-  // 3. Artist Profile (/artist/:artistId or /artists/:artistId)
+  // 3. Artist Profile & Sub-resources
   if ((segments[0] === "artist" || segments[0] === "artists") && segments[1]) {
     const artistId = segments[1];
     if (!isValidEntityId(artistId)) {
       return { isValid: false, type: "ARTIST", error: "Invalid artist ID" };
     }
-    const cleanId = isNaN(Number(artistId)) ? artistId : Number(artistId);
+    const cleanArtistId = isNaN(Number(artistId)) ? artistId : Number(artistId);
+
+    // 3a. Artist Service Catalog (/artist/:artistId/service/:serviceId)
+    if ((segments[2] === "service" || segments[2] === "services") && segments[3]) {
+      const serviceId = segments[3];
+      const cleanServiceId = isNaN(Number(serviceId)) ? serviceId : Number(serviceId);
+      return {
+        isValid: true,
+        type: "ARTIST_SERVICE_CATALOG",
+        screen: "ArtistServiceCatalog",
+        params: { artistId: cleanArtistId, serviceId: cleanServiceId },
+        requiresAuth: false,
+        rawUrl
+      };
+    }
+
+    // 3b. Design Details (/artist/:artistId/design/:designId)
+    if ((segments[2] === "design" || segments[2] === "designs") && segments[3]) {
+      const designId = segments[3];
+      const cleanDesignId = isNaN(Number(designId)) ? designId : Number(designId);
+      return {
+        isValid: true,
+        type: "DESIGN_DETAILS",
+        screen: "DesignDetails",
+        params: { artistId: cleanArtistId, designId: cleanDesignId },
+        requiresAuth: false,
+        rawUrl
+      };
+    }
+
+    // 3c. Custom Design Request (/artist/:artistId/custom-design)
+    if (segments[2] === "custom-design" || segments[2] === "custom") {
+      return {
+        isValid: true,
+        type: "CUSTOM_DESIGN",
+        screen: "CustomDesignRequest",
+        params: { artistId: cleanArtistId },
+        requiresAuth: false,
+        rawUrl
+      };
+    }
+
     return {
       isValid: true,
       type: "ARTIST",
       screen: "ArtistProfile",
-      params: { artistId: cleanId },
+      params: { artistId: cleanArtistId },
       requiresAuth: false,
       rawUrl
     };
@@ -973,10 +1040,17 @@ export const linkingConfig = {
               Profile: "artist/profile",
             },
           },
+          ArtistProfile: "artist/profile-view/:artistId",
+          PublicProfile: "artist/public/:artistId",
           BookingDetails: "artist/booking/:id",
           LeadDetails: "artist/lead/:id",
           Notifications: "artist/notifications",
+          NotificationCenter: "artist/notifications-center",
           NotificationDetails: "artist/notification/:id",
+          Wallet: "artist/my-wallet",
+          Support: "artist/help-support",
+          SupportTicketDetails: "artist/support/:ticketId",
+          Settings: "artist/my-settings",
           WithdrawalSuccess: "artist/withdrawal/success",
           WithdrawalFailed: "artist/withdrawal/failed",
           ReuploadDocuments: "artist/documents/reupload",

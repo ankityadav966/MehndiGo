@@ -46,10 +46,12 @@ class ArtistService {
 
     // Aadhaar number validation and collision check if provided
     if (data.aadhaar_number) {
-      const cleanAadhaar = String(data.aadhaar_number).replace(/\s/g, "");
-      if (!/^\d{12}$/.test(cleanAadhaar)) {
-        throw new AppError("Aadhaar number must be exactly 12 numeric digits", 400);
+      const { validateAadhaarNumber } = require("../utils/aadhaar.validator");
+      const aadhaarValidation = validateAadhaarNumber(data.aadhaar_number);
+      if (!aadhaarValidation.valid) {
+        throw new AppError(aadhaarValidation.message, 400);
       }
+      const cleanAadhaar = aadhaarValidation.cleanNumber;
       const existingAadhaar = await db.ArtistProfile.findOne({
         where: {
           aadhaar_number: cleanAadhaar,
@@ -60,6 +62,17 @@ class ArtistService {
         throw new AppError("This Aadhaar number is already registered with another artist account.", 400);
       }
       data.aadhaar_number = cleanAadhaar;
+    }
+
+    // Aadhaar front & back distinct photos validation
+    if (data.aadhaar_front || data.aadhaar_back) {
+      const { validateAadhaarPhotos } = require("../utils/aadhaar.validator");
+      if (data.aadhaar_front && data.aadhaar_back) {
+        const photoValidation = validateAadhaarPhotos(data.aadhaar_front, data.aadhaar_back);
+        if (!photoValidation.valid) {
+          throw new AppError(photoValidation.message, 400);
+        }
+      }
     }
 
     // PAN number validation and collision check if provided
@@ -107,7 +120,7 @@ class ArtistService {
       const updatePayload = {
         bio: data.bio !== undefined ? data.bio : existingProfile.bio,
         experience_years: data.experience_years !== undefined ? Number(data.experience_years) : existingProfile.experience_years,
-        starting_price: data.starting_price !== undefined ? Number(data.starting_price) : (existingProfile.starting_price || 1500),
+        starting_price: data.starting_price !== undefined ? Number(data.starting_price) : (existingProfile.starting_price || 0),
         home_service: data.home_service !== undefined ? Boolean(data.home_service) : existingProfile.home_service,
         salon_service: data.salon_service !== undefined ? Boolean(data.salon_service) : existingProfile.salon_service,
         location: data.location !== undefined ? data.location : existingProfile.location,
@@ -137,8 +150,8 @@ class ArtistService {
             specialization_name: "Bridal & Party Mehndi",
             category: "Bridal Mehndi",
             description: data.bio || "Custom handcrafted mehndi design service",
-            minimum_price: Number(data.starting_price) || 1500,
-            maximum_price: (Number(data.starting_price) || 1500) * 3,
+            minimum_price: Number(data.starting_price) || 0,
+            maximum_price: (Number(data.starting_price) || 0) * 3,
             duration_minutes: 120,
             is_home_service: Boolean(data.home_service !== false),
             is_salon_service: Boolean(data.salon_service),
@@ -154,7 +167,7 @@ class ArtistService {
 
     const profile = await ArtistProfileRepositor.createProfile({
       ...data,
-      starting_price: Number(data.starting_price) || 1500,
+      starting_price: Number(data.starting_price) || 0,
       verification_status: "PENDING",
       is_available: false,
       rejection_reason: null,
@@ -168,8 +181,8 @@ class ArtistService {
         specialization_name: "Bridal & Party Mehndi",
         category: "Bridal Mehndi",
         description: data.bio || "Custom handcrafted mehndi design service",
-        minimum_price: Number(data.starting_price) || 1500,
-        maximum_price: (Number(data.starting_price) || 1500) * 3,
+        minimum_price: Number(data.starting_price) || 0,
+        maximum_price: (Number(data.starting_price) || 0) * 3,
         duration_minutes: 120,
         is_home_service: Boolean(data.home_service !== false),
         is_salon_service: Boolean(data.salon_service),
@@ -257,11 +270,24 @@ class ArtistService {
     if (data.aadhaar_front || data.aadhaar_back || data.aadhaar_number || data.pan_number) {
       if (data.aadhaar_front) allowedUpdates.aadhaar_front = data.aadhaar_front;
       if (data.aadhaar_back) allowedUpdates.aadhaar_back = data.aadhaar_back;
-      if (data.aadhaar_number) {
-        const cleanAadhaar = String(data.aadhaar_number).replace(/\s/g, "");
-        if (!/^\d{12}$/.test(cleanAadhaar)) {
-          throw new AppError("Aadhaar number must be exactly 12 numeric digits", 400);
+      
+      const frontToCheck = data.aadhaar_front || artist.aadhaar_front;
+      const backToCheck = data.aadhaar_back || artist.aadhaar_back;
+      if (frontToCheck && backToCheck) {
+        const { validateAadhaarPhotos } = require("../utils/aadhaar.validator");
+        const photoValidation = validateAadhaarPhotos(frontToCheck, backToCheck);
+        if (!photoValidation.valid) {
+          throw new AppError(photoValidation.message, 400);
         }
+      }
+
+      if (data.aadhaar_number) {
+        const { validateAadhaarNumber } = require("../utils/aadhaar.validator");
+        const aadhaarValidation = validateAadhaarNumber(data.aadhaar_number);
+        if (!aadhaarValidation.valid) {
+          throw new AppError(aadhaarValidation.message, 400);
+        }
+        const cleanAadhaar = aadhaarValidation.cleanNumber;
         const existingAadhaar = await db.ArtistProfile.findOne({
           where: {
             aadhaar_number: cleanAadhaar,
@@ -2709,7 +2735,7 @@ async createReview(data) {
         address: b.address,
         booking_date: b.reschedule_date || b.booking_date || b.createdAt,
         booking_time: b.reschedule_time || b.booking_time || "10:00 AM",
-        price: b.total_price || b.total_amount || 1500,
+        price: b.total_price || b.total_amount || 0,
         distance,
         status: getLeadStatus(b),
         detailed_status: b.detailed_status,

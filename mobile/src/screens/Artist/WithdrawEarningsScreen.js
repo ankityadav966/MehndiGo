@@ -352,7 +352,7 @@ export default function WithdrawEarningsScreen({ navigation }) {
               <View style={[styles.inputWrapper, !isWithdrawalOpen && { backgroundColor: "#F1F5F9", borderColor: "#CBD5E1" }]}>
                 <Text style={[styles.currencyPrefix, !isWithdrawalOpen && { color: "#94A3B8" }]}>₹</Text>
                 <TextInput
-                  placeholder={isWithdrawalOpen ? "e.g. 1500" : "Withdrawals open Wed & Sat"}
+                  placeholder={isWithdrawalOpen ? "e.g. 500" : "Withdrawals open Wed & Sat"}
                   placeholderTextColor={Colors.textTertiary}
                   keyboardType="numeric"
                   value={amount}
@@ -526,7 +526,7 @@ export default function WithdrawEarningsScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F8FAFC" },
   center: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#F8FAFC" },
-  scrollContent: { paddingBottom: 30 },
+  scrollContent: { paddingBottom: 140 },
   header: {
     flexDirection: "row",
     alignItems: "center",

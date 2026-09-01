@@ -108,6 +108,13 @@ class AuthService {
       throw new AppError("Email address is already registered. Please log in.", 400);
     }
 
+    if (cleanPhone) {
+      const existingPhoneUser = await UserRepositor.getOne({ phone: cleanPhone });
+      if (existingPhoneUser && existingPhoneUser.is_verified) {
+        throw new AppError("Phone number is already registered. Please log in.", 400);
+      }
+    }
+
     const otp = String(data.otp || data.code || crypto.randomInt(100000, 1000000)).trim();
 
     // Rate Limit check

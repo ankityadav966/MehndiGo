@@ -96,18 +96,18 @@ export default function PANVerificationScreen({ navigation }) {
           </View>
         ) : null}
       </ScrollView>
-      </KeyboardAvoidingView>
 
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 20) }]}>
         <CustomButton title="Continue" onPress={handleContinue} />
       </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#FFFFFF" },
-  container: { paddingHorizontal: 20, paddingTop: 15, paddingBottom: 100 },
+  container: { paddingHorizontal: 20, paddingTop: 15, paddingBottom: 120 },
   heading: { fontSize: 22, fontWeight: "700", color: "#1F2937", marginBottom: 6 },
   subHeading: { fontSize: 13, color: "#6B7280", marginBottom: 20 },
   inputLabel: { fontSize: 13, fontWeight: "600", color: "#374151", marginBottom: 6 },
@@ -141,5 +141,5 @@ const styles = StyleSheet.create({
   changeBtnText: { color: Colors.primary || "#FF4D6D", fontSize: 13, fontWeight: "600" },
   errorBox: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 14, padding: 12, backgroundColor: "#FEF2F2", borderRadius: 10 },
   errorText: { color: "#EF4444", fontSize: 13, flex: 1 },
-  footer: { position: "absolute", bottom: 0, left: 0, right: 0, paddingHorizontal: 20, paddingBottom: 25, paddingTop: 10, backgroundColor: "#FFFFFF" },
+  footer: { paddingHorizontal: 20, paddingTop: 10, backgroundColor: "#FFFFFF", borderTopWidth: 1, borderTopColor: "#F3F4F6" },
 });

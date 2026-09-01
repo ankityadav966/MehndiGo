@@ -57,6 +57,16 @@ module.exports = (
           as: "reviews",
         }
       );
+
+      if (models.CustomDesignRequest) {
+        ArtistProfile.hasMany(
+          models.CustomDesignRequest,
+          {
+            foreignKey: "artist_id",
+            as: "custom_design_requests",
+          }
+        );
+      }
     }
   }
 

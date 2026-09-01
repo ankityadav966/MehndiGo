@@ -192,16 +192,43 @@ export default function MyBookingsScreen({ navigation }) {
       >
         {/* Top Header */}
         <View style={styles.cardTopRow}>
-          <Image
-            source={resolveBookingImage(item)}
-            onError={() => setImageErrors((prev) => ({ ...prev, [item.id]: true }))}
-            style={styles.artistAvatar}
-          />
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => {
+              const targetArtistId = item.artist_id || item.artist?.id || item.artist?.user_id;
+              if (targetArtistId) {
+                navigation.navigate("ArtistProfile", {
+                  artistId: targetArtistId,
+                  from: "MyBookings"
+                });
+              }
+            }}
+          >
+            <Image
+              source={resolveBookingImage(item)}
+              onError={() => setImageErrors((prev) => ({ ...prev, [item.id]: true }))}
+              style={styles.artistAvatar}
+            />
+          </TouchableOpacity>
           <View style={styles.cardHeaderInfo}>
             <View style={styles.titleStatusRow}>
-              <Text numberOfLines={1} style={[styles.bookingTitle, { color: currentTextColor }]}>
-                {artistName}
-              </Text>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                style={{ flex: 1 }}
+                onPress={() => {
+                  const targetArtistId = item.artist_id || item.artist?.id || item.artist?.user_id;
+                  if (targetArtistId) {
+                    navigation.navigate("ArtistProfile", {
+                      artistId: targetArtistId,
+                      from: "MyBookings"
+                    });
+                  }
+                }}
+              >
+                <Text numberOfLines={1} style={[styles.bookingTitle, { color: currentTextColor }]}>
+                  {artistName}
+                </Text>
+              </TouchableOpacity>
               <View style={[styles.statusBadge, { backgroundColor: statusConfig.bg }]}>
                 <Text style={[styles.statusText, { color: statusConfig.text }]}>{statusConfig.label}</Text>
               </View>

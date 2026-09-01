@@ -16,8 +16,8 @@ import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import Colors from "../../constants/Colors";
-import { getSupportTicketDetails, replySupportTicket, closeSupportTicket, reopenSupportTicket, markTicketAsRead, getCustomerNotifications } from "../../services/customer";
-import { uploadPortfolioMedia, getArtistNotificationsData } from "../../services/artist";
+import { getSupportTicketDetails, replySupportTicket, closeSupportTicket, reopenSupportTicket, markTicketAsRead } from "../../services/customer";
+import { uploadPortfolioMedia } from "../../services/artist";
 import { TICKET_STATUSES } from "../../constants/SupportCategories";
 
 export default function SupportTicketDetailsScreen({ route, navigation }) {
@@ -36,106 +36,35 @@ export default function SupportTicketDetailsScreen({ route, navigation }) {
   const loadTicketData = async (isBackground = false) => {
     if (!isBackground) setLoading(true);
     try {
-      const [ticketData, custNotifs, artNotifs] = await Promise.all([
-        (route.params && route.params.ticket) ? Promise.resolve(route.params.ticket) : getSupportTicketDetails(ticketId),
-        getCustomerNotifications().catch(() => ({ notifications: [] })),
-        getArtistNotificationsData().catch(() => ({ notifications: [] }))
-      ]);
+      // Always fetch fresh ticket data from backend — replies are stored per-ticket
+      // and are already scoped to this ticket only. Never use global notifications
+      // as a reply source — that leaks admin messages across all users.
+      const ticketData = await getSupportTicketDetails(ticketId);
 
       const data = ticketData || {};
       setTicket(data);
 
-      let r = [];
+      // Parse replies from the authoritative backend ticket record
+      let serverReplies = [];
       try {
-        r = typeof data.replies === "string" ? JSON.parse(data.replies) : (Array.isArray(data.replies) ? data.replies : []);
+        serverReplies = typeof data.replies === "string"
+          ? JSON.parse(data.replies)
+          : (Array.isArray(data.replies) ? data.replies : []);
       } catch (_) {
-        r = [];
+        serverReplies = [];
       }
 
-      // Collect all admin notifications and user replies for this ticket
-      const allNotifs = [
-        ...(Array.isArray(custNotifs?.notifications) ? custNotifs.notifications : (Array.isArray(custNotifs?.data?.notifications) ? custNotifs.data.notifications : (Array.isArray(custNotifs?.data) ? custNotifs.data : (Array.isArray(custNotifs) ? custNotifs : [])))),
-        ...(Array.isArray(artNotifs?.notifications) ? artNotifs.notifications : (Array.isArray(artNotifs?.data?.notifications) ? artNotifs.data.notifications : (Array.isArray(artNotifs?.data) ? artNotifs.data : (Array.isArray(artNotifs) ? artNotifs : []))))
-      ];
-
-      const rawIdStr = String(ticketId || "");
-      const numMatch = rawIdStr.match(/\d+/);
-      const targetNum = numMatch ? numMatch[0] : rawIdStr;
-
-      const notifReplies = allNotifs
-        .filter(n => {
-          const title = String(n.title || "");
-          const msg = String(n.message || "");
-          const isSupport =
-            title.includes("Response") ||
-            title.includes("Reply") ||
-            title.includes("Update") ||
-            n.type === "SUPPORT" ||
-            n.type === "SUPPORT_TICKET_REPLY" ||
-            n.type === "SUPPORT_TICKET_USER_REPLY";
-          if (!isSupport || title.includes("Opened")) return false;
-
-          const hasIdMatch =
-            title.includes(`#${targetNum}`) ||
-            title.includes(`#${ticketId}`) ||
-            msg.includes(`#${targetNum}`) ||
-            (n.data && (n.data.ticketId == ticketId || n.data.ticket_id == ticketId));
-          const matchesSubject = data.subject && title.toLowerCase().includes(data.subject.toLowerCase());
-          return hasIdMatch || matchesSubject;
-        })
-        .map(n => {
-          const isUserReply = (n.title && n.title.includes("User Reply")) || n.type === "SUPPORT_TICKET_USER_REPLY";
-          return {
-            id: `notif-${n.id}`,
-            sender: isUserReply ? "USER" : "ADMIN",
-            sender_name: isUserReply ? "You" : "MehndiGo Support Desk",
-            sender_role: isUserReply ? "CUSTOMER" : "ADMIN",
-            message: n.message,
-            created_at: n.created_at || n.createdAt || new Date().toISOString()
-          };
-        });
-
-      // Fallback: If no direct match by ID, include latest admin response notifications
-      let candidateReplies = notifReplies;
-      if (candidateReplies.length === 0) {
-        const latestResponses = allNotifs
-          .filter(n => {
-            const title = String(n.title || "");
-            return (title.includes("Response") || title.includes("Reply") || title.includes("Update")) && !title.includes("Opened");
-          })
-          .slice(0, 10)
-          .map(n => ({
-            id: `notif-${n.id}`,
-            sender: "ADMIN",
-            sender_name: "MehndiGo Support Desk",
-            sender_role: "ADMIN",
-            message: n.message,
-            created_at: n.created_at || n.createdAt || new Date().toISOString()
-          }));
-        if (latestResponses.length > 0) {
-          candidateReplies = latestResponses;
-        }
-      }
-
-      // Combine replies cleanly without broadcast cloning or flickers
+      // Merge with any optimistic local replies the user just sent
+      // (so the send feels instant before the next poll refreshes)
       const replyMap = new Map();
-      r.forEach((rep) => {
-        const timeKey = (rep.created_at || "").slice(0, 16);
-        const broadcastKey = `msg-${String(rep.message).trim()}-${timeKey}`;
-        replyMap.set(broadcastKey, rep);
+      serverReplies.forEach((rep) => {
+        const key = `${String(rep.message).trim()}-${(rep.created_at || "").slice(0, 16)}`;
+        replyMap.set(key, rep);
       });
-      candidateReplies.forEach(nr => {
-        const timeKey = (nr.created_at || "").slice(0, 16);
-        const broadcastKey = `msg-${String(nr.message).trim()}-${timeKey}`;
-        if (!replyMap.has(broadcastKey)) {
-          replyMap.set(broadcastKey, nr);
-        }
-      });
-      localRepliesRef.current.forEach(lr => {
-        const timeKey = (lr.created_at || "").slice(0, 16);
-        const broadcastKey = `msg-${String(lr.message).trim()}-${timeKey}`;
-        if (!replyMap.has(broadcastKey)) {
-          replyMap.set(broadcastKey, lr);
+      localRepliesRef.current.forEach((lr) => {
+        const key = `${String(lr.message).trim()}-${(lr.created_at || "").slice(0, 16)}`;
+        if (!replyMap.has(key)) {
+          replyMap.set(key, lr);
         }
       });
 

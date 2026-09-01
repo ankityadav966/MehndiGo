@@ -2,6 +2,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import React, { useState, useEffect } from "react";
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Platform,
   ScrollView,
   StyleSheet,
@@ -18,7 +19,7 @@ import { getCustomerAddresses } from "../../services/customer";
 import * as Location from "expo-location";
 
 export default function AddressSelection({ route, navigation }) {
-  const { artistId, serviceId, selectedDate, slotId, timeLabel, selectedArt } = route.params || {};
+  const { artistId, serviceId, selectedDate, slotId, timeLabel, selectedArt, packageId } = route.params || {};
 
   const [houseFlat, setHouseFlat] = useState("");
   const [localityArea, setLocalityArea] = useState("");
@@ -286,7 +287,8 @@ export default function AddressSelection({ route, navigation }) {
       landmark: landmark.trim() || null,
       latitude: finalLat,
       longitude: finalLng,
-      selectedArt
+      selectedArt,
+      packageId
     });
   };
 
@@ -319,131 +321,140 @@ export default function AddressSelection({ route, navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
-            <Ionicons name="chevron-back" size={22} color={Colors.text} />
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.header}>
+            <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
+              <Ionicons name="chevron-back" size={22} color={Colors.text} />
+            </TouchableOpacity>
+            <Text style={styles.title}>Appointment Address</Text>
+            <View style={{ width: 40 }} />
+          </View>
+
+          {fetchingAddresses ? (
+            <ActivityIndicator size="small" color={Colors.primary} style={{ marginTop: 20 }} />
+          ) : savedAddresses.length > 0 ? (
+            <View style={styles.savedAddressesContainer}>
+              <Text style={[styles.sectionHeaderTitle, { paddingHorizontal: 16 }]}>Saved Addresses</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8, paddingTop: 4 }}>
+                {savedAddresses.map((addr) => {
+                  const isSelected = selectedAddressId === addr.id;
+                  return (
+                    <TouchableOpacity
+                      key={addr.id}
+                      style={[styles.addressCard, isSelected && styles.addressCardSelected]}
+                      onPress={() => handleSelectSavedAddress(addr)}
+                    >
+                      <View style={styles.addressCardHeader}>
+                        <Ionicons name={addr.name?.toLowerCase() === "home" ? "home" : addr.name?.toLowerCase() === "work" ? "briefcase" : "location"} size={16} color={isSelected ? Colors.primary : Colors.textSecondary} />
+                        <Text style={[styles.addressCardTitle, isSelected && { color: Colors.primary }]}>{addr.name || "Address"}</Text>
+                      </View>
+                      <Text style={styles.addressCardText} numberOfLines={2}>
+                        {[addr.address_line_1, addr.address_line_2, addr.city].filter(Boolean).join(", ")}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          ) : null}
+
+          <TouchableOpacity style={styles.locationButton} onPress={handleUseCurrentLocation}>
+            <Ionicons name="location" size={18} color={Colors.primary} />
+            <Text style={styles.locationText}>Use Current GPS Location</Text>
           </TouchableOpacity>
-          <Text style={styles.title}>Appointment Address</Text>
-          <View style={{ width: 40 }} />
-        </View>
 
-        {fetchingAddresses ? (
-          <ActivityIndicator size="small" color={Colors.primary} style={{ marginTop: 20 }} />
-        ) : savedAddresses.length > 0 ? (
-          <View style={styles.savedAddressesContainer}>
-            <Text style={[styles.sectionHeaderTitle, { paddingHorizontal: 16 }]}>Saved Addresses</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8, paddingTop: 4 }}>
-              {savedAddresses.map((addr) => {
-                const isSelected = selectedAddressId === addr.id;
-                return (
-                  <TouchableOpacity
-                    key={addr.id}
-                    style={[styles.addressCard, isSelected && styles.addressCardSelected]}
-                    onPress={() => handleSelectSavedAddress(addr)}
-                  >
-                    <View style={styles.addressCardHeader}>
-                      <Ionicons name={addr.name?.toLowerCase() === "home" ? "home" : addr.name?.toLowerCase() === "work" ? "briefcase" : "location"} size={16} color={isSelected ? Colors.primary : Colors.textSecondary} />
-                      <Text style={[styles.addressCardTitle, isSelected && { color: Colors.primary }]}>{addr.name || "Address"}</Text>
-                    </View>
-                    <Text style={styles.addressCardText} numberOfLines={2}>
-                      {[addr.address_line_1, addr.address_line_2, addr.city].filter(Boolean).join(", ")}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          </View>
-        ) : null}
+          <View style={styles.manualForm}>
+            <Text style={styles.sectionHeaderTitle}>Or Enter Address Manually</Text>
 
-        <TouchableOpacity style={styles.locationButton} onPress={handleUseCurrentLocation}>
-          <Ionicons name="location" size={18} color={Colors.primary} />
-          <Text style={styles.locationText}>Use Current GPS Location</Text>
-        </TouchableOpacity>
+            <Text style={styles.inputLabel}>House / Flat / Building No. *</Text>
+            <TextInput
+              placeholder="e.g. Flat 302, Green Valley Apartments"
+              placeholderTextColor={Colors.textTertiary}
+              style={styles.textInput}
+              value={houseFlat}
+              onChangeText={(txt) => {
+                setHouseFlat(txt);
+                setFullAddressText("");
+              }}
+            />
 
-        <View style={styles.manualForm}>
-          <Text style={styles.sectionHeaderTitle}>Or Enter Address Manually</Text>
+            <Text style={styles.inputLabel}>Area / Locality / Street *</Text>
+            <TextInput
+              placeholder="e.g. Sector 5, Malviya Nagar"
+              placeholderTextColor={Colors.textTertiary}
+              style={styles.textInput}
+              value={localityArea}
+              onChangeText={(txt) => {
+                setLocalityArea(txt);
+                setFullAddressText("");
+              }}
+            />
 
-          <Text style={styles.inputLabel}>House / Flat / Building No. *</Text>
-          <TextInput
-            placeholder="e.g. Flat 302, Green Valley Apartments"
-            placeholderTextColor={Colors.textTertiary}
-            style={styles.textInput}
-            value={houseFlat}
-            onChangeText={(txt) => {
-              setHouseFlat(txt);
-              setFullAddressText("");
-            }}
-          />
-
-          <Text style={styles.inputLabel}>Area / Locality / Street *</Text>
-          <TextInput
-            placeholder="e.g. Sector 5, Malviya Nagar"
-            placeholderTextColor={Colors.textTertiary}
-            style={styles.textInput}
-            value={localityArea}
-            onChangeText={(txt) => {
-              setLocalityArea(txt);
-              setFullAddressText("");
-            }}
-          />
-
-          <View style={{ flexDirection: "row", gap: 10 }}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.inputLabel}>City *</Text>
-              <TextInput
-                placeholder="e.g. Jaipur"
-                placeholderTextColor={Colors.textTertiary}
-                style={styles.textInput}
-                value={city}
-                onChangeText={(txt) => {
-                  setCity(txt);
-                  setFullAddressText("");
-                }}
-              />
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.inputLabel}>City *</Text>
+                <TextInput
+                  placeholder="e.g. Jaipur"
+                  placeholderTextColor={Colors.textTertiary}
+                  style={styles.textInput}
+                  value={city}
+                  onChangeText={(txt) => {
+                    setCity(txt);
+                    setFullAddressText("");
+                  }}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.inputLabel}>State *</Text>
+                <TextInput
+                  placeholder="e.g. Rajasthan"
+                  placeholderTextColor={Colors.textTertiary}
+                  style={styles.textInput}
+                  value={stateName}
+                  onChangeText={(txt) => {
+                    setStateName(txt);
+                    setFullAddressText("");
+                  }}
+                />
+              </View>
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.inputLabel}>State *</Text>
-              <TextInput
-                placeholder="e.g. Rajasthan"
-                placeholderTextColor={Colors.textTertiary}
-                style={styles.textInput}
-                value={stateName}
-                onChangeText={(txt) => {
-                  setStateName(txt);
-                  setFullAddressText("");
-                }}
-              />
-            </View>
+
+            <Text style={styles.inputLabel}>Pincode *</Text>
+            <TextInput
+              placeholder="e.g. 302017"
+              placeholderTextColor={Colors.textTertiary}
+              keyboardType="number-pad"
+              style={styles.textInput}
+              value={pincode}
+              onChangeText={(txt) => {
+                setPincode(txt);
+                setFullAddressText("");
+              }}
+            />
+
+            <Text style={styles.inputLabel}>Landmark (Optional)</Text>
+            <TextInput
+              placeholder="e.g. Near Community Center"
+              placeholderTextColor={Colors.textTertiary}
+              style={styles.textInput}
+              value={landmark}
+              onChangeText={setLandmark}
+            />
           </View>
+        </ScrollView>
 
-          <Text style={styles.inputLabel}>Pincode *</Text>
-          <TextInput
-            placeholder="e.g. 302017"
-            placeholderTextColor={Colors.textTertiary}
-            keyboardType="number-pad"
-            style={styles.textInput}
-            value={pincode}
-            onChangeText={(txt) => {
-              setPincode(txt);
-              setFullAddressText("");
-            }}
-          />
-
-          <Text style={styles.inputLabel}>Landmark (Optional)</Text>
-          <TextInput
-            placeholder="e.g. Near Community Center"
-            placeholderTextColor={Colors.textTertiary}
-            style={styles.textInput}
-            value={landmark}
-            onChangeText={setLandmark}
-          />
+        <View style={styles.footer}>
+          <CustomButton title="Continue to Summary" onPress={handleContinue} />
         </View>
-      </ScrollView>
-
-      <View style={styles.footer}>
-        <CustomButton title="Continue to Summary" onPress={handleContinue} />
-      </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -454,7 +465,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12 },
   backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.background, justifyContent: "center", alignItems: "center" },
   title: { fontSize: 18, fontWeight: "700", color: Colors.text },
-  content: { paddingBottom: 100 },
+  content: { paddingBottom: 140 },
   locationButton: { marginHorizontal: 16, marginTop: 12, marginBottom: 8, flexDirection: "row", alignItems: "center", justifyContent: "center", height: 48, borderRadius: 12, borderWidth: 1.5, borderColor: Colors.primary, backgroundColor: "#FFF0F4" },
   locationText: { marginLeft: 8, color: Colors.primary, fontWeight: "700", fontSize: 14 },
   sectionHeaderTitle: { fontSize: 14, fontWeight: "700", color: Colors.text, marginTop: 16, marginBottom: 4 },

@@ -57,7 +57,7 @@ export default function ReferralDashboardScreen({ navigation }) {
     if (!refCode) return;
     const shareLink = dashboardData?.referralLink || createReferralDeepLink(refCode);
     try {
-      const messageText = `Hey! Join MehndiGo for premium home mehndi artists. Sign up with my link and verify your phone number to get welcome wallet cashbacks! Use my invite code: ${refCode}\n\n${shareLink}`;
+      const messageText = `Hey! Join MehndiGo for premium home mehndi artists. Sign up with my link and verify your phone number to get welcome profile boosts! Use my invite code: ${refCode}\n\n${shareLink}`;
       await Share.share({
         message: messageText,
         title: "MehndiGo Invitation",
@@ -70,6 +70,18 @@ export default function ReferralDashboardScreen({ navigation }) {
 
   const renderFriend = ({ item }) => {
     const isCompleted = item.status === "COMPLETED";
+    
+    // Determine reward string based on what was awarded
+    let rewardString = "Pending";
+    if (isCompleted) {
+      if (item.boostDaysAwarded) {
+        rewardString = `Earned ${item.boostDaysAwarded}d Boost`;
+      } else if (item.customerBenefitAwarded) {
+        rewardString = "Unlocked Perks";
+      } else {
+        rewardString = "Completed";
+      }
+    }
     
     return (
       <View style={styles.friendCard}>
@@ -94,7 +106,7 @@ export default function ReferralDashboardScreen({ navigation }) {
             color={isCompleted ? "#2E7D32" : "#E65100"}
           />
           <Text style={[styles.statusText, isCompleted ? styles.completedText : styles.pendingText]}>
-            {isCompleted ? `Earned ₹${item.rewardAmount}` : "Pending"}
+            {rewardString}
           </Text>
         </View>
       </View>
@@ -109,8 +121,8 @@ export default function ReferralDashboardScreen({ navigation }) {
     );
   }
 
-  const stats = dashboardData?.stats || { totalInvites: 0, pendingInvites: 0, completedInvites: 0, totalEarnings: 0 };
-  const campaign = dashboardData?.campaign || { title: "Standard Campaign", referrerReward: 100 };
+  const stats = dashboardData?.stats || { totalInvites: 0, pendingInvites: 0, completedInvites: 0, totalBoostDaysEarned: 0 };
+  const campaign = dashboardData?.campaign || { title: "Refer & Boost", artistBoostDays: 7, customerBenefit: "Priority Perks" };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -119,7 +131,7 @@ export default function ReferralDashboardScreen({ navigation }) {
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
           <Ionicons name="chevron-back" size={22} color={Colors.text} />
         </TouchableOpacity>
-        <Text style={styles.title}>Refer & Earn</Text>
+        <Text style={styles.title}>Refer & Boost Profile</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -138,10 +150,10 @@ export default function ReferralDashboardScreen({ navigation }) {
           <View>
             {/* Promo banner */}
             <View style={styles.heroCard}>
-              <Ionicons name="gift" size={40} color={Colors.white} />
+              <Ionicons name="rocket" size={40} color={Colors.white} />
               <Text style={styles.heroTitle}>{campaign.title}</Text>
               <Text style={styles.heroDesc}>
-                {"Invite your friends to try MehndiGo. When they complete their first service, we'll credit ₹" + campaign.referrerReward + " to your wallet!"}
+                {`Invite friends to try MehndiGo. When they complete their first service, we'll give you a ${campaign.artistBoostDays}-Day Profile Boost or ${campaign.customerBenefit}!`}
               </Text>
             </View>
 
@@ -167,6 +179,21 @@ export default function ReferralDashboardScreen({ navigation }) {
                 <Text style={styles.xpTodayText}>+{dashboardData?.xp?.todayXp || 0} XP Today</Text>
               </View>
             </View>
+
+            {/* Boost Status Banner */}
+            {dashboardData?.boostStatus?.active && (
+              <View style={[styles.xpCard, { borderColor: "#4CAF50", backgroundColor: "#E8F5E9" }]}>
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <Ionicons name="rocket" size={24} color="#2E7D32" />
+                  <View style={{ marginLeft: 12 }}>
+                    <Text style={{ fontSize: 14, fontWeight: "800", color: "#2E7D32" }}>Boost Active! 🚀</Text>
+                    <Text style={{ fontSize: 11, color: "#1B5E20", marginTop: 2 }}>
+                      Expires: {formatDate(dashboardData.boostStatus.expiresAt)}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            )}
 
             {/* Navigation Quick Links */}
             <View style={styles.navigationRow}>
@@ -224,12 +251,12 @@ export default function ReferralDashboardScreen({ navigation }) {
                 <Text style={styles.statLabel}>Invited Friends</Text>
               </View>
               <View style={styles.statBox}>
-                <Text style={styles.statVal}>{stats.pendingInvites}</Text>
-                <Text style={styles.statLabel}>Pending Installs</Text>
+                <Text style={styles.statVal}>{stats.completedInvites}</Text>
+                <Text style={styles.statLabel}>Successful</Text>
               </View>
               <View style={styles.statBox}>
-                <Text style={[styles.statVal, { color: Colors.primary }]}>₹{stats.totalEarnings}</Text>
-                <Text style={styles.statLabel}>Total Earnings</Text>
+                <Text style={[styles.statVal, { color: Colors.primary }]}>{stats.totalBoostDaysEarned}d</Text>
+                <Text style={styles.statLabel}>Boost Earned</Text>
               </View>
             </View>
 
@@ -241,7 +268,7 @@ export default function ReferralDashboardScreen({ navigation }) {
           <View style={styles.emptyContainer}>
             <Ionicons name="people-outline" size={48} color={Colors.textTertiary} />
             <Text style={styles.emptyText}>{"You haven't referred any friends yet."}</Text>
-            <Text style={styles.emptySubText}>{"Invite your friends to start earning wallet cashbacks!"}</Text>
+            <Text style={styles.emptySubText}>{"Invite your friends to unlock profile boosts & perks!"}</Text>
           </View>
         }
       />

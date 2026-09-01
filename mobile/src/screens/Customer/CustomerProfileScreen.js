@@ -90,12 +90,12 @@ export default function CustomerProfileScreen({ navigation }) {
   const initials = profile.name ? profile.name.split(" ").map((n) => n[0]).join("").toUpperCase() : "ME";
 
   const quickActions = [
+    { icon: "person-outline", label: "Edit Profile", screen: "EditProfile" },
     { icon: "calendar-outline", label: "My Bookings", screen: "MyBookings" },
     { icon: "location-outline", label: "Saved Addresses", screen: "SavedAddresses" },
     { icon: "wallet-outline", label: "Wallet & Payments", screen: "Wallet" },
-
     { icon: "heart-outline", label: "Wishlist", screen: "Wishlist" },
-    { icon: "share-social-outline", label: "Refer & Earn", screen: "ReferralDashboard" },
+    { icon: "share-social-outline", label: "Refer & Boost", screen: "ReferralDashboard" },
     { icon: "pricetag-outline", label: "Coupons & Offers", screen: "Coupons" },
     { icon: "star-outline", label: "My Reviews", screen: "Reviews" },
     { icon: "shield-checkmark-outline", label: "Security & Privacy", screen: "SecurityPrivacy" },
@@ -120,7 +120,11 @@ export default function CustomerProfileScreen({ navigation }) {
       >
         {/* Profile Card Info */}
         <View style={[styles.profileHeader, { backgroundColor: currentCardBg, borderBottomColor: currentBorderColor }]}>
-          <View style={styles.photoContainer}>
+          <TouchableOpacity
+            style={styles.photoContainer}
+            activeOpacity={0.85}
+            onPress={() => navigation.navigate("EditProfile")}
+          >
             {customerAvatar ? (
               <Image source={{ uri: customerAvatar }} style={styles.avatarCircle} resizeMode="cover" />
             ) : (
@@ -128,13 +132,10 @@ export default function CustomerProfileScreen({ navigation }) {
                 <Text style={styles.avatarText}>{initials}</Text>
               </View>
             )}
-            <TouchableOpacity
-              style={styles.editBadge}
-              onPress={() => navigation.navigate("EditProfile")}
-            >
+            <View style={styles.editBadge}>
               <Ionicons name="pencil" size={12} color={Colors.white} />
-            </TouchableOpacity>
-          </View>
+            </View>
+          </TouchableOpacity>
 
           <Text style={[styles.name, { color: currentTextColor }]}>{profile.name}</Text>
           <View style={styles.badgeRow}>

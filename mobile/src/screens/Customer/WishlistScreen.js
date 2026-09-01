@@ -141,7 +141,7 @@ export default function WishlistScreen({ navigation }) {
       ? `Starting ₹${artist.starting_price}`
       : artist.services?.[0]?.minimum_price
       ? `Starting ₹${artist.services[0].minimum_price}`
-      : "";
+      : "Price on Request";
     const isApproved = artist.verification_status === "APPROVED" || artist.status === "APPROVED";
 
     const portfolioImages = Array.isArray(artist.portfolio_images) && artist.portfolio_images.length > 0

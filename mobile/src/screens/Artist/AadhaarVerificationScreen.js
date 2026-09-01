@@ -7,6 +7,8 @@ import Colors from "../../constants/Colors";
 import CustomButton from "../../components/CustomButton";
 import { useArtistOnboarding } from "../../context/ArtistOnboardingContext";
 
+import { validateAadhaarNumber, validateAadhaarPhotos } from "../../utils/aadhaar.validator";
+
 export default function AadhaarVerificationScreen({ navigation }) {
   const { aadhaarFiles, updateAadhaarFiles, artistDetails, updateArtistDetails } = useArtistOnboarding();
   const [aadhaarNumber, setAadhaarNumber] = useState(artistDetails?.aadhaarNumber || "");
@@ -32,37 +34,24 @@ export default function AadhaarVerificationScreen({ navigation }) {
 
   const handleValidateAndContinue = () => {
     setError("");
-    const cleanNumber = String(aadhaarNumber || "").replace(/[^0-9]/g, "");
-
-    if (!cleanNumber) {
-      const msg = "Please enter your 12-digit Aadhaar Number";
-      setError(msg);
-      if (global.showToast) global.showToast(msg, "warning");
+    
+    // 1. Validate Aadhaar Number format, UIDAI rules, dummy patterns, and checksum
+    const numValidation = validateAadhaarNumber(aadhaarNumber);
+    if (!numValidation.valid) {
+      setError(numValidation.message);
+      if (global.showToast) global.showToast(numValidation.message, "warning");
       return;
     }
 
-    if (cleanNumber.length !== 12) {
-      const msg = "Aadhaar number must be exactly 12 numeric digits";
-      setError(msg);
-      if (global.showToast) global.showToast(msg, "warning");
+    // 2. Validate Front & Back distinct photos
+    const photoValidation = validateAadhaarPhotos(aadhaarFiles?.front, aadhaarFiles?.back);
+    if (!photoValidation.valid) {
+      setError(photoValidation.message);
+      if (global.showToast) global.showToast(photoValidation.message, "warning");
       return;
     }
 
-    if (!aadhaarFiles?.front) {
-      const msg = "Please upload Aadhaar card Front photo";
-      setError(msg);
-      if (global.showToast) global.showToast(msg, "warning");
-      return;
-    }
-
-    if (!aadhaarFiles?.back) {
-      const msg = "Please upload Aadhaar card Back photo";
-      setError(msg);
-      if (global.showToast) global.showToast(msg, "warning");
-      return;
-    }
-
-    updateArtistDetails({ aadhaarNumber: cleanNumber });
+    updateArtistDetails({ aadhaarNumber: numValidation.cleanNumber });
     navigation.navigate("ReviewSubmit");
   };
 
@@ -133,18 +122,18 @@ export default function AadhaarVerificationScreen({ navigation }) {
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
         </View>
       </ScrollView>
-      </KeyboardAvoidingView>
 
       <View style={styles.footer}>
         <CustomButton title="Continue" onPress={handleValidateAndContinue} />
       </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: Colors.white },
-  scrollContent: { paddingBottom: 20 },
+  scrollContent: { paddingBottom: 120 },
   container: { flex: 1, paddingHorizontal: 20, paddingTop: 15 },
   heading: { fontSize: 22, fontWeight: "700", color: Colors.text, marginBottom: 6 },
   subHeading: { fontSize: 13, color: Colors.textSecondary, marginBottom: 20, lineHeight: 18 },

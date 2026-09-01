@@ -38,6 +38,7 @@ export default function EditProfileScreen({ navigation }) {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [avatarUri, setAvatarUri] = useState("");
+  const [bannerUri, setBannerUri] = useState("");
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
   const [pincode, setPincode] = useState("");
@@ -45,7 +46,7 @@ export default function EditProfileScreen({ navigation }) {
   // Artist Specific Fields
   const [bio, setBio] = useState("");
   const [experience, setExperience] = useState("");
-  const [startingPrice, setStartingPrice] = useState("1500");
+  const [startingPrice, setStartingPrice] = useState("");
   const [location, setLocation] = useState("");
   const [languages, setLanguages] = useState("");
   const [homeService, setHomeService] = useState(true);
@@ -71,9 +72,14 @@ export default function EditProfileScreen({ navigation }) {
           setAvatarUri(resolveImage(photo));
         }
 
+        const banner = data.banner_image || data.cover_image || data.banner || artistUser.banner_image || artistUser.cover_image;
+        if (banner) {
+          setBannerUri(resolveImage(banner));
+        }
+
         setBio(data.bio || "");
         setExperience(data.experience_years !== undefined && data.experience_years !== null ? String(data.experience_years) : "");
-        setStartingPrice(data.starting_price ? String(data.starting_price) : "1500");
+        setStartingPrice(data.starting_price ? String(data.starting_price) : "");
         setLocation(data.location || "");
         setCity(data.city || "");
         setState(data.state || "");
@@ -135,6 +141,26 @@ export default function EditProfileScreen({ navigation }) {
     }
   };
 
+  const handlePickBanner = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("Permission Required", "Please allow access to photos to change profile banner.");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [16, 9],
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      const uri = result.assets[0].uri;
+      setBannerUri(uri);
+    }
+  };
+
   const handleSave = async () => {
     if (!fullName.trim()) {
       Alert.alert("Validation Error", "Please enter your name");
@@ -177,17 +203,30 @@ export default function EditProfileScreen({ navigation }) {
       let uploadedUrl = null;
       const isLocalAvatar = avatarUri && (avatarUri.startsWith("file://") || avatarUri.startsWith("content://") || avatarUri.startsWith("ph://") || avatarUri.startsWith("assets-library://") || avatarUri.startsWith("/"));
       if (isLocalAvatar) {
-        if (__DEV__) console.log('[CLOUDINARY UPLOAD START]');
+        if (__DEV__) console.log('[CLOUDINARY AVATAR UPLOAD START]');
         const uploadResult = await uploadPortfolioMedia([{ uri: avatarUri }]);
         if (uploadResult && uploadResult.length > 0 && uploadResult[0].url) {
           uploadedUrl = uploadResult[0].url;
         } else {
-          throw new Error("Failed to upload profile photo to Cloudinary. Please try again.");
+          throw new Error("Failed to upload profile photo. Please try again.");
+        }
+      }
+
+      let uploadedBannerUrl = null;
+      const isLocalBanner = bannerUri && (bannerUri.startsWith("file://") || bannerUri.startsWith("content://") || bannerUri.startsWith("ph://") || bannerUri.startsWith("assets-library://") || bannerUri.startsWith("/"));
+      if (isLocalBanner) {
+        if (__DEV__) console.log('[CLOUDINARY BANNER UPLOAD START]');
+        const bannerUploadResult = await uploadPortfolioMedia([{ uri: bannerUri }]);
+        if (bannerUploadResult && bannerUploadResult.length > 0 && bannerUploadResult[0].url) {
+          uploadedBannerUrl = bannerUploadResult[0].url;
+        } else {
+          throw new Error("Failed to upload banner image. Please try again.");
         }
       }
 
       // If a new photo was uploaded, use uploadedUrl; if unchanged remote URL, use avatarUri; otherwise undefined to preserve DB image
       const finalAvatar = uploadedUrl ? uploadedUrl : (!isLocalAvatar && avatarUri ? avatarUri : undefined);
+      const finalBanner = uploadedBannerUrl ? uploadedBannerUrl : (!isLocalBanner && bannerUri ? bannerUri : undefined);
 
       if (isArtist) {
         const payload = {
@@ -198,11 +237,15 @@ export default function EditProfileScreen({ navigation }) {
           profileImage: finalAvatar,
           avatar: finalAvatar,
           selfie_image: finalAvatar,
+          cover_image: finalBanner,
+          coverImage: finalBanner,
+          banner_image: finalBanner,
+          bannerImage: finalBanner,
           bio: bio.trim(),
           experience_years: experience.trim() ? Number(experience) : undefined,
           experience: experience.trim() ? Number(experience) : undefined,
-          starting_price: startingPrice.trim() ? Number(startingPrice) : 1500,
-          startingPrice: startingPrice.trim() ? Number(startingPrice) : 1500,
+          starting_price: startingPrice.trim() ? Number(startingPrice) : 0,
+          startingPrice: startingPrice.trim() ? Number(startingPrice) : 0,
           home_service: homeService,
           homeService: homeService,
           salon_service: salonService,
@@ -249,12 +292,15 @@ export default function EditProfileScreen({ navigation }) {
       // Sync local auth context and secureStorage
       const currentStored = await secureStorage.getUserData();
       const resolvedStoredAvatar = finalAvatar || currentStored?.profile_image || currentStored?.avatar || user?.profile_image || user?.avatar || null;
+      const resolvedStoredBanner = finalBanner || currentStored?.banner_image || currentStored?.cover_image || null;
       const updatedUser = {
         ...currentStored,
         name: fullName.trim(),
         full_name: fullName.trim(),
         profile_image: resolvedStoredAvatar,
         avatar: resolvedStoredAvatar,
+        banner_image: resolvedStoredBanner,
+        cover_image: resolvedStoredBanner,
         email: email.trim(),
         phone: cleanPhone,
         city: city.trim(),
@@ -306,6 +352,26 @@ export default function EditProfileScreen({ navigation }) {
             <Text style={styles.headerTitle}>Edit Profile</Text>
             <View style={{ width: 40 }} />
           </View>
+
+          {/* Banner & Profile Pictures Section for Artists */}
+          {isArtist && (
+            <View style={styles.bannerSection}>
+              <TouchableOpacity activeOpacity={0.85} style={styles.bannerWrapper} onPress={handlePickBanner}>
+                {bannerUri ? (
+                  <Image source={{ uri: bannerUri }} style={styles.bannerImage} resizeMode="cover" />
+                ) : (
+                  <View style={styles.bannerPlaceholder}>
+                    <Ionicons name="image-outline" size={32} color={Colors.primary} />
+                    <Text style={styles.bannerPlaceholderText}>Tap to add Profile Banner Photo</Text>
+                  </View>
+                )}
+                <View style={styles.bannerEditBtn}>
+                  <Ionicons name="camera" size={16} color={Colors.white} />
+                  <Text style={styles.bannerEditText}>{bannerUri ? "Change Banner" : "Add Banner"}</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* Profile Picture Section */}
           <View style={styles.profileSection}>
@@ -501,7 +567,7 @@ export default function EditProfileScreen({ navigation }) {
                   <TextInput
                     value={startingPrice}
                     onChangeText={setStartingPrice}
-                    placeholder="Starting Price (e.g. 1500)"
+                    placeholder="Starting Price (Optional)"
                     placeholderTextColor={Colors.textTertiary}
                     keyboardType="numeric"
                     style={styles.input}
@@ -793,6 +859,54 @@ const styles = StyleSheet.create({
   kycNote: {
     fontSize: 11,
     color: Colors.textTertiary,
+  },
+  bannerSection: {
+    marginHorizontal: 16,
+    marginBottom: 10,
+    marginTop: 4,
+  },
+  bannerWrapper: {
+    height: 150,
+    borderRadius: 16,
+    overflow: "hidden",
+    backgroundColor: Colors.primaryLight + "30",
+    borderWidth: 1,
+    borderColor: Colors.border,
+    position: "relative",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  bannerImage: {
+    width: "100%",
+    height: "100%",
+  },
+  bannerPlaceholder: {
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 12,
+  },
+  bannerPlaceholderText: {
+    marginTop: 6,
+    fontSize: 13,
+    fontWeight: "600",
+    color: Colors.primary,
+  },
+  bannerEditBtn: {
+    position: "absolute",
+    right: 10,
+    bottom: 10,
+    backgroundColor: "rgba(0,0,0,0.65)",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  bannerEditText: {
+    color: Colors.white,
+    fontSize: 12,
+    fontWeight: "600",
   },
   footer: { paddingHorizontal: 16, paddingTop: 25 },
 });

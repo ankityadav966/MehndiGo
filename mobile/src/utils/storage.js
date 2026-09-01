@@ -145,7 +145,7 @@ export const secureStorage = {
     await AsyncStorage.removeItem("@mehndigo_draft_booking");
   },
 
-  // Clear Session & Auth Data Only (Preserves onboarding flags & preferences)
+  // Clear Session & Auth Data Only (Preserves app onboarding & theme preferences)
   clearAll: async () => {
     const authKeys = [
       TOKEN_KEYS.ACCESS_TOKEN,
@@ -156,8 +156,23 @@ export const secureStorage = {
       TOKEN_KEYS.ARTIST_PROFILE_COMPLETED,
       "artist_onboarding_done",
       "@mehndigo_draft_booking",
+      "@mehndigo_artist_availability",
+      "pendingReferralCode",
     ];
-    await AsyncStorage.multiRemove(authKeys);
+    try {
+      const allKeys = await AsyncStorage.getAllKeys();
+      const accountScopedKeys = allKeys.filter(k => 
+        k.startsWith("@mehndigo_") || 
+        k.startsWith("@cached_") || 
+        k.startsWith("artist_") ||
+        k.startsWith("customer_") ||
+        k.startsWith("user_")
+      ).filter(k => k !== TOKEN_KEYS.HAS_SEEN_ONBOARDING && k !== "app_theme");
+      const keysToRemove = Array.from(new Set([...authKeys, ...accountScopedKeys]));
+      await AsyncStorage.multiRemove(keysToRemove);
+    } catch (e) {
+      await AsyncStorage.multiRemove(authKeys).catch(() => {});
+    }
   },
 };
 

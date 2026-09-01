@@ -32,10 +32,14 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         defaultValue: "PENDING"
       },
-      reward_amount: {
+      boost_days_awarded: {
         type: DataTypes.INTEGER,
         allowNull: false,
         defaultValue: 0
+      },
+      customer_benefit_awarded: {
+        type: DataTypes.STRING,
+        allowNull: true
       },
       reward_status: {
         type: DataTypes.ENUM("PENDING", "CREDITED", "FAILED"),

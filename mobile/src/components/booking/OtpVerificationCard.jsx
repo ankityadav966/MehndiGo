@@ -85,8 +85,9 @@ export default function OtpVerificationCard({
       );
     }
 
-    // MODE B: Service Is Started / In Progress / Checkout (Check-In Done, Completion PIN Active)
-    if (isCheckInVerified || isServiceActive || isCheckout) {
+    // MODE B: Service Is Started / In Progress / Checkout (Completion PIN Active)
+    if ((isCheckInVerified || isServiceActive || isCheckout) && resolvedCheckoutOtp) {
+      const pinDigits = String(resolvedCheckoutOtp).split("");
       return (
         <View style={[styles.customerCard, styles.customerCardCheckout]}>
           {/* Header */}
@@ -101,29 +102,41 @@ export default function OtpVerificationCard({
                 </Text>
                 <View style={[styles.statusBadge, styles.statusBadgeCheckout]}>
                   <View style={[styles.pulseDot, styles.pulseDotCheckout]} />
-                  <Text style={[styles.statusBadgeText, styles.statusBadgeTextCheckout]}>SERVICE UNDERWAY</Text>
+                  <Text style={[styles.statusBadgeText, styles.statusBadgeTextCheckout]}>ACTIVE PIN</Text>
                 </View>
               </View>
               <Text style={[styles.customerSubtitle, styles.customerSubtitleCheckout]} numberOfLines={2}>
-                Share the 4-digit PIN sent to your email with your specialist ONLY AFTER mehndi application is fully finished.
+                Share this PIN with your specialist ONLY AFTER mehndi application is fully finished.
               </Text>
             </View>
+          </View>
+
+          {/* 4-Digit Display Card */}
+          <View style={styles.pinDisplayCardPurple}>
+            <Text style={styles.pinDisplayLabelPurple}>YOUR 4-DIGIT COMPLETION PIN</Text>
+            <View style={styles.pinDigitsRow}>
+              {pinDigits.map((digit, idx) => (
+                <View key={idx} style={styles.pinDigitTilePurple}>
+                  <Text style={styles.pinDigitTextPurple}>{digit}</Text>
+                </View>
+              ))}
+            </View>
+            <Text style={styles.pinInstructionPurple}>
+              Share this PIN with your specialist only after you are 100% satisfied with the completed design.
+            </Text>
           </View>
 
           {/* Secure Email Delivery Info Box */}
           <View style={styles.emailInfoBoxPurple}>
             <View style={styles.emailRow}>
-              <Ionicons name="mail-unread" size={18} color="#701DDB" style={{ marginRight: 8 }} />
+              <Ionicons name="mail-unread" size={16} color="#701DDB" style={{ marginRight: 8 }} />
               <View style={{ flex: 1 }}>
-                <Text style={styles.emailTitleTextPurple}>Completion PIN Sent to Email ✉️</Text>
+                <Text style={styles.emailTitleTextPurple}>Also Dispatched to Email ✉️</Text>
                 <Text style={styles.emailAddressTextPurple} numberOfLines={1}>
-                  Dispatched to: {masked}
+                  {masked}
                 </Text>
               </View>
             </View>
-            <Text style={styles.pinInstructionPurple}>
-              Check your inbox for the 4-digit completion code. Keep it private until you are 100% satisfied with the finished design.
-            </Text>
           </View>
 
           {/* Step 1 Completed Status Bar */}
@@ -137,60 +150,78 @@ export default function OtpVerificationCard({
       );
     }
 
-    // MODE C: Artist Accepted / On The Way / Arrived (Check-In PIN Is Active!)
-    return (
-      <View style={styles.customerCard}>
-        {/* Header */}
-        <View style={styles.headerRow}>
-          <View style={styles.customerIconCircle}>
-            <Ionicons name="shield-checkmark" size={20} color="#059669" />
-          </View>
-          <View style={styles.headerTextContainer}>
-            <View style={styles.titleWithBadge}>
-              <Text style={styles.customerTitle} numberOfLines={1}>
-                Step 1: Check-In PIN
+    // MODE C: Artist Arrived (Check-In PIN Is Active!)
+    if (resolvedCheckinOtp && !isCheckInVerified) {
+      const pinDigits = String(resolvedCheckinOtp).split("");
+      return (
+        <View style={styles.customerCard}>
+          {/* Header */}
+          <View style={styles.headerRow}>
+            <View style={styles.customerIconCircle}>
+              <Ionicons name="shield-checkmark" size={20} color="#059669" />
+            </View>
+            <View style={styles.headerTextContainer}>
+              <View style={styles.titleWithBadge}>
+                <Text style={styles.customerTitle} numberOfLines={1}>
+                  Step 1: Check-In PIN
+                </Text>
+                <View style={styles.statusBadge}>
+                  <View style={styles.pulseDot} />
+                  <Text style={styles.statusBadgeText}>SHARE AT DOORSTEP</Text>
+                </View>
+              </View>
+              <Text style={styles.customerSubtitle} numberOfLines={2}>
+                Share this 4-digit PIN with your artist when they arrive at your location to verify identity and start service.
               </Text>
-              <View style={styles.statusBadge}>
-                <View style={styles.pulseDot} />
-                <Text style={styles.statusBadgeText}>SHARE AT DOORSTEP</Text>
+            </View>
+          </View>
+
+          {/* 4-Digit Display Card */}
+          <View style={styles.pinDisplayCardGreen}>
+            <Text style={styles.pinDisplayLabelGreen}>YOUR 4-DIGIT CHECK-IN PIN</Text>
+            <View style={styles.pinDigitsRow}>
+              {pinDigits.map((digit, idx) => (
+                <View key={idx} style={styles.pinDigitTileGreen}>
+                  <Text style={styles.pinDigitTextGreen}>{digit}</Text>
+                </View>
+              ))}
+            </View>
+            <Text style={styles.pinInstructionGreen}>
+              Share this PIN in person when the specialist arrives at your doorstep.
+            </Text>
+          </View>
+
+          {/* Secure Email Delivery Info Box */}
+          <View style={styles.emailInfoBox}>
+            <View style={styles.emailRow}>
+              <Ionicons name="mail-unread" size={16} color="#059669" style={{ marginRight: 8 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.emailTitleTextGreen}>Also Dispatched to Email ✉️</Text>
+                <Text style={styles.emailAddressText} numberOfLines={1}>
+                  {masked}
+                </Text>
               </View>
             </View>
-            <Text style={styles.customerSubtitle} numberOfLines={2}>
-              Share the 4-digit Check-In PIN sent to your email with your artist when they arrive at your location.
-            </Text>
           </View>
-        </View>
 
-        {/* Secure Email Delivery Info Box */}
-        <View style={styles.emailInfoBox}>
-          <View style={styles.emailRow}>
-            <Ionicons name="mail-unread" size={18} color="#059669" style={{ marginRight: 8 }} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.emailTitleTextGreen}>Doorstep Check-In PIN Sent to Email ✉️</Text>
-              <Text style={styles.emailAddressText} numberOfLines={1}>
-                Dispatched to: {masked}
+          {/* Locked Upcoming Step 2 */}
+          <View style={styles.lockedStepBar}>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <Ionicons name="lock-closed" size={13} color="#94A3B8" style={{ marginRight: 6 }} />
+              <Text style={styles.lockedStepTitle}>
+                Step 2: Service Completion PIN
               </Text>
             </View>
-          </View>
-          <Text style={styles.pinInstructionGreen}>
-            Check your inbox for the 4-digit code and share in person when the specialist arrives at your doorstep.
-          </Text>
-        </View>
-
-        {/* Locked Upcoming Step 2 */}
-        <View style={styles.lockedStepBar}>
-          <View style={{ flexDirection: "row", alignItems: "center" }}>
-            <Ionicons name="lock-closed" size={13} color="#94A3B8" style={{ marginRight: 6 }} />
-            <Text style={styles.lockedStepTitle}>
-              Step 2: Service Completion PIN
+            <Text style={styles.lockedStepDesc}>
+              Will be activated automatically after specialist verifies Check-In and completes service.
             </Text>
           </View>
-          <Text style={styles.lockedStepDesc}>
-            Will be activated automatically after specialist verifies Check-In and starts service.
-          </Text>
         </View>
-      </View>
-    );
+      );
+    }
+
+    // Default: If no active OTP for the current state, return null so empty cards are never shown
+    return null;
   }
 
   // =========================================================================

@@ -71,6 +71,7 @@ export async function searchArtists(query = "", filters = {}, sort = "nearest", 
 }
 
 export async function getArtistById(artistId) {
+  if (!artistId || artistId === "undefined" || artistId === "null") return null;
   const res = await apiRequest("GET", `/customer/artists/${artistId}`, null, true);
   return res?.data || res;
 }
@@ -171,6 +172,33 @@ export async function fetchArtistAvailability(id, date = null) {
 
 export async function fetchSimilarArtists(id) {
   const res = await apiRequest("GET", `/customer/artist/${id}/similar`, null, true);
+  return res?.data || res;
+}
+
+export async function fetchArtistServiceCatalog(artistId, serviceId, filters = {}, sort = "popular") {
+  let endpoint = `/customer/artist/${artistId}/service/${serviceId}/catalog?sort=${sort}`;
+  if (filters.complexity) {
+    endpoint += `&complexity=${encodeURIComponent(filters.complexity)}`;
+  }
+  if (filters.art_tier) {
+    endpoint += `&art_tier=${encodeURIComponent(filters.art_tier)}`;
+  }
+  const res = await apiRequest("GET", endpoint, null, true);
+  return res?.data || res;
+}
+
+export async function submitCustomDesignRequest(requestData) {
+  const res = await apiRequest("POST", "/customer/custom-design-request", requestData, true);
+  return res?.data || res;
+}
+
+export async function fetchArtistFaqs(artistId) {
+  const res = await apiRequest("GET", `/customer/artist/${artistId}/faqs`, null, true);
+  return res?.data || res;
+}
+
+export async function fetchArtistOffers(artistId) {
+  const res = await apiRequest("GET", `/customer/artist/${artistId}/offers`, null, true);
   return res?.data || res;
 }
 

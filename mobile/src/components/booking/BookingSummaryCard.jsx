@@ -140,6 +140,40 @@ export default function BookingSummaryCard({
             </View>
           </View>
         </View>
+
+        {/* Selected Design Preview if present */}
+        {(booking?.selected_art_title || booking?.selected_art_image) && (
+          <View style={styles.designPreviewContainer}>
+            <Text style={styles.designPreviewHeading}>Chosen Mehndi Artwork</Text>
+            <View style={styles.designPreviewCard}>
+              {Boolean(booking?.selected_art_image) && (
+                <Image source={{ uri: booking.selected_art_image }} style={styles.designPreviewThumb} />
+              )}
+              <View style={{ flex: 1, marginLeft: booking?.selected_art_image ? 10 : 0 }}>
+                <Text style={styles.designPreviewTitle} numberOfLines={1}>
+                  {booking.selected_art_title}
+                </Text>
+                <View style={styles.designPreviewMetaRow}>
+                  {booking.selected_art_tier && (
+                    <View style={[
+                      styles.designTierTag,
+                      booking.selected_art_tier === "BRIDAL_EXCLUSIVE" ? styles.bridalTierTag :
+                      booking.selected_art_tier === "PREMIUM" ? styles.premiumTierTag : styles.standardTierTag
+                    ]}>
+                      <Text style={styles.designTierTagText}>
+                        {booking.selected_art_tier === "BRIDAL_EXCLUSIVE" ? "👑 Bridal" :
+                         booking.selected_art_tier === "PREMIUM" ? "💎 Premium" : "✨ Standard"}
+                      </Text>
+                    </View>
+                  )}
+                  {booking.selected_art_duration && (
+                    <Text style={styles.designDurationText}>⏱️ {booking.selected_art_duration} mins</Text>
+                  )}
+                </View>
+              </View>
+            </View>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -322,5 +356,69 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: "#1F2937",
     marginTop: 1
+  },
+  designPreviewContainer: {
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: "#F3F4F6"
+  },
+  designPreviewHeading: {
+    fontSize: 11,
+    fontWeight: "750",
+    color: "#6B7280",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+    marginBottom: 6
+  },
+  designPreviewCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F9FAFB",
+    padding: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#EDE9FE"
+  },
+  designPreviewThumb: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: "#EDE9FE"
+  },
+  designPreviewTitle: {
+    fontSize: 12.5,
+    fontWeight: "800",
+    color: "#1F2937"
+  },
+  designPreviewMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 3
+  },
+  designTierTag: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4
+  },
+  standardTierTag: {
+    backgroundColor: "#E5E7EB"
+  },
+  premiumTierTag: {
+    backgroundColor: "#FEF3C7"
+  },
+  bridalTierTag: {
+    backgroundColor: "#FCE7F3"
+  },
+  designTierTagText: {
+    fontSize: 9.5,
+    fontWeight: "750",
+    color: "#4B5563"
+  },
+  designDurationText: {
+    fontSize: 10.5,
+    color: "#6B7280",
+    fontWeight: "600"
   }
 });

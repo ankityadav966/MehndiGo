@@ -369,7 +369,7 @@ async function runTestSuite() {
   assert(booking && booking.booking_code !== undefined, "32. Booking successfully created for APPROVED artist");
 
   // 32. APPROVED Artist can now withdraw
-  const withdrawReq = await WalletService.initiateWithdrawal(verifyRes.user.id, 2000, "Approved withdrawal");
+  const withdrawReq = await WalletService.initiateWithdrawal(verifyRes.user.id, 2000, { ignoreDayRestriction: true });
   assert(withdrawReq && withdrawReq.status === "PENDING", "33. Withdrawal initiated successfully for APPROVED artist");
 
   // ==========================================

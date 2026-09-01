@@ -11,7 +11,13 @@ import { fetchArtistAvailability } from "../../services/customer";
 import { checkRestrictedBooking } from "../../services/booking";
 
 export default function SelectDateScreen({ route, navigation }) {
-  const { artistId, serviceId, selectedDate: initialDate, selectedTimeSlot, selectedArt } = route.params || {};
+  const rawParams = route.params || {};
+  const artistId = rawParams.artistId || rawParams.artist?.id || rawParams.artist_id;
+  const serviceId = rawParams.serviceId || rawParams.service?.id || rawParams.service_id || rawParams.selectedArt?.service_id || 1;
+  const initialDate = rawParams.selectedDate;
+  const selectedTimeSlot = rawParams.selectedTimeSlot;
+  const selectedArt = rawParams.selectedArt;
+  const packageId = rawParams.packageId;
 
   // Single Date Selection Rule: Exactly 1 selected date string (YYYY-MM-DD)
   const todayStr = moment().format("YYYY-MM-DD");
@@ -22,8 +28,8 @@ export default function SelectDateScreen({ route, navigation }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!artistId || !serviceId) {
-      Alert.alert("Error", "Missing booking context details.");
+    if (!artistId) {
+      Alert.alert("Error", "Missing booking context details. Please select an artist.");
       navigation.goBack();
       return;
     }
@@ -53,7 +59,7 @@ export default function SelectDateScreen({ route, navigation }) {
                   if (restrictedBookingId) {
                     navigation.navigate("BookingSettlement", { bookingId: restrictedBookingId, id: restrictedBookingId });
                   } else {
-                    navigation.navigate("CustomerBookings");
+                    navigation.navigate("MyBookings");
                   }
                 }
               },
@@ -63,7 +69,7 @@ export default function SelectDateScreen({ route, navigation }) {
                   if (restrictedBookingId) {
                     navigation.navigate("BookingDetails", { bookingId: restrictedBookingId, id: restrictedBookingId });
                   } else {
-                    navigation.navigate("CustomerBookings");
+                    navigation.navigate("MyBookings");
                   }
                 }
               },
@@ -109,7 +115,8 @@ export default function SelectDateScreen({ route, navigation }) {
       serviceId,
       selectedDate,
       selectedTimeSlot,
-      selectedArt
+      selectedArt,
+      packageId
     });
     
     // reset lock after a short delay

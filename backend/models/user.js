@@ -153,6 +153,14 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING,
         allowNull: true
       },
+      boost_start_at: {
+        type: DataTypes.DATE,
+        allowNull: true
+      },
+      boost_expires_at: {
+        type: DataTypes.DATE,
+        allowNull: true
+      },
     },
     {
       sequelize,

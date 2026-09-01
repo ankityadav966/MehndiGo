@@ -37,9 +37,13 @@ export default function LeadDetailsScreen({ route, navigation }) {
       const response = await getLeadById(id);
       setLead(response);
       
-      // 2. Mark viewed on server
-      if (response.status === "New Lead") {
-        await viewLead(id);
+      // 2. Mark viewed on server (non-blocking)
+      if (response.status === "New Lead" || response.lead_status === "New Lead") {
+        try {
+          await viewLead(id);
+        } catch (vErr) {
+          if (__DEV__) console.log("Non-blocking viewLead notice:", vErr);
+        }
       }
     } catch (err) {
       if (__DEV__) console.log("Failed to load lead details:", err);

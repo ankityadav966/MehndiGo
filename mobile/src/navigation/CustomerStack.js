@@ -14,6 +14,9 @@ import TermsConditionsScreen from "../screens/Common/TermsConditionsScreen";
 import AddressSelection from "../screens/Customer/AddressSelection";
 import ArtistListingScreen from "../screens/Customer/ArtistListingScreen";
 import ArtistProfileScreen from "../screens/Customer/ArtistProfileScreen";
+import ArtistServiceCatalogScreen from "../screens/Customer/ArtistServiceCatalogScreen";
+import DesignDetailsScreen from "../screens/Customer/DesignDetailsScreen";
+import CustomDesignRequestScreen from "../screens/Customer/CustomDesignRequestScreen";
 import BookingCancellationScreen from "../screens/Customer/BookingCancellationScreen";
 import BookingDetailsScreen from "../screens/Customer/BookingDetailsScreen";
 import BookingSettlementScreen from "../screens/Customer/BookingSettlementScreen";
@@ -64,6 +67,9 @@ export default function CustomerStack() {
       <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />
       <Stack.Screen name="RewardStore" component={RewardStoreScreen} />
       <Stack.Screen name="ArtistProfile" component={ArtistProfileScreen} />
+      <Stack.Screen name="ArtistServiceCatalog" component={ArtistServiceCatalogScreen} />
+      <Stack.Screen name="DesignDetails" component={DesignDetailsScreen} />
+      <Stack.Screen name="CustomDesignRequest" component={CustomDesignRequestScreen} />
       <Stack.Screen name="Search" component={SearchScreen} />
       <Stack.Screen name="Categories" component={CategoriesScreen} />
       <Stack.Screen name="ArtistListing" component={ArtistListingScreen} />
@@ -77,6 +83,7 @@ export default function CustomerStack() {
       <Stack.Screen name="BookingSuccess" component={BookingSuccessScreen} />
       <Stack.Screen name="LiveTracking" component={LiveTrackingScreen} />
       <Stack.Screen name="MyBookings" component={MyBookingsScreen} />
+      <Stack.Screen name="CustomerBookings" component={MyBookingsScreen} />
       <Stack.Screen name="Coupons" component={CouponsScreen} />
       <Stack.Screen name="Support" component={SupportScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
@@ -102,13 +109,11 @@ export default function CustomerStack() {
       <Stack.Screen name="SavedAddresses" component={SavedAddressesScreen} />
       <Stack.Screen name="AddNewAddress" component={AddNewAddressScreen} />
       <Stack.Screen name="Wallet" component={WalletScreen} />
-      <Stack.Screen name="Wishlist" component={WishlistScreen} />
       <Stack.Screen name="CompareArtists" component={CompareArtistsScreen} />
       <Stack.Screen name="Filters" component={FiltersScreen} />
       <Stack.Screen name="CustomerProfile" component={CustomerProfileScreen} />
       <Stack.Screen name="VideoPlayer" component={VideoPlayerScreen} />
       <Stack.Screen name="InitialLocationSetup" component={InitialLocationSetupScreen} />
-      <Stack.Screen name="InitialLocationSetupScreen" component={InitialLocationSetupScreen} />
     </Stack.Navigator>
   );
 }

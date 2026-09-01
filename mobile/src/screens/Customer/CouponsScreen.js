@@ -49,6 +49,25 @@ export default function CouponsScreen({ route, navigation }) {
     return () => clearTimeout(timer);
   }, [fetchCouponsList]);
 
+  const applyAndReturn = (code) => {
+    if (onSelectCoupon && typeof onSelectCoupon === "function") {
+      try { onSelectCoupon(code); } catch {}
+    }
+    const returnScreen = route.params?.returnScreen;
+    if (returnScreen) {
+      navigation.navigate(returnScreen, {
+        ...(route.params || {}),
+        selectedCouponCode: code
+      });
+    } else {
+      Alert.alert(
+        "Coupon Selected 🎉",
+        `Coupon code "${code}" has been saved. It will be applied when you book an artist.`,
+        [{ text: "OK", onPress: () => navigation.goBack() }]
+      );
+    }
+  };
+
   const handleAutoApplyBest = async () => {
     setApplying(true);
     try {
@@ -56,12 +75,7 @@ export default function CouponsScreen({ route, navigation }) {
       const best = res?.data || res;
       if (best && (best.couponCode || best.coupon_code || best.code)) {
         const code = (best.couponCode || best.coupon_code || best.code).toUpperCase();
-        if (onSelectCoupon) {
-          onSelectCoupon(code);
-          navigation.goBack();
-        } else {
-          Alert.alert("Best Coupon Applied 🎉", `Applied ${code} for maximum savings!`);
-        }
+        applyAndReturn(code);
       } else {
         Alert.alert("Notice", "No eligible coupons for this booking value.");
       }
@@ -82,13 +96,7 @@ export default function CouponsScreen({ route, navigation }) {
       Alert.alert("Notice", "This coupon is already applied.");
       return;
     }
-
-    if (onSelectCoupon) {
-      onSelectCoupon(clean);
-      navigation.goBack();
-    } else {
-      Alert.alert("Applied 🎉", `Promo code ${clean} applied!`);
-    }
+    applyAndReturn(clean);
   };
 
   const handleSelectCoupon = (item) => {
@@ -101,13 +109,7 @@ export default function CouponsScreen({ route, navigation }) {
       Alert.alert("Notice", "This coupon is already applied to your booking.");
       return;
     }
-
-    if (onSelectCoupon) {
-      onSelectCoupon(itemCode);
-      navigation.goBack();
-    } else {
-      Alert.alert("Applied 🎉", `Promo code ${itemCode} selected!`);
-    }
+    applyAndReturn(itemCode);
   };
 
   const renderCoupon = ({ item }) => {

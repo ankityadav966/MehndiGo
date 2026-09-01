@@ -10,7 +10,7 @@ import { fetchArtistAvailability } from "../../services/customer";
 import { formatServiceDate } from "../../utils/date";
 
 export default function SelectTimeSlotScreen({ route, navigation }) {
-  const { artistId, serviceId, selectedDate: paramDate, selectedArt } = route.params || {};
+  const { artistId, serviceId, selectedDate: paramDate, selectedArt, packageId } = route.params || {};
 
   const targetDate = typeof paramDate === "string" ? paramDate : (Array.isArray(paramDate) ? paramDate[0] : moment().format("YYYY-MM-DD"));
   const isToday = moment(targetDate).isSame(moment(), "day");
@@ -125,7 +125,8 @@ export default function SelectTimeSlotScreen({ route, navigation }) {
       selectedDate: targetDate,
       slotId: cleanSlotId,
       timeLabel: timeLabel,
-      selectedArt
+      selectedArt,
+      packageId
     });
     
     setTimeout(() => setIsNavigating(false), 500);

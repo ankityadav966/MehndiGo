@@ -11,15 +11,20 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING,
         allowNull: false
       },
-      referrer_reward: {
+      artist_boost_days: {
         type: DataTypes.INTEGER,
         allowNull: false,
-        defaultValue: 0
+        defaultValue: 7
       },
-      referred_reward: {
+      welcome_boost_days: {
         type: DataTypes.INTEGER,
         allowNull: false,
-        defaultValue: 0
+        defaultValue: 3
+      },
+      customer_benefit: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        defaultValue: "Priority Support & Exclusive Offers"
       },
       is_active: {
         type: DataTypes.BOOLEAN,

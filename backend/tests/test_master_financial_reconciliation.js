@@ -255,7 +255,16 @@ async function runMasterFinancialAudit() {
   }
 }
 
-runMasterFinancialAudit().then(() => process.exit(0)).catch((err) => {
+const https = require("https");
+const http = require("http");
+
+runMasterFinancialAudit().then(() => {
+  https.globalAgent.destroy();
+  http.globalAgent.destroy();
+  setTimeout(() => {
+    process.exit(0);
+  }, 100);
+}).catch((err) => {
   console.error(err);
   process.exit(1);
 });

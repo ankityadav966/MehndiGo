@@ -29,6 +29,7 @@ import {
   verifyCheckOutOtp,
   completeService,
   confirmCashPayment,
+  rejectCashPayment,
   requestTravelCharge
 } from "../../services/booking";
 import { useSocket } from "../../context/SocketContext";
@@ -72,6 +73,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
   const [otpType, setOtpType] = useState("CHECKIN"); // "CHECKIN" or "CHECKOUT"
   const [otpError, setOtpError] = useState(null);
   const [isCheckInLocallyVerified, setIsCheckInLocallyVerified] = useState(false);
+  const hasShownCashAlertRef = useRef(false);
 
   const pollIntervalRef = useRef(null);
 
@@ -90,7 +92,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
         }
         setBooking((prev) => {
           const isLocallyVerified = isCheckInLocallyVerified || Number(prev?.checkin_otp_verified) === 1 || prev?.detailed_status === "SERVICE_IN_PROGRESS";
-          if (isLocallyVerified && Number(data?.checkin_otp_verified) !== 1 && data?.detailed_status !== "COMPLETED") {
+          if (isLocallyVerified && Number(data?.checkin_otp_verified) !== 1 && !["COMPLETED", "CHECKOUT", "PAYMENT_REQUIRED", "CANCELLED"].includes(data?.detailed_status)) {
             return {
               ...data,
               status: "in_progress",
@@ -472,41 +474,30 @@ export default function BookingDetailsScreen({ route, navigation }) {
   };
 
   // 7. CONFIRM CASH PAYMENT
-  const handleConfirmCash = async () => {
-    const remaining = Number(booking?.remaining_amount || 0);
-    Alert.alert(
-      "Confirm Cash Collection",
-      `Have you received ₹${remaining.toLocaleString("en-IN")} in cash from the customer?`,
-      [
-        { text: "No", style: "cancel" },
-        {
-          text: "Yes, Received",
-          onPress: async () => {
-            setActionLoading(true);
-            try {
-              await confirmCashPayment(bookingId);
-              setBooking((prev) => ({
-                ...(prev || {}),
-                status: "completed",
-                booking_status: "COMPLETED",
-                detailed_status: "COMPLETED",
-                remaining_amount: 0,
-                payment_status: "PAID",
-                final_payment_status: "PAID",
-                final_payment_method: "CASH"
-              }));
-              Alert.alert("Payment Confirmed! 💰", "Cash payment recorded and booking marked complete.");
-              loadDetails();
-            } catch (err) {
-              Alert.alert("Error", err.message || "Failed to record cash payment.");
-            } finally {
-              setActionLoading(false);
-            }
-          }
-        }
-      ]
-    );
-  };
+  const handleConfirmCash = useCallback(async () => {
+    setActionLoading(true);
+    try {
+      await confirmCashPayment(bookingId);
+      setBooking((prev) => ({
+        ...(prev || {}),
+        status: "completed",
+        booking_status: "COMPLETED",
+        detailed_status: "COMPLETED",
+        remaining_amount: 0,
+        payment_status: "PAID",
+        final_payment_status: "PAID",
+        final_payment_method: "CASH"
+      }));
+      Alert.alert("Payment Confirmed! 💰", "Cash payment recorded and booking marked complete.");
+      loadDetails();
+    } catch (err) {
+      Alert.alert("Error", err.message || "Failed to record cash payment.");
+    } finally {
+      setActionLoading(false);
+    }
+  }, [booking?.remaining_amount, bookingId, loadDetails]);
+
+
 
   // 8. REQUEST TRAVEL ALLOWANCE
   const handleRequestTravelCharge = async () => {
@@ -572,6 +563,10 @@ export default function BookingDetailsScreen({ route, navigation }) {
     booking?.detailed_status || booking?.booking_status || booking?.status || "PENDING"
   ).toUpperCase();
 
+  if (__DEV__) {
+    console.log("[DEBUG BookingDetailsScreen] booking ID:", booking?.id, "rawStatus:", rawStatus, "detailed_status:", booking?.detailed_status);
+  }
+
   const isCheckInVerified =
     isCheckInLocallyVerified ||
     Number(booking?.checkin_otp_verified) === 1 ||
@@ -580,7 +575,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
     booking?.check_in_otp_verified === true ||
     ["CUSTOMER_VERIFIED", "SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS", "CHECKOUT", "COMPLETED"].includes(rawStatus);
 
-  const isPending = rawStatus === "PENDING" || rawStatus === "REQUESTED";
+  const isPending = rawStatus === "PENDING" || rawStatus === "REQUESTED" || rawStatus === "PENDING_ARTIST_CONFIRMATION";
   const isAccepted = !isCheckInVerified && ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED"].includes(rawStatus);
   const isOnTheWay = !isCheckInVerified && ["ARTIST_ON_THE_WAY", "ON_THE_WAY"].includes(rawStatus);
 
@@ -640,6 +635,53 @@ export default function BookingDetailsScreen({ route, navigation }) {
         >
           {/* 2. Step Progression Timeline */}
           <BookingTimeline status={rawStatus} isCancelled={isCancelled} />
+
+          {/* 2b. AWAITING CASH CONFIRMATION ACTIONS */}
+          {rawStatus === "AWAITING_CASH_CONFIRMATION" && (
+            <View style={styles.actionCard}>
+              <View style={styles.actionCardHeader}>
+                <View style={[styles.carIconBox, { backgroundColor: "#FFF0F4" }]}>
+                  <Ionicons name="card" size={17} color={Colors.primary} />
+                </View>
+                <View style={{ flex: 1, flexShrink: 1 }}>
+                  <Text style={styles.actionCardTitle} numberOfLines={1}>Pending Cash Approval</Text>
+                  <Text style={styles.actionCardDesc} numberOfLines={2}>
+                    Awaiting your approval for collected cash (₹{booking?.final_amount || booking?.artist_total_payable}).
+                  </Text>
+                </View>
+              </View>
+
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                <TouchableOpacity
+                  style={[styles.startTravelBtn, { backgroundColor: Colors.error, flex: 1 }]}
+                  onPress={async () => {
+                      try {
+                        setActionLoading(true);
+                        await rejectCashPayment(bookingId);
+                        Alert.alert("Success", "Cash payment rejected.");
+                        loadDetails();
+                      } catch (err) {
+                        Alert.alert("Error", err.message);
+                        setActionLoading(false);
+                      }
+                  }}
+                  disabled={actionLoading}
+                  activeOpacity={0.85}
+                >
+                  {actionLoading ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={styles.startTravelBtnText}>Reject</Text>}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.startTravelBtn, { backgroundColor: Colors.success, flex: 1 }]}
+                  onPress={handleConfirmCash}
+                  disabled={actionLoading}
+                  activeOpacity={0.85}
+                >
+                  {actionLoading ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={styles.startTravelBtnText}>Approve</Text>}
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
 
           {/* 3. PENDING REQUEST ACTIONS (Accept / Reject) */}
           {isPending && (
@@ -865,7 +907,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
       <Modal visible={otpModalVisible} transparent animationType="fade">
         <KeyboardAvoidingView
           style={styles.modalOverlay}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
           <View style={styles.modalBox}>
             <View style={styles.modalHeaderIcon}>
@@ -903,7 +945,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
       <Modal visible={rejectModalVisible} transparent animationType="fade">
         <KeyboardAvoidingView
           style={styles.modalOverlay}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
           <View style={styles.modalBox}>
             <View style={[styles.modalHeaderIcon, { backgroundColor: "#FEE2E2" }]}>
@@ -951,7 +993,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
       <Modal visible={travelChargeModalVisible} transparent animationType="fade">
         <KeyboardAvoidingView
           style={styles.modalOverlay}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
           <View style={styles.modalBox}>
             <View style={styles.modalHeaderIcon}>
