@@ -18,21 +18,11 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import CustomButton from "../../components/CustomButton";
 import { createArtistService, uploadPortfolioMedia } from "../../services/artist";
-
-const CATEGORIES = [
-  "Bridal Mehndi",
-  "Arabic Mehndi",
-  "Indo Arabic",
-  "Traditional Mehndi",
-  "Festival Mehndi",
-  "Engagement",
-  "Party Mehndi",
-  "Others"
-];
+import { MEHNDI_CATEGORY_NAMES as CATEGORIES } from "../../constants/MehndiCategories";
 
 export default function AddServiceScreen({ navigation }) {
   const [serviceName, setServiceName] = useState("");
-  const [category, setCategory] = useState("Bridal Mehndi");
+  const [category, setCategory] = useState(CATEGORIES[0]);
   const [price, setPrice] = useState("");
   const [duration, setDuration] = useState("");
   const [description, setDescription] = useState("");

@@ -31,6 +31,7 @@ import { resolveImage } from "../../utils/imageHelper";
 import { getThumbnailUrl } from "../../utils/cloudinary";
 import { getActiveAddress } from "../../utils/locationManager";
 import { createArtistDeepLink } from "../../services/deepLink";
+import { QUICK_FILTER_CATEGORIES } from "../../constants/MehndiCategories";
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -440,16 +441,7 @@ export default function ArtistListingScreen({ route, navigation }) {
       {/* Quick Filter Horizontal Chips */}
       <View style={{ marginBottom: 10 }}>
         <FlatList
-          data={[
-            { label: "All Artists", key: "all" },
-            { label: "Bridal", key: "bridal" },
-            { label: "Arabic", key: "arabic" },
-            { label: "Royal", key: "royal" },
-            { label: "⭐ 4.5+ Rated", key: "top_rated" },
-            { label: "5+ Yrs Exp", key: "5_exp" },
-            { label: "Home Service", key: "home_service" },
-            { label: "Verified Only", key: "verified" }
-          ]}
+          data={QUICK_FILTER_CATEGORIES}
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ paddingHorizontal: 16 }}
@@ -457,13 +449,10 @@ export default function ArtistListingScreen({ route, navigation }) {
           renderItem={({ item }) => {
             let isActive = false;
             if (item.key === "all") isActive = !selectedCategory && !rating && !experience && !verified && !homeService;
-            else if (item.key === "bridal") isActive = selectedCategory?.toLowerCase().includes("bridal");
-            else if (item.key === "arabic") isActive = selectedCategory?.toLowerCase().includes("arabic");
-            else if (item.key === "royal") isActive = selectedCategory?.toLowerCase().includes("royal");
             else if (item.key === "top_rated") isActive = rating === "4.5";
-            else if (item.key === "5_exp") isActive = experience === "5";
             else if (item.key === "home_service") isActive = homeService;
             else if (item.key === "verified") isActive = verified;
+            else if (item.category) isActive = selectedCategory?.toLowerCase() === item.category.toLowerCase();
 
             return (
               <TouchableOpacity
@@ -471,16 +460,14 @@ export default function ArtistListingScreen({ route, navigation }) {
                 onPress={() => {
                   if (item.key === "all") {
                     resetFilters();
-                  } else if (item.key === "bridal" || item.key === "arabic" || item.key === "royal") {
-                    setSelectedCategory(isActive ? "" : item.label);
                   } else if (item.key === "top_rated") {
                     setRating(isActive ? "" : "4.5");
-                  } else if (item.key === "5_exp") {
-                    setExperience(isActive ? "" : "5");
                   } else if (item.key === "home_service") {
                     setHomeService(!homeService);
                   } else if (item.key === "verified") {
                     setVerified(!verified);
+                  } else if (item.category) {
+                    setSelectedCategory(isActive ? "" : item.category);
                   }
                 }}
               >

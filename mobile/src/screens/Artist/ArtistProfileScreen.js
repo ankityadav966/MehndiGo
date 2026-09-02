@@ -519,6 +519,9 @@ export default function ArtistProfileScreen({ navigation }) {
               color={Colors.text}
             />
           </TouchableOpacity>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate("ArtistReferral")}>
+            <Ionicons name="gift-outline" size={22} color={Colors.text} />
+          </TouchableOpacity>
           <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate("Settings")}>
             <Ionicons name="menu-outline" size={22} color={Colors.text} />
           </TouchableOpacity>

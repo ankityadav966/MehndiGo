@@ -19,20 +19,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import CustomButton from "../../components/CustomButton";
 import { updatePortfolioItem, uploadPortfolioMedia } from "../../services/artist";
-
-const CATEGORIES = [
-  "Bridal Mehndi",
-  "Arabic Mehndi",
-  "Royal Mehndi",
-  "Indo Arabic",
-  "Portrait Mehndi",
-  "Minimal Mehndi",
-  "Engagement",
-  "Festival",
-  "Kids Mehndi",
-  "Custom Design",
-  "Others"
-];
+import { MEHNDI_CATEGORY_NAMES as CATEGORIES } from "../../constants/MehndiCategories";
 
 const OCCASIONS = [
   "Wedding",

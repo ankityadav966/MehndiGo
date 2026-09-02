@@ -8,8 +8,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Config from "../constants/Config";
 
 export const STORAGE_KEYS = {
-  PENDING_DEEP_LINK: "pending_deep_link_route",
-  PENDING_REFERRAL_CODE: "pendingReferralCode"
+  PENDING_DEEP_LINK: "pending_deep_link_route"
 };
 
 // =========================================================================
@@ -116,18 +115,6 @@ export function createSupportDeepLink(ticketId = null, useScheme = false) {
     : `${Config.PRIMARY_DOMAIN}/support`;
 }
 
-export function createReferralDeepLink(referralCode, useScheme = false) {
-  if (!referralCode) return getPlayStoreFallbackUrl();
-  const cleanCode = encodeURIComponent(String(referralCode).trim().toUpperCase());
-  return useScheme
-    ? `${Config.APP_SCHEME}://invite?ref=${cleanCode}`
-    : `${Config.PRIMARY_DOMAIN}/invite?ref=${cleanCode}`;
-}
-
-export function createInviteDeepLink(referralCode, useScheme = false) {
-  return createReferralDeepLink(referralCode, useScheme);
-}
-
 export function createCategoryDeepLink(categoryId, useScheme = false) {
   if (!categoryId) return getPlayStoreFallbackUrl();
   const cleanId = encodeURIComponent(String(categoryId).trim());
@@ -154,6 +141,20 @@ export function createWalletDeepLink(useScheme = false) {
   return useScheme
     ? `${Config.APP_SCHEME}://wallet`
     : `${Config.PRIMARY_DOMAIN}/wallet`;
+}
+
+export function createReferralDeepLink(useScheme = false) {
+  return useScheme
+    ? `${Config.APP_SCHEME}://referral`
+    : `${Config.PRIMARY_DOMAIN}/referral`;
+}
+
+export function createInviteDeepLink(code, useScheme = false) {
+  if (!code) return getPlayStoreFallbackUrl();
+  const cleanCode = encodeURIComponent(String(code).trim());
+  return useScheme
+    ? `${Config.APP_SCHEME}://invite?ref=${cleanCode}`
+    : `${Config.PRIMARY_DOMAIN}/invite?ref=${cleanCode}`;
 }
 
 // =========================================================================
@@ -431,22 +432,6 @@ export function resolveDeepLink(rawUrl) {
     };
   }
 
-  // 9. Referral / Invite (/invite?ref=:code or /invite/:code or /referral/:code)
-  if (segments[0] === "invite" || segments[0] === "referral") {
-    let refCode = queryParams.ref || queryParams.referralCode || queryParams.code || (segments[1] || "");
-    refCode = (refCode || "").trim().toUpperCase();
-
-    return {
-      isValid: true,
-      type: "REFERRAL",
-      screen: "ReferralDashboard",
-      params: { ref: refCode, referralCode: refCode },
-      referralCode: refCode || null,
-      requiresAuth: false,
-      rawUrl
-    };
-  }
-
   // 10. Festival / Seasonal Offers (/festival/:code or /festivals/:code)
   if (segments[0] === "festival" || segments[0] === "festivals") {
     const festivalCode = (segments[1] || queryParams.code || "").trim();
@@ -455,20 +440,6 @@ export function resolveDeepLink(rawUrl) {
       type: "FESTIVAL",
       screen: "Coupons",
       params: { prefilledCode: festivalCode, festivalCode },
-      requiresAuth: false,
-      rawUrl
-    };
-  }
-
-  // Also check query param ?ref= on any root link
-  if (queryParams.ref || queryParams.referralCode) {
-    const refCode = (queryParams.ref || queryParams.referralCode || "").trim().toUpperCase();
-    return {
-      isValid: true,
-      type: "REFERRAL",
-      screen: "ReferralDashboard",
-      params: { ref: refCode, referralCode: refCode },
-      referralCode: refCode,
       requiresAuth: false,
       rawUrl
     };
@@ -589,6 +560,33 @@ export function resolveDeepLink(rawUrl) {
     };
   }
 
+  // 19. Referral invite link: /invite?ref=CODE  (new user landing)
+  //      Stores the referral code for RegisterScreen to pick up.
+  if (segments[0] === "invite") {
+    const refCode = queryParams.ref || queryParams.code || queryParams.referral || "";
+    return {
+      isValid: true,
+      type: "REFERRAL_INVITE",
+      screen: "Register",         // unauthenticated — goes to AuthStack Register
+      params: { referralCode: refCode.toUpperCase() },
+      requiresAuth: false,
+      pendingReferralCode: refCode.toUpperCase(),  // used by App.js to persist
+      rawUrl
+    };
+  }
+
+  // 20. Referral dashboard link: /referral (existing user — shows their own dashboard)
+  if (segments[0] === "referral" || segments[0] === "refer") {
+    return {
+      isValid: true,
+      type: "REFERRAL_DASHBOARD",
+      screen: "ReferralDashboard",
+      params: {},
+      requiresAuth: true,
+      rawUrl
+    };
+  }
+
   return {
     isValid: false,
     type: "UNKNOWN",
@@ -677,14 +675,6 @@ export async function handleDeepLinkNavigation(url, navigation, isAuthenticated 
     if (!resolved.isValid) {
       if (__DEV__) console.log(`[DeepLink Dispatcher] Skipped invalid URL: ${url} (${resolved.error})`);
       return;
-    }
-
-    // Capture referral code into storage regardless of current auth status
-    if (resolved.referralCode) {
-      try {
-        await AsyncStorage.setItem(STORAGE_KEYS.PENDING_REFERRAL_CODE, resolved.referralCode);
-        if (__DEV__) console.log(`[DeepLink Dispatcher] Captured referral code: ${resolved.referralCode}`);
-      } catch (e) {}
     }
 
     // If resource requires authentication and user is logged out:
@@ -1025,7 +1015,6 @@ export const linkingConfig = {
           Support: "support",
           SupportTicketDetails: "support/:ticketId",
           Settings: "settings",
-          ReferralDashboard: "invite",
           ChatRoom: "chat/:bookingId",
         },
       },

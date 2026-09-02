@@ -78,7 +78,7 @@ export default function OtpVerificationCard({
           <View style={styles.pendingNoticeBox}>
             <Ionicons name="information-circle" size={16} color="#B45309" style={{ marginRight: 8, marginTop: 1 }} />
             <Text style={styles.pendingNoticeText}>
-              Once the artist accepts your request, your <Text style={{ fontWeight: "700" }}>4-Digit Doorstep Check-In PIN</Text> will appear here and will be emailed to your inbox.
+              Once the artist accepts your request, an <Text style={{ fontWeight: "700" }}>OTP</Text> will be emailed to your inbox.
             </Text>
           </View>
         </View>
@@ -106,24 +106,9 @@ export default function OtpVerificationCard({
                 </View>
               </View>
               <Text style={[styles.customerSubtitle, styles.customerSubtitleCheckout]} numberOfLines={2}>
-                Share this PIN with your specialist ONLY AFTER mehndi application is fully finished.
+                Check your email for the OTP and share it with your specialist ONLY AFTER mehndi application is fully finished.
               </Text>
             </View>
-          </View>
-
-          {/* 4-Digit Display Card */}
-          <View style={styles.pinDisplayCardPurple}>
-            <Text style={styles.pinDisplayLabelPurple}>YOUR 4-DIGIT COMPLETION PIN</Text>
-            <View style={styles.pinDigitsRow}>
-              {pinDigits.map((digit, idx) => (
-                <View key={idx} style={styles.pinDigitTilePurple}>
-                  <Text style={styles.pinDigitTextPurple}>{digit}</Text>
-                </View>
-              ))}
-            </View>
-            <Text style={styles.pinInstructionPurple}>
-              Share this PIN with your specialist only after you are 100% satisfied with the completed design.
-            </Text>
           </View>
 
           {/* Secure Email Delivery Info Box */}
@@ -131,7 +116,7 @@ export default function OtpVerificationCard({
             <View style={styles.emailRow}>
               <Ionicons name="mail-unread" size={16} color="#701DDB" style={{ marginRight: 8 }} />
               <View style={{ flex: 1 }}>
-                <Text style={styles.emailTitleTextPurple}>Also Dispatched to Email ✉️</Text>
+                <Text style={styles.emailTitleTextPurple}>OTP Sent to Email ✉️</Text>
                 <Text style={styles.emailAddressTextPurple} numberOfLines={1}>
                   {masked}
                 </Text>
@@ -171,24 +156,9 @@ export default function OtpVerificationCard({
                 </View>
               </View>
               <Text style={styles.customerSubtitle} numberOfLines={2}>
-                Share this 4-digit PIN with your artist when they arrive at your location to verify identity and start service.
+                Check your email for the OTP and share it with your artist when they arrive at your location to verify identity and start service.
               </Text>
             </View>
-          </View>
-
-          {/* 4-Digit Display Card */}
-          <View style={styles.pinDisplayCardGreen}>
-            <Text style={styles.pinDisplayLabelGreen}>YOUR 4-DIGIT CHECK-IN PIN</Text>
-            <View style={styles.pinDigitsRow}>
-              {pinDigits.map((digit, idx) => (
-                <View key={idx} style={styles.pinDigitTileGreen}>
-                  <Text style={styles.pinDigitTextGreen}>{digit}</Text>
-                </View>
-              ))}
-            </View>
-            <Text style={styles.pinInstructionGreen}>
-              Share this PIN in person when the specialist arrives at your doorstep.
-            </Text>
           </View>
 
           {/* Secure Email Delivery Info Box */}
@@ -196,7 +166,7 @@ export default function OtpVerificationCard({
             <View style={styles.emailRow}>
               <Ionicons name="mail-unread" size={16} color="#059669" style={{ marginRight: 8 }} />
               <View style={{ flex: 1 }}>
-                <Text style={styles.emailTitleTextGreen}>Also Dispatched to Email ✉️</Text>
+                <Text style={styles.emailTitleTextGreen}>OTP Sent to Email ✉️</Text>
                 <Text style={styles.emailAddressText} numberOfLines={1}>
                   {masked}
                 </Text>

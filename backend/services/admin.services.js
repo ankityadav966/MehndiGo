@@ -244,6 +244,14 @@ class AdminService {
       console.error("[Milestones Trigger] Error evaluating milestones on approval:", err.message);
     }
 
+    // ── Referral: qualify this artist as a referred user (non-fatal) ──
+    try {
+      const referralService = require("./referral.services");
+      await referralService.qualifyReferral(artist.user_id);
+    } catch (err) {
+      console.error("[Referral] qualifyReferral failed (non-fatal):", err.message);
+    }
+
     return true;
   }
 

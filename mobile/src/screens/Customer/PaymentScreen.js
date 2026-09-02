@@ -252,24 +252,19 @@ export default function PaymentScreen({ route, navigation }) {
     let sessionData = null;
     try {
       try {
-        sessionData = await createPaymentSession(
-          targetBookingId,
-          {
-            bookingId: targetBookingId,
-            checkoutData: checkoutData,
-            payment_mode: paymentMethodType,
-            isSettlement: Boolean(isSettlement),
-            purpose: isSettlement ? "booking_remaining" : "booking_advance",
-            amount: isSettlement ? remainingAmount : (advanceAmount || payableNow),
-            finalAmount: finalAmount || totalAmount || payableNow,
-            total_amount: finalAmount || totalAmount || payableNow,
-            advanceAmount: advanceAmount || payableNow,
-            remainingAmount: remainingAmount,
-            bookingCode: bookingCode || booking?.booking_code || null
-          },
-          isSettlement ? "booking_remaining" : "booking_advance",
-          Boolean(isSettlement)
-        );
+        sessionData = await createPaymentSession({
+          bookingId: targetBookingId,
+          checkoutData: checkoutData,
+          payment_mode: paymentMethodType,
+          isSettlement: Boolean(isSettlement),
+          purpose: isSettlement ? "booking_remaining" : "booking_advance",
+          amount: isSettlement ? remainingAmount : (advanceAmount || payableNow),
+          finalAmount: finalAmount || totalAmount || payableNow,
+          total_amount: finalAmount || totalAmount || payableNow,
+          advanceAmount: advanceAmount || payableNow,
+          remainingAmount: remainingAmount,
+          bookingCode: bookingCode || booking?.booking_code || null
+        }, paymentMethodType);
       } catch (sessionErr) {
         console.warn("[PaymentScreen] Backend createPaymentSession notice, generating authentic order:", sessionErr.message);
       }

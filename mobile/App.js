@@ -93,18 +93,22 @@ export default function App() {
       if (!url) return;
       try {
         const { handleDeepLinkNavigation, resolveDeepLink, setPendingDeepLink } = require("./src/services/deepLink");
+
+        // Intercept referral invite links to persist the referral code
+        const resolved = resolveDeepLink(url);
+        if (resolved?.type === "REFERRAL_INVITE" && resolved?.pendingReferralCode) {
+          const AsyncStorage = require("@react-native-async-storage/async-storage").default;
+          await AsyncStorage.setItem("pendingReferralCode", resolved.pendingReferralCode);
+          if (__DEV__) console.log("[Referral] Stored pendingReferralCode:", resolved.pendingReferralCode);
+        }
+
         if (navigationRef.isReady()) {
           const { secureStorage } = require("./src/utils/storage");
           const token = await secureStorage.getAccessToken();
           const role = await secureStorage.getUserRole();
           await handleDeepLinkNavigation(url, navigationRef, !!token, role || "CUSTOMER");
         } else {
-          const resolved = resolveDeepLink(url);
           if (resolved.isValid) {
-            if (resolved.referralCode) {
-              const AsyncStorage = require("@react-native-async-storage/async-storage").default;
-              await AsyncStorage.setItem("pendingReferralCode", resolved.referralCode);
-            }
             await setPendingDeepLink(resolved);
           }
         }

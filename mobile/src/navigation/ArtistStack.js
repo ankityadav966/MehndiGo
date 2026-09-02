@@ -35,6 +35,7 @@ import EditServiceScreen from "../screens/Artist/EditServiceScreen";
 import ServiceDetailsScreen from "../screens/Artist/ServiceDetailsScreen";
 import SupportTicketScreen from "../screens/Customer/SupportTicketScreen";
 import SupportTicketDetailsScreen from "../screens/Common/SupportTicketDetailsScreen";
+import ArtistReferralScreen from "../screens/Artist/ArtistReferralScreen";
 
 import BottomTab from "./BottomTab";
 import ChatListScreen from "../screens/Common/ChatListScreen";
@@ -80,6 +81,7 @@ export default function ArtistStack() {
       <Stack.Screen name="ServiceDetails" component={ServiceDetailsScreen} />
       <Stack.Screen name="SupportTicket" component={SupportTicketScreen} />
       <Stack.Screen name="SupportTicketDetails" component={SupportTicketDetailsScreen} />
+      <Stack.Screen name="ArtistReferral" component={ArtistReferralScreen} />
       <Stack.Screen name="VideoPlayer" component={VideoPlayerScreen} />
     </Stack.Navigator>
   );

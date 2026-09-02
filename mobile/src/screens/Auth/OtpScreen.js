@@ -18,7 +18,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useArtistOnboarding } from "../../context/ArtistOnboardingContext";
 
 export default function OtpScreen({ navigation, route }) {
-  const { name, email, phone, role, isRegistering } = route.params || {};
+  const { name, email, phone, role, isRegistering, referralCode } = route.params || {};
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const inputRefs = useRef([]);
   const { dispatch } = useAuth();
@@ -127,15 +127,16 @@ export default function OtpScreen({ navigation, route }) {
     try {
       let data;
       if (isRegistering) {
-        data = await registerVerifyOtp(email, otpStr, name, phone, role);
+        data = await registerVerifyOtp(email, otpStr, name, phone, role, referralCode || null);
       } else {
         data = await verifyUserOtp(email, otpStr);
       }
-      try {
-        const AsyncStorage = require("@react-native-async-storage/async-storage").default;
-        await AsyncStorage.removeItem("pendingReferralCode");
-      } catch (err) {
-        if (__DEV__) console.log("Failed to clear stored referral code:", err.message);
+      // Clear stored referral code after successful registration use
+      if (isRegistering && referralCode) {
+        try {
+          const AsyncStorage = require("@react-native-async-storage/async-storage").default;
+          await AsyncStorage.removeItem("pendingReferralCode");
+        } catch (_) {}
       }
       const token = await secureStorage.getAccessToken();
       if (__DEV__) console.log("[ROLE TRACE 4] /register-verify-otp response:", JSON.stringify(data, null, 2));

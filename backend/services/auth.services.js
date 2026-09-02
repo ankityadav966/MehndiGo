@@ -139,7 +139,8 @@ class AuthService {
       email: trimmedEmail,
       phone: cleanPhone,
       role: normalizedRole,
-      password: password ? hashPassword(password) : null
+      password: password ? hashPassword(password) : null,
+      referralCode: data.referralCode ? String(data.referralCode).trim().toUpperCase() : null
     });
 
     await OtpRepositor.create({
@@ -294,6 +295,15 @@ class AuthService {
 
       await user.update({ refresh_token: refreshToken }, { transaction: t });
       await t.commit();
+
+      // ── Referral attribution (outside transaction — non-fatal) ──────────
+      const referralCode = payload.referralCode;
+      if (referralCode) {
+        const referralService = require("./referral.services");
+        referralService.captureReferral(referralCode, user.id).catch(err => {
+          console.error("[Auth] Referral capture failed (non-fatal):", err.message);
+        });
+      }
     } catch (err) {
       await t.rollback();
       throw err;

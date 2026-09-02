@@ -51,6 +51,7 @@ import {
 import { getActiveFestivalOffers, resolveFestivalBanner } from "../../utils/festivalEngine";
 import { copyAndSaveCoupon } from "../../utils/couponManager";
 import { resolveImage } from "../../utils/imageHelper";
+import { HOME_FALLBACK_CATEGORIES } from "../../constants/MehndiCategories";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -583,15 +584,8 @@ export default function HomeScreen({ navigation }) {
     const list = Array.from(map.values()).slice(0, 6);
     if (list.length > 0) return list;
 
-    // Fallback 6 rich mehndi categories
-    return [
-      { id: 1, name: "Bridal Mehndi", slug: "bridal-mehndi", description: "Royal bridal henna" },
-      { id: 2, name: "Arabic Mehndi", slug: "arabic-mehndi", description: "Flowing floral patterns" },
-      { id: 3, name: "Rajasthani", slug: "rajasthani-marwari", description: "Traditional Marwari jaali" },
-      { id: 4, name: "Indo-Western", slug: "indo-western", description: "Modern fusion henna" },
-      { id: 5, name: "Floral & Mandala", slug: "floral-mandala", description: "Delicate lotus & florals" },
-      { id: 6, name: "Traditional", slug: "traditional-indian", description: "Classic Indian patterns" }
-    ];
+    // Fallback 8 rich mehndi categories (synced with MehndiCategories constant)
+    return HOME_FALLBACK_CATEGORIES;
   }, [categories]);
 
   // Load nearby artists paginated

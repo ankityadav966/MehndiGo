@@ -43,7 +43,6 @@ import ServiceProgressCard from "../../components/booking/ServiceProgressCard";
 import CheckoutCard from "../../components/booking/CheckoutCard";
 import InvoiceCard from "../../components/booking/InvoiceCard";
 import ReviewCard from "../../components/booking/ReviewCard";
-import OtpVerificationCard from "../../components/booking/OtpVerificationCard";
 
 export default function BookingDetailsScreen({ route, navigation }) {
   const bookingId = route.params?.bookingId || route.params?.id;

@@ -61,11 +61,10 @@ const chatRoutes = require("./routes/chat.routes");
 const couponRoutes = require("./routes/coupon.routes");
 const notificationRoutes = require("./routes/notification.routes");
 const paymentRoutes = require("./routes/payment.routes");
-const referralRoutes = require("./routes/referral.routes");
 const categoryRoutes = require("./routes/category.routes");
-const rewardRoutes = require("./routes/reward.routes");
 const reviewRoutes = require("./routes/review.routes");
 const walletRoutes = require("./routes/wallet.routes");
+const referralRoutes = require("./routes/v1/referral.routes");
 
 app.use(["/auth", "/api/auth", "/api/v1/auth"], authRoutes);
 app.use(["/admin", "/api/admin", "/api/v1/admin"], adminRoutes);
@@ -78,14 +77,13 @@ app.use(["/chat", "/api/chat", "/api/v1/chat"], chatRoutes);
 app.use(["/coupon", "/api/coupon", "/api/v1/coupon"], couponRoutes);
 app.use(["/notification", "/api/notification", "/api/v1/notification"], notificationRoutes);
 app.use(["/payment", "/api/payment", "/api/v1/payment"], paymentRoutes);
-app.use(["/referral", "/api/referral", "/api/v1/referral"], referralRoutes);
 app.use(["/category", "/api/category", "/api/v1/category"], categoryRoutes);
-app.use(["/reward", "/api/reward", "/api/v1/reward"], rewardRoutes);
 app.use(["/reviews", "/api/reviews", "/api/v1/reviews"], reviewRoutes);
 app.use(["/wallet", "/api/wallet", "/api/v1/wallet"], walletRoutes);
 app.use(["/transactions", "/api/transactions", "/api/v1/transactions"], walletRoutes);
 app.use(["/settlements", "/api/settlements", "/api/v1/settlements"], walletRoutes);
 app.use(["/bank-account", "/api/bank-account", "/api/v1/bank-account"], walletRoutes);
+app.use(["/referral", "/api/referral", "/api/v1/referral", "/api/v1/mehndigo/referral"], referralRoutes);
 
 app.get("/health", (req, res) => {
   return res.status(200).json({

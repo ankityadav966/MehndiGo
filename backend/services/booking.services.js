@@ -842,6 +842,14 @@ class BookingService {
       });
     }
 
+    // ── Referral: check C2C booking qualification (non-fatal) ─────────────
+    if (bookingBefore?.user_id) {
+      try {
+        const referralService = require("./referral.services");
+        referralService.checkBookingQualification(bookingBefore.user_id).catch(() => {});
+      } catch (_) {}
+    }
+
     const booking = await db.Booking.findByPk(tx.booking_id);
     if (booking) {
       const artistProfile = await db.ArtistProfile.findByPk(booking.artist_id);

@@ -38,9 +38,6 @@ import SearchScreen from "../screens/Customer/SearchScreen";
 import SelectDateScreen from "../screens/Customer/SelectDateScreen";
 import SelectService from "../screens/Customer/SelectService";
 import SelectTimeSlotScreen from "../screens/Customer/SelectTimeSlotScreen";
-import ReferralDashboardScreen from "../screens/Customer/ReferralDashboardScreen";
-import LeaderboardScreen from "../screens/Customer/LeaderboardScreen";
-import RewardStoreScreen from "../screens/Customer/RewardStoreScreen";
 import SupportTicketScreen from "../screens/Customer/SupportTicketScreen";
 import SupportTicketDetailsScreen from "../screens/Common/SupportTicketDetailsScreen";
 import SavedAddressesScreen from "../screens/Customer/SavedAddressesScreen";
@@ -51,6 +48,7 @@ import CompareArtistsScreen from "../screens/Customer/CompareArtistsScreen";
 import FiltersScreen from "../screens/Customer/FiltersScreen";
 import CustomerProfileScreen from "../screens/Customer/CustomerProfileScreen";
 import InitialLocationSetupScreen from "../screens/Customer/InitialLocationSetupScreen";
+import ReferralDashboardScreen from "../screens/Customer/ReferralDashboardScreen";
 
 import BottomTab from "./BottomTab";
 import ChatListScreen from "../screens/Common/ChatListScreen";
@@ -64,8 +62,6 @@ export default function CustomerStack() {
       <Stack.Screen name="CustomerTabs" component={BottomTab} initialParams={{ role: "customer" }} />
       <Stack.Screen name="ChatList" component={ChatListScreen} />
       <Stack.Screen name="ChatRoom" component={ChatRoomScreen} />
-      <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />
-      <Stack.Screen name="RewardStore" component={RewardStoreScreen} />
       <Stack.Screen name="ArtistProfile" component={ArtistProfileScreen} />
       <Stack.Screen name="ArtistServiceCatalog" component={ArtistServiceCatalogScreen} />
       <Stack.Screen name="DesignDetails" component={DesignDetailsScreen} />
@@ -103,7 +99,6 @@ export default function CustomerStack() {
       <Stack.Screen name="Reviews" component={ReviewsScreen} />
       <Stack.Screen name="RefundStatus" component={RefundStatusScreen} />
       <Stack.Screen name="PaymentFailed" component={PaymentFailedScreen} />
-      <Stack.Screen name="ReferralDashboard" component={ReferralDashboardScreen} />
       <Stack.Screen name="SupportTicket" component={SupportTicketScreen} />
       <Stack.Screen name="SupportTicketDetails" component={SupportTicketDetailsScreen} />
       <Stack.Screen name="SavedAddresses" component={SavedAddressesScreen} />
@@ -112,6 +107,7 @@ export default function CustomerStack() {
       <Stack.Screen name="CompareArtists" component={CompareArtistsScreen} />
       <Stack.Screen name="Filters" component={FiltersScreen} />
       <Stack.Screen name="CustomerProfile" component={CustomerProfileScreen} />
+      <Stack.Screen name="ReferralDashboard" component={ReferralDashboardScreen} />
       <Stack.Screen name="VideoPlayer" component={VideoPlayerScreen} />
       <Stack.Screen name="InitialLocationSetup" component={InitialLocationSetupScreen} />
     </Stack.Navigator>
