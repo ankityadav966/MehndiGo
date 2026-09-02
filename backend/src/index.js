@@ -7977,7 +7977,7 @@ const handleWebFallbackInvite = async (c) => {
   const title = `You're Invited to MehndiGo! Get ₹100 Welcome Discount`;
   const desc = `Use referral code ${refCode} to get ₹100 off on your first home Mehndi booking. Discover verified artists near you.`;
   const img = "https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=1200&q=85";
-  const canonicalUrl = `https://mehndigo.in/invite?ref=${refCode}`;
+  const canonicalUrl = `https://api.mehndigo.in/invite?ref=${refCode}`;
   const appSchemeUrl = `mehendigoo://invite?ref=${refCode}`;
   const playStoreUrl = `https://play.google.com/store/apps/details?id=com.sonuy123.mehendigoo&referrer=utm_source%3Dmehndigo_invite%26utm_medium%3Ddeeplink%26utm_content%3Dref%3D${refCode}`;
 
@@ -11035,7 +11035,7 @@ const handleGetReferralDashboard = async (c) => {
 
   return jsonRes(c, true, {
     referralCode: code,
-    referralLink: `https://mehndigo.in/invite?ref=${code}`,
+    referralLink: `https://api.mehndigo.in/invite?ref=${code}`,
     stats: {
       totalInvites,
       pendingInvites,
@@ -11353,8 +11353,44 @@ addRoute("get", "/support/tickets", handleCustomerSupportTicket);
 addRoute("post", "/support/tickets", handleCustomerSupportTicket);
 addRoute("get", "/admin/support/tickets", handleCustomerSupportTicket);
 
+const handleGetArtistReferralDashboard = async (c) => {
+  const db = getDb(c.env);
+  const u = getUserFromHeader(c);
+  if (!u || !u.id) return jsonRes(c, false, null, "Authentication required", 401);
+
+  const user = await db.first("SELECT id, full_name, email, phone FROM users WHERE id = ?", [u.id]).catch(() => null);
+  const code = await getOrCreateReferralCode(db, u.id, user?.full_name || u.full_name || "");
+
+  const invites = await db.all("SELECT * FROM ReferralHistories WHERE referrer_id = ? OR CAST(referrer_id AS TEXT) = ?", [u.id, String(u.id)]).catch(async () => {
+    // fallback for old table name
+    return await db.all("SELECT * FROM referral_history WHERE referrer_id = ? OR CAST(referrer_id AS TEXT) = ?", [u.id, String(u.id)]).catch(() => []);
+  });
+
+  const totalInvites = invites.length;
+  const pendingInvites = invites.filter(i => (i.status || i.referral_status) === "PENDING" || (i.status || i.referral_status) === "REGISTERED").length;
+  const completedInvites = invites.filter(i => (i.status || i.referral_status) === "COMPLETED" || (i.status || i.referral_status) === "QUALIFIED").length;
+  
+  const totalEarnings = invites
+    .filter(i => i.reward_status === "CREDITED" || i.reward_status === "credited")
+    .reduce((acc, curr) => acc + (Number(curr.reward_amount) || 100), 0);
+
+  const artistReferredCount = invites.filter(i => i.referral_type === "ARTIST_TO_ARTIST" || i.referral_type === "CUSTOMER_TO_ARTIST").length;
+
+  return jsonRes(c, true, {
+    referralCode: code,
+    referralLink: "https://api.mehndigo.in/invite?ref=" + code,
+    stats: {
+      totalInvites,
+      pendingInvites,
+      completedInvites,
+      totalEarnings,
+      artistReferredCount
+    }
+  }, "Artist referral dashboard fetched successfully");
+};
 // Referral & Reward System Routes
 addRoute("get", "/referral", handleGetReferralDashboard);
+  addRoute("get", "/referral/artist-dashboard", handleGetArtistReferralDashboard);
 addRoute("get", "/referral/dashboard", handleGetReferralDashboard);
 addRoute("get", "/customer/referral", handleGetReferralDashboard);
 addRoute("get", "/api/v1/referral", handleGetReferralDashboard);
@@ -16631,3 +16667,4 @@ app.notFound((c) => {
 });
 
 export default app;
+
