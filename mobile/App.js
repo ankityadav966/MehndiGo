@@ -89,6 +89,39 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (Platform.OS === "android") {
+      const fetchInstallReferrer = async () => {
+        try {
+          const PlayInstallReferrer = require("react-native-play-install-referrer").default;
+          const AsyncStorage = require("@react-native-async-storage/async-storage").default;
+          
+          const referrerInfo = await PlayInstallReferrer.getInstallReferrerInfo();
+          if (referrerInfo && referrerInfo.installReferrer) {
+            const referrer = referrerInfo.installReferrer;
+            if (__DEV__) console.log("[InstallReferrer] Got referrer:", referrer);
+            
+            // Extract referral code (e.g. utm_content=ref=MEHNDIGO or ref=MEHNDIGO)
+            const match = referrer.match(/ref(?:erral)?=([^&]+)/i) || referrer.match(/code=([^&]+)/i);
+            if (match && match[1]) {
+              const code = decodeURIComponent(match[1]).trim().toUpperCase();
+              
+              // Only set if not already set, to avoid overwriting existing pending referral
+              const existingCode = await AsyncStorage.getItem("pendingReferralCode");
+              if (!existingCode) {
+                await AsyncStorage.setItem("pendingReferralCode", code);
+                if (__DEV__) console.log("[InstallReferrer] Stored pendingReferralCode:", code);
+              }
+            }
+          }
+        } catch (e) {
+          if (__DEV__) console.log("[InstallReferrer] Error fetching referrer:", e.message);
+        }
+      };
+      fetchInstallReferrer();
+    }
+  }, []);
+
+  useEffect(() => {
     const handleDeepLink = async (url) => {
       if (!url) return;
       try {
