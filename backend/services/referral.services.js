@@ -286,7 +286,7 @@ async function getCustomerDashboard(userId) {
   const reward50 = rewards.find(r => r.reward_type === "CUSTOMER_50_PERCENT_OFFER");
   const reward70 = rewards.find(r => r.reward_type === "CUSTOMER_70_PERCENT_OFFER");
 
-  const referralLink = `https://api.mehndigo.in/invite?ref=${codeRecord.code}`;
+  const referralLink = `https://mehndigo.in/invite?ref=${codeRecord.code}`;
 
   return {
     referralCode: codeRecord.code,
@@ -336,7 +336,7 @@ async function getArtistDashboard(userId) {
   });
 
   const artistProfile = await db.ArtistProfile.findOne({ where: { user_id: userId } });
-  const referralLink = `https://api.mehndigo.in/invite?ref=${codeRecord.code}`;
+  const referralLink = `https://mehndigo.in/invite?ref=${codeRecord.code}`;
 
   return {
     referralCode: codeRecord.code,

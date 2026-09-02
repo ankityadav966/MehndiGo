@@ -37,7 +37,7 @@ async function getReferralHistory(req, res) {
 async function getShareLink(req, res) {
   try {
     const codeRecord = await referralService.getOrCreateReferralCode(req.user.id);
-    const link = `https://api.mehndigo.in/invite?ref=${codeRecord.code}`;
+    const link = `https://mehndigo.in/invite?ref=${codeRecord.code}`;
     return res.status(200).json(SuccessResponse("Referral share link generated", {
       referralCode: codeRecord.code,
       referralLink: link,

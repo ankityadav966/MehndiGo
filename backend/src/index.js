@@ -7977,7 +7977,7 @@ const handleWebFallbackInvite = async (c) => {
   const title = `You're Invited to MehndiGo! Get ₹100 Welcome Discount`;
   const desc = `Use referral code ${refCode} to get ₹100 off on your first home Mehndi booking. Discover verified artists near you.`;
   const img = "https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=1200&q=85";
-  const canonicalUrl = `https://api.mehndigo.in/invite?ref=${refCode}`;
+  const canonicalUrl = `https://mehndigo.in/invite?ref=${refCode}`;
   const appSchemeUrl = `mehendigoo://invite?ref=${refCode}`;
   const playStoreUrl = `https://play.google.com/store/apps/details?id=com.sonuy123.mehendigoo&referrer=utm_source%3Dmehndigo_invite%26utm_medium%3Ddeeplink%26utm_content%3Dref%3D${refCode}`;
 
@@ -11035,7 +11035,7 @@ const handleGetReferralDashboard = async (c) => {
 
   return jsonRes(c, true, {
     referralCode: code,
-    referralLink: `https://api.mehndigo.in/invite?ref=${code}`,
+    referralLink: `https://mehndigo.in/invite?ref=${code}`,
     stats: {
       totalInvites,
       pendingInvites,
@@ -11378,7 +11378,7 @@ const handleGetArtistReferralDashboard = async (c) => {
 
   return jsonRes(c, true, {
     referralCode: code,
-    referralLink: "https://api.mehndigo.in/invite?ref=" + code,
+    referralLink: "https://mehndigo.in/invite?ref=" + code,
     stats: {
       totalInvites,
       pendingInvites,
