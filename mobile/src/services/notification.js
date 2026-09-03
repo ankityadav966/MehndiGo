@@ -129,21 +129,26 @@ export async function registerForPushNotificationsAsync() {
       });
     }
 
-    // 5. Fetch Expo Push Token
-    if (__DEV__) console.log("[PushNotification] Fetching Expo Push Token...");
+    // 5. Fetch Native Device Token (FCM for standalone/Android build)
+    if (__DEV__) console.log("[PushNotification] Fetching device push token...");
     let token = null;
     try {
-      const tokenData = await Notifications.getExpoPushTokenAsync({
-        projectId,
-      });
-      token = tokenData?.data;
-    } catch (tokenErr) {
-      if (__DEV__) console.log("[PushNotification] Expo token fetch notice:", tokenErr.message);
+      const deviceTokenData = await Notifications.getDevicePushTokenAsync();
+      token = deviceTokenData?.data;
+      if (token && __DEV__) console.log("[PushNotification] Native Device Push Token (FCM) fetched successfully");
+    } catch (devErr) {
+      if (__DEV__) console.log("[PushNotification] Native device token fetch notice:", devErr.message);
+    }
+
+    // Fallback to Expo Push Token if native token is unavailable (e.g. Expo Go)
+    if (!token) {
       try {
-        const deviceTokenData = await Notifications.getDevicePushTokenAsync();
-        token = deviceTokenData?.data;
-      } catch (devErr) {
-        if (__DEV__) console.log("[PushNotification] Device token fetch notice:", devErr.message);
+        const tokenData = await Notifications.getExpoPushTokenAsync({
+          projectId,
+        });
+        token = tokenData?.data;
+      } catch (tokenErr) {
+        if (__DEV__) console.log("[PushNotification] Expo token fetch notice:", tokenErr.message);
       }
     }
 

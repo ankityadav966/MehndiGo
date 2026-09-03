@@ -1,6 +1,10 @@
 // backend/src/notification_service.js
 // Centralized Notification & Push Service for MehendiGo (Cloudflare Worker & D1)
 
+import { sendBatchFcmNotifications, sendDirectFcmNotification } from "./fcm_v1_service.js";
+
+export { sendDirectFcmNotification, sendBatchFcmNotifications };
+
 /**
  * Ensures push notification and token tables exist in D1 SQLite database
  */
@@ -209,9 +213,35 @@ export async function dispatchNotification(db, {
 
   // 4. Dispatch push asynchronously (does not block caller)
   if (uniqueTokens.length > 0) {
-    sendExpoPushNotification(uniqueTokens, title, body, pushData).catch((err) => {
-      console.error("[NotificationService] Async push dispatch failed:", err.message);
-    });
+    const fcmTokens = [];
+    const expoTokens = [];
+
+    for (const tok of uniqueTokens) {
+      if (typeof tok === "string" && (tok.startsWith("ExponentPushToken") || tok.startsWith("ExpoPushToken"))) {
+        expoTokens.push(tok);
+      } else if (typeof tok === "string" && tok.trim()) {
+        fcmTokens.push(tok.trim());
+      }
+    }
+
+    // Direct Firebase Cloud Messaging (FCM HTTP v1) for native Android APK / standalone builds
+    if (fcmTokens.length > 0) {
+      sendBatchFcmNotifications(fcmTokens, {
+        title,
+        body,
+        data: pushData,
+        channelId: channelId || "default",
+      }).catch((err) => {
+        console.error("[NotificationService] Async FCM v1 push dispatch failed:", err.message);
+      });
+    }
+
+    // Expo Push Service for Expo Go or dev client builds
+    if (expoTokens.length > 0) {
+      sendExpoPushNotification(expoTokens, title, body, pushData).catch((err) => {
+        console.error("[NotificationService] Async Expo push dispatch failed:", err.message);
+      });
+    }
   } else {
     console.log(`[NotificationService] No push tokens found for user ${userId}. In-app notification saved.`);
   }

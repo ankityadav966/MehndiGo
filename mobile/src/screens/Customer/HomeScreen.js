@@ -39,6 +39,7 @@ import {
   removeFavorite,
   getCustomerAddresses,
   saveCustomerAddress,
+  getReels,
 } from "../../services/customer";
 import {
   getActiveAddress,
@@ -335,6 +336,7 @@ export default function HomeScreen({ navigation }) {
   const [offers, setOffers] = useState(() => memoryCachedDashboard?.offers || memoryCachedDashboard?.banners || []);
   const [featuredArtists, setFeaturedArtists] = useState(() => memoryCachedDashboard?.featured_artists || memoryCachedDashboard?.featuredArtists || []);
   const [popularArtists, setPopularArtists] = useState(() => memoryCachedDashboard?.popular_artists || memoryCachedDashboard?.popularArtists || []);
+  const [reels, setReels] = useState(() => memoryCachedDashboard?.reels || []);
   const [recommendations, setRecommendations] = useState([]);
   const [recentlyBookedArtists, setRecentlyBookedArtists] = useState(() => memoryCachedDashboard?.recently_booked || memoryCachedDashboard?.recentlyBooked || []);
 
@@ -468,6 +470,7 @@ export default function HomeScreen({ navigation }) {
             if (parsed.offers?.length || parsed.banners?.length) setOffers(parsed.offers || parsed.banners);
             if (parsed.featured_artists?.length || parsed.featuredArtists?.length) setFeaturedArtists(parsed.featured_artists || parsed.featuredArtists);
             if (parsed.popular_artists?.length || parsed.popularArtists?.length) setPopularArtists(parsed.popular_artists || parsed.popularArtists);
+            if (parsed.reels?.length) setReels(parsed.reels);
             if (parsed.recently_booked?.length || parsed.recentlyBooked?.length) setRecentlyBookedArtists(parsed.recently_booked || parsed.recentlyBooked);
             setDashboardLoading(false);
           }
@@ -484,19 +487,25 @@ export default function HomeScreen({ navigation }) {
       const lat = activeAddressState?.latitude || null;
       const lng = activeAddressState?.longitude || null;
 
-      // Fetch dashboard, categories, and favorites in parallel for ultra-fast startup
-      const [data, directCats, favs] = await Promise.all([
+      // Fetch dashboard, categories, favorites, and newest reels in parallel for ultra-fast startup
+      const [data, directCats, favs, reelsRes] = await Promise.all([
         getHomeDashboard(lat, lng),
         getCategories().catch(() => []),
-        getFavorites().catch(() => [])
+        getFavorites().catch(() => []),
+        getReels(1, 10).catch(() => []),
       ]);
 
       const rawCatList = (data?.categories && data.categories.length > 0)
         ? data.categories
         : (Array.isArray(directCats) && directCats.length > 0 ? directCats : (directCats?.data || []));
 
+      const rawReelsList = reelsRes?.reels || reelsRes?.data?.reels || (Array.isArray(reelsRes) ? reelsRes : (reelsRes?.data || []));
+      if (rawReelsList && rawReelsList.length > 0) {
+        setReels(rawReelsList.slice(0, 10));
+      }
+
       if (data) {
-        memoryCachedDashboard = { ...data, categories: rawCatList };
+        memoryCachedDashboard = { ...data, categories: rawCatList, reels: (rawReelsList || []).slice(0, 10) };
         setCategories(rawCatList || []);
         setOffers(data?.offers || data?.banners || []);
         setFeaturedArtists(data?.featured_artists || data?.featuredArtists || []);
@@ -869,6 +878,69 @@ export default function HomeScreen({ navigation }) {
     );
   }, [currentCardBg, currentBorderColor, currentTextColor, currentSecTextColor]);
 
+  // Render Horizontal Reel Card Item for Home Screen
+  const renderHomeReelItem = useCallback(({ item }) => {
+    const thumbnailUri =
+      item.thumbnail ||
+      item.image_url ||
+      (item.video_url ? item.video_url.replace(/\.mp4$/i, ".jpg") : null) ||
+      "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=400";
+
+    const artistAvatar = resolveImage(
+      item.artist_profile_image ||
+      item.artist_avatar ||
+      item.avatar ||
+      "https://picsum.photos/100"
+    );
+    const artistName = item.artist_name || item.full_name || "Mehndi Artist";
+    const reelTitle = item.title || item.caption || "Mehndi Reel";
+    const likesCount = item.real_likes_count ?? item.likes_count ?? 0;
+
+    return (
+      <TouchableOpacity
+        style={styles.reelHomeCard}
+        activeOpacity={0.88}
+        onPress={() => navigation.navigate("Reels", { reelId: item.id })}
+      >
+        <Image
+          source={{ uri: thumbnailUri }}
+          style={styles.reelHomePoster}
+          resizeMode="cover"
+        />
+
+        {/* Top Badges */}
+        <View style={styles.reelTopOverlay}>
+          <View style={styles.reelPlayPill}>
+            <Ionicons name="play" size={10} color="#FFFFFF" />
+            <Text style={styles.reelPlayPillText}>Reel</Text>
+          </View>
+          {likesCount > 0 && (
+            <View style={styles.reelLikesPill}>
+              <Ionicons name="heart" size={10} color="#EF4444" />
+              <Text style={styles.reelLikesText}>{likesCount}</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Bottom Dark Gradient / Vignette Overlay */}
+        <View style={styles.reelBottomScrim}>
+          <Text style={styles.reelCardTitle} numberOfLines={2}>
+            {reelTitle}
+          </Text>
+          <View style={styles.reelArtistRow}>
+            <Image
+              source={{ uri: artistAvatar }}
+              style={styles.reelArtistAvatar}
+            />
+            <Text style={styles.reelArtistName} numberOfLines={1}>
+              {artistName}
+            </Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  }, [navigation]);
+
   // Render an artist horizontal card (Featured & Popular)
   const renderHorizontalArtistItem = useCallback(({ item }) => {
     const artistId = item.id || item.user_id || item.artist_id;
@@ -1113,23 +1185,34 @@ export default function HomeScreen({ navigation }) {
         </View>
       )}
 
-      {/* 6. Popular Artists Section */}
-      {popularArtists.length > 0 && (
-        <View>
+      {/* 6. Trending Mehndi Reels Section (Replaced Trending & Popular) */}
+      {reels.length > 0 && (
+        <View style={{ marginBottom: 12 }}>
           <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: currentTextColor }]}>Trending & Popular</Text>
-            <TouchableOpacity onPress={() => navigation.navigate("ArtistListing", { filter: "popular", from: "Home" })}>
-              <Text style={styles.viewAllText}>View All ({popularArtists.length})</Text>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <View style={styles.reelsHeaderIconBadge}>
+                <Ionicons name="play" size={12} color="#FFFFFF" />
+              </View>
+              <Text style={[styles.sectionTitle, { color: currentTextColor }]}>Trending Reels</Text>
+              <View style={styles.reelsNewBadge}>
+                <Text style={styles.reelsNewBadgeText}>NEW</Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              onPress={() => navigation.navigate("Reels")}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Text style={styles.viewAllText}>Watch All ({reels.length}) →</Text>
             </TouchableOpacity>
           </View>
           <FlatList
-            data={popularArtists}
-            keyExtractor={(item, index) => String(item.id || item.user_id || item.artist_id || index)}
+            data={reels.slice(0, 10)}
+            keyExtractor={(item, index) => String(item.id || index)}
             horizontal
             nestedScrollEnabled={true}
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingLeft: 16, paddingBottom: 8 }}
-            renderItem={renderHorizontalArtistItem}
+            contentContainerStyle={{ paddingLeft: 16, paddingRight: 8, paddingBottom: 6 }}
+            renderItem={renderHomeReelItem}
             initialNumToRender={6}
             maxToRenderPerBatch={6}
             windowSize={5}
@@ -2327,5 +2410,128 @@ const styles = StyleSheet.create({
     color: "#374151",
     fontSize: 15,
     fontWeight: "600",
+  },
+
+  // Trending Reels Section Styles
+  reelsHeaderIconBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "#9C1344",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 8,
+  },
+  reelsNewBadge: {
+    backgroundColor: "#ECFDF5",
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+    marginLeft: 8,
+  },
+  reelsNewBadgeText: {
+    color: "#059669",
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  reelHomeCard: {
+    width: 130,
+    height: 205,
+    borderRadius: 16,
+    marginRight: 12,
+    overflow: "hidden",
+    backgroundColor: "#1F2937",
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    position: "relative",
+  },
+  reelHomePoster: {
+    width: "100%",
+    height: "100%",
+    position: "absolute",
+    top: 0,
+    left: 0,
+    backgroundColor: "#374151",
+  },
+  reelTopOverlay: {
+    position: "absolute",
+    top: 8,
+    left: 8,
+    right: 8,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  reelPlayPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.55)",
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 10,
+    gap: 3,
+  },
+  reelPlayPillText: {
+    color: "#FFFFFF",
+    fontSize: 9,
+    fontWeight: "700",
+  },
+  reelLikesPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.55)",
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 10,
+    gap: 3,
+  },
+  reelLikesText: {
+    color: "#FFFFFF",
+    fontSize: 9,
+    fontWeight: "700",
+  },
+  reelBottomScrim: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 8,
+    paddingBottom: 10,
+    paddingTop: 28,
+    backgroundColor: "rgba(0, 0, 0, 0.65)",
+  },
+  reelCardTitle: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "700",
+    lineHeight: 14,
+    marginBottom: 6,
+    textShadowColor: "rgba(0, 0, 0, 0.8)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  reelArtistRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  reelArtistAvatar: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: "#FFFFFF",
+    marginRight: 6,
+  },
+  reelArtistName: {
+    color: "rgba(255, 255, 255, 0.92)",
+    fontSize: 10,
+    fontWeight: "600",
+    flex: 1,
   },
 });

@@ -1,4 +1,4 @@
-﻿# MehndiGo Project Guidelines
+# MehndiGo Project Guidelines
 
 ## 1. Backend Deployment (Cloudflare Workers)
 - **Deployment is Mandatory**: The backend runs as a Cloudflare Worker at api.mehndigo.in. When modifying backend API logic in index.js, you MUST run `npx wrangler deploy` in the backend directory.
@@ -91,3 +91,9 @@ Incorrect pattern (AVOID):
   if (loading) return <ActivityIndicator />;
 
 The refreshing prop on RefreshControl is acceptable for pull-to-refresh UX.
+
+## 10. Media & Reels Data Integrity
+- **Active Artist Validation**:
+  Queries fetching reels or portfolio items (`/customer/reels`, `/reels`) must always join or filter by `users` to ensure that only media belonging to existing, active artists is returned.
+- **Orphan Prevention**:
+  Orphaned reels and portfolio records (where `artist_id` does not exist in `users`) must never be served to clients and should be systematically cleaned up alongside associated likes and comments.

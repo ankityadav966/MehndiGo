@@ -165,8 +165,13 @@ function WalletCard({ balance, cashCollected, onWithdrawPress, onCardPress, onCa
       <Pressable onPress={onCardPress}>
         <View style={styles.walletHeader}>
           <View style={styles.walletTitleRow}>
-            <Ionicons name="wallet" size={20} color={Colors.white} style={{ marginRight: 6 }} />
-            <Text style={styles.walletLabel}>Available Wallet Balance</Text>
+            <View style={styles.walletBadgeIcon}>
+              <Ionicons name="card-outline" size={15} color="#FFFFFF" />
+            </View>
+            <View>
+              <Text style={styles.walletLabel}>Online Withdrawable Balance</Text>
+              <Text style={{ fontSize: 9, color: "rgba(255,255,255,0.75)", fontWeight: "600" }}>Online Payments Only</Text>
+            </View>
           </View>
           <Text style={styles.walletSecureText}>Safe & Secure Payouts</Text>
         </View>
@@ -176,7 +181,7 @@ function WalletCard({ balance, cashCollected, onWithdrawPress, onCardPress, onCa
             <Text style={styles.walletSubText}>Actual Withdrawable Balance</Text>
           </View>
           <Pressable onPress={onWithdrawPress} style={styles.walletBtn}>
-            <Ionicons name="arrow-up-circle-outline" size={16} color={Colors.primary} style={{ marginRight: 4 }} />
+            <Ionicons name="arrow-up-circle" size={15} color="#9C1344" style={{ marginRight: 4 }} />
             <Text style={styles.walletBtnText}>Withdraw</Text>
           </Pressable>
         </View>
@@ -189,7 +194,7 @@ function WalletCard({ balance, cashCollected, onWithdrawPress, onCardPress, onCa
       >
         <View style={styles.walletCashLeft}>
           <View style={styles.walletCashIconWrap}>
-            <Ionicons name="cash" size={16} color="#059669" />
+            <Ionicons name="cash-outline" size={15} color="#FFFFFF" />
           </View>
           <View>
             <Text style={styles.walletCashTitle}>Cash Collected (In-Hand)</Text>
@@ -744,132 +749,136 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     backgroundColor: Colors.white,
     borderBottomWidth: 1,
     borderBottomColor: "#F3F4F6",
   },
   headerProfileRow: { flexDirection: "row", alignItems: "center", flex: 1 },
   avatarWrapper: { position: "relative" },
-  avatarImage: { width: 56, height: 56, borderRadius: 28, backgroundColor: "#F3F4F6", borderWidth: 2, borderColor: Colors.white },
+  avatarImage: { width: 48, height: 48, borderRadius: 24, backgroundColor: "#F3F4F6", borderWidth: 2, borderColor: Colors.white },
   verifiedMiniBadge: {
     position: "absolute",
     bottom: -2,
     right: -2,
     backgroundColor: Colors.success,
-    borderRadius: 10,
-    width: 20,
-    height: 20,
+    borderRadius: 9,
+    width: 18,
+    height: 18,
     justifyContent: "center",
     alignItems: "center",
-    borderWidth: 2,
+    borderWidth: 1.5,
     borderColor: Colors.white
   },
-  headerTextCol: { marginLeft: 14, flex: 1 },
-  greetingText: { fontSize: 13, color: Colors.textSecondary, fontWeight: "500", marginBottom: 2 },
-  artistNameText: { fontSize: 18, fontWeight: "800", color: Colors.text },
-  statusBadgeRow: { flexDirection: "row", alignItems: "center", marginTop: 6, flexWrap: "wrap", gap: 6 },
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  headerTextCol: { marginLeft: 10, flex: 1 },
+  greetingText: { fontSize: 12, color: Colors.textSecondary, fontWeight: "500", marginBottom: 1 },
+  artistNameText: { fontSize: 16, fontWeight: "800", color: Colors.text },
+  statusBadgeRow: { flexDirection: "row", alignItems: "center", marginTop: 4, flexWrap: "wrap", gap: 6 },
+  statusBadge: { paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6 },
   statusBadgeText: { fontSize: 9, fontWeight: "800", textTransform: "uppercase" },
-  completionPercentage: { fontSize: 11, color: Colors.textTertiary, fontWeight: "600" },
-  bellBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#F3F4F6", justifyContent: "center", alignItems: "center" },
-  bellBadge: { position: "absolute", top: 8, right: 8, backgroundColor: Colors.error, borderRadius: 8, minWidth: 16, height: 16, justifyContent: "center", alignItems: "center", paddingHorizontal: 4, borderWidth: 1, borderColor: Colors.white },
-  bellBadgeText: { color: Colors.white, fontSize: 9, fontWeight: "800" },
+  completionPercentage: { fontSize: 10, color: Colors.textTertiary, fontWeight: "600" },
+  bellBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: "#F3F4F6", justifyContent: "center", alignItems: "center" },
+  bellBadge: { position: "absolute", top: 6, right: 6, backgroundColor: Colors.error, borderRadius: 7, minWidth: 14, height: 14, justifyContent: "center", alignItems: "center", paddingHorizontal: 3, borderWidth: 1, borderColor: Colors.white },
+  bellBadgeText: { color: Colors.white, fontSize: 8, fontWeight: "800" },
 
   // Wallet Card Styles
   walletCardBackground: {
-    margin: 20,
-    backgroundColor: Colors.primary,
-    borderRadius: 24,
-    padding: 24,
-    elevation: 8,
-    shadowColor: Colors.primary,
-    shadowOpacity: 0.3,
-    shadowOffset: { width: 0, height: 8 },
-    shadowRadius: 16
+    marginHorizontal: 16,
+    marginVertical: 10,
+    backgroundColor: "#9C1344", // Royal Rose / Burgundy from WalletScreen
+    borderRadius: 18,
+    padding: 16,
+    elevation: 5,
+    shadowColor: "#9C1344",
+    shadowOpacity: 0.25,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 10
   },
-  walletHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "rgba(255, 255, 255, 0.2)", paddingBottom: 16 },
+  walletHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "rgba(255, 255, 255, 0.15)", paddingBottom: 10 },
   walletTitleRow: { flexDirection: "row", alignItems: "center" },
-  walletLabel: { fontSize: 13, color: "rgba(255,255,255,0.9)", fontWeight: "500" },
-  walletSecureText: { fontSize: 10, color: "rgba(255,255,255,0.7)", fontWeight: "600" },
-  walletBody: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 20 },
-  walletBalance: { fontSize: 34, fontWeight: "900", color: Colors.white, letterSpacing: -0.5 },
-  walletSubText: { fontSize: 11, color: "rgba(255, 255, 255, 0.8)", marginTop: 4, fontWeight: "500" },
-  walletBtn: { flexDirection: "row", alignItems: "center", backgroundColor: Colors.white, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 14, elevation: 2, shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } },
-  walletBtnText: { color: Colors.primary, fontWeight: "800", fontSize: 14 },
+  walletBadgeIcon: { width: 28, height: 28, borderRadius: 14, backgroundColor: "rgba(255,255,255,0.2)", justifyContent: "center", alignItems: "center", marginRight: 8 },
+  walletLabel: { fontSize: 12, color: "rgba(255,255,255,0.95)", fontWeight: "600" },
+  walletSecureText: { fontSize: 9, color: "rgba(255,255,255,0.75)", fontWeight: "600" },
+  walletBody: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 12 },
+  walletBalance: { fontSize: 26, fontWeight: "900", color: Colors.white, letterSpacing: -0.5 },
+  walletSubText: { fontSize: 10, color: "rgba(255, 255, 255, 0.8)", marginTop: 2, fontWeight: "500" },
+  walletBtn: { flexDirection: "row", alignItems: "center", backgroundColor: Colors.white, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, elevation: 2 },
+  walletBtnText: { color: "#9C1344", fontWeight: "800", fontSize: 12 },
   walletCashBanner: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: "rgba(0, 0, 0, 0.15)",
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    marginTop: 20,
+    backgroundColor: "rgba(0, 0, 0, 0.18)",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.15)"
   },
-  walletCashLeft: { flexDirection: "row", alignItems: "center", flex: 1, marginRight: 12 },
-  walletCashIconWrap: { width: 36, height: 36, borderRadius: 10, backgroundColor: "rgba(255, 255, 255, 0.2)", justifyContent: "center", alignItems: "center", marginRight: 12 },
-  walletCashTitle: { fontSize: 13, fontWeight: "700", color: Colors.white },
-  walletCashSubtitle: { fontSize: 10, color: "rgba(255, 255, 255, 0.7)", marginTop: 2 },
-  walletCashAmount: { fontSize: 16, fontWeight: "800", color: "#A7F3D0" },
-  walletCashViewText: { fontSize: 10, color: "rgba(255, 255, 255, 0.8)", fontWeight: "600", marginTop: 4 },
+  walletCashLeft: { flexDirection: "row", alignItems: "center", flex: 1, marginRight: 10 },
+  walletCashIconWrap: { width: 28, height: 28, borderRadius: 8, backgroundColor: "rgba(255, 255, 255, 0.2)", justifyContent: "center", alignItems: "center", marginRight: 8 },
+  walletCashTitle: { fontSize: 11, fontWeight: "700", color: Colors.white },
+  walletCashSubtitle: { fontSize: 9, color: "rgba(255, 255, 255, 0.75)", marginTop: 1 },
+  walletCashAmount: { fontSize: 14, fontWeight: "800", color: "#A7F3D0" },
+  walletCashViewText: { fontSize: 9, color: "rgba(255, 255, 255, 0.85)", fontWeight: "600", marginTop: 2 },
 
   // Section Styles
-  sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 12, marginBottom: 8, paddingHorizontal: 20 },
-  sectionTitle: { fontSize: 18, fontWeight: "800", color: "#111827", letterSpacing: -0.3 },
-  viewAll: { color: Colors.primary, fontWeight: "700", fontSize: 14 },
+  sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 10, marginBottom: 6, paddingHorizontal: 16 },
+  sectionTitle: { fontSize: 15, fontWeight: "800", color: "#111827", letterSpacing: -0.3 },
+  viewAll: { color: "#9C1344", fontWeight: "700", fontSize: 13 },
 
   // Stats Grid Styles
-  statsGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", paddingHorizontal: 20, marginTop: 4 },
-  cardOuter: { width: "48%", marginBottom: 16 },
+  statsGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", paddingHorizontal: 16, marginTop: 2 },
+  cardOuter: { width: "48%", marginBottom: 10 },
   cardContainer: { 
-    padding: 16, 
-    borderRadius: 20, 
+    padding: 12, 
+    borderRadius: 14, 
     backgroundColor: Colors.white,
-    height: 145, 
+    height: 110, 
     justifyContent: "space-between",
     borderWidth: 1,
     borderColor: "#F3F4F6",
     elevation: 2,
     shadowColor: "#000",
     shadowOpacity: 0.04,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 8
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 6
   },
   cardHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  cardIconBox: { width: 40, height: 40, borderRadius: 12, justifyContent: "center", alignItems: "center" },
-  cardCount: { fontSize: 22, fontWeight: "900", color: "#111827" },
-  cardInfoCol: { flex: 1, justifyContent: "center", marginTop: 12 },
-  cardTitle: { fontSize: 13, fontWeight: "700", color: "#374151" },
-  cardDesc: { fontSize: 10, color: "#6B7280", marginTop: 4, lineHeight: 14 },
-  cardFooterRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderTopWidth: 1, borderTopColor: "#F3F4F6", paddingTop: 10, marginTop: 8 },
-  viewDetailsText: { fontSize: 10, fontWeight: "700" },
+  cardIconBox: { width: 32, height: 32, borderRadius: 8, justifyContent: "center", alignItems: "center" },
+  cardCount: { fontSize: 18, fontWeight: "900", color: "#111827" },
+  cardInfoCol: { flex: 1, justifyContent: "center", marginTop: 4 },
+  cardTitle: { fontSize: 12, fontWeight: "700", color: "#374151" },
+  cardDesc: { fontSize: 9, color: "#6B7280", marginTop: 1, lineHeight: 12 },
+  cardFooterRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderTopWidth: 1, borderTopColor: "#F3F4F6", paddingTop: 6, marginTop: 4 },
+  viewDetailsText: { fontSize: 9, fontWeight: "700" },
 
   // Quick Actions Styles
-  actionsRow: { paddingLeft: 20, paddingBottom: 24, marginTop: 4 },
-  actionChip: { flexDirection: "row", alignItems: "center", backgroundColor: Colors.white, borderRadius: 100, paddingHorizontal: 16, paddingVertical: 12, marginRight: 12, borderWidth: 1, borderColor: "#E5E7EB", elevation: 1, shadowColor: "#000", shadowOpacity: 0.03, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } },
-  actionLabel: { fontSize: 13, fontWeight: "700", color: "#374151", marginLeft: 8 },
+  actionsRow: { paddingLeft: 16, paddingBottom: 16, marginTop: 2 },
+  actionChip: { flexDirection: "row", alignItems: "center", backgroundColor: Colors.white, borderRadius: 100, paddingHorizontal: 12, paddingVertical: 8, marginRight: 8, borderWidth: 1, borderColor: "#E5E7EB", elevation: 1, shadowColor: "#000", shadowOpacity: 0.03, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } },
+  actionLabel: { fontSize: 12, fontWeight: "700", color: "#374151", marginLeft: 6 },
 
   // Booking Card Styles
-  bookingCard: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: Colors.white, marginHorizontal: 20, marginBottom: 16, padding: 16, borderRadius: 20, borderWidth: 1, borderColor: "#F3F4F6", elevation: 2, shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
+  bookingCard: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: Colors.white, marginHorizontal: 16, marginBottom: 10, padding: 12, borderRadius: 14, borderWidth: 1, borderColor: "#F3F4F6", elevation: 2, shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } },
   bookingLeft: { flexDirection: "row", alignItems: "center", flex: 1 },
-  avatarPlaceholder: { width: 48, height: 48, borderRadius: 24, backgroundColor: "#F3F4F6", justifyContent: "center", alignItems: "center" },
-  bookingInfo: { marginLeft: 14, flex: 1 },
-  customerName: { fontSize: 15, fontWeight: "800", color: "#111827" },
-  serviceName: { fontSize: 13, color: "#4B5563", marginTop: 2 },
-  bookingDate: { fontSize: 12, color: "#6B7280", marginTop: 6, fontWeight: "500" },
-  emptyText: { fontSize: 14, color: "#9CA3AF", textAlign: "center", marginVertical: 40, fontWeight: "500" },
+  avatarPlaceholder: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#F3F4F6", justifyContent: "center", alignItems: "center" },
+  bookingInfo: { marginLeft: 10, flex: 1 },
+  customerName: { fontSize: 14, fontWeight: "800", color: "#111827" },
+  serviceName: { fontSize: 12, color: "#4B5563", marginTop: 1 },
+  bookingDate: { fontSize: 11, color: "#6B7280", marginTop: 3, fontWeight: "500" },
+  emptyText: { fontSize: 14, color: "#9CA3AF", textAlign: "center", marginVertical: 30, fontWeight: "500" },
 
   // Cash Section Card Styles
-  cashSection: { paddingHorizontal: 20, marginVertical: 12 },
-  cashConfirmCard: { backgroundColor: Colors.white, borderRadius: 20, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: "#F3F4F6", elevation: 3, shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
-  cashCustomer: { fontSize: 16, fontWeight: "800", color: "#111827" },
-  cashService: { fontSize: 13, color: "#6B7280", marginTop: 2 },
-  itemMetaRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 12, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: "#F3F4F6" },
-  metaLabel: { fontSize: 13, color: "#6B7280", fontWeight: "500" },
-  metaValue: { fontSize: 13, color: "#111827", fontWeight: "700" },
-  cashActionsRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 20, gap: 12 },
-  cashBtn: { flex: 1, height: 46, borderRadius: 12, justifyContent: "center", alignItems: "center" },
-  cashBtnText: { color: Colors.white, fontWeight: "800", fontSize: 14 }
+  cashSection: { paddingHorizontal: 16, marginVertical: 8 },
+  cashConfirmCard: { backgroundColor: Colors.white, borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: "#F3F4F6", elevation: 2, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } },
+  cashCustomer: { fontSize: 14, fontWeight: "800", color: "#111827" },
+  cashService: { fontSize: 12, color: "#6B7280", marginTop: 1 },
+  itemMetaRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 8, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: "#F3F4F6" },
+  metaLabel: { fontSize: 12, color: "#6B7280", fontWeight: "500" },
+  metaValue: { fontSize: 12, color: "#111827", fontWeight: "700" },
+  cashActionsRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 12, gap: 8 },
+  cashBtn: { flex: 1, height: 38, borderRadius: 10, justifyContent: "center", alignItems: "center" },
+  cashBtnText: { color: Colors.white, fontWeight: "800", fontSize: 13 }
 });

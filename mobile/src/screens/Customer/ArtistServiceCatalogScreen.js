@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   StyleSheet,
   Text,
@@ -9,7 +9,9 @@ import {
   FlatList,
   ActivityIndicator,
   Share,
-  Dimensions
+  Dimensions,
+  Modal,
+  StatusBar,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -19,7 +21,7 @@ import { getNormalizedUrl } from "../../services/api";
 import { fetchArtistServiceCatalog, savePortfolioItem, unsavePortfolioItem } from "../../services/customer";
 import { createDesignDeepLink, createArtistServiceDeepLink } from "../../services/deepLink";
 
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 const CARD_WIDTH = (SCREEN_WIDTH - 44) / 2;
 
 const resolveImage = (uri) => {
@@ -53,6 +55,12 @@ export default function ArtistServiceCatalogScreen({ route, navigation }) {
   const [selectedTier, setSelectedTier] = useState("ALL");
   const [sortBy, setSortBy] = useState("popular");
   const [savedDesignIds, setSavedDesignIds] = useState([]);
+
+  // Fullpage Service Image Preview States
+  const [previewVisible, setPreviewVisible] = useState(false);
+  const [previewIndex, setPreviewIndex] = useState(0);
+  const [carouselIndex, setCarouselIndex] = useState(0);
+  const previewFlatListRef = useRef(null);
 
   const loadCatalog = useCallback(async () => {
     if (!artistId || !serviceId) {
@@ -165,16 +173,49 @@ export default function ArtistServiceCatalogScreen({ route, navigation }) {
     });
   };
 
+  const handleOpenPreview = (index = 0) => {
+    const safeIdx = Math.max(0, Math.min(index, Math.max(0, serviceImages.length - 1)));
+    setPreviewIndex(safeIdx);
+    setPreviewVisible(true);
+  };
+
+  const onPreviewScroll = (event) => {
+    const slideSize = event.nativeEvent.layoutMeasurement.width;
+    const index = Math.round(event.nativeEvent.contentOffset.x / slideSize);
+    if (index >= 0 && index < serviceImages.length && index !== previewIndex) {
+      setPreviewIndex(index);
+    }
+  };
+
+  const handleSelectThumbnail = (index) => {
+    setPreviewIndex(index);
+    previewFlatListRef.current?.scrollToIndex({ index, animated: true });
+  };
+
   const artist = catalogData?.artist || initialArtist || {};
   const service = catalogData?.service || initialService || {};
 
   let serviceImages = [];
   let serviceCategories = [];
   try {
-    serviceImages = typeof service.service_image === "string" && service.service_image.startsWith("[") ? JSON.parse(service.service_image) : (service.service_image ? [service.service_image] : []);
+    if (Array.isArray(service.service_image)) {
+      serviceImages = service.service_image;
+    } else if (typeof service.service_image === "string" && service.service_image.startsWith("[")) {
+      serviceImages = JSON.parse(service.service_image);
+    } else if (service.service_image) {
+      serviceImages = [service.service_image];
+    } else if (service.image_url || service.image) {
+      serviceImages = [service.image_url || service.image];
+    }
   } catch (e) { }
   try {
-    serviceCategories = typeof service.category === "string" && service.category.startsWith("[") ? JSON.parse(service.category) : (service.category ? [service.category] : []);
+    if (Array.isArray(service.category)) {
+      serviceCategories = service.category;
+    } else if (typeof service.category === "string" && service.category.startsWith("[")) {
+      serviceCategories = JSON.parse(service.category);
+    } else if (service.category) {
+      serviceCategories = [service.category];
+    }
   } catch (e) { }
 
   const coverImage = serviceImages.length > 0 ? serviceImages[0] : null;
@@ -284,24 +325,56 @@ export default function ArtistServiceCatalogScreen({ route, navigation }) {
           <View style={[styles.serviceBannerCard, { padding: 0, overflow: 'hidden' }]}>
             {/* Cover Image Carousel */}
             {serviceImages.length > 0 ? (
-              <View style={{ width: '100%', height: 200, backgroundColor: '#f1f5f9' }}>
-                <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} style={{ width: '100%', height: '100%' }}>
+              <View style={{ width: '100%', height: 210, backgroundColor: '#f1f5f9', position: 'relative' }}>
+                <ScrollView
+                  horizontal
+                  pagingEnabled
+                  showsHorizontalScrollIndicator={false}
+                  style={{ width: '100%', height: '100%' }}
+                  onMomentumScrollEnd={(e) => {
+                    const slideWidth = SCREEN_WIDTH - 32;
+                    const idx = Math.round(e.nativeEvent.contentOffset.x / slideWidth);
+                    if (idx >= 0 && idx < serviceImages.length) setCarouselIndex(idx);
+                  }}
+                >
                   {serviceImages.map((img, idx) => (
-                    <View key={idx} style={{ width: SCREEN_WIDTH - 32, height: 200 }}>
-                      <Image source={{ uri: resolveImage(img) }} style={{ width: '100%', height: '100%', resizeMode: 'cover' }} />
-                    </View>
+                    <TouchableOpacity
+                      key={idx}
+                      activeOpacity={0.92}
+                      style={{ width: SCREEN_WIDTH - 32, height: 210 }}
+                      onPress={() => handleOpenPreview(idx)}
+                    >
+                      <Image
+                        source={{ uri: resolveImage(img) }}
+                        style={{ width: '100%', height: '100%', resizeMode: 'cover' }}
+                      />
+                    </TouchableOpacity>
                   ))}
                 </ScrollView>
+
+                {/* Tap to Full Preview Hint Button */}
+                <TouchableOpacity
+                  style={styles.expandPreviewBadge}
+                  activeOpacity={0.85}
+                  onPress={() => handleOpenPreview(carouselIndex)}
+                >
+                  <Ionicons name="expand-outline" size={13} color="#FFFFFF" />
+                  <Text style={styles.expandPreviewText}>Full Preview</Text>
+                </TouchableOpacity>
+
                 {/* Photo Count Indicator */}
                 {serviceImages.length > 1 && (
-                  <View style={{ position: 'absolute', bottom: 12, right: 12, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, flexDirection: 'row', alignItems: 'center' }}>
-                    <Ionicons name="images" size={14} color="#fff" style={{ marginRight: 6 }} />
-                    <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>{serviceImages.length} Photos (Swipe)</Text>
+                  <View style={styles.photoCountIndicator}>
+                    <Ionicons name="images" size={13} color="#fff" style={{ marginRight: 5 }} />
+                    <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>
+                      {carouselIndex + 1}/{serviceImages.length} Photos
+                    </Text>
                   </View>
                 )}
+
                 {/* Premium/Standard Badge */}
-                <View style={{ position: 'absolute', top: 12, left: 12, backgroundColor: isPremium ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.9)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, flexDirection: 'row', alignItems: 'center' }}>
-                  <Text style={{ color: isPremium ? '#FBBF24' : '#475569', fontSize: 12, fontWeight: '700' }}>
+                <View style={styles.serviceTierBadge}>
+                  <Text style={{ color: isPremium ? '#FBBF24' : '#475569', fontSize: 11, fontWeight: '700' }}>
                     {isPremium ? "💎 Premium" : "✨ Standard"}
                   </Text>
                 </View>
@@ -386,20 +459,7 @@ export default function ArtistServiceCatalogScreen({ route, navigation }) {
           )}
 
           {/* Custom Design Banner Card */}
-          <TouchableOpacity
-            style={styles.customDesignBanner}
-            activeOpacity={0.9}
-            onPress={handleRequestCustomDesign}
-          >
-            <View style={styles.customDesignIconCircle}>
-              <Ionicons name="sparkles" size={24} color="#D97706" />
-            </View>
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={styles.customDesignTitle}>Have a Specific Design in Mind?</Text>
-              <Text style={styles.customDesignSubtitle}>Upload your reference photos for custom pricing & styling.</Text>
-            </View>
-            <Ionicons name="arrow-forward-circle" size={28} color="#D97706" />
-          </TouchableOpacity>
+
 
           {/* Filter & Sort Controls */}
           <View style={styles.filterSection}>
@@ -561,6 +621,145 @@ export default function ArtistServiceCatalogScreen({ route, navigation }) {
           <Text style={styles.bottomBookBtnText}>Book {service.specialization_name ? service.specialization_name.split(" ")[0] : "Service"}</Text>
         </TouchableOpacity>
       </View>
+      {/* Fullpage Service Images Preview Modal */}
+      <Modal
+        visible={previewVisible}
+        transparent={false}
+        animationType="fade"
+        statusBarTranslucent={true}
+        onRequestClose={() => setPreviewVisible(false)}
+      >
+        <View style={styles.previewContainer}>
+          <StatusBar barStyle="light-content" backgroundColor="#000000" />
+
+          {/* Floating Header */}
+          <View style={[styles.previewHeader, { paddingTop: Math.max(insets.top, 16) }]}>
+            <TouchableOpacity
+              style={styles.previewCloseBtn}
+              activeOpacity={0.8}
+              onPress={() => setPreviewVisible(false)}
+            >
+              <Ionicons name="close" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+
+            <View style={styles.previewHeaderTitleCol}>
+              <Text style={styles.previewHeaderTitle} numberOfLines={1}>
+                {service.specialization_name || "Service Photos"}
+              </Text>
+              {serviceImages.length > 0 && (
+                <Text style={styles.previewHeaderSub}>
+                  {previewIndex + 1} of {serviceImages.length}
+                </Text>
+              )}
+            </View>
+
+            <TouchableOpacity
+              style={styles.previewShareBtn}
+              activeOpacity={0.8}
+              onPress={() => {
+                const url = createArtistServiceDeepLink(artistId, serviceId);
+                Share.share({
+                  title: `${service.specialization_name || "Service"} by ${artist.name || "Artist"}`,
+                  message: `Check out this service photo on MehndiGo!\n${url}`,
+                  url
+                }).catch(() => { });
+              }}
+            >
+              <Ionicons name="share-social-outline" size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Full Screen Image Swiper */}
+          <FlatList
+            ref={previewFlatListRef}
+            data={serviceImages}
+            keyExtractor={(_, index) => `preview-img-${index}`}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            initialScrollIndex={Math.min(previewIndex, Math.max(0, serviceImages.length - 1))}
+            getItemLayout={(_, index) => ({
+              length: SCREEN_WIDTH,
+              offset: SCREEN_WIDTH * index,
+              index
+            })}
+            onMomentumScrollEnd={onPreviewScroll}
+            renderItem={({ item }) => (
+              <View style={styles.previewSlide}>
+                <Image
+                  source={{ uri: resolveImage(item) }}
+                  style={styles.previewImage}
+                  resizeMode="contain"
+                />
+              </View>
+            )}
+          />
+
+          {/* Bottom Floating Info & Thumbnails Bar */}
+          <View style={[styles.previewBottomBar, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+            {/* Thumbnails strip if multiple photos */}
+            {serviceImages.length > 1 && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.thumbnailStrip}
+              >
+                {serviceImages.map((img, tIdx) => {
+                  const isActive = tIdx === previewIndex;
+                  return (
+                    <TouchableOpacity
+                      key={`thumb-${tIdx}`}
+                      activeOpacity={0.8}
+                      onPress={() => handleSelectThumbnail(tIdx)}
+                      style={[styles.thumbnailItem, isActive && styles.thumbnailItemActive]}
+                    >
+                      <Image
+                        source={{ uri: resolveImage(img) }}
+                        style={styles.thumbnailImage}
+                        resizeMode="cover"
+                      />
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
+
+            {/* Service Quick Meta Row */}
+            <View style={styles.previewMetaRow}>
+              <View style={{ flex: 1, marginRight: 12 }}>
+                <Text style={styles.previewServiceName} numberOfLines={1}>
+                  {service.specialization_name || "Mehndi Service"}
+                </Text>
+                <Text style={styles.previewArtistName} numberOfLines={1}>
+                  By {artist.name || "Specialist"} • ₹{service.minimum_price || 0} starting
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.previewBookBtn}
+                activeOpacity={0.9}
+                onPress={() => {
+                  setPreviewVisible(false);
+                  navigation.navigate("SelectDate", {
+                    artistId,
+                    serviceId,
+                    selectedArt: designs.length > 0 ? {
+                      id: designs[0].id,
+                      title: designs[0].title || service.specialization_name,
+                      image_url: designs[0].image_url,
+                      art_tier: designs[0].art_tier || "STANDARD",
+                      duration_minutes: designs[0].duration_minutes || service.duration_minutes || 60,
+                      price: designs[0].price || service.minimum_price
+                    } : null
+                  });
+                }}
+              >
+                <Text style={styles.previewBookBtnText}>Book Now</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1080,5 +1279,164 @@ const styles = StyleSheet.create({
     color: Colors.white,
     fontSize: 14,
     fontWeight: "750"
+  },
+
+  // Carousel Affordance Badges
+  expandPreviewBadge: {
+    position: 'absolute',
+    bottom: 12,
+    left: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4
+  },
+  expandPreviewText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700'
+  },
+  photoCountIndicator: {
+    position: 'absolute',
+    bottom: 12,
+    right: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center'
+  },
+  serviceTierBadge: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center'
+  },
+
+  // Fullpage Image Preview Modal Styles
+  previewContainer: {
+    flex: 1,
+    backgroundColor: '#000000',
+    position: 'relative'
+  },
+  previewHeader: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)'
+  },
+  previewCloseBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  previewHeaderTitleCol: {
+    flex: 1,
+    marginHorizontal: 12,
+    alignItems: 'center'
+  },
+  previewHeaderTitle: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700'
+  },
+  previewHeaderSub: {
+    color: 'rgba(255, 255, 255, 0.75)',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2
+  },
+  previewShareBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  previewSlide: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  previewImage: {
+    width: SCREEN_WIDTH,
+    height: '100%'
+  },
+  previewBottomBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    paddingTop: 12,
+    paddingHorizontal: 16
+  },
+  thumbnailStrip: {
+    gap: 8,
+    paddingBottom: 12
+  },
+  thumbnailItem: {
+    width: 50,
+    height: 50,
+    borderRadius: 8,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: 'transparent'
+  },
+  thumbnailItemActive: {
+    borderColor: Colors.primary
+  },
+  thumbnailImage: {
+    width: '100%',
+    height: '100%'
+  },
+  previewMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  },
+  previewServiceName: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700'
+  },
+  previewArtistName: {
+    color: 'rgba(255, 255, 255, 0.75)',
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 2
+  },
+  previewBookBtn: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 10
+  },
+  previewBookBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700'
   }
 });
