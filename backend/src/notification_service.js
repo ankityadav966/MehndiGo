@@ -165,9 +165,12 @@ export async function dispatchNotification(db, {
   try {
     // From push_tokens table
     const tokenRows = await db.all(
-      "SELECT token FROM push_tokens WHERE (user_id = ? OR CAST(user_id AS TEXT) = ?) AND is_active = 1",
+      "SELECT token FROM push_tokens WHERE (user_id = ? OR CAST(user_id AS TEXT) = ?) AND (is_active = 1 OR is_active IS NULL)",
       [cleanUserId, strUserId]
-    ).catch(() => []);
+    ).catch((e) => {
+      console.error("[NotificationService] DB push_tokens query error:", e.message);
+      return [];
+    });
 
     if (tokenRows && tokenRows.length > 0) {
       tokenRows.forEach((r) => {

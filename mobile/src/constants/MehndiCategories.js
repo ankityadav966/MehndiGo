@@ -1,4 +1,4 @@
-﻿/**
+/**
  * MEHNDI_CATEGORIES — Single source of truth across the entire app.
  *
  * Used by:

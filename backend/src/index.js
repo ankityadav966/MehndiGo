@@ -1863,6 +1863,7 @@ const handleGetArtistDetails = async (c) => {
     homeService: canonicalHomeSvc,
     salon_service: canonicalSalonSvc,
     salonService: canonicalSalonSvc,
+    service_radius: profile?.service_radius !== undefined && profile?.service_radius !== null ? Number(profile.service_radius) : null,
     location: canonicalLocation,
     locality: canonicalLocality,
     city: canonicalCity,
@@ -2006,6 +2007,7 @@ const handleUpdateArtistProfile = async (c) => {
 
   await db.run("ALTER TABLE artist_profiles ADD COLUMN banner_image TEXT").catch(() => {});
   await db.run("ALTER TABLE artist_profiles ADD COLUMN cover_image TEXT").catch(() => {});
+  await db.run("ALTER TABLE artist_profiles ADD COLUMN service_radius INTEGER").catch(() => {});
 
   let body = {};
   try {
@@ -2049,6 +2051,7 @@ const handleUpdateArtistProfile = async (c) => {
   const aadhaarBack = sanitizeStorageUrl(await resolveFileValue(rawBack));
   const latitude = body.latitude;
   const longitude = body.longitude;
+  const serviceRadius = body.service_radius !== undefined ? (body.service_radius === null ? null : Number(body.service_radius)) : (body.serviceRadius !== undefined ? (body.serviceRadius === null ? null : Number(body.serviceRadius)) : undefined);
 
   // Sanitize Aadhaar: Only update if an actual 12-digit non-masked Aadhaar number was sent
   let cleanAadhaar = undefined;
@@ -2100,6 +2103,7 @@ const handleUpdateArtistProfile = async (c) => {
         aadhaar_back = COALESCE(?, aadhaar_back),
         latitude = COALESCE(?, latitude),
         longitude = COALESCE(?, longitude),
+        service_radius = COALESCE(?, service_radius),
         status = ?,
         verification_status = ?,
         updated_at = CURRENT_TIMESTAMP
@@ -2126,6 +2130,7 @@ const handleUpdateArtistProfile = async (c) => {
       aadhaarBack !== undefined ? aadhaarBack : null,
       latitude !== undefined ? latitude : null,
       longitude !== undefined ? longitude : null,
+      serviceRadius !== undefined ? serviceRadius : null,
       targetDbStatus,
       targetVerificationStatus,
       u.id
@@ -2135,8 +2140,8 @@ const handleUpdateArtistProfile = async (c) => {
       INSERT INTO artist_profiles (
         user_id, bio, experience_years, starting_price, home_service, salon_service, is_available,
         location, locality, city, state, pincode, languages, cover_image, banner_image, selfie_image, profile_image,
-        aadhaar_number, aadhaar_front, aadhaar_back, latitude, longitude, status, verification_status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        aadhaar_number, aadhaar_front, aadhaar_back, latitude, longitude, service_radius, status, verification_status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       u.id,
       bio || "",
@@ -2160,6 +2165,7 @@ const handleUpdateArtistProfile = async (c) => {
       aadhaarBack || "",
       latitude || "26.912434",
       longitude || "75.787270",
+      serviceRadius !== undefined ? serviceRadius : null,
       targetDbStatus,
       targetVerificationStatus
     ]).catch((err) => console.warn("Artist profile insert err:", err.message));
@@ -4133,7 +4139,11 @@ const handleNearbyArtists = async (c) => {
     return { ...art, distance: distKm, distance_km: distKm };
   });
 
-  const filtered = hasUserLocation && radius ? mapped.filter((art) => art.distance <= radius) : mapped;
+  const filtered = hasUserLocation ? mapped.filter((art) => {
+    const custRadius = radius ? radius : 9999;
+    const srvRadius = art.service_radius ? art.service_radius : 9999;
+    return art.distance <= Math.min(custRadius, srvRadius);
+  }) : mapped;
   if (hasUserLocation) {
     filtered.sort((a, b) => (a.distance || 0) - (b.distance || 0));
   } else {
@@ -7064,8 +7074,33 @@ async function handleCustomerDynamic(c) {
 
     await enrichArtistRecords(db, artists);
 
-    if (sortParam === "nearest" && userLat && userLng && !isNaN(userLat) && !isNaN(userLng)) {
-      artists = (artists || []).map((art) => ({ ...art, distance: 0, distance_km: 0 }));
+    if (userLat && userLng && !isNaN(userLat) && !isNaN(userLng)) {
+      artists = (artists || []).map((art) => {
+        const R = 6371;
+        const dLat = (Number(art.latitude || userLat) - userLat) * (Math.PI / 180);
+        const dLon = (Number(art.longitude || userLng) - userLng) * (Math.PI / 180);
+        const a =
+          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos(userLat * (Math.PI / 180)) *
+            Math.cos(Number(art.latitude || userLat) * (Math.PI / 180)) *
+            Math.sin(dLon / 2) *
+            Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        const distance = R * c;
+
+        return { ...art, distance, distance_km: distance };
+      });
+      
+      artists = artists.filter((art) => {
+        const maxRadius = art.service_radius !== null && art.service_radius !== undefined ? Number(art.service_radius) : 25;
+        return art.distance <= maxRadius;
+      });
+      
+      if (sortParam === "nearest") {
+        artists.sort((a, b) => a.distance - b.distance);
+      }
+    } else {
+      artists = (artists || []).map((art) => ({ ...art, distance: null, distance_km: null }));
     }
 
     const offset = (page - 1) * limit;
@@ -7702,6 +7737,9 @@ const handleGetAssetLinks = (c) => {
         namespace: "android_app",
         package_name: "com.sonuy123.mehendigoo",
         sha256_cert_fingerprints: [
+          "2D:A0:9F:27:7C:F9:F3:E4:43:6B:9E:15:B8:29:B0:B1:8B:0B:27:04:E4:E0:47:F8:CD:00:BF:2A:50:C4:CF:44",
+          "16:16:45:6A:B3:8F:70:D5:F1:B8:CD:73:B8:69:87:AE:AB:B6:0A:F1:94:A0:71:8B:69:C0:B1:98:53:2C:40:20",
+          "45:79:35:68:72:A3:CA:98:82:7F:E1:57:43:99:42:8B:69:50:FD:C2:9E:58:3F:E5:CA:D7:73:14:23:DF:DF:54",
           "08:A7:0F:01:36:61:BB:CD:15:9C:68:53:FB:9C:C6:5C:09:D2:69:61:B7:AE:13:91:3A:D7:F9:5F:74:2C:0E:98",
           "FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C"
         ]

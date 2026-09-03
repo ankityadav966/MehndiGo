@@ -1,6 +1,6 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as ImagePicker from "expo-image-picker";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Image,
   ScrollView,
@@ -18,20 +18,22 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import CustomButton from "../../components/CustomButton";
 import { getArtistServiceById, updateArtistService, uploadPortfolioMedia } from "../../services/artist";
-import { MEHNDI_CATEGORY_NAMES as CATEGORIES } from "../../constants/MehndiCategories";
+import { getCategories } from "../../services/category";
 
 export default function EditServiceScreen({ route, navigation }) {
   const { id } = route.params || {};
 
   const [serviceName, setServiceName] = useState("");
-  const [category, setCategory] = useState(CATEGORIES[0]);
+  // category is stored as array of name strings
+  const [category, setCategory] = useState([]);
+  const [categoriesList, setCategoriesList] = useState([]);
+  const [fetchingCategories, setFetchingCategories] = useState(true);
   const [price, setPrice] = useState("");
   const [duration, setDuration] = useState("");
   const [description, setDescription] = useState("");
-  const [showDropdown, setShowDropdown] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [serviceImage, setServiceImage] = useState(null);
+  const [images, setImages] = useState([]); // array of local URIs or server URIs
 
   // Packages list array state
   const [packages, setPackages] = useState([]);
@@ -52,14 +54,22 @@ export default function EditServiceScreen({ route, navigation }) {
     description: ""
   });
 
-  const fetchServiceDetail = React.useCallback(async () => {
+  const fetchServiceDetail = useCallback(async () => {
     try {
       const data = await getArtistServiceById(id);
       setServiceName(data.specialization_name || data.title || "");
-      setCategory(data.category || "Bridal");
+
+      // Parse category: may be array, JSON string, or plain string
+      let parsedCat = data.category || [];
+      if (typeof parsedCat === "string") {
+        try { parsedCat = JSON.parse(parsedCat); } catch { parsedCat = [parsedCat]; }
+      }
+      setCategory(Array.isArray(parsedCat) ? parsedCat : (parsedCat ? [parsedCat] : []));
+
       setPrice(String(data.minimum_price || data.price || "0"));
       setDuration(String(data.duration_minutes || data.duration || "60"));
       setDescription(data.description || "");
+
       let parsedPackages = data.packages || [];
       if (typeof parsedPackages === 'string') {
         try { parsedPackages = JSON.parse(parsedPackages); } catch (e) { parsedPackages = []; }
@@ -71,7 +81,12 @@ export default function EditServiceScreen({ route, navigation }) {
         try { parsedAddons = JSON.parse(parsedAddons); } catch (e) { parsedAddons = []; }
       }
       setAddons(Array.isArray(parsedAddons) ? parsedAddons : []);
-      setServiceImage(data.service_image);
+      
+      let parsedImages = data.service_image || [];
+      if (typeof parsedImages === "string") {
+        try { parsedImages = JSON.parse(parsedImages); } catch { parsedImages = [parsedImages]; }
+      }
+      setImages(Array.isArray(parsedImages) ? parsedImages : (parsedImages ? [parsedImages] : []));
     } catch (err) {
       Alert.alert("Error", "Failed to retrieve service details.");
       navigation.goBack();
@@ -79,6 +94,29 @@ export default function EditServiceScreen({ route, navigation }) {
       setLoading(false);
     }
   }, [id, navigation]);
+
+  // Fetch Admin categories from API
+  useEffect(() => {
+    (async () => {
+      try {
+        const list = await getCategories();
+        const normalized = list
+          .map((c) => (typeof c === "string" ? { name: c } : c))
+          .filter((c) => c && c.name);
+        setCategoriesList(normalized);
+      } catch (e) {
+        if (__DEV__) console.log("Failed to fetch categories:", e.message);
+      } finally {
+        setFetchingCategories(false);
+      }
+    })();
+  }, []);
+
+  const toggleCategory = useCallback((name) => {
+    setCategory((prev) =>
+      prev.includes(name) ? prev.filter((c) => c !== name) : [...prev, name]
+    );
+  }, []);
 
   useEffect(() => {
     if (!id) {
@@ -92,23 +130,36 @@ export default function EditServiceScreen({ route, navigation }) {
     return () => clearTimeout(timer);
   }, [id, fetchServiceDetail, navigation]);
 
-  const pickImage = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== "granted") {
-      Alert.alert("Permission Required", "Please allow gallery access in settings to update the service image.");
+  const MAX_IMAGES = 5;
+
+  const pickImages = async () => {
+    if (images.length >= MAX_IMAGES) {
+      Alert.alert("Limit Reached", `You can add up to ${MAX_IMAGES} images.`);
       return;
     }
 
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("Permission Required", "Please allow gallery access in settings to upload service images.");
+      return;
+    }
+
+    const remaining = MAX_IMAGES - images.length;
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsMultipleSelection: true,
+      selectionLimit: remaining,
       quality: 0.7,
-      allowsEditing: true,
-      aspect: [4, 3],
     });
 
     if (!result.canceled && result.assets && result.assets.length > 0) {
-      setServiceImage(result.assets[0].uri);
+      const uris = result.assets.map((a) => a.uri);
+      setImages((prev) => [...prev, ...uris].slice(0, MAX_IMAGES));
     }
+  };
+
+  const removeImage = (index) => {
+    setImages((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleAddPackage = () => {
@@ -154,9 +205,12 @@ export default function EditServiceScreen({ route, navigation }) {
       Alert.alert("Validation Error", "Please fill in all required fields.");
       return;
     }
+    if (category.length === 0) {
+      Alert.alert("Validation Error", "Please select at least one category.");
+      return;
+    }
     setSaving(true);
     try {
-      let uploadedUrl = serviceImage;
       const isLocal = (val) => {
         if (!val) return false;
         return (
@@ -167,21 +221,28 @@ export default function EditServiceScreen({ route, navigation }) {
         );
       };
 
-      if (serviceImage && isLocal(serviceImage)) {
-        // Upload the new service photo
-        const uploadRes = await uploadPortfolioMedia([serviceImage]);
+      const localImages = images.filter(isLocal);
+      const remoteImages = images.filter((img) => !isLocal(img));
+      
+      let finalImages = [...remoteImages];
+
+      if (localImages.length > 0) {
+        const uploadRes = await uploadPortfolioMedia(localImages);
         if (uploadRes && uploadRes.length > 0) {
-          uploadedUrl = uploadRes[0].url;
+          const uploadedUrls = uploadRes.map((res) => res.url);
+          finalImages = [...finalImages, ...uploadedUrls];
         }
       }
 
+      const uploadedImageValue = finalImages.length > 0 ? JSON.stringify(finalImages) : "[]";
+
       const servicePayload = {
         specialization_name: (serviceName || "").trim(),
-        category: category || "Bridal",
+        category: JSON.stringify(Array.isArray(category) ? category : [category]),
         minimum_price: Number(price),
         duration_minutes: Number(duration),
         description: (description || "").trim(),
-        service_image: uploadedUrl,
+        service_image: uploadedImageValue,
         packages: packages,
         addons
       };
@@ -224,17 +285,35 @@ export default function EditServiceScreen({ route, navigation }) {
 
         <View style={styles.form}>
           {/* Image Picker */}
-          <Text style={styles.label}>Service Cover Image</Text>
-          <TouchableOpacity style={styles.imagePickerContainer} onPress={pickImage}>
-            {serviceImage ? (
-              <Image source={{ uri: serviceImage }} style={styles.previewImage} />
-            ) : (
-              <View style={styles.imagePlaceholder}>
-                <Ionicons name="camera-outline" size={28} color={Colors.textTertiary} />
-                <Text style={styles.imagePlaceholderText}>Upload Service Photo</Text>
+          <Text style={styles.label}>Service Images (Up to 5)</Text>
+          <View style={styles.imageGrid}>
+            {images.map((uri, index) => (
+              <View key={index} style={styles.imageTile}>
+                <Image source={{ uri }} style={styles.imageTileImg} />
+                {index === 0 && (
+                  <View style={styles.coverBadge}>
+                    <Text style={styles.coverBadgeText}>Cover</Text>
+                  </View>
+                )}
+                <TouchableOpacity
+                  style={styles.removeImageBtn}
+                  onPress={() => removeImage(index)}
+                  hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
+                >
+                  <Ionicons name="close-circle" size={20} color="#EF4444" />
+                </TouchableOpacity>
               </View>
+            ))}
+
+            {images.length < MAX_IMAGES && (
+              <TouchableOpacity style={styles.addImageTile} onPress={pickImages} activeOpacity={0.7}>
+                <Ionicons name="camera-outline" size={26} color={Colors.textTertiary} />
+                <Text style={styles.addImageText}>
+                  {images.length === 0 ? "Add Photos" : `+${MAX_IMAGES - images.length} more`}
+                </Text>
+              </TouchableOpacity>
             )}
-          </TouchableOpacity>
+          </View>
 
           <Text style={styles.label}>Service Name *</Text>
           <TextInput
@@ -245,31 +324,30 @@ export default function EditServiceScreen({ route, navigation }) {
             style={styles.input}
           />
 
-          <Text style={styles.label}>Category *</Text>
-          <TouchableOpacity
-            style={styles.dropdown}
-            onPress={() => setShowDropdown(!showDropdown)}
-          >
-            <Text style={styles.dropdownText}>{category}</Text>
-            <Ionicons name={showDropdown ? "chevron-up" : "chevron-down"} size={16} color={Colors.textSecondary} />
-          </TouchableOpacity>
-          {showDropdown && (
-            <View style={styles.dropdownList}>
-              {CATEGORIES.map((cat) => (
-                <TouchableOpacity
-                  key={cat}
-                  style={[styles.dropdownItem, cat === category && styles.dropdownItemActive]}
-                  onPress={() => {
-                    setCategory(cat);
-                    setShowDropdown(false);
-                  }}
-                >
-                  <Text style={[styles.dropdownItemText, cat === category && styles.dropdownItemTextActive]}>
-                    {cat}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+          <Text style={styles.label}>Categories * (select all that apply)</Text>
+          {fetchingCategories ? (
+            <ActivityIndicator size="small" color={Colors.primary} style={{ alignSelf: "flex-start", marginBottom: 8 }} />
+          ) : (
+            <View style={styles.chipGroup}>
+              {categoriesList.map((cat) => {
+                const active = category.includes(cat.name);
+                return (
+                  <TouchableOpacity
+                    key={cat.name}
+                    style={[styles.chip, active && styles.chipActive]}
+                    onPress={() => toggleCategory(cat.name)}
+                  >
+                    {active && <Ionicons name="checkmark" size={11} color={Colors.white} style={{ marginRight: 3 }} />}
+                    <Text style={[styles.chipText, active && styles.chipTextActive]}>{cat.name}</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
+          )}
+          {category.length > 0 && (
+            <Text style={{ fontSize: 11, color: Colors.primary, marginTop: 6, fontWeight: "600" }}>
+              ✓ {category.length} selected
+            </Text>
           )}
 
           <View style={styles.row}>
@@ -428,8 +506,62 @@ const styles = StyleSheet.create({
   previewChip: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, padding: 10, marginTop: 8 },
   previewText: { fontSize: 12, color: Colors.text, fontWeight: "700" },
   footer: { padding: 16, backgroundColor: Colors.white, borderTopWidth: 1, borderTopColor: Colors.border },
-  imagePickerContainer: { height: 150, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, overflow: "hidden", backgroundColor: Colors.white, marginBottom: 12 },
-  previewImage: { width: "100%", height: "100%", resizeMode: "cover" },
-  imagePlaceholder: { flex: 1, justifyContent: "center", alignItems: "center" },
-  imagePlaceholderText: { fontSize: 12, color: Colors.textTertiary, marginTop: 6, fontWeight: "600" }
+  imageGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10
+  },
+  imageTile: {
+    width: 90,
+    height: 90,
+    borderRadius: 12,
+    overflow: "hidden",
+    position: "relative"
+  },
+  imageTileImg: { width: "100%", height: "100%", resizeMode: "cover" },
+  coverBadge: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "rgba(233,30,99,0.78)",
+    paddingVertical: 2,
+    alignItems: "center"
+  },
+  coverBadgeText: { fontSize: 9, fontWeight: "700", color: "#fff", letterSpacing: 0.5 },
+  removeImageBtn: {
+    position: "absolute",
+    top: 4,
+    right: 4,
+    backgroundColor: "rgba(255,255,255,0.9)",
+    borderRadius: 12,
+    padding: 2
+  },
+  addImageTile: {
+    width: 90,
+    height: 90,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderStyle: "dashed",
+    backgroundColor: Colors.white,
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 4
+  },
+  addImageText: { fontSize: 11, color: Colors.textTertiary, fontWeight: "600" },
+  chipGroup: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 4 },
+  chip: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.white
+  },
+  chipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  chipText: { fontSize: 12, color: Colors.textSecondary, fontWeight: "600" },
+  chipTextActive: { color: Colors.white }
 });

@@ -187,7 +187,11 @@ class ArtistProfileRepository extends CrudRepository {
       
       if (radius) {
         where[Op.and] = [
-          db.sequelize.where(db.sequelize.literal(distanceSql), "<=", Number(radius))
+          db.sequelize.where(db.sequelize.literal(distanceSql), "<=", db.sequelize.literal(`LEAST(${Number(radius)}, COALESCE("ArtistProfile"."service_radius", 9999))`))
+        ];
+      } else {
+        where[Op.and] = [
+          db.sequelize.where(db.sequelize.literal(distanceSql), "<=", db.sequelize.literal(`COALESCE("ArtistProfile"."service_radius", 9999)`))
         ];
       }
 

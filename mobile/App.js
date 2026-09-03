@@ -95,6 +95,11 @@ export default function App() {
           const PlayInstallReferrer = require("react-native-play-install-referrer").default;
           const AsyncStorage = require("@react-native-async-storage/async-storage").default;
           
+          if (!PlayInstallReferrer || typeof PlayInstallReferrer.getInstallReferrerInfo !== 'function') {
+            if (__DEV__) console.log("[InstallReferrer] Native module not available in this environment.");
+            return;
+          }
+
           const referrerInfo = await PlayInstallReferrer.getInstallReferrerInfo();
           if (referrerInfo && referrerInfo.installReferrer) {
             const referrer = referrerInfo.installReferrer;

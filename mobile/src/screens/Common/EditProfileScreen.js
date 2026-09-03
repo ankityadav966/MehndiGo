@@ -1,5 +1,6 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as ImagePicker from "expo-image-picker";
+import * as Location from "expo-location";
 import React, { useEffect, useState, useCallback } from "react";
 import {
   Image,
@@ -56,6 +57,7 @@ export default function EditProfileScreen({ navigation }) {
   const [verificationStatus, setVerificationStatus] = useState("PENDING");
   const [instagramHandle, setInstagramHandle] = useState("");
   const [facebookHandle, setFacebookHandle] = useState("");
+  const [serviceRadius, setServiceRadius] = useState("25");
 
   const loadProfileData = useCallback(async () => {
     setLoading(true);
@@ -89,6 +91,7 @@ export default function EditProfileScreen({ navigation }) {
         setSalonService(Boolean(data.salon_service));
         setIsAvailable(data.is_available !== undefined ? Boolean(data.is_available) : true);
         setAadhaarNumber(data.aadhaar_number || "");
+        setServiceRadius(data.service_radius !== undefined && data.service_radius !== null ? String(data.service_radius) : "25");
         setVerificationStatus(data.verification_status || data.status || "PENDING");
 
         if (user?.id) {
@@ -158,6 +161,38 @@ export default function EditProfileScreen({ navigation }) {
     if (!result.canceled && result.assets && result.assets.length > 0) {
       const uri = result.assets[0].uri;
       setBannerUri(uri);
+    }
+  };
+
+  const [fetchingLocation, setFetchingLocation] = useState(false);
+
+  const handleGetLocation = async () => {
+    try {
+      setFetchingLocation(true);
+      let { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission Denied", "Permission to access location was denied. Please enable it in settings.");
+        setFetchingLocation(false);
+        return;
+      }
+
+      let loc = await Location.getCurrentPositionAsync({});
+      let geocode = await Location.reverseGeocodeAsync({
+        latitude: loc.coords.latitude,
+        longitude: loc.coords.longitude,
+      });
+
+      if (geocode && geocode.length > 0) {
+        const addr = geocode[0];
+        const formattedAddress = [addr.street, addr.subregion, addr.city, addr.region].filter(Boolean).join(", ");
+        setLocation(formattedAddress);
+      } else {
+        setLocation(`${loc.coords.latitude.toFixed(4)}, ${loc.coords.longitude.toFixed(4)}`);
+      }
+    } catch (err) {
+      Alert.alert("Location Error", "Could not fetch location. Please try again.");
+    } finally {
+      setFetchingLocation(false);
     }
   };
 
@@ -252,6 +287,7 @@ export default function EditProfileScreen({ navigation }) {
           salonService: salonService,
           is_available: isAvailable,
           isAvailable: isAvailable,
+          service_radius: serviceRadius.trim() ? Number(serviceRadius) : null,
           location: location.trim(),
           city: city.trim(),
           state: state.trim(),
@@ -389,10 +425,9 @@ export default function EditProfileScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          {/* Form Card */}
-          <View style={styles.formCard}>
-            {/* Verification Status Banner for Artists */}
-            {isArtist && (
+          {/* Status Banner */}
+          {isArtist && verificationStatus && (
+            <View style={{ marginHorizontal: 16 }}>
               <View style={[
                 styles.statusBanner,
                 verificationStatus === "APPROVED" ? styles.statusApproved : (verificationStatus === "REJECTED" ? styles.statusRejected : styles.statusPending)
@@ -409,8 +444,11 @@ export default function EditProfileScreen({ navigation }) {
                   </Text>
                 </View>
               </View>
-            )}
+            </View>
+          )}
 
+          {/* Personal Info Card */}
+          <View style={styles.cardGroup}>
             <Text style={styles.sectionHeader}>Personal Information</Text>
 
             <Text style={styles.label}>Full Name</Text>
@@ -464,7 +502,10 @@ export default function EditProfileScreen({ navigation }) {
                 style={styles.input}
               />
             </View>
+          </View>
 
+          {/* Location Card */}
+          <View style={styles.cardGroup}>
             <Text style={styles.sectionHeader}>Location Details</Text>
 
             <Text style={styles.label}>City</Text>
@@ -516,9 +557,12 @@ export default function EditProfileScreen({ navigation }) {
                 style={styles.input}
               />
             </View>
+          </View>
 
-            {isArtist && (
-              <>
+          {isArtist && (
+            <>
+              {/* Professional Card */}
+              <View style={styles.cardGroup}>
                 <Text style={styles.sectionHeader}>Professional & Service Info</Text>
 
                 <Text style={styles.label}>Bio</Text>
@@ -586,8 +630,42 @@ export default function EditProfileScreen({ navigation }) {
                     onChangeText={setLocation}
                     placeholder="Full Studio Address or Area"
                     placeholderTextColor={Colors.textTertiary}
-                    style={styles.input}
+                    style={[styles.input, { flex: 1 }]}
                   />
+                  <TouchableOpacity onPress={handleGetLocation} disabled={fetchingLocation} style={{ padding: 5 }}>
+                    {fetchingLocation ? (
+                      <ActivityIndicator size="small" color={Colors.primary} />
+                    ) : (
+                      <Ionicons name="navigate" size={24} color={Colors.primary} />
+                    )}
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={styles.label}>Service Radius (km)</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 }}>
+                  {[10, 15, 25].map((radius) => (
+                    <TouchableOpacity
+                      key={radius}
+                      onPress={() => setServiceRadius(radius.toString())}
+                      style={{
+                        flex: 1,
+                        marginHorizontal: 5,
+                        paddingVertical: 10,
+                        borderWidth: 1,
+                        borderColor: serviceRadius === radius.toString() ? Colors.primary : Colors.border,
+                        backgroundColor: serviceRadius === radius.toString() ? Colors.primary + '1A' : Colors.surface,
+                        borderRadius: 8,
+                        alignItems: 'center'
+                      }}
+                    >
+                      <Text style={{ 
+                        color: serviceRadius === radius.toString() ? Colors.primary : Colors.textSecondary,
+                        fontWeight: serviceRadius === radius.toString() ? 'bold' : 'normal'
+                      }}>
+                        {radius} KM
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
                 </View>
 
                 <Text style={styles.label}>Languages Spoken</Text>
@@ -607,14 +685,12 @@ export default function EditProfileScreen({ navigation }) {
                 </View>
 
                 {/* Service Types & Availability Switches */}
-                <Text style={styles.sectionHeader}>Service Types & Availability</Text>
-
-                <View style={styles.switchRow}>
+                <View style={[styles.switchRow, { borderTopWidth: 1, borderTopColor: Colors.border + "50", marginTop: 10 }]}>
                   <View style={styles.switchLabelContainer}>
                     <Ionicons name="home-outline" size={20} color={Colors.textSecondary} />
                     <View style={{ marginLeft: 10 }}>
                       <Text style={styles.switchTitle}>Home Service</Text>
-                      <Text style={styles.switchSubtitle}>Travel to client's location for bookings</Text>
+                      <Text style={styles.switchSubtitle}>Travel to client&apos;s location for bookings</Text>
                     </View>
                   </View>
                   <Switch
@@ -668,7 +744,10 @@ export default function EditProfileScreen({ navigation }) {
                     <Text style={styles.kycNote}>Government ID securely stored. Masked for your privacy.</Text>
                   </View>
                 ) : null}
+              </View>
 
+              {/* Social Handles Card */}
+              <View style={styles.cardGroup}>
                 <Text style={styles.sectionHeader}>Social Handles</Text>
 
                 <Text style={styles.label}>Instagram Handle</Text>
@@ -704,9 +783,9 @@ export default function EditProfileScreen({ navigation }) {
                     style={styles.input}
                   />
                 </View>
-              </>
-            )}
-          </View>
+              </View>
+            </>
+          )}
 
           {/* Save Button */}
           <View style={styles.footer}>
@@ -742,7 +821,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  headerTitle: { fontSize: 20, fontWeight: "700", color: Colors.text },
+  headerTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },
   profileSection: { alignItems: "center", marginTop: 10, marginBottom: 25 },
   avatarWrapper: { position: "relative" },
   profileImage: { width: 110, height: 110, borderRadius: 55 },
@@ -763,44 +842,42 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontSize: 14,
   },
-  formCard: {
+  cardGroup: {
     backgroundColor: Colors.white,
     marginHorizontal: 16,
-    borderRadius: 20,
-    padding: 18,
+    marginBottom: 12,
+    borderRadius: 12,
+    padding: 12,
     elevation: 2,
     shadowColor: Colors.shadow,
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
   },
   sectionHeader: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "700",
     color: Colors.primary,
-    marginTop: 20,
     marginBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-    paddingBottom: 6,
   },
   statusBanner: {
     flexDirection: "row",
     alignItems: "center",
     padding: 12,
     borderRadius: 12,
-    marginBottom: 16,
+    marginBottom: 12,
   },
   statusApproved: { backgroundColor: "#DCFCE7", borderWidth: 1, borderColor: "#86EFAC" },
   statusPending: { backgroundColor: "#FEF3C7", borderWidth: 1, borderColor: "#FCD34D" },
   statusRejected: { backgroundColor: "#FEE2E2", borderWidth: 1, borderColor: "#FCA5A5" },
-  statusTitle: { fontSize: 14, fontWeight: "700", color: Colors.text },
-  statusSubtitle: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  statusTitle: { fontSize: 13, fontWeight: "700", color: Colors.text },
+  statusSubtitle: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
   label: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "600",
     color: Colors.textSecondary,
-    marginBottom: 8,
-    marginTop: 12,
+    marginBottom: 4,
+    marginTop: 8,
   },
   inputContainer: {
     flexDirection: "row",
@@ -808,16 +885,16 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
     borderWidth: 1,
     borderColor: Colors.border,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    height: 54,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    height: 44,
   },
-  input: { flex: 1, marginLeft: 10, fontSize: 15, color: Colors.text },
+  input: { flex: 1, marginLeft: 8, fontSize: 14, color: Colors.text },
   switchRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 12,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border + "50",
   },
@@ -827,8 +904,8 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingRight: 10,
   },
-  switchTitle: { fontSize: 14, fontWeight: "600", color: Colors.text },
-  switchSubtitle: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  switchTitle: { fontSize: 13, fontWeight: "600", color: Colors.text },
+  switchSubtitle: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
   kycCard: {
     backgroundColor: Colors.primaryLight + "15",
     borderWidth: 1,
@@ -844,13 +921,13 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   kycTitle: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "700",
     color: Colors.primary,
     marginLeft: 8,
   },
   kycNumber: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "600",
     color: Colors.text,
     letterSpacing: 2,
@@ -866,8 +943,8 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   bannerWrapper: {
-    height: 150,
-    borderRadius: 16,
+    height: 140,
+    borderRadius: 12,
     overflow: "hidden",
     backgroundColor: Colors.primaryLight + "30",
     borderWidth: 1,

@@ -59,16 +59,14 @@ export async function registerForPushNotificationsAsync() {
   // 1. Skip in Expo Go container (Expo Go does not bundle custom google-services.json)
   if (isExpoGo) {
     console.log(
-      "[PushNotification] Environment: Expo Go container detected. Remote FCM push registration skipped. Use Development Build or Standalone APK for push testing."
+      "[PushNotification] Environment: Expo Go container detected. Proceeding with registration anyway for testing."
     );
-    return null;
   }
 
   try {
     // 2. Physical Device check
     if (!Device.isDevice) {
-      if (__DEV__) console.log("[PushNotification] Physical device required for push notifications. Emulator detected.");
-      return null;
+      if (__DEV__) console.log("[PushNotification] Emulator detected. Proceeding with registration anyway for testing.");
     }
 
     // 3. Permission Request

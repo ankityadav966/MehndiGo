@@ -130,6 +130,12 @@ module.exports = (
         defaultValue: true,
       },
 
+      service_radius: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        defaultValue: null,
+      },
+
       aadhaar_front: {
         type: DataTypes.STRING,
         allowNull: true,

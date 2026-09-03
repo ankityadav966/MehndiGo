@@ -103,6 +103,9 @@ app.get(["/.well-known/assetlinks.json", "/assetlinks.json"], (req, res) => {
         namespace: "android_app",
         package_name: "com.sonuy123.mehendigoo",
         sha256_cert_fingerprints: [
+          "2D:A0:9F:27:7C:F9:F3:E4:43:6B:9E:15:B8:29:B0:B1:8B:0B:27:04:E4:E0:47:F8:CD:00:BF:2A:50:C4:CF:44",
+          "16:16:45:6A:B3:8F:70:D5:F1:B8:CD:73:B8:69:87:AE:AB:B6:0A:F1:94:A0:71:8B:69:C0:B1:98:53:2C:40:20",
+          "45:79:35:68:72:A3:CA:98:82:7F:E1:57:43:99:42:8B:69:50:FD:C2:9E:58:3F:E5:CA:D7:73:14:23:DF:DF:54",
           "08:A7:0F:01:36:61:BB:CD:15:9C:68:53:FB:9C:C6:5C:09:D2:69:61:B7:AE:13:91:3A:D7:F9:5F:74:2C:0E:98",
           "FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C"
         ]

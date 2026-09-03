@@ -90,10 +90,10 @@ export default function ArtistServiceCatalogScreen({ route, navigation }) {
       const isSaved = savedDesignIds.includes(designId);
       if (isSaved) {
         setSavedDesignIds(prev => prev.filter(id => id !== designId));
-        await unsavePortfolioItem(designId).catch(() => {});
+        await unsavePortfolioItem(designId).catch(() => { });
       } else {
         setSavedDesignIds(prev => [...prev, designId]);
-        await savePortfolioItem(designId).catch(() => {});
+        await savePortfolioItem(designId).catch(() => { });
       }
     } catch (e) {
       if (__DEV__) console.log("Toggle save design error:", e.message);
@@ -167,6 +167,21 @@ export default function ArtistServiceCatalogScreen({ route, navigation }) {
 
   const artist = catalogData?.artist || initialArtist || {};
   const service = catalogData?.service || initialService || {};
+
+  let serviceImages = [];
+  let serviceCategories = [];
+  try {
+    serviceImages = typeof service.service_image === "string" && service.service_image.startsWith("[") ? JSON.parse(service.service_image) : (service.service_image ? [service.service_image] : []);
+  } catch (e) { }
+  try {
+    serviceCategories = typeof service.category === "string" && service.category.startsWith("[") ? JSON.parse(service.category) : (service.category ? [service.category] : []);
+  } catch (e) { }
+
+  const coverImage = serviceImages.length > 0 ? serviceImages[0] : null;
+  const displayCategories = serviceCategories.slice(0, 3);
+  const extraCategories = serviceCategories.length > 3 ? serviceCategories.length - 3 : 0;
+  const hasPremiumPackage = Array.isArray(catalogData?.packages) && catalogData.packages.some(p => p.art_tier === 'PREMIUM');
+  const isPremium = artist?.is_premium || hasPremiumPackage;
   const designs = catalogData?.designs || [];
   const packages = catalogData?.packages || [];
 
@@ -208,7 +223,7 @@ export default function ArtistServiceCatalogScreen({ route, navigation }) {
               title: `${service.specialization_name || "Catalog"} by ${artist.name || "Artist"}`,
               message: `Explore ${service.specialization_name || "Mehndi Services"} by ${artist.name || "Artist"} on MehndiGo:\n${url}`,
               url
-            }).catch(() => {});
+            }).catch(() => { });
           }}
         >
           <Ionicons name="share-social-outline" size={20} color={Colors.text} />
@@ -266,26 +281,71 @@ export default function ArtistServiceCatalogScreen({ route, navigation }) {
           </TouchableOpacity>
 
           {/* Service Banner Info Card */}
-          <View style={styles.serviceBannerCard}>
-            <View style={styles.serviceBannerHeader}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.serviceTitle}>{service.specialization_name || service.category || "Mehndi Service"}</Text>
-                <Text style={styles.serviceDesc}>{service.description || "Bespoke mehndi artwork tailored with authentic organic dark-stain henna."}</Text>
+          <View style={[styles.serviceBannerCard, { padding: 0, overflow: 'hidden' }]}>
+            {/* Cover Image Carousel */}
+            {serviceImages.length > 0 ? (
+              <View style={{ width: '100%', height: 200, backgroundColor: '#f1f5f9' }}>
+                <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} style={{ width: '100%', height: '100%' }}>
+                  {serviceImages.map((img, idx) => (
+                    <View key={idx} style={{ width: SCREEN_WIDTH - 32, height: 200 }}>
+                      <Image source={{ uri: resolveImage(img) }} style={{ width: '100%', height: '100%', resizeMode: 'cover' }} />
+                    </View>
+                  ))}
+                </ScrollView>
+                {/* Photo Count Indicator */}
+                {serviceImages.length > 1 && (
+                  <View style={{ position: 'absolute', bottom: 12, right: 12, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, flexDirection: 'row', alignItems: 'center' }}>
+                    <Ionicons name="images" size={14} color="#fff" style={{ marginRight: 6 }} />
+                    <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>{serviceImages.length} Photos (Swipe)</Text>
+                  </View>
+                )}
+                {/* Premium/Standard Badge */}
+                <View style={{ position: 'absolute', top: 12, left: 12, backgroundColor: isPremium ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.9)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, flexDirection: 'row', alignItems: 'center' }}>
+                  <Text style={{ color: isPremium ? '#FBBF24' : '#475569', fontSize: 12, fontWeight: '700' }}>
+                    {isPremium ? "💎 Premium" : "✨ Standard"}
+                  </Text>
+                </View>
               </View>
-              <View style={styles.servicePriceBox}>
-                <Text style={styles.servicePriceLabel}>Starting</Text>
-                <Text style={styles.servicePriceVal}>₹{service.minimum_price || 0}</Text>
-              </View>
-            </View>
+            ) : null}
 
-            <View style={styles.serviceMetaRow}>
-              <View style={styles.serviceMetaTag}>
-                <Ionicons name="time-outline" size={12} color={Colors.primary} />
-                <Text style={styles.serviceMetaTagText}> {service.duration_minutes || 60} mins duration</Text>
+            <View style={{ padding: 16 }}>
+              <View style={styles.serviceBannerHeader}>
+                <View style={{ flex: 1, paddingRight: 12 }}>
+                  <Text style={styles.serviceTitle}>{service.specialization_name || (serviceCategories.length > 0 ? serviceCategories[0] : service.category)}</Text>
+
+                  {/* Category Chips */}
+                  {serviceCategories.length > 0 && (
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+                      {displayCategories.map((cat, idx) => (
+                        <View key={idx} style={{ backgroundColor: '#F1F5F9', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 }}>
+                          <Text style={{ fontSize: 12, color: '#475569', fontWeight: '500' }}>{cat}</Text>
+                        </View>
+                      ))}
+                      {extraCategories > 0 && (
+                        <View style={{ backgroundColor: '#E2E8F0', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 }}>
+                          <Text style={{ fontSize: 12, color: '#334155', fontWeight: '600' }}>+{extraCategories}</Text>
+                        </View>
+                      )}
+                    </View>
+                  )}
+
+                  <Text style={styles.serviceDesc}>{service.description || "Bespoke mehndi artwork tailored with authentic organic dark-stain henna."}</Text>
+                </View>
+                <View style={styles.servicePriceBox}>
+                  <Text style={styles.servicePriceLabel}>Starting</Text>
+                  <Text style={styles.servicePriceVal}>₹{service.minimum_price || 0}</Text>
+                </View>
               </View>
-              <View style={styles.serviceMetaTag}>
-                <Ionicons name="home-outline" size={12} color="#059669" />
-                <Text style={[styles.serviceMetaTagText, { color: "#059669" }]}> Doorstep Home Service</Text>
+
+              <View style={styles.serviceMetaRow}>
+                <View style={styles.serviceMetaTag}>
+                  <Ionicons name="time-outline" size={14} color={Colors.primary} />
+                  <Text style={styles.serviceMetaTagText}> {service.duration_minutes || 60} mins duration</Text>
+                </View>
+                <View style={styles.serviceMetaTag}>
+                  <Ionicons name="home-outline" size={14} color="#059669" />
+                  <Text style={[styles.serviceMetaTagText, { color: "#059669" }]}> Doorstep Home Service</Text>
+                </View>
               </View>
             </View>
           </View>
@@ -420,11 +480,11 @@ export default function ArtistServiceCatalogScreen({ route, navigation }) {
                       <View style={[
                         styles.tierBadge,
                         design.art_tier === "BRIDAL_EXCLUSIVE" ? styles.bridalBadge :
-                        design.art_tier === "PREMIUM" ? styles.premiumBadge : styles.standardBadge
+                          design.art_tier === "PREMIUM" ? styles.premiumBadge : styles.standardBadge
                       ]}>
                         <Text style={styles.tierBadgeText}>
                           {design.art_tier === "BRIDAL_EXCLUSIVE" ? "👑 Bridal" :
-                           design.art_tier === "PREMIUM" ? "💎 Premium" : "✨ Standard"}
+                            design.art_tier === "PREMIUM" ? "💎 Premium" : "✨ Standard"}
                         </Text>
                       </View>
 

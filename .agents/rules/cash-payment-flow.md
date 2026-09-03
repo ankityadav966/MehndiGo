@@ -10,7 +10,7 @@ The cash payment completion flow MUST follow this exact sequence and should NEVE
    - This action updates the backend `detailed_status` strictly to `AWAITING_CASH_CONFIRMATION`.
 
 2. **Step 2: Artist Confirms Receipt**
-   - **Frontend Constraint:** The artist's app MUST hide the "Confirm Cash Received" button (and any related popup) UNTIL the `detailed_status` is `AWAITING_CASH_CONFIRMATION`. It should display a waiting badge to the artist beforehand.
+   - **Frontend Constraint:** In `CheckoutCard.jsx` (and any checkout action view), the artist's "Confirm Cash Received" button MUST be visible but strictly **disabled** (`disabled={loading || !isCashChosen}`) and styled with a disabled/grey appearance with copy such as *"Waiting for customer to select 'Pay Cash'"*. It must only be enabled (green) once the customer has chosen cash (`isCashChosen` / `AWAITING_CASH_CONFIRMATION`).
    - **Backend Constraint:** The backend API (`handleConfirmCashPayment` in `backend/src/index.js`) MUST strictly validate that `detailed_status` is `AWAITING_CASH_CONFIRMATION` before allowing the booking to be marked as `COMPLETED`. 
 
 ## Rationale

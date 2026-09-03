@@ -495,7 +495,7 @@ async function sendUsingResend(
 // AZURE COMMUNICATION SERVICES EMAIL
 // ============================================================
 
-async function sendUsingAzure(to, subject, body, html = null) {
+async function sendUsingAzure(to, subject, body, html = null, senderAddress = AZURE_EMAIL_FROM) {
   if (!AZURE_EMAIL_CONNECTION_STRING) {
     throw new Error("Missing AZURE_EMAIL_CONNECTION_STRING in environment variables.");
   }
@@ -508,7 +508,7 @@ async function sendUsingAzure(to, subject, body, html = null) {
     const client = getAzureEmailClient();
     if (client) {
       const message = {
-        senderAddress: AZURE_EMAIL_FROM,
+        senderAddress: senderAddress,
         content: {
           subject: subject,
           plainText: plainText,
@@ -555,7 +555,7 @@ async function sendUsingAzure(to, subject, body, html = null) {
   const url = `${endpoint}${pathAndQuery}`;
 
   const bodyObj = {
-    senderAddress: AZURE_EMAIL_FROM,
+    senderAddress: senderAddress,
     content: {
       subject: subject,
       plainText: plainText,
@@ -651,7 +651,7 @@ async function sendEmail(
   const errors = [];
 
   // ==========================================================
-  // PROVIDER ROUTING: PRIMARY (AZURE) -> FALLBACK (GMAIL)
+  // PROVIDER ROUTING: PRIMARY (AZURE donotreply) -> SECONDARY (AZURE support) -> FALLBACK (GMAIL) -> RESEND
   // ==========================================================
 
   console.log(`[EMAIL] Initiating email send to: ${to}`);
@@ -659,20 +659,31 @@ async function sendEmail(
   // 1. PRIMARY SENDER - AZURE (Do Not Reply)
   if (AZURE_EMAIL_CONNECTION_STRING && AZURE_EMAIL_CONNECTION_STRING !== "AZURE_KEY_REMOVED") {
     try {
-      console.log(`[EMAIL] Attempting PRIMARY sender (Azure: ${AZURE_EMAIL_FROM}) for ${to}...`);
-      const result = await sendUsingAzure(to, subject, body, finalHtml);
+      console.log(`[EMAIL] Attempting PRIMARY sender (Azure: donotreply@mehndigo.in) for ${to}...`);
+      const result = await sendUsingAzure(to, subject, body, finalHtml, "donotreply@mehndigo.in");
       console.log(`[EMAIL] ✅ PRIMARY sender succeeded for ${to}.`);
       return result;
     } catch (error) {
-      console.error(`[EMAIL] ❌ PRIMARY sender (Azure) failed for ${to}:`, error.message);
-      errors.push(`Primary (Azure): ${error.message}`);
+      console.error(`[EMAIL] ❌ PRIMARY sender (Azure donotreply) failed for ${to}:`, error.message);
+      errors.push(`Primary (Azure donotreply): ${error.message}`);
+      
+      // 2. SECONDARY SENDER - AZURE (Support)
+      try {
+        console.log(`[EMAIL] Attempting SECONDARY sender (Azure: support@mehndigo.in) for ${to}...`);
+        const result = await sendUsingAzure(to, subject, body, finalHtml, "support@mehndigo.in");
+        console.log(`[EMAIL] ✅ SECONDARY sender succeeded for ${to}.`);
+        return result;
+      } catch (err2) {
+        console.error(`[EMAIL] ❌ SECONDARY sender (Azure support) failed for ${to}:`, err2.message);
+        errors.push(`Secondary (Azure support): ${err2.message}`);
+      }
     }
   } else {
-    console.warn(`[EMAIL] ⚠️ PRIMARY sender (Azure) not configured. Proceeding to fallback...`);
-    errors.push(`Primary (Azure): Not configured`);
+    console.warn(`[EMAIL] ⚠️ Azure not configured. Proceeding to fallback...`);
+    errors.push(`Primary/Secondary (Azure): Not configured`);
   }
 
-  // 2. FALLBACK SENDER - GMAIL (mehndigo.in / EMAIL_USER)
+  // 3. FALLBACK SENDER - GMAIL (mehndigo.in / EMAIL_USER)
   if (EMAIL_USER && EMAIL_PASS) {
     try {
       console.log(`[EMAIL] Attempting FALLBACK sender (Gmail: ${EMAIL_USER}) for ${to}...`);

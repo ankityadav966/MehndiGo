@@ -240,6 +240,7 @@ class ArtistService {
       home_service: data.home_service !== undefined ? Boolean(data.home_service) : (data.homeService !== undefined ? Boolean(data.homeService) : artist.home_service),
       salon_service: data.salon_service !== undefined ? Boolean(data.salon_service) : (data.salonService !== undefined ? Boolean(data.salonService) : artist.salon_service),
       is_available: data.is_available !== undefined ? Boolean(data.is_available) : (data.isAvailable !== undefined ? Boolean(data.isAvailable) : artist.is_available),
+      service_radius: data.service_radius !== undefined ? (data.service_radius === null ? null : Number(data.service_radius)) : (data.serviceRadius !== undefined ? (data.serviceRadius === null ? null : Number(data.serviceRadius)) : artist.service_radius),
       selfie_image: data.selfie_image !== undefined ? data.selfie_image : (data.profile_image !== undefined ? data.profile_image : (data.profileImage !== undefined ? data.profileImage : artist.selfie_image)),
       location: data.location !== undefined ? data.location : artist.location,
       city: data.city !== undefined ? data.city : artist.city,
@@ -1918,6 +1919,7 @@ async createReview(data) {
     await artist.update({
       bio: data.bio !== undefined ? data.bio : artist.bio,
       experience_years: data.experience_years !== undefined ? Number(data.experience_years) : (data.experience !== undefined ? Number(data.experience) : artist.experience_years),
+      service_radius: data.service_radius !== undefined ? (data.service_radius === null ? null : Number(data.service_radius)) : (data.serviceRadius !== undefined ? (data.serviceRadius === null ? null : Number(data.serviceRadius)) : artist.service_radius),
       location: data.location !== undefined ? data.location : artist.location,
       city: data.city !== undefined ? data.city : artist.city,
       state: data.state !== undefined ? data.state : artist.state,
@@ -1990,30 +1992,81 @@ async createReview(data) {
     return service;
   }
 
-  async validateCategory(categoryName) {
-    if (!categoryName || typeof categoryName !== "string") {
-      throw new AppError("Category name is required", 400);
+  async validateCategory(categoryInput) {
+    if (!categoryInput) {
+      throw new AppError("Category is required", 400);
     }
-    const trimmed = categoryName.trim();
+    
+    const categories = Array.isArray(categoryInput) ? categoryInput : [categoryInput];
+    
+    if (categories.length === 0) {
+      throw new AppError("At least one category is required", 400);
+    }
+
     const isPostgres = db.sequelize.getDialect() === "postgres";
     const likeOp = isPostgres ? Op.iLike : Op.like;
 
-    const cat = await db.Category.findOne({
-      where: {
-        [Op.or]: [
-          { name: { [likeOp]: trimmed } },
-          { slug: { [likeOp]: trimmed.toLowerCase().replace(/[^a-z0-9]+/g, "-") } }
-        ]
-      }
-    });
+    const validCategories = [];
 
-    if (cat) {
-      if (cat.status === "INACTIVE") {
-        throw new AppError(`Selected category '${cat.name}' is currently inactive`, 400);
+    for (const catName of categories) {
+      if (typeof catName !== "string") continue;
+      const trimmed = catName.trim();
+      if (!trimmed) continue;
+
+      const cat = await db.Category.findOne({
+        where: {
+          [Op.or]: [
+            { name: { [likeOp]: trimmed } },
+            { slug: { [likeOp]: trimmed.toLowerCase().replace(/[^a-z0-9]+/g, "-") } }
+          ]
+        }
+      });
+  
+      if (cat) {
+        if (cat.status === "INACTIVE") {
+          throw new AppError(`Selected category '${cat.name}' is currently inactive`, 400);
+        }
+        validCategories.push(cat.name);
+      } else {
+        validCategories.push(trimmed);
       }
-      return cat.name;
     }
-    return trimmed;
+
+    if (validCategories.length === 0) {
+      throw new AppError("Valid category name is required", 400);
+    }
+
+    return validCategories;
+  }
+
+  /**
+   * Checks whether the Services.category column has been migrated to JSONB.
+   * If the column is still VARCHAR, storing an array will cause a Postgres
+   * type error (500). Throws a clear AppError so the cause is obvious in logs.
+   * Run migration: npx sequelize-cli db:migrate
+   */
+  async _assertCategoryColumnIsJson() {
+    try {
+      const [rows] = await db.sequelize.query(
+        `SELECT data_type, udt_name FROM information_schema.columns
+         WHERE table_name = 'Services' AND column_name = 'category' LIMIT 1`
+      );
+      if (rows && rows.length > 0) {
+        const { data_type, udt_name } = rows[0];
+        // Acceptable types: jsonb, json, text (SQLite stores as text)
+        const isJson = ["jsonb", "json", "text"].includes((data_type || "").toLowerCase())
+          || ["jsonb", "json"].includes((udt_name || "").toLowerCase());
+        if (!isJson) {
+          throw new AppError(
+            "Database migration required: Services.category column must be JSONB. Run: npx sequelize-cli db:migrate",
+            500
+          );
+        }
+      }
+    } catch (err) {
+      // Re-throw our own AppErrors; swallow introspection failures on non-postgres dialects
+      if (err instanceof AppError) throw err;
+    }
   }
 
   validatePricingAndDuration(data) {
@@ -2067,6 +2120,10 @@ async createReview(data) {
       throw new AppError("Specialization name is required", 400);
     }
 
+    // Guard: ensures the DB column is JSONB before attempting to store an array.
+    // If still VARCHAR, this throws a clear 500 with migration instructions.
+    await this._assertCategoryColumnIsJson();
+
     const canonicalCategory = await this.validateCategory(data.category);
     this.validatePricingAndDuration(data);
 
@@ -2095,6 +2152,7 @@ async createReview(data) {
         service_image: data.service_image || null,
         is_home_service: data.is_home_service !== undefined ? Boolean(data.is_home_service) : true,
         is_salon_service: data.is_salon_service !== undefined ? Boolean(data.is_salon_service) : false,
+        service_tier: data.service_tier || 'STANDARD',
         is_active: true,
         offer_price: data.offer_price ? Number(data.offer_price) : null,
         travel_charges: data.travel_charges ? Number(data.travel_charges) : 0,

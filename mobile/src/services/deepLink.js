@@ -971,14 +971,8 @@ export const linkingConfig = {
     "mehendigoo://",
     "mehndigo://",
     "exp+sonu-yadav://",
-    "https://mehendigoo.com",
-    "https://www.mehendigoo.com",
-    "https://mehndigo.com",
-    "https://www.mehndigo.com",
-    "https://mehendigo.app",
-    "https://www.mehendigo.app",
     "https://mehndigo.in",
-    "https://www.mehndigo.in"
+    "https://api.mehndigo.in"
   ],
   config: {
     screens: {

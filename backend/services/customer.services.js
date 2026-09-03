@@ -292,8 +292,16 @@ class CustomerService {
       distanceSql = `(6371 * acos(LEAST(1.0, GREATEST(-1.0, cos(radians(${Number(lat)})) * cos(radians(COALESCE(latitude::double precision, ${Number(lat)}))) * cos(radians(COALESCE(longitude::double precision, ${Number(lng)})) - radians(${Number(lng)})) + sin(radians(${Number(lat)})) * sin(radians(COALESCE(latitude::double precision, ${Number(lat)})))))))`;
       attributes.include.push([db.sequelize.literal(distanceSql), "distance"]);
       
+      const serviceRadiusSql = `${isPostgres ? '"ArtistProfile"' : 'ArtistProfile'}.service_radius`;
+
+      // Always enforce the artist's configured service radius (or default 25km)
+      where[Op.and] = where[Op.and] || [];
+      where[Op.and].push(
+        db.sequelize.where(db.sequelize.literal(distanceSql), "<=", db.sequelize.literal(`COALESCE(${serviceRadiusSql}, 25)`))
+      );
+
+      // If customer specifies an additional radius filter, apply that too
       if (filters.radius) {
-        where[Op.and] = where[Op.and] || [];
         where[Op.and].push(
           db.sequelize.where(db.sequelize.literal(distanceSql), "<=", Number(filters.radius))
         );

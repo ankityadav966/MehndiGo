@@ -184,8 +184,8 @@ export default function ArtistProfileScreen({ route, navigation }) {
         const historyRes = await getBookingHistory().catch(() => []);
         const bookingList = Array.isArray(historyRes) ? historyRes : (historyRes?.data || historyRes?.bookings || []);
         const artistTargetId = Number(prof.user_id || prof.id || artistId);
-        const matched = bookingList.find(b => 
-          Number(b.artist_id) === artistTargetId || 
+        const matched = bookingList.find(b =>
+          Number(b.artist_id) === artistTargetId ||
           Number(b.artist_profile_id) === Number(prof.id || artistId) ||
           Number(b.artistId) === artistTargetId
         );
@@ -250,7 +250,7 @@ export default function ArtistProfileScreen({ route, navigation }) {
       const name = profile?.name || profile?.full_name || profile?.user?.name || profile?.user?.full_name || "Mehndi Artist";
       const rating = Number(profile?.avg_rating || profile?.rating || 0).toFixed(1);
       const exp = profile?.experience_years;
-      
+
       let stats = [];
       if (startingPrice) stats.push(`Starting at ₹${startingPrice}`);
       if (exp) stats.push(`${exp} years experience`);
@@ -504,9 +504,7 @@ export default function ArtistProfileScreen({ route, navigation }) {
                     color={isFav ? "#E11D48" : "#FFFFFF"}
                   />
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.glassBtn} onPress={handleShare}>
-                  <Ionicons name="share-social-outline" size={22} color="#FFFFFF" />
-                </TouchableOpacity>
+
               </View>
             </View>
           </View>
@@ -565,6 +563,11 @@ export default function ArtistProfileScreen({ route, navigation }) {
             <Text style={styles.locationText}>
               📍 {profile?.city || "Jaipur, Rajasthan"} • {profile?.home_service ? "Doorstep Service Available" : "Studio Appointments"}
             </Text>
+            {profile?.home_service && (
+              <Text style={[styles.locationText, { fontSize: 13, marginTop: 4, color: Colors.primary }]}>
+                🚗 Services available within {profile?.service_radius || 25} KM radius
+              </Text>
+            )}
             <Text style={styles.languagesText}>
               🗣️ Speaks: {profile?.languages || "Hindi, English, Rajasthani"} • ⚡ Responds in {profile?.response_time || "~15 mins"}
             </Text>
@@ -628,44 +631,63 @@ export default function ArtistProfileScreen({ route, navigation }) {
               <Text style={styles.sectionSubtitle}>Tap a service to explore full design catalog & packages</Text>
             </View>
 
-            {services.map((svc) => (
-              <TouchableOpacity
-                key={`svc-${svc.id}`}
-                style={styles.serviceItemCard}
-                activeOpacity={0.88}
-                onPress={() => handleOpenServiceCatalog(svc)}
-              >
-                <View style={styles.svcCardTop}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.svcTitle}>{svc.specialization_name || svc.category}</Text>
-                    <Text style={styles.svcDesc} numberOfLines={2}>{svc.description}</Text>
-                  </View>
-                  <View style={styles.svcPriceBox}>
-                    <Text style={styles.svcPriceLabel}>From</Text>
-                    <Text style={styles.svcPriceVal}>{svc.minimum_price ? `₹${svc.minimum_price}` : "Price on Request"}</Text>
-                  </View>
-                </View>
+            {services.map((svc) => {
+              let images = [];
+              let categories = [];
+              try {
+                images = typeof svc.service_image === "string" && svc.service_image.startsWith("[") ? JSON.parse(svc.service_image) : (svc.service_image ? [svc.service_image] : []);
+              } catch (e) { }
+              try {
+                categories = typeof svc.category === "string" && svc.category.startsWith("[") ? JSON.parse(svc.category) : (svc.category ? [svc.category] : []);
+              } catch (e) { }
 
-                <View style={styles.svcMetaRow}>
-                  <View style={styles.svcMetaPill}>
-                    <Ionicons name="time-outline" size={12} color={Colors.primary} />
-                    <Text style={styles.svcMetaPillText}> {svc.duration_minutes || 60}m</Text>
+              const coverImage = images.length > 0 ? images[0] : null;
+              const displayCategories = categories.slice(0, 3);
+              const extraCategories = categories.length > 3 ? categories.length - 3 : 0;
+              const hasPremiumPackage = Array.isArray(svc.packages) && svc.packages.some(p => p.art_tier === 'PREMIUM');
+              const isPremium = profile?.is_premium || hasPremiumPackage;
+
+              return (
+                <TouchableOpacity
+                  key={`svc-${svc.id}`}
+                  style={[styles.serviceItemCard, { flexDirection: 'row', alignItems: 'center', padding: 12 }]}
+                  activeOpacity={0.88}
+                  onPress={() => handleOpenServiceCatalog(svc)}
+                >
+                  {/* Image (Left) */}
+                  <View style={{ width: 64, height: 64, borderRadius: 10, backgroundColor: '#f1f5f9', overflow: 'hidden' }}>
+                    {coverImage ? (
+                      <Image source={{ uri: resolveImage(coverImage) }} style={{ width: '100%', height: '100%', resizeMode: 'cover' }} />
+                    ) : (
+                      <View style={{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' }}>
+                        <Ionicons name="image-outline" size={24} color="#CBD5E1" />
+                      </View>
+                    )}
                   </View>
-                  {Array.isArray(svc.packages) && svc.packages.length > 0 && (
-                    <View style={[styles.svcMetaPill, { backgroundColor: "#F3E8FF" }]}>
-                      <Text style={[styles.svcMetaPillText, { color: "#7C3AED" }]}>
-                        🎁 {svc.packages.length} Packages Available
-                      </Text>
+
+                  {/* Title & Subtitle (Center) */}
+                  <View style={{ flex: 1, marginLeft: 14, justifyContent: 'center' }}>
+                    <Text style={[styles.svcTitle, { fontSize: 15, marginBottom: 4 }]} numberOfLines={1}>
+                      {svc.specialization_name || (categories.length > 0 ? categories[0] : svc.category)}
+                    </Text>
+                    <Text style={{ fontSize: 13, color: '#64748B' }} numberOfLines={1}>
+                      {svc.description || (categories.length > 0 ? categories.join(', ') : "Mehndi Service")}
+                    </Text>
+                  </View>
+
+                  {/* Price & Action (Right) */}
+                  <View style={{ alignItems: 'flex-end', marginLeft: 10, justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: '#334155', marginBottom: 4 }}>
+                      {svc.minimum_price ? `₹${svc.minimum_price}` : "On Req"}
+                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <Text style={{ fontSize: 12, color: Colors.primary, fontWeight: '600' }}>View</Text>
+                      <Ionicons name="chevron-forward" size={12} color={Colors.primary} style={{ marginLeft: 2 }} />
                     </View>
-                  )}
-                  <View style={{ flex: 1 }} />
-                  <View style={styles.browseCatalogCta}>
-                    <Text style={styles.browseCatalogCtaText}>View Designs</Text>
-                    <Ionicons name="arrow-forward" size={13} color={Colors.primary} />
                   </View>
-                </View>
-              </TouchableOpacity>
-            ))}
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
           {/* Section 2: Custom Design Request Banner */}
@@ -765,11 +787,11 @@ export default function ArtistProfileScreen({ route, navigation }) {
                       <View style={[
                         styles.tierBadge,
                         item.art_tier === "BRIDAL_EXCLUSIVE" ? styles.bridalBadge :
-                        item.art_tier === "PREMIUM" ? styles.premiumBadge : styles.standardBadge
+                          item.art_tier === "PREMIUM" ? styles.premiumBadge : styles.standardBadge
                       ]}>
                         <Text style={styles.tierBadgeText}>
                           {item.art_tier === "BRIDAL_EXCLUSIVE" ? "👑 Bridal" :
-                           item.art_tier === "PREMIUM" ? "💎 Premium" : "✨ Standard"}
+                            item.art_tier === "PREMIUM" ? "💎 Premium" : "✨ Standard"}
                         </Text>
                       </View>
                     </TouchableOpacity>
@@ -798,7 +820,7 @@ export default function ArtistProfileScreen({ route, navigation }) {
           </View>
 
           {/* Section 5: Live Availability Schedule Preview */}
-          <View style={styles.sectionBlock}>
+          {/* <View style={styles.sectionBlock}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Upcoming Slot Availability</Text>
               <Text style={styles.sectionSubtitle}>Select your date and preferred time slot during checkout</Text>
@@ -817,7 +839,7 @@ export default function ArtistProfileScreen({ route, navigation }) {
                 We accept bookings up to 90 days in advance. Instant confirmation upon payment.
               </Text>
             </View>
-          </View>
+          </View> */}
 
           {/* Section 6: Client Reviews & Ratings Breakdown */}
           <View style={styles.sectionBlock}>

@@ -43,6 +43,21 @@ export default function ServiceDetailsScreen({ route, navigation }) {
     }
   }, [id, navigation]);
 
+  /** Safely parse category which may be JSON string, plain string, or array */
+  const parseCategory = (raw) => {
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    if (typeof raw === "string") {
+      try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [raw];
+      } catch {
+        return [raw];
+      }
+    }
+    return [];
+  };
+
   useEffect(() => {
     if (!id) {
       Alert.alert("Error", "Missing service parameter ID.");
@@ -92,7 +107,22 @@ export default function ServiceDetailsScreen({ route, navigation }) {
     );
   }
 
-  const imageUri = service.service_image || "https://images.unsplash.com/photo-1605559424843-9e4c228bf1c2?w=500";
+  const parseImages = (raw) => {
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    if (typeof raw === "string") {
+      try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [raw];
+      } catch {
+        return [raw];
+      }
+    }
+    return [];
+  };
+
+  const imagesList = parseImages(service.service_image);
+  const imageUri = imagesList.length > 0 ? imagesList[0] : "https://images.unsplash.com/photo-1605559424843-9e4c228bf1c2?w=500";
 
   return (
     <SafeAreaView style={styles.container}>
@@ -111,8 +141,13 @@ export default function ServiceDetailsScreen({ route, navigation }) {
           <View style={styles.titleRow}>
             <View style={styles.titleInfo}>
               <Text style={styles.serviceName}>{service.specialization_name}</Text>
-              <View style={styles.categoryBadge}>
-                <Text style={styles.categoryText}>{service.category}</Text>
+              {/* Multi-category badges */}
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                {parseCategory(service.category).map((cat, i) => (
+                  <View key={i} style={styles.categoryBadge}>
+                    <Text style={styles.categoryText}>{cat}</Text>
+                  </View>
+                ))}
               </View>
             </View>
             <Text style={styles.price}>Min ₹{service.minimum_price}</Text>

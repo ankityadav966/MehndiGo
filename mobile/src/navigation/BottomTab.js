@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "../constants/Colors";
 
 import DashboardScreen from "../screens/Artist/DashboardScreen";
-import LeadsScreen from "../screens/Artist/LeadsScreen";
+import ServicesScreen from "../screens/Artist/ServicesScreen";
 import ArtistProfileScreen from "../screens/Artist/ArtistProfileScreen";
 import ArtistWalletScreen from "../screens/Artist/WalletScreen";
 import BookingRequestsScreen from "../screens/Artist/BookingRequestsScreen";
@@ -65,10 +65,10 @@ const artistRoutes = [
     activeIcon: "grid",
   },
   {
-    name: "Leads",
-    component: LeadsScreen,
-    icon: "people-outline",
-    activeIcon: "people",
+    name: "Services",
+    component: ServicesScreen,
+    icon: "layers-outline",
+    activeIcon: "layers",
   },
   {
     name: "Bookings",

@@ -414,8 +414,9 @@ export async function getArtistDashboardData() {
 }
 
 export async function getArtistBookingsData() {
-  const res = await apiRequest("GET", "/artist/bookings", null, true);
-  return res?.data || res;
+  // Use /artist/dashboard instead of /artist/bookings as a reliable workaround
+  const res = await apiRequest("GET", "/artist/dashboard", null, true);
+  return res?.data?.recentBookings || [];
 }
 
 export async function getArtistEarningsData() {

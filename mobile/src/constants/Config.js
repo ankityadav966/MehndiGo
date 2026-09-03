@@ -15,15 +15,10 @@ export const Config = {
   SUPPORTED_SCHEMES: ["mehendigoo", "mehndigo", "exp+sonu-yadav"],
 
   // Primary Web & Deep Link Domain (Canonical)
-  PRIMARY_DOMAIN: "https://api.mehndigo.in",
+  PRIMARY_DOMAIN: "https://mehndigo.in",
   SUPPORTED_DOMAINS: [
-    "api.mehndigo.in",
     "mehndigo.in",
-    "www.mehndigo.in",
-    "mehendigoo.com",
-    "www.mehendigoo.com",
-    "mehendigo.app",
-    "www.mehendigo.app"
+    "api.mehndigo.in"
   ],
 
   // Feature Flag: Set to true when Admin approval is required for artists before dashboard access

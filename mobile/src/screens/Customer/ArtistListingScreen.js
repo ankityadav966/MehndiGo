@@ -621,14 +621,16 @@ export default function ArtistListingScreen({ route, navigation }) {
             ) : null
           }
           ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Ionicons name="search-outline" size={48} color={Colors.textTertiary} />
-              <Text style={styles.emptyTitle}>No Artists Found</Text>
-              <Text style={styles.emptySub}>{"We couldn't find any matching artists under current filter settings."}</Text>
-              <TouchableOpacity style={styles.resetSearchBtn} onPress={resetFilters}>
-                <Text style={styles.resetSearchBtnText}>Reset Filter Settings</Text>
-              </TouchableOpacity>
-            </View>
+            !loading && !refreshing ? (
+              <View style={styles.emptyContainer}>
+                <Ionicons name="search-outline" size={48} color={Colors.textTertiary} />
+                <Text style={styles.emptyTitle}>No Artists Found</Text>
+                <Text style={styles.emptySub}>{"No artists available in this service area. Try changing the service location."}</Text>
+                <TouchableOpacity style={styles.resetSearchBtn} onPress={resetFilters}>
+                  <Text style={styles.resetSearchBtnText}>Reset Filter Settings</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null
           }
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"

@@ -306,6 +306,26 @@ class BookingService {
       throw new AppError("Selected service is currently inactive.", 400);
     }
 
+    // 4.5. Validate Service Area (Radius)
+    if (latitude && longitude && artist.latitude && artist.longitude) {
+      const R = 6371;
+      const dLat = (Number(artist.latitude) - Number(latitude)) * (Math.PI / 180);
+      const dLon = (Number(artist.longitude) - Number(longitude)) * (Math.PI / 180);
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(Number(latitude) * (Math.PI / 180)) *
+          Math.cos(Number(artist.latitude) * (Math.PI / 180)) *
+          Math.sin(dLon / 2) *
+          Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      const distance = R * c;
+
+      const maxRadius = artist.service_radius !== null && artist.service_radius !== undefined ? Number(artist.service_radius) : 25;
+      if (distance > maxRadius) {
+        throw new AppError(`The selected service location is out of the artist's service area (${maxRadius} KM).`, 400);
+      }
+    }
+
     // 5. Check Restricted Booking Rules
     let isRestricted = false;
     try {

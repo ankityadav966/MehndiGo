@@ -31,6 +31,8 @@ export default function BookingRequestsScreen({ route, navigation }) {
     try {
       if (!isSilent) setLoading(true);
       const data = await getArtistBookingsData();
+      // Show an alert to help debug
+      console.log(`[DEBUG_BOOKINGS] Fetched ${Array.isArray(data) ? data.length : "NOT_ARRAY"} bookings from API. Data:`, JSON.stringify(data).substring(0, 200));
       setBookings(Array.isArray(data) ? data : []);
     } catch (e) {
       if (__DEV__) console.log("Failed to fetch artist bookings:", e.message);
@@ -328,7 +330,7 @@ export default function BookingRequestsScreen({ route, navigation }) {
         const isCash = pMode === "CASH";
 
         const isUnpaidOnlineDraft = rawDetailed === "PENDING_PAYMENT" || (!isCash && pStatus === "PENDING" && advance <= 0);
-        if (isUnpaidOnlineDraft) return false;
+        // if (isUnpaidOnlineDraft) return false;
 
         const isAccepted = rawStatus === "ACCEPTED" || rawStatus === "CONFIRMED" || rawDetailed === "ARTIST_ACCEPTED" || rawDetailed === "ACCEPTED" || rawDetailed === "CONFIRMED" || rawDetailed === "ARTIST_ON_THE_WAY" || rawDetailed === "ON_THE_WAY" || rawDetailed === "ARTIST_ARRIVED" || rawDetailed === "ARRIVED" || rawDetailed === "SERVICE_IN_PROGRESS" || rawDetailed === "SERVICE_STARTED" || rawDetailed === "IN_PROGRESS";
         const isCancelled = rawStatus === "CANCELLED" || rawStatus === "REJECTED" || rawStatus === "DECLINED" || rawDetailed === "CANCELLED" || rawDetailed === "REJECTED" || rawDetailed === "DECLINED" || rawDetailed === "REFUNDED";

@@ -140,16 +140,19 @@ export default function CheckoutCard({
 
           {onConfirmCash && (
             <TouchableOpacity
-              style={[styles.confirmCashBtn, !isCashChosen && { backgroundColor: "#059669" }]}
+              style={[
+                styles.confirmCashBtn,
+                !isCashChosen && { backgroundColor: "#D1D5DB" } // Grey out if not chosen yet
+              ]}
               onPress={onConfirmCash}
-              disabled={loading}
+              disabled={loading || !isCashChosen}
               activeOpacity={0.85}
             >
-              <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-              <Text style={styles.confirmCashBtnText} numberOfLines={1} ellipsizeMode="tail">
+              <Ionicons name="checkmark-circle" size={18} color={!isCashChosen ? "#9CA3AF" : "#FFFFFF"} style={{ marginRight: 6 }} />
+              <Text style={[styles.confirmCashBtnText, !isCashChosen && { color: "#6B7280" }]} numberOfLines={1} ellipsizeMode="tail">
                 {isCashChosen
                   ? `Confirm Cash Received (₹${remainingAmount.toLocaleString("en-IN")})`
-                  : `Customer Paid Cash? Confirm Receipt (₹${remainingAmount.toLocaleString("en-IN")})`}
+                  : `Waiting for customer to select 'Pay Cash'`}
               </Text>
             </TouchableOpacity>
           )}
