@@ -14,7 +14,7 @@ import OptimizedImage from "../../components/OptimizedImage";
 import { getBookingDetails, selectCashPayment } from "../../services/booking";
 
 export default function BookingSettlementScreen({ route, navigation }) {
-  const { bookingId } = route.params || {};
+  const bookingId = route.params?.bookingId || route.params?.id || route.params?.booking_id;
 
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(true);

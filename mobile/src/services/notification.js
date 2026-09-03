@@ -4,6 +4,8 @@ import Constants, { ExecutionEnvironment } from "expo-constants";
 import Colors from "../constants/Colors";
 import { secureStorage } from "../utils/storage";
 
+import apiRequest from "./api";
+
 let Notifications = null;
 try {
   Notifications = require("expo-notifications");
@@ -57,16 +59,14 @@ export async function registerForPushNotificationsAsync() {
   // 1. Skip in Expo Go container (Expo Go does not bundle custom google-services.json)
   if (isExpoGo) {
     console.log(
-      "[PushNotification] Environment: Expo Go container detected. Remote FCM push registration skipped. Use Development Build or Standalone APK for push testing."
+      "[PushNotification] Environment: Expo Go container detected. Proceeding with registration anyway for testing."
     );
-    return null;
   }
 
   try {
     // 2. Physical Device check
     if (!Device.isDevice) {
-      if (__DEV__) console.log("[PushNotification] Physical device required for push notifications. Emulator detected.");
-      return null;
+      if (__DEV__) console.log("[PushNotification] Emulator detected. Proceeding with registration anyway for testing.");
     }
 
     // 3. Permission Request
@@ -129,21 +129,26 @@ export async function registerForPushNotificationsAsync() {
       });
     }
 
-    // 5. Fetch Expo Push Token
-    if (__DEV__) console.log("[PushNotification] Fetching Expo Push Token...");
+    // 5. Fetch Native Device Token (FCM for standalone/Android build)
+    if (__DEV__) console.log("[PushNotification] Fetching device push token...");
     let token = null;
     try {
-      const tokenData = await Notifications.getExpoPushTokenAsync({
-        projectId,
-      });
-      token = tokenData?.data;
-    } catch (tokenErr) {
-      if (__DEV__) console.log("[PushNotification] Expo token fetch notice:", tokenErr.message);
+      const deviceTokenData = await Notifications.getDevicePushTokenAsync();
+      token = deviceTokenData?.data;
+      if (token && __DEV__) console.log("[PushNotification] Native Device Push Token (FCM) fetched successfully");
+    } catch (devErr) {
+      if (__DEV__) console.log("[PushNotification] Native device token fetch notice:", devErr.message);
+    }
+
+    // Fallback to Expo Push Token if native token is unavailable (e.g. Expo Go)
+    if (!token) {
       try {
-        const deviceTokenData = await Notifications.getDevicePushTokenAsync();
-        token = deviceTokenData?.data;
-      } catch (devErr) {
-        if (__DEV__) console.log("[PushNotification] Device token fetch notice:", devErr.message);
+        const tokenData = await Notifications.getExpoPushTokenAsync({
+          projectId,
+        });
+        token = tokenData?.data;
+      } catch (tokenErr) {
+        if (__DEV__) console.log("[PushNotification] Expo token fetch notice:", tokenErr.message);
       }
     }
 
@@ -162,8 +167,6 @@ export async function registerForPushNotificationsAsync() {
     return null;
   }
 }
-
-import apiRequest from "./api";
 
 export async function sendNotificationTokenToServer(token) {
   if (!token) return;

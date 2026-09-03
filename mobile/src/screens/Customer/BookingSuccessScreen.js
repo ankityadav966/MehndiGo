@@ -7,13 +7,15 @@ import {
   Animated,
   ScrollView,
   ActivityIndicator,
-  Image
+  Image,
+  BackHandler
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import Colors from "../../constants/Colors";
 import { getBookingDetails } from "../../services/booking";
 import { formatServiceDate } from "../../utils/date";
+import { resetToHome } from "../../utils/navigationHelper";
 
 export default function BookingSuccessScreen({ route, navigation }) {
   const { bookingId, bookingCode: paramCode } = route.params || {};
@@ -21,6 +23,16 @@ export default function BookingSuccessScreen({ route, navigation }) {
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(true);
   const [scaleAnim] = useState(() => new Animated.Value(0));
+
+  // Android hardware back handler - cleanly resets to Home instead of exiting app or looping back to Payment
+  useEffect(() => {
+    const onBackPress = () => {
+      resetToHome(navigation);
+      return true;
+    };
+    const backHandler = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+    return () => backHandler.remove();
+  }, [navigation]);
 
   useEffect(() => {
     Animated.spring(scaleAnim, {
@@ -58,6 +70,27 @@ export default function BookingSuccessScreen({ route, navigation }) {
   const totalAmount = Number(booking?.total_amount || booking?.final_amount || 0);
   const advancePaid = Number(booking?.advance_amount || booking?.advance_paid || Math.round(totalAmount * 0.10));
   const remainingDue = Number(booking?.remaining_amount !== undefined ? booking.remaining_amount : (totalAmount - advancePaid));
+
+  const handleGoHome = () => {
+    resetToHome(navigation);
+  };
+
+  const handleViewBooking = () => {
+    if (bookingId) {
+      navigation.reset({
+        index: 1,
+        routes: [
+          { name: "CustomerTabs", params: { screen: "Bookings" } },
+          { name: "BookingDetails", params: { bookingId, id: bookingId } }
+        ]
+      });
+    } else {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "CustomerTabs", params: { screen: "Bookings" } }]
+      });
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -147,7 +180,7 @@ export default function BookingSuccessScreen({ route, navigation }) {
       <View style={styles.footerRow}>
         <TouchableOpacity
           style={styles.secondaryBtn}
-          onPress={() => navigation.navigate("CustomerTabs", { screen: "Home" })}
+          onPress={handleGoHome}
           activeOpacity={0.8}
         >
           <Text style={styles.secondaryBtnText}>Home</Text>
@@ -155,13 +188,7 @@ export default function BookingSuccessScreen({ route, navigation }) {
 
         <TouchableOpacity
           style={styles.primaryBtn}
-          onPress={() => {
-            if (bookingId) {
-              navigation.navigate("BookingDetails", { bookingId, id: bookingId });
-            } else {
-              navigation.navigate("CustomerTabs", { screen: "Bookings" });
-            }
-          }}
+          onPress={handleViewBooking}
           activeOpacity={0.8}
         >
           <Text style={styles.primaryBtnText}>View Booking</Text>

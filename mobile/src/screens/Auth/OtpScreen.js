@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -17,7 +18,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useArtistOnboarding } from "../../context/ArtistOnboardingContext";
 
 export default function OtpScreen({ navigation, route }) {
-  const { name, email, phone, role, isRegistering } = route.params || {};
+  const { name, email, phone, role, isRegistering, referralCode } = route.params || {};
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const inputRefs = useRef([]);
   const { dispatch } = useAuth();
@@ -126,29 +127,28 @@ export default function OtpScreen({ navigation, route }) {
     try {
       let data;
       if (isRegistering) {
-        data = await registerVerifyOtp(email, otpStr, name, phone, role);
+        data = await registerVerifyOtp(email, otpStr, name, phone, role, referralCode || null);
       } else {
         data = await verifyUserOtp(email, otpStr);
       }
-      try {
-        const AsyncStorage = require("@react-native-async-storage/async-storage").default;
-        await AsyncStorage.removeItem("pendingReferralCode");
-      } catch (err) {
-        if (__DEV__) console.log("Failed to clear stored referral code:", err.message);
+      // Clear stored referral code after successful registration use
+      if (isRegistering && referralCode) {
+        try {
+          const AsyncStorage = require("@react-native-async-storage/async-storage").default;
+          await AsyncStorage.removeItem("pendingReferralCode");
+        } catch (_) {}
       }
       const token = await secureStorage.getAccessToken();
       if (__DEV__) console.log("[ROLE TRACE 4] /register-verify-otp response:", JSON.stringify(data, null, 2));
       if (__DEV__) console.log("[ROLE TRACE 5] data.user.role from API response:", data.user?.role, "| Route param role:", role);
 
       const rawRole = data.user?.role || role || "";
-      const userRole = (String(rawRole).toUpperCase() === "ARTIST") ? "ARTIST" : "USER";
+      const userRole = (String(rawRole).toUpperCase() === "ARTIST") ? "ARTIST" : "CUSTOMER";
 
-      const isFirstTimeArtist = Boolean(isRegistering && userRole === "ARTIST");
       await secureStorage.setUserRole(userRole);
       if (data.user) {
-        await secureStorage.setUserData({ ...data.user, role: userRole, isFirstTimeArtistSignup: isFirstTimeArtist });
+        await secureStorage.setUserData({ ...data.user, role: userRole });
       }
-      if (__DEV__) console.log("[ROLE TRACE 6] Role saved in secureStorage:", userRole, "| isFirstTimeArtist:", isFirstTimeArtist);
 
       if (userRole === "ARTIST") {
         try {
@@ -160,11 +160,10 @@ export default function OtpScreen({ navigation, route }) {
         }
       }
 
-      if (__DEV__) console.log("[ROLE TRACE 7] Role passed in LOGIN dispatch:", userRole);
       dispatch({
         type: "LOGIN",
         payload: {
-          user: data.user ? { ...data.user, role: userRole, isFirstTimeArtistSignup: isFirstTimeArtist } : { role: userRole, isFirstTimeArtistSignup: isFirstTimeArtist },
+          user: data.user ? { ...data.user, role: userRole } : { role: userRole },
           token: token || data.token,
           role: userRole,
         },
@@ -187,60 +186,66 @@ export default function OtpScreen({ navigation, route }) {
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
-        style={styles.container}
+        style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <Text style={styles.title}>Verify Your Email</Text>
-        <Text style={styles.subtitle}>Enter 6 digit code sent to</Text>
-        <Text style={styles.emailText}>{displayEmail}</Text>
-
-        <View style={styles.otpContainer}>
-          {otp.map((digit, index) => (
-            <TextInput
-              key={index}
-              ref={(ref) => (inputRefs.current[index] = ref)}
-              style={[styles.otpBox, error ? styles.otpBoxError : null]}
-              maxLength={1}
-              value={digit}
-              onChangeText={(text) => handleOtpChange(text, index)}
-              onKeyPress={(e) => handleKeyPress(e, index)}
-              keyboardType="number-pad"
-              editable={!loading}
-            />
-          ))}
-        </View>
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-        <View style={{ alignItems: "center", marginTop: 30 }}>
-          {timer > 0 ? (
-            <Text style={styles.resend}>
-              Resend OTP in{" "}
-              <Text style={styles.timer}>
-                00:{timer.toString().padStart(2, "0")}
-              </Text>
-            </Text>
-          ) : (
-            <TouchableOpacity onPress={handleResend} disabled={resending}>
-              {resending ? (
-                <ActivityIndicator color={Colors.primary} size="small" />
-              ) : (
-                <Text style={styles.timer}>Resend OTP</Text>
-              )}
-            </TouchableOpacity>
-          )}
-        </View>
-
-        <TouchableOpacity
-          style={[styles.button, loading && styles.disabledButton]}
-          onPress={handleVerify}
-          disabled={loading}
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          {loading ? (
-            <ActivityIndicator color={Colors.white} size="small" />
-          ) : (
-            <Text style={styles.buttonText}>Verify OTP</Text>
-          )}
-        </TouchableOpacity>
+          <Text style={styles.title}>Verify Your Email</Text>
+          <Text style={styles.subtitle}>Enter 6 digit code sent to</Text>
+          <Text style={styles.emailText}>{displayEmail}</Text>
+
+          <View style={styles.otpContainer}>
+            {otp.map((digit, index) => (
+              <TextInput
+                key={index}
+                ref={(ref) => (inputRefs.current[index] = ref)}
+                style={[styles.otpBox, error ? styles.otpBoxError : null]}
+                maxLength={1}
+                value={digit}
+                onChangeText={(text) => handleOtpChange(text, index)}
+                onKeyPress={(e) => handleKeyPress(e, index)}
+                keyboardType="number-pad"
+                editable={!loading}
+              />
+            ))}
+          </View>
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+          <View style={{ alignItems: "center", marginTop: 30 }}>
+            {timer > 0 ? (
+              <Text style={styles.resend}>
+                Resend OTP in{" "}
+                <Text style={styles.timer}>
+                  00:{timer.toString().padStart(2, "0")}
+                </Text>
+              </Text>
+            ) : (
+              <TouchableOpacity onPress={handleResend} disabled={resending}>
+                {resending ? (
+                  <ActivityIndicator color={Colors.primary} size="small" />
+                ) : (
+                  <Text style={styles.timer}>Resend OTP</Text>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <TouchableOpacity
+            style={[styles.button, loading && styles.disabledButton]}
+            onPress={handleVerify}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color={Colors.white} size="small" />
+            ) : (
+              <Text style={styles.buttonText}>Verify OTP</Text>
+            )}
+          </TouchableOpacity>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -248,7 +253,13 @@ export default function OtpScreen({ navigation, route }) {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: Colors.white },
-  container: { flex: 1, backgroundColor: Colors.white, justifyContent: "center", paddingHorizontal: 24 },
+  scrollContent: {
+    flexGrow: 1,
+    backgroundColor: Colors.white,
+    justifyContent: "center",
+    paddingHorizontal: 24,
+    paddingVertical: 20
+  },
   title: { fontSize: 30, fontWeight: "700", color: Colors.text },
   subtitle: { marginTop: 8, fontSize: 14, color: Colors.textSecondary },
   emailText: { marginTop: 15, fontSize: 15, fontWeight: "600", color: Colors.text },

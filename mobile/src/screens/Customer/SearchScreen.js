@@ -9,8 +9,11 @@ import {
   View,
   FlatList,
   ActivityIndicator,
-  Keyboard
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import {
   getSearchSuggestions,
@@ -125,13 +128,31 @@ export default function SearchScreen({ navigation }) {
   const handleSuggestionPress = (item) => {
     Keyboard.dismiss();
     if (item.type === "artist" && item.artistId) {
-      navigation.navigate("ArtistProfile", { artistId: item.artistId });
+      navigation.navigate("ArtistProfile", { artistId: item.artistId, from: "Search" });
     } else if (item.type === "category") {
-      navigation.navigate("ArtistListing", { category: item.text, categoryId: item.id || null });
+      navigation.navigate("ArtistListing", { category: item.text, categoryId: item.id || null, from: "Search" });
     } else {
       handleSearchSubmit(item.text);
     }
   };
+
+  const handleBack = useCallback(() => {
+    if (navigation?.canGoBack && navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "CustomerTabs", params: { screen: "Home" } }]
+      });
+    }
+    return true;
+  }, [navigation]);
+
+  useEffect(() => {
+    const { BackHandler } = require("react-native");
+    const backSubscription = BackHandler.addEventListener("hardwareBackPress", handleBack);
+    return () => backSubscription.remove();
+  }, [handleBack]);
 
   // Render suggestion list item
   const renderSuggestionItem = ({ item }) => {
@@ -175,171 +196,183 @@ export default function SearchScreen({ navigation }) {
   ];
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name="arrow-back" size={22} color={Colors.text} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Search & Discover</Text>
-        {loading && <ActivityIndicator size="small" color={Colors.primary} style={{ marginLeft: 10 }} />}
-      </View>
-
-      {/* Search Input Bar with Voice Mic */}
-      <View style={styles.searchBarContainer}>
-        <Ionicons name="search-outline" size={20} color={Colors.primary} style={{ marginRight: 8 }} />
-        <TextInput
-          placeholder="Search by artist, category, price, city..."
-          placeholderTextColor={Colors.textTertiary}
-          style={styles.searchInput}
-          value={query}
-          onChangeText={setQuery}
-          onSubmitEditing={() => handleSearchSubmit()}
-          returnKeyType="search"
-          autoFocus
-        />
-        {query.length > 0 ? (
-          <TouchableOpacity onPress={clearQueryInput} style={{ marginRight: 8 }}>
-            <Ionicons name="close-circle" size={20} color={Colors.textTertiary} />
+    <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1 }}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={handleBack}
+          >
+            <Ionicons name="arrow-back" size={22} color={Colors.text} />
           </TouchableOpacity>
-        ) : null}
-        <TouchableOpacity onPress={handleVoiceSearch} style={styles.micBtn}>
-          <Ionicons name="mic-outline" size={20} color={Colors.primary} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Voice Listening Modal / Banner */}
-      {isListening && (
-        <View style={styles.voiceBanner}>
-          <Ionicons name="mic" size={24} color="#FFFFFF" style={{ marginRight: 10 }} />
-          <Text style={styles.voiceText}>Listening... Speak artist or category name</Text>
-          <ActivityIndicator size="small" color="#FFFFFF" style={{ marginLeft: 10 }} />
+          <Text style={styles.headerTitle}>Search & Discover</Text>
+          {loading && <ActivityIndicator size="small" color={Colors.primary} style={{ marginLeft: 10 }} />}
         </View>
-      )}
 
-      {/* Quick Filter Chips Bar */}
-      <View style={styles.chipsWrapper}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsContainer}>
-          {QUICK_FILTERS.map((chip, idx) => (
-            <TouchableOpacity
-              key={idx}
-              style={styles.filterChip}
-              onPress={() => handleSearchSubmit(chip.query)}
-            >
-              <Ionicons name={chip.icon} size={14} color={Colors.primary} style={{ marginRight: 4 }} />
-              <Text style={styles.chipText}>{chip.label}</Text>
+        {/* Search Input Bar with Voice Mic */}
+        <View style={styles.searchBarContainer}>
+          <Ionicons name="search-outline" size={20} color={Colors.primary} style={{ marginRight: 8 }} />
+          <TextInput
+            placeholder="Search by artist, category, price, city..."
+            placeholderTextColor={Colors.textTertiary}
+            style={styles.searchInput}
+            value={query}
+            onChangeText={setQuery}
+            onSubmitEditing={() => handleSearchSubmit()}
+            returnKeyType="search"
+            autoFocus
+          />
+          {query.length > 0 ? (
+            <TouchableOpacity onPress={clearQueryInput} style={{ marginRight: 8 }}>
+              <Ionicons name="close-circle" size={20} color={Colors.textTertiary} />
             </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
+          ) : null}
+          <TouchableOpacity onPress={handleVoiceSearch} style={styles.micBtn}>
+            <Ionicons name="mic-outline" size={20} color={Colors.primary} />
+          </TouchableOpacity>
+        </View>
 
-      {/* Autocomplete suggestions or initial search panels */}
-      {query.length > 0 ? (
-        suggestionsLoading ? (
-          <View style={styles.centerLoader}>
-            <ActivityIndicator size="small" color={Colors.primary} />
-            <Text style={styles.loaderText}>Searching suggestions...</Text>
+        {/* Voice Listening Modal / Banner */}
+        {isListening && (
+          <View style={styles.voiceBanner}>
+            <Ionicons name="mic" size={24} color="#FFFFFF" style={{ marginRight: 10 }} />
+            <Text style={styles.voiceText}>Listening... Speak artist or category name</Text>
+            <ActivityIndicator size="small" color="#FFFFFF" style={{ marginLeft: 10 }} />
           </View>
+        )}
+
+        {/* Quick Filter Chips Bar */}
+        <View style={styles.chipsWrapper}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipsContainer}
+            keyboardShouldPersistTaps="handled"
+          >
+            {QUICK_FILTERS.map((chip, idx) => (
+              <TouchableOpacity
+                key={idx}
+                style={styles.filterChip}
+                onPress={() => handleSearchSubmit(chip.query)}
+              >
+                <Ionicons name={chip.icon} size={14} color={Colors.primary} style={{ marginRight: 4 }} />
+                <Text style={styles.chipText}>{chip.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        {/* Autocomplete suggestions or initial search panels */}
+        {query.length > 0 ? (
+          suggestionsLoading ? (
+            <View style={styles.centerLoader}>
+              <ActivityIndicator size="small" color={Colors.primary} />
+              <Text style={styles.loaderText}>Searching suggestions...</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={suggestions}
+              keyExtractor={(item, index) => `${item.type}-${index}`}
+              renderItem={renderSuggestionItem}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              contentContainerStyle={{ paddingBottom: 120 }}
+              ListEmptyComponent={
+                <View style={styles.emptySuggestions}>
+                  <Text style={styles.emptyText}>{"Press return to search for \"" + query + "\""}</Text>
+                </View>
+              }
+            />
+          )
         ) : (
-          <FlatList
-            data={suggestions}
-            keyExtractor={(item, index) => `${item.type}-${index}`}
-            renderItem={renderSuggestionItem}
+          <ScrollView
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
-            ListEmptyComponent={
-              <View style={styles.emptySuggestions}>
-                <Text style={styles.emptyText}>{"Press return to search for \"" + query + "\""}</Text>
-              </View>
-            }
-          />
-        )
-      ) : (
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ paddingBottom: 80 }}
-        >
-          {/* Recent Searches */}
-          {recentSearches.length > 0 && (
-            <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Recent Searches</Text>
-                <TouchableOpacity onPress={handleClearAllHistory}>
-                  <Text style={styles.clearAllBtn}>Clear All</Text>
-                </TouchableOpacity>
-              </View>
-              {recentSearches.map((item, index) => {
-                const textVal = typeof item === "string" ? item : (item?.search_query || item?.query || item?.name || item?.full_name || "");
-                return (
-                  <View key={item?.id || index} style={styles.historyRow}>
-                    <TouchableOpacity
-                      style={styles.historyBtn}
-                      onPress={() => handleSearchSubmit(textVal)}
-                    >
-                      <Ionicons name="time-outline" size={18} color={Colors.textTertiary} style={{ marginRight: 10 }} />
-                      <Text style={styles.historyText} numberOfLines={1}>{textVal}</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.historyDelete}
-                      onPress={() => handleDeleteHistoryItem(item?.id || index)}
-                    >
-                      <Ionicons name="close" size={18} color={Colors.textTertiary} />
-                    </TouchableOpacity>
-                  </View>
-                );
-              })}
-            </View>
-          )}
-
-          {/* Trending Searches */}
-          {trendingSearches.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Trending Searches 🔥</Text>
-              <View style={styles.trendingContainer}>
-                {trendingSearches.map((item, index) => {
-                  const labelStr = typeof item === "string" ? item : (item?.name || item?.full_name || item?.query || item?.search_query || "");
+            keyboardDismissMode="on-drag"
+            contentContainerStyle={{ paddingBottom: 120 }}
+          >
+            {/* Recent Searches */}
+            {recentSearches.length > 0 && (
+              <View style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>Recent Searches</Text>
+                  <TouchableOpacity onPress={handleClearAllHistory}>
+                    <Text style={styles.clearAllBtn}>Clear All</Text>
+                  </TouchableOpacity>
+                </View>
+                {recentSearches.map((item, index) => {
+                  const textVal = typeof item === "string" ? item : (item?.search_query || item?.query || item?.name || item?.full_name || "");
                   return (
-                    <TouchableOpacity
-                      key={index}
-                      style={styles.trendingChip}
-                      onPress={() => handleSearchSubmit(labelStr)}
-                    >
-                      <Ionicons name="flame" size={14} color={Colors.primary} style={{ marginRight: 4 }} />
-                      <Text style={styles.trendingText}>{labelStr}</Text>
-                    </TouchableOpacity>
+                    <View key={item?.id || index} style={styles.historyRow}>
+                      <TouchableOpacity
+                        style={styles.historyBtn}
+                        onPress={() => handleSearchSubmit(textVal)}
+                      >
+                        <Ionicons name="time-outline" size={18} color={Colors.textTertiary} style={{ marginRight: 10 }} />
+                        <Text style={styles.historyText} numberOfLines={1}>{textVal}</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.historyDelete}
+                        onPress={() => handleDeleteHistoryItem(item?.id || index)}
+                      >
+                        <Ionicons name="close" size={18} color={Colors.textTertiary} />
+                      </TouchableOpacity>
+                    </View>
                   );
                 })}
               </View>
+            )}
+
+            {/* Trending Searches */}
+            {trendingSearches.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Trending Searches 🔥</Text>
+                <View style={styles.trendingContainer}>
+                  {trendingSearches.map((item, index) => {
+                    const labelStr = typeof item === "string" ? item : (item?.name || item?.full_name || item?.query || item?.search_query || "");
+                    return (
+                      <TouchableOpacity
+                        key={index}
+                        style={styles.trendingChip}
+                        onPress={() => handleSearchSubmit(labelStr)}
+                      >
+                        <Ionicons name="flame" size={14} color={Colors.primary} style={{ marginRight: 4 }} />
+                        <Text style={styles.trendingText}>{labelStr}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+
+            {/* Popular Categories */}
+            <Text style={styles.sectionTitle}>Popular Categories</Text>
+            <View style={styles.popularCategoriesContainer}>
+              {popularCategories.map((item, index) => (
+                <TouchableOpacity
+                  key={index}
+                  style={styles.popularCategoryCard}
+                  onPress={() => handleSearchSubmit(item.name)}
+                >
+                  <Ionicons name={item.icon || "color-palette-outline"} size={22} color={Colors.primary} style={{ marginBottom: 6 }} />
+                  <Text style={styles.popularCategoryText}>{item.name}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
-          )}
-
-          {/* Popular Categories */}
-          <Text style={styles.sectionTitle}>Popular Categories</Text>
-          <View style={styles.popularCategoriesContainer}>
-            {popularCategories.map((item, index) => (
-              <TouchableOpacity
-                key={index}
-                style={styles.popularCategoryCard}
-                onPress={() => handleSearchSubmit(item.name)}
-              >
-                <Ionicons name={item.icon || "color-palette-outline"} size={22} color={Colors.primary} style={{ marginBottom: 6 }} />
-                <Text style={styles.popularCategoryText}>{item.name}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </ScrollView>
-      )}
-    </View>
+          </ScrollView>
+        )}
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
-
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.white, paddingHorizontal: 16, paddingTop: 50 },
+  container: { flex: 1, backgroundColor: Colors.white, paddingHorizontal: 16 },
   header: { flexDirection: "row", alignItems: "center", marginBottom: 16 },
   backBtn: {
     width: 40,

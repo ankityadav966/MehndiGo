@@ -91,7 +91,7 @@ class UserService {
       throw new AppError("Access denied: Invalid Admin credentials", 403);
     }
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = String(crypto.randomInt(100000, 1000000));
 
     await OtpRepositor.create({
       user_id: user.id,

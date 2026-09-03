@@ -13,12 +13,122 @@ class WalletService {
 
   async getWalletSummary(userId) {
     const wallet = await this.getOrCreateWallet(userId);
+    const availableBalance = Number(wallet.available_balance !== undefined ? wallet.available_balance : wallet.balance || 0);
+    const pendingBalance = Number(wallet.pending_balance || 0);
+    const lifetimeEarnings = Number(wallet.lifetime_earnings || 0);
+
+    // Retrieve artist profile to extract cash collection records if role is ARTIST
+    let cashEntries = [];
+    let cashEarnings = 0;
+    try {
+      const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
+      if (artist) {
+        const completedCashBookings = await db.Booking.findAll({
+          where: {
+            artist_id: artist.id,
+            booking_status: "COMPLETED"
+          },
+          include: [
+            {
+              model: db.User,
+              as: "user",
+              required: false,
+              attributes: ["name", "phone", "profile_image"]
+            }
+          ],
+          order: [["createdAt", "DESC"]]
+        });
+
+        cashEntries = completedCashBookings.map((b) => {
+          const totalAmt = Number(b.final_amount || b.total_price || 0);
+          const advAmt = Number(b.advance_paid || 0);
+          const cashCollected = totalAmt - advAmt > 0 ? (totalAmt - advAmt) : totalAmt;
+          return {
+            id: b.id,
+            booking_id: b.id,
+            booking_code: b.booking_code,
+            booking_number: b.booking_code,
+            amount: cashCollected,
+            total_amount: totalAmt,
+            advance_paid: advAmt,
+            customer_name: b.user ? b.user.name : "Customer",
+            customer_phone: b.user ? b.user.phone : "",
+            customer_avatar: b.user ? b.user.profile_image : null,
+            date: b.completed_at || b.updatedAt || b.createdAt,
+            created_at: b.completed_at || b.updatedAt || b.createdAt,
+            createdAt: b.completed_at || b.updatedAt || b.createdAt,
+            status: "COMPLETED",
+            type: "CASH_COLLECTED",
+            transaction_type: "CASH_COLLECTED",
+            is_cash: true,
+            is_cash_entry: true,
+            description: `Cash received from ${b.user ? b.user.name : "Customer"} (#${b.booking_code})`
+          };
+        });
+
+        cashEarnings = cashEntries.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+      }
+    } catch (cashErr) {
+      console.warn("[WALLET_SERVICE] Cash entries calculation notice:", cashErr.message);
+    }
+
     return {
-      balance: wallet.balance || 0,
-      pending_balance: wallet.pending_balance || 0,
-      lifetime_earnings: wallet.lifetime_earnings || 0,
-      total_withdrawals: wallet.total_withdrawals || 0,
-      withdrawable_balance: wallet.balance || 0
+      balance: availableBalance,
+      available_balance: availableBalance,
+      availableBalance: availableBalance,
+      pending_balance: pendingBalance,
+      pendingBalance: pendingBalance,
+      lifetime_earnings: lifetimeEarnings || (availableBalance + cashEarnings),
+      total_earnings: lifetimeEarnings || (availableBalance + cashEarnings),
+      cash_earnings: cashEarnings,
+      cashEarnings: cashEarnings,
+      cash_entries: cashEntries,
+      cashEntries: cashEntries,
+      total_withdrawals: Number(wallet.total_withdrawals || 0),
+      withdrawable_balance: availableBalance
+    };
+  }
+
+  async getWithdrawalStatus(userId) {
+    const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
+    const wallet = await this.getOrCreateWallet(userId);
+    const bankAccount = await this.getBankAccount(userId);
+
+    const now = new Date();
+    const istOffset = 5.5 * 60 * 60 * 1000;
+    const istDate = new Date(now.getTime() + istOffset);
+    const day = istDate.getUTCDay();
+    const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const allowed = day === 3 || day === 6 || process.env.ALLOW_ANY_DAY_WITHDRAWAL === "true";
+
+    const dayInfo = {
+      allowed,
+      currentDayName: days[day],
+      message: allowed
+        ? `Withdrawals are open today (${days[day]}).`
+        : "Withdrawals are available only on Wednesday and Saturday."
+    };
+
+    let pendingRequest = null;
+    if (artist) {
+      pendingRequest = await db.WithdrawRequest.findOne({
+        where: { artist_id: artist.id, status: "PENDING" },
+        order: [["createdAt", "DESC"]]
+      });
+    }
+
+    const availableBalance = Number(wallet.available_balance !== undefined ? wallet.available_balance : wallet.balance || 0);
+    const pendingBalance = Number(wallet.pending_balance || 0);
+
+    return {
+      is_withdrawal_open: allowed,
+      day_info: dayInfo,
+      has_pending_request: !!pendingRequest,
+      pending_request: pendingRequest,
+      available_balance: availableBalance,
+      pending_balance: pendingBalance,
+      total_earnings: Number(wallet.lifetime_earnings || 0),
+      bank_details: bankAccount
     };
   }
 
@@ -48,7 +158,7 @@ class WalletService {
     return (history || []).map((tx) => {
       const txData = tx.toJSON();
       if (txData.booking && txData.booking.user) {
-        txData.description = `Payment from ${txData.booking.user.name} (#${txData.booking.booking_code})`;
+        txData.description = `${txData.transaction_type === "CASH_COLLECTED" ? "Cash collected from" : "Payment from"} ${txData.booking.user.name} (#${txData.booking.booking_code})`;
       }
       return txData;
     });
@@ -77,29 +187,38 @@ class WalletService {
     return { wallet, tx, result };
   }
 
-  async initiateWithdrawal(userId, amount) {
+  async initiateWithdrawal(userId, amount, options = {}) {
+    const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
+    if (!artist) {
+      throw new AppError("Artist profile required for withdrawal requests", 404);
+    }
+    if (artist.verification_status !== "APPROVED") {
+      throw new AppError("Only approved artists with verified KYC can request withdrawals", 403);
+    }
+
+    // 1. Strictly Validate Day of Week (Wednesday and Saturday in IST only)
+    if (!options?.ignoreDayRestriction && process.env.ALLOW_ANY_DAY_WITHDRAWAL !== "true") {
+      const now = new Date();
+      const istOffset = 5.5 * 60 * 60 * 1000;
+      const istDate = new Date(now.getTime() + istOffset);
+      const day = istDate.getUTCDay(); // 0 = Sun, 1 = Mon, 2 = Tue, 3 = Wed, 4 = Thu, 5 = Fri, 6 = Sat
+      if (day !== 3 && day !== 6) {
+        throw new AppError("Withdrawals are available only on Wednesday and Saturday.", 400);
+      }
+    }
+
     const numAmount = Number(amount);
     if (isNaN(numAmount) || numAmount < 100) {
       throw new AppError("Minimum withdrawal amount is ₹100", 400);
     }
 
     const bankAccount = await db.BankAccount.findOne({ where: { user_id: userId } });
-    if (!bankAccount || (!bankAccount.account_number && !bankAccount.upi_id)) {
-      throw new AppError("Please link your bank account or UPI ID before requesting a withdrawal.", 400);
+    if (!bankAccount || (!bankAccount.account_number && !bankAccount.upi_id) || !bankAccount.account_holder_name || !bankAccount.ifsc_code) {
+      throw new AppError("Please add and verify your bank details before requesting withdrawal.", 400);
     }
 
     const t = await db.sequelize.transaction();
     try {
-      const artist = await db.ArtistProfile.findOne({ 
-        where: { user_id: userId },
-        transaction: t
-      });
-      if (!artist) {
-        throw new AppError("Artist profile required for withdrawal requests", 404);
-      }
-      if (artist.verification_status !== "APPROVED") {
-        throw new AppError("Only approved artists with verified KYC can request withdrawals", 403);
-      }
 
       // Check if artist already has an active PENDING withdrawal request
       const existingPending = await db.WithdrawRequest.findOne({
@@ -108,7 +227,7 @@ class WalletService {
         lock: t.LOCK.UPDATE
       });
       if (existingPending) {
-        throw new AppError("You already have a pending withdrawal request (WR-" + existingPending.id + ") being processed. Please wait for it to complete.", 400);
+        throw new AppError("You already have a pending withdrawal request. Please wait until it is processed.", 400);
       }
 
       // Get or create wallet row safely with row update lock

@@ -33,7 +33,7 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false
       },
       category: {
-        type: DataTypes.STRING(100),
+        type: DataTypes.JSON,
         allowNull: false
       },
       description: {
@@ -65,6 +65,11 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.BOOLEAN,
         allowNull: false,
         defaultValue: false
+      },
+      service_tier: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        defaultValue: 'STANDARD'
       },
       is_active: {
         type: DataTypes.BOOLEAN,

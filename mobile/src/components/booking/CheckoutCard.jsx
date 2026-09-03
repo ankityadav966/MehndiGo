@@ -15,7 +15,9 @@ export default function CheckoutCard({
   const totalAmount = Number(booking.total_amount || booking.final_amount || 0);
   const advanceAmount = Number(booking.advance_amount || booking.advance_paid || Math.round(totalAmount * 0.10));
   const remainingAmount = Number(booking.remaining_amount !== undefined ? booking.remaining_amount : (totalAmount - advanceAmount));
-  const paymentMethod = String(booking.payment_method || "").toLowerCase();
+  const rawMode = String(booking.payment_mode || booking.payment_method || "").toUpperCase();
+  const isCashChosen = rawMode === "CASH" || rawMode === "CASH_ON_DELIVERY";
+  const isFullyPaid = String(booking.payment_status || "").toUpperCase() === "PAID" || remainingAmount <= 0;
 
   return (
     <View style={styles.card}>
@@ -29,8 +31,10 @@ export default function CheckoutCard({
           </Text>
           <Text style={styles.subtitleText} numberOfLines={2}>
             {isArtist
-              ? "Verify balance collection from customer before marking service settled."
-              : "Please complete remaining balance payment to finalize appointment."}
+              ? (isCashChosen
+                  ? "Customer selected Cash. Confirm receipt after taking physical cash."
+                  : "Customer can pay online via UPI/Card or hand over physical cash.")
+              : "Please choose your preferred method to pay the remaining balance."}
           </Text>
         </View>
       </View>
@@ -58,7 +62,11 @@ export default function CheckoutCard({
         <View style={{ flex: 1, marginRight: 8 }}>
           <Text style={styles.dueLabel} numberOfLines={1}>Remaining Balance</Text>
           <Text style={styles.dueSublabel} numberOfLines={1}>
-            {paymentMethod === "cash" ? "Mode: Direct Cash Collection" : "Mode: Online / Cash Payment"}
+            {isFullyPaid
+              ? "Status: Fully Paid ✓"
+              : isCashChosen
+                ? "Status: Customer Selected Cash"
+                : "Status: Awaiting Payment Selection"}
           </Text>
         </View>
         <View style={styles.dueValueContainer}>
@@ -69,46 +77,82 @@ export default function CheckoutCard({
 
       {/* Customer Action Buttons */}
       {!isArtist && remainingAmount > 0 && (
-        <View style={styles.btnRow}>
-          {onPayCash && (
-            <TouchableOpacity
-              style={styles.secondaryBtn}
-              onPress={onPayCash}
-              disabled={loading}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="cash-outline" size={15} color="#1F2937" />
-              <Text style={styles.secondaryBtnText}>Pay Cash</Text>
-            </TouchableOpacity>
-          )}
+        isCashChosen ? (
+          <View style={styles.awaitingCashContainer}>
+            <View style={styles.awaitingCashBadge}>
+              <Ionicons name="hourglass-outline" size={16} color="#D97706" style={{ marginRight: 6 }} />
+              <Text style={styles.awaitingCashText}>
+                Hand over ₹{remainingAmount.toLocaleString("en-IN")} in cash to the artist. The artist will confirm and complete the booking.
+              </Text>
+            </View>
+            {onPayOnline && (
+              <TouchableOpacity
+                style={[styles.secondaryBtn, { marginTop: 8 }]}
+                onPress={onPayOnline}
+                disabled={loading}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="card-outline" size={15} color="#1F2937" />
+                <Text style={styles.secondaryBtnText}>Switch to Pay Online (₹{remainingAmount})</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        ) : (
+          <View style={styles.btnRow}>
+            {onPayCash && (
+              <TouchableOpacity
+                style={styles.secondaryBtn}
+                onPress={onPayCash}
+                disabled={loading}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="cash-outline" size={15} color="#1F2937" />
+                <Text style={styles.secondaryBtnText}>Pay Cash</Text>
+              </TouchableOpacity>
+            )}
 
-          {onPayOnline && (
-            <TouchableOpacity
-              style={styles.primaryBtn}
-              onPress={onPayOnline}
-              disabled={loading}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="card" size={15} color="#FFFFFF" />
-              <Text style={styles.primaryBtnText} numberOfLines={1}>Pay Online (₹{remainingAmount})</Text>
-            </TouchableOpacity>
-          )}
-        </View>
+            {onPayOnline && (
+              <TouchableOpacity
+                style={styles.primaryBtn}
+                onPress={onPayOnline}
+                disabled={loading}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="card" size={15} color="#FFFFFF" />
+                <Text style={styles.primaryBtnText} numberOfLines={1}>Pay Online (₹{remainingAmount})</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )
       )}
 
       {/* Artist Action Buttons */}
-      {isArtist && (
+      {isArtist && remainingAmount > 0 && (
         <View style={styles.artistActionContainer}>
+          {!isCashChosen && (
+            <View style={styles.awaitingNoticeBox}>
+              <Ionicons name="time-outline" size={14} color="#6B7280" style={{ marginRight: 4 }} />
+              <Text style={styles.awaitingNoticeText}>
+                Awaiting customer payment (Online UPI or Cash Handover)
+              </Text>
+            </View>
+          )}
+
           {onConfirmCash && (
             <TouchableOpacity
-              style={styles.confirmCashBtn}
+              style={[
+                styles.confirmCashBtn,
+                !isCashChosen && { backgroundColor: "#D1D5DB" } // Grey out if not chosen yet
+              ]}
               onPress={onConfirmCash}
-              disabled={loading}
+              disabled={loading || !isCashChosen}
               activeOpacity={0.85}
             >
-              <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-              <Text style={styles.confirmCashBtnText} numberOfLines={1} ellipsizeMode="tail">
-                Confirm Cash Received (₹{remainingAmount.toLocaleString("en-IN")})
+              <Ionicons name="checkmark-circle" size={18} color={!isCashChosen ? "#9CA3AF" : "#FFFFFF"} style={{ marginRight: 6 }} />
+              <Text style={[styles.confirmCashBtnText, !isCashChosen && { color: "#6B7280" }]} numberOfLines={1} ellipsizeMode="tail">
+                {isCashChosen
+                  ? `Confirm Cash Received (₹${remainingAmount.toLocaleString("en-IN")})`
+                  : `Waiting for customer to select 'Pay Cash'`}
               </Text>
             </TouchableOpacity>
           )}
@@ -272,6 +316,21 @@ const styles = StyleSheet.create({
   artistActionContainer: {
     marginTop: 12
   },
+  awaitingNoticeBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F3F4F6",
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    marginBottom: 10
+  },
+  awaitingNoticeText: {
+    fontSize: 11.5,
+    fontWeight: "600",
+    color: "#4B5563"
+  },
   confirmCashBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -292,5 +351,24 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     letterSpacing: 0.2,
     flexShrink: 1
+  },
+  awaitingCashContainer: {
+    marginTop: 12
+  },
+  awaitingCashBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FEF3C7",
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#FDE68A"
+  },
+  awaitingCashText: {
+    flex: 1,
+    fontSize: 12,
+    color: "#92400E",
+    fontWeight: "600",
+    lineHeight: 16
   }
 });

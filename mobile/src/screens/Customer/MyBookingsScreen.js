@@ -14,6 +14,7 @@ import {
   Platform
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useFocusEffect } from "@react-navigation/native";
 import Colors from "../../constants/Colors";
 import { useAuth } from "../../context/AuthContext";
 import { getBookingHistory } from "../../services/booking";
@@ -34,6 +35,23 @@ export default function MyBookingsScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [imageErrors, setImageErrors] = useState({});
+
+  // Back handling: If subscreen -> goBack(), If tab -> switch to Home tab
+  useFocusEffect(
+    React.useCallback(() => {
+      const { BackHandler } = require("react-native");
+      const onBackPress = () => {
+        if (navigation?.canGoBack && navigation.canGoBack()) {
+          navigation.goBack();
+        } else {
+          navigation.navigate("CustomerTabs", { screen: "Home" });
+        }
+        return true;
+      };
+      const sub = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+      return () => sub.remove();
+    }, [navigation])
+  );
 
   const LOCAL_CATEGORY_IMAGES = {
     bridal: require("../../assets/images/categories/bridal.png"),
@@ -99,13 +117,28 @@ export default function MyBookingsScreen({ navigation }) {
       const status = String(item.detailed_status || item.booking_status || item.status || "").toUpperCase();
       if (selectedTab === "All") return true;
       if (selectedTab === "Pending") {
-        return ["PENDING", "VIEWED", "CONFIRMED", "WAITING_FOR_USER_PAYMENT"].includes(status);
+        return ["PENDING", "VIEWED", "WAITING_FOR_USER_PAYMENT", "PENDING_ARTIST_CONFIRMATION", "REQUESTED"].includes(status);
       } else if (selectedTab === "Accepted") {
-        return ["ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "ARTIST_ARRIVED", "SERVICE_STARTED", "RESCHEDULED", "CASH_PAYMENT_PENDING", "ON_THE_WAY", "IN_PROGRESS"].includes(status);
+        return [
+          "CONFIRMED",
+          "ARTIST_ACCEPTED",
+          "ACCEPTED",
+          "ARTIST_ON_THE_WAY",
+          "ON_THE_WAY",
+          "ARTIST_ARRIVED",
+          "ARRIVED",
+          "SERVICE_STARTED",
+          "SERVICE_IN_PROGRESS",
+          "IN_PROGRESS",
+          "RESCHEDULED",
+          "CASH_PAYMENT_PENDING",
+          "CUSTOMER_VERIFIED",
+          "CHECKOUT"
+        ].includes(status);
       } else if (selectedTab === "Completed") {
         return ["COMPLETED", "AWAITING_CASH_CONFIRMATION", "COMPLETED_CLOSED"].includes(status);
       } else {
-        return ["CANCELLED", "REJECTED", "REFUNDED"].includes(status);
+        return ["CANCELLED", "REJECTED", "DECLINED", "REFUNDED"].includes(status);
       }
     });
   }, [bookings, selectedTab]);
@@ -115,7 +148,7 @@ export default function MyBookingsScreen({ navigation }) {
     if (["COMPLETED", "COMPLETED_CLOSED", "AWAITING_CASH_CONFIRMATION"].includes(st)) {
       return { bg: "#EFF6FF", text: "#1D4ED8", label: "Completed" };
     }
-    if (["SERVICE_IN_PROGRESS", "IN_PROGRESS", "PROCESSING", "CUSTOMER_VERIFIED", "SERVICE_STARTED"].includes(st)) {
+    if (["SERVICE_IN_PROGRESS", "IN_PROGRESS", "PROCESSING", "CUSTOMER_VERIFIED", "SERVICE_STARTED", "CHECKOUT"].includes(st)) {
       return { bg: "#FCE7F3", text: "#E91E63", label: "In Progress" };
     }
     if (["ARTIST_ARRIVED", "ARRIVED"].includes(st)) {
@@ -124,10 +157,10 @@ export default function MyBookingsScreen({ navigation }) {
     if (["ARTIST_ON_THE_WAY", "ON_THE_WAY"].includes(st)) {
       return { bg: "#EDE9FE", text: "#701DDB", label: "On The Way" };
     }
-    if (["ARTIST_ACCEPTED", "ACCEPTED"].includes(st)) {
+    if (["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED"].includes(st)) {
       return { bg: "#ECFDF5", text: "#047857", label: "Confirmed" };
     }
-    if (["PENDING", "VIEWED", "CONFIRMED", "WAITING_FOR_USER_PAYMENT"].includes(st)) {
+    if (["PENDING", "VIEWED", "PENDING_ARTIST_CONFIRMATION", "WAITING_FOR_USER_PAYMENT", "REQUESTED"].includes(st)) {
       return { bg: "#FFFBEB", text: "#D97706", label: "Pending" };
     }
     return { bg: "#FEF2F2", text: "#DC2626", label: "Cancelled" };
@@ -144,7 +177,12 @@ export default function MyBookingsScreen({ navigation }) {
     let timeStr = rawTime ? (rawTime.includes("AM") || rawTime.includes("PM") || rawTime.includes("-") ? rawTime : formatTime(rawTime)) : "TBD";
 
     const isLiveBooking = ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "ON_THE_WAY", "ARTIST_ARRIVED", "ARRIVED", "SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS", "CHECKOUT"].includes(String(status).toUpperCase());
-    const artistName = item.artist_name || item.artist?.user?.name || item.service_title || item.service?.specialization_name || "Mehndi Booking";
+    const isTrackingActive = ["ARTIST_ON_THE_WAY", "ON_THE_WAY", "ARTIST_ARRIVED", "ARRIVED"].includes(String(status).toUpperCase());
+    
+    const artistName = item.artist_name || item.artist?.user?.name || item.artist?.name || "Mehndi Specialist";
+    const serviceName = item.service_title || item.service?.title || item.service?.specialization_name || item.service_specialization || "Henna Mehndi";
+    const totalDisplayAmt = item.total_amount || item.final_amount || item.remaining_amount || 0;
+    const isCheckInPending = !item.checkin_otp_verified && item.checkin_otp && ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED", "ARTIST_ON_THE_WAY", "ON_THE_WAY", "ARTIST_ARRIVED", "ARRIVED"].includes(String(status).toUpperCase());
 
     return (
       <TouchableOpacity
@@ -154,26 +192,67 @@ export default function MyBookingsScreen({ navigation }) {
       >
         {/* Top Header */}
         <View style={styles.cardTopRow}>
-          <Image
-            source={resolveBookingImage(item)}
-            onError={() => setImageErrors((prev) => ({ ...prev, [item.id]: true }))}
-            style={styles.artistAvatar}
-          />
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => {
+              const targetArtistId = item.artist_id || item.artist?.id || item.artist?.user_id;
+              if (targetArtistId) {
+                navigation.navigate("ArtistProfile", {
+                  artistId: targetArtistId,
+                  from: "MyBookings"
+                });
+              }
+            }}
+          >
+            <Image
+              source={resolveBookingImage(item)}
+              onError={() => setImageErrors((prev) => ({ ...prev, [item.id]: true }))}
+              style={styles.artistAvatar}
+            />
+          </TouchableOpacity>
           <View style={styles.cardHeaderInfo}>
             <View style={styles.titleStatusRow}>
-              <Text numberOfLines={1} style={[styles.bookingTitle, { color: currentTextColor }]}>
-                {artistName}
-              </Text>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                style={{ flex: 1 }}
+                onPress={() => {
+                  const targetArtistId = item.artist_id || item.artist?.id || item.artist?.user_id;
+                  if (targetArtistId) {
+                    navigation.navigate("ArtistProfile", {
+                      artistId: targetArtistId,
+                      from: "MyBookings"
+                    });
+                  }
+                }}
+              >
+                <Text numberOfLines={1} style={[styles.bookingTitle, { color: currentTextColor }]}>
+                  {artistName}
+                </Text>
+              </TouchableOpacity>
               <View style={[styles.statusBadge, { backgroundColor: statusConfig.bg }]}>
                 <Text style={[styles.statusText, { color: statusConfig.text }]}>{statusConfig.label}</Text>
               </View>
             </View>
 
+            <Text numberOfLines={1} style={[styles.serviceSubtitle, { color: currentSecTextColor }]}>
+              {serviceName}
+            </Text>
+
             <View style={styles.codeRow}>
-              <Text style={[styles.codeTag, { color: currentSecTextColor }]}>Ref: #{item.booking_code || item.id}</Text>
+              <Text style={[styles.codeTag, { color: currentSecTextColor }]}>Ref: #{item.booking_code || item.booking_number || item.id}</Text>
             </View>
           </View>
         </View>
+
+        {/* Check-In PIN Banner (Visible only to Customer for quick Check-In) */}
+        {isCheckInPending && (
+          <View style={styles.pinBanner}>
+            <Ionicons name="key-outline" size={14} color="#059669" />
+            <Text style={styles.pinBannerLabel}>Check-In PIN:</Text>
+            <Text style={styles.pinBannerCode}>{item.checkin_otp}</Text>
+            <Text style={styles.pinBannerHint}>(Share with specialist upon arrival)</Text>
+          </View>
+        )}
 
         <View style={[styles.cardDivider, { backgroundColor: currentBorderColor }]} />
 
@@ -188,10 +267,21 @@ export default function MyBookingsScreen({ navigation }) {
             <Text style={[styles.detailText, { color: currentTextColor }]} numberOfLines={1}>{timeStr}</Text>
           </View>
           <View style={styles.detailItemEnd}>
-            <Text style={styles.priceLabel}>Amount</Text>
-            <Text style={styles.priceValue}>₹{item.final_amount || item.remaining_amount}</Text>
+            <Text style={styles.priceLabel}>Total Amount</Text>
+            <Text style={styles.priceValue}>₹{totalDisplayAmt}</Text>
           </View>
         </View>
+
+        {/* Live Tracking Button (if Specialist is On The Way) */}
+        {isTrackingActive && (
+          <TouchableOpacity
+            style={styles.trackingBtn}
+            onPress={() => navigation.navigate("LiveTracking", { bookingId: item.id, id: item.id })}
+          >
+            <Ionicons name="navigate-circle-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+            <Text style={styles.trackingBtnText}>Track Specialist Live</Text>
+          </TouchableOpacity>
+        )}
 
         {/* Live Booking Quick Action Buttons (Call / Chat) */}
         {isLiveBooking && (
@@ -199,7 +289,7 @@ export default function MyBookingsScreen({ navigation }) {
             <TouchableOpacity
               style={styles.callBtn}
               onPress={() => {
-                const phone = item.artist?.user?.phone || "9999999999";
+                const phone = item.artist?.user?.phone || item.artist_phone || "9999999999";
                 Linking.openURL(`tel:${phone}`);
               }}
             >
@@ -213,8 +303,8 @@ export default function MyBookingsScreen({ navigation }) {
                 navigation.navigate("ChatRoom", {
                   bookingId: item.id,
                   receiverId: item.artist?.user_id || item.artist_id,
-                  receiverName: item.artist?.user?.name || "Artist",
-                  receiverImage: item.artist?.user?.profile_image
+                  receiverName: item.artist?.user?.name || item.artist_name || "Artist",
+                  receiverImage: item.artist?.user?.profile_image || item.artist_image
                 });
               }}
             >
@@ -431,12 +521,46 @@ const styles = StyleSheet.create({
     fontSize: 10.5,
     fontWeight: "700"
   },
+  serviceSubtitle: {
+    fontSize: 12,
+    fontWeight: "500",
+    marginTop: 2
+  },
   codeRow: {
     marginTop: 2
   },
   codeTag: {
-    fontSize: 11.5,
+    fontSize: 11,
     fontWeight: "500"
+  },
+  pinBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ECFDF5",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+    gap: 6
+  },
+  pinBannerLabel: {
+    fontSize: 11.5,
+    fontWeight: "700",
+    color: "#065F46"
+  },
+  pinBannerCode: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#059669",
+    letterSpacing: 1.5
+  },
+  pinBannerHint: {
+    fontSize: 10,
+    color: "#047857",
+    fontStyle: "italic",
+    flexShrink: 1
   },
   cardDivider: {
     height: 1,
@@ -473,6 +597,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "800",
     color: Colors.primary || "#9C1344"
+  },
+  trackingBtn: {
+    flexDirection: "row",
+    height: 36,
+    backgroundColor: "#701DDB",
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 8
+  },
+  trackingBtnText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "700"
   },
   actionBtnRow: {
     flexDirection: "row",

@@ -153,6 +153,57 @@ async function getSimilarArtists(req, res) {
   }
 }
 
+async function getArtistServiceCatalog(req, res) {
+  try {
+    const { id, serviceId } = req.params;
+    const { complexity, art_tier, sort } = req.query;
+    const response = await CustomerService.getArtistServiceCatalog(id, serviceId, { complexity, art_tier }, sort);
+    return res.status(200).json(SuccessResponse("Artist Service Catalog Fetched Successfully", response));
+  } catch (error) {
+    return res
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
+  }
+}
+
+async function createCustomDesignRequest(req, res) {
+  try {
+    const userId = req.user?.id;
+    const payload = {
+      ...req.body,
+      artistId: req.params?.id || req.body?.artistId || req.body?.artist_id
+    };
+    const response = await CustomerService.createCustomDesignRequest(userId, payload);
+    return res.status(201).json(SuccessResponse("Custom Design Request Submitted Successfully", response));
+  } catch (error) {
+    return res
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
+  }
+}
+
+async function getArtistFaqs(req, res) {
+  try {
+    const response = await CustomerService.getArtistFaqs(req.params.id);
+    return res.status(200).json(SuccessResponse("Artist FAQs Fetched Successfully", response));
+  } catch (error) {
+    return res
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
+  }
+}
+
+async function getArtistOffers(req, res) {
+  try {
+    const response = await CustomerService.getArtistOffers(req.params.id);
+    return res.status(200).json(SuccessResponse("Artist Offers Fetched Successfully", response));
+  } catch (error) {
+    return res
+      .status(error.statusCode || 500)
+      .json(ErrorResponse(error.message, error));
+  }
+}
+
 async function getTrendingArtists(req, res) {
   try {
     const { latitude, longitude } = req.query;
@@ -717,6 +768,10 @@ module.exports = {
   getArtistReviews,
   getArtistAvailability,
   getSimilarArtists,
+  getArtistServiceCatalog,
+  createCustomDesignRequest,
+  getArtistFaqs,
+  getArtistOffers,
   getTrendingArtists,
   getRecommendedArtists,
   getSuggestions,

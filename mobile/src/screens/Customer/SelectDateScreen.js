@@ -11,7 +11,13 @@ import { fetchArtistAvailability } from "../../services/customer";
 import { checkRestrictedBooking } from "../../services/booking";
 
 export default function SelectDateScreen({ route, navigation }) {
-  const { artistId, serviceId, selectedDate: initialDate, selectedTimeSlot, selectedArt } = route.params || {};
+  const rawParams = route.params || {};
+  const artistId = rawParams.artistId || rawParams.artist?.id || rawParams.artist_id;
+  const serviceId = rawParams.serviceId || rawParams.service?.id || rawParams.service_id || rawParams.selectedArt?.service_id || 1;
+  const initialDate = rawParams.selectedDate;
+  const selectedTimeSlot = rawParams.selectedTimeSlot;
+  const selectedArt = rawParams.selectedArt;
+  const packageId = rawParams.packageId;
 
   // Single Date Selection Rule: Exactly 1 selected date string (YYYY-MM-DD)
   const todayStr = moment().format("YYYY-MM-DD");
@@ -22,8 +28,8 @@ export default function SelectDateScreen({ route, navigation }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!artistId || !serviceId) {
-      Alert.alert("Error", "Missing booking context details.");
+    if (!artistId) {
+      Alert.alert("Error", "Missing booking context details. Please select an artist.");
       navigation.goBack();
       return;
     }
@@ -42,6 +48,7 @@ export default function SelectDateScreen({ route, navigation }) {
         ]);
 
         if (check?.hasRestricted) {
+          const restrictedBookingId = check.bookingId || check.booking_id || check.id || check.activeBooking?.id || check.activeBooking?.booking_id;
           Alert.alert(
             "Pending Booking Payment",
             "You have a previous booking that still requires payment completion or artist confirmation.\n\nPlease complete that booking before creating a new one.",
@@ -49,13 +56,21 @@ export default function SelectDateScreen({ route, navigation }) {
               {
                 text: "Complete Payment",
                 onPress: () => {
-                  navigation.navigate("BookingSettlement", { bookingId: check.bookingId });
+                  if (restrictedBookingId) {
+                    navigation.navigate("BookingSettlement", { bookingId: restrictedBookingId, id: restrictedBookingId });
+                  } else {
+                    navigation.navigate("MyBookings");
+                  }
                 }
               },
               {
                 text: "View Booking",
                 onPress: () => {
-                  navigation.navigate("BookingDetails", { bookingId: check.bookingId });
+                  if (restrictedBookingId) {
+                    navigation.navigate("BookingDetails", { bookingId: restrictedBookingId, id: restrictedBookingId });
+                  } else {
+                    navigation.navigate("MyBookings");
+                  }
                 }
               },
               {
@@ -100,7 +115,8 @@ export default function SelectDateScreen({ route, navigation }) {
       serviceId,
       selectedDate,
       selectedTimeSlot,
-      selectedArt
+      selectedArt,
+      packageId
     });
     
     // reset lock after a short delay
@@ -132,11 +148,29 @@ export default function SelectDateScreen({ route, navigation }) {
     return marked;
   };
 
+  const handleBack = () => {
+    if (navigation?.canGoBack && navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "CustomerTabs", params: { screen: "Home" } }]
+      });
+    }
+    return true;
+  };
+
+  useEffect(() => {
+    const { BackHandler } = require("react-native");
+    const backSubscription = BackHandler.addEventListener("hardwareBackPress", handleBack);
+    return () => backSubscription.remove();
+  }, [navigation]);
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+        <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
           <Ionicons name="chevron-back" size={22} color={Colors.text} />
         </TouchableOpacity>
         <Text style={styles.title}>Select 1 Booking Date</Text>
@@ -164,9 +198,10 @@ export default function SelectDateScreen({ route, navigation }) {
                 // Single Date Rule: Selecting a date automatically replaces previous date!
                 setSelectedDate(dateStr);
               }}
-              hideExtraDays
-              enableSwipeMonths
+              hideExtraDays={false}
+              enableSwipeMonths={true}
               minDate={todayStr}
+              maxDate={moment().add(90, "days").format("YYYY-MM-DD")}
               renderArrow={(direction) => (
                 <Ionicons name={direction === "left" ? "chevron-back" : "chevron-forward"} size={20} color={Colors.text} />
               )}

@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, useCallback } 
 import { secureStorage } from "../utils/storage";
 import { getArtistDetails } from "../services/artist";
 import { useAuth } from "./AuthContext";
+import { ARTIST_APPROVAL_REQUIRED } from "../constants/Config";
 
 const ArtistOnboardingContext = createContext(null);
 
@@ -10,9 +11,11 @@ export function determineArtistInitialRoute({ verificationStatus, isProfileCompl
   if (status === "REJECTED") {
     return "ApprovalRejected";
   }
-  // Only route to ApprovalPending if profile is actually complete & submitted
-  if (status === "PENDING" && isProfileComplete) {
-    return "ApprovalPending";
+  // If manual approval is required, route completed pending profiles to ApprovalPending
+  if (ARTIST_APPROVAL_REQUIRED) {
+    if (status === "PENDING" && isProfileComplete) {
+      return "ApprovalPending";
+    }
   }
   // Unsubmitted / fresh artist onboarding starts at BecomeArtist ("Join Now as Artist")
   return "BecomeArtist";
@@ -56,9 +59,9 @@ export function ArtistOnboardingProvider({ children }) {
   const [profilePhoto, setProfilePhoto] = useState(null);
   const [workSamples, setWorkSamples] = useState([]);
 
-  // Reset state when user logs out
+  // Reset state when user logs out or user ID changes
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!isAuthenticated || !user?.id) {
       setVerificationStatus("NOT_SUBMITTED");
       setRejectionReason(null);
       setIsProfileComplete(false);
@@ -71,7 +74,7 @@ export function ArtistOnboardingProvider({ children }) {
       setWorkSamples([]);
       setIsLoading(false);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, user?.id]);
 
   const refreshArtistProfile = useCallback(async (silent = false) => {
     if (!isAuthenticated || String(user?.role).toUpperCase() !== "ARTIST") {
@@ -85,17 +88,24 @@ export function ArtistOnboardingProvider({ children }) {
       const res = await getArtistDetails();
       const profile = res?.data || res;
 
-      if (profile && (profile.id || profile.user_id || profile.user?.id)) {
-        const rawStatus = profile.verification_status || profile.status || "NOT_SUBMITTED";
+      if (profile && (profile.has_profile || profile.id || profile.user_id || profile.user?.id)) {
+        const hasProfile = Boolean(profile.has_profile !== false && (profile.id || profile.bio || profile.aadhaar_number));
+        const rawStatus = profile.verification_status || profile.status || (hasProfile ? "PENDING" : "NOT_SUBMITTED");
         const status = String(rawStatus).toUpperCase();
         const hasAadhaar = Boolean(profile.aadhaar_front || profile.aadhaar_number);
         const hasBio = Boolean(profile.bio && String(profile.bio).trim().length > 0);
-        const isApproved = status === "APPROVED" || profile.status === "approved" || profile.user?.is_verified === 1 || profile.user?.is_verified === true;
-        const complete = Boolean(
-          isApproved ||
+        const isComplete = hasProfile && Boolean(
           profile.isProfileComplete ||
-          (hasBio && hasAadhaar)
+          (hasBio && (hasAadhaar || profile.city || profile.location))
         );
+        const isApproved = Boolean(
+          hasProfile && (
+            !ARTIST_APPROVAL_REQUIRED
+              ? (status !== "REJECTED" && isComplete)
+              : (status === "APPROVED" || profile.status === "approved" || profile.verification_status === "APPROVED")
+          )
+        );
+        const complete = isComplete || isApproved;
         const reason = profile.rejection_reason || null;
 
         let effectiveStatus = "NOT_SUBMITTED";
@@ -136,7 +146,7 @@ export function ArtistOnboardingProvider({ children }) {
           state: profile.state || prev.state,
           pincode: profile.pincode || prev.pincode,
           experienceYears: profile.experience_years !== undefined && profile.experience_years !== null ? String(profile.experience_years) : prev.experienceYears,
-          startingPrice: profile.starting_price ? String(profile.starting_price) : (prev.startingPrice || "1500"),
+          startingPrice: profile.starting_price ? String(profile.starting_price) : (prev.startingPrice || ""),
           location: profile.location || profile.locality || prev.location,
           languages: profile.languages || prev.languages || "English, Hindi",
           homeService: profile.home_service !== undefined ? Boolean(profile.home_service) : prev.homeService,

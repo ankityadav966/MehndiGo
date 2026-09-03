@@ -40,6 +40,10 @@ export default function ReuploadDocumentsScreen({ navigation }) {
       Alert.alert("Incomplete", "Please upload all required documents.");
       return;
     }
+    if (uploaded.aadhaarFront && uploaded.aadhaarBack && uploaded.aadhaarFront === uploaded.aadhaarBack) {
+      Alert.alert("Duplicate Photos", "Aadhaar Front and Back photos must be distinct images of both sides.");
+      return;
+    }
     Alert.alert("Submitted", "Your documents have been submitted for re-verification.");
     navigation.navigate("ApprovalPending");
   };

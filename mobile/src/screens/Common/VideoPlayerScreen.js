@@ -6,15 +6,18 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Image,
-  Platform,
+  Dimensions,
+  Platform
 } from "react-native";
-import { WebView } from "react-native-webview";
+import { useVideoPlayer, VideoView } from "expo-video";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import { getNormalizedUrl } from "../../services/api";
 
-function resolveVideoUrl(url) {
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
+
+function resolveMediaUrl(url) {
   if (!url || typeof url !== "string") return "";
   let trimmed = url.trim();
 
@@ -29,181 +32,154 @@ function resolveVideoUrl(url) {
   return getNormalizedUrl(trimmed);
 }
 
+function isImageExtension(url) {
+  if (!url) return false;
+  return /\.(jpg|jpeg|png|webp|gif|bmp)$/i.test(url) && !/\/video\/upload\//.test(url);
+}
+
 export default function VideoPlayerScreen({ route, navigation }) {
-  const { videoUrl, title = "Media Viewer" } = route.params || {};
-  const [loading, setLoading] = useState(true);
+  const { videoUrl, title = "Video Viewer", posterUrl } = route.params || {};
   const [hasError, setHasError] = useState(false);
-  const [isImageMedia, setIsImageMedia] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(true);
 
-  const finalVideoUrl = resolveVideoUrl(videoUrl);
+  const finalMediaUrl = resolveMediaUrl(videoUrl);
+  const finalPosterUrl = resolveMediaUrl(posterUrl);
+  const isImage = isImageExtension(finalMediaUrl);
 
+  // Initialize native expo-video player
+  const player = useVideoPlayer(isImage ? null : finalMediaUrl, (p) => {
+    p.loop = true;
+    p.muted = false;
+    p.showsPlaybackControls = true;
+    try {
+      p.play();
+    } catch (_) {}
+  });
+
+  // Track playback status updates
   useEffect(() => {
-    if (__DEV__) console.log("[PLAYER CREATED]", { title });
-    if (__DEV__) console.log("[SOURCE ASSIGNED]", { rawInput: videoUrl, finalResolvedUrl: finalVideoUrl });
+    if (!player || isImage) return;
 
-    // Synchronous extension check
-    if (/\.(jpg|jpeg|png|webp)$/i.test(finalVideoUrl)) {
-      if (__DEV__) console.log("[MEDIA TYPE DETECTED] File extension is image, switching to ImageViewer mode.");
-      setIsImageMedia(true);
-      setLoading(false);
-      return;
-    }
+    const subscription = player.addListener("statusChange", (status) => {
+      if (status?.status === "error") {
+        setHasError(true);
+      }
+    });
 
-    if (finalVideoUrl.startsWith("http://") || finalVideoUrl.startsWith("https://")) {
-      fetch(finalVideoUrl, { method: "HEAD" })
-        .then((res) => {
-          const contentType = res.headers.get("content-type") || "";
-          console.log("[URL HEAD CHECK]", {
-            status: res.status,
-            ok: res.ok,
-            contentType,
-            contentLength: res.headers.get("content-length"),
-            acceptRanges: res.headers.get("accept-ranges")
-          });
+    return () => {
+      try {
+        subscription.remove();
+      } catch (_) {}
+    };
+  }, [player, isImage]);
 
-          if (contentType.startsWith("image/")) {
-            if (__DEV__) console.log("[MEDIA TYPE DETECTED] Item is a Photo Image, switching to ImageViewer mode.");
-            setIsImageMedia(true);
-          }
-          setLoading(false);
-        })
-        .catch((err) => {
-          console.error("[URL HEAD CHECK ERROR]", err.message);
-          setLoading(false);
-        });
+  const togglePlayPause = () => {
+    if (!player) return;
+    if (player.playing) {
+      player.pause();
+      setIsPlaying(false);
     } else {
-      setLoading(false);
+      player.play();
+      setIsPlaying(true);
     }
-  }, [videoUrl, finalVideoUrl, title]);
+  };
 
-  const htmlContent = `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-        <style>
-          html, body {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            background-color: #000000;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            overflow: hidden;
-          }
-          video {
-            width: 100%;
-            height: 100%;
-            max-width: 100%;
-            max-height: 100%;
-            object-fit: contain;
-          }
-        </style>
-      </head>
-      <body>
-        <video
-          id="video-player"
-          controls
-          autoplay
-          playsinline
-          loop
-          webkit-playsinline
-          src="${finalVideoUrl}"
-        >
-          <source src="${finalVideoUrl}" />
-          Your browser does not support video playback.
-        </video>
-        <script>
-          const v = document.getElementById('video-player');
-          window.ReactNativeWebView = window.ReactNativeWebView || {};
-          
-          v.addEventListener('loadstart', function() {
-            window.ReactNativeWebView.postMessage && window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'LOADING_STARTED' }));
-          });
-          v.addEventListener('canplay', function() {
-            window.ReactNativeWebView.postMessage && window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'VIDEO_READY' }));
-          });
-          v.addEventListener('playing', function() {
-            window.ReactNativeWebView.postMessage && window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'PLAYBACK_STARTED' }));
-          });
-          v.addEventListener('error', function(e) {
-            window.ReactNativeWebView.postMessage && window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'PLAYBACK_ERROR', error: v.error ? v.error.message : 'Unknown' }));
-          });
+  const toggleMute = () => {
+    if (!player) return;
+    const newMuted = !isMuted;
+    player.muted = newMuted;
+    setIsMuted(newMuted);
+  };
 
-          v.play().catch(function(err) {
-            if (__DEV__) console.log('Autoplay deferred:', err);
-          });
-        </script>
-      </body>
-    </html>
-  `;
+  const handleRetry = () => {
+    setHasError(false);
+    if (player && finalMediaUrl) {
+      try {
+        if (typeof player.replaceAsync === "function") {
+          player.replaceAsync(finalMediaUrl);
+        } else if (typeof player.replace === "function") {
+          player.replace(finalMediaUrl);
+        }
+        player.play();
+      } catch (_) {}
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
-      {/* Header bar overlay */}
+      {/* Header Bar */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => navigation.goBack()}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        >
+          <Ionicons name="chevron-back" size={26} color="#FFFFFF" />
         </TouchableOpacity>
+
         <Text style={styles.headerTitle} numberOfLines={1}>
           {title}
         </Text>
-        <View style={{ width: 40 }} />
+
+        {!isImage && player ? (
+          <TouchableOpacity
+            style={styles.muteBtn}
+            onPress={toggleMute}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <Ionicons
+              name={isMuted ? "volume-mute" : "volume-high"}
+              size={22}
+              color="#FFFFFF"
+            />
+          </TouchableOpacity>
+        ) : (
+          <View style={{ width: 40 }} />
+        )}
       </View>
 
-      <View style={styles.playerWrapper}>
-        {loading ? (
-          <View style={styles.indicatorContainer}>
-            <ActivityIndicator size="large" color={Colors.primary} />
-          </View>
-        ) : isImageMedia ? (
-          <View style={styles.imageWrapper}>
-            <Image
-              source={{ uri: finalVideoUrl }}
-              style={styles.imageMedia}
-              resizeMode="contain"
-            />
-            <View style={styles.imageNoteBanner}>
-              <Ionicons name="image-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-              <Text style={styles.imageNoteText}>Photo Portfolio Item</Text>
-            </View>
-          </View>
-        ) : hasError ? (
-          <View style={styles.errorContainer}>
-            <Ionicons name="alert-circle-outline" size={48} color="#FF6B6B" />
-            <Text style={styles.errorText}>Unable to load video playback.</Text>
-            <Text style={styles.errorSubText}>{finalVideoUrl}</Text>
-          </View>
-        ) : (
-          <WebView
-            originWhitelist={["*"]}
-            source={{ html: htmlContent, baseUrl: finalVideoUrl }}
-            style={styles.webView}
-            javaScriptEnabled={true}
-            domStorageEnabled={true}
-            allowsFullscreenVideo={true}
-            allowsInlineMediaPlayback={true}
-            mediaPlaybackRequiresUserAction={false}
-            mixedContentMode="always"
-            allowFileAccess={true}
-            allowUniversalAccessFromFileURLs={true}
-            onMessage={(event) => {
-              try {
-                const data = JSON.parse(event.nativeEvent.data);
-                if (__DEV__) console.log("[VIDEO PLAYER EVENT]", data);
-                if (data.type === "PLAYBACK_ERROR") {
-                  console.error("[PLAYBACK ERROR]", data.error);
-                }
-              } catch (e) {}
-            }}
-            onError={(syntheticEvent) => {
-              const { nativeEvent } = syntheticEvent;
-              console.error("[PLAYBACK ERROR]", nativeEvent);
-              setHasError(true);
-            }}
+      {/* Main Player / Image Canvas */}
+      <View style={styles.mediaCanvas}>
+        {isImage ? (
+          <Image
+            source={{ uri: finalMediaUrl }}
+            style={styles.fullImage}
+            resizeMode="contain"
           />
+        ) : (
+          <View style={styles.videoWrapper}>
+            {finalPosterUrl ? (
+              <Image
+                source={{ uri: finalPosterUrl }}
+                style={StyleSheet.absoluteFillObject}
+                resizeMode="cover"
+              />
+            ) : null}
+
+            {player && !hasError ? (
+              <VideoView
+                style={styles.videoSurface}
+                player={player}
+                allowsFullscreen={true}
+                showsPlaybackControls={true}
+                contentFit="contain"
+              />
+            ) : null}
+
+            {/* Error Overlay */}
+            {hasError && (
+              <View style={styles.errorContainer}>
+                <Ionicons name="alert-circle-outline" size={48} color="#EF4444" />
+                <Text style={styles.errorTitle}>Unable to play video</Text>
+                <Text style={styles.errorText}>Please check your network connection or try again.</Text>
+                <TouchableOpacity style={styles.retryBtn} onPress={handleRetry}>
+                  <Ionicons name="refresh" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                  <Text style={styles.retryBtnText}>Retry Playback</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
         )}
       </View>
     </SafeAreaView>
@@ -216,101 +192,95 @@ const styles = StyleSheet.create({
     backgroundColor: "#000000",
   },
   header: {
-    height: 56,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: "rgba(0,0,0,0.8)",
     zIndex: 10,
-    backgroundColor: "#000000",
-    borderBottomWidth: 1,
-    borderColor: "#222",
   },
   backBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "rgba(255,255,255,0.1)",
+    backgroundColor: "rgba(255,255,255,0.15)",
     justifyContent: "center",
     alignItems: "center",
   },
   headerTitle: {
-    color: "#FFFFFF",
+    flex: 1,
     fontSize: 16,
     fontWeight: "700",
+    color: "#FFFFFF",
     textAlign: "center",
-    flex: 1,
     marginHorizontal: 12,
   },
-  playerWrapper: {
-    flex: 1,
-    position: "relative",
-    width: "100%",
-    height: "100%",
+  muteBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    justifyContent: "center",
+    alignItems: "center",
   },
-  webView: {
+  mediaCanvas: {
     flex: 1,
-    width: "100%",
-    height: "100%",
-    backgroundColor: "#000000",
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#050505",
   },
-  imageWrapper: {
-    flex: 1,
+  videoWrapper: {
     width: "100%",
     height: "100%",
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#000000",
     position: "relative",
   },
-  imageMedia: {
+  videoSurface: {
     width: "100%",
     height: "100%",
   },
-  imageNoteBanner: {
-    position: "absolute",
-    bottom: 24,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.75)",
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
+  fullImage: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT * 0.8,
   },
-  imageNoteText: {
-    color: "#FFFFFF",
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  indicatorContainer: {
+  errorContainer: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: "#000000",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  errorContainer: {
-    flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: 24,
-    backgroundColor: "#000000",
+    backgroundColor: "rgba(0,0,0,0.9)",
+    paddingHorizontal: 32,
   },
-  errorText: {
+  errorTitle: {
+    fontSize: 18,
+    fontWeight: "700",
     color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "600",
     marginTop: 12,
   },
-  errorSubText: {
-    color: "#888888",
-    fontSize: 12,
-    marginTop: 6,
+  errorText: {
+    fontSize: 13,
+    color: "#94A3B8",
     textAlign: "center",
+    marginTop: 6,
+    lineHeight: 18,
+  },
+  retryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.primary || "#9C1344",
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginTop: 20,
+  },
+  retryBtnText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
   },
 });

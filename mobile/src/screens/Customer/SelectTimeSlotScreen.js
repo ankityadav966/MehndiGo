@@ -10,7 +10,7 @@ import { fetchArtistAvailability } from "../../services/customer";
 import { formatServiceDate } from "../../utils/date";
 
 export default function SelectTimeSlotScreen({ route, navigation }) {
-  const { artistId, serviceId, selectedDate: paramDate, selectedArt } = route.params || {};
+  const { artistId, serviceId, selectedDate: paramDate, selectedArt, packageId } = route.params || {};
 
   const targetDate = typeof paramDate === "string" ? paramDate : (Array.isArray(paramDate) ? paramDate[0] : moment().format("YYYY-MM-DD"));
   const isToday = moment(targetDate).isSame(moment(), "day");
@@ -28,7 +28,7 @@ export default function SelectTimeSlotScreen({ route, navigation }) {
 
     const loadSlots = async () => {
       try {
-        const rawData = await fetchArtistAvailability(artistId);
+        const rawData = await fetchArtistAvailability(artistId, targetDate);
         const slotsList = Array.isArray(rawData)
           ? rawData
           : (rawData?.smart_slots || rawData?.slots || rawData?.data || []);
@@ -125,17 +125,36 @@ export default function SelectTimeSlotScreen({ route, navigation }) {
       selectedDate: targetDate,
       slotId: cleanSlotId,
       timeLabel: timeLabel,
-      selectedArt
+      selectedArt,
+      packageId
     });
     
     setTimeout(() => setIsNavigating(false), 500);
   };
 
+  const handleBack = () => {
+    if (navigation?.canGoBack && navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "CustomerTabs", params: { screen: "Home" } }]
+      });
+    }
+    return true;
+  };
+
+  useEffect(() => {
+    const { BackHandler } = require("react-native");
+    const backSubscription = BackHandler.addEventListener("hardwareBackPress", handleBack);
+    return () => backSubscription.remove();
+  }, [navigation]);
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+        <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
           <Ionicons name="chevron-back" size={22} color={Colors.text} />
         </TouchableOpacity>
         <Text style={styles.title}>Select 1 Time Slot</Text>

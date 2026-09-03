@@ -18,6 +18,12 @@ export async function removeCoupon(serviceId, basePrice) {
   return res?.data || res;
 }
 
+// Auto-apply best available coupon for cart/booking amount
+export async function autoApplyCoupon(basePrice) {
+  const res = await apiRequest("POST", "/coupon/auto-apply", { basePrice }, true);
+  return res?.data || res;
+}
+
 // Fetch historical used coupon records
 export async function getCouponHistory() {
   const res = await apiRequest("GET", "/coupon/history", null, true);

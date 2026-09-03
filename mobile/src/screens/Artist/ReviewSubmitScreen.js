@@ -13,6 +13,8 @@ import Colors from "../../constants/Colors";
 import { useArtistOnboarding } from "../../context/ArtistOnboardingContext";
 import { createArtistProfile } from "../../services/artist";
 import { secureStorage } from "../../utils/storage";
+import { ARTIST_APPROVAL_REQUIRED } from "../../constants/Config";
+import { validateAadhaarNumber, validateAadhaarPhotos } from "../../utils/aadhaar.validator";
 
 export default function ReviewSubmitScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -22,12 +24,24 @@ export default function ReviewSubmitScreen({ navigation }) {
   const [error, setError] = useState("");
 
   const handleSubmit = async () => {
+    setError("");
+    const numValidation = validateAadhaarNumber(artistDetails?.aadhaarNumber);
+    if (!numValidation.valid) {
+      setError(numValidation.message);
+      return;
+    }
+    const photoValidation = validateAadhaarPhotos(aadhaarFiles?.front, aadhaarFiles?.back);
+    if (!photoValidation.valid) {
+      setError(photoValidation.message);
+      return;
+    }
+
     setLoading(true);
     try {
       await createArtistProfile({
         bio: artistDetails.bio,
         experience_years: Number(artistDetails.experienceYears),
-        starting_price: Number(artistDetails.startingPrice) || 1500,
+        starting_price: artistDetails.startingPrice ? Number(artistDetails.startingPrice) : 0,
         home_service: artistDetails.homeService,
         salon_service: artistDetails.salonService,
         city: artistDetails.city,
@@ -50,10 +64,12 @@ export default function ReviewSubmitScreen({ navigation }) {
         await secureStorage.setUserData({ ...currentUser, isFirstTimeArtistSignup: false });
       }
       await submitArtistProfile();
-      navigation.reset({
-        index: 0,
-        routes: [{ name: "ApprovalPending" }],
-      });
+      if (ARTIST_APPROVAL_REQUIRED) {
+        navigation.reset({
+          index: 0,
+          routes: [{ name: "ApprovalPending" }],
+        });
+      }
     } catch (err) {
       if (err.message && err.message.includes("already exists")) {
         await secureStorage.setArtistProfileCompleted(true);
@@ -63,10 +79,12 @@ export default function ReviewSubmitScreen({ navigation }) {
           await secureStorage.setUserData({ ...currentUser, isFirstTimeArtistSignup: false });
         }
         await submitArtistProfile();
-        navigation.reset({
-          index: 0,
-          routes: [{ name: "ApprovalPending" }],
-        });
+        if (ARTIST_APPROVAL_REQUIRED) {
+          navigation.reset({
+            index: 0,
+            routes: [{ name: "ApprovalPending" }],
+          });
+        }
       } else {
         setError(err.message || "Failed to submit profile. Please try again.");
       }

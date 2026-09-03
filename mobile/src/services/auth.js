@@ -31,10 +31,12 @@ async function persistAuthData(response) {
     await secureStorage.setRefreshToken(payload.refreshToken);
   }
   if (payload.user) {
-    await secureStorage.setUserData(payload.user);
-    if (payload.user.role) {
-      await secureStorage.setUserRole(payload.user.role);
-    }
+    const rawRole = payload.user.role || payload.role;
+    const canonicalRole = (String(rawRole).toUpperCase().trim() === "ARTIST") ? "ARTIST" : "CUSTOMER";
+    const userWithRole = { ...payload.user, role: canonicalRole };
+    await secureStorage.setUserData(userWithRole);
+    await secureStorage.setUserRole(canonicalRole);
+    return { ...payload, user: userWithRole, role: canonicalRole };
   }
   return payload;
 }
@@ -114,7 +116,7 @@ export async function sendOtp(emailOrPhone, emailParam, phone, role) {
   return data;
 }
 
-export async function registerSendOtp(name, email, phone, role) {
+export async function registerSendOtp(name, email, phone, role, referralCode = null) {
   const cleanPhone = sanitizePhone(phone);
   const trimmedEmail = email ? String(email).trim().toLowerCase() : "";
   const endpoint = "/api/v1/mehndigo/user/register-send-otp";
@@ -125,26 +127,29 @@ export async function registerSendOtp(name, email, phone, role) {
     phone: cleanPhone || undefined,
     role: role === "CUSTOMER" ? "USER" : (role || "USER"),
   };
+  if (referralCode) payload.referralCode = String(referralCode).trim().toUpperCase();
 
   if (__DEV__) console.log("[OTP] REGISTER REQUEST:", endpoint, "EMAIL:", maskEmail(trimmedEmail));
   const data = await apiRequest("POST", endpoint, payload);
   return data;
 }
 
-export async function registerVerifyOtp(email, otp, name, phone, role) {
+export async function registerVerifyOtp(email, otp, name, phone, role, referralCode = null) {
   const cleanPhone = sanitizePhone(phone);
   const trimmedEmail = email ? String(email).trim().toLowerCase() : "";
-  const data = await apiRequest("POST", "/api/v1/mehndigo/user/register-verify-otp", {
+  const body = {
     email: trimmedEmail || undefined,
     phone: cleanPhone || undefined,
     otp: String(otp).trim(),
     name: name ? String(name).trim() : undefined,
     role: role === "CUSTOMER" ? "USER" : role,
-  });
+  };
+  if (referralCode) body.referralCode = String(referralCode).trim().toUpperCase();
+  const data = await apiRequest("POST", "/api/v1/mehndigo/user/register-verify-otp", body);
   return persistAuthData(data);
 }
 
-export async function verifyUserOtp(phoneOrEmail, otp, role, name, email, referralCode = "") {
+export async function verifyUserOtp(phoneOrEmail, otp, role, name, email) {
   let cleanPhone = "";
   let userEmail = "";
   if (typeof phoneOrEmail === "string" && phoneOrEmail.includes("@")) {
@@ -159,7 +164,6 @@ export async function verifyUserOtp(phoneOrEmail, otp, role, name, email, referr
   const payload = {
     otp: String(otp).trim(),
     role: role === "CUSTOMER" ? "USER" : (role || "USER"),
-    referralCode: referralCode || undefined,
   };
   if (name) payload.name = name;
   if (userEmail) payload.email = userEmail;

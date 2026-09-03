@@ -22,30 +22,44 @@ const initialState = {
   isOnboardingComplete: false,
 };
 
+function normalizeRole(role) {
+  if (!role) return null;
+  return String(role).toUpperCase().trim() === "ARTIST" ? "ARTIST" : "CUSTOMER";
+}
+
 function authReducer(state, action) {
   switch (action.type) {
-    case "RESTORE_SESSION":
+    case "RESTORE_SESSION": {
+      const canonicalRole = normalizeRole(action.payload.user?.role || action.payload.role);
+      const user = action.payload.user ? { ...action.payload.user, role: canonicalRole } : null;
       return {
         ...state,
-        user: action.payload.user,
+        user,
         token: action.payload.token,
-        role: action.payload.role,
-        isAuthenticated: !!action.payload.user,
+        role: user ? canonicalRole : null,
+        isAuthenticated: !!user,
         isLoading: false,
       };
-    case "LOGIN":
+    }
+    case "LOGIN": {
+      const canonicalRole = normalizeRole(action.payload.user?.role || action.payload.role) || "CUSTOMER";
+      const user = action.payload.user ? { ...action.payload.user, role: canonicalRole } : null;
       return {
         ...state,
-        user: action.payload.user,
+        user,
         token: action.payload.token,
-        role: action.payload.user?.role || action.payload.role,
+        role: canonicalRole,
         isAuthenticated: true,
         isLoading: false,
       };
+    }
     case "SET_ROLE":
-      return { ...state, role: action.payload };
-    case "UPDATE_USER":
-      return { ...state, user: { ...state.user, ...action.payload } };
+      return { ...state, role: normalizeRole(action.payload) };
+    case "UPDATE_USER": {
+      const updatedUser = action.payload ? { ...state.user, ...action.payload } : state.user;
+      const canonicalRole = normalizeRole(updatedUser?.role) || state.role;
+      return { ...state, user: updatedUser ? { ...updatedUser, role: canonicalRole } : null, role: canonicalRole };
+    }
     case "LOGOUT":
       return { ...initialState, isLoading: false };
     case "SET_LOADING":
@@ -84,16 +98,11 @@ export function AuthProvider({ children }) {
     let isMounted = true;
     async function restoreSession() {
       try {
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("Storage timeout")), 1000)
-        );
-        const loadStoragePromise = Promise.all([
+        const [token, user, role] = await Promise.all([
           secureStorage.getAccessToken(),
           secureStorage.getUserData(),
           secureStorage.getUserRole(),
         ]);
-
-        const [token, user, role] = await Promise.race([loadStoragePromise, timeoutPromise]);
         if (isMounted) {
           if (token && user) {
             dispatch({ type: "RESTORE_SESSION", payload: { user, token, role } });
@@ -114,51 +123,68 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
+  const triggerPendingDeepLinkResume = useCallback(() => {
+    setTimeout(() => {
+      if (global.navigationRef && global.navigationRef.isReady && global.navigationRef.isReady()) {
+        try {
+          const { consumePendingDeepLink } = require("../services/deepLink");
+          consumePendingDeepLink(global.navigationRef, true);
+        } catch (e) {
+          if (__DEV__) console.log("[AuthContext] Failed to resume pending link:", e.message);
+        }
+      }
+    }, 400);
+  }, []);
+
   const loginWithGoogle = useCallback(async (idToken) => {
     dispatch({ type: "SET_LOADING", payload: true });
     try {
       const data = await signInWithGoogle(idToken);
       dispatch({ type: "LOGIN", payload: { user: data.user, token: data.accessToken, role: data.user.role } });
+      triggerPendingDeepLinkResume();
       return data;
     } catch (error) {
       dispatch({ type: "SET_LOADING", payload: false });
       throw error;
     }
-  }, []);
+  }, [triggerPendingDeepLinkResume]);
 
   const loginWithEmail = useCallback(async (email, password) => {
     dispatch({ type: "SET_LOADING", payload: true });
     try {
       const data = await signInWithEmail(email, password);
       dispatch({ type: "LOGIN", payload: { user: data.user, token: data.accessToken, role: data.user.role } });
+      triggerPendingDeepLinkResume();
       return data;
     } catch (error) {
       dispatch({ type: "SET_LOADING", payload: false });
       throw error;
     }
-  }, []);
+  }, [triggerPendingDeepLinkResume]);
 
   const register = useCallback(async (userData) => {
     dispatch({ type: "SET_LOADING", payload: true });
     try {
       const data = await registerUser(userData);
       dispatch({ type: "LOGIN", payload: { user: data.user, token: data.accessToken, role: data.user.role } });
+      triggerPendingDeepLinkResume();
       return data;
     } catch (error) {
       dispatch({ type: "SET_LOADING", payload: false });
       throw error;
     }
-  }, []);
+  }, [triggerPendingDeepLinkResume]);
 
   const verifyOtpAndLogin = useCallback(async (email, otp) => {
     try {
       const data = await verifyOtp(email, otp);
       dispatch({ type: "LOGIN", payload: { user: data.user, token: data.accessToken, role: data.user.role } });
+      triggerPendingDeepLinkResume();
       return data;
     } catch (error) {
       throw error;
     }
-  }, []);
+  }, [triggerPendingDeepLinkResume]);
 
   const sendOtp = useCallback(async (email, role) => {
     return await sendOtpService(email, undefined, role);
@@ -175,11 +201,12 @@ export function AuthProvider({ children }) {
           role: data.user.role,
         },
       });
+      triggerPendingDeepLinkResume();
       return data;
     } catch (error) {
       throw error;
     }
-  }, []);
+  }, [triggerPendingDeepLinkResume]);
 
   const setUserRole = useCallback(async (role) => {
     secureStorage.setUserRole(role);
@@ -192,6 +219,12 @@ export function AuthProvider({ children }) {
   }, [state.user]);
 
   const logout = useCallback(async () => {
+    try {
+      const { clearArtistDashboardMemoryCache } = require("../screens/Artist/DashboardScreen");
+      if (typeof clearArtistDashboardMemoryCache === "function") {
+        clearArtistDashboardMemoryCache();
+      }
+    } catch (_) {}
     await authSignOut();
     dispatch({ type: "LOGOUT" });
   }, []);

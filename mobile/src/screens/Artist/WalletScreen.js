@@ -10,12 +10,16 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  ScrollView
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform
 } from "react-native";
 import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useFocusEffect } from "@react-navigation/native";
 import Colors from "../../constants/Colors";
 import CustomButton from "../../components/CustomButton";
+import { useSocket } from "../../context/SocketContext";
 import {
   getUserWallet,
   getWalletHistory,
@@ -27,13 +31,16 @@ import {
 import moment from "moment";
 
 export default function WalletScreen({ route, navigation }) {
-  const [balance, setBalance] = useState(0);
-  const [walletData, setWalletData] = useState(null);
+  const initialPassedBalance = Number(route?.params?.balance || route?.params?.wallet?.available_balance || route?.params?.wallet?.balance || 0);
+  const [balance, setBalance] = useState(initialPassedBalance);
+  const [walletData, setWalletData] = useState(route?.params?.wallet || null);
   const [transactions, setTransactions] = useState([]);
+  const [cashEntries, setCashEntries] = useState([]);
   const [withdraws, setWithdraws] = useState([]);
   const [bankAccount, setBankAccount] = useState(null);
 
-  const [activeTab, setActiveTab] = useState("Withdraw"); // Withdraw, Transactions
+  // Default to Transactions or route param
+  const [activeTab, setActiveTab] = useState(route?.params?.initialTab || "Transactions");
 
   useEffect(() => {
     if (route?.params?.initialTab) {
@@ -63,67 +70,198 @@ export default function WalletScreen({ route, navigation }) {
     upiId: ""
   });
 
-  const loadWalletDataset = useCallback(async () => {
+  const socketContext = useSocket?.();
+  const socket = socketContext?.socket;
+
+  const loadWalletDataset = useCallback(async (isSilent = false) => {
+    if (!isSilent && !refreshing && !walletData) {
+      setLoading(true);
+    }
     try {
-      const [wallet, history, requests, bank] = await Promise.all([
-        getUserWallet().catch(() => null),
-        getWalletHistory().catch(() => []),
-        getWithdrawalHistory().catch(() => []),
-        getBankAccountDetails().catch(() => null)
+      const [walletRes, historyRes, requestsRes, bankRes] = await Promise.allSettled([
+        getUserWallet(),
+        getWalletHistory(),
+        getWithdrawalHistory(),
+        getBankAccountDetails()
       ]);
 
-      if (wallet) {
-        setWalletData(wallet);
-        setBalance(wallet.balance || 0);
+      let wObj = null;
+      if (walletRes.status === "fulfilled" && walletRes.value) {
+        wObj = walletRes.value?.data || walletRes.value;
+        console.log("=== WALLET DATA ===", JSON.stringify(wObj, null, 2));
+        if (wObj && typeof wObj === "object") {
+          setWalletData(wObj);
+          const avBal = Number(
+            wObj.available_balance !== undefined && wObj.available_balance !== null
+              ? wObj.available_balance
+              : (wObj.balance || wObj.availableBalance || 0)
+          );
+          setBalance(avBal);
+
+          // Extract dedicated cash collection entries
+          if (Array.isArray(wObj.cash_entries || wObj.cashEntries)) {
+            setCashEntries(wObj.cash_entries || wObj.cashEntries);
+          }
+        }
       }
-      setTransactions(Array.isArray(history) ? history : []);
-      setWithdraws(Array.isArray(requests) ? requests : []);
-      if (bank) {
-        setBankAccount(bank);
-        setBankForm({
-          accountHolderName: bank.account_holder_name || "",
-          accountNumber: bank.account_number || "",
-          ifscCode: bank.ifsc_code || "",
-          bankName: bank.bank_name || "",
-          upiId: bank.upi_id || ""
+
+      // Extract transaction history from historyRes OR wallet response wObj.transactions
+      let txList = [];
+      if (historyRes.status === "fulfilled" && historyRes.value) {
+        txList = historyRes.value?.data || historyRes.value || [];
+        console.log("=== TRANSACTIONS DATA ===", JSON.stringify(txList, null, 2));
+      }
+      if (txList.length === 0 && Array.isArray(wObj?.transactions)) {
+        txList = wObj.transactions;
+      }
+      
+      // Filter out cash payments and withdrawals/debits from online wallet ledger
+      const onlineTxList = (txList || []).filter((tx) => {
+        const rawType = String(tx.type || tx.transaction_type || "").toUpperCase();
+        const desc = String(tx.description || "").toLowerCase();
+        const isCash = tx.is_cash || rawType === "CASH" || rawType === "CASH_COLLECTED" || desc.includes("cash") || desc.includes("in hand");
+        const isDebit = rawType === "DEBIT" || rawType === "WITHDRAWAL" || desc.includes("withdrawal") || desc.includes("payout");
+        const amt = Number(tx.amount || 0);
+        return !isCash && !isDebit && amt > 0;
+      });
+      setTransactions(onlineTxList);
+
+      // Extract any cash transactions in txList if cashEntries is still empty
+      if ((!wObj?.cash_entries && !wObj?.cashEntries) || (wObj?.cash_entries?.length === 0 && wObj?.cashEntries?.length === 0)) {
+        const fallbackCash = (txList || []).filter(tx => {
+          const rawType = String(tx.type || tx.transaction_type || "").toUpperCase();
+          const desc = String(tx.description || "").toLowerCase();
+          return tx.is_cash || rawType === "CASH" || rawType === "CASH_COLLECTED" || desc.includes("cash") || desc.includes("in hand");
         });
+        if (fallbackCash.length > 0) {
+          // Deduplicate by booking_id or id
+          const uniqueFallback = [];
+          const seen = new Set();
+          fallbackCash.forEach(tx => {
+            const key = tx.booking_id || tx.booking_number || tx.id;
+            if (!seen.has(key)) {
+              seen.add(key);
+              uniqueFallback.push(tx);
+            }
+          });
+          setCashEntries(uniqueFallback);
+        }
+      } else {
+         // Deduplicate wObj cash entries as well
+         const existingCash = wObj?.cash_entries || wObj?.cashEntries || [];
+         const uniqueCash = [];
+         const seen = new Set();
+         existingCash.forEach(tx => {
+            const key = tx.booking_id || tx.booking_number || tx.id;
+            if (!seen.has(key)) {
+               seen.add(key);
+               uniqueCash.push(tx);
+            }
+         });
+         setCashEntries(uniqueCash);
+      }
+
+      // Extract withdrawal requests
+      if (requestsRes.status === "fulfilled" && requestsRes.value) {
+        const rVal = requestsRes.value?.data || requestsRes.value;
+        if (Array.isArray(rVal)) {
+          setWithdraws(rVal);
+        }
+      }
+
+      // Extract bank account details
+      if (bankRes.status === "fulfilled" && bankRes.value) {
+        const bank = bankRes.value?.data || bankRes.value;
+        if (bank && (bank.account_number || bank.bank_name || bank.ifsc_code)) {
+          setBankAccount(bank);
+          setBankForm({
+            accountHolderName: bank.account_holder_name || "",
+            accountNumber: bank.account_number || "",
+            ifscCode: bank.ifsc_code || "",
+            bankName: bank.bank_name || "",
+            upiId: bank.upi_id || ""
+          });
+        }
       }
     } catch (err) {
       if (__DEV__) console.log("Failed to load artist wallet info:", err.message);
     } finally {
-      setLoading(false);
       setRefreshing(false);
+      setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     loadWalletDataset();
-  }, []);
+  }, [loadWalletDataset]);
 
-  useEffect(() => {
-    const unsubscribe = navigation.addListener("focus", () => {
-      loadWalletDataset();
-    });
-    return unsubscribe;
-  }, [navigation]);
-
-  const handleRefresh = () => {
+  const handleRefresh = useCallback(() => {
     setRefreshing(true);
-    loadWalletDataset();
-  };
+    loadWalletDataset(false);
+  }, [loadWalletDataset]);
+
+  // Initial & Focus load + Back handling
+  useFocusEffect(
+    useCallback(() => {
+      loadWalletDataset(true);
+      const { BackHandler } = require("react-native");
+
+      const onBackPress = () => {
+        if (selectedItem) {
+          setSelectedItem(null);
+          return true;
+        }
+        if (withdrawModalVisible) {
+          setWithdrawModalVisible(false);
+          return true;
+        }
+        if (bankModalVisible) {
+          setBankModalVisible(false);
+          return true;
+        }
+        if (navigation?.canGoBack && navigation.canGoBack()) {
+          navigation.goBack();
+        } else {
+          navigation.navigate("ArtistTabs", { screen: "Dashboard" });
+        }
+        return true;
+      };
+
+      const sub = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+      return () => sub.remove();
+    }, [loadWalletDataset, selectedItem, withdrawModalVisible, bankModalVisible, navigation])
+  );
+
+  // Auto-refresh on Real-time Socket Events
+  useEffect(() => {
+    if (!socket) return;
+    const handleSocketUpdate = () => {
+      loadWalletDataset(true);
+    };
+
+    socket.on("WALLET_UPDATED", handleSocketUpdate);
+    socket.on("BOOKING_COMPLETED", handleSocketUpdate);
+    socket.on("PAYMENT_RECEIVED", handleSocketUpdate);
+
+    return () => {
+      socket.off("WALLET_UPDATED", handleSocketUpdate);
+      socket.off("BOOKING_COMPLETED", handleSocketUpdate);
+      socket.off("PAYMENT_RECEIVED", handleSocketUpdate);
+    };
+  }, [socket, loadWalletDataset]);
 
   const handleWithdrawalRequest = async () => {
-    const amt = Number(withdrawAmount);
-    if (isNaN(amt) || amt <= 0) {
-      Alert.alert("Invalid Amount", "Please enter a valid amount to withdraw.");
+    const numAmt = Number(withdrawAmount);
+    if (!numAmt || isNaN(numAmt) || numAmt < 100) {
+      Alert.alert("Invalid Amount", "Minimum withdrawal amount is ₹100.");
       return;
     }
-    if (amt > balance) {
-      Alert.alert("Insufficient Balance", "Your payout request exceeds your current available balance.");
+    if (numAmt > balance) {
+      Alert.alert("Insufficient Balance", `Your available balance is ₹${balance.toLocaleString("en-IN")}.`);
       return;
     }
     if (!bankAccount) {
-      Alert.alert("Bank Details Required", "Please link your bank account details first before requesting payout.");
+      Alert.alert("Bank Account Missing", "Please add your bank account details before requesting a payout.");
       setWithdrawModalVisible(false);
       setBankModalVisible(true);
       return;
@@ -131,13 +269,13 @@ export default function WalletScreen({ route, navigation }) {
 
     setWithdrawLoading(true);
     try {
-      await requestWithdrawal(amt);
-      Alert.alert("Request Submitted 🎉", `Withdrawal request of ₹${amt} has been submitted for bank transfer.`);
+      await requestWithdrawal(numAmt);
       setWithdrawModalVisible(false);
       setWithdrawAmount("");
-      loadWalletDataset();
+      Alert.alert("Request Submitted 🎉", `Payout request for ₹${numAmt} submitted successfully.`);
+      loadWalletDataset(true);
     } catch (err) {
-      Alert.alert("Payout Error", err.message || "Withdrawal request failed.");
+      Alert.alert("Payout Error", err.message || "Failed to submit withdrawal request.");
     } finally {
       setWithdrawLoading(false);
     }
@@ -146,24 +284,32 @@ export default function WalletScreen({ route, navigation }) {
   const handleSaveBankDetails = async () => {
     const { accountHolderName, accountNumber, ifscCode, bankName } = bankForm;
     if (!accountHolderName || !accountNumber || !ifscCode || !bankName) {
-      Alert.alert("Incomplete Details", "Please fill in Account Name, Account Number, IFSC, and Bank Name.");
+      Alert.alert("Validation Error", "Please fill in all required bank details.");
       return;
     }
+
     setBankLoading(true);
     try {
       await saveBankAccountDetails(bankForm);
-      Alert.alert("Bank Linked Success", "Your payout bank credentials have been updated.");
       setBankModalVisible(false);
-      loadWalletDataset();
+      Alert.alert("Success", "Bank credentials updated successfully.");
+      loadWalletDataset(true);
     } catch (err) {
-      Alert.alert("Save Error", "Failed to save bank credentials.");
+      Alert.alert("Error", err.message || "Failed to save bank credentials.");
     } finally {
       setBankLoading(false);
     }
   };
 
   const renderTransaction = ({ item }) => {
-    const isCredit = ["RECHARGE", "REFUND", "CASHBACK", "SETTLEMENT", "MANUAL_CREDIT", "EARNING"].includes(item.transaction_type);
+    const rawType = String(item.type || item.transaction_type || "").toUpperCase();
+    const isCredit = rawType === "CREDIT" || ["RECHARGE", "REFUND", "CASHBACK", "SETTLEMENT", "MANUAL_CREDIT", "EARNING"].includes(rawType);
+
+    let iconBg = isCredit ? "#ECFDF5" : "#FEF2F2";
+    let iconName = isCredit ? "arrow-down" : "arrow-up";
+    let iconColor = isCredit ? Colors.success : Colors.error;
+    let amountColor = isCredit ? Colors.success : Colors.error;
+    let sign = isCredit ? "+" : "-";
 
     return (
       <TouchableOpacity 
@@ -171,24 +317,74 @@ export default function WalletScreen({ route, navigation }) {
         activeOpacity={0.7}
         onPress={() => setSelectedItem(item)}
       >
-        <View style={[styles.iconCircle, { backgroundColor: isCredit ? "#ECFDF5" : "#FEF2F2" }]}>
+        <View style={[styles.iconCircle, { backgroundColor: iconBg }]}>
           <Ionicons
-            name={isCredit ? "arrow-down" : "arrow-up"}
+            name={iconName}
             size={20}
-            color={isCredit ? Colors.success : Colors.error}
+            color={iconColor}
           />
         </View>
 
         <View style={styles.cardInfo}>
           <Text style={styles.cardTitle} numberOfLines={1}>
-            {item.description || item.transaction_type?.replace(/_/g, " ")}
+            {(item.description || "").replace(/,?\s*Commission:\s*₹[\d,.]+/i, "").replace(/\(\s*Online Paid[^)]+deducted as Commission\s*\)/i, "").trim() || (isCredit ? "Online Booking Payment" : "Payout Withdrawal")}
           </Text>
-          <Text style={styles.cardSubtitle}>{moment(item.createdAt).format("DD MMM YYYY, hh:mm A")}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
+            <View style={{ backgroundColor: "#E0F2FE", paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4, marginRight: 6 }}>
+              <Text style={{ fontSize: 9, color: "#0369A1", fontWeight: "700" }}>ONLINE</Text>
+            </View>
+            <Text style={styles.cardSubtitle}>{moment(item.created_at || item.createdAt || item.date || new Date()).format("DD MMM YYYY, hh:mm A")}</Text>
+          </View>
         </View>
 
-        <Text style={[styles.cardAmount, { color: isCredit ? Colors.success : Colors.error }]}>
-          {isCredit ? "+" : "-"}₹{Number(item.amount).toLocaleString("en-IN")}
+        <Text style={[styles.cardAmount, { color: amountColor }]}>
+          {sign}₹{Number(item.amount || 0).toLocaleString("en-IN")}
         </Text>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderCashEntry = ({ item }) => {
+    let displayAmount = Number(item.amount || 0);
+    if (displayAmount === 0) {
+      const match = (item.description || "").match(/₹([\d.,]+)/);
+      if (match && match[1]) {
+        displayAmount = parseFloat(match[1].replace(/,/g, ''));
+      }
+    }
+
+    return (
+      <TouchableOpacity 
+        style={styles.cardItem} 
+        activeOpacity={0.7}
+        onPress={() => setSelectedItem({ ...item, is_cash_entry: true })}
+      >
+        <View style={[styles.iconCircle, { backgroundColor: "#ECFDF5" }]}>
+          <Ionicons
+            name="cash"
+            size={20}
+            color="#059669"
+          />
+        </View>
+
+        <View style={styles.cardInfo}>
+          <Text style={styles.cardTitle} numberOfLines={1}>
+            {item.description || (item.booking_number ? `Booking #${item.booking_number}` : "Cash Collected in Hand")}
+          </Text>
+          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
+            <View style={{ backgroundColor: "#D1FAE5", paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4, marginRight: 6 }}>
+              <Text style={{ fontSize: 9, color: "#047857", fontWeight: "800" }}>CASH IN-HAND</Text>
+            </View>
+            <Text style={styles.cardSubtitle}>{moment(item.created_at || item.createdAt || item.date || new Date()).format("DD MMM YYYY, hh:mm A")}</Text>
+          </View>
+        </View>
+
+        <View style={{ alignItems: "flex-end" }}>
+          <Text style={[styles.cardAmount, { color: "#059669" }]}>
+            +₹{displayAmount.toLocaleString("en-IN")}
+          </Text>
+          <Text style={{ fontSize: 9, color: Colors.textTertiary, fontWeight: "600", marginTop: 2 }}>Direct Payout</Text>
+        </View>
       </TouchableOpacity>
     );
   };
@@ -244,9 +440,9 @@ export default function WalletScreen({ route, navigation }) {
       </View>
 
       <FlatList
-        data={activeTab === "Transactions" ? transactions : withdraws}
-        renderItem={activeTab === "Transactions" ? renderTransaction : renderWithdrawItem}
-        keyExtractor={(item) => String(item.id)}
+        data={activeTab === "Transactions" ? transactions : (activeTab === "Cash" ? cashEntries : withdraws)}
+        renderItem={activeTab === "Transactions" ? renderTransaction : (activeTab === "Cash" ? renderCashEntry : renderWithdrawItem)}
+        keyExtractor={(item) => String(item.id || item.reference_id || Math.random())}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[Colors.primary]} />
         }
@@ -254,14 +450,17 @@ export default function WalletScreen({ route, navigation }) {
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={
           <>
-            {/* Hero Earnings Card */}
+            {/* Hero Earnings Card - ONLY ONLINE WITHDRAWABLE AMOUNT */}
             <View style={styles.heroCard}>
               <View style={styles.heroTopRow}>
                 <View style={{ flexDirection: "row", alignItems: "center" }}>
                   <View style={styles.walletBadgeIcon}>
-                    <Ionicons name="wallet-outline" size={18} color="#FFFFFF" />
+                    <Ionicons name="card-outline" size={18} color="#FFFFFF" />
                   </View>
-                  <Text style={styles.heroLabel}>Available Payout Balance</Text>
+                  <View style={{ marginLeft: 8 }}>
+                    <Text style={styles.heroLabel}>Online Withdrawable Balance</Text>
+                    <Text style={{ fontSize: 10, color: "rgba(255,255,255,0.75)", fontWeight: "600" }}>Online Payments Only</Text>
+                  </View>
                 </View>
                 <TouchableOpacity onPress={() => setShowBalance(!showBalance)}>
                   <Ionicons name={showBalance ? "eye-outline" : "eye-off-outline"} size={20} color="rgba(255,255,255,0.85)" />
@@ -269,7 +468,11 @@ export default function WalletScreen({ route, navigation }) {
               </View>
 
               <Text style={styles.heroBalance}>
-                {showBalance ? `₹${Number(balance).toLocaleString("en-IN")}` : "••••••••"}
+                {showBalance ? `₹${Number(
+                  (Number((walletData?.total_earnings || walletData?.lifetime_earnings || 0) - (walletData?.cash_earnings !== undefined ? walletData.cash_earnings : (walletData?.cashEarnings || cashEntries.reduce((s, i) => s + Number(i.amount || 0), 0)))))
+                  + 
+                  Number(walletData?.escrow_balance || walletData?.pending_settlement || walletData?.pending_balance || 0)
+                ).toLocaleString("en-IN")}` : "••••••••"}
               </Text>
               
               <Text style={styles.heroSubtitle}>
@@ -282,8 +485,10 @@ export default function WalletScreen({ route, navigation }) {
                   style={styles.payoutBtn} 
                   activeOpacity={0.85}
                   onPress={() => {
-                    if (!bankAccount) {
-                      Alert.alert("Link Bank Account", "Please link your bank credentials before requesting withdrawal.", [
+                    if (navigation?.navigate) {
+                      navigation.navigate("WithdrawEarnings");
+                    } else if (!bankAccount) {
+                      Alert.alert("Link Bank Account", "Please add and verify your bank details before requesting withdrawal.", [
                         { text: "Cancel" },
                         { text: "Link Now", onPress: () => setBankModalVisible(true) }
                       ]);
@@ -313,36 +518,59 @@ export default function WalletScreen({ route, navigation }) {
                 <View style={styles.statIconBadge}>
                   <Ionicons name="trending-up" size={16} color={Colors.success} />
                 </View>
-                <Text style={styles.statMiniLabel}>Lifetime Earnings</Text>
+                <Text style={styles.statMiniLabel}>Online Total</Text>
                 <Text style={styles.statMiniValue}>₹{Number(walletData?.total_earnings || walletData?.lifetime_earnings || 0).toLocaleString("en-IN")}</Text>
               </View>
+
+              <TouchableOpacity 
+                activeOpacity={0.8}
+                onPress={() => setActiveTab("Cash")}
+                style={[styles.statMiniCard, { borderColor: "#10B981", backgroundColor: activeTab === "Cash" ? "#ECFDF5" : "#FFFFFF" }]}
+              >
+                <View style={[styles.statIconBadge, { backgroundColor: "#D1FAE5" }]}>
+                  <Ionicons name="cash" size={16} color="#059669" />
+                </View>
+                <Text style={[styles.statMiniLabel, { color: "#047857", fontWeight: "700" }]}>Cash In-Hand</Text>
+                <Text style={[styles.statMiniValue, { color: "#059669", fontWeight: "800" }]}>
+                  ₹{Number(walletData?.cash_earnings !== undefined ? walletData.cash_earnings : (walletData?.cashEarnings || cashEntries.reduce((s, i) => s + Number(i.amount || 0), 0))).toLocaleString("en-IN")}
+                </Text>
+              </TouchableOpacity>
 
               <View style={styles.statMiniCard}>
                 <View style={[styles.statIconBadge, { backgroundColor: "#FFFBEB" }]}>
                   <Ionicons name="lock-closed-outline" size={16} color={Colors.warning} />
                 </View>
                 <Text style={styles.statMiniLabel}>In Escrow</Text>
-                <Text style={styles.statMiniValue}>₹{Number(walletData?.escrow_balance || walletData?.pending_balance || 0).toLocaleString("en-IN")}</Text>
+                <Text style={styles.statMiniValue}>₹{Number(walletData?.escrow_balance || walletData?.pending_settlement || walletData?.pending_balance || 0).toLocaleString("en-IN")}</Text>
               </View>
             </View>
 
             {/* Tabs Bar */}
             <View style={styles.tabContainer}>
               <TouchableOpacity
-                style={[styles.tabBtn, activeTab === "Withdraw" && styles.activeTabBtn]}
-                onPress={() => setActiveTab("Withdraw")}
-              >
-                <Text style={[styles.tabBtnText, activeTab === "Withdraw" && styles.activeTabBtnText]}>
-                  Payout Requests ({withdraws.length})
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
                 style={[styles.tabBtn, activeTab === "Transactions" && styles.activeTabBtn]}
                 onPress={() => setActiveTab("Transactions")}
               >
                 <Text style={[styles.tabBtnText, activeTab === "Transactions" && styles.activeTabBtnText]}>
-                  Ledger Logs ({transactions.length})
+                  Online ({transactions.length})
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.tabBtn, activeTab === "Cash" && styles.activeTabBtn]}
+                onPress={() => setActiveTab("Cash")}
+              >
+                <Text style={[styles.tabBtnText, activeTab === "Cash" && styles.activeTabBtnText]}>
+                  Cash ({cashEntries.length})
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.tabBtn, activeTab === "Withdraw" && styles.activeTabBtn]}
+                onPress={() => setActiveTab("Withdraw")}
+              >
+                <Text style={[styles.tabBtnText, activeTab === "Withdraw" && styles.activeTabBtnText]}>
+                  Payouts ({withdraws.length})
                 </Text>
               </TouchableOpacity>
             </View>
@@ -350,17 +578,32 @@ export default function WalletScreen({ route, navigation }) {
             {/* Section Heading */}
             <View style={styles.sectionHeaderRow}>
               <Text style={styles.sectionHeaderTitle}>
-                {activeTab === "Transactions" ? "Earnings & Settlement Ledger" : "Bank Transfer History"}
+                {activeTab === "Transactions"
+                  ? "Online Earnings & Settlement Ledger"
+                  : (activeTab === "Cash" ? "Cash Collected in Hand (Booking History)" : "Bank Transfer History")}
               </Text>
             </View>
           </>
         }
         ListEmptyComponent={
-          !loading && (
+          loading ? (
+            <View style={[styles.emptyState, { paddingVertical: 40 }]}>
+              <ActivityIndicator size="small" color={Colors.primary} />
+              <Text style={[styles.emptyText, { marginTop: 10 }]}>Loading wallet records...</Text>
+            </View>
+          ) : (
             <View style={styles.emptyState}>
-              <Ionicons name="receipt-outline" size={40} color={Colors.textTertiary} />
+              <Ionicons
+                name={activeTab === "Cash" ? "cash-outline" : (activeTab === "Transactions" ? "receipt-outline" : "paper-plane-outline")}
+                size={40}
+                color={Colors.textTertiary}
+              />
               <Text style={styles.emptyText}>
-                No {activeTab === "Transactions" ? "ledger entries" : "payout requests"} recorded yet.
+                {activeTab === "Transactions"
+                  ? "No online ledger transactions recorded yet."
+                  : (activeTab === "Cash"
+                    ? "No cash collected entries recorded yet."
+                    : "No payout requests recorded yet.")}
               </Text>
             </View>
           )
@@ -369,137 +612,180 @@ export default function WalletScreen({ route, navigation }) {
 
       {/* 1. Request Payout Modal */}
       <Modal visible={withdrawModalVisible} transparent animationType="slide">
-        <View style={styles.modalBg}>
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalSheetTitle}>Request Payout Transfer</Text>
-            <Text style={styles.modalSheetSubtitle}>Available Balance: ₹{Number(balance).toLocaleString("en-IN")}</Text>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={{ flex: 1, justifyContent: "flex-end" }}
+        >
+          <View style={styles.modalBg}>
+            <View style={styles.modalSheet}>
+              <View style={styles.modalHandle} />
+              <Text style={styles.modalSheetTitle}>Request Payout Transfer</Text>
+              <Text style={styles.modalSheetSubtitle}>Available Balance: ₹{Number(balance).toLocaleString("en-IN")}</Text>
 
-            <Text style={styles.inputLabel}>Enter Amount (₹)</Text>
-            <View style={styles.inputWrapper}>
-              <Text style={styles.currencyPrefix}>₹</Text>
-              <TextInput
-                keyboardType="number-pad"
-                value={withdrawAmount}
-                onChangeText={setWithdrawAmount}
-                placeholder="e.g. 1000"
-                placeholderTextColor={Colors.placeholder}
-                style={styles.amountInput}
-                autoFocus
-              />
-            </View>
-
-            <View style={styles.chipsRow}>
-              {[500, 1000, 2500, 5000].map((amt) => (
-                <TouchableOpacity
-                  key={amt}
-                  style={styles.chipBtn}
-                  onPress={() => setWithdrawAmount(String(amt))}
-                >
-                  <Text style={styles.chipText}>₹{amt}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {withdrawLoading ? (
-              <ActivityIndicator color={Colors.primary} style={{ marginVertical: 16 }} />
-            ) : (
-              <View style={styles.modalActionRow}>
-                <TouchableOpacity style={styles.cancelBtn} onPress={() => setWithdrawModalVisible(false)}>
-                  <Text style={styles.cancelText}>Cancel</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity style={styles.confirmBtn} onPress={handleWithdrawalRequest}>
-                  <Text style={styles.confirmText}>Submit Request</Text>
-                </TouchableOpacity>
+              <Text style={styles.inputLabel}>Enter Amount (₹)</Text>
+              <View style={styles.inputWrapper}>
+                <Text style={styles.currencyPrefix}>₹</Text>
+                <TextInput
+                  keyboardType="number-pad"
+                  value={withdrawAmount}
+                  onChangeText={setWithdrawAmount}
+                  placeholder="e.g. 1000"
+                  placeholderTextColor={Colors.placeholder}
+                  style={styles.amountInput}
+                  autoFocus
+                />
               </View>
-            )}
+
+              <View style={styles.chipsRow}>
+                {[500, 1000, 2500, 5000].map((amt) => (
+                  <TouchableOpacity
+                    key={amt}
+                    style={styles.chipBtn}
+                    onPress={() => setWithdrawAmount(String(amt))}
+                  >
+                    <Text style={styles.chipText}>₹{amt}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {withdrawLoading ? (
+                <ActivityIndicator color={Colors.primary} style={{ marginVertical: 16 }} />
+              ) : (
+                <View style={styles.modalActionRow}>
+                  <TouchableOpacity style={styles.cancelBtn} onPress={() => setWithdrawModalVisible(false)}>
+                    <Text style={styles.cancelText}>Cancel</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity style={styles.confirmBtn} onPress={handleWithdrawalRequest}>
+                    <Text style={styles.confirmText}>Submit Request</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* 2. Link/Edit Bank Account Modal */}
       <Modal visible={bankModalVisible} transparent animationType="slide">
-        <View style={styles.modalBg}>
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalSheetTitle}>Bank Account Credentials</Text>
-            <Text style={styles.modalSheetSubtitle}>Enter your official bank details for automatic payout transfers.</Text>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={{ flex: 1, justifyContent: "flex-end" }}
+        >
+          <View style={styles.modalBg}>
+            <View style={styles.modalSheet}>
+              <View style={styles.modalHandle} />
+              <Text style={styles.modalSheetTitle}>Bank Account Credentials</Text>
+              <Text style={styles.modalSheetSubtitle}>Enter your official bank details for automatic payout transfers.</Text>
 
-            <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
-              <Text style={styles.inputLabel}>Account Holder Name</Text>
-              <TextInput
-                value={bankForm.accountHolderName}
-                onChangeText={(val) => setBankForm({ ...bankForm, accountHolderName: val })}
-                placeholder="Name as registered with Bank"
-                style={styles.fieldInput}
-              />
+              <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
+                <Text style={styles.inputLabel}>Account Holder Name</Text>
+                <TextInput
+                  value={bankForm.accountHolderName}
+                  onChangeText={(val) => setBankForm({ ...bankForm, accountHolderName: val })}
+                  placeholder="Name as registered with Bank"
+                  style={styles.fieldInput}
+                />
 
-              <Text style={styles.inputLabel}>Account Number</Text>
-              <TextInput
-                value={bankForm.accountNumber}
-                keyboardType="number-pad"
-                onChangeText={(val) => setBankForm({ ...bankForm, accountNumber: val })}
-                placeholder="e.g. 987654321012"
-                style={styles.fieldInput}
-              />
+                <Text style={styles.inputLabel}>Account Number</Text>
+                <TextInput
+                  value={bankForm.accountNumber}
+                  keyboardType="number-pad"
+                  onChangeText={(val) => setBankForm({ ...bankForm, accountNumber: val })}
+                  placeholder="e.g. 987654321012"
+                  style={styles.fieldInput}
+                />
 
-              <Text style={styles.inputLabel}>IFSC Code</Text>
-              <TextInput
-                value={bankForm.ifscCode}
-                autoCapitalize="characters"
-                onChangeText={(val) => setBankForm({ ...bankForm, ifscCode: val })}
-                placeholder="e.g. SBIN0001234"
-                style={styles.fieldInput}
-              />
+                <Text style={styles.inputLabel}>IFSC Code</Text>
+                <TextInput
+                  value={bankForm.ifscCode}
+                  autoCapitalize="characters"
+                  onChangeText={(val) => setBankForm({ ...bankForm, ifscCode: val })}
+                  placeholder="e.g. SBIN0001234"
+                  style={styles.fieldInput}
+                />
 
-              <Text style={styles.inputLabel}>Bank Name</Text>
-              <TextInput
-                value={bankForm.bankName}
-                onChangeText={(val) => setBankForm({ ...bankForm, bankName: val })}
-                placeholder="e.g. State Bank of India / HDFC"
-                style={styles.fieldInput}
-              />
-            </ScrollView>
+                <Text style={styles.inputLabel}>Bank Name</Text>
+                <TextInput
+                  value={bankForm.bankName}
+                  onChangeText={(val) => setBankForm({ ...bankForm, bankName: val })}
+                  placeholder="e.g. State Bank of India / HDFC"
+                  style={styles.fieldInput}
+                />
+              </ScrollView>
 
-            {bankLoading ? (
-              <ActivityIndicator color={Colors.primary} style={{ marginVertical: 16 }} />
-            ) : (
-              <View style={styles.modalActionRow}>
-                <TouchableOpacity style={styles.cancelBtn} onPress={() => setBankModalVisible(false)}>
-                  <Text style={styles.cancelText}>Cancel</Text>
-                </TouchableOpacity>
+              {bankLoading ? (
+                <ActivityIndicator color={Colors.primary} style={{ marginVertical: 16 }} />
+              ) : (
+                <View style={styles.modalActionRow}>
+                  <TouchableOpacity style={styles.cancelBtn} onPress={() => setBankModalVisible(false)}>
+                    <Text style={styles.cancelText}>Cancel</Text>
+                  </TouchableOpacity>
 
-                <TouchableOpacity style={styles.confirmBtn} onPress={handleSaveBankDetails}>
-                  <Text style={styles.confirmText}>Save Credentials</Text>
-                </TouchableOpacity>
-              </View>
-            )}
+                  <TouchableOpacity style={styles.confirmBtn} onPress={handleSaveBankDetails}>
+                    <Text style={styles.confirmText}>Save Credentials</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* 3. Item Detail Modal */}
       <Modal visible={!!selectedItem} transparent animationType="fade">
         <View style={styles.modalBg}>
           <View style={styles.detailCard}>
-            <Text style={styles.detailTitle}>{selectedItem?.transaction_type || "Payout Request"}</Text>
-            <Text style={styles.detailAmount}>₹{Number(selectedItem?.amount || 0).toLocaleString("en-IN")}</Text>
+            <Text style={styles.detailTitle}>
+              {selectedItem?.is_cash_entry || selectedItem?.type === "cash_collected"
+                ? "Cash Collected (In-Hand)"
+                : (selectedItem?.transaction_type || "Payout Request")}
+            </Text>
+            <Text style={[styles.detailAmount, (selectedItem?.is_cash_entry || selectedItem?.type === "cash_collected") && { color: "#059669" }]}>
+              ₹{Number(selectedItem?.amount || 0) === 0 && (selectedItem?.is_cash_entry || selectedItem?.type === "cash_collected")
+                 ? (selectedItem?.description?.match(/₹([\d.,]+)/) ? parseFloat(selectedItem.description.match(/₹([\d.,]+)/)[1].replace(/,/g, '')) : 0).toLocaleString("en-IN")
+                 : Number(selectedItem?.amount || 0).toLocaleString("en-IN")
+               }
+            </Text>
 
             <View style={styles.detailDivider} />
 
             <View style={styles.detailRow}>
+              <Text style={styles.detailKey}>Payment Channel</Text>
+              <Text style={[styles.detailVal, { color: selectedItem?.is_cash_entry || selectedItem?.type === "cash_collected" ? "#059669" : "#0284C7", fontWeight: "700", flexShrink: 1, textAlign: "right", paddingLeft: 10 }]}>
+                {selectedItem?.is_cash_entry || selectedItem?.type === "cash_collected"
+                  ? "Cash In-Hand"
+                  : (selectedItem?.transaction_type === "WITHDRAWAL" || selectedItem?.status === "PENDING" ? "Bank Transfer" : "Online Escrow")}
+              </Text>
+            </View>
+            <View style={styles.detailRow}>
               <Text style={styles.detailKey}>Status</Text>
-              <Text style={[styles.detailVal, { color: Colors.primary, fontWeight: "700" }]}>{selectedItem?.status || "SUCCESS"}</Text>
+              <Text style={[styles.detailVal, { color: selectedItem?.is_cash_entry || selectedItem?.type === "cash_collected" ? "#059669" : Colors.primary, fontWeight: "700" }]}>
+                {selectedItem?.is_cash_entry || selectedItem?.type === "cash_collected" ? "COLLECTED IN-HAND" : (selectedItem?.status || "SUCCESS")}
+              </Text>
             </View>
             <View style={styles.detailRow}>
               <Text style={styles.detailKey}>Date & Time</Text>
-              <Text style={styles.detailVal}>{moment(selectedItem?.createdAt).format("DD MMM YYYY, hh:mm A")}</Text>
+              <Text style={styles.detailVal}>{moment(selectedItem?.createdAt || selectedItem?.created_at || selectedItem?.date).format("DD MMM YYYY, hh:mm A")}</Text>
             </View>
             <View style={styles.detailRow}>
               <Text style={styles.detailKey}>Reference ID</Text>
-              <Text style={styles.detailVal}>REF-{selectedItem?.id}</Text>
+              <Text style={styles.detailVal}>REF-{selectedItem?.id || selectedItem?.reference_id || Date.now()}</Text>
             </View>
+
+            {selectedItem?.customer_name && (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailKey}>Customer</Text>
+                <Text style={styles.detailVal}>{selectedItem.customer_name}</Text>
+              </View>
+            )}
+
+            {selectedItem?.service_title && (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailKey}>Service</Text>
+                <Text style={styles.detailVal}>{selectedItem.service_title}</Text>
+              </View>
+            )}
 
             <TouchableOpacity style={styles.closeDetailBtn} onPress={() => setSelectedItem(null)}>
               <Text style={styles.closeDetailText}>Close</Text>
@@ -572,11 +858,11 @@ const styles = StyleSheet.create({
   bankManageText: { color: "#FFFFFF", fontWeight: "700", fontSize: 13, marginLeft: 6 },
 
   // Stats Grid
-  statsRow: { flexDirection: "row", paddingHorizontal: 16, gap: 12, marginBottom: 14 },
-  statMiniCard: { flex: 1, backgroundColor: Colors.white, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: "#EEF2F6", elevation: 1 },
-  statIconBadge: { width: 28, height: 28, borderRadius: 14, backgroundColor: "#ECFDF5", justifyContent: "center", alignItems: "center", marginBottom: 8 },
-  statMiniLabel: { fontSize: 11, color: Colors.textSecondary, fontWeight: "600", marginBottom: 2 },
-  statMiniValue: { fontSize: 16, fontWeight: "800", color: Colors.text },
+  statsRow: { flexDirection: "row", paddingHorizontal: 16, gap: 8, marginBottom: 14 },
+  statMiniCard: { flex: 1, backgroundColor: Colors.white, borderRadius: 14, padding: 10, borderWidth: 1, borderColor: "#EEF2F6", elevation: 1 },
+  statIconBadge: { width: 26, height: 26, borderRadius: 13, backgroundColor: "#ECFDF5", justifyContent: "center", alignItems: "center", marginBottom: 6 },
+  statMiniLabel: { fontSize: 10, color: Colors.textSecondary, fontWeight: "600", marginBottom: 2 },
+  statMiniValue: { fontSize: 13, fontWeight: "800", color: Colors.text },
 
   // Tabs Bar
   tabContainer: { flexDirection: "row", marginHorizontal: 16, backgroundColor: Colors.white, borderRadius: 14, padding: 4, borderWidth: 1, borderColor: "#EEF2F6", marginBottom: 12 },

@@ -14,7 +14,7 @@ export default function PersonalDetailsScreen({ navigation, route }) {
 
   const [bio, setBio] = useState(artistDetails.bio || "");
   const [experienceYears, setExperienceYears] = useState(artistDetails.experienceYears || "");
-  const [startingPrice, setStartingPrice] = useState(artistDetails.startingPrice || "1500");
+  const [startingPrice, setStartingPrice] = useState(artistDetails.startingPrice ? String(artistDetails.startingPrice) : "");
   const [homeService, setHomeService] = useState(artistDetails.homeService !== false);
   const [salonService, setSalonService] = useState(artistDetails.salonService || false);
   const [city, setCity] = useState(artistDetails.city || "");
@@ -93,7 +93,7 @@ export default function PersonalDetailsScreen({ navigation, route }) {
     updateArtistDetails({
       bio: bio.trim(),
       experienceYears,
-      startingPrice: Number(startingPrice) || 1500,
+      startingPrice: startingPrice ? Number(startingPrice) : 0,
       homeService,
       salonService,
       city: city.trim(),
@@ -151,7 +151,7 @@ export default function PersonalDetailsScreen({ navigation, route }) {
             style={[styles.input, errors.startingPrice ? styles.inputError : null]}
             value={String(startingPrice || "")}
             placeholderTextColor={Colors.placeholder}
-            placeholder="e.g. 1500"
+            placeholder="e.g. 500"
             keyboardType="numeric"
             onChangeText={(t) => { setStartingPrice(t.replace(/[^0-9]/g, "")); setErrors((p) => ({ ...p, startingPrice: "" })); }}
           />
@@ -257,7 +257,7 @@ export default function PersonalDetailsScreen({ navigation, route }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.white },
-  content: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 120 },
+  content: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 60 },
   title: { fontSize: 24, fontWeight: "700", color: Colors.text, textAlign: "center", marginTop: 10, marginBottom: 25 },
   formGroup: { marginBottom: 18 },
   label: { fontSize: 13, fontWeight: "600", color: Colors.text, marginBottom: 8, marginLeft: 5 },
@@ -276,7 +276,7 @@ const styles = StyleSheet.create({
   toggleBtnSelected: { borderColor: Colors.primary, backgroundColor: Colors.primaryLight + "30" },
   toggleText: { fontSize: 14, fontWeight: "500", color: Colors.textSecondary },
   toggleTextSelected: { color: Colors.primary, fontWeight: "700" },
-  footer: { position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: Colors.white, paddingHorizontal: 20, paddingBottom: 20, paddingTop: 10 },
+  footer: { backgroundColor: Colors.white, paddingHorizontal: 20, paddingBottom: 20, paddingTop: 10, borderTopWidth: 1, borderTopColor: Colors.border },
   button: { height: 56, borderRadius: 16, backgroundColor: Colors.primary, justifyContent: "center", alignItems: "center" },
   buttonText: { color: Colors.white, fontSize: 16, fontWeight: "700" },
 });

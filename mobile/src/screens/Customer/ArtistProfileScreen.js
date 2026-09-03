@@ -10,16 +10,33 @@ import {
   View,
   ActivityIndicator,
   Share,
-  Linking,
-  Modal,
   Dimensions,
-  FlatList
+  FlatList,
+  StatusBar
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Alert from "../../utils/Alert";
 import Colors from "../../constants/Colors";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getNormalizedUrl } from "../../services/api";
 import { formatDate } from "../../utils/date";
+import {
+  fetchArtistProfile,
+  fetchArtistServices,
+  fetchArtistPortfolio,
+  fetchArtistReviews,
+  fetchArtistAvailability,
+  fetchArtistFaqs,
+  addArtistFavorite,
+  removeArtistFavorite,
+  getFavorites,
+  savePortfolioItem,
+  unsavePortfolioItem
+} from "../../services/customer";
+import { getBookingHistory } from "../../services/booking";
+import { createArtistDeepLink, createDesignDeepLink } from "../../services/deepLink";
+
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const CARD_WIDTH = (SCREEN_WIDTH - 44) / 2;
 
 const resolveImage = (uri) => {
   if (!uri || typeof uri !== "string") return "";
@@ -35,28 +52,10 @@ const resolveImage = (uri) => {
   }
   return getNormalizedUrl(trimmed);
 };
-import { createBooking, getBookingHistory } from "../../services/booking";
-import {
-  fetchArtistProfile,
-  fetchArtistServices,
-  fetchArtistPortfolio,
-  fetchArtistReviews,
-  fetchArtistAvailability,
-  fetchSimilarArtists,
-  addArtistFavorite,
-  removeArtistFavorite,
-  getFavorites
-} from "../../services/customer";
-import { createArtistDeepLink } from "../../services/deepLink";
-
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
-
-import { useFocusEffect } from "@react-navigation/native";
 
 export default function ArtistProfileScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
   const artistId = route.params?.artistId || route.params?.id || route.params?.artist_id;
-
   const initialArtist = route.params?.artist || null;
 
   // Data states
@@ -68,26 +67,21 @@ export default function ArtistProfileScreen({ route, navigation }) {
     distribution: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 }
   });
   const [availability, setAvailability] = useState([]);
-  const [similar, setSimilar] = useState([]);
+  const [faqs, setFaqs] = useState([]);
   const [isFav, setIsFav] = useState(false);
+  const [selectedPortfolioFilter, setSelectedPortfolioFilter] = useState("ALL");
+  const [expandedBio, setExpandedBio] = useState(false);
+  const [openFaqIndex, setOpenFaqIndex] = useState(null);
+  const [activeCoverIndex, setActiveCoverIndex] = useState(0);
+  const [hasBookingWithArtist, setHasBookingWithArtist] = useState(false);
+  const [activeBookingForChat, setActiveBookingForChat] = useState(null);
 
   // Layout states
   const [loading, setLoading] = useState(!initialArtist);
   const [error, setError] = useState(null);
-  const [activeCoverIndex, setActiveCoverIndex] = useState(0);
-
-  // Zoom Portfolio Modal state
-  const [zoomModalVisible, setZoomModalVisible] = useState(false);
-  const [zoomImageIndex, setZoomImageIndex] = useState(0);
-
-  // Booking states
-  const [selectedDate, setSelectedDate] = useState(null);
-  const [selectedTimeSlot, setSelectedTimeSlot] = useState(null);
-
   const isFetchingRef = useRef(false);
 
-  // Load profile sub-resources with instant cache & parallel fetching
-  const loadProfileDetails = React.useCallback(async () => {
+  const loadProfileDetails = useCallback(async () => {
     if (!artistId) {
       setError("Artist ID is required");
       setLoading(false);
@@ -96,7 +90,6 @@ export default function ArtistProfileScreen({ route, navigation }) {
 
     if (isFetchingRef.current) return;
     isFetchingRef.current = true;
-
     setError(null);
 
     // 1. Instant Cache Layer
@@ -110,18 +103,19 @@ export default function ArtistProfileScreen({ route, navigation }) {
         if (cachedData.portfolio) setPortfolio(cachedData.portfolio);
         if (cachedData.reviewsData) setReviewsData(cachedData.reviewsData);
         if (cachedData.availability) setAvailability(cachedData.availability);
-        setLoading(false); // Instant render!
+        setLoading(false);
       }
     } catch (e) {
-      console.log("Artist cache read error:", e.message);
+      if (__DEV__) console.log("Artist cache read error:", e.message);
     }
 
     try {
-      // 2. Fetch primary profile, availability, and favorites in PARALLEL
-      const [profResult, availResult, favsResult] = await Promise.allSettled([
+      // 2. Fetch primary profile, availability, favorites, and faqs in parallel
+      const [profResult, availResult, favsResult, faqsResult] = await Promise.allSettled([
         fetchArtistProfile(artistId),
         fetchArtistAvailability(artistId),
-        getFavorites()
+        getFavorites(),
+        fetchArtistFaqs(artistId).catch(() => [])
       ]);
 
       const prof = profResult.status === "fulfilled" ? profResult.value : null;
@@ -132,16 +126,16 @@ export default function ArtistProfileScreen({ route, navigation }) {
 
       setProfile(prof);
 
-      // Extract services, portfolio, reviews (fetch in parallel only if missing)
-      let servs = (prof.services && prof.services.length > 0) ? prof.services : null;
-      let port = (prof.portfolio && prof.portfolio.length > 0) ? prof.portfolio : null;
-      let revs = (prof.reviews && prof.reviews.length > 0) ? prof.reviews : null;
+      // Extract services, portfolio, reviews
+      let servs = prof.services && prof.services.length > 0 ? prof.services : null;
+      let port = prof.portfolio && prof.portfolio.length > 0 ? prof.portfolio : null;
+      let revs = prof.reviews && prof.reviews.length > 0 ? prof.reviews : null;
 
       if (!servs || !port || !revs) {
         const [extraServs, extraPort, extraRevs] = await Promise.all([
           !servs ? fetchArtistServices(artistId).catch(() => []) : Promise.resolve(servs),
           !port ? fetchArtistPortfolio(artistId).catch(() => []) : Promise.resolve(port),
-          !revs ? fetchArtistReviews(artistId).catch(() => []) : Promise.resolve(revs),
+          !revs ? fetchArtistReviews(artistId).catch(() => []) : Promise.resolve(revs)
         ]);
         servs = extraServs || [];
         port = extraPort || [];
@@ -152,78 +146,78 @@ export default function ArtistProfileScreen({ route, navigation }) {
         ? (prof.availability || availResult.value)
         : (prof.availability || []);
       const favs = favsResult.status === "fulfilled" ? favsResult.value : [];
+      const fetchedFaqs = faqsResult.status === "fulfilled" ? faqsResult.value : [];
 
       setServices(servs || []);
       setPortfolio(Array.isArray(port) ? port : (port?.portfolios || port?.data || []));
+      setFaqs(Array.isArray(fetchedFaqs) ? fetchedFaqs : []);
+
       const reviewsList = Array.isArray(revs) ? revs : (revs?.reviews || []);
-      const reviewsDist = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
-      let sumRating = 0;
-      reviewsList.forEach((r) => {
-        const rVal = Math.min(5, Math.max(1, Math.round(Number(r.rating || 5))));
-        reviewsDist[rVal] = (reviewsDist[rVal] || 0) + 1;
-        sumRating += Number(r.rating || 5);
-      });
-      if (reviewsList.length > 0) {
-        prof.avg_rating = Number((sumRating / reviewsList.length).toFixed(1));
-        prof.total_reviews = reviewsList.length;
+      const reviewsDist = (revs && typeof revs === "object" && revs.distribution) ? revs.distribution : { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+
+      if (!revs?.distribution && reviewsList.length > 0) {
+        reviewsList.forEach((r) => {
+          const rVal = Math.min(5, Math.max(1, Math.round(Number(r.rating || 5))));
+          reviewsDist[rVal] = (reviewsDist[rVal] || 0) + 1;
+        });
       }
-      const calculatedReviewsData = {
+
+      setReviewsData({
         reviews: reviewsList,
         distribution: reviewsDist
-      };
-      setReviewsData(calculatedReviewsData);
+      });
+
       const slots = Array.isArray(avail) ? avail : (avail?.slots || []);
       setAvailability(slots);
-      setSimilar([]);
 
-      // 3. Save to local cache for instant future loads
+      // Check favorite
+      const targetId = prof.id || prof.user_id;
+      const isArtistFav = (Array.isArray(favs) ? favs : []).some((fav) =>
+        String(fav.id) === String(targetId) ||
+        String(fav.user_id) === String(targetId) ||
+        String(fav.artist_id) === String(targetId)
+      );
+      setIsFav(isArtistFav);
+
+      // Check if current user has an active or past booking with this artist
+      try {
+        const historyRes = await getBookingHistory().catch(() => []);
+        const bookingList = Array.isArray(historyRes) ? historyRes : (historyRes?.data || historyRes?.bookings || []);
+        const artistTargetId = Number(prof.user_id || prof.id || artistId);
+        const matched = bookingList.find(b =>
+          Number(b.artist_id) === artistTargetId ||
+          Number(b.artist_profile_id) === Number(prof.id || artistId) ||
+          Number(b.artistId) === artistTargetId
+        );
+        if (matched) {
+          setHasBookingWithArtist(true);
+          setActiveBookingForChat(matched);
+        } else {
+          setHasBookingWithArtist(false);
+          setActiveBookingForChat(null);
+        }
+      } catch (err) {
+        setHasBookingWithArtist(false);
+        setActiveBookingForChat(null);
+      }
+
+      // Cache for next time
       try {
         await AsyncStorage.setItem(
           cacheKey,
           JSON.stringify({
             profile: prof,
             services: servs || [],
-            portfolio: Array.isArray(port) ? port : (port?.portfolios || port?.data || []),
-            reviewsData: calculatedReviewsData,
+            portfolio: Array.isArray(port) ? port : [],
+            reviewsData: { reviews: reviewsList, distribution: reviewsDist },
             availability: slots
           })
         );
       } catch (e) {
-        console.log("Artist cache write error:", e.message);
-      }
-
-      // Check favorite
-      const targetId = prof.id || prof.user_id;
-      const targetUserId = prof.user_id || prof.user?.id || prof.id;
-      const targetProfileId = prof.id || prof.artist_profile_id;
-      const isArtistFav = (Array.isArray(favs) ? favs : []).some((fav) => 
-        String(fav.id) === String(targetId) || 
-        String(fav.user_id) === String(targetId) ||
-        String(fav.artist_id) === String(targetId) ||
-        String(fav.artist_profile_id) === String(targetId) ||
-        String(fav.id) === String(targetUserId) ||
-        String(fav.user_id) === String(targetUserId) ||
-        String(fav.artist_id) === String(targetUserId) ||
-        String(fav.artist_profile_id) === String(targetUserId) ||
-        String(fav.id) === String(targetProfileId) ||
-        String(fav.user_id) === String(targetProfileId) ||
-        String(fav.artist_id) === String(targetProfileId) ||
-        String(fav.artist_profile_id) === String(targetProfileId)
-      );
-      setIsFav(isArtistFav);
-
-      // Default date select
-      if (slots && slots.length > 0) {
-        const moment = require("moment");
-        const distinctDates = [...new Set(slots.map((s) => s?.date).filter(Boolean))].filter((date) => {
-          return moment(date, ["YYYY-MM-DD", "YYYY-MM-DDTHH:mm:ss.SSSZ", "YYYY-MM-DDTHH:mm:ssZ"]).isValid();
-        });
-        if (distinctDates.length > 0) {
-          setSelectedDate(distinctDates[0]);
-        }
+        if (__DEV__) console.log("Artist cache write error:", e.message);
       }
     } catch (e) {
-      if (__DEV__) console.log("[ArtistProfileScreen Debug] Error loading artist details:", e.message);
+      if (__DEV__) console.log("Error loading artist details:", e.message);
       setError("Failed to load artist details. Please try again.");
     } finally {
       setLoading(false);
@@ -235,7 +229,6 @@ export default function ArtistProfileScreen({ route, navigation }) {
     loadProfileDetails();
   }, [loadProfileDetails]);
 
-  // Sync Favorite actions
   const handleToggleFavorite = async () => {
     try {
       const targetId = profile?.id || profile?.user_id || artistId;
@@ -247,1175 +240,1538 @@ export default function ArtistProfileScreen({ route, navigation }) {
         setIsFav(true);
       }
     } catch (e) {
-      if (__DEV__) console.log("Failed to toggle favorite:", e.message);
+      if (__DEV__) console.log("Favorite error:", e.message);
     }
   };
 
-  // Share profile triggers
-  const handleShareProfile = async () => {
+  const handleShare = async () => {
     try {
-      const artistName = profile.user?.name || profile.business_name || "Mehndi Artist";
-      const minPrice = services?.[0]?.minimum_price || 1500;
-      const shareUrl = createArtistDeepLink(artistId);
+      const url = createArtistDeepLink(artistId);
+      const name = profile?.name || profile?.full_name || profile?.user?.name || profile?.user?.full_name || "Mehndi Artist";
+      const rating = Number(profile?.avg_rating || profile?.rating || 0).toFixed(1);
+      const exp = profile?.experience_years;
+
+      let stats = [];
+      if (startingPrice) stats.push(`Starting at ₹${startingPrice}`);
+      if (exp) stats.push(`${exp} years experience`);
+      if (rating > 0) stats.push(`⭐ ${rating} rating`);
+
+      const statsString = stats.length > 0 ? ` ${stats.join(", ")}.` : "";
+
       await Share.share({
-        title: `${artistName} on MehndiGo`,
-        message: `Book ${artistName} on MehndiGo! Starting at ₹${minPrice}, ${profile.experience_years ? `${profile.experience_years} years experience, ` : ""}⭐ ${Number(profile.avg_rating || 0).toFixed(1)} rating.\n\nView Profile: ${shareUrl}`,
-        url: shareUrl
+        title: `Book ${name} on MehndiGo`,
+        message: `Check out ${name}'s verified mehndi portfolio & bridal packages on MehndiGo!${statsString}\n\nView Profile: ${url}`,
+        url
       });
     } catch (e) {
-      if (__DEV__) console.log("Failed to share profile:", e.message);
+      if (__DEV__) console.log("Share error:", e.message);
     }
   };
 
-  const handleMoreOptions = () => {
-    Alert.alert(
-      "Profile Options",
-      "Select an action for this artist profile.",
-      [
-        {
-          text: "Report Profile",
-          onPress: () => {
-            Alert.alert("Profile Reported", "Thank you. Our compliance team will review this artist profile within 24 hours.");
-          }
-        },
-        {
-          text: "Block Artist",
-          style: "destructive",
-          onPress: () => {
-            Alert.alert("Artist Blocked", "This artist has been blocked. You will no longer receive updates or messages from them.");
-          }
-        },
-        {
-          text: "Cancel",
-          style: "cancel"
-        }
-      ]
-    );
-  };
-
-  // Directs map search to Google Maps Launcher
-  const handleOpenGoogleMaps = () => {
-    if (profile?.latitude && profile?.longitude) {
-      const url = `https://www.google.com/maps/search/?api=1&query=${profile.latitude},${profile.longitude}`;
-      Linking.openURL(url);
-    } else {
-      const label = encodeURIComponent(`${profile?.city || ""} ${profile?.user?.name || "Mehndi Artist"}`.trim());
-      const url = `https://www.google.com/maps/search/?api=1&query=${label}`;
-      Linking.openURL(url);
+  const handleOpenChat = () => {
+    if (!hasBookingWithArtist || !activeBookingForChat) {
+      Alert.alert("Booking Required", "You can only chat with an artist after creating a booking.");
+      return;
     }
-  };
-
-  // Chat action triggers
-  const handleMessageArtist = async () => {
-    try {
-      setLoading(true);
-      const history = await getBookingHistory();
-      const existing = (history || []).find(b => b.artist_id === profile.id);
-      
-      if (existing) {
-        setLoading(false);
-        navigation.navigate("ChatRoom", {
-          bookingId: existing.id,
-          receiverId: profile.user_id,
-          receiverName: profile.user?.name,
-          receiverImage: profile.user?.profile_image
-        });
-      } else {
-        // No booking exists yet. Create a mock booking for general chat inquiries
-        const defaultService = services?.[0];
-        if (!defaultService) {
-          setLoading(false);
-          Alert.alert("Notice", "Cannot start chat. This artist has no services listed.");
-          return;
-        }
-
-        const newB = await createBooking({
-          artistId: profile.id,
-          serviceId: defaultService.id,
-          slotId: null,
-          address: "Inquiry Chat Channel",
-          landmark: "Auto-generated",
-          notes: "General Pre-Booking Inquiry Chat"
-        });
-
-        // Backend response returns booking wrapper
-        const finalBookingId = newB?.id || newB?.booking?.id;
-        setLoading(false);
-        
-        if (!finalBookingId) {
-          throw new Error("Could not construct chat session ID");
-        }
-
-        navigation.navigate("ChatRoom", {
-          bookingId: finalBookingId,
-          receiverId: profile.user_id,
-          receiverName: profile.user?.name,
-          receiverImage: profile.user?.profile_image
-        });
-      }
-    } catch (err) {
-      setLoading(false);
-      Alert.alert("Chat Error", "Could not start chat session with this artist.");
-    }
-  };
-
-  // Confirm reservation items
-  const handleBookNow = () => {
-    navigation.navigate("SelectService", {
-      artistId: profile.id,
-      services: services || [],
-      selectedDate,
-      selectedTimeSlot
+    const chatArtistName = profile?.name || profile?.full_name || profile?.user?.name || profile?.user?.full_name || "Artist";
+    navigation.navigate("ChatRoom", {
+      bookingId: activeBookingForChat.id || activeBookingForChat.booking_id,
+      artistId: profile?.user_id || profile?.id || artistId,
+      artistName: chatArtistName,
+      artistAvatar: profile?.profile_image || profile?.avatar || profile?.user?.profile_image || profile?.user?.avatar
     });
   };
 
-  if (loading) {
-    return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.loadingText}>Fetching Artist Profile...</Text>
-      </View>
-    );
-  }
+  const handleOpenServiceCatalog = (service) => {
+    navigation.navigate("ArtistServiceCatalog", {
+      artistId: profile?.id || artistId,
+      serviceId: service.id,
+      service,
+      artist: {
+        id: profile?.id || artistId,
+        user_id: profile?.user_id,
+        name: profile?.user?.name || "Artist",
+        profile_image: profile?.user?.profile_image,
+        avg_rating: profile?.avg_rating,
+        total_reviews: profile?.total_reviews,
+        experience_years: profile?.experience_years,
+        is_verified: profile?.is_verified,
+        is_premium: profile?.is_premium,
+        city: profile?.city
+      }
+    });
+  };
 
-  if (error || !profile) {
-    return (
-      <View style={styles.centerContainer}>
-        <Ionicons name="alert-circle-outline" size={48} color={Colors.error} />
-        <Text style={styles.errorText}>{error || "Artist profile not found"}</Text>
-        <TouchableOpacity style={styles.retryBtn} onPress={loadProfileDetails}>
-          <Text style={styles.retryBtnText}>Retry Load</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
+  const handleOpenDesignDetails = (design, index) => {
+    navigation.navigate("DesignDetails", {
+      artistId: profile?.id || artistId,
+      serviceId: design.service_id || (services.length > 0 ? services[0].id : (profile?.services?.[0]?.id || 1)),
+      initialDesignIndex: index,
+      designs: filteredPortfolio,
+      artist: {
+        id: profile?.id || artistId,
+        user_id: profile?.user_id,
+        name: profile?.user?.name || "Artist",
+        profile_image: profile?.user?.profile_image
+      },
+      service: services.length > 0 ? services[0] : (profile?.services?.[0] || {})
+    });
+  };
 
-  // Cover image assets array
-  const coverImages = portfolio.length > 0
-    ? portfolio.slice(0, 4).map((p) => resolveImage(p.image_url || p.url)).filter(Boolean)
-    : [];
+  const handleBookDesign = (design) => {
+    navigation.navigate("SelectDate", {
+      artistId: profile?.id || artistId,
+      serviceId: design.service_id || (services.length > 0 ? services[0].id : (profile?.services?.[0]?.id || 1)),
+      selectedArt: {
+        id: design.id,
+        title: design.title || "Mehndi Design",
+        image_url: design.image_url || design.url,
+        art_tier: design.art_tier || "STANDARD",
+        duration_minutes: design.duration_minutes || 60,
+        price: design.price || profile?.starting_price || 0
+      }
+    });
+  };
 
-  // Distinct dates in availability slots
-  const availableDates = [...new Set(availability.map((slot) => slot?.date).filter(Boolean))].filter((date) => {
-    const moment = require("moment");
-    return moment(date, ["YYYY-MM-DD", "YYYY-MM-DDTHH:mm:ss.SSSZ", "YYYY-MM-DDTHH:mm:ssZ"]).isValid();
+  const handleSelectPackage = (pkg, service) => {
+    navigation.navigate("SelectDate", {
+      artistId: profile?.id || artistId,
+      serviceId: service?.id || pkg.service_id || (services.length > 0 ? services[0].id : (profile?.services?.[0]?.id || 1)),
+      packageId: pkg.id,
+      selectedArt: {
+        id: null,
+        title: `${pkg.package_name} (${service?.specialization_name || "Bridal Package"})`,
+        image_url: service?.service_image || profile?.user?.profile_image,
+        art_tier: "PREMIUM",
+        duration_minutes: pkg.duration || 120,
+        price: pkg.package_price
+      }
+    });
+  };
+
+  const handleRequestCustomDesign = () => {
+    navigation.navigate("CustomDesignRequest", {
+      artistId: profile?.id || artistId,
+      artist: {
+        id: profile?.id || artistId,
+        user_id: profile?.user_id,
+        name: profile?.user?.name || "Artist",
+        profile_image: profile?.user?.profile_image,
+        avg_rating: profile?.avg_rating,
+        city: profile?.city
+      }
+    });
+  };
+
+  // Filtered portfolio logic
+  const portfolioFilterOptions = [
+    { label: "All Designs", value: "ALL" },
+    { label: "👑 Bridal", value: "BRIDAL" },
+    { label: "💎 Premium", value: "PREMIUM" },
+    { label: "✨ Simple", value: "SIMPLE" },
+    { label: "🌸 Medium", value: "MEDIUM" },
+    { label: "👑 Masterpiece", value: "MASTERPIECE" }
+  ];
+
+  const filteredPortfolio = portfolio.filter((item) => {
+    if (selectedPortfolioFilter === "ALL") return true;
+    if (selectedPortfolioFilter === "BRIDAL") {
+      return (item.art_tier === "BRIDAL_EXCLUSIVE" || (item.category || "").toLowerCase().includes("bridal") || (item.occasion || "").toLowerCase().includes("wedding"));
+    }
+    if (selectedPortfolioFilter === "PREMIUM") {
+      return (item.art_tier === "PREMIUM" || item.art_tier === "BRIDAL_EXCLUSIVE");
+    }
+    if (selectedPortfolioFilter === "SIMPLE") {
+      return item.complexity_level === "SIMPLE";
+    }
+    if (selectedPortfolioFilter === "MEDIUM") {
+      return item.complexity_level === "MEDIUM";
+    }
+    if (selectedPortfolioFilter === "MASTERPIECE") {
+      return item.complexity_level === "MASTERPIECE" || item.complexity_level === "INTRICATE";
+    }
+    return true;
   });
-  const timeSlotsForSelectedDate = availability.filter((slot) => slot?.date === selectedDate);
 
-  const artistDisplayName = profile.name || profile.full_name || profile.user?.name || "Mehndi Artist";
-  const artistAvatarUri = resolveImage(profile.profile_image || profile.avatar || profile.user?.profile_image || profile.selfie_image || profile.user?.avatar)
-    || `https://ui-avatars.com/api/?name=${encodeURIComponent(artistDisplayName)}&background=F3E8FF&color=7C3AED`;
+  // Extract all packages across services
+  const allPackages = [];
+  services.forEach((s) => {
+    if (Array.isArray(s.packages)) {
+      s.packages.forEach((p) => {
+        allPackages.push({ ...p, service: s });
+      });
+    }
+  });
+
+  const artistName = profile?.name || profile?.full_name || profile?.user?.name || profile?.user?.full_name || "Mehndi Artist";
+
+  const rawBanner = profile?.banner_image || profile?.cover_image || profile?.bannerImage || profile?.coverImage || profile?.banner || profile?.user?.banner_image || profile?.user?.cover_image;
+  const rawAvatar = profile?.profile_image || profile?.selfie_image || profile?.avatar || profile?.user?.profile_image || profile?.user?.avatar;
+
+  const resolvedBanner = resolveImage(rawBanner);
+  const resolvedAvatar = resolveImage(rawAvatar);
+  const defaultPlaceholder = "https://images.unsplash.com/photo-1590502593747-42a996133562?q=80&w=800";
+
+  // Banner Fallback Hierarchy:
+  // 1. Real Artist Banner
+  // 2. Fallback: Same Artist's Profile Photo
+  // 3. Fallback: Safe Placeholder
+  const primaryBannerUri = resolvedBanner || resolvedAvatar || defaultPlaceholder;
+
+  const coverImages = [
+    primaryBannerUri,
+    ...(portfolio.slice(0, 3).map(p => resolveImage(p.image_url || p.url)).filter(Boolean))
+  ].filter((uri, idx, self) => Boolean(uri) && self.indexOf(uri) === idx);
+
+  if (coverImages.length === 0) {
+    coverImages.push(defaultPlaceholder);
+  }
+
+  const artistAvatar = resolvedAvatar ||
+    `https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=F3E8FF&color=7C3AED`;
+
+  const isAvailable = profile?.is_available !== false;
+  const avgRating = (profile?.avg_rating || profile?.rating) ? Number(profile?.avg_rating || profile?.rating).toFixed(1) : (reviewsData.reviews.length > 0 ? (reviewsData.reviews.reduce((acc, r) => acc + Number(r.rating || 5), 0) / reviewsData.reviews.length).toFixed(1) : "0.0");
+  const totalReviews = profile?.total_reviews ?? reviewsData.reviews.length;
+  const experienceYears = Number(profile?.experience_years || 0);
+  const minServicePrice = services.length > 0
+    ? Math.min(...services.map(s => Number(s.price || s.minimum_price || s.starting_price || 0)).filter(p => p > 0))
+    : 0;
+  const startingPrice = Number(profile?.starting_price || minServicePrice || 0);
 
   return (
     <View style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 + insets.bottom }}>
-        {/* Cover Carousel */}
-        <View style={styles.coverContainer}>
-          <ScrollView
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            onScroll={(e) => {
-              const x = e.nativeEvent.contentOffset.x;
-              setActiveCoverIndex(Math.round(x / SCREEN_WIDTH));
-            }}
-            scrollEventThrottle={16}
-          >
-            {coverImages.map((uri, idx) => (
-              <Image key={idx} source={{ uri: resolveImage(uri) || uri }} style={styles.coverImage} />
-            ))}
-          </ScrollView>
-          
-          {/* Header Actions Overlay */}
-          <View style={styles.headerOverlay}>
-            <TouchableOpacity style={styles.circleBtn} onPress={() => navigation.goBack()}>
-              <Ionicons name="arrow-back" size={20} color={Colors.text} />
-            </TouchableOpacity>
-            <View style={{ flexDirection: "row" }}>
-              <TouchableOpacity style={styles.circleBtn} onPress={handleShareProfile}>
-                <Ionicons name="share-social-outline" size={20} color={Colors.text} />
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.circleBtn, { marginLeft: 8 }]} onPress={handleToggleFavorite}>
-                <Ionicons name={isFav ? "heart" : "heart-outline"} size={20} color={isFav ? Colors.error : Colors.text} />
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.circleBtn, { marginLeft: 8 }]} onPress={handleMoreOptions}>
-                <Ionicons name="ellipsis-vertical" size={20} color={Colors.text} />
-              </TouchableOpacity>
-            </View>
-          </View>
+      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
-          {/* Dots Indicator */}
-          {coverImages.length > 1 && (
-            <View style={styles.dotContainer}>
-              {coverImages.map((_, i) => (
-                <View
-                  key={i}
-                  style={[
-                    styles.dot,
-                    activeCoverIndex === i ? styles.activeDot : null
-                  ]}
-                />
-              ))}
-            </View>
-          )}
+      {loading && !profile ? (
+        <View style={styles.centerContainer}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.loadingText}>Loading Artist Profile...</Text>
         </View>
-
-        {/* Profile Card Header */}
-        <View style={styles.profileCard}>
-          <Image
-            source={{ uri: artistAvatarUri }}
-            style={styles.avatarImage}
-          />
-          <View style={styles.profileInfo}>
-            <View style={styles.nameRow}>
-              <Text style={styles.nameText}>{artistDisplayName}</Text>
-              {profile.verification_status === "APPROVED" && (
-                <Ionicons name="checkmark-circle" size={18} color={Colors.primary} style={{ marginLeft: 4 }} />
+      ) : error ? (
+        <View style={styles.centerContainer}>
+          <Ionicons name="alert-circle-outline" size={48} color={Colors.error} />
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={loadProfileDetails}>
+            <Text style={styles.retryBtnText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: 110 + insets.bottom }}
+        >
+          {/* Cover Carousel & Floating Actions */}
+          <View style={styles.coverContainer}>
+            <FlatList
+              data={coverImages}
+              keyExtractor={(_, i) => `cover-${i}`}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              onMomentumScrollEnd={(e) => {
+                const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
+                setActiveCoverIndex(idx);
+              }}
+              renderItem={({ item }) => (
+                <Image source={{ uri: item }} style={styles.coverImage} resizeMode="cover" />
               )}
-            </View>
-            <Text style={styles.titleText}>Professional Mehndi Stylist</Text>
-            
-            <View style={styles.detailsRow}>
-              <Text style={styles.detailItem}>{profile.experience_years ? `🎓 ${profile.experience_years} Years Exp` : "🎓 Fresh Artist"}</Text>
-              <Text style={styles.detailItem}>{profile.response_time ? `⚡ ${profile.response_time}` : "⚡ Quick response"}</Text>
-            </View>
-            <View style={styles.detailsRow}>
-              {profile.user?.gender ? (
-                <Text style={styles.detailItem}>👤 {profile.user.gender}</Text>
-              ) : null}
-              <Text style={styles.detailItem}>🗣️ {profile.languages || "Hindi, English"}</Text>
-            </View>
-          </View>
-        </View>
+            />
+            <View style={styles.coverGradientOverlay} />
 
-        {/* Dynamic Stats Row */}
-        <View style={styles.statsRow}>
-          <View style={styles.statBox}>
-            <Text style={styles.statVal}>
-              ⭐ {Number(profile.avg_rating || 0) > 0 ? Number(profile.avg_rating).toFixed(1) : "New"}
-            </Text>
-            <Text style={styles.statLabel}>{profile.total_reviews ? `${profile.total_reviews} Reviews` : "0 Reviews"}</Text>
-          </View>
-          <View style={styles.divider} />
-          <View style={styles.statBox}>
-            <Text style={styles.statVal}>💼 {profile.total_bookings !== undefined ? profile.total_bookings : 0}</Text>
-            <Text style={styles.statLabel}>Bookings</Text>
-          </View>
-          <View style={styles.divider} />
-          <View style={styles.statBox}>
-            <Text style={styles.statVal}>🎂 Member</Text>
-            <Text style={styles.statLabel}>{profile.user?.createdAt ? new Date(profile.user.createdAt).getFullYear() : "—"}</Text>
-          </View>
-        </View>
+            {/* Carousel Dots */}
+            {coverImages.length > 1 && (
+              <View style={styles.coverDotsRow}>
+                {coverImages.map((_, i) => (
+                  <View
+                    key={`dot-${i}`}
+                    style={[styles.coverDot, i === activeCoverIndex && styles.coverDotActive]}
+                  />
+                ))}
+              </View>
+            )}
 
-        {/* Section: About bio */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>About Artist</Text>
-          <Text style={styles.bioText}>{profile.bio || "No bio added yet."}</Text>
-        </View>
-
-        {/* Section: Profile Videos */}
-        {(profile.intro_video || profile.portfolio_video) && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Profile Videos</Text>
-            <View style={{ flexDirection: "row", gap: 12, marginTop: 4 }}>
-              {profile.intro_video && (
-                <TouchableOpacity
-                  style={styles.videoCard}
-                  onPress={() => navigation.navigate("VideoPlayer", { videoUrl: profile.intro_video, title: "Introduction Video" })}
-                >
-                  <Ionicons name="play-circle" size={32} color={Colors.primary} />
-                  <Text style={styles.videoCardText}>Intro Video</Text>
+            {/* Header Floating Action Buttons */}
+            <View style={[styles.floatingHeader, { top: Math.max(insets.top, 16) }]}>
+              <TouchableOpacity style={styles.glassBtn} onPress={() => navigation.goBack()}>
+                <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
+              </TouchableOpacity>
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                <TouchableOpacity style={styles.glassBtn} onPress={handleToggleFavorite}>
+                  <Ionicons
+                    name={isFav ? "heart" : "heart-outline"}
+                    size={22}
+                    color={isFav ? "#E11D48" : "#FFFFFF"}
+                  />
                 </TouchableOpacity>
-              )}
-              {profile.portfolio_video && (
-                <TouchableOpacity
-                  style={styles.videoCard}
-                  onPress={() => navigation.navigate("VideoPlayer", { videoUrl: profile.portfolio_video, title: "Portfolio Video" })}
-                >
-                  <Ionicons name="play-circle" size={32} color={Colors.primary} />
-                  <Text style={styles.videoCardText}>Portfolio Video</Text>
-                </TouchableOpacity>
-              )}
+
+              </View>
             </View>
           </View>
-        )}
 
-        {/* Section: Location and Map */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Location</Text>
-          <Text style={styles.locationText}>
-            {profile.city ? `📍 ${profile.city}${profile.state ? `, ${profile.state}` : ""}` : "📍 Location not specified"}
-          </Text>
-          
-          {/* Map Preview card */}
-          <View style={styles.mapCard}>
-            <Ionicons name="map-outline" size={32} color={Colors.primary} />
-            <Text style={styles.mapCardText}>
-              {profile.latitude && profile.longitude
-                ? `Coordinates: ${Number(profile.latitude).toFixed(4)}, ${Number(profile.longitude).toFixed(4)}`
-                : `Service Area: ${profile.city || "Local City"}`}
-            </Text>
-            <TouchableOpacity style={styles.mapsBtn} onPress={handleOpenGoogleMaps}>
-              <Ionicons name="navigate" size={16} color={Colors.white} style={{ marginRight: 6 }} />
-              <Text style={styles.mapsBtnText}>Open in Google Maps</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+          {/* Artist Identity & Trust Header Section */}
+          <View style={styles.profileHeaderCard}>
+            <View style={styles.avatarRow}>
+              {/* Avatar with Status Dot */}
+              <View style={styles.avatarWrapper}>
+                <Image source={{ uri: artistAvatar }} style={styles.avatarImage} />
+                <View style={[
+                  styles.statusDot,
+                  { backgroundColor: isAvailable ? "#10B981" : "#94A3B8" }
+                ]} />
+              </View>
 
-        {/* Section: Services List */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Services Offered ({services.length})</Text>
-          {services.length === 0 ? (
-            <Text style={styles.emptyText}>No services listed by this artist.</Text>
-          ) : (
-            services.map((item, index) => (
-              <View key={`service-${item.id || 'idx'}-${index}`} style={styles.serviceRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.serviceName}>{item.specialization_name || item.title || item.name || "Henna Package"}</Text>
-                  <Text style={styles.serviceCategory}>{item.category || "Henna Art"} • ⏱️ {item.duration_minutes || item.duration || 60} mins</Text>
-                  <Text style={styles.serviceDesc} numberOfLines={2}>{item.description || "Beautiful custom mehndi styling."}</Text>
-                  {item.add_on_services && (
-                    <Text style={styles.addonText}>🎁 Add-ons: {item.add_on_services}</Text>
-                  )}
-                </View>
-                <View style={styles.servicePriceBlock}>
-                  <Text style={styles.servicePrice}>{item.minimum_price ? `₹${item.minimum_price}` : (item.price ? `₹${item.price}` : "Price on request")}</Text>
-                  {item.offer_price && (
-                    <Text style={styles.offerPrice}>₹{item.offer_price} Offer</Text>
-                  )}
+              {/* Action Buttons: Chat (Only if valid booking exists) & Availability */}
+              <View style={styles.headerRightActions}>
+                {hasBookingWithArtist && (
+                  <TouchableOpacity style={styles.chatActionBtn} onPress={handleOpenChat}>
+                    <Ionicons name="chatbubble-ellipses-outline" size={16} color={Colors.primary} />
+                    <Text style={styles.chatActionBtnText}>Message</Text>
+                  </TouchableOpacity>
+                )}
+                <View style={[
+                  styles.availabilityPill,
+                  { backgroundColor: isAvailable ? "#ECFDF5" : "#F1F5F9" }
+                ]}>
+                  <Text style={[
+                    styles.availabilityPillText,
+                    { color: isAvailable ? "#059669" : "#64748B" }
+                  ]}>
+                    {isAvailable ? "🟢 Available" : "⚪ Offline"}
+                  </Text>
                 </View>
               </View>
-            ))
-          )}
-        </View>
+            </View>
 
-        {/* Section: Portfolio Grid */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Portfolio Gallery ({portfolio.length})</Text>
-          {portfolio.length === 0 ? (
-            <Text style={styles.emptyText}>No portfolio images available.</Text>
-          ) : (
-            <View style={styles.portfolioGrid}>
-              {portfolio.map((item, index) => (
+            {/* Name & Badges */}
+            <View style={styles.nameRow}>
+              <Text style={styles.artistNameText}>{artistName}</Text>
+              {profile?.is_verified && (
+                <View style={styles.verifiedBadge}>
+                  <Ionicons name="checkmark-circle" size={16} color="#059669" />
+                  <Text style={styles.verifiedBadgeText}>Verified</Text>
+                </View>
+              )}
+              {profile?.is_premium && (
+                <View style={styles.premiumBadge}>
+                  <Text style={styles.premiumBadgeText}>💎 Luxury Artist</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Location & Details */}
+            <Text style={styles.locationText}>
+              📍 {profile?.city || "Jaipur, Rajasthan"} • {profile?.home_service ? "Doorstep Service Available" : "Studio Appointments"}
+            </Text>
+            {profile?.home_service && (
+              <Text style={[styles.locationText, { fontSize: 13, marginTop: 4, color: Colors.primary }]}>
+                🚗 Services available within {profile?.service_radius || 25} KM radius
+              </Text>
+            )}
+            <Text style={styles.languagesText}>
+              🗣️ Speaks: {profile?.languages || "Hindi, English, Rajasthani"} • ⚡ Responds in {profile?.response_time || "~15 mins"}
+            </Text>
+
+            {/* Statistics Bar */}
+            <View style={styles.statsBar}>
+              <View style={styles.statItem}>
+                <Text style={styles.statVal}>⭐ {avgRating}</Text>
+                <Text style={styles.statLabel}>{totalReviews} Reviews</Text>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.statItem}>
+                <Text style={styles.statVal}>{experienceYears}+ Yrs</Text>
+                <Text style={styles.statLabel}>Experience</Text>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.statItem}>
+                <Text style={styles.statVal}>{profile?.total_bookings || "0"}</Text>
+                <Text style={styles.statLabel}>Bookings</Text>
+              </View>
+            </View>
+
+            {/* About Bio with Read More */}
+            <View style={styles.bioContainer}>
+              <Text
+                style={styles.bioText}
+                numberOfLines={expandedBio ? undefined : 3}
+              >
+                {profile?.bio || "No biography provided by the artist."}
+              </Text>
+              <TouchableOpacity onPress={() => setExpandedBio(!expandedBio)}>
+                <Text style={styles.readMoreText}>{expandedBio ? "Read Less" : "Read More"}</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Trust Factors Grid */}
+            <View style={styles.trustGrid}>
+              <View style={styles.trustItem}>
+                <Ionicons name="shield-checkmark" size={16} color="#059669" />
+                <Text style={styles.trustText}>KYC Verified Artist</Text>
+              </View>
+              <View style={styles.trustItem}>
+                <Ionicons name="leaf" size={16} color="#059669" />
+                <Text style={styles.trustText}>Chemical-Free Dye</Text>
+              </View>
+              <View style={styles.trustItem}>
+                <Ionicons name="timer" size={16} color="#059669" />
+                <Text style={styles.trustText}>On-Time Arrival</Text>
+              </View>
+              <View style={styles.trustItem}>
+                <Ionicons name="lock-closed" size={16} color="#059669" />
+                <Text style={styles.trustText}>Escrow Safe Pay</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Section 1: Services Storefront */}
+          <View style={styles.sectionBlock}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Services Storefront ({services.length})</Text>
+              <Text style={styles.sectionSubtitle}>Tap a service to explore full design catalog & packages</Text>
+            </View>
+
+            {services.map((svc) => {
+              let images = [];
+              let categories = [];
+              try {
+                images = typeof svc.service_image === "string" && svc.service_image.startsWith("[") ? JSON.parse(svc.service_image) : (svc.service_image ? [svc.service_image] : []);
+              } catch (e) { }
+              try {
+                categories = typeof svc.category === "string" && svc.category.startsWith("[") ? JSON.parse(svc.category) : (svc.category ? [svc.category] : []);
+              } catch (e) { }
+
+              const coverImage = images.length > 0 ? images[0] : null;
+              const displayCategories = categories.slice(0, 3);
+              const extraCategories = categories.length > 3 ? categories.length - 3 : 0;
+              const hasPremiumPackage = Array.isArray(svc.packages) && svc.packages.some(p => p.art_tier === 'PREMIUM');
+              const isPremium = profile?.is_premium || hasPremiumPackage;
+
+              return (
                 <TouchableOpacity
-                  key={`portfolio-${item.id || 'idx'}-${index}`}
-                  style={styles.portfolioGridItem}
-                  onPress={() => {
-                    setZoomImageIndex(index);
-                    setZoomModalVisible(true);
-                  }}
+                  key={`svc-${svc.id}`}
+                  style={[styles.serviceItemCard, { flexDirection: 'row', alignItems: 'center', padding: 12 }]}
+                  activeOpacity={0.88}
+                  onPress={() => handleOpenServiceCatalog(svc)}
                 >
-                  <Image source={{ uri: resolveImage(item.image_url || item.url || item.image || item.media_url || item) }} style={styles.portfolioThumb} />
-                  {item.video_url && (
-                    <View style={styles.videoBadge}>
-                      <Ionicons name="play" size={12} color={Colors.white} />
-                    </View>
-                  )}
-                  {/* Tier Badge */}
-                  <View style={[styles.gridTierBadge, item.art_tier === "PREMIUM" ? styles.gridPremiumBadge : styles.gridStandardBadge]}>
-                    <Text style={[styles.gridTierText, item.art_tier === "PREMIUM" ? styles.gridPremiumText : styles.gridStandardText]}>
-                      {item.art_tier === "PREMIUM" ? `💎 ₹${item.price || "Prem"}` : "✨ Standard"}
+                  {/* Image (Left) */}
+                  <View style={{ width: 64, height: 64, borderRadius: 10, backgroundColor: '#f1f5f9', overflow: 'hidden' }}>
+                    {coverImage ? (
+                      <Image source={{ uri: resolveImage(coverImage) }} style={{ width: '100%', height: '100%', resizeMode: 'cover' }} />
+                    ) : (
+                      <View style={{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' }}>
+                        <Ionicons name="image-outline" size={24} color="#CBD5E1" />
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Title & Subtitle (Center) */}
+                  <View style={{ flex: 1, marginLeft: 14, justifyContent: 'center' }}>
+                    <Text style={[styles.svcTitle, { fontSize: 15, marginBottom: 4 }]} numberOfLines={1}>
+                      {svc.specialization_name || (categories.length > 0 ? categories[0] : svc.category)}
+                    </Text>
+                    <Text style={{ fontSize: 13, color: '#64748B' }} numberOfLines={1}>
+                      {svc.description || (categories.length > 0 ? categories.join(', ') : "Mehndi Service")}
                     </Text>
                   </View>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-        </View>
 
-        {/* Section: Availability Calendar */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Check Availability</Text>
-          {availableDates.length === 0 ? (
-            <Text style={styles.emptyText}>No available slots. Contact artist below.</Text>
-          ) : (
-            <View>
-              <Text style={styles.subHeading}>Available Dates</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 8 }}>
-                {availableDates.map((date, index) => {
-                  const moment = require("moment");
-                  const dateObj = moment(date, ["YYYY-MM-DD", "YYYY-MM-DDTHH:mm:ss.SSSZ", "YYYY-MM-DDTHH:mm:ssZ"]);
-                  const isSelected = selectedDate === date;
-                  return (
-                    <TouchableOpacity
-                      key={`avail-date-${date}-${index}`}
-                      style={[
-                        styles.dateChip,
-                        isSelected ? styles.activeDateChip : null
-                      ]}
-                      onPress={() => {
-                        setSelectedDate(date);
-                        setSelectedTimeSlot(null);
-                      }}
-                    >
-                      <Text style={[styles.dateDayText, isSelected ? styles.activeDateText : null]}>
-                        {dateObj.format("ddd")}
-                      </Text>
-                      <Text style={[styles.dateNumText, isSelected ? styles.activeDateText : null]}>
-                        {dateObj.format("DD")}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-
-              <Text style={styles.subHeading}>Available Time Slots</Text>
-              <View style={styles.slotsGrid}>
-                {timeSlotsForSelectedDate.length === 0 ? (
-                  <Text style={styles.holidayText}>🌴 Artist on Holiday / Fully Booked on this date</Text>
-                ) : (
-                  timeSlotsForSelectedDate.map((slot, index) => {
-                    const isSelected = selectedTimeSlot === slot.id;
-                    const moment = require("moment");
-                    const startLabel = moment(slot.start_time).format("hh:mm A");
-                    const endLabel = moment(slot.end_time).format("hh:mm A");
-                    return (
-                      <TouchableOpacity
-                        key={`avail-slot-${slot.id || 'idx'}-${index}`}
-                        style={[
-                          styles.slotChip,
-                          isSelected ? styles.activeSlotChip : null
-                        ]}
-                        onPress={() => setSelectedTimeSlot(slot.id)}
-                      >
-                        <Text style={[styles.slotText, isSelected ? styles.activeSlotText : null]}>
-                          🕒 {startLabel} - {endLabel}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })
-                )}
-              </View>
-            </View>
-          )}
-        </View>
-
-        {/* Section: Reviews List & Star Distribution */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Customer Reviews ({reviewsData.reviews.length})</Text>
-
-          {/* Client Video Reviews Reel Carousel */}
-          {reviewsData.reviews.filter(r => Boolean(r.video_url)).length > 0 && (
-            <View style={{ marginBottom: 18 }}>
-              <Text style={styles.subHeading}>🎬 Client Video Reviews</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 8 }}>
-                {reviewsData.reviews.filter(r => Boolean(r.video_url)).map((vRev, vIdx) => (
-                  <TouchableOpacity
-                    key={`v-rev-${vRev.id || vIdx}`}
-                    style={styles.videoReviewCard}
-                    onPress={() => {
-                      navigation.navigate("VideoPlayer", {
-                        videoUrl: vRev.video_url,
-                        title: `Review by ${vRev.user?.name || vRev.reviewer?.name || "Verified Customer"}`
-                      });
-                    }}
-                  >
-                    <Image
-                      source={{ uri: vRev.video_thumbnail || resolveImage(vRev.reviewer?.profile_image) || "https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=300" }}
-                      style={styles.videoReviewThumb}
-                    />
-                    <View style={styles.videoReviewOverlay}>
-                      <Ionicons name="play-circle" size={36} color="#FFFFFF" />
-                      <View style={styles.videoReviewMeta}>
-                        <Text style={styles.videoReviewName} numberOfLines={1}>
-                          {vRev.user?.name || vRev.reviewer?.name || "Client"}
-                        </Text>
-                        <Text style={styles.videoReviewStars}>{"⭐".repeat(vRev.rating || 5)}</Text>
-                      </View>
+                  {/* Price & Action (Right) */}
+                  <View style={{ alignItems: 'flex-end', marginLeft: 10, justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: '#334155', marginBottom: 4 }}>
+                      {svc.minimum_price ? `₹${svc.minimum_price}` : "On Req"}
+                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <Text style={{ fontSize: 12, color: Colors.primary, fontWeight: '600' }}>View</Text>
+                      <Ionicons name="chevron-forward" size={12} color={Colors.primary} style={{ marginLeft: 2 }} />
                     </View>
-                  </TouchableOpacity>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Section 2: Custom Design Request Banner */}
+          {(profile?.custom_design_enabled || profile?.reference_design_enabled) && (
+            <TouchableOpacity
+              style={styles.customDesignBanner}
+              activeOpacity={0.9}
+              onPress={handleRequestCustomDesign}
+            >
+              <View style={styles.customBannerIconCircle}>
+                <Ionicons name="sparkles" size={26} color="#D97706" />
+              </View>
+              <View style={{ flex: 1, marginLeft: 14 }}>
+                <Text style={styles.customBannerTitle}>Have a Custom Design or Reference?</Text>
+                <Text style={styles.customBannerDesc}>
+                  Upload your Pinterest/Instagram photos for bespoke bride/groom portraits & customized quotes.
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward-circle" size={28} color="#D97706" />
+            </TouchableOpacity>
+          )}
+
+          {/* Section 3: Curated Packages (if available) */}
+          {allPackages.length > 0 && (
+            <View style={styles.sectionBlock}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Curated Mehndi Packages ({allPackages.length})</Text>
+                <Text style={styles.sectionSubtitle}>Complete bundles including aftercare & touch-ups</Text>
+              </View>
+
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}>
+                {allPackages.map((pkg, pIdx) => (
+                  <View key={`pkg-${pkg.id || pIdx}`} style={styles.packageCard}>
+                    <View style={styles.pkgHeader}>
+                      <Text style={styles.pkgName}>{pkg.package_name}</Text>
+                      <Text style={styles.pkgPrice}>₹{pkg.package_price}</Text>
+                    </View>
+                    {pkg.included_designs ? (
+                      <Text style={styles.pkgInclusions} numberOfLines={3}>
+                        {pkg.included_designs}
+                      </Text>
+                    ) : null}
+                    <View style={styles.pkgMetaRow}>
+                      {pkg.duration ? <Text style={styles.pkgMeta}>⏱️ {pkg.duration} mins</Text> : null}
+                      {pkg.number_of_hands > 0 && <Text style={styles.pkgMeta}>✋ {pkg.number_of_hands} Hands</Text>}
+                      {pkg.aftercare_included && <Text style={styles.pkgMeta}>🌿 Aftercare Kit</Text>}
+                    </View>
+                    <TouchableOpacity
+                      style={styles.selectPkgBtn}
+                      onPress={() => handleSelectPackage(pkg, pkg.service)}
+                    >
+                      <Text style={styles.selectPkgBtnText}>Select Package</Text>
+                    </TouchableOpacity>
+                  </View>
                 ))}
               </ScrollView>
             </View>
           )}
 
-          <View style={styles.reviewDistributionCard}>
-            <View style={styles.avgRatingCol}>
-              <Text style={styles.ratingBigVal}>
-                {Number(profile.avg_rating || 0) > 0 ? Number(profile.avg_rating).toFixed(1) : "New"}
-              </Text>
-              <View style={{ flexDirection: "row", marginVertical: 4 }}>
-                <Ionicons name="star" size={14} color="#FFB800" />
-                <Ionicons name="star" size={14} color="#FFB800" />
-                <Ionicons name="star" size={14} color="#FFB800" />
-                <Ionicons name="star" size={14} color="#FFB800" />
-                <Ionicons name="star" size={14} color="#FFB800" />
-              </View>
-              <Text style={styles.ratingSubLabel}>{profile.total_reviews ? `${profile.total_reviews} reviews` : "No reviews yet"}</Text>
+          {/* Section 4: Design Portfolio Gallery */}
+          <View style={styles.sectionBlock}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Design Portfolio ({filteredPortfolio.length})</Text>
+              <Text style={styles.sectionSubtitle}>Tap any design for full-screen view & instant booking</Text>
             </View>
-            <View style={styles.distCol}>
-              <View style={styles.distRow}>
-                <Text style={styles.distStarText}>5 ★</Text>
-                <View style={styles.distTrack}>
-                  <View style={[styles.distFill, { width: `${reviewsData.reviews.length ? (reviewsData.distribution[5] / reviewsData.reviews.length) * 100 : 0}%` }]} />
-                </View>
-                <Text style={styles.distCountText}>{reviewsData.distribution[5] || 0}</Text>
-              </View>
-              <View style={styles.distRow}>
-                <Text style={styles.distStarText}>4 ★</Text>
-                <View style={styles.distTrack}>
-                  <View style={[styles.distFill, { width: `${reviewsData.reviews.length ? (reviewsData.distribution[4] / reviewsData.reviews.length) * 100 : 0}%` }]} />
-                </View>
-                <Text style={styles.distCountText}>{reviewsData.distribution[4] || 0}</Text>
-              </View>
-              <View style={styles.distRow}>
-                <Text style={styles.distStarText}>3 ★</Text>
-                <View style={styles.distTrack}>
-                  <View style={[styles.distFill, { width: `${reviewsData.reviews.length ? (reviewsData.distribution[3] / reviewsData.reviews.length) * 100 : 0}%` }]} />
-                </View>
-                <Text style={styles.distCountText}>{reviewsData.distribution[3] || 0}</Text>
-              </View>
-              <View style={styles.distRow}>
-                <Text style={styles.distStarText}>2 ★</Text>
-                <View style={styles.distTrack}>
-                  <View style={[styles.distFill, { width: `${reviewsData.reviews.length ? (reviewsData.distribution[2] / reviewsData.reviews.length) * 100 : 0}%` }]} />
-                </View>
-                <Text style={styles.distCountText}>{reviewsData.distribution[2] || 0}</Text>
-              </View>
-              <View style={styles.distRow}>
-                <Text style={styles.distStarText}>1 ★</Text>
-                <View style={styles.distTrack}>
-                  <View style={[styles.distFill, { width: `${reviewsData.reviews.length ? (reviewsData.distribution[1] / reviewsData.reviews.length) * 100 : 0}%` }]} />
-                </View>
-                <Text style={styles.distCountText}>{reviewsData.distribution[1] || 0}</Text>
-              </View>
-            </View>
-          </View>
 
-          {/* Individual Reviews Rows */}
-          {reviewsData.reviews.length === 0 ? (
-            <Text style={styles.emptyText}>No reviews submitted yet.</Text>
-          ) : (
-            reviewsData.reviews.map((rev, index) => (
-              <View key={`review-${rev.id || 'idx'}-${index}`} style={styles.reviewCard}>
-                <View style={styles.reviewerHeader}>
-                  <Image
-                    source={{ uri: resolveImage(rev.reviewer?.profile_image || rev.user?.profile_image) || `https://ui-avatars.com/api/?name=${encodeURIComponent(rev.reviewer?.name || rev.user?.name || "Customer")}&background=F3E8FF&color=7C3AED` }}
-                    style={styles.reviewerAvatar}
-                  />
-                  <View style={{ marginLeft: 10, flex: 1 }}>
-                    <View style={{ flexDirection: "row", alignItems: "center" }}>
-                      <Text style={styles.reviewerName}>{rev.reviewer?.name || rev.user?.name || "Customer"}</Text>
-                      {rev.is_verified && (
-                        <View style={styles.verifiedClientBadge}>
-                          <Ionicons name="checkmark-circle" size={12} color="#059669" />
-                          <Text style={styles.verifiedClientText}>Verified</Text>
-                        </View>
-                      )}
-                    </View>
-                    <View style={{ flexDirection: "row", marginTop: 2 }}>
-                      {Array.from({ length: rev.rating || 5 }).map((_, i) => (
-                        <Ionicons key={`star-${rev.id || index}-${i}`} name="star" size={10} color="#FFB800" />
-                      ))}
-                    </View>
-                  </View>
-                  <Text style={styles.reviewDate}>
-                    {rev.createdAt || rev.created_at ? formatDate(rev.createdAt || rev.created_at) : ""}
-                  </Text>
-                </View>
-                <Text style={styles.reviewContent}>{rev.comment || rev.review_text}</Text>
-                {/* Review Media (Photos/Video) */}
-                {(() => {
-                  const photosList = Array.isArray(rev.photos) ? rev.photos : (typeof rev.photos === 'string' ? JSON.parse(rev.photos || "[]") : []);
-                  if (photosList.length === 0 && !rev.video_url) return null;
-                  
-                  return (
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
-                      {rev.video_url && (
-                        <View style={{ marginRight: 8, position: "relative" }}>
-                          <Image 
-                            source={{ uri: rev.video_thumbnail || "https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=300" }} 
-                            style={styles.reviewPhotoAttachment} 
-                          />
-                          <View style={{ position: "absolute", top: "50%", left: "50%", marginLeft: -12, marginTop: -12, backgroundColor: "rgba(0,0,0,0.6)", borderRadius: 12, padding: 4 }}>
-                            <Ionicons name="play" size={16} color="#fff" />
-                          </View>
-                        </View>
-                      )}
-                      {photosList.map((pUrl, pIdx) => (
-                        <Image key={pIdx} source={{ uri: pUrl }} style={styles.reviewPhotoAttachment} />
-                      ))}
-                    </ScrollView>
-                  );
-                })()}
-                {/* Artist Reply */}
-                {rev.reply_text && (
-                  <View style={styles.replyBox}>
-                    <Text style={styles.replyHeader}>Artist Reply:</Text>
-                    <Text style={styles.replyText}>{rev.reply_text}</Text>
-                  </View>
-                )}
-              </View>
-            ))
-          )}
-        </View>
-
-        {/* Section: Related Artists */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Similar Artists</Text>
-          {similar.length === 0 ? (
-            <Text style={styles.emptyText}>No similar artists nearby.</Text>
-          ) : (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 8 }}>
-              {similar.map((art, index) => (
-                <TouchableOpacity
-                  key={`sim-${art.id || 'idx'}-${index}`}
-                  style={styles.similarCard}
-                  onPress={() => navigation.push("ArtistProfile", { artistId: art.id })}
-                >
-                  <Image source={{ uri: resolveImage(art.cover_photo || art.avatar) }} style={styles.similarImage} />
-                  <Text style={styles.similarName} numberOfLines={1}>{art.name}</Text>
-                  <Text style={styles.similarRating}>⭐ {Number(art.rating || 4.8).toFixed(1)}</Text>
-                </TouchableOpacity>
-              ))}
+            {/* Filter Chips */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 8, marginBottom: 12 }}>
+              {portfolioFilterOptions.map((opt) => {
+                const isSelected = selectedPortfolioFilter === opt.value;
+                return (
+                  <TouchableOpacity
+                    key={`pf-opt-${opt.value}`}
+                    style={[styles.filterChip, isSelected && styles.filterChipActive]}
+                    onPress={() => setSelectedPortfolioFilter(opt.value)}
+                  >
+                    <Text style={[styles.filterChipText, isSelected && styles.filterChipTextActive]}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </ScrollView>
-          )}
-        </View>
-      </ScrollView>
 
-      {/* Bottom Sticky Action Button */}
-      {(() => {
-        const calculatedStartingPrice = profile.starting_price || (services.length > 0 ? Math.min(...services.map(s => Number(s.minimum_price || s.price || 0)).filter(p => p > 0)) : null);
-        return (
-          <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12), height: 75 + (insets.bottom > 0 ? insets.bottom : 0) }]}>
-            <View style={styles.bottomPriceCol}>
-              <Text style={styles.bottomPriceLabel}>Starting from</Text>
-              <Text style={styles.bottomPriceVal}>
-                {calculatedStartingPrice && calculatedStartingPrice !== Infinity ? `₹${calculatedStartingPrice}` : "Price on request"}
+            {/* Design Grid */}
+            <View style={styles.portfolioGrid}>
+              {filteredPortfolio.map((item, index) => {
+                const displayPrice = item.price || startingPrice;
+                return (
+                  <View key={`port-${item.id || index}`} style={styles.portfolioCard}>
+                    <TouchableOpacity
+                      activeOpacity={0.95}
+                      onPress={() => handleOpenDesignDetails(item, index)}
+                      style={styles.portfolioImageBox}
+                    >
+                      <Image source={{ uri: resolveImage(item.image_url || item.url) }} style={styles.portfolioImage} />
+                      <View style={[
+                        styles.tierBadge,
+                        item.art_tier === "BRIDAL_EXCLUSIVE" ? styles.bridalBadge :
+                          item.art_tier === "PREMIUM" ? styles.premiumBadge : styles.standardBadge
+                      ]}>
+                        <Text style={styles.tierBadgeText}>
+                          {item.art_tier === "BRIDAL_EXCLUSIVE" ? "👑 Bridal" :
+                            item.art_tier === "PREMIUM" ? "💎 Premium" : "✨ Standard"}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+
+                    <View style={styles.portfolioCardBody}>
+                      <Text style={styles.portTitle} numberOfLines={1}>
+                        {item.title || `${item.category || "Mehndi"} Art #${item.id}`}
+                      </Text>
+                      <Text style={styles.portMeta} numberOfLines={1}>
+                        {item.complexity_level || "Medium"} • ⏱️ {item.duration_minutes || 60}m
+                      </Text>
+                      <View style={styles.portPriceRow}>
+                        <Text style={styles.portPrice}>₹{displayPrice}</Text>
+                        <TouchableOpacity
+                          style={styles.bookPortBtn}
+                          onPress={() => handleBookDesign(item)}
+                        >
+                          <Text style={styles.bookPortBtnText}>Book</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* Section 5: Live Availability Schedule Preview */}
+          {/* <View style={styles.sectionBlock}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Upcoming Slot Availability</Text>
+              <Text style={styles.sectionSubtitle}>Select your date and preferred time slot during checkout</Text>
+            </View>
+
+            <View style={styles.availabilityCard}>
+              <View style={styles.availHeader}>
+                <Ionicons name="calendar-outline" size={20} color={Colors.primary} />
+                <Text style={styles.availHeaderText}>
+                  {availability.length > 0
+                    ? `${availability.filter(s => !s.is_booked).length} Slots Open This Week`
+                    : "Flexible Appointment Slots Available"}
+                </Text>
+              </View>
+              <Text style={styles.availSubtext}>
+                We accept bookings up to 90 days in advance. Instant confirmation upon payment.
               </Text>
             </View>
-            <TouchableOpacity
-              style={styles.bookNowBtn}
-              onPress={() => {
-                navigation.navigate("SelectService", {
-                  artistId: profile.id,
-                  artist: profile
-                });
-              }}
-            >
-              <Text style={styles.bookNowBtnText}>Book Appointment</Text>
-            </TouchableOpacity>
-          </View>
-        );
-      })()}
+          </View> */}
 
-      {/* Fullscreen Portfolio zoom Carousel Modal */}
-      <Modal
-        visible={zoomModalVisible}
-        transparent={true}
-        onRequestClose={() => setZoomModalVisible(false)}
-      >
-        <View style={styles.zoomContainer}>
-          <TouchableOpacity style={styles.zoomCloseBtn} onPress={() => setZoomModalVisible(false)}>
-            <Ionicons name="close" size={28} color={Colors.white} />
-          </TouchableOpacity>
-          {portfolio.length > 0 && (
-            <View style={{ width: "100%", height: 320, justifyContent: "center", alignItems: "center", position: "relative" }}>
-              <Image
-                source={{ uri: resolveImage(portfolio[zoomImageIndex]?.image_url || portfolio[zoomImageIndex]?.url || portfolio[zoomImageIndex]?.image || portfolio[zoomImageIndex]?.media_url) }}
-                style={styles.zoomImage}
-                resizeMode="contain"
-              />
-              {portfolio[zoomImageIndex]?.video_url && (
-                <TouchableOpacity
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    justifyContent: "center",
-                    alignItems: "center",
-                    backgroundColor: "rgba(0,0,0,0.3)"
-                  }}
-                  onPress={() => {
-                    setZoomModalVisible(false);
-                    navigation.navigate("VideoPlayer", {
-                      videoUrl: portfolio[zoomImageIndex].video_url,
-                      title: portfolio[zoomImageIndex].title || "Portfolio Video"
-                    });
-                  }}
-                >
-                  <Ionicons name="play-circle" size={64} color="#FFFFFF" />
-                  <Text style={{ color: "#FFFFFF", marginTop: 8, fontWeight: "700" }}>Tap to Play Video</Text>
-                </TouchableOpacity>
-              )}
+          {/* Section 6: Client Reviews & Ratings Breakdown */}
+          <View style={styles.sectionBlock}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Client Reviews & Ratings ({reviewsData.reviews.length})</Text>
+            </View>
+
+            {/* Rating Summary Card */}
+            <View style={styles.ratingSummaryCard}>
+              <View style={styles.ratingBigScoreCol}>
+                <Text style={styles.bigScore}>{avgRating}</Text>
+                <View style={{ flexDirection: "row", marginTop: 2 }}>
+                  {[1, 2, 3, 4, 5].map((s) => (
+                    <Ionicons
+                      key={`star-${s}`}
+                      name="star"
+                      size={15}
+                      color={s <= Math.round(Number(avgRating)) ? "#FBBF24" : "#E2E8F0"}
+                    />
+                  ))}
+                </View>
+                <Text style={styles.totalReviewsCount}>{totalReviews} verified ratings</Text>
+              </View>
+
+              <View style={styles.ratingBarsCol}>
+                {[5, 4, 3, 2, 1].map((star) => {
+                  const count = reviewsData.distribution[star] || 0;
+                  const pct = totalReviews > 0 ? (count / totalReviews) * 100 : 0;
+                  return (
+                    <View key={`dist-${star}`} style={styles.ratingBarRow}>
+                      <Text style={styles.starNum}>{star}★</Text>
+                      <View style={styles.barTrack}>
+                        <View style={[styles.barFill, { width: `${Math.max(4, pct)}%` }]} />
+                      </View>
+                      <Text style={styles.starCount}>{count}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* Reviews List */}
+            {reviewsData.reviews.slice(0, 4).map((rev, rIdx) => (
+              <View key={`rev-${rev.id || rIdx}`} style={styles.reviewItemCard}>
+                <View style={styles.reviewUserRow}>
+                  <Image
+                    source={{
+                      uri: resolveImage(rev.user?.profile_image) ||
+                        `https://ui-avatars.com/api/?name=${encodeURIComponent(rev.user?.name || "Client")}&background=F3E8FF&color=7C3AED`
+                    }}
+                    style={styles.reviewUserAvatar}
+                  />
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={styles.reviewUserName}>{rev.user?.name || "Verified Customer"}</Text>
+                    <Text style={styles.reviewDate}>{formatDate(rev.createdAt || new Date())}</Text>
+                  </View>
+                  <View style={styles.reviewRatingPill}>
+                    <Text style={styles.reviewRatingText}>⭐ {Number(rev.rating || 5).toFixed(1)}</Text>
+                  </View>
+                </View>
+                <Text style={styles.reviewComment}>{rev.comment || "Loved the intricate design and dark rich stain!"}</Text>
+              </View>
+            ))}
+          </View>
+
+          {/* Section 7: FAQs Accordion */}
+          {faqs.length > 0 && (
+            <View style={styles.sectionBlock}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Frequently Asked Questions</Text>
+              </View>
+
+              {faqs.map((faq, idx) => {
+                const isOpen = openFaqIndex === idx;
+                return (
+                  <TouchableOpacity
+                    key={`faq-${faq.id || idx}`}
+                    style={styles.faqCard}
+                    activeOpacity={0.88}
+                    onPress={() => setOpenFaqIndex(isOpen ? null : idx)}
+                  >
+                    <View style={styles.faqQuestionRow}>
+                      <Text style={styles.faqQuestion}>{faq.question}</Text>
+                      <Ionicons
+                        name={isOpen ? "chevron-up" : "chevron-down"}
+                        size={18}
+                        color="#64748B"
+                      />
+                    </View>
+                    {isOpen && (
+                      <Text style={styles.faqAnswer}>{faq.answer}</Text>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           )}
-          {/* Zoom Carousel controls */}
-          <View style={styles.zoomControls}>
-            <TouchableOpacity
-              style={styles.zoomCtrlBtn}
-              onPress={() => setZoomImageIndex((prev) => (prev > 0 ? prev - 1 : portfolio.length - 1))}
-            >
-              <Ionicons name="chevron-back" size={24} color={Colors.white} />
-            </TouchableOpacity>
-            <Text style={styles.zoomIndexText}>{zoomImageIndex + 1} / {portfolio.length}</Text>
-            <TouchableOpacity
-              style={styles.zoomCtrlBtn}
-              onPress={() => setZoomImageIndex((prev) => (prev < portfolio.length - 1 ? prev + 1 : 0))}
-            >
-              <Ionicons name="chevron-forward" size={24} color={Colors.white} />
-            </TouchableOpacity>
-          </View>
+        </ScrollView>
+      )}
 
-          {/* Design Info & Book Design Button inside Zoom Modal */}
-          {portfolio[zoomImageIndex] && (
-            <View style={styles.zoomDesignDetails}>
-              <Text style={styles.zoomDesignTitle}>{portfolio[zoomImageIndex].title || "Mehndi Design Sample"}</Text>
-              <View style={styles.zoomBadgeRow}>
-                <View style={[styles.gridTierBadge, portfolio[zoomImageIndex].art_tier === "PREMIUM" ? styles.gridPremiumBadge : styles.gridStandardBadge]}>
-                  <Text style={[styles.gridTierText, portfolio[zoomImageIndex].art_tier === "PREMIUM" ? styles.gridPremiumText : styles.gridStandardText]}>
-                    {portfolio[zoomImageIndex].art_tier === "PREMIUM" ? `💎 PREMIUM ART` : "✨ STANDARD ART"}
-                  </Text>
-                </View>
-                <Text style={styles.zoomMetaText}>⏱️ {portfolio[zoomImageIndex].duration_minutes || 60} mins</Text>
-              </View>
-              {Boolean(portfolio[zoomImageIndex].description) && (
-                <Text style={styles.zoomDescText} numberOfLines={2}>{portfolio[zoomImageIndex].description}</Text>
-              )}
-              <TouchableOpacity
-                style={styles.bookDesignModalBtn}
-                onPress={() => {
-                  setZoomModalVisible(false);
-                  navigation.navigate("SelectService", {
-                    artistId: profile.id,
-                    artist: profile,
-                    selectedArt: portfolio[zoomImageIndex]
-                  });
-                }}
-              >
-                <Ionicons name="sparkles" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
-                <Text style={styles.bookDesignModalBtnText}>
-                  Book This Design {portfolio[zoomImageIndex].price ? `• ₹${portfolio[zoomImageIndex].price}` : ""}
-                </Text>
-              </TouchableOpacity>
-            </View>
+      {/* Sticky Bottom Booking Bar */}
+      <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+        {hasBookingWithArtist && (
+          <TouchableOpacity style={styles.quickChatBtn} onPress={handleOpenChat}>
+            <Ionicons name="chatbubble-ellipses-outline" size={20} color={Colors.primary} />
+          </TouchableOpacity>
+        )}
+
+        <View style={styles.bottomPriceCol}>
+          {startingPrice ? (
+            <>
+              <Text style={styles.bottomPriceLabel}>Starting from</Text>
+              <Text style={styles.bottomPriceVal}>₹{startingPrice}</Text>
+            </>
+          ) : (
+            <Text style={[styles.bottomPriceVal, { fontSize: 16 }]}>Price on Request</Text>
           )}
         </View>
-      </Modal>
+
+        <TouchableOpacity
+          style={styles.bottomBookBtn}
+          onPress={() => {
+            if (services.length > 0) {
+              navigation.navigate("SelectDate", {
+                artistId: profile?.id || artistId,
+                serviceId: services[0].id
+              });
+            } else {
+              navigation.navigate("SelectService", {
+                artistId: profile?.id || artistId
+              });
+            }
+          }}
+        >
+          <Text style={styles.bottomBookBtnText}>Book Appointment</Text>
+          <Ionicons name="arrow-forward" size={16} color="#FFFFFF" style={{ marginLeft: 6 }} />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.white },
-  centerContainer: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: Colors.white },
-  loadingText: { fontSize: 13, color: Colors.textSecondary, marginTop: 10 },
-  errorText: { fontSize: 14, color: Colors.error, marginTop: 10, textAlign: "center", paddingHorizontal: 20 },
-  retryBtn: { marginTop: 16, backgroundColor: Colors.primary, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8 },
-  retryBtnText: { color: Colors.white, fontWeight: "700" },
-  coverContainer: { position: "relative", height: 280, backgroundColor: Colors.inputBackground },
-  coverImage: { width: SCREEN_WIDTH, height: 280, resizeMode: "cover" },
-  headerOverlay: {
-    position: "absolute",
-    top: 50,
-    left: 16,
-    right: 16,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center"
-  },
-  circleBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.white + "DD",
-    justifyContent: "center",
-    alignItems: "center",
-    elevation: 4,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 3
-  },
-  dotContainer: {
-    position: "absolute",
-    bottom: 12,
-    flexDirection: "row",
-    alignSelf: "center"
-  },
-  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.white + "77", marginHorizontal: 4 },
-  activeDot: { backgroundColor: Colors.primary, width: 14 },
-  profileCard: {
-    flexDirection: "row",
-    marginHorizontal: 16,
-    backgroundColor: Colors.white,
-    borderRadius: 16,
-    padding: 16,
-    marginTop: -40,
-    elevation: 8,
-    shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    borderWidth: 1,
-    borderColor: Colors.border
-  },
-  avatarImage: { width: 85, height: 85, borderRadius: 12, borderWidth: 3, borderColor: Colors.white },
-  profileInfo: { flex: 1, marginLeft: 14 },
-  nameRow: { flexDirection: "row", alignItems: "center" },
-  nameText: { fontSize: 18, fontWeight: "800", color: Colors.text },
-  titleText: { fontSize: 12, color: Colors.textTertiary, marginTop: 2, fontWeight: "600" },
-  detailsRow: { flexDirection: "row", marginTop: 6, justifyContent: "space-between" },
-  detailItem: { fontSize: 11, color: Colors.textSecondary, fontWeight: "600" },
-  statsRow: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    alignItems: "center",
-    marginHorizontal: 16,
-    marginVertical: 18,
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.border
-  },
-  statBox: { alignItems: "center", flex: 1 },
-  statVal: { fontSize: 16, fontWeight: "800", color: Colors.primary },
-  statLabel: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
-  divider: { width: 1, height: 28, backgroundColor: Colors.border },
-  section: { marginHorizontal: 16, marginTop: 18, borderBottomWidth: 1, borderBottomColor: Colors.border, paddingBottom: 18 },
-  sectionTitle: { fontSize: 15, fontWeight: "800", color: Colors.text, marginBottom: 12 },
-  bioText: { fontSize: 13, color: Colors.textSecondary, lineHeight: 20 },
-  locationText: { fontSize: 13, color: Colors.text, fontWeight: "600" },
-  mapCard: {
-    height: 130,
-    backgroundColor: Colors.inputBackground,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: 10,
-    paddingHorizontal: 16
-  },
-  mapCardText: { fontSize: 11, color: Colors.textSecondary, marginVertical: 8 },
-  mapsBtn: {
-    flexDirection: "row",
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    alignItems: "center"
-  },
-  mapsBtnText: { color: Colors.white, fontWeight: "700", fontSize: 12 },
-  videoCard: {
+  container: {
     flex: 1,
-    height: 70,
-    backgroundColor: Colors.inputBackground || "#F5F5F5",
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 4,
+    backgroundColor: "#F8FAFC"
   },
-  videoCardText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: Colors.textSecondary,
-  },
-  emptyText: { fontSize: 12, color: Colors.textTertiary, fontStyle: "italic" },
-  serviceRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.inputBackground
-  },
-  serviceName: { fontSize: 14, fontWeight: "700", color: Colors.text },
-  serviceCategory: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
-  serviceDesc: { fontSize: 12, color: Colors.textTertiary, marginTop: 4, lineHeight: 16 },
-  addonText: { fontSize: 11, color: Colors.primary, fontWeight: "600", marginTop: 4 },
-  servicePriceBlock: { alignItems: "flex-end" },
-  servicePrice: { fontSize: 15, fontWeight: "800", color: Colors.primary },
-  offerPrice: { fontSize: 10, color: Colors.error, fontWeight: "700", marginTop: 2 },
-  portfolioGrid: { flexDirection: "row", flexWrap: "wrap", marginHorizontal: -4 },
-  portfolioGridItem: { width: "31%", aspectRatio: 1, margin: "1.1%", position: "relative" },
-  portfolioThumb: { width: "100%", height: "100%", borderRadius: 8 },
-  videoBadge: {
-    position: "absolute",
-    right: 6,
-    top: 6,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    justifyContent: "center",
-    alignItems: "center"
-  },
-  subHeading: { fontSize: 13, fontWeight: "700", color: Colors.text, marginTop: 10 },
-  dateChip: {
-    width: 50,
-    height: 60,
-    borderRadius: 10,
-    backgroundColor: Colors.inputBackground,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 8
-  },
-  activeDateChip: { backgroundColor: Colors.primary },
-  dateDayText: { fontSize: 11, color: Colors.textSecondary },
-  dateNumText: { fontSize: 15, fontWeight: "800", color: Colors.text, marginTop: 2 },
-  activeDateText: { color: Colors.white },
-  slotsGrid: { flexDirection: "row", flexWrap: "wrap", marginTop: 8 },
-  slotChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: Colors.inputBackground,
-    marginRight: 8,
-    marginBottom: 8
-  },
-  activeSlotChip: { backgroundColor: Colors.primary },
-  slotText: { fontSize: 12, color: Colors.textSecondary },
-  activeSlotText: { color: Colors.white, fontWeight: "700" },
-  holidayText: { fontSize: 12, color: Colors.textTertiary, fontStyle: "italic", marginVertical: 8 },
-  reviewDistributionCard: {
-    flexDirection: "row",
-    backgroundColor: Colors.inputBackground,
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 16
-  },
-  avgRatingCol: { flex: 1, alignItems: "center", justifyContent: "center" },
-  ratingBigVal: { fontSize: 32, fontWeight: "900", color: Colors.text },
-  ratingSubLabel: { fontSize: 11, color: Colors.textTertiary },
-  distCol: { flex: 1.5, justifyContent: "center" },
-  distRow: { flexDirection: "row", alignItems: "center", marginVertical: 2 },
-  distStarText: { fontSize: 11, color: Colors.textSecondary, width: 30 },
-  distTrack: { flex: 1, height: 6, backgroundColor: Colors.border, borderRadius: 3, marginHorizontal: 8, overflow: "hidden" },
-  distFill: { height: "100%", backgroundColor: Colors.primary, borderRadius: 3 },
-  distCountText: { fontSize: 11, color: Colors.textTertiary, width: 20, textAlign: "right" },
-  reviewCard: { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: Colors.inputBackground },
-  reviewerHeader: { flexDirection: "row", alignItems: "center" },
-  reviewerAvatar: { width: 36, height: 36, borderRadius: 18 },
-  reviewerName: { fontSize: 13, fontWeight: "700", color: Colors.text },
-  reviewerStars: { fontSize: 11, marginTop: 2 },
-  reviewDate: { fontSize: 11, color: Colors.textTertiary, marginLeft: 6 },
-  reviewContent: { fontSize: 13, color: Colors.textSecondary, marginTop: 8, lineHeight: 18 },
-  replyBox: { backgroundColor: Colors.inputBackground, borderRadius: 8, padding: 10, marginTop: 10 },
-  replyHeader: { fontSize: 11, fontWeight: "700", color: Colors.textSecondary },
-  replyText: { fontSize: 12, color: Colors.textTertiary, marginTop: 2 },
-  relatedCard: { width: 100, marginRight: 12 },
-  relatedImage: { width: "100%", height: 100, borderRadius: 10 },
-  relatedName: { fontSize: 12, fontWeight: "700", color: Colors.text, marginTop: 6 },
-  relatedRating: { fontSize: 11, fontWeight: "600", color: Colors.text, marginLeft: 2 },
-  stickyFooter: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 75,
-    backgroundColor: Colors.white,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    justifyContent: "space-between"
-  },
-  chatFooterBtn: {
-    width: 60,
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  chatFooterBtnText: { fontSize: 10, color: Colors.primary, fontWeight: "700", marginTop: 2 },
-  bookFooterBtn: {
+  centerContainer: {
     flex: 1,
-    height: 48,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: "#64748B",
+    fontWeight: "500"
+  },
+  errorText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: Colors.error,
+    textAlign: "center"
+  },
+  retryBtn: {
+    marginTop: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
     backgroundColor: Colors.primary,
-    borderRadius: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center"
+    borderRadius: 10
   },
-  bookFooterBtnText: { color: Colors.white, fontWeight: "800", fontSize: 14 },
-  zoomContainer: { flex: 1, backgroundColor: "black", justifyContent: "center", alignItems: "center" },
-  zoomImage: { width: SCREEN_WIDTH, height: "80%" },
-  zoomCloseBtn: { position: "absolute", top: 50, right: 20 },
-  zoomControls: {
-    position: "absolute",
-    bottom: 50,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    width: "70%"
+  retryBtnText: {
+    color: Colors.white,
+    fontWeight: "700",
+    fontSize: 13
   },
-  zoomCtrlBtn: { padding: 10 },
-  zoomIndexText: { color: Colors.white, fontSize: 15, fontWeight: "700" },
-  gridTierBadge: {
-    position: "absolute",
-    left: 4,
-    bottom: 4,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  gridPremiumBadge: {
-    backgroundColor: "rgba(124, 58, 237, 0.9)",
-  },
-  gridStandardBadge: {
-    backgroundColor: "rgba(15, 23, 42, 0.75)",
-  },
-  gridTierText: {
-    fontSize: 9,
-    fontWeight: "800",
-  },
-  gridPremiumText: {
-    color: "#FFFFFF",
-  },
-  gridStandardText: {
-    color: "#FFFFFF",
-  },
-  videoReviewCard: {
-    width: 130,
-    height: 190,
-    borderRadius: 14,
-    overflow: "hidden",
-    marginRight: 12,
-    backgroundColor: "#000",
+  coverContainer: {
+    width: SCREEN_WIDTH,
+    height: 250,
     position: "relative",
+    backgroundColor: "#0F172A"
   },
-  videoReviewThumb: {
-    width: "100%",
-    height: "100%",
-    resizeMode: "cover",
+  coverImage: {
+    width: SCREEN_WIDTH,
+    height: 250
   },
-  videoReviewOverlay: {
+  coverGradientOverlay: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.35)",
+    backgroundColor: "rgba(0,0,0,0.35)"
+  },
+  coverDotsRow: {
+    position: "absolute",
+    bottom: 16,
+    left: 0,
+    right: 0,
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 6
+  },
+  coverDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "rgba(255,255,255,0.4)"
+  },
+  coverDotActive: {
+    width: 18,
+    backgroundColor: "#FFFFFF"
+  },
+  floatingHeader: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: 10,
+    zIndex: 10
   },
-  videoReviewMeta: {
+  glassBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "rgba(15, 23, 42, 0.6)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+    justifyContent: "center",
+    alignItems: "center"
+  },
+  profileHeaderCard: {
+    marginTop: -28,
+    marginHorizontal: 16,
+    backgroundColor: Colors.white,
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8
+  },
+  avatarRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-end"
+  },
+  avatarWrapper: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 3,
+    borderColor: Colors.white,
+    backgroundColor: "#F3E8FF",
+    position: "relative",
+    marginTop: -40
+  },
+  avatarImage: {
     width: "100%",
-    backgroundColor: "rgba(0,0,0,0.6)",
-    padding: 6,
+    height: "100%",
+    borderRadius: 37
+  },
+  statusDot: {
+    position: "absolute",
+    bottom: 2,
+    right: 2,
+    width: 16,
+    height: 16,
     borderRadius: 8,
+    borderWidth: 2,
+    borderColor: Colors.white
   },
-  videoReviewName: {
-    color: "#FFFFFF",
+  headerRightActions: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center"
+  },
+  chatActionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F3E8FF",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    gap: 4
+  },
+  chatActionBtnText: {
+    color: Colors.primary,
+    fontSize: 12,
+    fontWeight: "700"
+  },
+  availabilityPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8
+  },
+  availabilityPillText: {
     fontSize: 11,
-    fontWeight: "700",
+    fontWeight: "700"
   },
-  videoReviewStars: {
-    fontSize: 9,
-    marginTop: 2,
+  nameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 12
   },
-  verifiedClientBadge: {
+  artistNameText: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#0F172A"
+  },
+  verifiedBadge: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#ECFDF5",
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 4,
-    marginLeft: 6,
+    borderRadius: 6,
+    gap: 2
   },
-  verifiedClientText: {
+  verifiedBadgeText: {
     fontSize: 10,
-    fontWeight: "700",
     color: "#059669",
-    marginLeft: 3,
+    fontWeight: "700"
   },
-  reviewPhotoAttachment: {
-    width: 60,
-    height: 60,
-    borderRadius: 8,
-    marginRight: 8,
+  premiumBadge: {
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6
   },
-  zoomDesignDetails: {
-    position: "absolute",
-    bottom: 30,
-    left: 20,
-    right: 20,
-    backgroundColor: "rgba(15, 23, 42, 0.9)",
-    borderRadius: 16,
-    padding: 16,
+  premiumBadgeText: {
+    fontSize: 10,
+    color: "#92400E",
+    fontWeight: "750"
   },
-  zoomDesignTitle: {
-    color: "#FFFFFF",
+  locationText: {
+    fontSize: 12,
+    color: "#475569",
+    marginTop: 4
+  },
+  languagesText: {
+    fontSize: 11,
+    color: "#64748B",
+    marginTop: 2
+  },
+  statsBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#F8FAFC",
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0"
+  },
+  statItem: {
+    flex: 1,
+    alignItems: "center"
+  },
+  statVal: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#0F172A"
+  },
+  statLabel: {
+    fontSize: 10,
+    color: "#64748B",
+    marginTop: 2
+  },
+  statDivider: {
+    width: 1,
+    height: 22,
+    backgroundColor: "#E2E8F0"
+  },
+  bioContainer: {
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9"
+  },
+  bioText: {
+    fontSize: 12,
+    color: "#475569",
+    lineHeight: 18
+  },
+  readMoreText: {
+    fontSize: 12,
+    color: Colors.primary,
+    fontWeight: "700",
+    marginTop: 4
+  },
+  trustGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9"
+  },
+  trustItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#ECFDF5",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6
+  },
+  trustText: {
+    fontSize: 11,
+    color: "#065F46",
+    fontWeight: "600"
+  },
+  sectionBlock: {
+    marginTop: 20
+  },
+  sectionHeader: {
+    paddingHorizontal: 16,
+    marginBottom: 12
+  },
+  sectionTitle: {
     fontSize: 16,
     fontWeight: "800",
-    marginBottom: 6,
+    color: "#0F172A"
   },
-  zoomBadgeRow: {
+  sectionSubtitle: {
+    fontSize: 12,
+    color: "#64748B",
+    marginTop: 2
+  },
+  serviceItemCard: {
+    marginHorizontal: 16,
+    marginBottom: 10,
+    backgroundColor: Colors.white,
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4
+  },
+  svcCardTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start"
+  },
+  svcTitle: {
+    fontSize: 14,
+    fontWeight: "750",
+    color: "#0F172A"
+  },
+  svcDesc: {
+    fontSize: 12,
+    color: "#64748B",
+    marginTop: 3,
+    lineHeight: 16
+  },
+  svcPriceBox: {
+    alignItems: "flex-end",
+    marginLeft: 10
+  },
+  svcPriceLabel: {
+    fontSize: 10,
+    color: "#64748B",
+    textTransform: "uppercase",
+    fontWeight: "600"
+  },
+  svcPriceVal: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: Colors.primary,
+    marginTop: 1
+  },
+  svcMetaRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    marginBottom: 8,
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9"
   },
-  zoomMetaText: {
-    color: "#CBD5E1",
-    fontSize: 12,
-  },
-  zoomDescText: {
-    color: "#94A3B8",
-    fontSize: 12,
-    lineHeight: 16,
-    marginBottom: 12,
-  },
-  bookDesignModalBtn: {
+  svcMetaPill: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: Colors.primary,
-    paddingVertical: 12,
-    borderRadius: 10,
+    backgroundColor: "#F8FAFC",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6
   },
-  bookDesignModalBtnText: {
-    color: "#FFFFFF",
+  svcMetaPillText: {
+    fontSize: 11,
+    color: Colors.primary,
+    fontWeight: "600"
+  },
+  browseCatalogCta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4
+  },
+  browseCatalogCtaText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: Colors.primary
+  },
+  customDesignBanner: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 4,
+    backgroundColor: "#FFFBEB",
+    borderWidth: 1.5,
+    borderColor: "#FDE68A",
+    borderRadius: 16,
+    padding: 14,
+    flexDirection: "row",
+    alignItems: "center"
+  },
+  customBannerIconCircle: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: "#FEF3C7",
+    justifyContent: "center",
+    alignItems: "center"
+  },
+  customBannerTitle: {
+    fontSize: 13,
+    fontWeight: "750",
+    color: "#92400E"
+  },
+  customBannerDesc: {
+    fontSize: 11,
+    color: "#B45309",
+    marginTop: 2,
+    lineHeight: 15
+  },
+  packageCard: {
+    width: 260,
+    backgroundColor: Colors.white,
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1.5,
+    borderColor: "#DDD6FE",
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4
+  },
+  pkgHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center"
+  },
+  pkgName: {
+    fontSize: 13,
+    fontWeight: "750",
+    color: "#0F172A",
+    flex: 1
+  },
+  pkgPrice: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: Colors.primary,
+    marginLeft: 8
+  },
+  pkgInclusions: {
+    fontSize: 11,
+    color: "#64748B",
+    marginTop: 6,
+    lineHeight: 15
+  },
+  pkgMetaRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 8,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9"
+  },
+  pkgMeta: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#475569"
+  },
+  selectPkgBtn: {
+    marginTop: 10,
+    backgroundColor: "#7C3AED",
+    paddingVertical: 7,
+    borderRadius: 8,
+    alignItems: "center"
+  },
+  selectPkgBtnText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: Colors.white
+  },
+  filterChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: Colors.white,
+    borderWidth: 1,
+    borderColor: "#E2E8F0"
+  },
+  filterChipActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary
+  },
+  filterChipText: {
+    fontSize: 12,
+    color: "#475569",
+    fontWeight: "600"
+  },
+  filterChipTextActive: {
+    color: Colors.white,
+    fontWeight: "700"
+  },
+  portfolioGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    paddingHorizontal: 16,
+    gap: 12,
+    justifyContent: "space-between"
+  },
+  portfolioCard: {
+    width: CARD_WIDTH,
+    backgroundColor: Colors.white,
+    borderRadius: 14,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4
+  },
+  portfolioImageBox: {
+    width: "100%",
+    height: CARD_WIDTH * 1.25,
+    position: "relative",
+    backgroundColor: "#F1F5F9"
+  },
+  portfolioImage: {
+    width: "100%",
+    height: "100%",
+    resizeMode: "cover"
+  },
+  tierBadge: {
+    position: "absolute",
+    top: 8,
+    left: 8,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6
+  },
+  standardBadge: {
+    backgroundColor: "rgba(15, 23, 42, 0.75)"
+  },
+  premiumBadge: {
+    backgroundColor: "#D97706"
+  },
+  bridalBadge: {
+    backgroundColor: "#BE123C"
+  },
+  tierBadgeText: {
+    fontSize: 9,
+    fontWeight: "700",
+    color: Colors.white
+  },
+  portfolioCardBody: {
+    padding: 10
+  },
+  portTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#0F172A"
+  },
+  portMeta: {
+    fontSize: 10,
+    color: "#64748B",
+    marginTop: 2
+  },
+  portPriceRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 8,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9"
+  },
+  portPrice: {
     fontSize: 14,
     fontWeight: "800",
+    color: Colors.primary
+  },
+  bookPortBtn: {
+    backgroundColor: "#7C3AED",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6
+  },
+  bookPortBtnText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: Colors.white
+  },
+  availabilityCard: {
+    marginHorizontal: 16,
+    backgroundColor: Colors.white,
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0"
+  },
+  availHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8
+  },
+  availHeaderText: {
+    fontSize: 13,
+    fontWeight: "750",
+    color: "#0F172A"
+  },
+  availSubtext: {
+    fontSize: 11,
+    color: "#64748B",
+    marginTop: 6,
+    lineHeight: 16
+  },
+  ratingSummaryCard: {
+    marginHorizontal: 16,
+    backgroundColor: Colors.white,
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    flexDirection: "row",
+    alignItems: "center"
+  },
+  ratingBigScoreCol: {
+    alignItems: "center",
+    paddingRight: 16,
+    borderRightWidth: 1,
+    borderRightColor: "#F1F5F9"
+  },
+  bigScore: {
+    fontSize: 32,
+    fontWeight: "850",
+    color: "#0F172A"
+  },
+  totalReviewsCount: {
+    fontSize: 10,
+    color: "#64748B",
+    marginTop: 4
+  },
+  ratingBarsCol: {
+    flex: 1,
+    paddingLeft: 16,
+    gap: 4
+  },
+  ratingBarRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6
+  },
+  starNum: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#64748B",
+    width: 18
+  },
+  barTrack: {
+    flex: 1,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#F1F5F9",
+    overflow: "hidden"
+  },
+  barFill: {
+    height: "100%",
+    backgroundColor: "#FBBF24",
+    borderRadius: 3
+  },
+  starCount: {
+    fontSize: 10,
+    color: "#94A3B8",
+    width: 16,
+    textAlign: "right"
+  },
+  reviewItemCard: {
+    marginHorizontal: 16,
+    marginTop: 10,
+    backgroundColor: Colors.white,
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0"
+  },
+  reviewUserRow: {
+    flexDirection: "row",
+    alignItems: "center"
+  },
+  reviewUserAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "#F3E8FF"
+  },
+  reviewUserName: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#0F172A"
+  },
+  reviewDate: {
+    fontSize: 10,
+    color: "#94A3B8"
+  },
+  reviewRatingPill: {
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4
+  },
+  reviewRatingText: {
+    fontSize: 10,
+    fontWeight: "750",
+    color: "#92400E"
+  },
+  reviewComment: {
+    fontSize: 12,
+    color: "#475569",
+    marginTop: 8,
+    lineHeight: 16
+  },
+  faqCard: {
+    marginHorizontal: 16,
+    marginBottom: 8,
+    backgroundColor: Colors.white,
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0"
+  },
+  faqQuestionRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center"
+  },
+  faqQuestion: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#0F172A",
+    flex: 1,
+    paddingRight: 10
+  },
+  faqAnswer: {
+    fontSize: 12,
+    color: "#475569",
+    marginTop: 10,
+    lineHeight: 17
   },
   bottomBar: {
     position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
-    height: 75,
     backgroundColor: Colors.white,
+    paddingHorizontal: 16,
+    paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: Colors.border,
+    borderTopColor: "#E2E8F0",
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    justifyContent: "space-between"
+    gap: 12,
+    elevation: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4
+  },
+  quickChatBtn: {
+    width: 46,
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: "#F3E8FF",
+    justifyContent: "center",
+    alignItems: "center"
   },
   bottomPriceCol: {
-    justifyContent: "center"
+    flex: 1
   },
   bottomPriceLabel: {
     fontSize: 10,
-    color: Colors.textSecondary,
+    color: "#64748B",
+    textTransform: "uppercase",
     fontWeight: "600"
   },
   bottomPriceVal: {
     fontSize: 18,
-    fontWeight: "900",
-    color: Colors.primary
+    fontWeight: "850",
+    color: Colors.primary,
+    marginTop: 1
   },
-  bookNowBtn: {
-    flex: 1,
-    marginLeft: 16,
-    height: 48,
-    backgroundColor: Colors.primary,
-    borderRadius: 12,
+  bottomBookBtn: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center"
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 12,
+    elevation: 2
   },
-  bookNowBtnText: {
+  bottomBookBtnText: {
     color: Colors.white,
-    fontWeight: "800",
-    fontSize: 14
-  },
-  similarCard: { width: 100, marginRight: 12 },
-  similarImage: { width: "100%", height: 100, borderRadius: 10 },
-  similarName: { fontSize: 12, fontWeight: "700", color: Colors.text, marginTop: 6 },
-  similarRating: { fontSize: 11, fontWeight: "600", color: Colors.text, marginLeft: 2 },
+    fontSize: 13,
+    fontWeight: "750"
+  }
 });

@@ -28,7 +28,7 @@ import {
   unsavePortfolioItem,
   getCategories
 } from "../../services/customer";
-import { createPortfolioDeepLink } from "../../services/deepLink";
+import { createPortfolioDeepLink, createReelDeepLink, createArtistDeepLink } from "../../services/deepLink";
 
 const resolveImage = (uri) => {
   if (!uri || typeof uri !== "string") return "";

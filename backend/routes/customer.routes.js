@@ -20,10 +20,16 @@ router.get("/recommended-artists", authenticate, CustomerController.getRecommend
 // Singular artist profile sub-resource queries
 router.get("/artist/:id", authenticate, CustomerController.getArtistById);
 router.get("/artist/:id/services", authenticate, CustomerController.getArtistServices);
+router.get("/artist/:id/service/:serviceId/catalog", authenticate, CustomerController.getArtistServiceCatalog);
+router.get("/artist/:id/services/:serviceId/catalog", authenticate, CustomerController.getArtistServiceCatalog);
 router.get("/artist/:id/portfolio", authenticate, CustomerController.getArtistPortfolio);
 router.get("/artist/:id/reviews", authenticate, CustomerController.getArtistReviews);
 router.get("/artist/:id/availability", authenticate, CustomerController.getArtistAvailability);
 router.get("/artist/:id/similar", authenticate, CustomerController.getSimilarArtists);
+router.get("/artist/:id/faqs", authenticate, CustomerController.getArtistFaqs);
+router.get("/artist/:id/offers", authenticate, CustomerController.getArtistOffers);
+router.post("/artist/:id/custom-design", authenticate, CustomerController.createCustomDesignRequest);
+router.post("/custom-design-request", authenticate, CustomerController.createCustomDesignRequest);
 
 // Singular artist favorite actions
 router.post("/artist/favorite", authenticate, CustomerController.addFavorite);

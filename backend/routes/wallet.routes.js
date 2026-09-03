@@ -12,6 +12,7 @@ router.post("/add-money", authenticate, WalletController.addMoney);
 router.post("/withdraw", authenticate, WalletController.initiateWithdrawal);
 router.put("/withdraw/cancel", authenticate, WalletController.cancelWithdrawal);
 router.get("/withdraw/history", authenticate, WalletController.getWithdrawHistory);
+router.get("/withdraw/status", authenticate, WalletController.getWithdrawalStatus);
 
 // Transactions operations
 router.get("/transactions", authenticate, WalletController.getTransactions);

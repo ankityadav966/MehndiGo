@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -10,7 +11,6 @@ import {
   View,
   Image,
 } from "react-native";
-import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import { sendOtp } from "../../services/auth";
@@ -84,61 +84,69 @@ export default function LoginScreen({ navigation, route }) {
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
-        style={styles.container}
+        style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <View style={styles.logoContainer}>
-          <Image
-            source={require("../../assets/images/logo.png")}
-            style={styles.logo}
-            resizeMode="contain"
-          />
-        </View>
+        <ScrollView
+          contentContainerStyle={styles.scrollContainer}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.logoContainer}>
+            <Image
+              source={require("../../assets/images/logo.png")}
+              style={styles.logo}
+              resizeMode="contain"
+            />
+          </View>
 
-        <Text style={styles.title}>MehndiGo</Text>
-        <Text style={styles.subtitle}>Enter your email address to continue</Text>
+          <Text style={styles.title}>MehndiGo</Text>
+          <Text style={styles.subtitle}>Enter your email address to continue</Text>
 
-        <View style={styles.inputContainer}>
-          <TextInput
-            value={email}
-            onChangeText={(text) => {
-              setEmail(text);
+          <View style={styles.inputContainer}>
+            <TextInput
+              value={email}
+              onChangeText={(text) => {
+                setEmail(text);
+                setError("");
+              }}
+              style={styles.input}
+              placeholder="Email Address"
+              placeholderTextColor={Colors.placeholder}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              returnKeyType="done"
+              onSubmitEditing={handleContinue}
+              maxLength={100} 
+              editable={!loading}
+            />
+          </View>
+
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+          <TouchableOpacity
+            style={[styles.loginButton, loading && styles.disabledButton]}
+            onPress={handleContinue}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color={Colors.white} size="small" />
+            ) : (
+              <Text style={styles.loginText}>Continue</Text>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={{ marginTop: 20, marginBottom: 20 }}
+            onPress={() => {
+              const trimmedEmail = email.trim().toLowerCase();
               setError("");
+              navigation.navigate("Register", { email: trimmedEmail });
             }}
-            style={styles.input}
-            placeholder="Email Address"
-            placeholderTextColor={Colors.placeholder}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            maxLength={100}
-            editable={!loading}
-          />
-        </View>
-
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-        <TouchableOpacity
-          style={[styles.loginButton, loading && styles.disabledButton]}
-          onPress={handleContinue}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color={Colors.white} size="small" />
-          ) : (
-            <Text style={styles.loginText}>Continue</Text>
-          )}
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={{ marginTop: 20 }}
-          onPress={() => {
-            const trimmedEmail = email.trim().toLowerCase();
-            setError("");
-            navigation.navigate("Register", { email: trimmedEmail });
-          }}
-        >
-          <Text style={styles.linkText}>Don't have an account? Sign Up</Text>
-        </TouchableOpacity>
+          >
+            <Text style={styles.linkText}>Don't have an account? Sign Up</Text>
+          </TouchableOpacity>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -146,21 +154,21 @@ export default function LoginScreen({ navigation, route }) {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: Colors.white },
-  container: {
-    flex: 1,
+  scrollContainer: {
+    flexGrow: 1,
     backgroundColor: Colors.white,
     paddingHorizontal: 24,
     justifyContent: "center",
+    paddingVertical: 20,
   },
   logoContainer: {
     alignItems: "center",
     marginBottom: 24,
-    marginTop: -40,
   },
   logo: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: 110,
+    height: 110,
+    borderRadius: 55,
     borderWidth: 1.5,
     borderColor: Colors.border,
   },

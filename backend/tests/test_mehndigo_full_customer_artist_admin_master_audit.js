@@ -229,7 +229,7 @@ describe("MEHNDIGO CROSS-ROLE PRODUCTION AUDIT: CUSTOMER + ARTIST + ADMIN", () =
       payment_status: "PAID",
       detailed_status: "PENDING",
       check_in_otp: "512389",
-      check_out_otp: "984120"
+      check_out_otp: "9841"
     });
 
     await slot1.update({ is_booked: true });
@@ -284,7 +284,7 @@ describe("MEHNDIGO CROSS-ROLE PRODUCTION AUDIT: CUSTOMER + ARTIST + ADMIN", () =
   it("18, 19, 20, 21. Checkout, Remaining Payment, Checkout OTP & COMPLETED transition", async () => {
     const checkoutResult = await BookingService.verifyCheckOutOtp(
       flowABooking.id,
-      "984120",
+      "9841",
       artistUserA.id
     );
     assert.ok(checkoutResult.success);

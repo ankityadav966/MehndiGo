@@ -20,6 +20,11 @@ export async function requestWithdrawal(amount) {
   return res?.data || res;
 }
 
+export async function getWithdrawalStatus() {
+  const res = await apiRequest("GET", "/wallet/withdraw/status", null, true);
+  return res?.data || res;
+}
+
 export async function cancelWithdrawal(requestId) {
   const res = await apiRequest("PUT", "/wallet/withdraw/cancel", { requestId }, true);
   return res?.data || res;

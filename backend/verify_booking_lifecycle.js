@@ -38,7 +38,7 @@ async function runVerification() {
     console.log("\n👉 2. Normal Lifecycle & Early Completion Verification");
     const testDate = new Date().toISOString().split("T")[0];
     const testStartTime = "02:00 PM";
-    
+
     let booking = await db.Booking.create({
       booking_code: "MG-TEST-" + Date.now().toString().slice(-4),
       user_id: 1,

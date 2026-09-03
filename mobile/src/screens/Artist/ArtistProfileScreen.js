@@ -55,6 +55,29 @@ export default function ArtistProfileScreen({ navigation }) {
   const [tempFB, setTempFB] = useState("");
 
   useEffect(() => {
+    const { BackHandler } = require("react-native");
+    const onBackPress = () => {
+      if (instagramModalVisible) {
+        setInstagramModalVisible(false);
+        return true;
+      }
+      if (facebookModalVisible) {
+        setFacebookModalVisible(false);
+        return true;
+      }
+      if (navigation?.canGoBack && navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        navigation.navigate("ArtistTabs", { screen: "Dashboard" });
+      }
+      return true;
+    };
+
+    const backSub = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+    return () => backSub.remove();
+  }, [instagramModalVisible, facebookModalVisible, navigation]);
+
+  useEffect(() => {
     if (user?.id) {
       AsyncStorage.getItem(`@mehndigo_insta_${user.id}`).then(val => {
         if (val) setInstagramHandle(val);
@@ -230,7 +253,7 @@ export default function ArtistProfileScreen({ navigation }) {
         setProfileLoading(true);
         const pickedUri = result.assets[0].uri;
         const uploadResult = await uploadPortfolioMedia([{ uri: pickedUri }]);
-        
+
         if (uploadResult && uploadResult.length > 0) {
           const uploadedUrl = uploadResult[0].url;
 
@@ -270,6 +293,73 @@ export default function ArtistProfileScreen({ navigation }) {
     } catch (err) {
       if (__DEV__) console.log("Failed to upload avatar:", err);
       Alert.alert("Error", err.message || "Failed to upload avatar.");
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
+  const handleUploadBanner = async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert("Permission Required", "Please allow photo library access to change your banner image.");
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [16, 9],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setProfileLoading(true);
+        const pickedUri = result.assets[0].uri;
+        const uploadResult = await uploadPortfolioMedia([{ uri: pickedUri }]);
+
+        if (uploadResult && uploadResult.length > 0) {
+          const uploadedUrl = uploadResult[0].url;
+
+          // Save on backend
+          await updateArtistProfileDetails({
+            bannerImage: uploadedUrl,
+            coverImage: uploadedUrl,
+            banner_image: uploadedUrl,
+            cover_image: uploadedUrl,
+          });
+
+          // Update local secure storage
+          const currentStored = await secureStorage.getUserData();
+          const updatedUser = {
+            ...currentStored,
+            banner_image: uploadedUrl,
+            cover_image: uploadedUrl,
+          };
+          await secureStorage.setUserData(updatedUser);
+
+          // Dispatch updated user info to AuthContext
+          dispatch({ type: "UPDATE_USER", payload: updatedUser });
+
+          // Update local profile state
+          setProfile((prev) => ({
+            ...prev,
+            banner_image: uploadedUrl,
+            cover_image: uploadedUrl,
+            banner: uploadedUrl,
+            user: {
+              ...prev?.user,
+              banner_image: uploadedUrl,
+              cover_image: uploadedUrl,
+            },
+          }));
+
+          Alert.alert("Success", "Banner image updated successfully!");
+        }
+      }
+    } catch (err) {
+      if (__DEV__) console.log("Failed to upload banner:", err);
+      Alert.alert("Error", err.message || "Failed to upload banner.");
     } finally {
       setProfileLoading(false);
     }
@@ -369,6 +459,13 @@ export default function ArtistProfileScreen({ navigation }) {
             <Ionicons name="play" size={14} color={Colors.white} />
           </View>
         )}
+        {item.art_tier && (
+          <View style={[styles.gridTierBadge, item.art_tier === "PREMIUM" ? styles.gridPremiumBadge : styles.gridStandardBadge]}>
+            <Text style={[styles.gridTierText, item.art_tier === "PREMIUM" ? styles.gridPremiumText : styles.gridStandardText]}>
+              {item.art_tier === "PREMIUM" ? `💎 ₹${item.price || "Prem"}` : "✨ Standard"}
+            </Text>
+          </View>
+        )}
         {title ? (
           <View style={styles.gridOverlay}>
             <Text style={styles.gridLabel} numberOfLines={1}>
@@ -419,6 +516,24 @@ export default function ArtistProfileScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.username}>{user?.name || "Artist"}</Text>
+        <View style={styles.headerIcons}>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate("Notifications")}>
+            <Ionicons
+              name="notifications-outline"
+              size={22}
+              color={Colors.text}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate("ArtistReferral")}>
+            <Ionicons name="gift-outline" size={22} color={Colors.text} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate("Settings")}>
+            <Ionicons name="menu-outline" size={22} color={Colors.text} />
+          </TouchableOpacity>
+        </View>
+      </View>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 120 }}
@@ -431,25 +546,40 @@ export default function ArtistProfileScreen({ navigation }) {
           />
         }
       >
-        <View style={styles.header}>
-          <Text style={styles.username}>{user?.name || "Artist"}</Text>
-          <View style={styles.headerIcons}>
-            <TouchableOpacity style={styles.iconBtn}>
-              <Ionicons
-                name="notifications-outline"
-                size={22}
-                color={Colors.text}
-              />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate("Settings")}>
-              <Ionicons name="menu-outline" size={22} color={Colors.text} />
-            </TouchableOpacity>
-          </View>
-        </View>
+
+
 
         <View style={styles.profileSection}>
+          {/* Top Banner Cover Card */}
+          <TouchableOpacity
+            activeOpacity={0.9}
+            style={styles.bannerHeaderCard}
+            onPress={handleUploadBanner}
+          >
+            <Image
+              source={
+                (() => {
+                  const bannerRaw = profile?.banner_image || profile?.cover_image || profile?.banner || user?.banner_image || user?.cover_image;
+                  const profileRaw = profile?.profile_image || profile?.selfie_image || profile?.avatar || user?.profile_image || user?.avatar;
+                  const resolvedBanner = resolveImage(bannerRaw);
+                  const resolvedProfile = resolveImage(profileRaw);
+                  if (resolvedBanner) return { uri: resolvedBanner };
+                  if (resolvedProfile) return { uri: resolvedProfile };
+                  return require("../../assets/images/o1.png");
+                })()
+              }
+              style={styles.bannerHeaderImage}
+              resizeMode="cover"
+            />
+            <View style={styles.bannerHeaderOverlay} />
+            {/* <TouchableOpacity style={styles.bannerHeaderEditBtn} onPress={handleUploadBanner}>
+            <Ionicons name="camera" size={14} color={Colors.white} />
+            <Text style={styles.bannerHeaderEditText}>Change Banner</Text>
+          </TouchableOpacity> */}
+          </TouchableOpacity>
+
           <View style={styles.profileTopHeader}>
-            <View style={styles.avatarContainer}>
+            <TouchableOpacity style={styles.avatarContainer} activeOpacity={0.8} onPress={handleUploadAvatar}>
               <Image
                 source={
                   (() => {
@@ -460,7 +590,10 @@ export default function ArtistProfileScreen({ navigation }) {
                 }
                 style={styles.avatar}
               />
-            </View>
+              <View style={styles.addAvatarBadge}>
+                <Ionicons name="camera" size={13} color={Colors.white} />
+              </View>
+            </TouchableOpacity>
 
             <View style={styles.profileMainInfo}>
               <Text style={styles.name}>
@@ -474,11 +607,9 @@ export default function ArtistProfileScreen({ navigation }) {
                   📍 {profile?.city ? `${profile.city}${profile?.state ? `, ${profile.state}` : ''}` : profile?.location}
                 </Text>
               ) : null}
-              {profile?.starting_price ? (
-                <Text style={{ fontSize: 13, color: Colors.primary, fontWeight: "700", marginTop: 3 }}>
-                  Starts at ₹{profile.starting_price}
-                </Text>
-              ) : null}
+              <Text style={{ fontSize: 13, color: Colors.primary, fontWeight: "700", marginTop: 3 }}>
+                {profile?.starting_price ? `Starts at ₹${profile.starting_price}` : "Price on Request"}
+              </Text>
               {profile?.rating ? (
                 <View style={styles.ratingRow}>
                   <Ionicons name="star" size={14} color="#F5A623" />
@@ -523,7 +654,7 @@ export default function ArtistProfileScreen({ navigation }) {
 
           {/* Stats Bar */}
           <View style={styles.statsBar}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.statsDividerItem}
               onPress={() => navigation.navigate("Bookings")}
             >
@@ -531,11 +662,6 @@ export default function ArtistProfileScreen({ navigation }) {
                 {profile?.bookingStats?.total ?? "0"}
               </Text>
               <Text style={styles.statLabel}>Bookings</Text>
-              <View style={{ flexDirection: "row", gap: 4, marginTop: 4, flexWrap: "wrap", justifyContent: "center" }}>
-                <Text style={{ fontSize: 9, color: Colors.primary, fontWeight: "600" }}>P:{profile?.bookingStats?.pending ?? 0}</Text>
-                <Text style={{ fontSize: 9, color: Colors.success, fontWeight: "600" }}>C:{profile?.bookingStats?.completed ?? 0}</Text>
-                <Text style={{ fontSize: 9, color: Colors.error, fontWeight: "600" }}>Can:{profile?.bookingStats?.cancelled ?? 0}</Text>
-              </View>
             </TouchableOpacity>
             <View style={styles.statsSeparator} />
             <View style={styles.statsDividerItem}>
@@ -569,7 +695,7 @@ export default function ArtistProfileScreen({ navigation }) {
         </View>
 
         {/* Professional Details & Services Card */}
-        <View style={styles.detailsCard}>
+        {/* <View style={styles.detailsCard}>
           <View style={styles.cardHeaderRow}>
             <Text style={styles.cardSectionTitle}>Professional Details & KYC</Text>
             <TouchableOpacity onPress={() => navigation.navigate("EditProfile")}>
@@ -577,142 +703,134 @@ export default function ArtistProfileScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          {/* Service Badges & Pricing */}
-          <View style={styles.badgeRow}>
-            {profile?.starting_price ? (
-              <View style={[styles.infoBadge, { backgroundColor: "#FFF0F0", borderColor: "#FFD0D0" }]}>
-                <Ionicons name="pricetag" size={13} color={Colors.primary} />
-                <Text style={[styles.infoBadgeText, { color: Colors.primary, fontWeight: "700" }]}>
-                  Starts at ₹{profile.starting_price}
-                </Text>
-              </View>
-            ) : null}
-
-            {profile?.home_service !== false ? (
-              <View style={[styles.infoBadge, { backgroundColor: "#E6F4EA", borderColor: "#CEEAD6" }]}>
-                <Ionicons name="home" size={13} color={Colors.success} />
-                <Text style={[styles.infoBadgeText, { color: Colors.success }]}>Home Service</Text>
-              </View>
-            ) : null}
-
-            {profile?.salon_service ? (
-              <View style={[styles.infoBadge, { backgroundColor: "#E8F0FE", borderColor: "#D2E3FC" }]}>
-                <Ionicons name="business" size={13} color="#1A73E8" />
-                <Text style={[styles.infoBadgeText, { color: "#1A73E8" }]}>Studio / Salon</Text>
-              </View>
-            ) : null}
-
-            <View style={[styles.infoBadge, { backgroundColor: profile?.is_available !== false ? "#E6F4EA" : "#FEF3C7", borderColor: profile?.is_available !== false ? "#CEEAD6" : "#FDE68A" }]}>
-              <View style={[styles.statusDot, { backgroundColor: profile?.is_available !== false ? Colors.success : Colors.warning }]} />
-              <Text style={[styles.infoBadgeText, { color: profile?.is_available !== false ? Colors.success : "#B45309" }]}>
-                {profile?.is_available !== false ? "Accepting Bookings" : "Unavailable"}
-              </Text>
-            </View>
+        <View style={styles.badgeRow}>
+          <View style={[styles.infoBadge, { backgroundColor: "#FFF0F0", borderColor: "#FFD0D0" }]}>
+            <Ionicons name="pricetag" size={13} color={Colors.primary} />
+            <Text style={[styles.infoBadgeText, { color: Colors.primary, fontWeight: "700" }]}>
+              {profile?.starting_price ? `Starts at ₹${profile.starting_price}` : "Price on Request"}
+            </Text>
           </View>
 
-          {/* Detailed Location & Address */}
-          <View style={styles.detailItemRow}>
-            <Ionicons name="location-outline" size={18} color={Colors.textSecondary} style={styles.detailIcon} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.detailLabel}>Studio Location & Address</Text>
-              <Text style={styles.detailValue}>
-                {profile?.location || profile?.locality
-                  ? `${profile.location || profile.locality}${profile?.city ? `, ${profile.city}` : ''}${profile?.state ? `, ${profile.state}` : ''}${profile?.pincode ? ` - ${profile.pincode}` : ''}`
-                  : (profile?.city ? `${profile.city}${profile?.state ? `, ${profile.state}` : ''}${profile?.pincode ? ` - ${profile.pincode}` : ''}` : "Location not specified")}
-              </Text>
-            </View>
-          </View>
-
-          {/* Languages Spoken */}
-          {profile?.languages ? (
-            <View style={styles.detailItemRow}>
-              <Ionicons name="language-outline" size={18} color={Colors.textSecondary} style={styles.detailIcon} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.detailLabel}>Languages Spoken</Text>
-                <Text style={styles.detailValue}>{profile.languages}</Text>
-              </View>
+          {profile?.home_service !== false ? (
+            <View style={[styles.infoBadge, { backgroundColor: "#E6F4EA", borderColor: "#CEEAD6" }]}>
+              <Ionicons name="home" size={13} color={Colors.success} />
+              <Text style={[styles.infoBadgeText, { color: Colors.success }]}>Home Service</Text>
             </View>
           ) : null}
 
-          {/* Verified KYC Identity Box */}
-          <View style={styles.kycSectionBox}>
-            <View style={styles.kycLeft}>
-              <View style={styles.kycShieldCircle}>
-                <Ionicons name="shield-checkmark" size={18} color={Colors.success} />
-              </View>
-              <View>
-                <Text style={styles.kycTitle}>Government ID (Aadhaar KYC)</Text>
-                <Text style={styles.kycMaskedNumber}>
-                  {profile?.aadhaar_number || "•••• •••• Verified"}
-                </Text>
-              </View>
+          {profile?.salon_service ? (
+            <View style={[styles.infoBadge, { backgroundColor: "#E8F0FE", borderColor: "#D2E3FC" }]}>
+              <Ionicons name="business" size={13} color="#1A73E8" />
+              <Text style={[styles.infoBadgeText, { color: "#1A73E8" }]}>Studio / Salon</Text>
             </View>
-            <View style={[styles.kycBadgePill, { backgroundColor: profile?.verification_status === "APPROVED" ? "#E6F4EA" : "#FEF3C7" }]}>
-              <Text style={[styles.kycBadgeText, { color: profile?.verification_status === "APPROVED" ? Colors.success : "#B45309" }]}>
-                {profile?.verification_status || "PENDING"}
+          ) : null}
+
+          <View style={[styles.infoBadge, { backgroundColor: profile?.is_available !== false ? "#E6F4EA" : "#FEF3C7", borderColor: profile?.is_available !== false ? "#CEEAD6" : "#FDE68A" }]}>
+            <View style={[styles.statusDot, { backgroundColor: profile?.is_available !== false ? Colors.success : Colors.warning }]} />
+            <Text style={[styles.infoBadgeText, { color: profile?.is_available !== false ? Colors.success : "#B45309" }]}>
+              {profile?.is_available !== false ? "Accepting Bookings" : "Unavailable"}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.detailItemRow}>
+          <Ionicons name="location-outline" size={18} color={Colors.textSecondary} style={styles.detailIcon} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.detailLabel}>Studio Location & Address</Text>
+            <Text style={styles.detailValue}>
+              {profile?.location || profile?.locality
+                ? `${profile.location || profile.locality}${profile?.city ? `, ${profile.city}` : ''}${profile?.state ? `, ${profile.state}` : ''}${profile?.pincode ? ` - ${profile.pincode}` : ''}`
+                : (profile?.city ? `${profile.city}${profile?.state ? `, ${profile.state}` : ''}${profile?.pincode ? ` - ${profile.pincode}` : ''}` : "Location not specified")}
+            </Text>
+          </View>
+        </View>
+
+        {profile?.languages ? (
+          <View style={styles.detailItemRow}>
+            <Ionicons name="language-outline" size={18} color={Colors.textSecondary} style={styles.detailIcon} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.detailLabel}>Languages Spoken</Text>
+              <Text style={styles.detailValue}>{profile.languages}</Text>
+            </View>
+          </View>
+        ) : null}
+
+        <View style={styles.kycSectionBox}>
+          <View style={styles.kycLeft}>
+            <View style={styles.kycShieldCircle}>
+              <Ionicons name="shield-checkmark" size={18} color={Colors.success} />
+            </View>
+            <View>
+              <Text style={styles.kycTitle}>Government ID (Aadhaar KYC)</Text>
+              <Text style={styles.kycMaskedNumber}>
+                {profile?.aadhaar_number || "•••• •••• Verified"}
               </Text>
             </View>
           </View>
+          <View style={[styles.kycBadgePill, { backgroundColor: profile?.verification_status === "APPROVED" ? "#E6F4EA" : "#FEF3C7" }]}>
+            <Text style={[styles.kycBadgeText, { color: profile?.verification_status === "APPROVED" ? Colors.success : "#B45309" }]}>
+              {profile?.verification_status || "PENDING"}
+            </Text>
+          </View>
         </View>
+      </View> */}
 
         {/* Social Connections (View-Only / Click to Open) */}
-        <View style={styles.socialCard}>
+        {/* <View style={styles.socialCard}>
           <Text style={styles.socialSectionTitle}>Social Connections</Text>
-          
-          {/* Instagram */}
-          <View style={styles.socialRow}>
-            <TouchableOpacity 
-              style={styles.socialLeft} 
-              activeOpacity={instagramHandle ? 0.7 : 1}
-              onPress={() => instagramHandle ? openSocialLink("instagram", instagramHandle) : navigation.navigate("EditProfile")}
-            >
-              <View style={[styles.socialIconCircle, { backgroundColor: "#FFE5EC" }]}>
-                <Ionicons name="logo-instagram" size={20} color="#E1306C" />
-              </View>
-              <View>
-                <Text style={styles.socialLabel}>Instagram</Text>
-                <Text style={[styles.socialValue, instagramHandle && { color: Colors.primary, fontWeight: "600" }]}>
-                  {instagramHandle ? `@${instagramHandle}` : "Not Connected"}
-                </Text>
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.connectBtn} 
-              onPress={() => instagramHandle ? openSocialLink("instagram", instagramHandle) : navigation.navigate("EditProfile")}
-            >
-              <Text style={styles.connectBtnText}>
-                {instagramHandle ? "View" : "Edit"}
-              </Text>
-            </TouchableOpacity>
-          </View>
 
-          {/* Facebook */}
-          <View style={styles.socialRow}>
-            <TouchableOpacity 
-              style={styles.socialLeft} 
-              activeOpacity={facebookHandle ? 0.7 : 1}
-              onPress={() => facebookHandle ? openSocialLink("facebook", facebookHandle) : navigation.navigate("EditProfile")}
-            >
-              <View style={[styles.socialIconCircle, { backgroundColor: "#E8F0FE" }]}>
-                <Ionicons name="logo-facebook" size={20} color="#1877F2" />
-              </View>
-              <View>
-                <Text style={styles.socialLabel}>Facebook</Text>
-                <Text style={[styles.socialValue, facebookHandle && { color: "#1877F2", fontWeight: "600" }]}>
-                  {facebookHandle ? `${facebookHandle}` : "Not Connected"}
-                </Text>
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.connectBtn} 
-              onPress={() => facebookHandle ? openSocialLink("facebook", facebookHandle) : navigation.navigate("EditProfile")}
-            >
-              <Text style={styles.connectBtnText}>
-                {facebookHandle ? "View" : "Edit"}
+        <View style={styles.socialRow}>
+          <TouchableOpacity
+            style={styles.socialLeft}
+            activeOpacity={instagramHandle ? 0.7 : 1}
+            onPress={() => instagramHandle ? openSocialLink("instagram", instagramHandle) : navigation.navigate("EditProfile")}
+          >
+            <View style={[styles.socialIconCircle, { backgroundColor: "#FFE5EC" }]}>
+              <Ionicons name="logo-instagram" size={20} color="#E1306C" />
+            </View>
+            <View>
+              <Text style={styles.socialLabel}>Instagram</Text>
+              <Text style={[styles.socialValue, instagramHandle && { color: Colors.primary, fontWeight: "600" }]}>
+                {instagramHandle ? `@${instagramHandle}` : "Not Connected"}
               </Text>
-            </TouchableOpacity>
-          </View>
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.connectBtn}
+            onPress={() => instagramHandle ? openSocialLink("instagram", instagramHandle) : navigation.navigate("EditProfile")}
+          >
+            <Text style={styles.connectBtnText}>
+              {instagramHandle ? "View" : "Edit"}
+            </Text>
+          </TouchableOpacity>
         </View>
+
+        <View style={styles.socialRow}>
+          <TouchableOpacity
+            style={styles.socialLeft}
+            activeOpacity={facebookHandle ? 0.7 : 1}
+            onPress={() => facebookHandle ? openSocialLink("facebook", facebookHandle) : navigation.navigate("EditProfile")}
+          >
+            <View style={[styles.socialIconCircle, { backgroundColor: "#E8F0FE" }]}>
+              <Ionicons name="logo-facebook" size={20} color="#1877F2" />
+            </View>
+            <View>
+              <Text style={styles.socialLabel}>Facebook</Text>
+              <Text style={[styles.socialValue, facebookHandle && { color: "#1877F2", fontWeight: "600" }]}>
+                {facebookHandle ? `${facebookHandle}` : "Not Connected"}
+              </Text>
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.connectBtn}
+            onPress={() => facebookHandle ? openSocialLink("facebook", facebookHandle) : navigation.navigate("EditProfile")}
+          >
+            <Text style={styles.connectBtnText}>
+              {facebookHandle ? "View" : "Edit"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View> */}
 
         <View style={styles.tabBar}>
           {TABS.map((tab) => (
@@ -748,7 +866,7 @@ export default function ArtistProfileScreen({ navigation }) {
 
         {renderContent()}
       </ScrollView>
-    </SafeAreaView>
+    </SafeAreaView >
   );
 }
 
@@ -765,7 +883,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   username: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "700",
     color: Colors.text,
   },
@@ -783,6 +901,41 @@ const styles = StyleSheet.create({
   profileSection: {
     paddingHorizontal: 16,
     paddingBottom: 12,
+  },
+  bannerHeaderCard: {
+    height: 140,
+    borderRadius: 16,
+    overflow: "hidden",
+    marginBottom: 16,
+    position: "relative",
+    backgroundColor: Colors.primaryLight + "30",
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  bannerHeaderImage: {
+    width: "100%",
+    height: "100%",
+  },
+  bannerHeaderOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.15)",
+  },
+  bannerHeaderEditBtn: {
+    position: "absolute",
+    right: 10,
+    bottom: 10,
+    backgroundColor: "rgba(0,0,0,0.65)",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  bannerHeaderEditText: {
+    color: Colors.white,
+    fontSize: 12,
+    fontWeight: "600",
   },
   profileTopHeader: {
     flexDirection: "row",
@@ -838,7 +991,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.border,
   },
   statValue: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "700",
     color: Colors.text,
   },
@@ -848,12 +1001,12 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   name: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: "700",
     color: Colors.text,
   },
   email: {
-    fontSize: 13,
+    fontSize: 12,
     color: Colors.textSecondary,
     marginTop: 2,
   },
@@ -864,7 +1017,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   ratingText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "600",
     color: Colors.text,
   },
@@ -876,7 +1029,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   bio: {
-    fontSize: 13,
+    fontSize: 12,
     color: Colors.text,
     lineHeight: 18,
   },
@@ -1002,6 +1155,30 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
+  gridTierBadge: {
+    position: "absolute",
+    left: 4,
+    bottom: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  gridPremiumBadge: {
+    backgroundColor: "rgba(124, 58, 237, 0.9)",
+  },
+  gridStandardBadge: {
+    backgroundColor: "rgba(15, 23, 42, 0.75)",
+  },
+  gridTierText: {
+    fontSize: 9,
+    fontWeight: "800",
+  },
+  gridPremiumText: {
+    color: "#FFFFFF",
+  },
+  gridStandardText: {
+    color: "#FFFFFF",
+  },
   gridOverlay: {
     position: "absolute",
     bottom: 0,
@@ -1018,7 +1195,7 @@ const styles = StyleSheet.create({
   },
   socialCard: {
     backgroundColor: Colors.white,
-    borderRadius: 16,
+    borderRadius: 12,
     padding: 16,
     marginHorizontal: 16,
     marginTop: 16,
@@ -1026,13 +1203,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
     shadowColor: Colors.shadow,
-    shadowOpacity: 0.03,
+    shadowOpacity: 0.05,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
     elevation: 2,
   },
   socialSectionTitle: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "700",
     color: Colors.text,
     marginBottom: 12,
@@ -1058,7 +1235,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   socialLabel: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "600",
     color: Colors.text,
   },
@@ -1100,13 +1277,13 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "700",
     color: Colors.text,
     textAlign: "center",
   },
   modalDesc: {
-    fontSize: 13,
+    fontSize: 12,
     color: Colors.textSecondary,
     textAlign: "center",
     marginTop: 6,
@@ -1119,7 +1296,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    fontSize: 14,
+    fontSize: 13,
     color: Colors.text,
     backgroundColor: Colors.inputBackground,
     marginBottom: 20,
@@ -1175,7 +1352,7 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   analyticsValue: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "800",
     color: Colors.text,
   },
@@ -1188,14 +1365,14 @@ const styles = StyleSheet.create({
   },
   detailsCard: {
     backgroundColor: Colors.white,
-    borderRadius: 16,
+    borderRadius: 12,
     padding: 16,
     marginHorizontal: 16,
     marginTop: 16,
     borderWidth: 1,
     borderColor: Colors.border,
     shadowColor: Colors.shadow,
-    shadowOpacity: 0.03,
+    shadowOpacity: 0.05,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
     elevation: 2,
@@ -1207,7 +1384,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   cardSectionTitle: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "700",
     color: Colors.text,
   },
@@ -1252,12 +1429,12 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   detailLabel: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "500",
     color: Colors.textSecondary,
   },
   detailValue: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "600",
     color: Colors.text,
     marginTop: 2,
@@ -1287,12 +1464,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   kycTitle: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "600",
     color: Colors.textSecondary,
   },
   kycMaskedNumber: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "700",
     color: Colors.text,
     marginTop: 1,

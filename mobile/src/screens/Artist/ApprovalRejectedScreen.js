@@ -1,5 +1,7 @@
+import React, { useCallback, useEffect } from "react";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import { useArtistOnboarding } from "../../context/ArtistOnboardingContext";
@@ -9,8 +11,39 @@ export default function ApprovalRejectedScreen({ navigation }) {
   const { rejectionReason } = useArtistOnboarding();
   const { logout } = useAuth();
 
+  const handleBack = useCallback(() => {
+    if (navigation?.canGoBack && navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      Alert.alert(
+        "Application Status",
+        "Would you like to update your documents or log out?",
+        [
+          { text: "Update Documents", onPress: () => navigation.navigate("PersonalDetails") },
+          { text: "Log Out", style: "destructive", onPress: logout }
+        ]
+      );
+    }
+    return true;
+  }, [navigation, logout]);
+
+  useEffect(() => {
+    const { BackHandler } = require("react-native");
+    const backSub = BackHandler.addEventListener("hardwareBackPress", handleBack);
+    return () => backSub.remove();
+  }, [handleBack]);
+
   return (
     <SafeAreaView style={styles.container}>
+      {/* Top Header */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={handleBack} activeOpacity={0.7}>
+          <Ionicons name="arrow-back" size={22} color="#111827" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Application Status</Text>
+        <View style={styles.headerRightPlaceholder} />
+      </View>
+
       <View style={styles.content}>
         <View style={styles.iconWrapper}>
           <Ionicons name="close-circle" size={72} color="#EF4444" />
@@ -62,41 +95,68 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#FFF8FA",
   },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#FEE2E2",
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#FFFFFF",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#FEE2E2",
+  },
+  headerTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  headerRightPlaceholder: {
+    width: 40,
+  },
   content: {
     flex: 1,
     alignItems: "center",
     paddingHorizontal: 24,
-    paddingTop: 40,
+    paddingTop: 24,
   },
   iconWrapper: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
     backgroundColor: "#FEF2F2",
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 24,
+    marginBottom: 20,
   },
   title: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: "700",
     color: "#111827",
     textAlign: "center",
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 13.5,
     color: "#6B7280",
     textAlign: "center",
     marginTop: 8,
-    lineHeight: 22,
+    lineHeight: 20,
     paddingHorizontal: 10,
   },
   reasonsCard: {
     width: "100%",
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
-    padding: 20,
-    marginTop: 24,
+    padding: 18,
+    marginTop: 20,
     borderWidth: 1,
     borderColor: "#FEE2E2",
     shadowColor: "#000",
@@ -106,38 +166,38 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   reasonsTitle: {
-    fontSize: 15,
+    fontSize: 14.5,
     fontWeight: "700",
     color: "#991B1B",
-    marginBottom: 10,
+    marginBottom: 8,
   },
   reasonRow: {
     flexDirection: "row",
     alignItems: "flex-start",
   },
   reasonText: {
-    fontSize: 14,
+    fontSize: 13.5,
     color: "#374151",
     marginLeft: 10,
     flex: 1,
-    lineHeight: 22,
+    lineHeight: 20,
     fontWeight: "500",
   },
   hint: {
-    fontSize: 13,
+    fontSize: 12.5,
     color: "#6B7280",
     textAlign: "center",
-    marginTop: 20,
+    marginTop: 16,
     paddingHorizontal: 15,
-    lineHeight: 20,
+    lineHeight: 18,
   },
   footer: {
     padding: 20,
-    gap: 12,
+    gap: 10,
     backgroundColor: "#FFF8FA",
   },
   primaryButton: {
-    height: 52,
+    height: 50,
     backgroundColor: PRIMARY,
     borderRadius: 12,
     justifyContent: "center",
@@ -149,7 +209,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   outlineButton: {
-    height: 48,
+    height: 46,
     borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",

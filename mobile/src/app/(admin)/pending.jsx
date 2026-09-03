@@ -3,7 +3,7 @@ import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, Alert, Refre
 import { useAuth } from '../../context/AuthContext';
 import { getGlobalStyles } from '../../theme/globalStyles';
 import { Colors } from '../../theme/colors';
-import { adminService } from '../../services/api';
+import { adminService } from '../../services/admin';
 import { Check, X, ShieldCheck } from 'lucide-react-native';
 
 export default function AdminPending() {

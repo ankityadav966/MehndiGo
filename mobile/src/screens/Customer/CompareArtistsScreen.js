@@ -109,7 +109,7 @@ export default function CompareArtistsScreen({ route, navigation }) {
             <View style={styles.valuesRow}>
               {artists.map((a) => (
                 <Text key={a.id} style={styles.priceVal}>
-                  ₹{a.services?.[0]?.minimum_price || 1500}
+                  ₹{a.services?.[0]?.minimum_price || 0}
                 </Text>
               ))}
             </View>

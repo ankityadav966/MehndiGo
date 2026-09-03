@@ -23,11 +23,13 @@ import {
   rejectBooking,
   updateOnTheWay,
   updateArrived,
+  sendCheckInOtp,
   verifyCheckInOtp,
   sendCheckOutOtp,
   verifyCheckOutOtp,
   completeService,
   confirmCashPayment,
+  rejectCashPayment,
   requestTravelCharge
 } from "../../services/booking";
 import { useSocket } from "../../context/SocketContext";
@@ -70,6 +72,8 @@ export default function BookingDetailsScreen({ route, navigation }) {
   const [otpModalVisible, setOtpModalVisible] = useState(false);
   const [otpType, setOtpType] = useState("CHECKIN"); // "CHECKIN" or "CHECKOUT"
   const [otpError, setOtpError] = useState(null);
+  const [isCheckInLocallyVerified, setIsCheckInLocallyVerified] = useState(false);
+  const hasShownCashAlertRef = useRef(false);
 
   const pollIntervalRef = useRef(null);
 
@@ -87,20 +91,8 @@ export default function BookingDetailsScreen({ route, navigation }) {
           });
         }
         setBooking((prev) => {
-          const prevVerified =
-            prev &&
-            (Number(prev.checkin_otp_verified) === 1 ||
-              Number(prev.checkin_verified) === 1 ||
-              String(prev.detailed_status).toUpperCase() === "SERVICE_IN_PROGRESS");
-          const incomingVerified =
-            Number(data.checkin_otp_verified) === 1 ||
-            Number(data.checkin_verified) === 1 ||
-            String(data.detailed_status).toUpperCase() === "SERVICE_IN_PROGRESS";
-          const isFinished = ["COMPLETED", "COMPLETED_CLOSED", "CANCELLED", "CHECKOUT"].includes(
-            String(data.detailed_status || data.status || "").toUpperCase()
-          );
-
-          if (prevVerified && !incomingVerified && !isFinished) {
+          const isLocallyVerified = isCheckInLocallyVerified || Number(prev?.checkin_otp_verified) === 1 || prev?.detailed_status === "SERVICE_IN_PROGRESS";
+          if (isLocallyVerified && Number(data?.checkin_otp_verified) !== 1 && !["COMPLETED", "CHECKOUT", "PAYMENT_REQUIRED", "CANCELLED"].includes(data?.detailed_status)) {
             return {
               ...data,
               status: "in_progress",
@@ -119,7 +111,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [bookingId]);
+  }, [bookingId, isCheckInLocallyVerified]);
 
   // Screen Focus & Polling
   useEffect(() => {
@@ -159,6 +151,55 @@ export default function BookingDetailsScreen({ route, navigation }) {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     };
   }, [bookingId, navigation, loadDetails, booking?.detailed_status, booking?.booking_status, booking?.status]);
+
+  // Socket Live Status Listener
+  useEffect(() => {
+    if (!socket || !bookingId) return;
+
+    socket.emit("join-room", { bookingId });
+
+    const handleStatusUpdate = () => {
+      loadDetails();
+    };
+
+    socket.on("booking-status-updated", handleStatusUpdate);
+    socket.on("booking_status_updated", handleStatusUpdate);
+    socket.on("bookingStatusUpdated", handleStatusUpdate);
+    socket.on("service_started", handleStatusUpdate);
+    socket.on("SERVICE_STARTED", handleStatusUpdate);
+    socket.on("CHECKIN_VERIFIED", handleStatusUpdate);
+    socket.on("checkout_otp_received", handleStatusUpdate);
+    socket.on("CHECKOUT_OTP_GENERATED", handleStatusUpdate);
+    socket.on("BOOKING_COMPLETED", handleStatusUpdate);
+    socket.on("booking_completed", handleStatusUpdate);
+    socket.on("service_completed", handleStatusUpdate);
+    socket.on("payment_completed", handleStatusUpdate);
+    socket.on("PAYMENT_COMPLETED", handleStatusUpdate);
+    socket.on("cash_payment_confirmed", handleStatusUpdate);
+    socket.on("CASH_PAYMENT_CONFIRMED", handleStatusUpdate);
+    socket.on("settlement_completed", handleStatusUpdate);
+    socket.on("SETTLEMENT_COMPLETED", handleStatusUpdate);
+
+    return () => {
+      socket.off("booking-status-updated", handleStatusUpdate);
+      socket.off("booking_status_updated", handleStatusUpdate);
+      socket.off("bookingStatusUpdated", handleStatusUpdate);
+      socket.off("service_started", handleStatusUpdate);
+      socket.off("SERVICE_STARTED", handleStatusUpdate);
+      socket.off("CHECKIN_VERIFIED", handleStatusUpdate);
+      socket.off("checkout_otp_received", handleStatusUpdate);
+      socket.off("CHECKOUT_OTP_GENERATED", handleStatusUpdate);
+      socket.off("BOOKING_COMPLETED", handleStatusUpdate);
+      socket.off("booking_completed", handleStatusUpdate);
+      socket.off("service_completed", handleStatusUpdate);
+      socket.off("payment_completed", handleStatusUpdate);
+      socket.off("PAYMENT_COMPLETED", handleStatusUpdate);
+      socket.off("cash_payment_confirmed", handleStatusUpdate);
+      socket.off("CASH_PAYMENT_CONFIRMED", handleStatusUpdate);
+      socket.off("settlement_completed", handleStatusUpdate);
+      socket.off("SETTLEMENT_COMPLETED", handleStatusUpdate);
+    };
+  }, [socket, bookingId, loadDetails]);
 
   // Real-time GPS location broadcasting when ON_THE_WAY
   useEffect(() => {
@@ -293,11 +334,15 @@ export default function BookingDetailsScreen({ route, navigation }) {
         console.warn("[handleArrived] GPS fetch notice:", locErr.message);
       }
 
-      await updateArrived(bookingId, lat, lng);
-      Alert.alert("Arrived! 📍", "You have arrived at the customer doorstep. Ask the customer for their 4-digit check-in PIN.");
+      const customerEmail = booking?.customer?.email || booking?.customer_email || booking?.user?.email || booking?.email || "Customer Email";
+      console.log(`[ARTIST ARRIVED AT DOORSTEP] Triggering Check-In PIN dispatch to Customer Email: ${customerEmail} | Booking ID: ${bookingId}`);
+      const res = await updateArrived(bookingId, lat, lng);
+      console.log(`[ARTIST ARRIVED API RESPONSE]:`, res);
+      Alert.alert("Arrived! 📍", "You have arrived at the customer doorstep. Check-In PIN has been sent to customer email.");
       setOtpType("CHECKIN");
       loadDetails();
     } catch (err) {
+      console.error(`[ARTIST ARRIVED ERROR]:`, err);
       Alert.alert("Error", err.message || "Failed to confirm arrival.");
     } finally {
       setActionLoading(false);
@@ -305,13 +350,16 @@ export default function BookingDetailsScreen({ route, navigation }) {
   };
 
   // 5. VERIFY OTP (Check-in or Checkout)
-  const handleVerifyOtp = async (otp) => {
+  const handleVerifyOtp = async (otp, explicitType = null) => {
+    const activeType = explicitType || otpType;
     setActionLoading(true);
     setOtpError(null);
     try {
-      if (otpType === "CHECKIN") {
+      if (activeType === "CHECKIN") {
         const res = await verifyCheckInOtp(bookingId, otp);
+        setIsCheckInLocallyVerified(true);
         setOtpModalVisible(false);
+        setOtpType("CHECKOUT");
         setBooking((prev) => ({
           ...(prev || {}),
           ...(res?.data || res || {}),
@@ -319,26 +367,73 @@ export default function BookingDetailsScreen({ route, navigation }) {
           booking_status: "IN_PROGRESS",
           detailed_status: "SERVICE_IN_PROGRESS",
           checkin_otp_verified: 1,
-          checkin_verified: true
+          checkin_verified: true,
+          service_started_at: res?.data?.service_started_at || new Date()
         }));
-        Alert.alert("Check-In Verified! ✅", "Customer check-in verified. Service is now in progress.");
+        Alert.alert("Check-In Verified! ✅", "Customer check-in verified. Service timer is now running.");
         loadDetails();
       } else {
         const res = await verifyCheckOutOtp(bookingId, otp);
         setOtpModalVisible(false);
+        const resData = res?.data || res || {};
+        const isFullyPaid = resData.is_fully_paid || Number(resData.remaining_amount) <= 0;
+
         setBooking((prev) => ({
           ...(prev || {}),
-          ...(res?.data || res || {}),
-          status: "completed",
-          booking_status: "COMPLETED",
-          detailed_status: "COMPLETED",
-          checkout_otp_verified: 1
+          ...resData,
+          status: isFullyPaid ? "completed" : "confirmed",
+          booking_status: isFullyPaid ? "COMPLETED" : "CHECKOUT",
+          detailed_status: isFullyPaid ? "COMPLETED" : "CHECKOUT",
+          checkout_otp_verified: 1,
+          check_out_time: resData.check_out_time || new Date()
         }));
-        Alert.alert("Service Completed! 🎉", "Booking completed! Your earnings have been released to your wallet.");
+
+        if (isFullyPaid) {
+          Alert.alert("Service Completed! 🎉", "Booking completed! Timer stopped and earnings released to your wallet.");
+        } else {
+          Alert.alert("Check-Out Verified! ✨", `Check-out verified. Please collect remaining balance of ₹${Number(resData.remaining_amount || 0).toLocaleString("en-IN")} from customer (Online or Cash).`);
+        }
         loadDetails();
       }
     } catch (err) {
-      setOtpError(err.message || "Invalid OTP code. Please ask the customer for their 4-digit PIN.");
+      setOtpError(err.message || "Invalid PIN. Please ask the customer for the PIN displayed on their app.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // 5b. RESEND PIN TO CUSTOMER EMAIL (Artist Action)
+  const handleResendCheckInPin = async () => {
+    setActionLoading(true);
+    try {
+      const customerEmail = booking?.customer?.email || booking?.customer_email || booking?.user?.email || booking?.email || "Customer Email";
+      console.log(`[ARTIST RESEND CHECK-IN PIN] Sending OTP to Customer Email: ${customerEmail} | Booking ID: ${bookingId}`);
+      const res = await sendCheckInOtp(bookingId);
+      console.log(`[ARTIST RESEND CHECK-IN PIN API RESPONSE]:`, res);
+      const emailResolved = res?.customerEmail || res?.customer_email || res?.customerEmailMasked || customerEmail;
+      Alert.alert("Check-In PIN Sent! ✉️", `A 4-digit Check-In PIN has been sent to customer email (${emailResolved}).`);
+      loadDetails();
+    } catch (err) {
+      console.error(`[ARTIST RESEND CHECK-IN PIN ERROR]:`, err);
+      Alert.alert("Notice", err.message || "Please wait before requesting a new PIN.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleResendCheckOutPin = async () => {
+    setActionLoading(true);
+    try {
+      const customerEmail = booking?.customer?.email || booking?.customer_email || booking?.user?.email || booking?.email || "Customer Email";
+      console.log(`[ARTIST RESEND CHECK-OUT PIN] Sending Completion OTP to Customer Email: ${customerEmail} | Booking ID: ${bookingId}`);
+      const res = await sendCheckOutOtp(bookingId);
+      console.log(`[ARTIST RESEND CHECK-OUT PIN API RESPONSE]:`, res);
+      const emailResolved = res?.customerEmail || res?.customer_email || res?.customerEmailMasked || customerEmail;
+      Alert.alert("Completion PIN Sent! ✉️", `A 4-digit Service Completion PIN has been sent to customer email (${emailResolved}).`);
+      loadDetails();
+    } catch (err) {
+      console.error(`[ARTIST RESEND CHECK-OUT PIN ERROR]:`, err);
+      Alert.alert("Notice", err.message || "Please wait before requesting a new PIN.");
     } finally {
       setActionLoading(false);
     }
@@ -348,20 +443,27 @@ export default function BookingDetailsScreen({ route, navigation }) {
   const handleFinishAndCheckout = () => {
     Alert.alert(
       "Complete Mehndi Service?",
-      "Are you ready to finish the application and complete service?",
+      "Are you ready to finish application and request the completion PIN from the customer?",
       [
         { text: "Cancel", style: "cancel" },
         {
-          text: "Proceed to Checkout",
+          text: "Proceed & Request PIN",
           onPress: async () => {
             setActionLoading(true);
             try {
-              await sendCheckOutOtp(bookingId).catch(() => {});
+              const customerEmail = booking?.customer?.email || booking?.customer_email || booking?.user?.email || booking?.email || "Customer Email";
+              console.log(`[ARTIST FINISH & CHECKOUT] Dispatching Completion PIN to Customer Email: ${customerEmail} | Booking ID: ${bookingId}`);
+              const res = await sendCheckOutOtp(bookingId);
+              console.log(`[ARTIST FINISH & CHECKOUT API RESPONSE]:`, res);
               setOtpType("CHECKOUT");
               setOtpModalVisible(true);
               loadDetails();
             } catch (err) {
-              Alert.alert("Error", err.message || "Failed to initiate checkout.");
+              console.error(`[ARTIST FINISH & CHECKOUT ERROR]:`, err);
+              Alert.alert("Notice", err.message || "Please request completion PIN from customer.");
+              setOtpType("CHECKOUT");
+              setOtpModalVisible(true);
+              loadDetails();
             } finally {
               setActionLoading(false);
             }
@@ -372,40 +474,30 @@ export default function BookingDetailsScreen({ route, navigation }) {
   };
 
   // 7. CONFIRM CASH PAYMENT
-  const handleConfirmCash = async () => {
-    const remaining = Number(booking?.remaining_amount || 0);
-    Alert.alert(
-      "Confirm Cash Collection",
-      `Have you received ₹${remaining.toLocaleString("en-IN")} in cash from the customer?`,
-      [
-        { text: "No", style: "cancel" },
-        {
-          text: "Yes, Received",
-          onPress: async () => {
-            setActionLoading(true);
-            try {
-              await confirmCashPayment(bookingId);
-              await completeService(bookingId);
-              setBooking((prev) => ({
-                ...(prev || {}),
-                status: "completed",
-                booking_status: "COMPLETED",
-                detailed_status: "COMPLETED",
-                remaining_amount: 0,
-                payment_status: "paid"
-              }));
-              Alert.alert("Payment Confirmed! 💰", "Cash payment recorded and booking marked complete.");
-              loadDetails();
-            } catch (err) {
-              Alert.alert("Error", err.message || "Failed to record cash payment.");
-            } finally {
-              setActionLoading(false);
-            }
-          }
-        }
-      ]
-    );
-  };
+  const handleConfirmCash = useCallback(async () => {
+    setActionLoading(true);
+    try {
+      await confirmCashPayment(bookingId);
+      setBooking((prev) => ({
+        ...(prev || {}),
+        status: "completed",
+        booking_status: "COMPLETED",
+        detailed_status: "COMPLETED",
+        remaining_amount: 0,
+        payment_status: "PAID",
+        final_payment_status: "PAID",
+        final_payment_method: "CASH"
+      }));
+      Alert.alert("Payment Confirmed! 💰", "Cash payment recorded and booking marked complete.");
+      loadDetails();
+    } catch (err) {
+      Alert.alert("Error", err.message || "Failed to record cash payment.");
+    } finally {
+      setActionLoading(false);
+    }
+  }, [booking?.remaining_amount, bookingId, loadDetails]);
+
+
 
   // 8. REQUEST TRAVEL ALLOWANCE
   const handleRequestTravelCharge = async () => {
@@ -427,6 +519,37 @@ export default function BookingDetailsScreen({ route, navigation }) {
     }
   };
 
+  const handleBack = useCallback(() => {
+    if (rejectModalVisible) {
+      setRejectModalVisible(false);
+      return true;
+    }
+    if (travelChargeModalVisible) {
+      setTravelChargeModalVisible(false);
+      return true;
+    }
+    if (otpModalVisible) {
+      setOtpModalVisible(false);
+      return true;
+    }
+
+    if (navigation?.canGoBack && navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "ArtistTabs", params: { screen: "Dashboard" } }]
+      });
+    }
+    return true;
+  }, [rejectModalVisible, travelChargeModalVisible, otpModalVisible, navigation]);
+
+  useEffect(() => {
+    const { BackHandler } = require("react-native");
+    const backSubscription = BackHandler.addEventListener("hardwareBackPress", handleBack);
+    return () => backSubscription.remove();
+  }, [handleBack]);
+
   if (loading && !booking) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
@@ -439,26 +562,42 @@ export default function BookingDetailsScreen({ route, navigation }) {
   const rawStatus = String(
     booking?.detailed_status || booking?.booking_status || booking?.status || "PENDING"
   ).toUpperCase();
+
+  if (__DEV__) {
+    console.log("[DEBUG BookingDetailsScreen] booking ID:", booking?.id, "rawStatus:", rawStatus, "detailed_status:", booking?.detailed_status);
+  }
+
   const isCheckInVerified =
-    Number(booking?.checkin_otp_verified) === 1 || Number(booking?.checkin_verified) === 1;
+    isCheckInLocallyVerified ||
+    Number(booking?.checkin_otp_verified) === 1 ||
+    Number(booking?.checkin_verified) === 1 ||
+    Number(booking?.check_in_otp_verified) === 1 ||
+    booking?.check_in_otp_verified === true ||
+    ["CUSTOMER_VERIFIED", "SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS", "CHECKOUT", "COMPLETED"].includes(rawStatus);
 
-  const isPending = rawStatus === "PENDING" || rawStatus === "REQUESTED";
-  const isAccepted = ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED"].includes(rawStatus);
-  const isOnTheWay = ["ARTIST_ON_THE_WAY", "ON_THE_WAY"].includes(rawStatus);
+  const isPending = rawStatus === "PENDING" || rawStatus === "REQUESTED" || rawStatus === "PENDING_ARTIST_CONFIRMATION";
+  const isAccepted = !isCheckInVerified && ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED"].includes(rawStatus);
+  const isOnTheWay = !isCheckInVerified && ["ARTIST_ON_THE_WAY", "ON_THE_WAY"].includes(rawStatus);
 
-  // Arrived state is active ONLY when arrived AND check-in OTP is not yet verified
-  const isArrived = (rawStatus === "ARTIST_ARRIVED" || rawStatus === "ARRIVED") && !isCheckInVerified;
+  const isCompleted =
+    rawStatus === "COMPLETED" ||
+    rawStatus === "COMPLETED_CLOSED" ||
+    rawStatus === "PAYMENT_COMPLETED" ||
+    (Number(booking?.remaining_amount) <= 0 && Number(booking?.advance_paid) >= Number(booking?.total_amount) && Number(booking?.checkout_otp_verified) === 1);
 
-  // Service is active whenever status is in_progress / service_in_progress OR checkin is verified
+  const isCheckout = ["CHECKOUT", "PAYMENT_REQUIRED"].includes(rawStatus) && !isCompleted;
+
+  // Service is active whenever checkin is verified or service started, until checkout/completed/cancelled
   const isServiceActive =
-    (["SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS", "CUSTOMER_VERIFIED"].includes(rawStatus) ||
-      isCheckInVerified) &&
-    rawStatus !== "COMPLETED" &&
-    rawStatus !== "COMPLETED_CLOSED" &&
-    rawStatus !== "CANCELLED";
+    (isCheckInVerified || ["SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS", "CUSTOMER_VERIFIED"].includes(rawStatus)) &&
+    !isCheckout &&
+    !isCompleted &&
+    rawStatus !== "CANCELLED" &&
+    rawStatus !== "REJECTED";
 
-  const isCheckout = ["CHECKOUT", "PAYMENT_REQUIRED"].includes(rawStatus) && rawStatus !== "COMPLETED";
-  const isCompleted = rawStatus === "COMPLETED" || rawStatus === "COMPLETED_CLOSED";
+  // Arrived state is active ONLY when arrived AND check-in OTP is not yet verified AND service is not active
+  const isArrived = !isCheckInVerified && !isServiceActive && !isCheckout && !isCompleted && (rawStatus === "ARTIST_ARRIVED" || rawStatus === "ARRIVED");
+
   const isCancelled = rawStatus === "CANCELLED" || rawStatus === "REJECTED";
 
   const resolvedCustomerCoords =
@@ -478,11 +617,12 @@ export default function BookingDetailsScreen({ route, navigation }) {
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        {/* 1. Header with Status Pill */}
+        {/* 1. Header with Status Pill & Instant Refresh */}
         <BookingStatusHeader
           bookingCode={booking?.booking_code || booking?.booking_number || booking?.id}
           status={rawStatus}
-          onBack={() => navigation.goBack()}
+          onBack={handleBack}
+          onRefresh={handleRefresh}
         />
 
         <ScrollView
@@ -495,6 +635,53 @@ export default function BookingDetailsScreen({ route, navigation }) {
         >
           {/* 2. Step Progression Timeline */}
           <BookingTimeline status={rawStatus} isCancelled={isCancelled} />
+
+          {/* 2b. AWAITING CASH CONFIRMATION ACTIONS */}
+          {rawStatus === "AWAITING_CASH_CONFIRMATION" && (
+            <View style={styles.actionCard}>
+              <View style={styles.actionCardHeader}>
+                <View style={[styles.carIconBox, { backgroundColor: "#FFF0F4" }]}>
+                  <Ionicons name="card" size={17} color={Colors.primary} />
+                </View>
+                <View style={{ flex: 1, flexShrink: 1 }}>
+                  <Text style={styles.actionCardTitle} numberOfLines={1}>Pending Cash Approval</Text>
+                  <Text style={styles.actionCardDesc} numberOfLines={2}>
+                    Awaiting your approval for collected cash (₹{booking?.final_amount || booking?.artist_total_payable}).
+                  </Text>
+                </View>
+              </View>
+
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                <TouchableOpacity
+                  style={[styles.startTravelBtn, { backgroundColor: Colors.error, flex: 1 }]}
+                  onPress={async () => {
+                      try {
+                        setActionLoading(true);
+                        await rejectCashPayment(bookingId);
+                        Alert.alert("Success", "Cash payment rejected.");
+                        loadDetails();
+                      } catch (err) {
+                        Alert.alert("Error", err.message);
+                        setActionLoading(false);
+                      }
+                  }}
+                  disabled={actionLoading}
+                  activeOpacity={0.85}
+                >
+                  {actionLoading ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={styles.startTravelBtnText}>Reject</Text>}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.startTravelBtn, { backgroundColor: Colors.success, flex: 1 }]}
+                  onPress={handleConfirmCash}
+                  disabled={actionLoading}
+                  activeOpacity={0.85}
+                >
+                  {actionLoading ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={styles.startTravelBtnText}>Approve</Text>}
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
 
           {/* 3. PENDING REQUEST ACTIONS (Accept / Reject) */}
           {isPending && (
@@ -630,14 +817,15 @@ export default function BookingDetailsScreen({ route, navigation }) {
             <OtpVerificationCard
               isArtist={true}
               onVerify={handleVerifyOtp}
+              onResend={handleResendCheckInPin}
               loading={actionLoading}
               otpType="CHECKIN"
               errorMessage={otpError}
             />
           )}
 
-          {/* 7. ACTIVE SERVICE (Live Elapsed Timer & Checkout Button) */}
-          {isServiceActive && !isCheckout && (
+          {/* 7. ACTIVE / COMPLETED SERVICE (Live Elapsed Timer & Checkout Button) */}
+          {(isServiceActive || (isCompleted && (booking?.service_started_at || booking?.check_in_time))) && !isCheckout && (
             <ServiceProgressCard
               startTime={
                 booking?.service_started_at ||
@@ -645,6 +833,8 @@ export default function BookingDetailsScreen({ route, navigation }) {
                 booking?.checked_in_at ||
                 booking?.service_start_time
               }
+              endTime={booking?.check_out_time}
+              isCompleted={isCompleted}
               isArtist={true}
               onCheckout={handleFinishAndCheckout}
               serviceName={booking?.service_name || booking?.package_name || "Mehndi Service"}
@@ -717,7 +907,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
       <Modal visible={otpModalVisible} transparent animationType="fade">
         <KeyboardAvoidingView
           style={styles.modalOverlay}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
           <View style={styles.modalBox}>
             <View style={styles.modalHeaderIcon}>
@@ -731,6 +921,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
             <OtpVerificationCard
               isArtist={true}
               onVerify={handleVerifyOtp}
+              onResend={handleResendCheckOutPin}
               loading={actionLoading}
               otpType={otpType}
               errorMessage={otpError}
@@ -754,7 +945,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
       <Modal visible={rejectModalVisible} transparent animationType="fade">
         <KeyboardAvoidingView
           style={styles.modalOverlay}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
           <View style={styles.modalBox}>
             <View style={[styles.modalHeaderIcon, { backgroundColor: "#FEE2E2" }]}>
@@ -802,7 +993,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
       <Modal visible={travelChargeModalVisible} transparent animationType="fade">
         <KeyboardAvoidingView
           style={styles.modalOverlay}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
           <View style={styles.modalBox}>
             <View style={styles.modalHeaderIcon}>

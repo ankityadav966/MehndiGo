@@ -246,18 +246,37 @@ export default function LiveTrackingScreen({ route, navigation }) {
   const isCheckInVerified =
     Number(booking?.checkin_otp_verified) === 1 ||
     Number(booking?.checkin_verified) === 1 ||
-    String(booking?.detailed_status || "").toUpperCase() === "SERVICE_IN_PROGRESS" ||
-    String(booking?.status || "").toUpperCase() === "IN_PROGRESS";
-  const checkinOtp = booking?.checkin_otp;
+    Number(booking?.check_in_otp_verified) === 1 ||
+    ["SERVICE_IN_PROGRESS", "SERVICE_STARTED", "CUSTOMER_VERIFIED", "IN_PROGRESS", "COMPLETED"].includes(
+      String(booking?.detailed_status || booking?.status || "").toUpperCase()
+    );
 
   const originCoords = customerCoords || (booking?.latitude ? { lat: Number(booking.latitude), lng: Number(booking.longitude) } : null);
   const destinationCoords = artistCoords || (booking?.artist?.latitude ? { lat: Number(booking.artist.latitude), lng: Number(booking.artist.longitude) } : null);
+
+  const handleBack = useCallback(() => {
+    if (navigation?.canGoBack && navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "CustomerTabs", params: { screen: "Bookings" } }]
+      });
+    }
+    return true;
+  }, [navigation]);
+
+  useEffect(() => {
+    const { BackHandler } = require("react-native");
+    const backSubscription = BackHandler.addEventListener("hardwareBackPress", handleBack);
+    return () => backSubscription.remove();
+  }, [handleBack]);
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       {/* Top Header Bar */}
       <View style={styles.topHeader}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+        <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
           <Ionicons name="chevron-back" size={24} color={Colors.text} />
         </TouchableOpacity>
         <Text style={styles.topHeaderTitle}>Live Artist Tracking</Text>
@@ -320,19 +339,15 @@ export default function LiveTrackingScreen({ route, navigation }) {
         </View>
 
         {/* Check-In PIN Card (Only before check-in is verified) */}
-        {Boolean(checkinOtp) && !isCheckInVerified && (
-          <View style={styles.checkinCard}>
-            <Text style={styles.checkinLabel}>Doorstep Check-In PIN</Text>
-            <View style={styles.pinRow}>
-              {String(checkinOtp)
-                .split("")
-                .map((d, idx) => (
-                  <View key={idx} style={styles.pinBox}>
-                    <Text style={styles.pinDigit}>{d}</Text>
-                  </View>
-                ))}
+        {!isCheckInVerified && (
+          <View style={[styles.checkinCard, { backgroundColor: "#F0FDF4", borderColor: "#BBF7D0" }]}>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", marginBottom: 4 }}>
+              <Ionicons name="mail" size={16} color="#059669" style={{ marginRight: 6 }} />
+              <Text style={[styles.checkinLabel, { color: "#065F46", marginBottom: 0 }]}>Check-In PIN Sent to Email ✉️</Text>
             </View>
-            <Text style={styles.pinHint}>Share this 4-digit PIN with the artist upon arrival.</Text>
+            <Text style={[styles.pinHint, { color: "#047857" }]}>
+              Please check your registered email inbox for the 4-digit PIN and share with your specialist upon arrival.
+            </Text>
           </View>
         )}
 

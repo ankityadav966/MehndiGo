@@ -1,37 +1,25 @@
-import apiRequest from "./api";
+import { apiRequest } from "./api";
 
-// Fetch user's referral dashboard details
-export async function getReferralDashboard() {
-  const res = await apiRequest("GET", "/referral", null, true);
-  return res?.data || res;
+const BASE = "/mehndigo/referral";
+
+// ── Customer ─────────────────────────────────────────────────────────────────
+
+/** Fetch customer referral dashboard stats */
+export async function getCustomerReferralDashboard() {
+  return apiRequest("GET", `${BASE}/dashboard`, null, true);
 }
 
-// Fetch user's invited friends history list
-export async function getReferralHistory() {
-  const res = await apiRequest("GET", "/referral/history", null, true);
-  return res?.data || res;
+/** Fetch artist referral dashboard stats */
+export async function getArtistReferralDashboard() {
+  return apiRequest("GET", `${BASE}/artist-dashboard`, null, true);
 }
 
-// Fetch referral wallet transactions rewards
-export async function getReferralRewardsHistory() {
-  const res = await apiRequest("GET", "/referral/rewards", null, true);
-  return res?.data || res;
+/** Paginated referral history */
+export async function getReferralHistory(page = 1, limit = 20) {
+  return apiRequest("GET", `${BASE}/history?page=${page}&limit=${limit}`, null, true);
 }
 
-// Fetch Leaderboard ranks
-export async function getLeaderboard(type = "XP", period = "all-time") {
-  const res = await apiRequest("GET", `/referral/leaderboard?type=${type}&period=${period}`, null, true);
-  return res?.data || res;
-}
-
-// Fetch reward store options
-export async function listRewardOptions() {
-  const res = await apiRequest("GET", "/reward", null, true);
-  return res?.data || res;
-}
-
-// Claim reward store item
-export async function claimRewardOption(rewardId) {
-  const res = await apiRequest("POST", "/reward/claim", { rewardId }, true);
-  return res?.data || res;
+/** Get share link + referral code */
+export async function getShareLink() {
+  return apiRequest("GET", `${BASE}/share-link`, null, true);
 }

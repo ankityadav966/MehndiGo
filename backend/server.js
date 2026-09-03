@@ -48,30 +48,85 @@ const { secureUploadsHandler } = require("./middleware/secureUploads.middleware"
 app.use("/uploads", secureUploadsHandler);
 app.use(checkBlockedIP);
 app.use(sanitizeInputs);
-app.use("/auth", require("./routes/auth.routes"));
-app.use("/admin", require("./routes/v1/admin.routes"));
-app.use("/analytics", require("./routes/analytics.routes"));
-app.use("/security", require("./routes/security.routes"));
-app.use("/customer", require("./routes/customer.routes"));
-app.use("/artist", require("./routes/artist.routes"));
-app.use("/booking", require("./routes/booking.routes"));
-app.use("/chat", require("./routes/chat.routes"));
-app.use("/coupon", require("./routes/coupon.routes"));
-app.use("/notification", require("./routes/notification.routes"));
-app.use("/payment", require("./routes/payment.routes"));
-app.use("/referral", require("./routes/referral.routes"));
-app.use("/category", require("./routes/category.routes"));
-app.use("/reward", require("./routes/reward.routes"));
-app.use("/reviews", require("./routes/review.routes"));
-app.use("/wallet", require("./routes/wallet.routes"));
-app.use("/transactions", require("./routes/wallet.routes"));
-app.use("/settlements", require("./routes/wallet.routes"));
-app.use("/bank-account", require("./routes/wallet.routes"));
+
+// Mount all core API routes with and without /api and /api/v1 prefixes for robust client compatibility
+const authRoutes = require("./routes/auth.routes");
+const adminRoutes = require("./routes/v1/admin.routes");
+const analyticsRoutes = require("./routes/analytics.routes");
+const securityRoutes = require("./routes/security.routes");
+const customerRoutes = require("./routes/customer.routes");
+const artistRoutes = require("./routes/artist.routes");
+const bookingRoutes = require("./routes/booking.routes");
+const chatRoutes = require("./routes/chat.routes");
+const couponRoutes = require("./routes/coupon.routes");
+const notificationRoutes = require("./routes/notification.routes");
+const paymentRoutes = require("./routes/payment.routes");
+const categoryRoutes = require("./routes/category.routes");
+const reviewRoutes = require("./routes/review.routes");
+const walletRoutes = require("./routes/wallet.routes");
+const referralRoutes = require("./routes/v1/referral.routes");
+
+app.use(["/auth", "/api/auth", "/api/v1/auth"], authRoutes);
+app.use(["/admin", "/api/admin", "/api/v1/admin"], adminRoutes);
+app.use(["/analytics", "/api/analytics", "/api/v1/analytics"], analyticsRoutes);
+app.use(["/security", "/api/security", "/api/v1/security"], securityRoutes);
+app.use(["/customer", "/api/customer", "/api/v1/customer"], customerRoutes);
+app.use(["/artist", "/api/artist", "/api/v1/artist"], artistRoutes);
+app.use(["/booking", "/api/booking", "/api/v1/booking"], bookingRoutes);
+app.use(["/chat", "/api/chat", "/api/v1/chat"], chatRoutes);
+app.use(["/coupon", "/api/coupon", "/api/v1/coupon"], couponRoutes);
+app.use(["/notification", "/api/notification", "/api/v1/notification"], notificationRoutes);
+app.use(["/payment", "/api/payment", "/api/v1/payment"], paymentRoutes);
+app.use(["/category", "/api/category", "/api/v1/category"], categoryRoutes);
+app.use(["/reviews", "/api/reviews", "/api/v1/reviews"], reviewRoutes);
+app.use(["/wallet", "/api/wallet", "/api/v1/wallet"], walletRoutes);
+app.use(["/transactions", "/api/transactions", "/api/v1/transactions"], walletRoutes);
+app.use(["/settlements", "/api/settlements", "/api/v1/settlements"], walletRoutes);
+app.use(["/bank-account", "/api/bank-account", "/api/v1/bank-account"], walletRoutes);
+app.use(["/referral", "/api/referral", "/api/v1/referral", "/api/v1/mehndigo/referral"], referralRoutes);
+
 app.get("/health", (req, res) => {
   return res.status(200).json({
     success: true,
     status: "UP",
     timestamp: new Date()
+  });
+});
+
+app.get(["/.well-known/assetlinks.json", "/assetlinks.json"], (req, res) => {
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  return res.status(200).json([
+    {
+      relation: ["delegate_permission/common.handle_all_urls"],
+      target: {
+        namespace: "android_app",
+        package_name: "com.sonuy123.mehendigoo",
+        sha256_cert_fingerprints: [
+          "2D:A0:9F:27:7C:F9:F3:E4:43:6B:9E:15:B8:29:B0:B1:8B:0B:27:04:E4:E0:47:F8:CD:00:BF:2A:50:C4:CF:44",
+          "16:16:45:6A:B3:8F:70:D5:F1:B8:CD:73:B8:69:87:AE:AB:B6:0A:F1:94:A0:71:8B:69:C0:B1:98:53:2C:40:20",
+          "45:79:35:68:72:A3:CA:98:82:7F:E1:57:43:99:42:8B:69:50:FD:C2:9E:58:3F:E5:CA:D7:73:14:23:DF:DF:54",
+          "08:A7:0F:01:36:61:BB:CD:15:9C:68:53:FB:9C:C6:5C:09:D2:69:61:B7:AE:13:91:3A:D7:F9:5F:74:2C:0E:98",
+          "FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C"
+        ]
+      }
+    }
+  ]);
+});
+
+app.get(["/.well-known/apple-app-site-association", "/apple-app-site-association"], (req, res) => {
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  return res.status(200).json({
+    applinks: {
+      apps: [],
+      details: [
+        {
+          appID: "TEAMID.com.sonuy123.mehendigoo",
+          paths: ["*"]
+        }
+      ]
+    }
   });
 });
 

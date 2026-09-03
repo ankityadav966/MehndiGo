@@ -16,7 +16,7 @@ import Colors from "../../constants/Colors";
 import { getLiveCategories } from "../../services/category";
 import { SkeletonGrid } from "../../components/LoadingSkeleton";
 
-export default function CategoriesScreen({ navigation }) {
+export default function CategoriesScreen({ navigation, route }) {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -45,6 +45,26 @@ export default function CategoriesScreen({ navigation }) {
     return () => clearTimeout(timer);
   }, [fetchCategories]);
 
+  const handleBack = React.useCallback(() => {
+    if (navigation?.canGoBack && navigation.canGoBack()) {
+      navigation.goBack();
+    } else if (route?.params?.from) {
+      navigation.navigate(route.params.from);
+    } else {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "CustomerTabs", params: { screen: "Home" } }]
+      });
+    }
+    return true;
+  }, [navigation, route?.params]);
+
+  useEffect(() => {
+    const { BackHandler } = require("react-native");
+    const backSubscription = BackHandler.addEventListener("hardwareBackPress", handleBack);
+    return () => backSubscription.remove();
+  }, [handleBack]);
+
   const handleRefresh = () => {
     setRefreshing(true);
     fetchCategories();
@@ -54,10 +74,14 @@ export default function CategoriesScreen({ navigation }) {
     "bridal": require("../../assets/images/categories/bridal.png"),
     "royal": require("../../assets/images/categories/royal.png"),
     "arabic": require("../../assets/images/categories/arabic.png"),
+    "rajasthani": require("../../assets/images/categories/rajasthani.png"),
     "traditional": require("../../assets/images/categories/traditional.png"),
     "floral": require("../../assets/images/categories/floral.png"),
     "minimal": require("../../assets/images/categories/minimal.png"),
+    "minimalist": require("../../assets/images/categories/minimalist.png"),
     "modern": require("../../assets/images/categories/modern.png"),
+    "pakistani": require("../../assets/images/categories/pakistani.png"),
+    "indo-western": require("../../assets/images/categories/indo_western.png"),
     "finger": require("../../assets/images/categories/finger.png"),
     "full-hand": require("../../assets/images/categories/full_hand.png"),
     "back-hand": require("../../assets/images/categories/back_hand.png"),
@@ -70,19 +94,20 @@ export default function CategoriesScreen({ navigation }) {
     "karwa-chauth": require("../../assets/images/categories/karwa_chauth.png"),
     "eid": require("../../assets/images/categories/eid.png"),
     "festival": require("../../assets/images/categories/festival.png"),
-    "indo-arabic": require("../../assets/images/categories/indo_arabic.png"),
+    "indo-arabic": require("../../assets/images/categories/indo-arabic.png"),
     "custom": require("../../assets/images/categories/custom.png")
   };
 
   const getCategoryImage = (item) => {
-    if (item && item.image && typeof item.image === "string") {
-      if (item.image.startsWith("http://") || item.image.startsWith("https://")) {
-        return { uri: item.image };
+    const imgUrl = item?.image_url || item?.image;
+    if (imgUrl && typeof imgUrl === "string") {
+      if (!imgUrl.includes("unsplash.com") && (imgUrl.startsWith("http://") || imgUrl.startsWith("https://"))) {
+        return { uri: imgUrl };
       }
-      if (item.image.startsWith("/")) {
+      if (imgUrl.startsWith("/")) {
         const { BASE_URL } = require("../../services/api");
         const cleanBase = (BASE_URL || "").replace(/\/api\/v1\/?$/, "");
-        return { uri: `${cleanBase}${item.image}` };
+        return { uri: `${cleanBase}${imgUrl}` };
       }
     }
 
@@ -90,14 +115,18 @@ export default function CategoriesScreen({ navigation }) {
     const slug = (item?.slug || "").toLowerCase();
 
     let key = "custom";
-    if (slug.includes("indo-arabic") || slug.includes("indo_arabic") || name.includes("indo-arabic") || name.includes("indo arabic") || name.includes("fusion")) key = "indo-arabic";
-    else if (slug.includes("royal") || name.includes("royal")) key = "royal";
+    if (slug.includes("pakistani") || name.includes("pakistani") || slug.includes("khafif") || name.includes("khafif")) key = "pakistani";
+    else if (slug.includes("rajasthani") || name.includes("rajasthani") || slug.includes("marwari") || name.includes("marwari")) key = "rajasthani";
+    else if (slug.includes("indo-western") || slug.includes("indo_western") || name.includes("indo-western") || name.includes("indo western") || name.includes("fusion")) key = "indo-western";
+    else if (slug.includes("indo-arabic") || slug.includes("indo_arabic") || name.includes("indo-arabic") || name.includes("indo arabic")) key = "indo-arabic";
+    else if (slug.includes("royal") || name.includes("royal") || slug.includes("portrait") || name.includes("portrait")) key = "royal";
     else if (slug.includes("bridal") || name.includes("bridal")) key = "bridal";
     else if (slug.includes("arabic") || name.includes("arabic")) key = "arabic";
     else if (slug.includes("traditional") || name.includes("traditional")) key = "traditional";
-    else if (slug.includes("floral") || name.includes("floral")) key = "floral";
-    else if (slug.includes("minimal") || name.includes("minimal")) key = "minimal";
+    else if (slug.includes("floral") || name.includes("floral") || slug.includes("mandala") || name.includes("mandala")) key = "floral";
+    else if (slug.includes("minimal") || name.includes("minimal") || slug.includes("geometric") || name.includes("geometric")) key = "minimalist";
     else if (slug.includes("modern") || name.includes("modern")) key = "modern";
+    else if (slug.includes("engagement") || name.includes("engagement") || slug.includes("sangeet") || name.includes("sangeet")) key = "engagement";
     else if (slug.includes("finger") || name.includes("finger")) key = "finger";
     else if (slug.includes("full-hand") || name.includes("full hand") || name.includes("full-hand") || name.includes("hand mehendi") || name.includes("hand mehndi")) key = "full-hand";
     else if (slug.includes("back-hand") || name.includes("back hand") || name.includes("back-hand")) key = "back-hand";
@@ -105,7 +134,6 @@ export default function CategoriesScreen({ navigation }) {
     else if (slug.includes("leg") || name.includes("leg") || slug.includes("feet") || name.includes("feet")) key = "leg";
     else if (slug.includes("kids") || name.includes("kid") || slug.includes("kid")) key = "kids";
     else if (slug.includes("groom") || name.includes("groom")) key = "groom";
-    else if (slug.includes("engagement") || name.includes("engagement")) key = "engagement";
     else if (slug.includes("wedding") || name.includes("wedding")) key = "wedding";
     else if (slug.includes("karwa") || name.includes("karwa")) key = "karwa-chauth";
     else if (slug.includes("eid") || name.includes("eid")) key = "eid";
@@ -124,6 +152,8 @@ export default function CategoriesScreen({ navigation }) {
           navigation.navigate("ArtistListing", {
             categoryId: item.id,
             category: item.name,
+            categorySlug: item.slug,
+            from: "Categories"
           })
         }
       >
@@ -150,7 +180,7 @@ export default function CategoriesScreen({ navigation }) {
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="dark-content" backgroundColor={Colors.white} />
         <View style={styles.headerRow}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+          <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
             <Ionicons name="chevron-back" size={22} color={Colors.text} />
           </TouchableOpacity>
           <View>
@@ -170,7 +200,7 @@ export default function CategoriesScreen({ navigation }) {
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="dark-content" backgroundColor={Colors.white} />
         <View style={styles.headerRow}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+          <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
             <Ionicons name="chevron-back" size={22} color={Colors.text} />
           </TouchableOpacity>
           <View>

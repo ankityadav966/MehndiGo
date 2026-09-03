@@ -31,6 +31,7 @@ import { formatServiceDate, formatTime } from "../../utils/date";
 
 import {
   getHomeDashboard,
+  getCategories,
   getNearbyArtists,
   getCustomerProfile,
   getFavorites,
@@ -38,6 +39,7 @@ import {
   removeFavorite,
   getCustomerAddresses,
   saveCustomerAddress,
+  getReels,
 } from "../../services/customer";
 import {
   getActiveAddress,
@@ -45,13 +47,27 @@ import {
   subscribeActiveAddress,
   checkSmartLocationChange,
   reverseGeocodeCoords,
+  autoDetectCurrentLocation,
 } from "../../utils/locationManager";
-import { getActiveFestivalOffers } from "../../utils/festivalEngine";
+import { getActiveFestivalOffers, resolveFestivalBanner } from "../../utils/festivalEngine";
 import { copyAndSaveCoupon } from "../../utils/couponManager";
 import { resolveImage } from "../../utils/imageHelper";
+import { HOME_FALLBACK_CATEGORIES } from "../../constants/MehndiCategories";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
+const resolveImage = (uri) => {
+  if (!uri) return null;
+  if (typeof uri !== "string") return null;
+  if (uri.startsWith("http://") || uri.startsWith("https://") || uri.startsWith("data:")) {
+    return uri;
+  }
+  if (uri.startsWith("/")) {
+    const { BASE_URL } = require("../../services/api");
+    return `${BASE_URL}${uri}`;
+  }
+  return uri;
+};
 
 let memoryCachedDashboard = null;
 let memoryCachedNearby = null;
@@ -63,8 +79,9 @@ const PromotionalBannerSlider = React.memo(function PromotionalBannerSlider({ of
   const bannerFlatListRef = useRef(null);
   const bannerTimerRef = useRef(null);
 
-  const dynamicFestivalBanners = React.useMemo(() => getActiveFestivalOffers(), []);
-  const displayOffers = (offers && offers.length > 0) ? offers : dynamicFestivalBanners;
+  const dynamicFestivalBanners = React.useMemo(() => (getActiveFestivalOffers() || []).slice(0, 4), []);
+  const rawOffers = (offers && offers.length > 0) ? offers : dynamicFestivalBanners;
+  const displayOffers = React.useMemo(() => (rawOffers || []).slice(0, 4), [rawOffers]);
 
   useEffect(() => {
     if (displayOffers.length === 0 || !isAutoPlayEnabled) return;
@@ -95,27 +112,22 @@ const PromotionalBannerSlider = React.memo(function PromotionalBannerSlider({ of
   }, [isAutoPlayEnabled, displayOffers.length]);
 
   const getBannerImage = (item) => {
-    if (!item) return null;
-    const imgUrl = item.image_url || item.banner_image || item.image;
-    if (imgUrl && typeof imgUrl === "string") {
-      if (imgUrl.startsWith("http://") || imgUrl.startsWith("https://")) {
-        return { uri: imgUrl };
-      }
-      if (imgUrl.startsWith("/")) {
-        const { BASE_URL } = require("../../services/api");
-        const cleanBase = (BASE_URL || "").replace(/\/api\/v1\/?$/, "");
-        return { uri: `${cleanBase}${imgUrl}` };
-      }
-    }
-    return null;
+    return resolveFestivalBanner(item);
   };
 
   const renderBannerItem = useCallback(({ item }) => {
     const bannerImg = getBannerImage(item);
     const hasImageError = !!bannerErrors[item.id];
 
-    const handleBannerPress = () => {
+    const handleBannerPress = async () => {
       if (!item) return;
+
+      if (item.code && item.code !== "FESTIVE") {
+        await copyAndSaveCoupon(item.code, item.title || item.festival_name);
+        navigation.navigate("Coupons", { prefilledCode: item.code, offer: item });
+        return;
+      }
+
       if (item.target_type === "category" && item.target_id) {
         navigation.navigate("ArtistListing", { categoryId: item.target_id, category: item.title });
       } else if (item.target_type === "artist" && item.target_id) {
@@ -125,6 +137,8 @@ const PromotionalBannerSlider = React.memo(function PromotionalBannerSlider({ of
       } else if (item.cta_link && typeof item.cta_link === "string" && item.cta_link.startsWith("http")) {
         const { Linking } = require("react-native");
         Linking.openURL(item.cta_link).catch(() => {});
+      } else {
+        navigation.navigate("ArtistListing", { filter: "featured" });
       }
     };
 
@@ -143,13 +157,20 @@ const PromotionalBannerSlider = React.memo(function PromotionalBannerSlider({ of
               resizeMode="cover"
             />
           ) : (
-            <View style={[styles.bannerBgImage, { backgroundColor: Colors.primary + "20" }]} />
+            <View style={[styles.bannerBgImage, { backgroundColor: (item.theme_color || Colors.primary) + "30" }]} />
           )}
           <View style={styles.bannerOverlay}>
             <View style={styles.bannerTextContainer}>
-              <Text style={styles.bannerTitle} numberOfLines={1}>{item.title}</Text>
+              {!!(item.badge || item.badge_text) && (
+                <View style={[styles.festivalBadgeContainer, { backgroundColor: item.theme_color || Colors.primary }]}>
+                  <Text style={styles.festivalBadgeText} numberOfLines={1}>
+                    {item.badge || item.badge_text}
+                  </Text>
+                </View>
+              )}
+              <Text style={styles.bannerTitle} numberOfLines={1}>{item.title || item.festival_name}</Text>
               {!!(item.subtitle || item.description) && (
-                <Text style={styles.bannerSubTitle} numberOfLines={2}>{item.subtitle || item.description}</Text>
+                <Text style={styles.bannerSubTitle} numberOfLines={1}>{item.subtitle || item.description}</Text>
               )}
               {!!item.code && (
                 <TouchableOpacity
@@ -157,7 +178,7 @@ const PromotionalBannerSlider = React.memo(function PromotionalBannerSlider({ of
                   activeOpacity={0.8}
                   onPress={(e) => {
                     e.stopPropagation();
-                    copyAndSaveCoupon(item.code, item.title);
+                    copyAndSaveCoupon(item.code, item.title || item.festival_name);
                   }}
                 >
                   <Text style={styles.promoBadgeText}>Code: {item.code}</Text>
@@ -166,7 +187,14 @@ const PromotionalBannerSlider = React.memo(function PromotionalBannerSlider({ of
               )}
             </View>
             {!!(item.discount || item.discount_text) && (
-              <Text style={styles.bannerDiscountText}>{item.discount || item.discount_text}</Text>
+              <View style={styles.discountBadgeWrapper}>
+                <Text style={styles.bannerDiscountText}>{item.discount || item.discount_text}</Text>
+                {!!item.valid_until && (
+                  <Text style={styles.bannerValidityText} numberOfLines={1}>
+                    Valid till {item.valid_until.slice(5)}
+                  </Text>
+                )}
+              </View>
             )}
           </View>
         </View>
@@ -281,6 +309,33 @@ export default function HomeScreen({ navigation }) {
     return b.service?.specialization_name || "Custom Mehndi Package";
   };
 
+  // Root level back handler with double-back-to-exit prevention
+  useFocusEffect(
+    useCallback(() => {
+      const { BackHandler } = require("react-native");
+      const { handleRootDoubleBackExit } = require("../../utils/navigationHelper");
+
+      const onBackPress = () => {
+        if (paymentModalVisible) {
+          setPaymentModalVisible(false);
+          return true;
+        }
+        if (locationModalVisible) {
+          setLocationModalVisible(false);
+          return true;
+        }
+        if (smartAlertVisible) {
+          setSmartAlertVisible(false);
+          return true;
+        }
+        return handleRootDoubleBackExit("Press back again to exit MehndiGo");
+      };
+
+      const sub = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+      return () => sub.remove();
+    }, [paymentModalVisible, locationModalVisible, smartAlertVisible])
+  );
+
   // Smart Location Management States
   const [activeAddressState, setActiveAddressState] = useState(null);
   const [savedAddressesList, setSavedAddressesList] = useState([]);
@@ -294,6 +349,7 @@ export default function HomeScreen({ navigation }) {
   const [offers, setOffers] = useState(() => memoryCachedDashboard?.offers || memoryCachedDashboard?.banners || []);
   const [featuredArtists, setFeaturedArtists] = useState(() => memoryCachedDashboard?.featured_artists || memoryCachedDashboard?.featuredArtists || []);
   const [popularArtists, setPopularArtists] = useState(() => memoryCachedDashboard?.popular_artists || memoryCachedDashboard?.popularArtists || []);
+  const [reels, setReels] = useState(() => memoryCachedDashboard?.reels || []);
   const [recommendations, setRecommendations] = useState([]);
   const [recentlyBookedArtists, setRecentlyBookedArtists] = useState(() => memoryCachedDashboard?.recently_booked || memoryCachedDashboard?.recentlyBooked || []);
 
@@ -302,6 +358,7 @@ export default function HomeScreen({ navigation }) {
   const [nearbyLoading, setNearbyLoading] = useState(false);
   const [nearbyPage, setNearbyPage] = useState(1);
   const [hasMoreNearby, setHasMoreNearby] = useState(true);
+  const [totalArtistsCount, setTotalArtistsCount] = useState(() => memoryCachedDashboard?.total_artists_count || memoryCachedDashboard?.totalArtistsCount || memoryCachedDashboard?.artists_count || 0);
 
   // Global Page Loading & Refresh States
   const [dashboardLoading, setDashboardLoading] = useState(() => !memoryCachedDashboard);
@@ -319,34 +376,35 @@ export default function HomeScreen({ navigation }) {
   // Smart Location Initialization & Background Distance Check
   useEffect(() => {
     const unsubscribe = subscribeActiveAddress((newAddr) => {
-      setActiveAddressState(newAddr);
+      if (newAddr) setActiveAddressState(newAddr);
     });
 
     async function initLocation() {
       try {
+        // 1. Check existing cached active address
         const cached = await getActiveAddress();
         if (cached) {
           setActiveAddressState(cached);
         }
 
-        const addresses = await getCustomerAddresses();
-        const list = addresses || [];
+        // 2. Fetch customer's saved addresses in the background
+        const addresses = await getCustomerAddresses().catch(() => []);
+        const list = Array.isArray(addresses) ? addresses : [];
         setSavedAddressesList(list);
 
         const primary = list.find((a) => a.is_default) || list[0];
 
-        // First Login Flow: If customer has NO saved primary address, navigate to InitialLocationSetup
-        if (list.length === 0) {
-          navigation.navigate("InitialLocationSetup");
-          return;
-        }
-
-        if (!cached && primary) {
+        // 3. If customer has a primary saved address, ensure it's selected as active
+        if (primary && (!cached || cached.id !== primary.id)) {
           const norm = await setActiveAddress(primary);
-          setActiveAddressState(norm);
+          if (norm) setActiveAddressState(norm);
+        } else if (!cached && !primary) {
+          // 4. No saved address & no cached address: Automatically detect GPS location or fallback
+          const autoLoc = await autoDetectCurrentLocation(user?.city || "Jaipur");
+          if (autoLoc) setActiveAddressState(autoLoc);
         }
 
-        // Run smart distance check asynchronously in background without blocking screen render
+        // 5. Run smart distance check asynchronously in background if primary address is set
         if (primary && primary.latitude && primary.longitude) {
           setTimeout(async () => {
             try {
@@ -365,7 +423,7 @@ export default function HomeScreen({ navigation }) {
 
     initLocation();
     return () => unsubscribe();
-  }, [navigation]);
+  }, [user?.city]);
 
   const handleUseCurrentGPSLocation = async () => {
     try {
@@ -425,6 +483,7 @@ export default function HomeScreen({ navigation }) {
             if (parsed.offers?.length || parsed.banners?.length) setOffers(parsed.offers || parsed.banners);
             if (parsed.featured_artists?.length || parsed.featuredArtists?.length) setFeaturedArtists(parsed.featured_artists || parsed.featuredArtists);
             if (parsed.popular_artists?.length || parsed.popularArtists?.length) setPopularArtists(parsed.popular_artists || parsed.popularArtists);
+            if (parsed.reels?.length) setReels(parsed.reels);
             if (parsed.recently_booked?.length || parsed.recentlyBooked?.length) setRecentlyBookedArtists(parsed.recently_booked || parsed.recentlyBooked);
             setDashboardLoading(false);
           }
@@ -441,26 +500,46 @@ export default function HomeScreen({ navigation }) {
       const lat = activeAddressState?.latitude || null;
       const lng = activeAddressState?.longitude || null;
 
-      // Fetch dashboard and favorites in parallel for ultra-fast startup
-      const [data, favs] = await Promise.all([
+      // Fetch dashboard, categories, favorites, and newest reels in parallel for ultra-fast startup
+      const [data, directCats, favs, reelsRes] = await Promise.all([
         getHomeDashboard(lat, lng),
-        getFavorites().catch(() => [])
+        getCategories().catch(() => []),
+        getFavorites().catch(() => []),
+        getReels(1, 10).catch(() => []),
       ]);
 
+      const rawCatList = (data?.categories && data.categories.length > 0)
+        ? data.categories
+        : (Array.isArray(directCats) && directCats.length > 0 ? directCats : (directCats?.data || []));
+
+      const rawReelsList = reelsRes?.reels || reelsRes?.data?.reels || (Array.isArray(reelsRes) ? reelsRes : (reelsRes?.data || []));
+      if (rawReelsList && rawReelsList.length > 0) {
+        setReels(rawReelsList.slice(0, 10));
+      }
+
       if (data) {
-        memoryCachedDashboard = data;
-        setCategories(data?.categories || []);
+        memoryCachedDashboard = { ...data, categories: rawCatList, reels: (rawReelsList || []).slice(0, 10) };
+        setCategories(rawCatList || []);
         setOffers(data?.offers || data?.banners || []);
         setFeaturedArtists(data?.featured_artists || data?.featuredArtists || []);
         setPopularArtists(data?.popular_artists || data?.popularArtists || []);
         setRecentlyBookedArtists(data?.recently_booked || data?.recentlyBooked || []);
+        if (data.total_artists_count !== undefined) {
+          setTotalArtistsCount(Number(data.total_artists_count));
+        } else if (data.totalArtistsCount !== undefined) {
+          setTotalArtistsCount(Number(data.totalArtistsCount));
+        } else if (data.artists_count !== undefined) {
+          setTotalArtistsCount(Number(data.artists_count));
+        }
         if (setUnreadCount && (data?.unread_notification_count !== undefined || data?.unread_count !== undefined)) {
           setUnreadCount(data.unread_notification_count ?? data.unread_count ?? 0);
         }
         try {
           const AsyncStorage = require("@react-native-async-storage/async-storage").default;
-          AsyncStorage.setItem("@mehndigo_dashboard_cache", JSON.stringify(data));
+          AsyncStorage.setItem("@mehndigo_dashboard_cache", JSON.stringify({ ...data, categories: rawCatList }));
         } catch (e) {}
+      } else if (rawCatList && rawCatList.length > 0) {
+        setCategories(rawCatList);
       }
 
       if (favs && Array.isArray(favs)) {
@@ -511,19 +590,24 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-  // Banner display with dynamic date-aware festival engine fallback
-  const dynamicFestivalBanners = React.useMemo(() => getActiveFestivalOffers(), []);
-  const displayOffers = (offers && offers.length > 0) ? offers : dynamicFestivalBanners;
+  // Banner display with dynamic date-aware festival engine fallback (Strict 4-card maximum)
+  const dynamicFestivalBanners = React.useMemo(() => (getActiveFestivalOffers() || []).slice(0, 4), []);
+  const displayOffers = React.useMemo(() => ((offers && offers.length > 0) ? offers : dynamicFestivalBanners).slice(0, 4), [offers, dynamicFestivalBanners]);
 
   // Deduplicated unique initial 6 categories for HomeScreen
   const unique6Categories = React.useMemo(() => {
     const map = new Map();
     (categories || []).forEach((cat) => {
-      if (cat && cat.id && !map.has(String(cat.id))) {
-        map.set(String(cat.id), cat);
+      const key = String(cat?.id || cat?.name || cat?.slug || "");
+      if (key && !map.has(key)) {
+        map.set(key, cat);
       }
     });
-    return Array.from(map.values()).slice(0, 6);
+    const list = Array.from(map.values()).slice(0, 6);
+    if (list.length > 0) return list;
+
+    // Fallback 8 rich mehndi categories (synced with MehndiCategories constant)
+    return HOME_FALLBACK_CATEGORIES;
   }, [categories]);
 
   // Load nearby artists paginated
@@ -535,8 +619,8 @@ export default function HomeScreen({ navigation }) {
       const lng = activeAddressState?.longitude || null;
       const currentFilter = filterOverride !== null ? filterOverride : selectedFilter;
       const data = await getNearbyArtists(lat, lng, null, page, 15, currentFilter);
-      const list = data?.rows || [];
-      const total = data?.count || 0;
+      const list = Array.isArray(data) ? data : (data?.rows || data?.data || data?.artists || []);
+      const total = typeof data?.count === 'number' ? data.count : (typeof data?.total === 'number' ? data.total : list.length);
 
       if (page === 1) {
         memoryCachedNearby = list;
@@ -674,10 +758,14 @@ export default function HomeScreen({ navigation }) {
     "bridal": require("../../assets/images/categories/bridal.png"),
     "royal": require("../../assets/images/categories/royal.png"),
     "arabic": require("../../assets/images/categories/arabic.png"),
+    "rajasthani": require("../../assets/images/categories/rajasthani.png"),
     "traditional": require("../../assets/images/categories/traditional.png"),
     "floral": require("../../assets/images/categories/floral.png"),
     "minimal": require("../../assets/images/categories/minimal.png"),
+    "minimalist": require("../../assets/images/categories/minimalist.png"),
     "modern": require("../../assets/images/categories/modern.png"),
+    "pakistani": require("../../assets/images/categories/pakistani.png"),
+    "indo-western": require("../../assets/images/categories/indo_western.png"),
     "finger": require("../../assets/images/categories/finger.png"),
     "full-hand": require("../../assets/images/categories/full_hand.png"),
     "back-hand": require("../../assets/images/categories/back_hand.png"),
@@ -690,33 +778,38 @@ export default function HomeScreen({ navigation }) {
     "karwa-chauth": require("../../assets/images/categories/karwa_chauth.png"),
     "eid": require("../../assets/images/categories/eid.png"),
     "festival": require("../../assets/images/categories/festival.png"),
-    "indo-arabic": require("../../assets/images/categories/indo_arabic.png"),
+    "indo-arabic": require("../../assets/images/categories/indo-arabic.png"),
     "custom": require("../../assets/images/categories/custom.png")
   };
 
   const getCategoryImage = (item) => {
-    if (item && item.image && typeof item.image === "string") {
-      if (item.image.startsWith("http://") || item.image.startsWith("https://")) {
-        return { uri: item.image };
+    const imgUrl = item?.image_url || item?.image;
+    if (imgUrl && typeof imgUrl === "string") {
+      if (!imgUrl.includes("unsplash.com") && (imgUrl.startsWith("http://") || imgUrl.startsWith("https://"))) {
+        return { uri: imgUrl };
       }
-      if (item.image.startsWith("/")) {
+      if (imgUrl.startsWith("/")) {
         const { BASE_URL } = require("../../services/api");
         const cleanBase = (BASE_URL || "").replace(/\/api\/v1\/?$/, "");
-        return { uri: `${cleanBase}${item.image}` };
+        return { uri: `${cleanBase}${imgUrl}` };
       }
     }
     const name = (item?.name || "").toLowerCase();
     const slug = (item?.slug || "").toLowerCase();
 
     let key = "custom";
-    if (slug.includes("indo-arabic") || slug.includes("indo_arabic") || name.includes("indo-arabic") || name.includes("indo arabic") || name.includes("fusion")) key = "indo-arabic";
-    else if (slug.includes("royal") || name.includes("royal")) key = "royal";
+    if (slug.includes("pakistani") || name.includes("pakistani") || slug.includes("khafif") || name.includes("khafif")) key = "pakistani";
+    else if (slug.includes("rajasthani") || name.includes("rajasthani") || slug.includes("marwari") || name.includes("marwari")) key = "rajasthani";
+    else if (slug.includes("indo-western") || slug.includes("indo_western") || name.includes("indo-western") || name.includes("indo western") || name.includes("fusion")) key = "indo-western";
+    else if (slug.includes("indo-arabic") || slug.includes("indo_arabic") || name.includes("indo-arabic") || name.includes("indo arabic")) key = "indo-arabic";
+    else if (slug.includes("royal") || name.includes("royal") || slug.includes("portrait") || name.includes("portrait")) key = "royal";
     else if (slug.includes("bridal") || name.includes("bridal")) key = "bridal";
     else if (slug.includes("arabic") || name.includes("arabic")) key = "arabic";
     else if (slug.includes("traditional") || name.includes("traditional")) key = "traditional";
-    else if (slug.includes("floral") || name.includes("floral")) key = "floral";
-    else if (slug.includes("minimal") || name.includes("minimal")) key = "minimal";
+    else if (slug.includes("floral") || name.includes("floral") || slug.includes("mandala") || name.includes("mandala")) key = "floral";
+    else if (slug.includes("minimal") || name.includes("minimal") || slug.includes("geometric") || name.includes("geometric")) key = "minimalist";
     else if (slug.includes("modern") || name.includes("modern")) key = "modern";
+    else if (slug.includes("engagement") || name.includes("engagement") || slug.includes("sangeet") || name.includes("sangeet")) key = "engagement";
     else if (slug.includes("finger") || name.includes("finger")) key = "finger";
     else if (slug.includes("full-hand") || name.includes("full hand") || name.includes("full-hand") || name.includes("hand mehendi") || name.includes("hand mehndi")) key = "full-hand";
     else if (slug.includes("back-hand") || name.includes("back hand") || name.includes("back-hand")) key = "back-hand";
@@ -724,7 +817,6 @@ export default function HomeScreen({ navigation }) {
     else if (slug.includes("leg") || name.includes("leg") || slug.includes("feet") || name.includes("feet")) key = "leg";
     else if (slug.includes("kids") || name.includes("kid") || slug.includes("kid")) key = "kids";
     else if (slug.includes("groom") || name.includes("groom")) key = "groom";
-    else if (slug.includes("engagement") || name.includes("engagement")) key = "engagement";
     else if (slug.includes("wedding") || name.includes("wedding")) key = "wedding";
     else if (slug.includes("karwa") || name.includes("karwa")) key = "karwa-chauth";
     else if (slug.includes("eid") || name.includes("eid")) key = "eid";
@@ -740,7 +832,7 @@ export default function HomeScreen({ navigation }) {
     return (
       <TouchableOpacity
         style={styles.categoryCard}
-        onPress={() => navigation.navigate("ArtistListing", { categoryId: item.id, category: item.name })}
+        onPress={() => navigation.navigate("ArtistListing", { categoryId: item.id, category: item.name, categorySlug: item.slug, from: "Home" })}
       >
         <View style={[styles.categoryIcon, { overflow: "hidden" }]}>
           <OptimizedImage
@@ -766,7 +858,7 @@ export default function HomeScreen({ navigation }) {
     return (
       <TouchableOpacity
         style={[styles.recentArtistCard, { backgroundColor: currentCardBg, borderColor: currentBorderColor }]}
-        onPress={() => navigation.navigate("ArtistProfile", { artistId: item.id })}
+        onPress={() => navigation.navigate("ArtistProfile", { artistId: item.id, from: "Home" })}
       >
         <OptimizedImage
           source={{ uri: avatarUrl }}
@@ -799,6 +891,69 @@ export default function HomeScreen({ navigation }) {
     );
   }, [currentCardBg, currentBorderColor, currentTextColor, currentSecTextColor]);
 
+  // Render Horizontal Reel Card Item for Home Screen
+  const renderHomeReelItem = useCallback(({ item }) => {
+    const thumbnailUri =
+      item.thumbnail ||
+      item.image_url ||
+      (item.video_url ? item.video_url.replace(/\.mp4$/i, ".jpg") : null) ||
+      "https://images.unsplash.com/photo-1590012357675-bc55909793fb?w=400";
+
+    const artistAvatar = resolveImage(
+      item.artist_profile_image ||
+      item.artist_avatar ||
+      item.avatar ||
+      "https://picsum.photos/100"
+    );
+    const artistName = item.artist_name || item.full_name || "Mehndi Artist";
+    const reelTitle = item.title || item.caption || "Mehndi Reel";
+    const likesCount = item.real_likes_count ?? item.likes_count ?? 0;
+
+    return (
+      <TouchableOpacity
+        style={styles.reelHomeCard}
+        activeOpacity={0.88}
+        onPress={() => navigation.navigate("Reels", { reelId: item.id })}
+      >
+        <Image
+          source={{ uri: thumbnailUri }}
+          style={styles.reelHomePoster}
+          resizeMode="cover"
+        />
+
+        {/* Top Badges */}
+        <View style={styles.reelTopOverlay}>
+          <View style={styles.reelPlayPill}>
+            <Ionicons name="play" size={10} color="#FFFFFF" />
+            <Text style={styles.reelPlayPillText}>Reel</Text>
+          </View>
+          {likesCount > 0 && (
+            <View style={styles.reelLikesPill}>
+              <Ionicons name="heart" size={10} color="#EF4444" />
+              <Text style={styles.reelLikesText}>{likesCount}</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Bottom Dark Gradient / Vignette Overlay */}
+        <View style={styles.reelBottomScrim}>
+          <Text style={styles.reelCardTitle} numberOfLines={2}>
+            {reelTitle}
+          </Text>
+          <View style={styles.reelArtistRow}>
+            <Image
+              source={{ uri: artistAvatar }}
+              style={styles.reelArtistAvatar}
+            />
+            <Text style={styles.reelArtistName} numberOfLines={1}>
+              {artistName}
+            </Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  }, [navigation]);
+
   // Render an artist horizontal card (Featured & Popular)
   const renderHorizontalArtistItem = useCallback(({ item }) => {
     const artistId = item.id || item.user_id || item.artist_id;
@@ -813,7 +968,7 @@ export default function HomeScreen({ navigation }) {
     return (
       <TouchableOpacity
         style={[styles.horizontalArtistCard, { backgroundColor: currentCardBg, borderColor: currentBorderColor }]}
-        onPress={() => navigation.navigate("ArtistProfile", { artistId })}
+        onPress={() => navigation.navigate("ArtistProfile", { artistId, from: "Home" })}
       >
         <OptimizedImage
           source={{ uri: artistImage }}
@@ -844,7 +999,7 @@ export default function HomeScreen({ navigation }) {
             <Text style={[styles.experienceText, { color: currentSecTextColor }]}>• {expText}</Text>
           </View>
           <Text style={[styles.startingPriceText, { color: currentTextColor }]}>
-            {startingPrice ? `From ₹${startingPrice}` : "View Profile"}
+            {startingPrice ? `From ₹${startingPrice}` : "Price on Request"}
           </Text>
         </View>
       </TouchableOpacity>
@@ -866,7 +1021,7 @@ export default function HomeScreen({ navigation }) {
     return (
       <TouchableOpacity
         style={[styles.nearbyArtistCard, { backgroundColor: currentCardBg, borderColor: currentBorderColor }]}
-        onPress={() => navigation.navigate("ArtistProfile", { artistId })}
+        onPress={() => navigation.navigate("ArtistProfile", { artistId, from: "Home" })}
       >
         <OptimizedImage
           source={{ uri: artistImage }}
@@ -906,7 +1061,7 @@ export default function HomeScreen({ navigation }) {
 
           <View style={styles.nearbyFooter}>
             <Text style={[styles.nearbyPriceText, { color: currentTextColor }]}>
-              {startingPrice ? `Starting from ₹${startingPrice}` : "View Profile"}
+              {startingPrice ? `Starting from ₹${startingPrice}` : "Price on Request"}
             </Text>
             {(item.status === "approved" || item.status === "APPROVED" || item.verification_status === "APPROVED") && (
               <View style={styles.availableTodayBadge}>
@@ -1002,7 +1157,7 @@ export default function HomeScreen({ navigation }) {
       {/* 4. Categories Section (Exactly 6 unique categories on HomeScreen) */}
       <View style={styles.sectionHeader}>
         <Text style={[styles.sectionTitle, { color: currentTextColor }]}>Mehndi Categories</Text>
-        <TouchableOpacity onPress={() => navigation.navigate("Categories")}>
+        <TouchableOpacity onPress={() => navigation.navigate("Categories", { from: "Home" })}>
           <Text style={styles.viewAllText}>View All</Text>
         </TouchableOpacity>
       </View>
@@ -1024,7 +1179,7 @@ export default function HomeScreen({ navigation }) {
         <View>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: currentTextColor }]}>Featured Artists</Text>
-            <TouchableOpacity onPress={() => navigation.navigate("ArtistListing", { filter: "featured" })}>
+            <TouchableOpacity onPress={() => navigation.navigate("ArtistListing", { filter: "featured", from: "Home" })}>
               <Text style={styles.viewAllText}>View All ({featuredArtists.length})</Text>
             </TouchableOpacity>
           </View>
@@ -1043,23 +1198,34 @@ export default function HomeScreen({ navigation }) {
         </View>
       )}
 
-      {/* 6. Popular Artists Section */}
-      {popularArtists.length > 0 && (
-        <View>
+      {/* 6. Trending Mehndi Reels Section (Replaced Trending & Popular) */}
+      {reels.length > 0 && (
+        <View style={{ marginBottom: 12 }}>
           <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: currentTextColor }]}>Trending & Popular</Text>
-            <TouchableOpacity onPress={() => navigation.navigate("ArtistListing", { filter: "popular" })}>
-              <Text style={styles.viewAllText}>View All ({popularArtists.length})</Text>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <View style={styles.reelsHeaderIconBadge}>
+                <Ionicons name="play" size={12} color="#FFFFFF" />
+              </View>
+              <Text style={[styles.sectionTitle, { color: currentTextColor }]}>Trending Reels</Text>
+              <View style={styles.reelsNewBadge}>
+                <Text style={styles.reelsNewBadgeText}>NEW</Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              onPress={() => navigation.navigate("Reels")}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Text style={styles.viewAllText}>Watch All ({reels.length}) →</Text>
             </TouchableOpacity>
           </View>
           <FlatList
-            data={popularArtists}
-            keyExtractor={(item, index) => String(item.id || item.user_id || item.artist_id || index)}
+            data={reels.slice(0, 10)}
+            keyExtractor={(item, index) => String(item.id || index)}
             horizontal
             nestedScrollEnabled={true}
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingLeft: 16, paddingBottom: 8 }}
-            renderItem={renderHorizontalArtistItem}
+            contentContainerStyle={{ paddingLeft: 16, paddingRight: 8, paddingBottom: 6 }}
+            renderItem={renderHomeReelItem}
             initialNumToRender={6}
             maxToRenderPerBatch={6}
             windowSize={5}
@@ -1092,11 +1258,11 @@ export default function HomeScreen({ navigation }) {
         <View style={{ flexDirection: "row", alignItems: "center" }}>
           <Text style={[styles.sectionTitle, { color: currentTextColor }]}>All Mehndi Artists</Text>
           <View style={{ backgroundColor: Colors.primary + "18", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, marginLeft: 8 }}>
-            <Text style={{ color: Colors.primary, fontSize: 11, fontWeight: "700" }}>{nearbyArtists.length > 0 ? `${nearbyArtists.length}+` : "All"}</Text>
+            <Text style={{ color: Colors.primary, fontSize: 11, fontWeight: "700" }}>{totalArtistsCount > 0 ? `${totalArtistsCount}` : (nearbyArtists.length > 0 ? `${nearbyArtists.length}+` : "All")}</Text>
           </View>
         </View>
         <TouchableOpacity onPress={() => navigation.navigate("ArtistListing", { filter: "all" })}>
-          <Text style={styles.viewAllText}>View All ({nearbyArtists.length})</Text>
+          <Text style={styles.viewAllText}>View All ({totalArtistsCount > 0 ? totalArtistsCount : nearbyArtists.length})</Text>
         </TouchableOpacity>
       </View>
       <FlatList
@@ -1623,11 +1789,36 @@ const styles = StyleSheet.create({
     maxWidth: "100%"
   },
   promoBadgeText: { color: Colors.white, fontSize: 10, fontWeight: "600" },
+  festivalBadgeContainer: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    alignSelf: "flex-start",
+    marginBottom: 4
+  },
+  festivalBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 9,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    textTransform: "uppercase"
+  },
+  discountBadgeWrapper: {
+    alignItems: "flex-end",
+    justifyContent: "center",
+    marginLeft: 8,
+    flexShrink: 0
+  },
+  bannerValidityText: {
+    color: "rgba(255,255,255,0.85)",
+    fontSize: 10,
+    fontWeight: "500",
+    marginTop: 2
+  },
   bannerDiscountText: {
     color: Colors.white,
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: "800",
-    marginLeft: 6,
     textAlign: "right",
     flexShrink: 0
   },
@@ -2232,5 +2423,128 @@ const styles = StyleSheet.create({
     color: "#374151",
     fontSize: 15,
     fontWeight: "600",
+  },
+
+  // Trending Reels Section Styles
+  reelsHeaderIconBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "#9C1344",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 8,
+  },
+  reelsNewBadge: {
+    backgroundColor: "#ECFDF5",
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+    marginLeft: 8,
+  },
+  reelsNewBadgeText: {
+    color: "#059669",
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  reelHomeCard: {
+    width: 130,
+    height: 205,
+    borderRadius: 16,
+    marginRight: 12,
+    overflow: "hidden",
+    backgroundColor: "#1F2937",
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    position: "relative",
+  },
+  reelHomePoster: {
+    width: "100%",
+    height: "100%",
+    position: "absolute",
+    top: 0,
+    left: 0,
+    backgroundColor: "#374151",
+  },
+  reelTopOverlay: {
+    position: "absolute",
+    top: 8,
+    left: 8,
+    right: 8,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  reelPlayPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.55)",
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 10,
+    gap: 3,
+  },
+  reelPlayPillText: {
+    color: "#FFFFFF",
+    fontSize: 9,
+    fontWeight: "700",
+  },
+  reelLikesPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.55)",
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 10,
+    gap: 3,
+  },
+  reelLikesText: {
+    color: "#FFFFFF",
+    fontSize: 9,
+    fontWeight: "700",
+  },
+  reelBottomScrim: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 8,
+    paddingBottom: 10,
+    paddingTop: 28,
+    backgroundColor: "rgba(0, 0, 0, 0.65)",
+  },
+  reelCardTitle: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "700",
+    lineHeight: 14,
+    marginBottom: 6,
+    textShadowColor: "rgba(0, 0, 0, 0.8)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  reelArtistRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  reelArtistAvatar: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: "#FFFFFF",
+    marginRight: 6,
+  },
+  reelArtistName: {
+    color: "rgba(255, 255, 255, 0.92)",
+    fontSize: 10,
+    fontWeight: "600",
+    flex: 1,
   },
 });

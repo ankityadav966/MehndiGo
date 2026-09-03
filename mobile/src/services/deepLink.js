@@ -8,16 +8,33 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Config from "../constants/Config";
 
 export const STORAGE_KEYS = {
-  PENDING_DEEP_LINK: "pending_deep_link_route",
-  PENDING_REFERRAL_CODE: "pendingReferralCode"
+  PENDING_DEEP_LINK: "pending_deep_link_route"
 };
 
 // =========================================================================
 // 1. CANONICAL LINK GENERATORS
 // =========================================================================
 
-export function getPlayStoreFallbackUrl() {
-  return Config.PLAY_STORE_URL;
+export function getPlayStoreFallbackUrl(targetPath = "") {
+  if (!targetPath) return Config.PLAY_STORE_URL;
+  const encodedPath = encodeURIComponent(targetPath);
+  return `${Config.PLAY_STORE_URL}&referrer=utm_source%3Dmehndigo_share%26utm_medium%3Ddeeplink%26utm_content%3D${encodedPath}`;
+}
+
+export function createReelDeepLink(reelId, useScheme = false) {
+  if (!reelId) return getPlayStoreFallbackUrl();
+  const cleanId = encodeURIComponent(String(reelId).trim());
+  return useScheme
+    ? `${Config.APP_SCHEME}://reel/${cleanId}`
+    : `${Config.PRIMARY_DOMAIN}/reel/${cleanId}`;
+}
+
+export function createServiceDeepLink(serviceId, useScheme = false) {
+  if (!serviceId) return getPlayStoreFallbackUrl();
+  const cleanId = encodeURIComponent(String(serviceId).trim());
+  return useScheme
+    ? `${Config.APP_SCHEME}://service/${cleanId}`
+    : `${Config.PRIMARY_DOMAIN}/service/${cleanId}`;
 }
 
 export function createArtistDeepLink(artistId, useScheme = false) {
@@ -26,6 +43,32 @@ export function createArtistDeepLink(artistId, useScheme = false) {
   return useScheme
     ? `${Config.APP_SCHEME}://artist/${cleanId}`
     : `${Config.PRIMARY_DOMAIN}/artist/${cleanId}`;
+}
+
+export function createArtistServiceDeepLink(artistId, serviceId, useScheme = false) {
+  if (!artistId || !serviceId) return getPlayStoreFallbackUrl();
+  const cleanArtistId = encodeURIComponent(String(artistId).trim());
+  const cleanServiceId = encodeURIComponent(String(serviceId).trim());
+  return useScheme
+    ? `${Config.APP_SCHEME}://artist/${cleanArtistId}/service/${cleanServiceId}`
+    : `${Config.PRIMARY_DOMAIN}/artist/${cleanArtistId}/service/${cleanServiceId}`;
+}
+
+export function createDesignDeepLink(artistId, designId, useScheme = false) {
+  if (!artistId || !designId) return getPlayStoreFallbackUrl();
+  const cleanArtistId = encodeURIComponent(String(artistId).trim());
+  const cleanDesignId = encodeURIComponent(String(designId).trim());
+  return useScheme
+    ? `${Config.APP_SCHEME}://artist/${cleanArtistId}/design/${cleanDesignId}`
+    : `${Config.PRIMARY_DOMAIN}/artist/${cleanArtistId}/design/${cleanDesignId}`;
+}
+
+export function createCustomDesignDeepLink(artistId, useScheme = false) {
+  if (!artistId) return getPlayStoreFallbackUrl();
+  const cleanArtistId = encodeURIComponent(String(artistId).trim());
+  return useScheme
+    ? `${Config.APP_SCHEME}://artist/${cleanArtistId}/custom-design`
+    : `${Config.PRIMARY_DOMAIN}/artist/${cleanArtistId}/custom-design`;
 }
 
 export function createPortfolioDeepLink(artistId, useScheme = false) {
@@ -72,14 +115,6 @@ export function createSupportDeepLink(ticketId = null, useScheme = false) {
     : `${Config.PRIMARY_DOMAIN}/support`;
 }
 
-export function createReferralDeepLink(referralCode, useScheme = false) {
-  if (!referralCode) return getPlayStoreFallbackUrl();
-  const cleanCode = encodeURIComponent(String(referralCode).trim().toUpperCase());
-  return useScheme
-    ? `${Config.APP_SCHEME}://invite?ref=${cleanCode}`
-    : `${Config.PRIMARY_DOMAIN}/invite?ref=${cleanCode}`;
-}
-
 export function createCategoryDeepLink(categoryId, useScheme = false) {
   if (!categoryId) return getPlayStoreFallbackUrl();
   const cleanId = encodeURIComponent(String(categoryId).trim());
@@ -106,6 +141,20 @@ export function createWalletDeepLink(useScheme = false) {
   return useScheme
     ? `${Config.APP_SCHEME}://wallet`
     : `${Config.PRIMARY_DOMAIN}/wallet`;
+}
+
+export function createReferralDeepLink(useScheme = false) {
+  return useScheme
+    ? `${Config.APP_SCHEME}://referral`
+    : `${Config.PRIMARY_DOMAIN}/referral`;
+}
+
+export function createInviteDeepLink(code, useScheme = false) {
+  if (!code) return getPlayStoreFallbackUrl();
+  const cleanCode = encodeURIComponent(String(code).trim());
+  return useScheme
+    ? `${Config.APP_SCHEME}://invite?ref=${cleanCode}`
+    : `${Config.PRIMARY_DOMAIN}/invite?ref=${cleanCode}`;
 }
 
 // =========================================================================
@@ -187,24 +236,108 @@ export function resolveDeepLink(rawUrl) {
     return /^[a-zA-Z0-9_-]+$/.test(clean);
   };
 
-  // 1. Artist Profile (/artist/:artistId)
-  if (segments[0] === "artist" && segments[1]) {
-    const artistId = segments[1];
-    if (!isValidEntityId(artistId)) {
-      return { isValid: false, type: "ARTIST", error: "Invalid artist ID" };
+  // 1. Reels & Short Videos (/reel/:reelId or /reels/:reelId or /reels)
+  if (segments[0] === "reel" || segments[0] === "reels") {
+    const reelId = segments[1];
+    if (!reelId || !isValidEntityId(reelId)) {
+      return {
+        isValid: true,
+        type: "REELS_FEED",
+        screen: "CustomerTabs",
+        tab: "Reels",
+        params: {},
+        requiresAuth: false,
+        rawUrl
+      };
     }
-    const cleanId = isNaN(Number(artistId)) ? artistId : Number(artistId);
+    const cleanId = isNaN(Number(reelId)) ? reelId : Number(reelId);
     return {
       isValid: true,
-      type: "ARTIST",
-      screen: "ArtistProfile",
-      params: { artistId: cleanId },
+      type: "REEL",
+      screen: "CustomerTabs",
+      tab: "Reels",
+      params: { reelId: cleanId, id: cleanId },
       requiresAuth: false,
       rawUrl
     };
   }
 
-  // 2. Artist Portfolio (/portfolio/:artistId)
+  // 2. Services (/service/:serviceId or /services/:serviceId)
+  if (segments[0] === "service" || segments[0] === "services") {
+    const serviceId = segments[1];
+    if (!serviceId || !isValidEntityId(serviceId)) {
+      return { isValid: false, type: "SERVICE", error: "Invalid service ID" };
+    }
+    const cleanId = isNaN(Number(serviceId)) ? serviceId : Number(serviceId);
+    return {
+      isValid: true,
+      type: "SERVICE",
+      screen: "SelectService",
+      params: { serviceId: cleanId, id: cleanId },
+      requiresAuth: false,
+      rawUrl
+    };
+  }
+
+  // 3. Artist Profile & Sub-resources
+  if ((segments[0] === "artist" || segments[0] === "artists") && segments[1]) {
+    const artistId = segments[1];
+    if (!isValidEntityId(artistId)) {
+      return { isValid: false, type: "ARTIST", error: "Invalid artist ID" };
+    }
+    const cleanArtistId = isNaN(Number(artistId)) ? artistId : Number(artistId);
+
+    // 3a. Artist Service Catalog (/artist/:artistId/service/:serviceId)
+    if ((segments[2] === "service" || segments[2] === "services") && segments[3]) {
+      const serviceId = segments[3];
+      const cleanServiceId = isNaN(Number(serviceId)) ? serviceId : Number(serviceId);
+      return {
+        isValid: true,
+        type: "ARTIST_SERVICE_CATALOG",
+        screen: "ArtistServiceCatalog",
+        params: { artistId: cleanArtistId, serviceId: cleanServiceId },
+        requiresAuth: false,
+        rawUrl
+      };
+    }
+
+    // 3b. Design Details (/artist/:artistId/design/:designId)
+    if ((segments[2] === "design" || segments[2] === "designs") && segments[3]) {
+      const designId = segments[3];
+      const cleanDesignId = isNaN(Number(designId)) ? designId : Number(designId);
+      return {
+        isValid: true,
+        type: "DESIGN_DETAILS",
+        screen: "DesignDetails",
+        params: { artistId: cleanArtistId, designId: cleanDesignId },
+        requiresAuth: false,
+        rawUrl
+      };
+    }
+
+    // 3c. Custom Design Request (/artist/:artistId/custom-design)
+    if (segments[2] === "custom-design" || segments[2] === "custom") {
+      return {
+        isValid: true,
+        type: "CUSTOM_DESIGN",
+        screen: "CustomDesignRequest",
+        params: { artistId: cleanArtistId },
+        requiresAuth: false,
+        rawUrl
+      };
+    }
+
+    return {
+      isValid: true,
+      type: "ARTIST",
+      screen: "ArtistProfile",
+      params: { artistId: cleanArtistId },
+      requiresAuth: false,
+      rawUrl
+    };
+  }
+
+  // 4. Artist Portfolio (/portfolio/:artistId)
   if (segments[0] === "portfolio" && segments[1]) {
     const artistId = segments[1];
     if (!isValidEntityId(artistId)) {
@@ -221,7 +354,7 @@ export function resolveDeepLink(rawUrl) {
     };
   }
 
-  // 3. Booking Details (/booking/:id)
+  // 5. Booking Details (/booking/:id)
   if (segments[0] === "booking" && segments[1]) {
     const bookingId = segments[1];
     if (!isValidEntityId(bookingId)) {
@@ -238,7 +371,7 @@ export function resolveDeepLink(rawUrl) {
     };
   }
 
-  // 4. Live Tracking (/tracking/:id)
+  // 6. Live Tracking (/tracking/:id)
   if (segments[0] === "tracking" && segments[1]) {
     const bookingId = segments[1];
     if (!isValidEntityId(bookingId)) {
@@ -255,7 +388,7 @@ export function resolveDeepLink(rawUrl) {
     };
   }
 
-  // 5. Review Submission (/review/:id)
+  // 7. Review Submission (/review/:id)
   if (segments[0] === "review" && segments[1]) {
     const bookingId = segments[1];
     if (!isValidEntityId(bookingId)) {
@@ -272,7 +405,7 @@ export function resolveDeepLink(rawUrl) {
     };
   }
 
-  // 6. Support Ticket (/support/:ticketId or /support)
+  // 8. Support Ticket (/support/:ticketId or /support)
   if (segments[0] === "support") {
     if (segments[1]) {
       const ticketId = segments[1];
@@ -299,37 +432,20 @@ export function resolveDeepLink(rawUrl) {
     };
   }
 
-  // 7. Referral / Invite (/invite?ref=:code or /invite/:code or /referral/:code)
-  if (segments[0] === "invite" || segments[0] === "referral") {
-    let refCode = queryParams.ref || queryParams.referralCode || queryParams.code || (segments[1] || "");
-    refCode = (refCode || "").trim().toUpperCase();
-
+  // 10. Festival / Seasonal Offers (/festival/:code or /festivals/:code)
+  if (segments[0] === "festival" || segments[0] === "festivals") {
+    const festivalCode = (segments[1] || queryParams.code || "").trim();
     return {
       isValid: true,
-      type: "REFERRAL",
-      screen: "ReferralDashboard",
-      params: { ref: refCode, referralCode: refCode },
-      referralCode: refCode || null,
+      type: "FESTIVAL",
+      screen: "Coupons",
+      params: { prefilledCode: festivalCode, festivalCode },
       requiresAuth: false,
       rawUrl
     };
   }
 
-  // Also check query param ?ref= on any root link
-  if (queryParams.ref || queryParams.referralCode) {
-    const refCode = (queryParams.ref || queryParams.referralCode || "").trim().toUpperCase();
-    return {
-      isValid: true,
-      type: "REFERRAL",
-      screen: "ReferralDashboard",
-      params: { ref: refCode, referralCode: refCode },
-      referralCode: refCode,
-      requiresAuth: false,
-      rawUrl
-    };
-  }
-
-  // 8. Category Filter (/category/:categoryId)
+  // 11. Category Filter (/category/:categoryId)
   if (segments[0] === "category" && segments[1]) {
     const categoryId = segments[1];
     if (!isValidEntityId(categoryId)) {
@@ -346,7 +462,7 @@ export function resolveDeepLink(rawUrl) {
     };
   }
 
-  // 9. Categories List (/categories)
+  // 12. Categories List (/categories)
   if (segments[0] === "categories") {
     return {
       isValid: true,
@@ -358,7 +474,7 @@ export function resolveDeepLink(rawUrl) {
     };
   }
 
-  // 10. Search Query (/search?q=:query or /search/:query)
+  // 13. Search Query (/search?q=:query or /search/:query)
   if (segments[0] === "search") {
     const q = queryParams.q || queryParams.query || segments[1] || "";
     return {
@@ -371,7 +487,7 @@ export function resolveDeepLink(rawUrl) {
     };
   }
 
-  // 11. Coupons & Offers (/coupons)
+  // 14. Coupons & Offers (/coupons)
   if (segments[0] === "coupons") {
     return {
       isValid: true,
@@ -383,7 +499,7 @@ export function resolveDeepLink(rawUrl) {
     };
   }
 
-  // 12. Wallet (/wallet)
+  // 15. Wallet (/wallet)
   if (segments[0] === "wallet") {
     return {
       isValid: true,
@@ -395,7 +511,7 @@ export function resolveDeepLink(rawUrl) {
     };
   }
 
-  // 13. Notifications (/notifications or /notification/:id)
+  // 16. Notifications (/notifications or /notification/:id)
   if (segments[0] === "notifications" || segments[0] === "notification") {
     if (segments[1]) {
       const notifId = segments[1];
@@ -419,7 +535,7 @@ export function resolveDeepLink(rawUrl) {
     };
   }
 
-  // 14. Customer My Bookings (/bookings or /my-bookings)
+  // 17. Customer My Bookings (/bookings or /my-bookings)
   if (segments[0] === "bookings" || segments[0] === "my-bookings") {
     return {
       isValid: true,
@@ -431,14 +547,42 @@ export function resolveDeepLink(rawUrl) {
     };
   }
 
-  // 15. Home Dashboard (/home or root)
+  // 18. Home Dashboard (/home or root)
   if (segments.length === 0 || segments[0] === "home") {
     return {
       isValid: true,
       type: "HOME",
       screen: "CustomerTabs",
+      tab: "Home",
       params: {},
       requiresAuth: false,
+      rawUrl
+    };
+  }
+
+  // 19. Referral invite link: /invite?ref=CODE  (new user landing)
+  //      Stores the referral code for RegisterScreen to pick up.
+  if (segments[0] === "invite") {
+    const refCode = queryParams.ref || queryParams.code || queryParams.referral || "";
+    return {
+      isValid: true,
+      type: "REFERRAL_INVITE",
+      screen: "Register",         // unauthenticated — goes to AuthStack Register
+      params: { referralCode: refCode.toUpperCase() },
+      requiresAuth: false,
+      pendingReferralCode: refCode.toUpperCase(),  // used by App.js to persist
+      rawUrl
+    };
+  }
+
+  // 20. Referral dashboard link: /referral (existing user — shows their own dashboard)
+  if (segments[0] === "referral" || segments[0] === "refer") {
+    return {
+      isValid: true,
+      type: "REFERRAL_DASHBOARD",
+      screen: "ReferralDashboard",
+      params: {},
+      requiresAuth: true,
       rawUrl
     };
   }
@@ -452,7 +596,7 @@ export function resolveDeepLink(rawUrl) {
 }
 
 // =========================================================================
-// 3. PENDING DEEP LINK / LOGIN RESUME GATE
+// 3. AUTHENTICATION GATING & PERSISTENCE
 // =========================================================================
 
 export async function setPendingDeepLink(routeObj) {
@@ -493,8 +637,16 @@ export async function consumePendingDeepLink(navigation, isAuthenticated) {
     const pending = await getPendingDeepLink();
     if (pending && pending.screen) {
       await clearPendingDeepLink();
-      if (__DEV__) console.log("[DeepLink Gate] Resuming pending deep link destination:", pending.screen, pending.params);
-      if (pending.params && Object.keys(pending.params).length > 0) {
+      if (__DEV__) console.log("[DeepLink Gate] Resuming pending deep link destination:", pending.screen, pending.tab, pending.params);
+      if (pending.screen === "CustomerTabs" && pending.tab) {
+        navigation.navigate("CustomerStack", {
+          screen: "CustomerTabs",
+          params: {
+            screen: pending.tab,
+            params: pending.params || {}
+          }
+        });
+      } else if (pending.params && Object.keys(pending.params).length > 0) {
         navigation.navigate(pending.screen, pending.params);
       } else {
         navigation.navigate(pending.screen);
@@ -525,14 +677,6 @@ export async function handleDeepLinkNavigation(url, navigation, isAuthenticated 
       return;
     }
 
-    // Capture referral code into storage regardless of current auth status
-    if (resolved.referralCode) {
-      try {
-        await AsyncStorage.setItem(STORAGE_KEYS.PENDING_REFERRAL_CODE, resolved.referralCode);
-        if (__DEV__) console.log(`[DeepLink Dispatcher] Captured referral code: ${resolved.referralCode}`);
-      } catch (e) {}
-    }
-
     // If resource requires authentication and user is logged out:
     if (resolved.requiresAuth && !isAuthenticated) {
       if (__DEV__) console.log(`[DeepLink Dispatcher] Target ${resolved.screen} requires auth. Redirecting to Login.`);
@@ -542,6 +686,18 @@ export async function handleDeepLinkNavigation(url, navigation, isAuthenticated 
     }
 
     // Direct navigation to target
+    if (resolved.screen === "CustomerTabs" && resolved.tab) {
+      if (__DEV__) console.log(`[DeepLink Dispatcher] Navigating to Tab ${resolved.tab} with params:`, resolved.params);
+      navigation.navigate("CustomerStack", {
+        screen: "CustomerTabs",
+        params: {
+          screen: resolved.tab,
+          params: resolved.params || {}
+        }
+      });
+      return;
+    }
+
     if (resolved.screen) {
       if (__DEV__) console.log(`[DeepLink Dispatcher] Navigating to ${resolved.screen} with params:`, resolved.params);
       if (resolved.params && Object.keys(resolved.params).length > 0) {
@@ -815,14 +971,8 @@ export const linkingConfig = {
     "mehendigoo://",
     "mehndigo://",
     "exp+sonu-yadav://",
-    "https://mehendigoo.com",
-    "https://www.mehendigoo.com",
-    "https://mehndigo.com",
-    "https://www.mehndigo.com",
-    "https://mehendigo.app",
-    "https://www.mehendigo.app",
     "https://mehndigo.in",
-    "https://www.mehndigo.in"
+    "https://api.mehndigo.in"
   ],
   config: {
     screens: {
@@ -835,6 +985,7 @@ export const linkingConfig = {
           CustomerTabs: {
             screens: {
               Home: "home",
+              Reels: "reel/:reelId",
               Wishlist: "wishlist",
               Bookings: "bookings",
               Wallet: "wallet",
@@ -843,6 +994,7 @@ export const linkingConfig = {
           },
           ArtistProfile: "artist/:artistId",
           Portfolio: "portfolio/:artistId",
+          SelectService: "service/:serviceId",
           ArtistListing: "category/:categoryId",
           Categories: "categories",
           BookingDetails: "booking/:id",
@@ -857,7 +1009,6 @@ export const linkingConfig = {
           Support: "support",
           SupportTicketDetails: "support/:ticketId",
           Settings: "settings",
-          ReferralDashboard: "invite",
           ChatRoom: "chat/:bookingId",
         },
       },
@@ -872,10 +1023,17 @@ export const linkingConfig = {
               Profile: "artist/profile",
             },
           },
+          ArtistProfile: "artist/profile-view/:artistId",
+          PublicProfile: "artist/public/:artistId",
           BookingDetails: "artist/booking/:id",
           LeadDetails: "artist/lead/:id",
           Notifications: "artist/notifications",
+          NotificationCenter: "artist/notifications-center",
           NotificationDetails: "artist/notification/:id",
+          Wallet: "artist/my-wallet",
+          Support: "artist/help-support",
+          SupportTicketDetails: "artist/support/:ticketId",
+          Settings: "artist/my-settings",
           WithdrawalSuccess: "artist/withdrawal/success",
           WithdrawalFailed: "artist/withdrawal/failed",
           ReuploadDocuments: "artist/documents/reupload",
@@ -898,6 +1056,8 @@ export const linkingConfig = {
 export default {
   Config,
   getPlayStoreFallbackUrl,
+  createReelDeepLink,
+  createServiceDeepLink,
   createArtistDeepLink,
   createPortfolioDeepLink,
   createBookingDeepLink,
@@ -905,6 +1065,7 @@ export default {
   createReviewDeepLink,
   createSupportDeepLink,
   createReferralDeepLink,
+  createInviteDeepLink,
   createCategoryDeepLink,
   createSearchDeepLink,
   createCouponsDeepLink,

@@ -21,7 +21,36 @@ import { formatServiceDate } from "../../utils/date";
 
 export default function BookingSummaryScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
-  const params = route.params || {};
+  const rawParams = route.params || {};
+
+  // Store persistent booking context in ref so parameters are never lost on sub-screen navigation
+  const paramsRef = React.useRef({
+    artistId: rawParams.artistId || rawParams.artist?.id || rawParams.artist_id,
+    serviceId: rawParams.serviceId || rawParams.service?.id || rawParams.service_id || rawParams.selectedArt?.service_id || 1,
+    selectedDate: rawParams.selectedDate,
+    slotId: rawParams.slotId,
+    timeLabel: rawParams.timeLabel,
+    address: rawParams.address,
+    landmark: rawParams.landmark,
+    latitude: rawParams.latitude,
+    longitude: rawParams.longitude,
+    selectedArt: rawParams.selectedArt,
+    packageId: rawParams.packageId
+  });
+
+  // Keep params ref up to date if new values arrive
+  if (rawParams.artistId || rawParams.artist?.id) paramsRef.current.artistId = rawParams.artistId || rawParams.artist?.id || rawParams.artist_id;
+  if (rawParams.serviceId || rawParams.service?.id) paramsRef.current.serviceId = rawParams.serviceId || rawParams.service?.id || rawParams.service_id;
+  if (rawParams.selectedDate) paramsRef.current.selectedDate = rawParams.selectedDate;
+  if (rawParams.slotId !== undefined) paramsRef.current.slotId = rawParams.slotId;
+  if (rawParams.timeLabel) paramsRef.current.timeLabel = rawParams.timeLabel;
+  if (rawParams.address) paramsRef.current.address = rawParams.address;
+  if (rawParams.landmark !== undefined) paramsRef.current.landmark = rawParams.landmark;
+  if (rawParams.latitude !== undefined) paramsRef.current.latitude = rawParams.latitude;
+  if (rawParams.longitude !== undefined) paramsRef.current.longitude = rawParams.longitude;
+  if (rawParams.selectedArt) paramsRef.current.selectedArt = rawParams.selectedArt;
+  if (rawParams.packageId !== undefined) paramsRef.current.packageId = rawParams.packageId;
+
   const {
     artistId,
     serviceId,
@@ -32,8 +61,9 @@ export default function BookingSummaryScreen({ route, navigation }) {
     landmark,
     latitude,
     longitude,
-    selectedArt
-  } = params;
+    selectedArt,
+    packageId
+  } = paramsRef.current;
 
   // Data states
   const [artist, setArtist] = useState(null);
@@ -42,47 +72,127 @@ export default function BookingSummaryScreen({ route, navigation }) {
   const [submitting, setSubmitting] = useState(false);
 
   // Group & Coverage states
-  const [groupSize, setGroupSize] = useState(1);
-  const [serviceCoverage, setServiceCoverage] = useState("BOTH_HANDS");
+  const [groupSize, setGroupSize] = useState(Number(rawParams.groupSize || rawParams.group_size || 1));
+  const [serviceCoverage, setServiceCoverage] = useState(rawParams.serviceCoverage || rawParams.service_coverage || "BOTH_HANDS");
 
   // Form states
   const [notes, setNotes] = useState("");
-  const [couponInput, setCouponInput] = useState("");
-  const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const [couponInput, setCouponInput] = useState(rawParams.selectedCouponCode || rawParams.prefilledCode || "");
+  const [appliedCoupon, setAppliedCoupon] = useState(rawParams.selectedCouponCode || rawParams.prefilledCode || null);
+  const isFetchingRef = React.useRef(false);
 
-  const fetchPricingAndArtist = useCallback(async (couponCode = null, newGroupSize = groupSize, newCoverage = serviceCoverage) => {
+  const fetchPricingAndArtist = useCallback(async (couponCode = null, newGroupSize = 1, newCoverage = "BOTH_HANDS") => {
+    const aid = artistId || rawParams.artistId || rawParams.artist?.id || rawParams.artist_id;
+    const sid = serviceId || rawParams.serviceId || rawParams.service?.id || 1;
+    if (!aid || aid === "undefined") return;
+
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
     try {
       const [artistData, pricing] = await Promise.all([
-        getArtistById(artistId),
-        getPriceDetails(serviceId, couponCode, 1, selectedArt?.price, newGroupSize, newCoverage)
+        getArtistById(aid).catch(() => null),
+        getPriceDetails(sid, couponCode, 1, selectedArt?.price, newGroupSize, newCoverage).catch(() => null)
       ]);
-      setArtist(artistData);
-      setPriceDetails(pricing);
-      if (couponCode) {
-        setAppliedCoupon(couponCode);
+
+      if (artistData) setArtist(artistData);
+
+      const unitRate = Number(selectedArt?.price || artistData?.starting_price || 500);
+      const calcBase = unitRate * newGroupSize;
+
+      if (pricing && (pricing.total_amount || pricing.totalAmount || pricing.final_amount || pricing.service_price)) {
+        setPriceDetails(pricing);
+        const discount = Number(pricing?.couponDiscount || pricing?.coupon_discount || pricing?.discount_amount || 0);
+        if (couponCode && discount > 0) {
+          setAppliedCoupon(couponCode);
+        } else if (couponCode && discount === 0) {
+          setAppliedCoupon(null);
+        }
+      } else {
+        const adv = Math.round(calcBase * 0.10);
+        setPriceDetails({
+          service_price: calcBase,
+          servicePrice: calcBase,
+          base_price: calcBase,
+          basePrice: calcBase,
+          unit_rate: unitRate,
+          unitRate: unitRate,
+          group_size: newGroupSize,
+          groupSize: newGroupSize,
+          total_amount: calcBase,
+          finalAmount: calcBase,
+          final_amount: calcBase,
+          totalAmount: calcBase,
+          advance_amount: adv,
+          advanceAmount: adv,
+          remaining_amount: Math.max(0, calcBase - adv),
+          remainingAmount: Math.max(0, calcBase - adv),
+          remainingCash: Math.max(0, calcBase - adv),
+          coupon_discount: 0,
+          couponDiscount: 0
+        });
       }
     } catch (err) {
       if (__DEV__) console.log("Failed to retrieve booking cost estimates:", err.message);
     } finally {
       setLoading(false);
+      isFetchingRef.current = false;
     }
-  }, [artistId, serviceId, selectedArt, groupSize, serviceCoverage]);
+  }, [artistId, serviceId, selectedArt?.price]);
 
   useEffect(() => {
-    if (!artistId || !serviceId) {
-      Alert.alert("Error", "Invalid booking parameters.");
+    const aid = artistId || rawParams.artistId || rawParams.artist?.id;
+    if (!aid) {
+      Alert.alert("Error", "Invalid booking parameters. Please choose an artist to book.");
       navigation.goBack();
       return;
     }
-    const unsubscribe = navigation.addListener("focus", () => {
-      fetchPricingAndArtist();
-    });
-    return unsubscribe;
-  }, [artistId, serviceId, navigation, fetchPricingAndArtist]);
+    fetchPricingAndArtist(appliedCoupon, groupSize, serviceCoverage);
+  }, [artistId]);
+
+  useEffect(() => {
+    if (route.params?.selectedCouponCode) {
+      const code = String(route.params.selectedCouponCode).trim().toUpperCase();
+      setCouponInput(code);
+      setAppliedCoupon(code);
+      fetchPricingAndArtist(code, groupSize, serviceCoverage);
+    }
+  }, [route.params?.selectedCouponCode, fetchPricingAndArtist, groupSize, serviceCoverage]);
 
   const handleGroupSizeChange = (newSize) => {
     if (newSize < 1 || newSize > 10) return;
     setGroupSize(newSize);
+
+    // Update local price details immediately for instantaneous UI feedback
+    setPriceDetails((prev) => {
+      const unitRate = Number(prev?.unitRate || prev?.unit_rate || selectedArt?.price || 500);
+      const newBase = unitRate * newSize;
+      const disc = Number(prev?.couponDiscount || prev?.coupon_discount || 0);
+      const tf = Number(prev?.travelFee || prev?.travel_fee || 0);
+      const total = Math.max(10, newBase + tf - disc);
+      const adv = Math.round(total * 0.10);
+      const rem = Math.max(0, total - adv);
+      return {
+        ...(prev || {}),
+        unit_rate: unitRate,
+        unitRate: unitRate,
+        group_size: newSize,
+        groupSize: newSize,
+        service_price: newBase,
+        servicePrice: newBase,
+        base_price: newBase,
+        basePrice: newBase,
+        total_amount: total,
+        final_amount: total,
+        finalAmount: total,
+        totalAmount: total,
+        advance_amount: adv,
+        advanceAmount: adv,
+        remaining_amount: rem,
+        remainingAmount: rem,
+        remainingCash: rem
+      };
+    });
+
     setLoading(true);
     fetchPricingAndArtist(appliedCoupon, newSize, serviceCoverage);
   };
@@ -105,15 +215,16 @@ export default function BookingSummaryScreen({ route, navigation }) {
     }
     setLoading(true);
     try {
-      const pricing = await getPriceDetails(serviceId, code, 1, selectedArt?.price, groupSize, serviceCoverage);
-      const discount = Number(pricing?.couponDiscount || pricing?.coupon_discount || 0);
+      const sid = serviceId || 1;
+      const pricing = await getPriceDetails(sid, code, 1, selectedArt?.price, groupSize, serviceCoverage);
+      const discount = Number(pricing?.couponDiscount || pricing?.coupon_discount || pricing?.discount_amount || pricing?.discount || 0);
       if (discount > 0) {
         setPriceDetails(pricing);
         setAppliedCoupon(code);
         Alert.alert("Coupon Applied 🎉", `Successfully applied ${code}! Saved ₹${discount}.`);
       } else {
         setAppliedCoupon(null);
-        Alert.alert("Coupon Notice", "This coupon does not provide a discount for this booking.");
+        Alert.alert("Coupon Notice", pricing?.message || `Coupon '${code}' requires a higher booking amount or is inactive.`);
       }
     } catch (err) {
       setAppliedCoupon(null);
@@ -128,8 +239,27 @@ export default function BookingSummaryScreen({ route, navigation }) {
     setCouponInput("");
     setAppliedCoupon(null);
     try {
-      const pricing = await getPriceDetails(serviceId, null, 1, selectedArt?.price, groupSize, serviceCoverage);
-      setPriceDetails(pricing);
+      const sid = serviceId || 1;
+      const pricing = await getPriceDetails(sid, null, 1, selectedArt?.price, groupSize, serviceCoverage);
+      if (pricing) {
+        setPriceDetails(pricing);
+      } else {
+        const unitRate = Number(selectedArt?.price || 500);
+        const newBase = unitRate * groupSize;
+        const adv = Math.round(newBase * 0.10);
+        setPriceDetails({
+          service_price: newBase,
+          servicePrice: newBase,
+          base_price: newBase,
+          basePrice: newBase,
+          total_amount: newBase,
+          finalAmount: newBase,
+          advance_amount: adv,
+          remaining_amount: Math.max(0, newBase - adv),
+          coupon_discount: 0,
+          couponDiscount: 0
+        });
+      }
     } catch (err) {
       if (__DEV__) console.log("Failed to refresh pricing on coupon removal:", err.message);
     } finally {
@@ -140,14 +270,35 @@ export default function BookingSummaryScreen({ route, navigation }) {
   const handleProceedToPayment = async () => {
     setSubmitting(true);
     try {
+      const safeFinal = Number(
+        priceDetails?.final_amount ||
+        priceDetails?.total_amount ||
+        priceDetails?.finalAmount ||
+        ((Number(selectedArt?.price || 500) * groupSize))
+      );
+      const safeAdvance = Number(
+        priceDetails?.advance_amount ||
+        priceDetails?.advanceAmount ||
+        priceDetails?.required_advance ||
+        priceDetails?.requiredAdvance ||
+        Math.round(safeFinal * 0.10) ||
+        50
+      );
+      const safeRemaining = Math.max(0, safeFinal - safeAdvance);
+
       const bookingData = {
-        artistId: Number(artistId),
-        serviceId: Number(serviceId),
+        artistId: Number(artistId || 1),
+        serviceId: Number(serviceId || 1),
+        packageId: packageId ? (isNaN(Number(packageId)) ? null : Number(packageId)) : null,
+        package_id: packageId ? (isNaN(Number(packageId)) ? null : Number(packageId)) : null,
         slotId: slotId ? (isNaN(Number(slotId)) ? null : Number(slotId)) : null,
         address: String(address || "Jaipur, Rajasthan, 302021"),
         landmark: landmark || null,
         notes: (notes || "").trim() || null,
         couponCode: appliedCoupon || null,
+        coupon_code: appliedCoupon || null,
+        discount_amount: Number(priceDetails?.couponDiscount || priceDetails?.coupon_discount || priceDetails?.discount_amount || 0),
+        coupon_discount: Number(priceDetails?.couponDiscount || priceDetails?.coupon_discount || priceDetails?.discount_amount || 0),
         latitude: latitude ? Number(latitude) : 26.9124,
         longitude: longitude ? Number(longitude) : 75.7873,
         selectedDate: selectedDate || new Date().toISOString().split("T")[0],
@@ -172,66 +323,53 @@ export default function BookingSummaryScreen({ route, navigation }) {
         selected_art_price: selectedArt?.price || null
       };
 
-      const newBooking = await createBooking(bookingData);
-      
-      const targetBookingId =
-        newBooking?.id ||
-        newBooking?.booking_id ||
-        newBooking?.bookingId ||
-        newBooking?.data?.id ||
-        newBooking?.data?.booking_id ||
-        newBooking?.data?.bookingId ||
-        newBooking?.data?.booking?.id ||
-        newBooking?.booking?.id ||
-        123;
+      const checkoutData = {
+        ...bookingData,
+        total_amount: safeFinal,
+        advance_amount: safeAdvance,
+        remaining_amount: safeRemaining,
+        artistName: artist?.name || artist?.full_name || artist?.user?.name || artist?.user?.full_name || artist?.business_name || "Mehndi Specialist",
+        serviceTitle: selectedArt?.title || artist?.specialization_name || "Mehndi Service",
+        service_price: Number(priceDetails?.service_price || priceDetails?.servicePrice || safeFinal)
+      };
 
-      const targetBookingCode =
-        newBooking?.booking_code ||
-        newBooking?.bookingCode ||
-        newBooking?.data?.booking_code ||
-        newBooking?.data?.bookingCode ||
-        newBooking?.data?.booking?.booking_code ||
-        newBooking?.booking?.booking_code ||
-        `MG-${targetBookingId || Date.now()}`;
-
-      const safeAdvance = Number(
-        priceDetails?.advance_amount ||
-        newBooking?.advance_amount ||
-        Math.round((priceDetails?.final_amount || priceDetails?.total_amount || 500) * 0.10) ||
-        50
-      );
-      const safeFinal = Number(
-        priceDetails?.final_amount ||
-        priceDetails?.total_amount ||
-        newBooking?.final_amount ||
-        newBooking?.total_amount ||
-        (safeAdvance * 10) ||
-        500
-      );
-      const safeRemaining = Number(
-        priceDetails?.remaining_amount !== undefined
-          ? priceDetails.remaining_amount
-          : (newBooking?.remaining_amount !== undefined ? newBooking.remaining_amount : (safeFinal - safeAdvance))
-      );
-
-      // Navigate directly to secure Figma-matched Payment screen with exact pricing
+      // Navigate directly to Payment screen with checkout intent data (NO BOOKING CREATED YET)
       navigation.navigate("Payment", {
-        bookingId: targetBookingId || null,
-        bookingCode: targetBookingCode,
+        checkoutData,
+        bookingId: null,
+        bookingCode: `MG-CHKT-${Date.now().toString().slice(-6)}`,
         finalAmount: safeFinal,
         advanceAmount: safeAdvance,
         remainingAmount: safeRemaining,
-        artistName: artist?.user?.name || artist?.business_name || "Mehndi Specialist",
-        serviceTitle: selectedArt?.title || "Mehndi Service",
+        artistName: checkoutData.artistName,
+        serviceTitle: checkoutData.serviceTitle,
         isSettlement: false
       });
     } catch (err) {
       console.log("[Proceed to payment error]:", err.message);
-      Alert.alert("Booking Notice", err.message || "Failed to initialize booking payment.");
+      Alert.alert("Checkout Notice", err.message || "Failed to proceed to payment.");
     } finally {
       setSubmitting(false);
     }
   };
+
+  const handleBack = () => {
+    if (navigation?.canGoBack && navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "CustomerTabs", params: { screen: "Home" } }]
+      });
+    }
+    return true;
+  };
+
+  useEffect(() => {
+    const { BackHandler } = require("react-native");
+    const backSubscription = BackHandler.addEventListener("hardwareBackPress", handleBack);
+    return () => backSubscription.remove();
+  }, [navigation]);
 
   if (loading && !priceDetails) {
     return (
@@ -245,10 +383,10 @@ export default function BookingSummaryScreen({ route, navigation }) {
   const basePrice = Number(priceDetails?.servicePrice || priceDetails?.service_price || priceDetails?.base_amount || priceDetails?.subtotal || 0);
   const discountAmount = Number(priceDetails?.couponDiscount || priceDetails?.coupon_discount || priceDetails?.discount_amount || 0);
   const totalAmount = Number(priceDetails?.finalAmount || priceDetails?.final_amount || priceDetails?.total_amount || (basePrice - discountAmount));
-  const advanceAmount = Number(priceDetails?.advanceAmount || priceDetails?.advance_amount || Math.round(totalAmount * 0.10));
-  const remainingAmount = Number(priceDetails?.remainingCash !== undefined ? priceDetails?.remainingCash : (priceDetails?.remaining_amount !== undefined ? priceDetails?.remaining_amount : (totalAmount - advanceAmount)));
+  const advanceAmount = Number(priceDetails?.advanceAmount || priceDetails?.advance_amount || Math.round(totalAmount * 0.10) || 50);
+  const remainingAmount = Number(priceDetails?.remainingCash !== undefined ? priceDetails?.remainingCash : (priceDetails?.remaining_amount !== undefined ? priceDetails?.remaining_amount : Math.max(0, totalAmount - advanceAmount)));
 
-  const artistName = artist?.user?.name || artist?.business_name || "Mehndi Artist";
+  const artistName = artist?.name || artist?.full_name || artist?.user?.name || artist?.user?.full_name || artist?.business_name || "Mehndi Artist";
 
   return (
     <SafeAreaView style={styles.container}>
@@ -258,7 +396,7 @@ export default function BookingSummaryScreen({ route, navigation }) {
       >
         {/* 1. Header */}
         <View style={styles.header}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.backBtn} onPress={handleBack} activeOpacity={0.7}>
             <Ionicons name="chevron-back" size={22} color="#212121" />
           </TouchableOpacity>
           <View style={styles.headerTitleContainer}>
@@ -405,22 +543,48 @@ export default function BookingSummaryScreen({ route, navigation }) {
               </TouchableOpacity>
             </View>
           ) : (
-            <View style={styles.couponInputRow}>
-              <TextInput
-                style={styles.couponInput}
-                value={couponInput}
-                onChangeText={(t) => setCouponInput(t.toUpperCase())}
-                placeholder="Enter coupon code (e.g. MEHNDI500)"
-                placeholderTextColor="#9CA3AF"
-                autoCapitalize="characters"
-              />
+            <View>
+              <View style={styles.couponInputRow}>
+                <TextInput
+                  style={styles.couponInput}
+                  value={couponInput}
+                  onChangeText={(t) => setCouponInput(t.toUpperCase())}
+                  placeholder="Enter coupon code (e.g. RAKHI20)"
+                  placeholderTextColor="#9CA3AF"
+                  autoCapitalize="characters"
+                />
+                <TouchableOpacity
+                  style={styles.applyBtn}
+                  onPress={handleApplyCoupon}
+                  disabled={loading}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.applyBtnText}>Apply</Text>
+                </TouchableOpacity>
+              </View>
               <TouchableOpacity
-                style={styles.applyBtn}
-                onPress={handleApplyCoupon}
-                disabled={loading}
-                activeOpacity={0.8}
+                style={{ flexDirection: "row", alignItems: "center", marginTop: 8 }}
+                onPress={() => navigation.navigate("Coupons", {
+                  artistId,
+                  serviceId,
+                  selectedDate,
+                  slotId,
+                  timeLabel,
+                  address,
+                  landmark,
+                  latitude,
+                  longitude,
+                  selectedArt,
+                  packageId,
+                  groupSize,
+                  serviceCoverage,
+                  basePrice: Number(priceDetails?.servicePrice || priceDetails?.service_price || priceDetails?.base_price || ((selectedArt?.price || 500) * groupSize)),
+                  prefilledCode: appliedCoupon,
+                  returnScreen: "BookingSummary"
+                })}
               >
-                <Text style={styles.applyBtnText}>Apply</Text>
+                <Ionicons name="sparkles" size={13} color="#9C1344" style={{ marginRight: 4 }} />
+                <Text style={{ fontSize: 12, color: "#9C1344", fontWeight: "600" }}>View All Available Coupons & Offers →</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -479,9 +643,9 @@ export default function BookingSummaryScreen({ route, navigation }) {
             <View style={styles.remainingLeft}>
               <View style={styles.remainingPill}>
                 <Ionicons name="time" size={12} color="#701DDB" />
-                <Text style={styles.remainingPillText}>REMAINING BALANCE</Text>
+                <Text style={styles.remainingPillText}>REMAINING BALANCE (90%)</Text>
               </View>
-              <Text style={styles.remainingDesc}>Pay after service completion directly</Text>
+              <Text style={styles.remainingDesc}>Pay after service completion (Cash or Online)</Text>
             </View>
             <Text style={styles.remainingAmount}>₹{remainingAmount}</Text>
           </View>
@@ -585,7 +749,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 14,
-    paddingBottom: 40
+    paddingBottom: 140
   },
   card: {
     backgroundColor: "#FFFFFF",

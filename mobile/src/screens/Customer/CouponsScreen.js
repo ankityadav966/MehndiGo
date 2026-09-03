@@ -14,18 +14,27 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Alert from "../../utils/Alert";
 import Colors from "../../constants/Colors";
-import { getCoupons } from "../../services/coupon";
+import { getCoupons, autoApplyCoupon } from "../../services/coupon";
 
 export default function CouponsScreen({ route, navigation }) {
   const [coupons, setCoupons] = useState([]);
-  const [couponCode, setCouponCode] = useState("");
+  const [couponCode, setCouponCode] = useState(route.params?.prefilledCode || "");
   const [loading, setLoading] = useState(true);
+  const [applying, setApplying] = useState(false);
   const onSelectCoupon = route.params?.onSelectCoupon;
+  const appliedCode = (route.params?.prefilledCode || "").trim().toUpperCase();
+  const basePrice = Number(route.params?.basePrice || route.params?.amount || 0);
+
+  useEffect(() => {
+    if (route.params?.prefilledCode) {
+      setCouponCode(route.params.prefilledCode);
+    }
+  }, [route.params?.prefilledCode]);
 
   const fetchCouponsList = React.useCallback(async () => {
     try {
       const data = await getCoupons();
-      setCoupons(data || []);
+      setCoupons(Array.isArray(data) ? data : (data?.data || []));
     } catch (err) {
       if (__DEV__) console.log("Failed to load coupons:", err.message);
     } finally {
@@ -40,88 +49,113 @@ export default function CouponsScreen({ route, navigation }) {
     return () => clearTimeout(timer);
   }, [fetchCouponsList]);
 
-  const handleAutoApplyBest = () => {
-    if (!coupons || coupons.length === 0) {
-      Alert.alert("Notice", "No active coupons available right now.");
-      return;
+  const applyAndReturn = (code) => {
+    if (onSelectCoupon && typeof onSelectCoupon === "function") {
+      try { onSelectCoupon(code); } catch {}
     }
-    // Pick active coupon with max discount
-    const activeCoupons = coupons.filter((c) => c.is_active !== false);
-    if (activeCoupons.length === 0) {
-      Alert.alert("Notice", "No valid coupons currently available.");
-      return;
-    }
-    const best = activeCoupons[0];
-    if (onSelectCoupon) {
-      onSelectCoupon(best.code);
-      navigation.goBack();
+    const returnScreen = route.params?.returnScreen;
+    if (returnScreen) {
+      navigation.navigate(returnScreen, {
+        ...(route.params || {}),
+        selectedCouponCode: code
+      });
     } else {
-      Alert.alert("Best Coupon Applied 🎉", `Applied ${best.code} for maximum savings!`);
+      Alert.alert(
+        "Coupon Selected 🎉",
+        `Coupon code "${code}" has been saved. It will be applied when you book an artist.`,
+        [{ text: "OK", onPress: () => navigation.goBack() }]
+      );
+    }
+  };
+
+  const handleAutoApplyBest = async () => {
+    setApplying(true);
+    try {
+      const res = await autoApplyCoupon(basePrice);
+      const best = res?.data || res;
+      if (best && (best.couponCode || best.coupon_code || best.code)) {
+        const code = (best.couponCode || best.coupon_code || best.code).toUpperCase();
+        applyAndReturn(code);
+      } else {
+        Alert.alert("Notice", "No eligible coupons for this booking value.");
+      }
+    } catch (err) {
+      Alert.alert("Notice", err.message || "No auto-apply coupon found.");
+    } finally {
+      setApplying(false);
     }
   };
 
   const handleApplyCode = async () => {
-    if (!couponCode.trim()) {
+    const clean = couponCode.trim().toUpperCase();
+    if (!clean) {
       Alert.alert("Input Error", "Please type a coupon code.");
       return;
     }
-
-    if (onSelectCoupon) {
-      onSelectCoupon(couponCode.trim().toUpperCase());
-      navigation.goBack();
-    } else {
-      Alert.alert("Applied 🎉", `Promo code ${couponCode.trim().toUpperCase()} applied successfully!`);
+    if (clean === appliedCode) {
+      Alert.alert("Notice", "This coupon is already applied.");
+      return;
     }
+    applyAndReturn(clean);
   };
 
   const handleSelectCoupon = (item) => {
+    const itemCode = (item.code || "").trim().toUpperCase();
     if (item.is_active === false) {
       Alert.alert("Promo Error", "This coupon code has expired.");
       return;
     }
-
-    if (onSelectCoupon) {
-      onSelectCoupon(item.code);
-      navigation.goBack();
-    } else {
-      Alert.alert("Applied 🎉", `Promo code ${item.code} selected!`);
+    if (itemCode === appliedCode) {
+      Alert.alert("Notice", "This coupon is already applied to your booking.");
+      return;
     }
+    applyAndReturn(itemCode);
   };
 
   const renderCoupon = ({ item }) => {
-    const expiresDate = item.expires_at ? new Date(item.expires_at).toDateString() : "TBD";
-    const discountText =
-      item.discount_type === "FLAT"
-        ? `₹${item.discount_value || 100} FLAT Discount`
-        : `${item.discount_percentage || 20}% off up to ₹${item.max_discount || 500}`;
+    const itemCode = (item.code || "").trim().toUpperCase();
+    const isCurrentlyApplied = appliedCode === itemCode;
+    const expiresDate = item.expires_at ? new Date(item.expires_at).toDateString() : "Active";
+    const dType = String(item.discount_type || "").toUpperCase();
+    const isFlat = dType === "FLAT" || dType === "FIXED";
+    const discountText = isFlat
+      ? `₹${item.discount_value || 100} FLAT Discount`
+      : `${item.discount_value || item.discount_percentage || 20}% OFF${item.max_discount ? ` up to ₹${item.max_discount}` : ""}`;
 
-    const tagLabel = item.code?.includes("FIRST")
-      ? "First Order Offer"
-      : item.code?.includes("FESTIVAL") || item.code?.includes("EID")
-      ? "Festival Special"
-      : "Category Deal";
+    const tagLabel = itemCode.includes("FIRST") || itemCode.includes("WELCOME")
+      ? "First Order Offer 🎉"
+      : itemCode.includes("RAKHI") || itemCode.includes("TEEJ") || itemCode.includes("KANHA") || itemCode.includes("BAPPA") || itemCode.includes("GARBA") || itemCode.includes("KARWA") || itemCode.includes("DIWALI") || itemCode.includes("HOLI")
+      ? "Festival Special ✨"
+      : itemCode.includes("BRIDAL")
+      ? "Bridal Package 👰"
+      : "Exclusive Offer";
+
+    const minOrder = item.min_order_amount || item.min_booking_value || item.min_booking_amount || 0;
 
     return (
-      <View style={styles.couponCard}>
-        <View style={styles.iconBox}>
-          <Ionicons name="pricetag" size={20} color={Colors.primary || "#9C1344"} />
+      <View style={[styles.couponCard, isCurrentlyApplied && styles.couponCardApplied]}>
+        <View style={[styles.iconBox, isCurrentlyApplied && styles.iconBoxApplied]}>
+          <Ionicons name={isCurrentlyApplied ? "checkmark-circle" : "pricetag"} size={20} color={isCurrentlyApplied ? "#059669" : (Colors.primary || "#9C1344")} />
         </View>
         <View style={styles.detailsContainer}>
           <View style={styles.codeRow}>
-            <Text style={styles.couponCode}>{item.code}</Text>
-            <View style={styles.tagBadge}>
-              <Text style={styles.tagText}>{tagLabel}</Text>
+            <Text style={[styles.couponCode, isCurrentlyApplied && { color: "#059669" }]}>{item.code}</Text>
+            <View style={[styles.tagBadge, isCurrentlyApplied && { backgroundColor: "#ECFDF5" }]}>
+              <Text style={[styles.tagText, isCurrentlyApplied && { color: "#059669" }]}>{tagLabel}</Text>
             </View>
           </View>
           <Text style={styles.description}>{discountText}</Text>
-          <Text style={styles.validity}>Expires: {expiresDate} • Min Order: ₹{item.min_booking_value || 500}</Text>
+          <Text style={styles.validity}>Expires: {expiresDate}{minOrder > 0 ? ` • Min Order: ₹${minOrder}` : ""}</Text>
         </View>
         <TouchableOpacity
           activeOpacity={0.8}
+          disabled={isCurrentlyApplied}
           onPress={() => handleSelectCoupon(item)}
-          style={styles.applyButton}
+          style={[styles.applyButton, isCurrentlyApplied && styles.applyButtonApplied]}
         >
-          <Text style={styles.applyButtonText}>Apply</Text>
+          <Text style={[styles.applyButtonText, isCurrentlyApplied && styles.applyButtonTextApplied]}>
+            {isCurrentlyApplied ? "Applied ✓" : "Apply"}
+          </Text>
         </TouchableOpacity>
       </View>
     );
@@ -246,7 +280,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border || "#E5E7EB",
   },
+  couponCardApplied: {
+    borderColor: "#10B981",
+    backgroundColor: "#F0FDF4",
+  },
   iconBox: { width: 40, height: 40, borderRadius: 10, backgroundColor: "#FFF0F4", justifyContent: "center", alignItems: "center" },
+  iconBoxApplied: { backgroundColor: "#DCFCE7" },
   detailsContainer: { flex: 1, marginLeft: 12 },
   codeRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   couponCode: { fontSize: 14, fontWeight: "700", color: Colors.text || "#1D1D1D" },
@@ -255,7 +294,9 @@ const styles = StyleSheet.create({
   description: { fontSize: 12, color: Colors.textSecondary || "#666666", marginTop: 4 },
   validity: { fontSize: 10, color: Colors.textTertiary || "#94A3B8", marginTop: 4 },
   applyButton: { borderWidth: 1, borderColor: Colors.primary || "#9C1344", paddingHorizontal: 14, paddingVertical: 6, borderRadius: 8 },
+  applyButtonApplied: { backgroundColor: "#059669", borderColor: "#059669" },
   applyButtonText: { color: Colors.primary || "#9C1344", fontWeight: "700", fontSize: 12 },
+  applyButtonTextApplied: { color: "#FFFFFF" },
   emptyContainer: { alignItems: "center", marginTop: 40 },
   emptyText: { color: Colors.textSecondary || "#666666", marginTop: 10, fontSize: 14 },
 });

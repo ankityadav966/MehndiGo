@@ -7,7 +7,7 @@
 process.env.NODE_ENV = "test";
 process.env.DB_DIALECT = "sqlite";
 process.env.JWT_SECRET = "test_jwt_secret_key_mehndi_go_2026";
-process.env.RAZORPAY_KEY_ID = "rzp_live_TSIrGnJIllkt0H";
+process.env.RAZORPAY_KEY_ID = "rzp_test_TTX0hx0yooeEQW";
 process.env.RAZORPAY_KEY_SECRET = "test_secret_for_hmac_sha256_verification";
 
 const assert = require("assert");
@@ -255,7 +255,16 @@ async function runMasterFinancialAudit() {
   }
 }
 
-runMasterFinancialAudit().then(() => process.exit(0)).catch((err) => {
+const https = require("https");
+const http = require("http");
+
+runMasterFinancialAudit().then(() => {
+  https.globalAgent.destroy();
+  http.globalAgent.destroy();
+  setTimeout(() => {
+    process.exit(0);
+  }, 100);
+}).catch((err) => {
   console.error(err);
   process.exit(1);
 });

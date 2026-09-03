@@ -14,7 +14,8 @@ import {
   ScrollView,
   Dimensions,
   Share,
-  Platform
+  Platform,
+  KeyboardAvoidingView
 } from "react-native";
 import Colors from "../../constants/Colors";
 import LoadingSkeleton from "../../components/LoadingSkeleton";
@@ -30,6 +31,7 @@ import { resolveImage } from "../../utils/imageHelper";
 import { getThumbnailUrl } from "../../utils/cloudinary";
 import { getActiveAddress } from "../../utils/locationManager";
 import { createArtistDeepLink } from "../../services/deepLink";
+import { QUICK_FILTER_CATEGORIES } from "../../constants/MehndiCategories";
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -252,11 +254,11 @@ export default function ArtistListingScreen({ route, navigation }) {
     try {
       const artistId = artist.id || artist.user_id || artist.artist_id;
       const artistName = artist.name || artist.full_name || artist.user?.name || "Mehndi Artist";
-      const minPrice = artist.starting_price || artist.services?.[0]?.minimum_price || 500;
+      const minPrice = artist.starting_price || artist.services?.[0]?.minimum_price || 0;
       const shareUrl = createArtistDeepLink(artistId);
       await Share.share({
         title: `${artistName} on MehndiGo`,
-        message: `Book ${artistName} on MehndiGo! Starting at ₹${minPrice}, ${artist.experience_years ? `${artist.experience_years} years experience, ` : ""}⭐ ${Number(artist.avg_rating || artist.rating || 0).toFixed(1)} rating.\n\nView Profile: ${shareUrl}`,
+        message: `Book ${artistName} on MehndiGo! ${minPrice ? `Starting at ₹${minPrice}, ` : ""}${artist.experience_years ? `${artist.experience_years} years experience, ` : ""}⭐ ${Number(artist.avg_rating || artist.rating || 0).toFixed(1)} rating.\n\nView Profile: ${shareUrl}`,
         url: shareUrl
       });
     } catch (e) {
@@ -287,7 +289,7 @@ export default function ArtistListingScreen({ route, navigation }) {
       <TouchableOpacity
         style={styles.listCard}
         activeOpacity={0.9}
-        onPress={() => navigation.navigate("ArtistProfile", { artistId: artistId })}
+        onPress={() => navigation.navigate("ArtistProfile", { artistId: artistId, from: "ArtistListing" })}
       >
         <View style={styles.imageContainer}>
           <OptimizedImage
@@ -347,7 +349,7 @@ export default function ArtistListingScreen({ route, navigation }) {
           </View>
 
           <View style={styles.footerRow}>
-            <Text style={styles.price}>{minPrice ? `₹${minPrice}+` : "Price on Profile"}</Text>
+            <Text style={styles.price}>{minPrice ? `₹${minPrice}+` : "Price on Request"}</Text>
             <View style={styles.availableTodayBadge}>
               <View style={styles.activeDot} />
               <Text style={styles.availableTodayText}>Available Today</Text>
@@ -357,7 +359,7 @@ export default function ArtistListingScreen({ route, navigation }) {
           <View style={styles.actionRow}>
             <TouchableOpacity
               style={styles.viewProfileBtn}
-              onPress={() => navigation.navigate("ArtistProfile", { artistId: artistId })}
+              onPress={() => navigation.navigate("ArtistProfile", { artistId: artistId, from: "ArtistListing" })}
             >
               <Text style={styles.viewProfileBtnText}>View Profile</Text>
             </TouchableOpacity>
@@ -373,11 +375,39 @@ export default function ArtistListingScreen({ route, navigation }) {
     );
   }, [favoriteArtistIds, navigation]);
 
+  const handleBack = React.useCallback(() => {
+    if (filterModalVisible) {
+      setFilterModalVisible(false);
+      return true;
+    }
+    if (sortDropdownVisible) {
+      setSortDropdownVisible(false);
+      return true;
+    }
+    if (navigation?.canGoBack && navigation.canGoBack()) {
+      navigation.goBack();
+    } else if (route?.params?.from) {
+      navigation.navigate(route.params.from);
+    } else {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "CustomerTabs", params: { screen: "Home" } }]
+      });
+    }
+    return true;
+  }, [filterModalVisible, sortDropdownVisible, navigation, route?.params]);
+
+  useEffect(() => {
+    const { BackHandler } = require("react-native");
+    const backSubscription = BackHandler.addEventListener("hardwareBackPress", handleBack);
+    return () => backSubscription.remove();
+  }, [handleBack]);
+
   return (
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+        <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
           <Ionicons name="arrow-back" size={24} color={Colors.text} />
         </TouchableOpacity>
         <View style={styles.headerMeta}>
@@ -411,16 +441,7 @@ export default function ArtistListingScreen({ route, navigation }) {
       {/* Quick Filter Horizontal Chips */}
       <View style={{ marginBottom: 10 }}>
         <FlatList
-          data={[
-            { label: "All Artists", key: "all" },
-            { label: "Bridal", key: "bridal" },
-            { label: "Arabic", key: "arabic" },
-            { label: "Royal", key: "royal" },
-            { label: "⭐ 4.5+ Rated", key: "top_rated" },
-            { label: "5+ Yrs Exp", key: "5_exp" },
-            { label: "Home Service", key: "home_service" },
-            { label: "Verified Only", key: "verified" }
-          ]}
+          data={QUICK_FILTER_CATEGORIES}
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ paddingHorizontal: 16 }}
@@ -428,13 +449,10 @@ export default function ArtistListingScreen({ route, navigation }) {
           renderItem={({ item }) => {
             let isActive = false;
             if (item.key === "all") isActive = !selectedCategory && !rating && !experience && !verified && !homeService;
-            else if (item.key === "bridal") isActive = selectedCategory?.toLowerCase().includes("bridal");
-            else if (item.key === "arabic") isActive = selectedCategory?.toLowerCase().includes("arabic");
-            else if (item.key === "royal") isActive = selectedCategory?.toLowerCase().includes("royal");
             else if (item.key === "top_rated") isActive = rating === "4.5";
-            else if (item.key === "5_exp") isActive = experience === "5";
             else if (item.key === "home_service") isActive = homeService;
             else if (item.key === "verified") isActive = verified;
+            else if (item.category) isActive = selectedCategory?.toLowerCase() === item.category.toLowerCase();
 
             return (
               <TouchableOpacity
@@ -442,16 +460,14 @@ export default function ArtistListingScreen({ route, navigation }) {
                 onPress={() => {
                   if (item.key === "all") {
                     resetFilters();
-                  } else if (item.key === "bridal" || item.key === "arabic" || item.key === "royal") {
-                    setSelectedCategory(isActive ? "" : item.label);
                   } else if (item.key === "top_rated") {
                     setRating(isActive ? "" : "4.5");
-                  } else if (item.key === "5_exp") {
-                    setExperience(isActive ? "" : "5");
                   } else if (item.key === "home_service") {
                     setHomeService(!homeService);
                   } else if (item.key === "verified") {
                     setVerified(!verified);
+                  } else if (item.category) {
+                    setSelectedCategory(isActive ? "" : item.category);
                   }
                 }}
               >
@@ -605,17 +621,21 @@ export default function ArtistListingScreen({ route, navigation }) {
             ) : null
           }
           ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Ionicons name="search-outline" size={48} color={Colors.textTertiary} />
-              <Text style={styles.emptyTitle}>No Artists Found</Text>
-              <Text style={styles.emptySub}>{"We couldn't find any matching artists under current filter settings."}</Text>
-              <TouchableOpacity style={styles.resetSearchBtn} onPress={resetFilters}>
-                <Text style={styles.resetSearchBtnText}>Reset Filter Settings</Text>
-              </TouchableOpacity>
-            </View>
+            !loading && !refreshing ? (
+              <View style={styles.emptyContainer}>
+                <Ionicons name="search-outline" size={48} color={Colors.textTertiary} />
+                <Text style={styles.emptyTitle}>No Artists Found</Text>
+                <Text style={styles.emptySub}>{"No artists available in this service area. Try changing the service location."}</Text>
+                <TouchableOpacity style={styles.resetSearchBtn} onPress={resetFilters}>
+                  <Text style={styles.resetSearchBtnText}>Reset Filter Settings</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null
           }
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 60 }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          contentContainerStyle={{ paddingBottom: 100 }}
         />
       )}
 
@@ -626,42 +646,51 @@ export default function ArtistListingScreen({ route, navigation }) {
         transparent={true}
         onRequestClose={() => setFilterModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Advanced Filters</Text>
-              <TouchableOpacity onPress={() => setFilterModalVisible(false)}>
-                <Ionicons name="close" size={24} color={Colors.text} />
-              </TouchableOpacity>
-            </View>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={{ flex: 1, justifyContent: "flex-end" }}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Advanced Filters</Text>
+                <TouchableOpacity onPress={() => setFilterModalVisible(false)}>
+                  <Ionicons name="close" size={24} color={Colors.text} />
+                </TouchableOpacity>
+              </View>
 
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 20 }}
-              keyboardShouldPersistTaps="handled"
-            >
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: 20 }}
+                keyboardShouldPersistTaps="handled"
+              >
               {/* Category selector */}
               <Text style={styles.filterTitle}>Mehendi Styling Category</Text>
               <View style={styles.filterGrid}>
-                {categories.map((cat) => (
-                  <TouchableOpacity
-                    key={cat.id}
-                    style={[
-                      styles.filterGridItem,
-                      selectedCategory === cat.name ? styles.activeGridItem : null
-                    ]}
-                    onPress={() => setSelectedCategory(selectedCategory === cat.name ? "" : cat.name)}
-                  >
-                    <Text
+                {categories.map((cat, idx) => {
+                  const catName = typeof cat === "string" ? cat : (cat?.name || "");
+                  const catKey = typeof cat === "string" ? `cat_str_${idx}_${cat}` : (cat?.id ? `cat_id_${cat.id}` : `cat_idx_${idx}`);
+                  if (!catName) return null;
+                  return (
+                    <TouchableOpacity
+                      key={catKey}
                       style={[
-                        styles.filterGridText,
-                        selectedCategory === cat.name ? styles.activeGridText : null
+                        styles.filterGridItem,
+                        selectedCategory === catName ? styles.activeGridItem : null
                       ]}
+                      onPress={() => setSelectedCategory(selectedCategory === catName ? "" : catName)}
                     >
-                      {cat.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                      <Text
+                        style={[
+                          styles.filterGridText,
+                          selectedCategory === catName ? styles.activeGridText : null
+                        ]}
+                      >
+                        {catName}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
 
               {/* Price range selector */}
@@ -839,7 +868,8 @@ export default function ArtistListingScreen({ route, navigation }) {
             </View>
           </View>
         </View>
-      </Modal>
+      </KeyboardAvoidingView>
+    </Modal>
     </View>
   );
 }

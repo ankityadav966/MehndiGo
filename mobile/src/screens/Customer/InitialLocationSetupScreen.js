@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Platform,
   StatusBar,
+  KeyboardAvoidingView
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -133,106 +134,111 @@ export default function InitialLocationSetupScreen({ navigation, route }) {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-        {/* GPS Banner */}
-        {!permissionDenied ? (
-          <View style={styles.gpsBanner}>
-            <Ionicons name="location-sharp" size={24} color={Colors.primary} style={{ marginRight: 10 }} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.gpsTitle}>Current Location Detected</Text>
-              <Text style={styles.gpsSub}>{fullAddress || "Jaipur, Rajasthan"}</Text>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1 }}
+      >
+        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+          {/* GPS Banner */}
+          {!permissionDenied ? (
+            <View style={styles.gpsBanner}>
+              <Ionicons name="location-sharp" size={24} color={Colors.primary} style={{ marginRight: 10 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.gpsTitle}>Current Location Detected</Text>
+                <Text style={styles.gpsSub}>{fullAddress || "Jaipur, Rajasthan"}</Text>
+              </View>
+              <TouchableOpacity onPress={requestGPSOnMount} style={styles.refreshGpsBtn}>
+                <Ionicons name="refresh-outline" size={20} color={Colors.primary} />
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity onPress={requestGPSOnMount} style={styles.refreshGpsBtn}>
-              <Ionicons name="refresh-outline" size={20} color={Colors.primary} />
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <View style={[styles.gpsBanner, { backgroundColor: "#FFFBEB", borderColor: "#FCD34D" }]}>
-            <Ionicons name="alert-circle-outline" size={24} color="#D97706" style={{ marginRight: 10 }} />
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.gpsTitle, { color: "#B45309" }]}>Manual Location Mode</Text>
-              <Text style={[styles.gpsSub, { color: "#92400E" }]}>GPS permission denied. Please enter your address details below.</Text>
+          ) : (
+            <View style={[styles.gpsBanner, { backgroundColor: "#FFFBEB", borderColor: "#FCD34D" }]}>
+              <Ionicons name="alert-circle-outline" size={24} color="#D97706" style={{ marginRight: 10 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.gpsTitle, { color: "#B45309" }]}>Manual Location Mode</Text>
+                <Text style={[styles.gpsSub, { color: "#92400E" }]}>GPS permission denied. Please enter your address details below.</Text>
+              </View>
             </View>
-          </View>
-        )}
+          )}
 
-        {/* Address Tag Selector */}
-        <Text style={styles.fieldLabel}>Save Address As</Text>
-        <View style={styles.tagRow}>
-          {["Home", "Work", "Other"].map((item) => (
-            <TouchableOpacity
-              key={item}
-              style={[styles.tagChip, label === item && styles.tagChipActive]}
-              onPress={() => setLabel(item)}
-            >
-              <Ionicons
-                name={item === "Home" ? "home-outline" : item === "Work" ? "briefcase-outline" : "location-outline"}
-                size={16}
-                color={label === item ? "#FFFFFF" : Colors.text}
-                style={{ marginRight: 6 }}
+          {/* Address Tag Selector */}
+          <Text style={styles.fieldLabel}>Save Address As</Text>
+          <View style={styles.tagRow}>
+            {["Home", "Work", "Other"].map((item) => (
+              <TouchableOpacity
+                key={item}
+                style={[styles.tagChip, label === item && styles.tagChipActive]}
+                onPress={() => setLabel(item)}
+              >
+                <Ionicons
+                  name={item === "Home" ? "home-outline" : item === "Work" ? "briefcase-outline" : "location-outline"}
+                  size={16}
+                  color={label === item ? "#FFFFFF" : Colors.text}
+                  style={{ marginRight: 6 }}
+                />
+                <Text style={[styles.tagText, label === item && styles.tagTextActive]}>{item}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* House / Flat Number */}
+          <Text style={styles.fieldLabel}>House / Flat / Building No. *</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="e.g. Flat 402, Royal Residency"
+            placeholderTextColor="#9CA3AF"
+            value={houseFlat}
+            onChangeText={setHouseFlat}
+          />
+
+          {/* Landmark */}
+          <Text style={styles.fieldLabel}>Landmark / Street (Optional)</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="e.g. Near HDFC Bank, Vaishali Nagar"
+            placeholderTextColor="#9CA3AF"
+            value={landmark}
+            onChangeText={setLandmark}
+          />
+
+          {/* Full Address */}
+          <Text style={styles.fieldLabel}>Full Address / Locality *</Text>
+          <TextInput
+            style={[styles.input, { height: 75, textAlignVertical: "top" }]}
+            multiline
+            placeholder="Complete street address..."
+            placeholderTextColor="#9CA3AF"
+            value={fullAddress}
+            onChangeText={setFullAddress}
+          />
+
+          {/* City & Pincode Row */}
+          <View style={styles.twoColRow}>
+            <View style={{ flex: 1, marginRight: 8 }}>
+              <Text style={styles.fieldLabel}>City</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Jaipur"
+                placeholderTextColor="#9CA3AF"
+                value={city}
+                onChangeText={setCity}
               />
-              <Text style={[styles.tagText, label === item && styles.tagTextActive]}>{item}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+            </View>
 
-        {/* House / Flat Number */}
-        <Text style={styles.fieldLabel}>House / Flat / Building No. *</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="e.g. Flat 402, Royal Residency"
-          placeholderTextColor="#9CA3AF"
-          value={houseFlat}
-          onChangeText={setHouseFlat}
-        />
-
-        {/* Landmark */}
-        <Text style={styles.fieldLabel}>Landmark / Street (Optional)</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="e.g. Near HDFC Bank, Vaishali Nagar"
-          placeholderTextColor="#9CA3AF"
-          value={landmark}
-          onChangeText={setLandmark}
-        />
-
-        {/* Full Address */}
-        <Text style={styles.fieldLabel}>Full Address / Locality *</Text>
-        <TextInput
-          style={[styles.input, { height: 75, textAlignVertical: "top" }]}
-          multiline
-          placeholder="Complete street address..."
-          placeholderTextColor="#9CA3AF"
-          value={fullAddress}
-          onChangeText={setFullAddress}
-        />
-
-        {/* City & Pincode Row */}
-        <View style={styles.twoColRow}>
-          <View style={{ flex: 1, marginRight: 8 }}>
-            <Text style={styles.fieldLabel}>City</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Jaipur"
-              placeholderTextColor="#9CA3AF"
-              value={city}
-              onChangeText={setCity}
-            />
+            <View style={{ flex: 1, marginLeft: 8 }}>
+              <Text style={styles.fieldLabel}>Pincode</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="302001"
+                keyboardType="number-pad"
+                placeholderTextColor="#9CA3AF"
+                value={pincode}
+                onChangeText={setPincode}
+              />
+            </View>
           </View>
-
-          <View style={{ flex: 1, marginLeft: 8 }}>
-            <Text style={styles.fieldLabel}>Pincode</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="302001"
-              keyboardType="number-pad"
-              placeholderTextColor="#9CA3AF"
-              value={pincode}
-              onChangeText={setPincode}
-            />
-          </View>
-        </View>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* Footer Save Button */}
       <View style={styles.footer}>

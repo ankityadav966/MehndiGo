@@ -21,6 +21,8 @@ import { openRazorpayCheckout } from "../../services/razorpayHelper";
 export default function PaymentScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
   const {
+    checkoutData: routeCheckoutData,
+    bookingData: routeBookingData,
     bookingId,
     bookingCode,
     finalAmount,
@@ -30,6 +32,8 @@ export default function PaymentScreen({ route, navigation }) {
     serviceTitle: routeService,
     isSettlement
   } = route.params || {};
+
+  const checkoutData = routeCheckoutData || routeBookingData || route.params?.checkoutData || route.params?.bookingData || null;
 
   const [booking, setBooking] = useState(null);
   const [selectedMethod, setSelectedMethod] = useState("phonepe"); // "phonepe", "online", "cash"
@@ -69,12 +73,17 @@ export default function PaymentScreen({ route, navigation }) {
         return;
       }
 
-      // Auto-recover missing bookingId from recent pending booking history
+      // If we already have checkout intent data in memory, DO NOT bind to old historical bookings
+      if (checkoutData) {
+        return;
+      }
+
+      // Auto-recover missing bookingId ONLY if no checkoutData is present
       try {
         const { getBookingHistory } = require("../../services/booking");
         const history = await getBookingHistory();
         const pendingBooking = Array.isArray(history)
-          ? history.find(b => b.payment_status === "PENDING" || b.booking_status === "PENDING")
+          ? history.find(b => (b.payment_status === "PENDING" || b.booking_status === "PENDING") && String(b.status || "").toLowerCase() !== "cancelled")
           : null;
 
         if (pendingBooking && pendingBooking.id) {
@@ -87,7 +96,7 @@ export default function PaymentScreen({ route, navigation }) {
     }
 
     initPayment();
-  }, [rawBookingId, loadBookingDetails]);
+  }, [rawBookingId, checkoutData, loadBookingDetails]);
 
   // Payment Verification Handler
   const handlePaymentSuccess = async (data, sessionDataToUse) => {
@@ -96,7 +105,7 @@ export default function PaymentScreen({ route, navigation }) {
     setLoading(true);
 
     const activeSession = sessionDataToUse || currentSessionData;
-    const targetBookingId = activeBookingId || rawBookingId || booking?.id || route.params?.bookingId || route.params?.id || 123;
+    const targetBookingId = activeBookingId || rawBookingId || booking?.id || route.params?.bookingId || route.params?.id || null;
 
     try {
       const orderIdToVerify = data?.razorpay_order_id || activeSession?.order_id || orderId;
@@ -106,6 +115,7 @@ export default function PaymentScreen({ route, navigation }) {
       const verifyData = {
         bookingId: targetBookingId,
         booking_id: targetBookingId,
+        checkoutData: checkoutData,
         razorpay_order_id: orderIdToVerify,
         razorpay_payment_id: paymentIdToVerify,
         razorpay_signature: signatureToVerify,
@@ -117,7 +127,9 @@ export default function PaymentScreen({ route, navigation }) {
       setLoading(false);
       setProcessingModalVisible(false);
 
-      const resolvedCode = bookingCode || booking?.booking_code || booking?.booking_number || `MG-${targetBookingId || 'SUCCESS'}`;
+      const createdBooking = verifyResult?.data?.booking || verifyResult?.booking || verifyResult?.data || {};
+      const finalBookingId = createdBooking.id || createdBooking.booking_id || targetBookingId;
+      const resolvedCode = createdBooking.booking_number || createdBooking.booking_code || bookingCode || `MG-${finalBookingId || 'SUCCESS'}`;
 
       if (isSettlement) {
         navigation.reset({
@@ -126,7 +138,7 @@ export default function PaymentScreen({ route, navigation }) {
             {
               name: "BookingDetails",
               params: {
-                bookingId: targetBookingId
+                bookingId: finalBookingId
               }
             }
           ]
@@ -139,13 +151,14 @@ export default function PaymentScreen({ route, navigation }) {
               name: "BookingSuccess",
               params: {
                 bookingCode: resolvedCode,
-                bookingId: targetBookingId,
-                totalAmount: totalAmount || 500,
-                advancePaid: payableNow || 50,
-                advanceAmount: payableNow || 50,
-                remainingAmount: balanceAfter || 450,
-                artistName: artistName,
-                serviceTitle: serviceName
+                bookingId: finalBookingId,
+                booking: createdBooking,
+                totalAmount: createdBooking.total_amount || totalAmount || 500,
+                advancePaid: createdBooking.advance_paid || payableNow || 50,
+                advanceAmount: createdBooking.advance_paid || payableNow || 50,
+                remainingAmount: createdBooking.remaining_amount || balanceAfter || 450,
+                artistName: createdBooking.artist_name || artistName,
+                serviceTitle: createdBooking.service_title || serviceName
               }
             }
           ]
@@ -179,39 +192,47 @@ export default function PaymentScreen({ route, navigation }) {
 
   // CASH PAYMENT SELECTION
   const handleSelectCash = async () => {
-    const targetBookingId = activeBookingId || rawBookingId || booking?.id;
-    if (!targetBookingId) {
-      Alert.alert("Error", "No active booking selected.");
+    if (!checkoutData && !activeBookingId && !rawBookingId && !booking?.id) {
+      Alert.alert("Error", "No active checkout details found. Please proceed from the booking summary.");
       return;
     }
 
     setLoading(true);
+    setProcessingModalVisible(true);
     try {
-      await selectCashPayment(targetBookingId);
+      const res = await selectCashPayment({
+        checkoutData,
+        bookingId: activeBookingId || rawBookingId || booking?.id
+      });
       setLoading(false);
+      setProcessingModalVisible(false);
+      const createdId = res?.data?.bookingId || res?.data?.id || res?.bookingId || res?.id || activeBookingId;
+
       Alert.alert(
-        "Cash Payment Selected 💵",
-        "Your booking is confirmed! Please pay the remaining amount directly to the artist upon service completion.",
+        "Cash Booking Request Placed! 🎉",
+        "Your booking request with Cash on Arrival has been successfully created and sent to the artist.",
         [
           {
-            text: "View Booking",
+            text: "View Booking Details",
             onPress: () => {
               navigation.reset({
                 index: 0,
                 routes: [
                   {
                     name: "BookingDetails",
-                    params: { bookingId: targetBookingId }
+                    params: { bookingId: createdId }
                   }
                 ]
               });
             }
           }
-        ]
+        ],
+        { cancelable: false }
       );
     } catch (err) {
       setLoading(false);
-      Alert.alert("Error", err.message || "Failed to select cash payment.");
+      setProcessingModalVisible(false);
+      Alert.alert("Error", err.message || "Failed to place cash booking request.");
     }
   };
 
@@ -223,48 +244,43 @@ export default function PaymentScreen({ route, navigation }) {
       return;
     }
 
-    let targetBookingId = activeBookingId || rawBookingId || booking?.id || route.params?.bookingId || route.params?.id;
-    if (!targetBookingId) {
-      try {
-        const { getBookingHistory, getPendingPayment } = require("../../services/booking");
-        const pending = await getPendingPayment();
-        if (pending?.id) {
-          targetBookingId = pending.id;
-          setActiveBookingId(pending.id);
-        } else {
-          const history = await getBookingHistory();
-          const list = Array.isArray(history) ? history : (history?.rows || history?.bookings || []);
-          if (list && list.length > 0) {
-            targetBookingId = list[0]?.id;
-            setActiveBookingId(list[0]?.id);
-          }
-        }
-      } catch (autoErr) {
-        console.log("Could not auto-resolve booking ID in PaymentScreen:", autoErr.message);
-      }
-    }
-
-    const paymentMethodType = isSettlement ? "SETTLEMENT" : "ADVANCE_CASH";
+    let targetBookingId = activeBookingId || rawBookingId || booking?.id || route.params?.bookingId || route.params?.id || null;
+    const paymentMethodType = isSettlement ? "SETTLEMENT" : "ADVANCE_ONLINE";
 
     setLoading(true);
     setProcessingModalVisible(true);
     let sessionData = null;
     try {
-      if (targetBookingId) {
-        sessionData = await createPaymentSession(targetBookingId, paymentMethodType).catch(() => null);
+      try {
+        sessionData = await createPaymentSession({
+          bookingId: targetBookingId,
+          checkoutData: checkoutData,
+          payment_mode: paymentMethodType,
+          isSettlement: Boolean(isSettlement),
+          purpose: isSettlement ? "booking_remaining" : "booking_advance",
+          amount: isSettlement ? remainingAmount : (advanceAmount || payableNow),
+          finalAmount: finalAmount || totalAmount || payableNow,
+          total_amount: finalAmount || totalAmount || payableNow,
+          advanceAmount: advanceAmount || payableNow,
+          remainingAmount: remainingAmount,
+          bookingCode: bookingCode || booking?.booking_code || null
+        }, paymentMethodType);
+      } catch (sessionErr) {
+        console.warn("[PaymentScreen] Backend createPaymentSession notice, generating authentic order:", sessionErr.message);
       }
 
-      // If backend session did not return an authentic Razorpay order, generate a genuine Live Razorpay order directly
+      // If backend session did not return an authentic Razorpay order, generate a genuine Razorpay order directly
       if (!sessionData?.order_id || !sessionData.order_id.startsWith("order_") || sessionData.order_id.includes("order_178")) {
-        const liveKeyId = "rzp_live_TSIrGnJIllkt0H";
+        const liveKeyId = process.env.EXPO_PUBLIC_RAZORPAY_KEY_ID || "rzp_live_TSIrGnJIllkt0H";
         const liveKeySecret = "AJSFmZyxn471PmOT8OGRB768";
-        const amountInPaise = Math.round(Number(payableNow || 50) * 100);
+        const targetRupees = isSettlement ? (remainingAmount || payableNow) : (advanceAmount || payableNow || Math.round(Number(totalAmount || 500) * 0.10));
+        const amountInPaise = Math.round(Number(targetRupees || 50) * 100);
 
         try {
-          // Direct native REST call to Razorpay Live Order API
+          // Direct native REST call to Razorpay Order API
           const authString = `${liveKeyId}:${liveKeySecret}`;
           const base64Auth = typeof btoa !== "undefined" ? btoa(authString) : Buffer.from(authString).toString("base64");
-          
+
           const rzpRes = await fetch("https://api.razorpay.com/v1/orders", {
             method: "POST",
             headers: {
@@ -274,7 +290,7 @@ export default function PaymentScreen({ route, navigation }) {
             body: JSON.stringify({
               amount: amountInPaise,
               currency: "INR",
-              receipt: `rcpt_${targetBookingId || Date.now()}`,
+              receipt: `rcpt_${targetBookingId || Date.now()}`.slice(0, 32),
               notes: {
                 booking_id: String(targetBookingId || ""),
                 purpose: isSettlement ? "settlement" : "advance"
@@ -284,7 +300,7 @@ export default function PaymentScreen({ route, navigation }) {
 
           const rzpData = await rzpRes.json();
           if (rzpData?.id) {
-            console.log("[PaymentScreen] Live Razorpay Order generated on server:", rzpData.id);
+            console.log("[PaymentScreen] Razorpay Order generated directly:", rzpData.id);
             sessionData = {
               key_id: liveKeyId,
               order_id: rzpData.id,
@@ -292,14 +308,14 @@ export default function PaymentScreen({ route, navigation }) {
               currency: "INR"
             };
           } else {
-            console.error("[PaymentScreen] Razorpay live order error:", rzpData);
+            console.error("[PaymentScreen] Razorpay order error:", rzpData);
           }
         } catch (rzpErr) {
-          console.error("[PaymentScreen] Live order exception:", rzpErr.message);
+          console.error("[PaymentScreen] order exception:", rzpErr.message);
         }
       }
 
-      const keyId = sessionData?.key_id || sessionData?.key || "rzp_live_TSIrGnJIllkt0H";
+      const keyId = sessionData?.key_id || sessionData?.key || process.env.EXPO_PUBLIC_RAZORPAY_KEY_ID || "rzp_live_TSIrGnJIllkt0H";
       const orderIdVal = sessionData?.order_id || sessionData?.orderId;
       const amountPaise = Number(sessionData?.amount || Math.round(Number(payableNow || 50) * 100));
 
@@ -382,14 +398,14 @@ export default function PaymentScreen({ route, navigation }) {
 
   const totalAmount = Number(finalAmount || route.params?.finalAmount || booking?.total_amount || booking?.final_amount || 500);
   const advanceAmount = Number(routeAdvance !== undefined ? routeAdvance : (booking?.advance_amount || booking?.advance_paid || Math.round(totalAmount * 0.10) || 50));
-  const remainingAmount = Number(routeRemaining !== undefined ? routeRemaining : (booking?.remaining_amount !== undefined ? booking?.remaining_amount : (totalAmount - advanceAmount)));
+  const remainingAmount = Number(routeRemaining !== undefined ? routeRemaining : (booking?.remaining_amount !== undefined ? booking?.remaining_amount : Math.max(0, totalAmount - advanceAmount)));
 
   const payableNow = isSettlement ? remainingAmount : advanceAmount;
   const balanceAfter = isSettlement ? 0 : remainingAmount;
 
   const displayCode = booking?.booking_code || bookingCode || (activeBookingId ? `MG-${String(activeBookingId).padStart(6, "0")}` : "MG-PENDING");
-  const artistName = booking?.artist_name || booking?.artist?.user?.name || routeArtist || "Mehndi Specialist";
-  const serviceName = booking?.service_name || booking?.service_title || routeService || "Henna Application";
+  const artistName = routeArtist || checkoutData?.artistName || checkoutData?.artist_name || booking?.artist_name || booking?.artist?.full_name || booking?.artist?.name || booking?.artist?.user?.name || "Mehndi Specialist";
+  const serviceName = routeService || checkoutData?.serviceTitle || checkoutData?.service_title || booking?.service_name || booking?.service_title || "Henna Application";
 
   return (
     <SafeAreaView style={styles.container}>
@@ -474,7 +490,7 @@ export default function PaymentScreen({ route, navigation }) {
                   <Text style={styles.recommendedText}>Fastest ⚡</Text>
                 </View>
               </View>
-              <Text style={styles.methodDesc}>Directly opens PhonePe, GPay, Paytm on your phone</Text>
+              <Text style={styles.methodDesc}>Directly opens PhonePe, GPay</Text>
             </View>
           </View>
           <Ionicons
@@ -485,7 +501,7 @@ export default function PaymentScreen({ route, navigation }) {
         </TouchableOpacity>
 
         {/* Option 2: Pay Online (Cards & Gateway) */}
-        <TouchableOpacity
+        {/* <TouchableOpacity
           style={[styles.methodCard, selectedMethod === "online" && styles.methodCardActive]}
           onPress={() => setSelectedMethod("online")}
           activeOpacity={0.8}
@@ -506,29 +522,33 @@ export default function PaymentScreen({ route, navigation }) {
             size={20}
             color={selectedMethod === "online" ? "#E91E63" : "#9CA3AF"}
           />
-        </TouchableOpacity>
+        </TouchableOpacity> */}
 
-        {/* Option 3: Pay Cash */}
-        <TouchableOpacity
-          style={[styles.methodCard, selectedMethod === "cash" && styles.methodCardActive]}
-          onPress={() => setSelectedMethod("cash")}
-          activeOpacity={0.8}
-        >
-          <View style={styles.methodLeft}>
-            <View style={[styles.methodIconBox, { backgroundColor: "#ECFDF5" }]}>
-              <Ionicons name="cash" size={22} color="#059669" />
+        {/* Option 3: Pay Cash to Artist */}
+        {/* {!isSettlement && (
+          <TouchableOpacity
+            style={[styles.methodCard, selectedMethod === "cash" && styles.methodCardActive]}
+            onPress={() => setSelectedMethod("cash")}
+            activeOpacity={0.8}
+          >
+            <View style={styles.methodLeft}>
+              <View style={[styles.methodIconBox, { backgroundColor: "#ECFDF5" }]}>
+                <Ionicons name="cash" size={22} color="#059669" />
+              </View>
+              <View style={styles.methodMeta}>
+                <Text style={styles.methodTitle}>Pay Cash on Arrival 💵</Text>
+                <Text style={styles.methodDesc}>
+                  Send booking request with 100% Cash on Arrival. Booking confirms only after artist accepts.
+                </Text>
+              </View>
             </View>
-            <View style={styles.methodMeta}>
-              <Text style={styles.methodTitle}>Pay Cash to Artist</Text>
-              <Text style={styles.methodDesc}>Pay directly to the artist on doorstep arrival</Text>
-            </View>
-          </View>
-          <Ionicons
-            name={selectedMethod === "cash" ? "radio-button-on" : "radio-button-off"}
-            size={20}
-            color={selectedMethod === "cash" ? "#059669" : "#9CA3AF"}
-          />
-        </TouchableOpacity>
+            <Ionicons
+              name={selectedMethod === "cash" ? "radio-button-on" : "radio-button-off"}
+              size={20}
+              color={selectedMethod === "cash" ? "#059669" : "#9CA3AF"}
+            />
+          </TouchableOpacity>
+        )} */}
 
         {/* 4. Escrow Security Banner */}
         <View style={styles.escrowCard}>
@@ -563,7 +583,7 @@ export default function PaymentScreen({ route, navigation }) {
             <>
               <Ionicons name="lock-closed" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
               <Text style={styles.primaryPayBtnText}>
-                {selectedMethod === "cash" ? "Confirm Cash Booking" : `Pay ₹${payableNow} Securely`}
+                {selectedMethod === "cash" ? "Send Booking Request 🌸" : `Pay ₹${payableNow} Securely`}
               </Text>
             </>
           )}

@@ -59,7 +59,16 @@ export default function ReviewSubmissionScreen({ route, navigation }) {
         videoMaxDuration: 60
       });
       if (!res.canceled && res.assets && res.assets.length > 0) {
-        setVideoMedia(res.assets[0]);
+        const asset = res.assets[0];
+        if (asset.fileSize && asset.fileSize > 50 * 1024 * 1024) {
+          Alert.alert("File Too Large", "Review video cannot exceed 50 MB.");
+          return;
+        }
+        if (asset.duration && asset.duration > 61000) {
+          Alert.alert("Video Too Long", "Review video must be a short-form video (max 60 seconds).");
+          return;
+        }
+        setVideoMedia(asset);
       }
     } catch (e) {
       Alert.alert("Error", "Failed to select video: " + e.message);
@@ -81,6 +90,24 @@ export default function ReviewSubmissionScreen({ route, navigation }) {
       Alert.alert("Error", "Failed to select photos: " + e.message);
     }
   };
+
+  const handleBack = useCallback(() => {
+    if (navigation?.canGoBack && navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "CustomerTabs", params: { screen: "Home" } }]
+      });
+    }
+    return true;
+  }, [navigation]);
+
+  useEffect(() => {
+    const { BackHandler } = require("react-native");
+    const backSubscription = BackHandler.addEventListener("hardwareBackPress", handleBack);
+    return () => backSubscription.remove();
+  }, [handleBack]);
 
   const handleSubmit = async () => {
     setLoading(true);
@@ -128,8 +155,8 @@ export default function ReviewSubmissionScreen({ route, navigation }) {
         photos: uploadedPhotosList
       });
 
-      Alert.alert("Review Submitted 🎉", "Thank you! Your review has been submitted for moderation and will appear on the artist profile once approved by admin.");
-      navigation.navigate("CustomerTabs", { screen: "Home" });
+      Alert.alert("Review Submitted 🎉", "Thank you! Your verified review has been published successfully.");
+      handleBack();
     } catch (err) {
       Alert.alert("Submission Error", err.message || "Failed to save review.");
     } finally {
@@ -143,7 +170,7 @@ export default function ReviewSubmissionScreen({ route, navigation }) {
     try {
       await skipReview(bookingId);
       Alert.alert("Review Skipped", "Review skipped successfully. Conversation is now closed.");
-      navigation.navigate("CustomerTabs", { screen: "Home" });
+      handleBack();
     } catch (err) {
       Alert.alert("Skip Error", err.message || "Failed to skip review.");
     } finally {
@@ -177,7 +204,7 @@ export default function ReviewSubmissionScreen({ route, navigation }) {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.header}>
-            <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+            <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
               <Ionicons name="chevron-back" size={22} color={Colors.text} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Write Review</Text>
@@ -304,32 +331,32 @@ export default function ReviewSubmissionScreen({ route, navigation }) {
             />
           </View>
         </ScrollView>
-      </KeyboardAvoidingView>
 
-      <View style={styles.footer}>
-        {loading ? (
-          <View style={{ alignItems: "center" }}>
-            <ActivityIndicator size="large" color={Colors.primary} />
-            <Text style={{ marginTop: 6, fontSize: 12, color: Colors.textSecondary }}>{uploadStatusText || "Submitting..."}</Text>
-          </View>
-        ) : (
-          <View style={styles.actionButtons}>
-            <TouchableOpacity style={styles.skipBtn} onPress={handleSkip}>
-              <Text style={styles.skipBtnLabel}>Skip Review</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit}>
-              <Text style={styles.submitBtnText}>Submit Review</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      </View>
+        <View style={styles.footer}>
+          {loading ? (
+            <View style={{ alignItems: "center" }}>
+              <ActivityIndicator size="large" color={Colors.primary} />
+              <Text style={{ marginTop: 6, fontSize: 12, color: Colors.textSecondary }}>{uploadStatusText || "Submitting..."}</Text>
+            </View>
+          ) : (
+            <View style={styles.actionButtons}>
+              <TouchableOpacity style={styles.skipBtn} onPress={handleSkip}>
+                <Text style={styles.skipBtnLabel}>Skip Review</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit}>
+                <Text style={styles.submitBtnText}>Submit Review</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  scrollContent: { paddingBottom: 40 },
+  scrollContent: { paddingBottom: 120 },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12, backgroundColor: Colors.white, borderBottomWidth: 1, borderBottomColor: Colors.border },
   backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.background, justifyContent: "center", alignItems: "center" },
   headerTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },

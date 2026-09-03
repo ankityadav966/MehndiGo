@@ -3,7 +3,7 @@ import { View, Text, FlatList, ActivityIndicator, Alert, TextInput, TouchableOpa
 import { useAuth } from '../../context/AuthContext';
 import { getGlobalStyles } from '../../theme/globalStyles';
 import { Colors } from '../../theme/colors';
-import { adminService } from '../../services/api';
+import { adminService } from '../../services/admin';
 import { Bell, Send } from 'lucide-react-native';
 
 export default function AdminNotifications() {

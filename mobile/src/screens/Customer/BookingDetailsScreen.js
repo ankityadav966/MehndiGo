@@ -23,7 +23,9 @@ import {
   rescheduleBooking,
   selectCashPayment,
   getArtistLocation,
-  reportBookingDispute
+  reportBookingDispute,
+  sendCheckInOtp,
+  sendCheckOutOtp
 } from "../../services/booking";
 import { useSocket } from "../../context/SocketContext";
 import apiRequest from "../../services/api";
@@ -89,23 +91,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
             longitude: Number(data.longitude)
           });
         }
-        setBooking((prev) => {
-          const prevVerified = prev && (Number(prev.checkin_otp_verified) === 1 || Number(prev.checkin_verified) === 1 || String(prev.detailed_status).toUpperCase() === "SERVICE_IN_PROGRESS");
-          const incomingVerified = Number(data.checkin_otp_verified) === 1 || Number(data.checkin_verified) === 1 || String(data.detailed_status).toUpperCase() === "SERVICE_IN_PROGRESS";
-          const isFinished = ["COMPLETED", "COMPLETED_CLOSED", "CANCELLED", "CHECKOUT"].includes(String(data.detailed_status || data.status || "").toUpperCase());
-
-          if (prevVerified && !incomingVerified && !isFinished) {
-            return {
-              ...data,
-              status: "in_progress",
-              booking_status: "IN_PROGRESS",
-              detailed_status: "SERVICE_IN_PROGRESS",
-              checkin_otp_verified: 1,
-              checkin_verified: true
-            };
-          }
-          return data;
-        });
+        setBooking(data);
       }
 
       // If artist is on the way, load live location
@@ -123,7 +109,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
             if (locData.distance_text || locData.distanceText) setDistanceText(locData.distance_text || locData.distanceText);
             if (locData.eta_text || locData.etaText) setEtaText(locData.eta_text || locData.etaText);
           }
-        } catch (_) {}
+        } catch (_) { }
       }
     } catch (err) {
       if (__DEV__) console.log("Failed to load booking details:", err.message);
@@ -199,9 +185,20 @@ export default function BookingDetailsScreen({ route, navigation }) {
     socket.on("booking-status-updated", handleStatusUpdate);
     socket.on("booking_status_updated", handleStatusUpdate);
     socket.on("bookingStatusUpdated", handleStatusUpdate);
+    socket.on("service_started", handleStatusUpdate);
     socket.on("SERVICE_STARTED", handleStatusUpdate);
     socket.on("CHECKIN_VERIFIED", handleStatusUpdate);
+    socket.on("checkout_otp_received", handleStatusUpdate);
+    socket.on("CHECKOUT_OTP_GENERATED", handleStatusUpdate);
     socket.on("BOOKING_COMPLETED", handleStatusUpdate);
+    socket.on("booking_completed", handleStatusUpdate);
+    socket.on("service_completed", handleStatusUpdate);
+    socket.on("payment_completed", handleStatusUpdate);
+    socket.on("PAYMENT_COMPLETED", handleStatusUpdate);
+    socket.on("cash_payment_confirmed", handleStatusUpdate);
+    socket.on("CASH_PAYMENT_CONFIRMED", handleStatusUpdate);
+    socket.on("settlement_completed", handleStatusUpdate);
+    socket.on("SETTLEMENT_COMPLETED", handleStatusUpdate);
 
     return () => {
       socket.off("location-update", handleLocationUpdate);
@@ -211,9 +208,20 @@ export default function BookingDetailsScreen({ route, navigation }) {
       socket.off("booking-status-updated", handleStatusUpdate);
       socket.off("booking_status_updated", handleStatusUpdate);
       socket.off("bookingStatusUpdated", handleStatusUpdate);
+      socket.off("service_started", handleStatusUpdate);
       socket.off("SERVICE_STARTED", handleStatusUpdate);
       socket.off("CHECKIN_VERIFIED", handleStatusUpdate);
+      socket.off("checkout_otp_received", handleStatusUpdate);
+      socket.off("CHECKOUT_OTP_GENERATED", handleStatusUpdate);
       socket.off("BOOKING_COMPLETED", handleStatusUpdate);
+      socket.off("booking_completed", handleStatusUpdate);
+      socket.off("service_completed", handleStatusUpdate);
+      socket.off("payment_completed", handleStatusUpdate);
+      socket.off("PAYMENT_COMPLETED", handleStatusUpdate);
+      socket.off("cash_payment_confirmed", handleStatusUpdate);
+      socket.off("CASH_PAYMENT_CONFIRMED", handleStatusUpdate);
+      socket.off("settlement_completed", handleStatusUpdate);
+      socket.off("SETTLEMENT_COMPLETED", handleStatusUpdate);
     };
   }, [socket, bookingId, loadDetails]);
 
@@ -255,24 +263,6 @@ export default function BookingDetailsScreen({ route, navigation }) {
     }
   };
 
-  const handlePayAdvance = () => {
-    if (!booking) return;
-    const totalAmount = Number(booking.total_amount || booking.final_amount || 0);
-    const advanceAmount = Number(booking.advance_amount || booking.advance_paid || Math.round(totalAmount * 0.10));
-    const remainingAmount = Number(booking.remaining_amount !== undefined ? booking.remaining_amount : (totalAmount - advanceAmount));
-
-    navigation.navigate("Payment", {
-      bookingId: booking.id,
-      bookingCode: booking.booking_code,
-      finalAmount: totalAmount,
-      advanceAmount: advanceAmount,
-      remainingAmount: remainingAmount,
-      artistName: booking.artist_name || booking.artist?.user?.name || "Mehndi Specialist",
-      serviceTitle: booking.service_name || booking.package_name || "Bridal Mehndi Service",
-      isSettlement: false
-    });
-  };
-
   const handlePayRemainingOnline = () => {
     if (!booking) return;
     navigation.navigate("Payment", {
@@ -287,7 +277,11 @@ export default function BookingDetailsScreen({ route, navigation }) {
     try {
       setLoading(true);
       await selectCashPayment(booking.id);
-      Alert.alert("Cash Selected", "Cash payment selected. Please hand over the remaining amount to the artist.");
+      const remaining = Number(booking?.remaining_amount || 0);
+      Alert.alert(
+        "Cash Payment Selected 💵",
+        `Please hand over ₹${remaining.toLocaleString("en-IN")} in cash to the mehndi artist. The artist will confirm cash receipt to complete your booking.`
+      );
       loadDetails();
     } catch (err) {
       Alert.alert("Error", err.message || "Failed to select cash payment.");
@@ -296,20 +290,32 @@ export default function BookingDetailsScreen({ route, navigation }) {
     }
   };
 
-  const handleSubmitReview = async ({ rating, comment }) => {
+  const handleSubmitReview = async ({ rating, comment, photos, video_url, video_thumbnail }) => {
     setReviewSubmitting(true);
     try {
-      await apiRequest("POST", "/customer/review", {
+      const res = await apiRequest("POST", "/customer/review", {
         bookingId: booking.id,
         booking_id: booking.id,
         artistId: booking.artist_id || booking.artist?.id,
         rating,
-        comment
+        comment,
+        photos: photos || [],
+        video_url: video_url || null,
+        video_thumbnail: video_thumbnail || null
       }, true);
-      Alert.alert("Thank You!", "Your review has been submitted successfully.");
+
+      const savedReview = res?.data || res?.review || res;
+      if (savedReview) {
+        setBooking(prev => ({
+          ...prev,
+          review: savedReview
+        }));
+      }
+
+      Alert.alert("Thank You! 🎉", "Your verified review has been submitted successfully!");
       loadDetails();
     } catch (err) {
-      Alert.alert("Error", err.message || "Failed to submit review.");
+      Alert.alert("Submission Error", err.message || "Failed to submit review.");
     } finally {
       setReviewSubmitting(false);
     }
@@ -332,6 +338,41 @@ export default function BookingDetailsScreen({ route, navigation }) {
     }
   };
 
+  const handleBack = useCallback(() => {
+    if (invoiceVisible) {
+      setInvoiceVisible(false);
+      return true;
+    }
+    if (cancelModalVisible) {
+      setCancelModalVisible(false);
+      return true;
+    }
+    if (rescheduleModalVisible) {
+      setRescheduleModalVisible(false);
+      return true;
+    }
+    if (disputeModalVisible) {
+      setDisputeModalVisible(false);
+      return true;
+    }
+
+    if (navigation?.canGoBack && navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "CustomerTabs", params: { screen: "Bookings" } }]
+      });
+    }
+    return true;
+  }, [invoiceVisible, cancelModalVisible, rescheduleModalVisible, disputeModalVisible, navigation]);
+
+  useEffect(() => {
+    const { BackHandler } = require("react-native");
+    const backSubscription = BackHandler.addEventListener("hardwareBackPress", handleBack);
+    return () => backSubscription.remove();
+  }, [handleBack]);
+
   if (loading && !booking) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
@@ -342,16 +383,49 @@ export default function BookingDetailsScreen({ route, navigation }) {
   }
 
   const rawStatus = String(booking?.detailed_status || booking?.booking_status || booking?.status || "PENDING").toUpperCase();
-  const isCheckInVerified = Number(booking?.checkin_otp_verified) === 1 || Number(booking?.checkin_verified) === 1;
+  const isCheckInVerified =
+    Number(booking?.checkin_otp_verified) === 1 ||
+    Number(booking?.checkin_verified) === 1 ||
+    Number(booking?.check_in_otp_verified) === 1 ||
+    booking?.check_in_otp_verified === true ||
+    ["CUSTOMER_VERIFIED", "SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS", "CHECKOUT", "COMPLETED"].includes(rawStatus);
 
   const isPending = rawStatus === "PENDING" || rawStatus === "REQUESTED";
   const isAccepted = ["CONFIRMED", "ARTIST_ACCEPTED", "ACCEPTED"].includes(rawStatus);
   const isOnTheWay = ["ARTIST_ON_THE_WAY", "ON_THE_WAY"].includes(rawStatus);
   const isArrived = (rawStatus === "ARTIST_ARRIVED" || rawStatus === "ARRIVED") && !isCheckInVerified;
-  const isServiceActive = (["CUSTOMER_VERIFIED", "SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS"].includes(rawStatus) || isCheckInVerified) && rawStatus !== "COMPLETED" && rawStatus !== "COMPLETED_CLOSED" && rawStatus !== "CANCELLED";
-  const isCheckout = ["CHECKOUT", "PAYMENT_REQUIRED"].includes(rawStatus) && rawStatus !== "COMPLETED";
-  const isCompleted = rawStatus === "COMPLETED" || rawStatus === "COMPLETED_CLOSED";
+
+  const isCompleted =
+    rawStatus === "COMPLETED" ||
+    rawStatus === "COMPLETED_CLOSED" ||
+    rawStatus === "PAYMENT_COMPLETED" ||
+    (Number(booking?.remaining_amount) <= 0 && Number(booking?.advance_paid) >= Number(booking?.total_amount) && Number(booking?.checkout_otp_verified) === 1);
+
+  const isCheckout = ["CHECKOUT", "PAYMENT_REQUIRED"].includes(rawStatus) && !isCompleted;
+
+  const isServiceActive =
+    (["CUSTOMER_VERIFIED", "SERVICE_STARTED", "SERVICE_IN_PROGRESS", "IN_PROGRESS"].includes(rawStatus) || isCheckInVerified) &&
+    !isCheckout &&
+    !isCompleted &&
+    rawStatus !== "CANCELLED" &&
+    rawStatus !== "REJECTED";
+
   const isCancelled = rawStatus === "CANCELLED" || rawStatus === "REJECTED";
+
+  const isCheckoutVerified =
+    Number(booking?.checkout_otp_verified) === 1 ||
+    Number(booking?.checkout_verified) === 1 ||
+    booking?.checkout_otp_verified === true ||
+    isCompleted;
+
+  const activeCheckinOtp = booking?.checkin_otp || booking?.check_in_otp;
+  const activeCheckoutOtp = booking?.checkout_otp || booking?.completion_pin || booking?.check_out_otp;
+
+  // Render Check-In PIN only at arrival / on the way when PIN is active and not yet verified
+  const showCheckInOtpCard = (isArrived || (isOnTheWay && activeCheckinOtp)) && !isCheckInVerified && Boolean(activeCheckinOtp);
+
+  // Render Completion PIN only when service is active / checkout, check-in is verified, and checkout PIN is active & not verified
+  const showCompletionOtpCard = (isServiceActive || isCheckout) && isCheckInVerified && !isCheckoutVerified && Boolean(activeCheckoutOtp);
 
   const resolvedCustomerCoords = customerCoords || (booking?.latitude && booking?.longitude ? {
     lat: Number(booking.latitude),
@@ -366,12 +440,13 @@ export default function BookingDetailsScreen({ route, navigation }) {
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        {/* 1. Header with Status Pill */}
+        {/* 1. Header with Status Pill & Instant Refresh */}
         <BookingStatusHeader
           bookingCode={booking?.booking_code || booking?.booking_number || booking?.id}
           status={rawStatus}
-          onBack={() => navigation.goBack()}
+          onBack={handleBack}
           onSupport={() => setDisputeModalVisible(true)}
+          onRefresh={handleRefresh}
         />
 
         <ScrollView
@@ -382,6 +457,35 @@ export default function BookingDetailsScreen({ route, navigation }) {
         >
           {/* 2. Step Progression Timeline */}
           <BookingTimeline status={rawStatus} isCancelled={isCancelled} />
+
+          {/* 2.5 Security PIN / OTP Card */}
+          {!isCancelled && !isCompleted && (
+            <OtpVerificationCard
+              otpCode={isCheckInVerified ? (booking?.checkout_otp || booking?.completion_pin) : (booking?.checkin_otp || booking?.checkin_pin)}
+              checkinOtp={booking?.checkin_otp || booking?.checkin_pin}
+              checkoutOtp={booking?.checkout_otp || booking?.completion_pin}
+              customerEmail={booking?.customer_email || booking?.user?.email}
+              isArtist={false}
+              otpType={isCheckInVerified ? "CHECKOUT" : "CHECKIN"}
+              isCheckInVerified={isCheckInVerified}
+              isServiceActive={isServiceActive}
+              isCheckout={isCheckout}
+              isPending={isPending}
+              isAccepted={isAccepted || isOnTheWay || isArrived}
+              onResend={async () => {
+                try {
+                  if (isCheckInVerified) {
+                    await sendCheckOutOtp(booking.id);
+                  } else {
+                    await sendCheckInOtp(booking.id);
+                  }
+                  Alert.alert("Success", "Security PIN resent successfully to your registered email.");
+                } catch (e) {
+                  Alert.alert("Error", e.message || "Failed to resend PIN.");
+                }
+              }}
+            />
+          )}
 
           {/* 3. Live Tracking Card (Only when ARTIST_ON_THE_WAY) */}
           {isOnTheWay && (
@@ -408,28 +512,34 @@ export default function BookingDetailsScreen({ route, navigation }) {
             />
           )}
 
-          {/* 4. Check-In OTP Card (Only when artist has legitimately arrived) */}
-          {isArrived && !isCheckInVerified && (booking?.checkin_otp || booking?.check_in_otp) && (
+          {/* 4. Active Stage-Specific Customer OTP / PIN Display Card (Omitted on screen as OTP is delivered directly to customer Gmail) */}
+          {/* {(showCheckInOtpCard || showCompletionOtpCard) && (
             <OtpVerificationCard
-              otpCode={booking.checkin_otp || booking.check_in_otp}
+              checkinOtp={showCheckInOtpCard ? activeCheckinOtp : null}
+              checkoutOtp={showCompletionOtpCard ? activeCheckoutOtp : null}
+              customerEmail={booking?.customer?.email || booking?.user?.email || booking?.customer_email || booking?.email}
               isArtist={false}
-              otpType="CHECKIN"
+              isCheckInVerified={isCheckInVerified}
+              isServiceActive={isServiceActive}
+              isCheckout={isCheckout}
+              isPending={false}
+              isAccepted={isAccepted || isOnTheWay || isArrived}
             />
-          )}
+          )} */}
 
-          {/* 4b. Check-Out Completion PIN Card (When Checkout is active) */}
-          {isCheckout && (booking?.checkout_otp || booking?.check_out_otp) && (
-            <OtpVerificationCard
-              otpCode={booking.checkout_otp || booking.check_out_otp}
-              isArtist={false}
-              otpType="CHECKOUT"
-            />
-          )}
-
-          {/* 5. During Service Active Dashboard */}
-          {isServiceActive && !isCheckout && (
+          {/* 4. Service Active / Completed Dashboard with Live/Frozen Timer */}
+          {(isServiceActive || isCheckoutVerified || isCompleted) && (
             <ServiceProgressCard
-              startTime={booking?.service_started_at || booking?.check_in_time || booking?.checked_in_at || booking?.service_start_time}
+              startTime={
+                booking?.service_started_at ||
+                booking?.check_in_time ||
+                booking?.checked_in_at ||
+                booking?.service_start_time ||
+                booking?.booking_date ||
+                booking?.created_at
+              }
+              endTime={booking?.check_out_time}
+              isCompleted={isCompleted || isCheckoutVerified}
               isArtist={false}
               serviceName={booking?.service_name || booking?.package_name || "Mehndi Service"}
               estimatedDurationMinutes={booking?.duration_minutes || 60}
@@ -465,8 +575,14 @@ export default function BookingDetailsScreen({ route, navigation }) {
             booking={booking}
             isArtistView={false}
             onViewProfile={() => {
-              if (booking?.artist_id || booking?.artist?.id) {
-                navigation.navigate("ArtistProfile", { artistId: booking.artist_id || booking.artist?.id });
+              const targetArtistId = booking?.artist_id || booking?.artist?.id || booking?.artist?.user_id;
+              if (targetArtistId) {
+                navigation.navigate("ArtistProfile", {
+                  artistId: targetArtistId,
+                  artist_id: targetArtistId,
+                  id: targetArtistId,
+                  from: "BookingDetails"
+                });
               }
             }}
           />
@@ -484,7 +600,6 @@ export default function BookingDetailsScreen({ route, navigation }) {
           {/* 10. Financial Amount Breakdown */}
           <BookingAmountCard
             booking={booking}
-            onPayAdvance={handlePayAdvance}
           />
 
           {/* 11. Completed State Actions: Invoice & Review */}
@@ -546,7 +661,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
       <Modal visible={cancelModalVisible} transparent animationType="fade">
         <KeyboardAvoidingView
           style={styles.modalOverlay}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
           <View style={styles.modalBox}>
             <Text style={styles.modalTitle}>Cancel Booking?</Text>
@@ -593,7 +708,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
       <Modal visible={rescheduleModalVisible} transparent animationType="slide">
         <KeyboardAvoidingView
           style={styles.modalOverlay}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
           <View style={styles.modalBoxLarge}>
             <Text style={styles.modalTitle}>Reschedule Appointment</Text>
@@ -642,7 +757,7 @@ export default function BookingDetailsScreen({ route, navigation }) {
       <Modal visible={disputeModalVisible} transparent animationType="fade">
         <KeyboardAvoidingView
           style={styles.modalOverlay}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
           <View style={styles.modalBox}>
             <Text style={styles.modalTitle}>Report an Issue / Dispute</Text>

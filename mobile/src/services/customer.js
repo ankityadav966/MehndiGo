@@ -20,7 +20,11 @@ export async function getCategories() {
 }
 
 export async function getOffers() {
-  const res = await apiRequest("GET", "/customer/offers", null, true);
+  const res = await apiRequest("GET", "/customer/festivals/active", null, true);
+  return res?.data || res;
+}
+export async function getActiveFestivalBanners() {
+  const res = await apiRequest("GET", "/customer/festivals/active", null, true);
   return res?.data || res;
 }
 
@@ -36,7 +40,12 @@ export async function getNearbyArtists(latitude = null, longitude = null, radius
     endpoint += `&filter=${encodeURIComponent(filter)}`;
   }
   const res = await apiRequest("GET", endpoint, null, true);
-  return res?.data || res;
+  if (res && res.data !== undefined) {
+    const list = Array.isArray(res.data) ? res.data : (res.rows || []);
+    const count = typeof res.count === 'number' ? res.count : (typeof res.total === 'number' ? res.total : list.length);
+    return { rows: list, data: list, count, total: count, success: res.success !== false };
+  }
+  return res;
 }
 
 export async function searchArtists(query = "", filters = {}, sort = "nearest", latitude = null, longitude = null, page = 1, limit = 15) {
@@ -53,10 +62,16 @@ export async function searchArtists(query = "", filters = {}, sort = "nearest", 
   });
 
   const res = await apiRequest("GET", endpoint, null, true);
-  return res?.data || res;
+  if (res && res.data !== undefined) {
+    const list = Array.isArray(res.data) ? res.data : (res.rows || []);
+    const count = typeof res.count === 'number' ? res.count : (typeof res.total === 'number' ? res.total : list.length);
+    return { rows: list, data: list, count, total: count, success: res.success !== false };
+  }
+  return res;
 }
 
 export async function getArtistById(artistId) {
+  if (!artistId || artistId === "undefined" || artistId === "null") return null;
   const res = await apiRequest("GET", `/customer/artists/${artistId}`, null, true);
   return res?.data || res;
 }
@@ -143,18 +158,47 @@ export async function fetchArtistPortfolio(id) {
   return res?.data || res;
 }
 
-export async function fetchArtistReviews(id) {
-  const res = await apiRequest("GET", `/customer/artist/${id}/reviews`, null, true);
+export async function fetchArtistReviews(id, page = 1, limit = 6) {
+  const query = `?page=${page}&limit=${limit}`;
+  const res = await apiRequest("GET", `/customer/artist/${id}/reviews${query}`, null, true);
   return res?.data || res;
 }
 
-export async function fetchArtistAvailability(id) {
-  const res = await apiRequest("GET", `/customer/artist/${id}/availability`, null, true);
+export async function fetchArtistAvailability(id, date = null) {
+  const query = date ? `?date=${encodeURIComponent(date)}` : "";
+  const res = await apiRequest("GET", `/customer/artist/${id}/availability${query}`, null, true);
   return res?.data || res;
 }
 
 export async function fetchSimilarArtists(id) {
   const res = await apiRequest("GET", `/customer/artist/${id}/similar`, null, true);
+  return res?.data || res;
+}
+
+export async function fetchArtistServiceCatalog(artistId, serviceId, filters = {}, sort = "popular") {
+  let endpoint = `/customer/artist/${artistId}/service/${serviceId}/catalog?sort=${sort}`;
+  if (filters.complexity) {
+    endpoint += `&complexity=${encodeURIComponent(filters.complexity)}`;
+  }
+  if (filters.art_tier) {
+    endpoint += `&art_tier=${encodeURIComponent(filters.art_tier)}`;
+  }
+  const res = await apiRequest("GET", endpoint, null, true);
+  return res?.data || res;
+}
+
+export async function submitCustomDesignRequest(requestData) {
+  const res = await apiRequest("POST", "/customer/custom-design-request", requestData, true);
+  return res?.data || res;
+}
+
+export async function fetchArtistFaqs(artistId) {
+  const res = await apiRequest("GET", `/customer/artist/${artistId}/faqs`, null, true);
+  return res?.data || res;
+}
+
+export async function fetchArtistOffers(artistId) {
+  const res = await apiRequest("GET", `/customer/artist/${artistId}/offers`, null, true);
   return res?.data || res;
 }
 
@@ -368,6 +412,16 @@ export async function getReels(page = 1, limit = 10) {
     return data?.data || data;
   } catch (error) {
     console.error("Error fetching reels:", error);
+    throw error;
+  }
+}
+
+export async function getReelById(reelId) {
+  try {
+    const data = await apiRequest("GET", `/customer/reels/${reelId}`, null, true);
+    return data?.data?.reel || data?.data || data?.reel || data;
+  } catch (error) {
+    console.error("Error fetching single reel:", error);
     throw error;
   }
 }

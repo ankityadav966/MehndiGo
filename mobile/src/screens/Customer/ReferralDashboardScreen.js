@@ -1,415 +1,273 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
-  ActivityIndicator,
-  Clipboard,
-  FlatList,
-  Share,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  Share, ActivityIndicator, RefreshControl, Animated, Alert
 } from "react-native";
-import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
-import Ionicons from "@expo/vector-icons/Ionicons";
+import { Ionicons } from "@expo/vector-icons";
 import Colors from "../../constants/Colors";
-import { getReferralDashboard, getReferralHistory } from "../../services/referral";
-import { createReferralDeepLink } from "../../services/deepLink";
-import { formatDate } from "../../utils/date";
+import { getCustomerReferralDashboard } from "../../services/referral";
 
+// ── Progress ring component ───────────────────────────────────────────────────
+function ProgressBar({ current, total, color = Colors.primary }) {
+  const pct = total > 0 ? Math.min(current / total, 1) : 0;
+  const widthAnim = React.useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(widthAnim, {
+      toValue: pct,
+      duration: 900,
+      useNativeDriver: false,
+    }).start();
+  }, [pct]);
+
+  return (
+    <View style={styles.progressTrack}>
+      <Animated.View
+        style={[
+          styles.progressFill,
+          { backgroundColor: color, width: widthAnim.interpolate({ inputRange: [0, 1], outputRange: ["0%", "100%"] }) }
+        ]}
+      />
+    </View>
+  );
+}
+
+// ── Reward card component ─────────────────────────────────────────────────────
+function RewardCard({ icon, title, status, unlockedAt }) {
+  const unlocked = status === "UNLOCKED" || status === "REDEEMED";
+  return (
+    <View style={[styles.rewardCard, unlocked && styles.rewardCardUnlocked]}>
+      <View style={[styles.rewardIcon, unlocked && styles.rewardIconUnlocked]}>
+        <Ionicons name={icon} size={22} color={unlocked ? "#fff" : Colors.primary} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.rewardTitle}>{title}</Text>
+        {unlocked && unlockedAt && (
+          <Text style={styles.rewardDate}>Unlocked {new Date(unlockedAt).toLocaleDateString()}</Text>
+        )}
+      </View>
+      <View style={[styles.rewardBadge, unlocked && styles.rewardBadgeUnlocked]}>
+        <Text style={[styles.rewardBadgeText, unlocked && { color: "#fff" }]}>
+          {unlocked ? (status === "REDEEMED" ? "REDEEMED" : "UNLOCKED ✓") : "LOCKED"}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+// ── Main Screen ───────────────────────────────────────────────────────────────
 export default function ReferralDashboardScreen({ navigation }) {
+  const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [dashboardData, setDashboardData] = useState(null);
-  const [history, setHistory] = useState([]);
+  const [shareLoading, setShareLoading] = useState(false);
 
-  const loadData = async () => {
+  const load = useCallback(async () => {
     try {
-      const [dbInfo, histList] = await Promise.all([
-        getReferralDashboard(),
-        getReferralHistory()
-      ]);
-      setDashboardData(dbInfo);
-      setHistory(histList || []);
-    } catch (err) {
-      if (__DEV__) console.log("Failed to load referrals:", err.message);
+      const res = await getCustomerReferralDashboard();
+      setData(res?.data || res);
+    } catch (e) {
+      Alert.alert("Error", "Could not load referral data. Please try again.");
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      loadData();
-    }, 0);
-    return () => clearTimeout(timer);
   }, []);
 
-  const handleCopyCode = () => {
-    if (!dashboardData?.referralCode) return;
-    Clipboard.setString(dashboardData.referralCode);
-    Alert.alert("Copied! 📋", "Referral code copied to clipboard.");
-  };
+  useEffect(() => { load(); }, [load]);
 
-  const handleShareInvite = async () => {
-    const refCode = dashboardData?.referralCode;
-    if (!refCode) return;
-    const shareLink = dashboardData?.referralLink || createReferralDeepLink(refCode);
+  const handleShare = async () => {
+    if (!data?.referralLink) return;
+    setShareLoading(true);
     try {
-      const messageText = `Hey! Join MehndiGo for premium home mehndi artists. Sign up with my link and verify your phone number to get welcome wallet cashbacks! Use my invite code: ${refCode}\n\n${shareLink}`;
       await Share.share({
-        message: messageText,
-        title: "MehndiGo Invitation",
-        url: shareLink
+        message: `🌸 Join MehndiGo — India's #1 Mehndi booking app!\nUse my referral link to get started:\n${data.referralLink}`,
+        url: data.referralLink,
+        title: "Join MehndiGo"
       });
-    } catch (err) {
-      if (__DEV__) console.log("Share failed:", err.message);
+    } catch (e) {
+      Alert.alert("Share failed", e.message);
+    } finally {
+      setShareLoading(false);
     }
-  };
-
-  const renderFriend = ({ item }) => {
-    const isCompleted = item.status === "COMPLETED";
-    
-    return (
-      <View style={styles.friendCard}>
-        <View style={styles.friendInfo}>
-          <View style={styles.avatarPlaceholder}>
-            <Text style={styles.avatarLetter}>
-              {item.friendName ? item.friendName.charAt(0).toUpperCase() : "?"}
-            </Text>
-          </View>
-          <View style={{ marginLeft: 12 }}>
-            <Text style={styles.friendName}>{item.friendName}</Text>
-            <Text style={styles.friendDate}>
-              Joined: {formatDate(item.joinedAt)}
-            </Text>
-          </View>
-        </View>
-
-        <View style={[styles.statusBadge, isCompleted ? styles.completedBadge : styles.pendingBadge]}>
-          <Ionicons
-            name={isCompleted ? "checkmark-circle" : "time-outline"}
-            size={14}
-            color={isCompleted ? "#2E7D32" : "#E65100"}
-          />
-          <Text style={[styles.statusText, isCompleted ? styles.completedText : styles.pendingText]}>
-            {isCompleted ? `Earned ₹${item.rewardAmount}` : "Pending"}
-          </Text>
-        </View>
-      </View>
-    );
   };
 
   if (loading) {
     return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color={Colors.primary} />
+      <View style={styles.center}>
+        <ActivityIndicator color={Colors.primary} size="large" />
       </View>
     );
   }
 
-  const stats = dashboardData?.stats || { totalInvites: 0, pendingInvites: 0, completedInvites: 0, totalEarnings: 0 };
-  const campaign = dashboardData?.campaign || { title: "Standard Campaign", referrerReward: 100 };
+  const c2c = data?.customerReferrals || {};
+  const c2a = data?.artistReferrals || {};
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView edges={["top"]} style={styles.safeArea}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} colors={[Colors.primary]} />}
+      >
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Ionicons name="chevron-back" size={22} color={Colors.text} />
+          <Ionicons name="arrow-back" size={22} color={Colors.text} />
         </TouchableOpacity>
-        <Text style={styles.title}>Refer & Earn</Text>
-        <View style={{ width: 40 }} />
+        <View>
+          <Text style={styles.headerTitle}>Refer & Earn</Text>
+          <Text style={styles.headerSub}>Invite friends, unlock rewards</Text>
+        </View>
       </View>
 
-      <FlatList
-        data={history}
-        renderItem={renderFriend}
-        keyExtractor={(item) => item.id.toString()}
-        refreshing={refreshing}
-        onRefresh={() => {
-          setRefreshing(true);
-          loadData();
-        }}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 40 }}
-        ListHeaderComponent={
-          <View>
-            {/* Promo banner */}
-            <View style={styles.heroCard}>
-              <Ionicons name="gift" size={40} color={Colors.white} />
-              <Text style={styles.heroTitle}>{campaign.title}</Text>
-              <Text style={styles.heroDesc}>
-                {"Invite your friends to try MehndiGo. When they complete their first service, we'll credit ₹" + campaign.referrerReward + " to your wallet!"}
-              </Text>
-            </View>
+      {/* Referral Code Banner */}
+      <View style={styles.codeBanner}>
+        <View>
+          <Text style={styles.codeLabel}>Your Referral Code</Text>
+          <Text style={styles.codeValue}>{data?.referralCode || "—"}</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.shareBtn}
+          onPress={handleShare}
+          disabled={shareLoading}
+          activeOpacity={0.8}
+        >
+          {shareLoading
+            ? <ActivityIndicator color="#fff" size="small" />
+            : <><Ionicons name="share-social-outline" size={16} color="#fff" style={{ marginRight: 6 }} /><Text style={styles.shareBtnText}>Share</Text></>
+          }
+        </TouchableOpacity>
+      </View>
 
-            {/* Level & XP Card */}
-            <View style={styles.xpCard}>
-              <View style={styles.xpHeader}>
-                <View>
-                  <Text style={styles.levelLabel}>Level {dashboardData?.xp?.level || 1}</Text>
-                  <Text style={styles.tierTagText}>{dashboardData?.xp?.tier || "BEGINNER"} AMBASSADOR</Text>
-                </View>
-                <View style={styles.rankBadge}>
-                  <Text style={styles.rankLabel}>RANK</Text>
-                  <Text style={styles.rankValText}>#{dashboardData?.xp?.rank || "--"}</Text>
-                </View>
-              </View>
+      {/* ── Customer → Customer ────────────────────────────────────────── */}
+      <Text style={styles.sectionTitle}>Customer Referrals</Text>
+      <View style={styles.card}>
+        <View style={styles.statRow}>
+          <Ionicons name="people-outline" size={20} color={Colors.primary} />
+          <Text style={styles.statLabel}>Friends Joined</Text>
+          <Text style={styles.statValue}>
+            <Text style={styles.statCurrent}>{c2c.count || 0}</Text>
+            <Text style={styles.statTotal}> / {c2c.threshold || 50}</Text>
+          </Text>
+        </View>
+        <ProgressBar current={c2c.count || 0} total={c2c.threshold || 50} />
 
-              <View style={styles.progressBarBg}>
-                <View style={[styles.progressBarFill, { width: `${Math.min(100, ((dashboardData?.xp?.currentXp || 0) / (dashboardData?.xp?.nextLevelXp || 500)) * 100)}%` }]} />
-              </View>
+        <View style={[styles.statRow, { marginTop: 10 }]}>
+          <Ionicons name="checkmark-circle-outline" size={20} color="#4CAF50" />
+          <Text style={styles.statLabel}>Qualifying Bookings</Text>
+          <Text style={styles.statValue}>
+            <Text style={styles.statCurrent}>{c2c.qualifyingBookings || 0}</Text>
+            <Text style={styles.statTotal}> / {c2c.bookingsThreshold || 3}</Text>
+          </Text>
+        </View>
+        <ProgressBar current={c2c.qualifyingBookings || 0} total={c2c.bookingsThreshold || 3} color="#4CAF50" />
 
-              <View style={styles.xpFooter}>
-                <Text style={styles.xpFooterText}>{dashboardData?.xp?.currentXp || 0} / {dashboardData?.xp?.nextLevelXp || 500} XP</Text>
-                <Text style={styles.xpTodayText}>+{dashboardData?.xp?.todayXp || 0} XP Today</Text>
-              </View>
-            </View>
+        {c2c.pending > 0 && (
+          <Text style={styles.pendingNote}>⏳ {c2c.pending} referral{c2c.pending > 1 ? "s" : ""} pending qualification</Text>
+        )}
 
-            {/* Navigation Quick Links */}
-            <View style={styles.navigationRow}>
-              <TouchableOpacity style={styles.navBtn} onPress={() => navigation.navigate("Leaderboard")}>
-                <Ionicons name="trophy-outline" size={20} color={Colors.primary} />
-                <Text style={styles.navBtnText}>Leaderboard</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.navBtn} onPress={() => navigation.navigate("RewardStore")}>
-                <Ionicons name="gift-outline" size={20} color={Colors.primary} />
-                <Text style={styles.navBtnText}>Reward Store</Text>
-              </TouchableOpacity>
-            </View>
+        <RewardCard
+          icon="pricetag-outline"
+          title="50% Mehndi Offer"
+          status={c2c.reward?.status}
+          unlockedAt={c2c.reward?.unlockedAt}
+        />
+      </View>
 
-            {/* Badges Earned */}
-            {dashboardData?.badges?.length > 0 && (
-              <View style={styles.badgesSection}>
-                <Text style={styles.badgeSectionTitle}>My Unlocked Badges ({dashboardData.badges.length})</Text>
-                <FlatList
-                  horizontal
-                  data={dashboardData.badges}
-                  showsHorizontalScrollIndicator={false}
-                  keyExtractor={(item) => item.id.toString()}
-                  renderItem={({ item }) => (
-                    <View style={styles.badgeItemCard}>
-                      <View style={styles.badgeIconWrapper}>
-                        <Ionicons name={item.iconName || "ribbon"} size={22} color={Colors.primary} />
-                      </View>
-                      <Text style={styles.badgeItemName} numberOfLines={1}>{item.name}</Text>
-                    </View>
-                  )}
-                  contentContainerStyle={{ paddingHorizontal: 16, gap: 10 }}
-                />
-              </View>
-            )}
+      {/* ── Customer → Artist ──────────────────────────────────────────── */}
+      <Text style={styles.sectionTitle}>Artist Referrals</Text>
+      <View style={styles.card}>
+        <View style={styles.statRow}>
+          <Ionicons name="brush-outline" size={20} color="#9C27B0" />
+          <Text style={styles.statLabel}>Artists Invited</Text>
+          <Text style={styles.statValue}>
+            <Text style={styles.statCurrent}>{c2a.count || 0}</Text>
+            <Text style={styles.statTotal}> / {c2a.threshold || 10}</Text>
+          </Text>
+        </View>
+        <ProgressBar current={c2a.count || 0} total={c2a.threshold || 10} color="#9C27B0" />
 
-            {/* Code Box */}
-            <View style={styles.shareContainer}>
-              <Text style={styles.shareLabel}>YOUR UNIQUE REFERRAL CODE</Text>
-              <View style={styles.codeRow}>
-                <Text style={styles.codeText}>{dashboardData?.referralCode}</Text>
-                <TouchableOpacity onPress={handleCopyCode} style={styles.iconBtn}>
-                  <Ionicons name="copy-outline" size={20} color={Colors.primary} />
-                </TouchableOpacity>
-              </View>
-              <TouchableOpacity onPress={handleShareInvite} style={styles.shareBtn}>
-                <Ionicons name="share-social-outline" size={18} color={Colors.white} />
-                <Text style={styles.shareBtnText}>Share Invitation Link</Text>
-              </TouchableOpacity>
-            </View>
+        {c2a.pending > 0 && (
+          <Text style={styles.pendingNote}>⏳ {c2a.pending} artist referral{c2a.pending > 1 ? "s" : ""} awaiting approval</Text>
+        )}
 
-            {/* Stats Dashboard Grid */}
-            <View style={styles.statsGrid}>
-              <View style={styles.statBox}>
-                <Text style={styles.statVal}>{stats.totalInvites}</Text>
-                <Text style={styles.statLabel}>Invited Friends</Text>
-              </View>
-              <View style={styles.statBox}>
-                <Text style={styles.statVal}>{stats.pendingInvites}</Text>
-                <Text style={styles.statLabel}>Pending Installs</Text>
-              </View>
-              <View style={styles.statBox}>
-                <Text style={[styles.statVal, { color: Colors.primary }]}>₹{stats.totalEarnings}</Text>
-                <Text style={styles.statLabel}>Total Earnings</Text>
-              </View>
-            </View>
+        <RewardCard
+          icon="sparkles-outline"
+          title="70% Mehndi Offer"
+          status={c2a.reward?.status}
+          unlockedAt={c2a.reward?.unlockedAt}
+        />
+      </View>
 
-            {/* History Label */}
-            <Text style={styles.sectionTitle}>Referral Track Log</Text>
+      {/* How it works */}
+      <View style={styles.howCard}>
+        <Text style={styles.howTitle}>How It Works</Text>
+        {[
+          { icon: "share-outline",   text: "Share your referral link with friends" },
+          { icon: "person-add-outline", text: "They join MehndiGo via your link" },
+          { icon: "gift-outline",    text: "Earn offers once milestones are reached" },
+        ].map((step, i) => (
+          <View key={i} style={styles.howRow}>
+            <View style={styles.howIcon}><Ionicons name={step.icon} size={16} color={Colors.primary} /></View>
+            <Text style={styles.howText}>{step.text}</Text>
           </View>
-        }
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Ionicons name="people-outline" size={48} color={Colors.textTertiary} />
-            <Text style={styles.emptyText}>{"You haven't referred any friends yet."}</Text>
-            <Text style={styles.emptySubText}>{"Invite your friends to start earning wallet cashbacks!"}</Text>
-          </View>
-        }
-      />
+        ))}
+      </View>
+
+      <View style={{ height: 40 }} />
+    </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
-  xpCard: {
-    backgroundColor: Colors.white,
-    marginHorizontal: 16,
-    marginTop: 12,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    elevation: 1
-  },
-  xpHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12
-  },
-  levelLabel: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: Colors.text
-  },
-  tierTagText: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: Colors.primary,
-    marginTop: 2
-  },
-  rankBadge: {
-    alignItems: "flex-end"
-  },
-  rankLabel: {
-    fontSize: 8,
-    color: Colors.textSecondary,
-    fontWeight: "700"
-  },
-  rankValText: {
-    fontSize: 14,
-    fontWeight: "800",
-    color: Colors.text
-  },
-  progressBarBg: {
-    height: 8,
-    backgroundColor: "#F3F4F6",
-    borderRadius: 4,
-    overflow: "hidden",
-    marginVertical: 4
-  },
-  progressBarFill: {
-    height: "100%",
-    backgroundColor: Colors.primary,
-    borderRadius: 4
-  },
-  xpFooter: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginTop: 6
-  },
-  xpFooterText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: Colors.textSecondary
-  },
-  xpTodayText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#2E7D32"
-  },
-  navigationRow: {
-    flexDirection: "row",
-    marginHorizontal: 16,
-    marginTop: 12,
-    gap: 12
-  },
-  navBtn: {
-    flex: 1,
-    backgroundColor: Colors.white,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    height: 48,
-    gap: 8
-  },
-  navBtnText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: Colors.text
-  },
-  badgesSection: {
-    marginTop: 16
-  },
-  badgeSectionTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: Colors.text,
-    marginHorizontal: 16,
-    marginBottom: 10
-  },
-  badgeItemCard: {
-    backgroundColor: Colors.white,
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    alignItems: "center",
-    width: 100,
-    borderWidth: 1,
-    borderColor: Colors.border
-  },
-  badgeIconWrapper: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.primaryLight + "15",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 6
-  },
-  badgeItemName: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: Colors.textSecondary,
-    textAlign: "center",
-    width: "100%"
-  },
-  centerContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12 },
-  backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.white, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: Colors.border },
-  title: { fontSize: 18, fontWeight: "700", color: Colors.text },
-  heroCard: { backgroundColor: Colors.primary, marginHorizontal: 16, borderRadius: 18, padding: 20, alignItems: "center", marginTop: 8 },
-  heroTitle: { fontSize: 18, fontWeight: "800", color: Colors.white, marginTop: 10, textAlign: "center" },
-  heroDesc: { fontSize: 12, color: "rgba(255, 255, 255, 0.8)", textAlign: "center", marginTop: 8, lineHeight: 18 },
-  shareContainer: { backgroundColor: Colors.white, marginHorizontal: 16, marginTop: 12, borderRadius: 16, padding: 16, borderFocus: 1, borderColor: Colors.border, elevation: 1, alignItems: "center" },
-  shareLabel: { fontSize: 10, color: Colors.textSecondary, fontWeight: "700", letterSpacing: 1 },
-  codeRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 1, borderStyle: "dashed", borderColor: Colors.primary, borderRadius: 8, paddingHorizontal: 16, paddingVertical: 8, width: "100%", marginVertical: 12, backgroundColor: "#FFF5F7" },
-  codeText: { fontSize: 18, fontWeight: "800", color: Colors.primary, letterSpacing: 2 },
-  iconBtn: { padding: 4 },
-  shareBtn: { backgroundColor: Colors.primary, flexDirection: "row", alignItems: "center", justifyContent: "center", width: "100%", height: 44, borderRadius: 10 },
-  shareBtnText: { color: Colors.white, fontWeight: "700", fontSize: 13, marginLeft: 8 },
-  statsGrid: { flexDirection: "row", marginHorizontal: 16, justifyContent: "space-between", marginTop: 12 },
-  statBox: { flex: 1, backgroundColor: Colors.white, borderRadius: 14, padding: 14, alignItems: "center", marginHorizontal: 4, borderWidth: 1, borderColor: Colors.border, elevation: 1 },
-  statVal: { fontSize: 18, fontWeight: "850", color: Colors.text },
-  statLabel: { fontSize: 10, color: Colors.textSecondary, marginTop: 4, textAlign: "center" },
-  sectionTitle: { fontSize: 15, fontWeight: "750", color: Colors.text, marginHorizontal: 16, marginTop: 20, marginBottom: 10 },
-  friendCard: { backgroundColor: Colors.white, marginHorizontal: 16, marginBottom: 8, borderRadius: 12, padding: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 1, borderColor: Colors.border },
-  friendInfo: { flexDirection: "row", alignItems: "center" },
-  avatarPlaceholder: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.border, justifyContent: "center", alignItems: "center" },
-  avatarLetter: { fontSize: 14, fontWeight: "700", color: Colors.textSecondary },
-  friendName: { fontSize: 13, fontWeight: "700", color: Colors.text },
-  friendDate: { fontSize: 10, color: Colors.textTertiary, marginTop: 2 },
-  statusBadge: { flexDirection: "row", alignItems: "center", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20 },
-  completedBadge: { backgroundColor: "#E8F5E9" },
-  pendingBadge: { backgroundColor: "#FFF3E0" },
-  statusText: { fontSize: 11, fontWeight: "700", marginLeft: 4 },
-  completedText: { color: "#2E7D32" },
-  pendingText: { color: "#E65100" },
-  emptyContainer: { alignItems: "center", paddingVertical: 40 },
-  emptyText: { fontSize: 14, fontWeight: "700", color: Colors.textSecondary, marginTop: 10 },
-  emptySubText: { fontSize: 12, color: Colors.textTertiary, marginTop: 4 }
+  safeArea:     { flex: 1, backgroundColor: Colors.background },
+  container:    { flex: 1, backgroundColor: Colors.background },
+  content:      { padding: 20 },
+  center:       { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: Colors.background },
+
+  header:       { flexDirection: "row", alignItems: "center", marginBottom: 20, gap: 12 },
+  backBtn:      { width: 38, height: 38, borderRadius: 19, backgroundColor: Colors.cardBackground, alignItems: "center", justifyContent: "center", elevation: 2 },
+  headerTitle:  { fontSize: 22, fontWeight: "700", color: Colors.text },
+  headerSub:    { fontSize: 13, color: Colors.textSecondary },
+
+  codeBanner:   { backgroundColor: Colors.primary, borderRadius: 16, padding: 20, flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 24, elevation: 4 },
+  codeLabel:    { color: "rgba(255,255,255,0.8)", fontSize: 12, marginBottom: 4 },
+  codeValue:    { color: "#fff", fontSize: 26, fontWeight: "800", letterSpacing: 3 },
+  shareBtn:     { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(255,255,255,0.25)", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10 },
+  shareBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
+
+  sectionTitle: { fontSize: 16, fontWeight: "700", color: Colors.text, marginBottom: 10 },
+  card:         { backgroundColor: Colors.cardBackground, borderRadius: 16, padding: 16, marginBottom: 18, elevation: 2 },
+
+  statRow:      { flexDirection: "row", alignItems: "center", marginBottom: 6 },
+  statLabel:    { flex: 1, fontSize: 14, color: Colors.textSecondary, marginLeft: 8 },
+  statValue:    { fontSize: 14 },
+  statCurrent:  { fontWeight: "800", color: Colors.text, fontSize: 16 },
+  statTotal:    { color: Colors.textSecondary, fontSize: 13 },
+
+  progressTrack: { height: 7, backgroundColor: Colors.border, borderRadius: 4, overflow: "hidden", marginBottom: 4 },
+  progressFill:  { height: "100%", borderRadius: 4 },
+
+  pendingNote:  { fontSize: 12, color: Colors.textSecondary, marginTop: 8, marginBottom: 4, fontStyle: "italic" },
+
+  // Reward card
+  rewardCard:         { flexDirection: "row", alignItems: "center", marginTop: 14, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, padding: 12, gap: 12 },
+  rewardCardUnlocked: { borderColor: Colors.primary, backgroundColor: "#FFF0F5" },
+  rewardIcon:         { width: 38, height: 38, borderRadius: 10, backgroundColor: "#FFF0F5", alignItems: "center", justifyContent: "center" },
+  rewardIconUnlocked: { backgroundColor: Colors.primary },
+  rewardTitle:        { fontSize: 14, fontWeight: "700", color: Colors.text },
+  rewardDate:         { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
+  rewardBadge:        { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, backgroundColor: Colors.border },
+  rewardBadgeUnlocked:{ backgroundColor: Colors.primary },
+  rewardBadgeText:    { fontSize: 10, fontWeight: "700", color: Colors.textSecondary },
+
+  // How it works
+  howCard:   { backgroundColor: Colors.cardBackground, borderRadius: 16, padding: 16, elevation: 1 },
+  howTitle:  { fontSize: 14, fontWeight: "700", color: Colors.text, marginBottom: 12 },
+  howRow:    { flexDirection: "row", alignItems: "center", marginBottom: 10, gap: 10 },
+  howIcon:   { width: 30, height: 30, borderRadius: 15, backgroundColor: "#FFF0F5", alignItems: "center", justifyContent: "center" },
+  howText:   { flex: 1, fontSize: 13, color: Colors.textSecondary },
 });

@@ -12,6 +12,7 @@ export default function AdminMore() {
   const colors = Colors[theme];
 
   const menuItems = [
+    { title: 'Artist Withdrawals & Bank Payouts', icon: DollarSign, route: '/(admin)/withdrawals' },
     { title: 'Artist Directory', icon: Award, route: '/(admin)/artists' },
     { title: 'Bookings Ledger', icon: Calendar, route: '/(admin)/bookings' },
     { title: 'Financial Ledger', icon: DollarSign, route: '/(admin)/ledger' },

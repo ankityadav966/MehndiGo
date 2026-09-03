@@ -369,21 +369,208 @@ async function seed() {
     }
     console.log("Availability Slots seeded.");
 
+    // 5.1 Create Service Packages
+    if (db.ServicePackage) {
+      await db.ServicePackage.destroy({ where: {} });
+      await db.ServicePackage.bulkCreate([
+        {
+          id: 1,
+          service_id: svc1.id,
+          package_name: "Royal Bride Standard Package",
+          package_price: 5000,
+          duration: 180,
+          number_of_hands: 2,
+          number_of_feet: 2,
+          home_visit: true,
+          touch_up_included: true,
+          aftercare_included: true,
+          included_designs: "Front & Back Palms, Elbow coverage, Classic Feet anklet patterns"
+        },
+        {
+          id: 2,
+          service_id: svc1.id,
+          package_name: "Maharani Portrait Exclusive Package",
+          package_price: 8500,
+          duration: 240,
+          number_of_hands: 2,
+          number_of_feet: 2,
+          home_visit: true,
+          touch_up_included: true,
+          aftercare_included: true,
+          included_designs: "Bride & Groom portraits, customized wedding date & hashtag, full arms to elbows, full feet"
+        },
+        {
+          id: 3,
+          service_id: svc2.id,
+          package_name: "Festive Arabic Simple Palm Package",
+          package_price: 1200,
+          duration: 45,
+          number_of_hands: 2,
+          number_of_feet: 0,
+          home_visit: true,
+          touch_up_included: false,
+          aftercare_included: true,
+          included_designs: "Two front palms with modern floral diagonal vines"
+        },
+        {
+          id: 4,
+          service_id: svc2.id,
+          package_name: "Festive Arabic Full Hand Duo",
+          package_price: 2200,
+          duration: 75,
+          number_of_hands: 4,
+          number_of_feet: 0,
+          home_visit: true,
+          touch_up_included: true,
+          aftercare_included: true,
+          included_designs: "Front and back hands for 2 people with organic dark stain henna"
+        },
+        {
+          id: 5,
+          service_id: svc3.id,
+          package_name: "Bold Fusion Single Client",
+          package_price: 1500,
+          duration: 60,
+          number_of_hands: 2,
+          number_of_feet: 0,
+          home_visit: true,
+          touch_up_included: false,
+          aftercare_included: true,
+          included_designs: "Front & back bold outlines with delicate lace fill"
+        },
+        {
+          id: 6,
+          service_id: svc5.id,
+          package_name: "Custom Portrait Masterpiece Package",
+          package_price: 8500,
+          duration: 240,
+          number_of_hands: 2,
+          number_of_feet: 2,
+          home_visit: true,
+          touch_up_included: true,
+          aftercare_included: true,
+          included_designs: "Custom photorealistic portraits, baraat procession, and personalized wedding vows calligraphy"
+        }
+      ]);
+      console.log("Service Packages seeded.");
+    }
+
     // 7. Create Portfolios
     const pfData = [
-      { id: 1, artist_id: 1, url: "https://images.unsplash.com/photo-1590502593747-42a996133562?q=80&w=400", caption: "Bridal peacock patterns" },
-      { id: 2, artist_id: 1, url: "https://images.unsplash.com/photo-1562322140-8baeececf3df?q=80&w=400", caption: "Detailed Arabic layout" },
-      { id: 3, artist_id: 2, url: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=400", caption: "Elegant flowy vines" },
-      { id: 4, artist_id: 3, url: "https://images.unsplash.com/photo-1580489944761-15a19d654956?q=80&w=400", caption: "Contemporary floral wristbands" },
-      { id: 5, artist_id: 4, url: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?q=80&w=400", caption: "Portrait elements" }
+      {
+        id: 1,
+        artist_id: 1,
+        image_url: "https://images.unsplash.com/photo-1590502593747-42a996133562?q=80&w=600",
+        title: "Royal Peacock Bridal Layout",
+        caption: "Bridal peacock & lotus motifs",
+        description: "Intricate traditional Rajasthani design featuring peacock pair and kalash auspicious motifs.",
+        category: "Bridal",
+        occasion: "Wedding",
+        art_tier: "BRIDAL_EXCLUSIVE",
+        price: 5000,
+        duration_minutes: 180,
+        complexity_level: "MASTERPIECE",
+        likes_count: 42,
+        views_count: 310
+      },
+      {
+        id: 2,
+        artist_id: 1,
+        image_url: "https://images.unsplash.com/photo-1562322140-8baeececf3df?q=80&w=600",
+        title: "Modern Arabic Floral Trail",
+        caption: "Detailed Arabic layout",
+        description: "Flowy diagonal floral pattern with shaded petals and lace finger details.",
+        category: "Arabic",
+        occasion: "Festival",
+        art_tier: "STANDARD",
+        price: 1200,
+        duration_minutes: 45,
+        complexity_level: "SIMPLE",
+        likes_count: 28,
+        views_count: 180
+      },
+      {
+        id: 3,
+        artist_id: 1,
+        image_url: "https://images.unsplash.com/photo-1580489944761-15a19d654956?q=80&w=600",
+        title: "Kashmiri Jaal Heavy Pattern",
+        caption: "Kashmiri jaal grid pattern",
+        description: "Exquisite symmetrical checkered jaal with pearl drop tips.",
+        category: "Bridal",
+        occasion: "Engagement",
+        art_tier: "PREMIUM",
+        price: 3500,
+        duration_minutes: 120,
+        complexity_level: "INTRICATE",
+        likes_count: 35,
+        views_count: 245
+      },
+      {
+        id: 4,
+        artist_id: 2,
+        image_url: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=600",
+        title: "Bold Indo-Arabic Wristlet",
+        caption: "Elegant flowy vines",
+        description: "Bold mandala center with trailing vine wrist bracelet design.",
+        category: "Arabic",
+        occasion: "Festival",
+        art_tier: "STANDARD",
+        price: 1500,
+        duration_minutes: 60,
+        complexity_level: "MEDIUM",
+        likes_count: 51,
+        views_count: 410
+      },
+      {
+        id: 5,
+        artist_id: 3,
+        image_url: "https://images.unsplash.com/photo-1580489944761-15a19d654956?q=80&w=600",
+        title: "Contemporary Floral Wristband",
+        caption: "Contemporary floral wristbands",
+        description: "Delicate glove-style wrist and finger connectivity.",
+        category: "Indo-Western",
+        occasion: "Party",
+        art_tier: "STANDARD",
+        price: 1800,
+        duration_minutes: 90,
+        complexity_level: "MEDIUM",
+        likes_count: 19,
+        views_count: 130
+      },
+      {
+        id: 6,
+        artist_id: 4,
+        image_url: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?q=80&w=600",
+        title: "Custom Bride & Groom Portrait",
+        caption: "Portrait elements",
+        description: "Hand-drawn portrait of couple with personalized baraat theme.",
+        category: "Portrait",
+        occasion: "Wedding",
+        art_tier: "PREMIUM",
+        price: 8500,
+        duration_minutes: 240,
+        complexity_level: "MASTERPIECE",
+        likes_count: 88,
+        views_count: 920
+      }
     ];
 
     for (const pf of pfData) {
       await db.Portfolio.create({
         id: pf.id,
         artist_id: pf.artist_id,
-        image_url: pf.url,
+        image_url: pf.image_url,
+        title: pf.title,
         caption: pf.caption,
+        description: pf.description,
+        category: pf.category,
+        occasion: pf.occasion,
+        art_tier: pf.art_tier,
+        price: pf.price,
+        duration_minutes: pf.duration_minutes,
+        complexity_level: pf.complexity_level,
+        likes_count: pf.likes_count,
+        views_count: pf.views_count,
         visibility: true,
         display_order: 1
       });
@@ -576,7 +763,48 @@ async function seed() {
       usage_limit: 500,
       first_booking_only: true
     });
-    console.log("Coupons seeded.");
+    // 11. Create FAQs
+    if (db.FAQ) {
+      await db.FAQ.destroy({ where: {} });
+      await db.FAQ.bulkCreate([
+        {
+          id: 1,
+          category: "General",
+          question: "Do you provide home service?",
+          answer: "Yes! We provide convenient doorstep mehndi services at your home, hotel, or venue across the city. Free travel within our local radius.",
+          is_active: true
+        },
+        {
+          id: 2,
+          category: "Payment",
+          question: "How much advance payment is required?",
+          answer: "Only a nominal 10% advance is required to secure your appointment on MehndiGo. The remaining balance is payable directly after service completion.",
+          is_active: true
+        },
+        {
+          id: 3,
+          category: "Designs",
+          question: "Can I choose or provide my own custom design?",
+          answer: "Absolutely! You can upload your own reference photos or pick from our catalog. Our artists specialize in bespoke tailoring to your preferences.",
+          is_active: true
+        },
+        {
+          id: 4,
+          category: "Duration",
+          question: "How long does bridal mehndi application take?",
+          answer: "Full bridal mehndi typically takes 3 to 4 hours depending on intricacy, while party designs take 20 to 45 minutes per person.",
+          is_active: true
+        },
+        {
+          id: 5,
+          category: "Policy",
+          question: "What is your cancellation and reschedule policy?",
+          answer: "You can reschedule or cancel for a full advance refund up to 24 hours before the scheduled time slot via the MehndiGo app.",
+          is_active: true
+        }
+      ]);
+      console.log("FAQs seeded.");
+    }
 
     console.log("Database expanded seeding completed successfully!");
     process.exit(0);

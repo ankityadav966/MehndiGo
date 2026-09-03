@@ -10,16 +10,18 @@
     }
   ],
   "vars": {
-    "ENVIRONMENT": "production",
+    "ENVIRONMENT": "production", "EMAIL_PROVIDER": "azure",
     "JWT_SECRET": "mehndigo-super-secret-jwt-token-key-2026",
     "RAZORPAY_KEY_ID": "rzp_live_TSIrGnJIllkt0H",
-    "RAZORPAY_KEY_SECRET": "AJSFmZyxn471PmOT8OGRB768",
-    "EMAIL_USER": "sonudonyadav87@gmail.com",
-    "EMAIL_PASS": "kwemkkniwxyohmvm",
+    "RAZORPAY_KEY_SECRET": "",
+    "EMAIL_USER": "mehendigo@gmail.com",
+    "EMAIL_PASS": "wviumjyvgbundgkd",
+    "AZURE_EMAIL_FROM": "donotreply@mehndigo.in",
+    "EMAIL_FROM": "donotreply@mehndigo.in",
     "RESEND_API_KEY": "",
     "CLOUDINARY_CLOUD_NAME": "dair21jov",
     "CLOUDINARY_API_KEY": "344422783583887",
-    "CLOUDINARY_API_SECRET": "KxOubI4_DlRLsEtkP360SLlwJNg"
+    "CLOUDINARY_API_SECRET": ""
   },
   "d1_databases": [
     {

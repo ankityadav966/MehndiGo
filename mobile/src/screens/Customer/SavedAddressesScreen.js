@@ -10,6 +10,8 @@ import {
   TextInput,
   ScrollView,
   StatusBar,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -106,11 +108,15 @@ export default function SavedAddressesScreen({ navigation }) {
 
     setModalLoading(true);
     try {
+      const finalAddress = fullAddress.trim() || [houseFlat, landmark, city, state, pincode].filter(Boolean).join(", ");
       const payload = {
         name: label,
         label,
-        addressLine1: fullAddress || `${houseFlat}, ${city}`,
-        fullAddress: fullAddress || `${houseFlat}, ${city}`,
+        address: finalAddress,
+        full_address: finalAddress,
+        fullAddress: finalAddress,
+        address_line_1: finalAddress,
+        addressLine1: finalAddress,
         houseFlat,
         house_flat: houseFlat,
         landmark,
@@ -194,13 +200,13 @@ export default function SavedAddressesScreen({ navigation }) {
         </View>
 
         <Text style={styles.addressLine1}>
-          {[item.house_flat || item.houseFlat, item.landmark, item.address_line_1 || item.fullAddress]
-            .filter(Boolean)
-            .join(", ")}
+          {String(item.full_address || item.fullAddress || item.address_line_1 || item.address || [item.house_flat || item.houseFlat, item.landmark].filter(Boolean).join(", ") || "Saved Address")}
         </Text>
-        <Text style={styles.addressLine2}>
-          {[item.city, item.state, item.pincode].filter(Boolean).join(", ")}
-        </Text>
+        {[item.city, item.state, item.pincode].filter(Boolean).length > 0 ? (
+          <Text style={styles.addressLine2}>
+            {[item.city, item.state, item.pincode].filter(Boolean).join(", ")}
+          </Text>
+        ) : null}
 
         <View style={styles.cardActions}>
           {!isPrimary && (
@@ -268,17 +274,33 @@ export default function SavedAddressesScreen({ navigation }) {
       )}
 
       {/* Add / Edit Modal */}
-      <Modal visible={modalVisible} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
+      <Modal visible={modalVisible} animationType="slide" transparent onRequestClose={() => setModalVisible(false)}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={styles.modalOverlay}
+        >
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setModalVisible(false)}
+          />
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{editingId ? "Edit Address" : "Add New Address"}</Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
+              <TouchableOpacity
+                onPress={() => setModalVisible(false)}
+                hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+              >
                 <Ionicons name="close" size={24} color="#6B7280" />
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ padding: 20 }} keyboardShouldPersistTaps="handled">
+            <ScrollView
+              style={{ padding: 20 }}
+              contentContainerStyle={{ paddingBottom: 20 }}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
               {/* Tag Row */}
               <Text style={styles.label}>Address Tag</Text>
               <View style={styles.tagRow}>
@@ -339,7 +361,7 @@ export default function SavedAddressesScreen({ navigation }) {
               />
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );

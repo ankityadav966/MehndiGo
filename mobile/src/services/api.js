@@ -121,9 +121,13 @@ async function apiRequest(method, endpoint, body = null, auth = false, customTim
 
     return data;
   } catch (error) {
-    console.warn(`[API ERROR] ${method} ${endpoint} (Status: ${error.response?.status || "NETWORK_ERROR"}):`, error.message);
+    const isAborted = error?.name === "AbortError" || String(error?.message || "").toLowerCase().includes("canceled") || String(error?.message || "").toLowerCase().includes("aborted");
+    if (!isAborted) {
+      console.warn(`[API ERROR] ${method} ${endpoint} (Status: ${error.response?.status || "NETWORK_ERROR"}):`, error.message);
+    }
     throw error;
   }
 }
 
+export { apiRequest };
 export default apiRequest;

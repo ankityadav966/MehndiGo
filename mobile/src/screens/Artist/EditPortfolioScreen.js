@@ -19,20 +19,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import CustomButton from "../../components/CustomButton";
 import { updatePortfolioItem, uploadPortfolioMedia } from "../../services/artist";
-
-const CATEGORIES = [
-  "Bridal Mehndi",
-  "Arabic Mehndi",
-  "Royal Mehndi",
-  "Indo Arabic",
-  "Portrait Mehndi",
-  "Minimal Mehndi",
-  "Engagement",
-  "Festival",
-  "Kids Mehndi",
-  "Custom Design",
-  "Others"
-];
+import { MEHNDI_CATEGORY_NAMES as CATEGORIES } from "../../constants/MehndiCategories";
 
 const OCCASIONS = [
   "Wedding",
@@ -139,7 +126,7 @@ export default function EditPortfolioScreen({ route, navigation }) {
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={{ flex: 1 }}
       >
         {/* Header */}
@@ -304,7 +291,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12 },
   backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.white, justifyContent: "center", alignItems: "center" },
   headerTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },
-  scrollContainer: { padding: 16 },
+  scrollContainer: { padding: 16, paddingBottom: 140 },
   mediaContainer: {
     height: 180,
     backgroundColor: Colors.white,

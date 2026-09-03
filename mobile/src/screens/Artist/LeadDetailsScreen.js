@@ -37,9 +37,13 @@ export default function LeadDetailsScreen({ route, navigation }) {
       const response = await getLeadById(id);
       setLead(response);
       
-      // 2. Mark viewed on server
-      if (response.status === "New Lead") {
-        await viewLead(id);
+      // 2. Mark viewed on server (non-blocking)
+      if (response.status === "New Lead" || response.lead_status === "New Lead") {
+        try {
+          await viewLead(id);
+        } catch (vErr) {
+          if (__DEV__) console.log("Non-blocking viewLead notice:", vErr);
+        }
       }
     } catch (err) {
       if (__DEV__) console.log("Failed to load lead details:", err);
@@ -137,6 +141,25 @@ export default function LeadDetailsScreen({ route, navigation }) {
     }
   };
 
+  const handleBack = () => {
+    if (rejectModalVisible) {
+      setRejectModalVisible(false);
+      return true;
+    }
+    if (navigation?.canGoBack && navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate("ArtistTabs", { screen: "Leads" });
+    }
+    return true;
+  };
+
+  useEffect(() => {
+    const { BackHandler } = require("react-native");
+    const backSub = BackHandler.addEventListener("hardwareBackPress", handleBack);
+    return () => backSub.remove();
+  }, [rejectModalVisible, navigation]);
+
   if (loading) {
     return (
       <SafeAreaView style={[styles.container, styles.center]}>
@@ -152,7 +175,7 @@ export default function LeadDetailsScreen({ route, navigation }) {
         <Ionicons name="alert-circle-outline" size={48} color={Colors.primary} />
         <Text style={styles.errorTitle}>Failed to load lead details</Text>
         <Text style={styles.errorSubtitle}>{error || "Lead not found."}</Text>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+        <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
           <Text style={styles.backBtnText}>Go Back</Text>
         </TouchableOpacity>
       </SafeAreaView>
@@ -163,7 +186,7 @@ export default function LeadDetailsScreen({ route, navigation }) {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backIconButton}>
+        <TouchableOpacity onPress={handleBack} style={styles.backIconButton}>
           <Ionicons name="arrow-back" size={22} color={Colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Lead Info</Text>
@@ -204,7 +227,17 @@ export default function LeadDetailsScreen({ route, navigation }) {
           <View style={styles.infoField}>
             <Text style={styles.fieldLabel}>Preferred Date & Time</Text>
             <Text style={styles.fieldValue}>
-              {new Date(lead.booking_date).toLocaleDateString("en-IN", { weekday: "long", year: "numeric", month: "long", day: "numeric" })} at {lead.booking_time}
+              {(() => {
+                try {
+                  const d = new Date(lead.booking_date || lead.date || lead.created_at);
+                  if (!isNaN(d.getTime())) {
+                    return d.toLocaleDateString("en-IN", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+                  }
+                  return lead.booking_date || "Today";
+                } catch {
+                  return lead.booking_date || "Today";
+                }
+              })()} at {lead.booking_time || lead.time || "Scheduled Time"}
             </Text>
           </View>
           <View style={styles.infoField}>

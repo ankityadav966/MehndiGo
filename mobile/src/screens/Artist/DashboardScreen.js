@@ -22,6 +22,86 @@ import { confirmCashPayment, rejectCashPayment, acceptBooking, rejectBooking } f
 import Alert from "../../utils/Alert";
 import OptimizedImage from "../../components/OptimizedImage";
 
+function formatBookingDateTime(item) {
+  if (!item) return { dateStr: "Today", timeStr: "Flexible" };
+
+  let dateStr = "";
+  const rawDate =
+    item.booking_date ||
+    item.date ||
+    item.bookingDate ||
+    item.event_date ||
+    item.slot?.date ||
+    item.reschedule_date ||
+    item.created_at ||
+    item.createdAt;
+
+  if (rawDate) {
+    const rawStr = String(rawDate).trim();
+    if (/^\d{1,2}\s+[A-Za-z]{3}\s+\d{4}$/.test(rawStr)) {
+      dateStr = rawStr;
+    } else {
+      try {
+        const d = new Date(rawDate);
+        if (!isNaN(d.getTime())) {
+          dateStr = d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+        } else {
+          const parts = rawStr.split(/[-/]/);
+          if (parts.length === 3) {
+            const parsed = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+            if (!isNaN(parsed.getTime())) {
+              dateStr = parsed.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+            } else {
+              dateStr = rawStr;
+            }
+          } else {
+            dateStr = rawStr;
+          }
+        }
+      } catch {
+        dateStr = rawStr;
+      }
+    }
+  }
+
+  if (!dateStr || dateStr.toLowerCase().includes("invalid")) {
+    if (item.created_at || item.createdAt) {
+      try {
+        const cd = new Date(item.created_at || item.createdAt);
+        if (!isNaN(cd.getTime())) {
+          dateStr = cd.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+        }
+      } catch (_) {}
+    }
+    if (!dateStr || dateStr.toLowerCase().includes("invalid")) {
+      dateStr = "Today";
+    }
+  }
+
+  let timeStr =
+    item.booking_time ||
+    item.time ||
+    item.bookingTime ||
+    item.slot_time ||
+    item.reschedule_time ||
+    item.slot?.slot_window ||
+    "";
+
+  if (!timeStr && item.slot) {
+    if (typeof item.slot.start_time === "string") {
+      const st = item.slot.start_time;
+      const et = item.slot.end_time;
+      timeStr = et ? `${st} - ${et}` : st;
+    }
+  }
+
+  if (!timeStr || timeStr.toLowerCase().includes("invalid")) {
+    timeStr = "Flexible / Scheduled Slot";
+  }
+
+  return { dateStr, timeStr };
+}
+
 // --- Greeting Header Component ---
 function GreetingHeader({ artist, isVerified, unreadCount, onProfilePress, onNotificationPress }) {
   const getGreeting = () => {
@@ -53,7 +133,7 @@ function GreetingHeader({ artist, isVerified, unreadCount, onProfilePress, onNot
         </Pressable>
         <View style={styles.headerTextCol}>
           <Text style={styles.greetingText}>{getGreeting()}</Text>
-          <Text style={styles.artistNameText}>{artist.name || "Sonu Ma'am"}</Text>
+          <Text style={styles.artistNameText}>{artist.full_name || artist.name || "Specialist Artist"}</Text>
           <View style={styles.statusBadgeRow}>
             <View style={[styles.statusBadge, { backgroundColor: isVerified ? "#E6F4EA" : "#FEF3C7" }]}>
               <Text style={[styles.statusBadgeText, { color: isVerified ? Colors.success : Colors.warning }]}>
@@ -79,26 +159,54 @@ function GreetingHeader({ artist, isVerified, unreadCount, onProfilePress, onNot
 }
 
 // --- Wallet Card Component ---
-function WalletCard({ balance, onWithdrawPress, onCardPress }) {
+function WalletCard({ balance, cashCollected, onWithdrawPress, onCardPress, onCashPress }) {
   return (
-    <Pressable onPress={onCardPress}>
-      <View style={styles.walletCardBackground}>
+    <View style={styles.walletCardBackground}>
+      <Pressable onPress={onCardPress}>
         <View style={styles.walletHeader}>
           <View style={styles.walletTitleRow}>
-            <Ionicons name="wallet" size={20} color={Colors.white} style={{ marginRight: 6 }} />
-            <Text style={styles.walletLabel}>Available Wallet Balance</Text>
+            <View style={styles.walletBadgeIcon}>
+              <Ionicons name="card-outline" size={15} color="#FFFFFF" />
+            </View>
+            <View>
+              <Text style={styles.walletLabel}>Online Withdrawable Balance</Text>
+              <Text style={{ fontSize: 9, color: "rgba(255,255,255,0.75)", fontWeight: "600" }}>Online Payments Only</Text>
+            </View>
           </View>
           <Text style={styles.walletSecureText}>Safe & Secure Payouts</Text>
         </View>
         <View style={styles.walletBody}>
-          <Text style={styles.walletBalance}>₹{balance.toLocaleString()}</Text>
+          <View>
+            <Text style={styles.walletBalance}>₹{Number(balance || 0).toLocaleString("en-IN")}</Text>
+            <Text style={styles.walletSubText}>Actual Withdrawable Balance</Text>
+          </View>
           <Pressable onPress={onWithdrawPress} style={styles.walletBtn}>
-            <Ionicons name="arrow-up-circle-outline" size={16} color={Colors.primary} style={{ marginRight: 4 }} />
+            <Ionicons name="arrow-up-circle" size={15} color="#9C1344" style={{ marginRight: 4 }} />
             <Text style={styles.walletBtnText}>Withdraw</Text>
           </Pressable>
         </View>
-      </View>
-    </Pressable>
+      </Pressable>
+
+      {/* Dedicated Cash Entries / Cash Collected Row */}
+      <Pressable
+        onPress={onCashPress || onCardPress}
+        style={styles.walletCashBanner}
+      >
+        <View style={styles.walletCashLeft}>
+          <View style={styles.walletCashIconWrap}>
+            <Ionicons name="cash-outline" size={15} color="#FFFFFF" />
+          </View>
+          <View>
+            <Text style={styles.walletCashTitle}>Cash Collected (In-Hand)</Text>
+            <Text style={styles.walletCashSubtitle}>Direct Payout • Excluded from Wallet</Text>
+          </View>
+        </View>
+        <View style={{ alignItems: "flex-end" }}>
+          <Text style={styles.walletCashAmount}>₹{Number(cashCollected || 0).toLocaleString("en-IN")}</Text>
+          <Text style={styles.walletCashViewText}>View Entries →</Text>
+        </View>
+      </Pressable>
+    </View>
   );
 }
 
@@ -152,7 +260,11 @@ function DashboardCard({ count, title, description, iconName, accentColor, onPre
   );
 }
 
-let memoryCachedArtistDashboard = null;
+let memoryCachedArtistDashboard = { userId: null, data: null };
+
+export function clearArtistDashboardMemoryCache() {
+  memoryCachedArtistDashboard = { userId: null, data: null };
+}
 
 // --- Main Screen ---
 export default function ArtistDashboardScreen({ navigation }) {
@@ -162,42 +274,78 @@ export default function ArtistDashboardScreen({ navigation }) {
 
   if (__DEV__) console.log(`[ARTIST_APPROVAL_DEBUG] CURRENT_ROUTE: ArtistDashboardScreen | USER_ID: ${user?.id} | ROLE: ${user?.role}`);
 
-  const [dashboard, setDashboard] = useState(() => memoryCachedArtistDashboard);
-  const [loading, setLoading] = useState(() => !memoryCachedArtistDashboard);
+  const isCacheForCurrentUser = Boolean(user?.id && memoryCachedArtistDashboard.userId === user?.id && memoryCachedArtistDashboard.data);
+
+  const [dashboard, setDashboard] = useState(() => isCacheForCurrentUser ? memoryCachedArtistDashboard.data : null);
+  const [loading, setLoading] = useState(() => !isCacheForCurrentUser);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Reset state whenever user ID changes (account switch / new login)
+  useEffect(() => {
+    if (user?.id && memoryCachedArtistDashboard.userId !== user.id) {
+      setDashboard(null);
+      setLoading(true);
+      fetchDashboardDetails();
+    }
+  }, [user?.id]);
+
+  // Root level back handler with double-back-to-exit prevention
+  useFocusEffect(
+    React.useCallback(() => {
+      const { BackHandler } = require("react-native");
+      const { handleRootDoubleBackExit } = require("../../utils/navigationHelper");
+
+      const onBackPress = () => {
+        return handleRootDoubleBackExit("Press back again to exit MehndiGo Artist");
+      };
+
+      const sub = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+      return () => sub.remove();
+    }, [])
+  );
 
   const fetchDashboardDetails = React.useCallback(async () => {
     try {
       const data = await getArtistDashboardData();
-      if (data) {
-        memoryCachedArtistDashboard = data;
+      if (data && user?.id) {
+        memoryCachedArtistDashboard = { userId: user.id, data };
         setDashboard(data);
       }
     } catch (err) {
       console.log("Failed to load artist dashboard details:", err.message);
-      if (!memoryCachedArtistDashboard) {
-        Alert.alert("Error", "Something went wrong loading your dashboard. Please retry.");
+      if (!isCacheForCurrentUser) {
+        if (!err.message?.includes("complete your onboarding")) {
+          Alert.alert("Error", "Something went wrong loading your dashboard. Please retry.");
+        }
         setDashboard(null);
       }
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [user]);
+  }, [user?.id, isCacheForCurrentUser]);
 
   useEffect(() => {
     if (socket) {
       const handleBookingUpdate = () => {
         fetchDashboardDetails();
       };
+      socket.on("BOOKING_CREATED", handleBookingUpdate);
+      socket.on("NEW_BOOKING_REQUEST", handleBookingUpdate);
+      socket.on("BOOKING_UPDATED", handleBookingUpdate);
+      socket.on("PAYMENT_RECEIVED", handleBookingUpdate);
       socket.on("booking_created", handleBookingUpdate);
       socket.on("new_notification", handleBookingUpdate);
       return () => {
+        socket.off("BOOKING_CREATED", handleBookingUpdate);
+        socket.off("NEW_BOOKING_REQUEST", handleBookingUpdate);
+        socket.off("BOOKING_UPDATED", handleBookingUpdate);
+        socket.off("PAYMENT_RECEIVED", handleBookingUpdate);
         socket.off("booking_created", handleBookingUpdate);
         socket.off("new_notification", handleBookingUpdate);
       };
     }
-  }, [socket]);
+  }, [socket, fetchDashboardDetails]);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -242,6 +390,7 @@ export default function ArtistDashboardScreen({ navigation }) {
   const quickActions = [
     { icon: "calendar-outline", label: "My Bookings", screen: "BookingRequests" },
     { icon: "wallet-outline", label: "Wallet Ledger", screen: "Wallet" },
+    { icon: "cash-outline", label: "Cash Entries", screen: "Wallet", params: { initialTab: "Cash" } },
     { icon: "calendar-number-outline", label: "Availability", screen: "AvailabilityCalendar" },
     { icon: "list-outline", label: "Services", screen: "Services" },
     { icon: "images-outline", label: "Portfolio", screen: "Portfolio" },
@@ -273,8 +422,10 @@ export default function ArtistDashboardScreen({ navigation }) {
         {/* 2. Wallet Card Component */}
         <WalletCard
           balance={dashboard?.walletBalance || 0}
-          onWithdrawPress={() => navigation.navigate("Wallet", { initialTab: "Withdraw" })}
-          onCardPress={() => navigation.navigate("Wallet", { initialTab: "Withdraw" })}
+          cashCollected={dashboard?.cashEarnings || dashboard?.totalCash || dashboard?.cashCollected || 0}
+          onWithdrawPress={() => navigation.navigate("Wallet", { initialTab: "Withdraw", balance: dashboard?.walletBalance })}
+          onCardPress={() => navigation.navigate("Wallet", { initialTab: "Transactions", balance: dashboard?.walletBalance })}
+          onCashPress={() => navigation.navigate("Wallet", { initialTab: "Cash", balance: dashboard?.walletBalance })}
         />
 
         {/* 3. Core Stats Widgets */}
@@ -296,7 +447,7 @@ export default function ArtistDashboardScreen({ navigation }) {
             description="Earnings cleared today"
             iconName="cash-outline"
             accentColor={Colors.success}
-            onPress={() => navigation.navigate("Wallet", { initialTab: "Transactions" })}
+            onPress={() => navigation.navigate("Wallet", { initialTab: "Transactions", balance: dashboard?.walletBalance })}
           />
           <DashboardCard
             count={dashboard?.pendingRequests || 0}
@@ -367,7 +518,7 @@ export default function ArtistDashboardScreen({ navigation }) {
             description="Settlements currently pending"
             iconName="logo-usd"
             accentColor="#EF4444"
-            onPress={() => navigation.navigate("Wallet", { initialTab: "Withdraw" })}
+            onPress={() => navigation.navigate("Wallet", { initialTab: "Transactions", balance: dashboard?.walletBalance })}
           />
           <DashboardCard
             count={counts.PENDING_CASH_APPROVAL || 0}
@@ -397,7 +548,7 @@ export default function ArtistDashboardScreen({ navigation }) {
             <Pressable
               key={index}
               style={styles.actionChip}
-              onPress={() => navigation.navigate(action.screen)}
+              onPress={() => navigation.navigate(action.screen, action.params)}
             >
               <Ionicons name={action.icon} size={16} color={Colors.primary} />
               <Text style={styles.actionLabel}>{action.label}</Text>
@@ -409,7 +560,22 @@ export default function ArtistDashboardScreen({ navigation }) {
         {dashboard?.recentBookings?.filter(b => {
           const st = String(b.booking_status || b.status || "").toUpperCase();
           const det = String(b.detailed_status || b.detailedStatus || "").toUpperCase();
-          return (st === "PENDING" || det === "PENDING") && det !== "ARTIST_ACCEPTED" && det !== "ACCEPTED" && det !== "CONFIRMED" && det !== "CANCELLED" && det !== "REJECTED" && det !== "COMPLETED";
+          const pStatus = String(b.payment_status || "").toUpperCase();
+          const pMode = String(b.payment_mode || "").toUpperCase();
+          const advance = Number(b.advance_paid || 0);
+
+          const isCash = pMode === "CASH";
+          const isPaidAdvance = advance > 0 || pStatus === "PAID" || pStatus === "PARTIAL" || pStatus === "ADVANCE_PAID";
+          const isUnpaidOnlineDraft = det === "PENDING_PAYMENT" || (!isCash && pStatus === "PENDING" && advance <= 0);
+
+          if (isUnpaidOnlineDraft) return false;
+          if (!isCash && !isPaidAdvance) return false;
+
+          const isAccepted = st === "ACCEPTED" || st === "CONFIRMED" || det === "ARTIST_ACCEPTED" || det === "ACCEPTED" || det === "CONFIRMED" || det === "ARTIST_ON_THE_WAY" || det === "ARTIST_ARRIVED" || det === "SERVICE_STARTED" || det === "IN_PROGRESS";
+          const isCancelled = st === "CANCELLED" || st === "REJECTED" || st === "DECLINED" || det === "CANCELLED" || det === "REJECTED" || det === "DECLINED";
+          const isCompleted = st === "COMPLETED" || det === "COMPLETED";
+
+          return !isAccepted && !isCancelled && !isCompleted;
         }).length > 0 && (
           <View style={styles.cashSection}>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
@@ -419,15 +585,26 @@ export default function ArtistDashboardScreen({ navigation }) {
               </Pressable>
             </View>
             {dashboard.recentBookings.filter(b => {
-              const st = String(b.status || b.booking_status || "").toUpperCase();
+              const st = String(b.booking_status || b.status || "").toUpperCase();
               const det = String(b.detailed_status || b.detailedStatus || "").toUpperCase();
-              const isAccepted = st === "ACCEPTED" || det === "ARTIST_ACCEPTED" || det === "ACCEPTED" || det === "ARTIST_ON_THE_WAY" || det === "ARTIST_ARRIVED" || det === "SERVICE_STARTED";
-              const isCancelled = st === "CANCELLED" || st === "REJECTED" || det === "CANCELLED" || det === "REJECTED";
+              const pStatus = String(b.payment_status || "").toUpperCase();
+              const pMode = String(b.payment_mode || "").toUpperCase();
+              const advance = Number(b.advance_paid || 0);
+
+              const isCash = pMode === "CASH";
+              const isPaidAdvance = advance > 0 || pStatus === "PAID" || pStatus === "PARTIAL" || pStatus === "ADVANCE_PAID";
+              const isUnpaidOnlineDraft = det === "PENDING_PAYMENT" || (!isCash && pStatus === "PENDING" && advance <= 0);
+
+              if (isUnpaidOnlineDraft) return false;
+              if (!isCash && !isPaidAdvance) return false;
+
+              const isAccepted = st === "ACCEPTED" || st === "CONFIRMED" || det === "ARTIST_ACCEPTED" || det === "ACCEPTED" || det === "CONFIRMED" || det === "ARTIST_ON_THE_WAY" || det === "ARTIST_ARRIVED" || det === "SERVICE_STARTED" || det === "IN_PROGRESS";
+              const isCancelled = st === "CANCELLED" || st === "REJECTED" || st === "DECLINED" || det === "CANCELLED" || det === "REJECTED" || det === "DECLINED";
               const isCompleted = st === "COMPLETED" || det === "COMPLETED";
-              return !isAccepted && !isCancelled && !isCompleted && (st === "PENDING" || st === "CONFIRMED" || det === "PENDING");
+
+              return !isAccepted && !isCancelled && !isCompleted;
             }).slice(0, 3).map((item) => {
-              const slotDate = item.slot?.start_time ? new Date(item.slot.start_time).toLocaleDateString() : (item.reschedule_date || "TBD");
-              const slotTime = item.slot ? `${new Date(item.slot.start_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - ${new Date(item.slot.end_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` : (item.reschedule_time || "TBD");
+              const { dateStr, timeStr } = formatBookingDateTime(item);
 
               return (
                 <View key={item.id} style={styles.cashConfirmCard}>
@@ -443,15 +620,15 @@ export default function ArtistDashboardScreen({ navigation }) {
                   </View>
                   <View style={styles.itemMetaRow}>
                     <Text style={styles.metaLabel}>Booking ID:</Text>
-                    <Text style={styles.metaValue}>#{item.booking_code}</Text>
+                    <Text style={styles.metaValue}>#{item.booking_code || item.booking_number || item.id}</Text>
                   </View>
                   <View style={styles.itemMetaRow}>
                     <Text style={styles.metaLabel}>Date & Time:</Text>
-                    <Text style={styles.metaValue}>{slotDate} • {slotTime}</Text>
+                    <Text style={[styles.metaValue, { fontWeight: "700", color: "#1F2937" }]}>{dateStr} • {timeStr}</Text>
                   </View>
                   <View style={styles.itemMetaRow}>
                     <Text style={styles.metaLabel}>Amount:</Text>
-                    <Text style={[styles.metaValue, { fontWeight: "800", color: Colors.primary }]}>₹{item.final_amount}</Text>
+                    <Text style={[styles.metaValue, { fontWeight: "800", color: Colors.primary }]}>₹{item.final_amount || item.total_amount || 0}</Text>
                   </View>
 
                   <View style={styles.cashActionsRow}>
@@ -509,72 +686,6 @@ export default function ArtistDashboardScreen({ navigation }) {
           </View>
         )}
 
-        {/* 7. Active Actions (Pending Cash Confirmations) */}
-        {dashboard?.recentBookings?.filter(b => b.detailed_status === "AWAITING_CASH_CONFIRMATION" || b.booking_status === "AWAITING_CASH_CONFIRMATION").length > 0 && (
-          <View style={styles.cashSection}>
-            <Text style={styles.sectionTitle}>Pending Cash Confirmations</Text>
-            {dashboard.recentBookings.filter(b => b.detailed_status === "AWAITING_CASH_CONFIRMATION" || b.booking_status === "AWAITING_CASH_CONFIRMATION").map((item) => (
-              <View key={item.id} style={styles.cashConfirmCard}>
-                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 12 }}>
-                  <View style={[styles.cardIconBox, { backgroundColor: "#FFF0F4", marginRight: 12 }]}>
-                    <Ionicons name="card" size={20} color={Colors.primary} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.cashCustomer}>{item.user?.name || "Client"}</Text>
-                    <Text style={styles.cashService}>Awaiting cash settlement approval</Text>
-                  </View>
-                </View>
-                <View style={styles.itemMetaRow}>
-                  <Text style={styles.metaLabel}>Booking ID:</Text>
-                  <Text style={styles.metaValue}>#{item.booking_code}</Text>
-                </View>
-                <View style={styles.itemMetaRow}>
-                  <Text style={styles.metaLabel}>Cash Amount:</Text>
-                  <Text style={[styles.metaValue, { fontWeight: "800", color: Colors.primary }]}>₹{item.final_amount}</Text>
-                </View>
-
-                <View style={styles.cashActionsRow}>
-                  <Pressable
-                    style={[styles.cashBtn, { backgroundColor: Colors.success }]}
-                    onPress={async () => {
-                      try {
-                        setLoading(true);
-                        await confirmCashPayment(item.id);
-                        Alert.alert("Success", "Cash payment approved successfully!");
-                        fetchDashboardDetails();
-                      } catch (err) {
-                        Alert.alert("Error", err.message);
-                        setLoading(true);
-                        fetchDashboardDetails();
-                      }
-                    }}
-                  >
-                    <Text style={styles.cashBtnText}>Approve Payment</Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.cashBtn, { backgroundColor: Colors.error }]}
-                    onPress={async () => {
-                      try {
-                        setLoading(true);
-                        await rejectCashPayment(item.id);
-                        Alert.alert("Success", "Cash payment rejected.");
-                        fetchDashboardDetails();
-                      } catch (err) {
-                        Alert.alert("Error", err.message);
-                        setLoading(true);
-                        fetchDashboardDetails();
-                      }
-                    }}
-                  >
-                    <Text style={styles.cashBtnText}>Reject</Text>
-                  </Pressable>
-                </View>
-              </View>
-            ))}
-          </View>
-        )}
-
-
         {/* 8. Recent Bookings List */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Recent Booking Jobs</Text>
@@ -587,6 +698,7 @@ export default function ArtistDashboardScreen({ navigation }) {
           const customerName = item.user?.name || item.customer_name || item.client_name || item.customer?.name || "Client";
           const customerPhone = item.user?.phone || item.customer_phone || "";
           const customerAvatar = resolveImage(item.user?.profile_image || item.customer_avatar || item.customer?.profile_image);
+          const { dateStr, timeStr } = formatBookingDateTime(item);
           
           return (
             <Pressable
@@ -606,9 +718,12 @@ export default function ArtistDashboardScreen({ navigation }) {
                       📞 {customerPhone}
                     </Text>
                   ) : null}
-                  <Text style={styles.serviceName}>{item.service?.specialization_name || "Mehndi Booking"}</Text>
+                  <Text style={styles.serviceName}>{item.service?.specialization_name || item.service_title || "Mehndi Booking"}</Text>
+                  <Text style={[styles.bookingDate, { color: "#374151", fontWeight: "600" }]}>
+                    📅 {dateStr} • ⏰ {timeStr}
+                  </Text>
                   <Text style={styles.bookingDate}>
-                    Status: {item.detailed_status || item.booking_status} • Value: ₹{item.final_amount || item.total_price}
+                    Status: {item.detailed_status || item.booking_status} • Value: ₹{item.final_amount || item.total_price || item.total_amount || 0}
                   </Text>
                 </View>
               </View>
@@ -626,34 +741,29 @@ export default function ArtistDashboardScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
-  centerContainer: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: Colors.background },
+  container: { flex: 1, backgroundColor: "#F9FAFB" },
+  centerContainer: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#F9FAFB" },
   
   // Greeting Header Styles
   headerContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     backgroundColor: Colors.white,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-    elevation: 2,
-    shadowColor: Colors.shadow,
-    shadowOpacity: 0.05,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 4
+    borderBottomColor: "#F3F4F6",
   },
   headerProfileRow: { flexDirection: "row", alignItems: "center", flex: 1 },
   avatarWrapper: { position: "relative" },
-  avatarImage: { width: 52, height: 52, borderRadius: 26, backgroundColor: Colors.background, borderWidth: 1.5, borderColor: Colors.border },
+  avatarImage: { width: 48, height: 48, borderRadius: 24, backgroundColor: "#F3F4F6", borderWidth: 2, borderColor: Colors.white },
   verifiedMiniBadge: {
     position: "absolute",
     bottom: -2,
     right: -2,
     backgroundColor: Colors.success,
-    borderRadius: 8,
+    borderRadius: 9,
     width: 18,
     height: 18,
     justifyContent: "center",
@@ -661,80 +771,114 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: Colors.white
   },
-  headerTextCol: { marginLeft: 12, flex: 1 },
-  greetingText: { fontSize: 12, color: Colors.textSecondary, fontWeight: "500" },
-  artistNameText: { fontSize: 18, fontWeight: "800", color: Colors.text },
-  statusBadgeRow: { flexDirection: "row", alignItems: "center", marginTop: 4, flexWrap: "wrap" },
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, marginRight: 6 },
+  headerTextCol: { marginLeft: 10, flex: 1 },
+  greetingText: { fontSize: 12, color: Colors.textSecondary, fontWeight: "500", marginBottom: 1 },
+  artistNameText: { fontSize: 16, fontWeight: "800", color: Colors.text },
+  statusBadgeRow: { flexDirection: "row", alignItems: "center", marginTop: 4, flexWrap: "wrap", gap: 6 },
+  statusBadge: { paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6 },
   statusBadgeText: { fontSize: 9, fontWeight: "800", textTransform: "uppercase" },
   completionPercentage: { fontSize: 10, color: Colors.textTertiary, fontWeight: "600" },
-  bellBtn: { width: 44, height: 44, borderRadius: 12, backgroundColor: Colors.background, justifyContent: "center", alignItems: "center" },
-  bellBadge: { position: "absolute", top: 8, right: 8, backgroundColor: Colors.primary, borderRadius: 8, minWidth: 16, height: 16, justifyContent: "center", alignItems: "center", paddingHorizontal: 2 },
-  bellBadgeText: { color: Colors.white, fontSize: 9, fontWeight: "800" },
+  bellBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: "#F3F4F6", justifyContent: "center", alignItems: "center" },
+  bellBadge: { position: "absolute", top: 6, right: 6, backgroundColor: Colors.error, borderRadius: 7, minWidth: 14, height: 14, justifyContent: "center", alignItems: "center", paddingHorizontal: 3, borderWidth: 1, borderColor: Colors.white },
+  bellBadgeText: { color: Colors.white, fontSize: 8, fontWeight: "800" },
 
   // Wallet Card Styles
   walletCardBackground: {
-    margin: 20,
-    backgroundColor: "#7D1538",
-    borderRadius: 20,
-    padding: 20,
-    elevation: 4,
-    shadowColor: Colors.shadow,
-    shadowOpacity: 0.15,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 8
+    marginHorizontal: 16,
+    marginVertical: 10,
+    backgroundColor: "#9C1344", // Royal Rose / Burgundy from WalletScreen
+    borderRadius: 18,
+    padding: 16,
+    elevation: 5,
+    shadowColor: "#9C1344",
+    shadowOpacity: 0.25,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 10
   },
-  walletHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "rgba(255, 255, 255, 0.15)", paddingBottom: 12 },
+  walletHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "rgba(255, 255, 255, 0.15)", paddingBottom: 10 },
   walletTitleRow: { flexDirection: "row", alignItems: "center" },
-  walletLabel: { fontSize: 12, color: Colors.white, opacity: 0.8 },
-  walletSecureText: { fontSize: 9, color: Colors.white, opacity: 0.6, fontWeight: "600" },
-  walletBody: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 14 },
-  walletBalance: { fontSize: 32, fontWeight: "800", color: Colors.white },
-  walletBtn: { flexDirection: "row", alignItems: "center", backgroundColor: Colors.white, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, elevation: 1 },
-  walletBtnText: { color: Colors.primary, fontWeight: "800", fontSize: 13 },
+  walletBadgeIcon: { width: 28, height: 28, borderRadius: 14, backgroundColor: "rgba(255,255,255,0.2)", justifyContent: "center", alignItems: "center", marginRight: 8 },
+  walletLabel: { fontSize: 12, color: "rgba(255,255,255,0.95)", fontWeight: "600" },
+  walletSecureText: { fontSize: 9, color: "rgba(255,255,255,0.75)", fontWeight: "600" },
+  walletBody: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 12 },
+  walletBalance: { fontSize: 26, fontWeight: "900", color: Colors.white, letterSpacing: -0.5 },
+  walletSubText: { fontSize: 10, color: "rgba(255, 255, 255, 0.8)", marginTop: 2, fontWeight: "500" },
+  walletBtn: { flexDirection: "row", alignItems: "center", backgroundColor: Colors.white, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, elevation: 2 },
+  walletBtnText: { color: "#9C1344", fontWeight: "800", fontSize: 12 },
+  walletCashBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "rgba(0, 0, 0, 0.18)",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.15)"
+  },
+  walletCashLeft: { flexDirection: "row", alignItems: "center", flex: 1, marginRight: 10 },
+  walletCashIconWrap: { width: 28, height: 28, borderRadius: 8, backgroundColor: "rgba(255, 255, 255, 0.2)", justifyContent: "center", alignItems: "center", marginRight: 8 },
+  walletCashTitle: { fontSize: 11, fontWeight: "700", color: Colors.white },
+  walletCashSubtitle: { fontSize: 9, color: "rgba(255, 255, 255, 0.75)", marginTop: 1 },
+  walletCashAmount: { fontSize: 14, fontWeight: "800", color: "#A7F3D0" },
+  walletCashViewText: { fontSize: 9, color: "rgba(255, 255, 255, 0.85)", fontWeight: "600", marginTop: 2 },
 
   // Section Styles
-  sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 10, paddingHorizontal: 20 },
-  sectionTitle: { fontSize: 15, fontWeight: "800", color: Colors.text, marginVertical: 8 },
-  viewAll: { color: Colors.primary, fontWeight: "800", fontSize: 13 },
+  sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 10, marginBottom: 6, paddingHorizontal: 16 },
+  sectionTitle: { fontSize: 15, fontWeight: "800", color: "#111827", letterSpacing: -0.3 },
+  viewAll: { color: "#9C1344", fontWeight: "700", fontSize: 13 },
 
   // Stats Grid Styles
-  statsGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", paddingHorizontal: 20, marginTop: 4 },
-  cardOuter: { width: "48%", marginBottom: 16, borderRadius: 16, backgroundColor: Colors.white, elevation: 2, shadowColor: Colors.shadow, shadowOpacity: 0.04, shadowOffset: { width: 0, height: 2 }, shadowRadius: 4 },
-  cardContainer: { padding: 14, borderRadius: 16, borderLeftWidth: 4, borderWidth: 1, borderColor: Colors.border, height: 135, justifyContent: "space-between" },
+  statsGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", paddingHorizontal: 16, marginTop: 2 },
+  cardOuter: { width: "48%", marginBottom: 10 },
+  cardContainer: { 
+    padding: 12, 
+    borderRadius: 14, 
+    backgroundColor: Colors.white,
+    height: 110, 
+    justifyContent: "space-between",
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOpacity: 0.04,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 6
+  },
   cardHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  cardIconBox: { width: 34, height: 34, borderRadius: 10, justifyContent: "center", alignItems: "center" },
-  cardCount: { fontSize: 20, fontWeight: "800", color: Colors.text },
-  cardInfoCol: { flex: 1, justifyContent: "center", marginTop: 6 },
-  cardTitle: { fontSize: 12, fontWeight: "700", color: Colors.text },
-  cardDesc: { fontSize: 9, color: Colors.textSecondary, marginTop: 2, lineHeight: 12 },
-  cardFooterRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 6, marginTop: 4 },
-  viewDetailsText: { fontSize: 9, fontWeight: "800" },
+  cardIconBox: { width: 32, height: 32, borderRadius: 8, justifyContent: "center", alignItems: "center" },
+  cardCount: { fontSize: 18, fontWeight: "900", color: "#111827" },
+  cardInfoCol: { flex: 1, justifyContent: "center", marginTop: 4 },
+  cardTitle: { fontSize: 12, fontWeight: "700", color: "#374151" },
+  cardDesc: { fontSize: 9, color: "#6B7280", marginTop: 1, lineHeight: 12 },
+  cardFooterRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderTopWidth: 1, borderTopColor: "#F3F4F6", paddingTop: 6, marginTop: 4 },
+  viewDetailsText: { fontSize: 9, fontWeight: "700" },
 
   // Quick Actions Styles
-  actionsRow: { paddingLeft: 20, paddingBottom: 16 },
-  actionChip: { flexDirection: "row", alignItems: "center", backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, marginRight: 12, elevation: 1 },
-  actionLabel: { fontSize: 12, fontWeight: "700", color: Colors.text, marginLeft: 8 },
+  actionsRow: { paddingLeft: 16, paddingBottom: 16, marginTop: 2 },
+  actionChip: { flexDirection: "row", alignItems: "center", backgroundColor: Colors.white, borderRadius: 100, paddingHorizontal: 12, paddingVertical: 8, marginRight: 8, borderWidth: 1, borderColor: "#E5E7EB", elevation: 1, shadowColor: "#000", shadowOpacity: 0.03, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } },
+  actionLabel: { fontSize: 12, fontWeight: "700", color: "#374151", marginLeft: 6 },
 
   // Booking Card Styles
-  bookingCard: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: Colors.white, marginHorizontal: 20, marginBottom: 12, padding: 14, borderRadius: 16, borderWidth: 1, borderColor: Colors.border, elevation: 1 },
+  bookingCard: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: Colors.white, marginHorizontal: 16, marginBottom: 10, padding: 12, borderRadius: 14, borderWidth: 1, borderColor: "#F3F4F6", elevation: 2, shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } },
   bookingLeft: { flexDirection: "row", alignItems: "center", flex: 1 },
-  avatarPlaceholder: { width: 44, height: 44, borderRadius: 12, backgroundColor: "#FFF0F4", justifyContent: "center", alignItems: "center" },
-  bookingInfo: { marginLeft: 12, flex: 1 },
-  customerName: { fontSize: 14, fontWeight: "700", color: Colors.text },
-  serviceName: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
-  bookingDate: { fontSize: 11, color: Colors.textTertiary, marginTop: 4 },
-  emptyText: { fontSize: 12, color: Colors.textSecondary, textAlign: "center", marginVertical: 32 },
+  avatarPlaceholder: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#F3F4F6", justifyContent: "center", alignItems: "center" },
+  bookingInfo: { marginLeft: 10, flex: 1 },
+  customerName: { fontSize: 14, fontWeight: "800", color: "#111827" },
+  serviceName: { fontSize: 12, color: "#4B5563", marginTop: 1 },
+  bookingDate: { fontSize: 11, color: "#6B7280", marginTop: 3, fontWeight: "500" },
+  emptyText: { fontSize: 14, color: "#9CA3AF", textAlign: "center", marginVertical: 30, fontWeight: "500" },
 
   // Cash Section Card Styles
-  cashSection: { paddingHorizontal: 20, marginVertical: 10 },
-  cashConfirmCard: { backgroundColor: Colors.white, borderRadius: 20, padding: 16, marginBottom: 14, borderWidth: 1, borderColor: Colors.border, elevation: 2 },
-  cashCustomer: { fontSize: 15, fontWeight: "800", color: Colors.text },
-  cashService: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
-  itemMetaRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 8 },
-  metaLabel: { fontSize: 12, color: Colors.textSecondary },
-  metaValue: { fontSize: 12, color: Colors.text, fontWeight: "600" },
-  cashActionsRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 16 },
-  cashBtn: { flex: 1, height: 42, borderRadius: 10, justifyContent: "center", alignItems: "center", marginHorizontal: 4 },
-  cashBtnText: { color: Colors.white, fontWeight: "800", fontSize: 12 }
+  cashSection: { paddingHorizontal: 16, marginVertical: 8 },
+  cashConfirmCard: { backgroundColor: Colors.white, borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: "#F3F4F6", elevation: 2, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } },
+  cashCustomer: { fontSize: 14, fontWeight: "800", color: "#111827" },
+  cashService: { fontSize: 12, color: "#6B7280", marginTop: 1 },
+  itemMetaRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 8, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: "#F3F4F6" },
+  metaLabel: { fontSize: 12, color: "#6B7280", fontWeight: "500" },
+  metaValue: { fontSize: 12, color: "#111827", fontWeight: "700" },
+  cashActionsRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 12, gap: 8 },
+  cashBtn: { flex: 1, height: 38, borderRadius: 10, justifyContent: "center", alignItems: "center" },
+  cashBtnText: { color: Colors.white, fontWeight: "800", fontSize: 13 }
 });

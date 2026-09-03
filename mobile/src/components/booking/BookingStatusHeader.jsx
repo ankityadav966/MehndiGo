@@ -137,6 +137,7 @@ export default function BookingStatusHeader({
   status,
   onBack,
   onSupport,
+  onRefresh,
   showBackButton = true,
   rightAction
 }) {
@@ -170,6 +171,16 @@ export default function BookingStatusHeader({
         </View>
 
         <View style={styles.rightActions}>
+          {onRefresh && (
+            <TouchableOpacity
+              style={styles.refreshBtn}
+              onPress={onRefresh}
+              activeOpacity={0.7}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name="refresh" size={17} color="#E91E63" />
+            </TouchableOpacity>
+          )}
           {rightAction ? (
             rightAction
           ) : onSupport ? (
@@ -182,9 +193,9 @@ export default function BookingStatusHeader({
               <Ionicons name="help-circle" size={15} color="#701DDB" />
               <Text style={styles.supportBtnText}>Help</Text>
             </TouchableOpacity>
-          ) : (
+          ) : !onRefresh ? (
             <View style={styles.btnPlaceholder} />
-          )}
+          ) : null}
         </View>
       </View>
 
@@ -266,8 +277,20 @@ const styles = StyleSheet.create({
   },
   rightActions: {
     minWidth: 38,
-    alignItems: "flex-end",
-    justifyContent: "center"
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 8
+  },
+  refreshBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: "#FFF1F2",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#FECDD3"
   },
   supportBtn: {
     flexDirection: "row",

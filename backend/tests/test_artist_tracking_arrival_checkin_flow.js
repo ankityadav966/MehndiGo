@@ -443,4 +443,22 @@ describe("ARTIST MODULE 5: ON THE WAY + LIVE TRACKING + ARRIVED + CHECK-IN INTEG
       (err) => err.statusCode === 400 && err.message.includes("Cannot modify a cancelled booking")
     );
   });
+
+  it("18. Permanent State Lock: Re-generating Check-In OTP after verification is strictly rejected (400) and checkin_otp remains null", async () => {
+    // 1. sendCheckInOtp rejected once verified
+    await assert.rejects(
+      async () => {
+        await BookingService.sendCheckInOtp(booking1.id, customerUser.id);
+      },
+      (err) => err.statusCode === 400 && err.message.includes("already been verified")
+    );
+
+    // 2. getBookingDetails returns null checkin_otp and checkin_otp_verified true
+    const details = await BookingService.getBookingDetails(booking1.id);
+    assert.equal(details.checkin_otp, null, "Check-in OTP must be null on verified booking");
+    assert.equal(details.check_in_otp, null, "check_in_otp must be null on verified booking");
+    assert.equal(details.checkin_otp_verified, 1);
+    assert.equal(details.check_in_otp_verified, true);
+    assert.ok(details.service_started_at);
+  });
 });

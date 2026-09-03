@@ -1,8 +1,9 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -13,6 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import Colors from "../../constants/Colors";
 import Alert from "../../utils/Alert";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { registerSendOtp, sanitizePhone } from "../../services/auth";
 
 export default function RegisterScreen({ navigation, route }) {
@@ -23,28 +25,15 @@ export default function RegisterScreen({ navigation, route }) {
   const [selectedRole, setSelectedRole] = useState("CUSTOMER");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [referralCode, setReferralCode] = useState("");
+  const [pendingReferralCode, setPendingReferralCode] = useState(route.params?.referralCode || "");
 
+  // Read pending referral code from AsyncStorage (set by deep link handler in App.js)
   useEffect(() => {
-    if (initialEmail && !email) {
-      setEmail(initialEmail);
-    }
-  }, [initialEmail]);
-
-  useEffect(() => {
-    const checkReferral = async () => {
-      try {
-        const AsyncStorage = require("@react-native-async-storage/async-storage").default;
-        const code = await AsyncStorage.getItem("pendingReferralCode");
-        if (code) {
-          setReferralCode(code);
-        }
-      } catch (err) {
-        if (__DEV__) console.log("Error reading referral code:", err.message);
-      }
-    };
-    checkReferral();
+    AsyncStorage.getItem("pendingReferralCode").then(code => {
+      if (code) setPendingReferralCode(code);
+    }).catch(() => {});
   }, []);
+
 
   const handleRegister = async () => {
     if (loading) return;
@@ -99,7 +88,7 @@ export default function RegisterScreen({ navigation, route }) {
 
     setLoading(true);
     try {
-      const res = await registerSendOtp(trimmedName, trimmedEmail, cleanPhone, selectedRole);
+      const res = await registerSendOtp(trimmedName, trimmedEmail, cleanPhone, selectedRole, pendingReferralCode);
       const data = res?.data || res;
       if (global.showToast) {
         global.showToast(`Verification code sent to ${trimmedEmail}`, "success");
@@ -111,7 +100,7 @@ export default function RegisterScreen({ navigation, route }) {
         role: selectedRole,
         isRegistering: true,
         flow: "SIGNUP",
-        referralCode: referralCode || "",
+        referralCode: pendingReferralCode || null,
       });
     } catch (e) {
       if (__DEV__) console.log("[REGISTER ERROR]:", e);
@@ -150,128 +139,136 @@ export default function RegisterScreen({ navigation, route }) {
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
-        style={styles.container}
+        style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <Text style={styles.title}>Create Account</Text>
-        <Text style={styles.subtitle}>Sign up to continue</Text>
-
-        {referralCode ? (
-          <View style={styles.referralBadge}>
-            <Ionicons name="gift-outline" size={16} color={Colors.primary} style={{ marginRight: 6 }} />
-            <Text style={styles.referralBadgeText}>Referral Code Applied: {referralCode}</Text>
-          </View>
-        ) : null}
-
-        <View style={styles.inputContainer}>
-          <TextInput
-            value={name}
-            onChangeText={(text) => {
-              setName(text);
-              if (error) setError("");
-            }}
-            editable={!loading}
-            style={[styles.input, loading && styles.disabledInput]}
-            placeholder="Full Name"
-            placeholderTextColor={Colors.placeholder}
-            maxLength={50}
-          />
-        </View>
-
-        <View style={[styles.inputContainer, { marginTop: 6 }]}>
-          <TextInput
-            value={email}
-            onChangeText={(text) => {
-              setEmail(text);
-              if (error) setError("");
-            }}
-            editable={!loading}
-            style={[styles.input, loading && styles.disabledInput]}
-            placeholder="Email Address"
-            placeholderTextColor={Colors.placeholder}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            maxLength={100}
-          />
-        </View>
-
-        <View style={[styles.inputContainer, { marginTop: 6 }]}>
-          <TextInput
-            value={phone}
-            onChangeText={(text) => {
-              setPhone(text);
-              if (error) setError("");
-            }}
-            editable={!loading}
-            style={[styles.input, loading && styles.disabledInput]}
-            placeholder="Mobile Phone Number (10 digits)"
-            placeholderTextColor={Colors.placeholder}
-            keyboardType="phone-pad"
-            maxLength={10}
-          />
-        </View>
-
-        <Text style={styles.roleLabel}>I want to register as a</Text>
-        
-        <View style={styles.roleRow}>
-          <TouchableOpacity
-            activeOpacity={0.8}
-            disabled={loading}
-            style={[styles.roleCard, selectedRole === "CUSTOMER" && styles.selectedRoleCard]}
-            onPress={() => {
-              setSelectedRole("CUSTOMER");
-              if (error) setError("");
-            }}
-          >
-            <View style={[styles.radio, selectedRole === "CUSTOMER" && styles.selectedRadio]}>
-              {selectedRole === "CUSTOMER" && <Text style={styles.radioDot}>✓</Text>}
-            </View>
-            <Text style={[styles.roleText, selectedRole === "CUSTOMER" && styles.selectedRoleText]}>
-              Customer
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            activeOpacity={0.8}
-            disabled={loading}
-            style={[styles.roleCard, selectedRole === "ARTIST" && styles.selectedRoleCard]}
-            onPress={() => {
-              setSelectedRole("ARTIST");
-              if (error) setError("");
-            }}
-          >
-            <View style={[styles.radio, selectedRole === "ARTIST" && styles.selectedRadio]}>
-              {selectedRole === "ARTIST" && <Text style={styles.radioDot}>✓</Text>}
-            </View>
-            <Text style={[styles.roleText, selectedRole === "ARTIST" && styles.selectedRoleText]}>
-              Artist
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-        <TouchableOpacity
-          disabled={loading}
-          onPress={() => {
-            setError("");
-            navigation.navigate("Login");
-          }}
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.linkText}>Already have an account? Log In</Text>
-        </TouchableOpacity>
+          <Text style={styles.title}>Create Account</Text>
+          <Text style={styles.subtitle}>Sign up to continue</Text>
 
-        <TouchableOpacity
-          style={[styles.registerButton, loading && styles.disabledButton]}
-          onPress={handleRegister}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color={Colors.white} size="small" />
-          ) : (
-            <Text style={styles.registerText}>Sign Up & Send OTP</Text>
+          {/* Referral badge */}
+          {!!pendingReferralCode && (
+            <View style={styles.referralBadge}>
+              <Ionicons name="gift-outline" size={14} color="#E91E63" style={{ marginRight: 6 }} />
+              <Text style={styles.referralBadgeText}>Invited by a friend ✓ Code: {pendingReferralCode}</Text>
+            </View>
           )}
-        </TouchableOpacity>
+
+          <View style={styles.inputContainer}>
+            <TextInput
+              value={name}
+              onChangeText={(text) => {
+                setName(text);
+                if (error) setError("");
+              }}
+              editable={!loading}
+              style={[styles.input, loading && styles.disabledInput]}
+              placeholder="Full Name"
+              placeholderTextColor={Colors.placeholder}
+              maxLength={50}
+            />
+          </View>
+
+          <View style={[styles.inputContainer, { marginTop: 6 }]}>
+            <TextInput
+              value={email}
+              onChangeText={(text) => {
+                setEmail(text);
+                if (error) setError("");
+              }}
+              editable={!loading}
+              style={[styles.input, loading && styles.disabledInput]}
+              placeholder="Email Address"
+              placeholderTextColor={Colors.placeholder}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              maxLength={100}
+            />
+          </View>
+
+          <View style={[styles.inputContainer, { marginTop: 6 }]}>
+            <TextInput
+              value={phone}
+              onChangeText={(text) => {
+                setPhone(text);
+                if (error) setError("");
+              }}
+              editable={!loading}
+              style={[styles.input, loading && styles.disabledInput]}
+              placeholder="Mobile Phone Number (10 digits)"
+              placeholderTextColor={Colors.placeholder}
+              keyboardType="phone-pad"
+              maxLength={10}
+            />
+          </View>
+
+          <Text style={styles.roleLabel}>I want to register as a</Text>
+          
+          <View style={styles.roleRow}>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              disabled={loading}
+              style={[styles.roleCard, selectedRole === "CUSTOMER" && styles.selectedRoleCard]}
+              onPress={() => {
+                setSelectedRole("CUSTOMER");
+                if (error) setError("");
+              }}
+            >
+              <View style={[styles.radio, selectedRole === "CUSTOMER" && styles.selectedRadio]}>
+                {selectedRole === "CUSTOMER" && <Text style={styles.radioDot}>✓</Text>}
+              </View>
+              <Text style={[styles.roleText, selectedRole === "CUSTOMER" && styles.selectedRoleText]}>
+                Customer
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.8}
+              disabled={loading}
+              style={[styles.roleCard, selectedRole === "ARTIST" && styles.selectedRoleCard]}
+              onPress={() => {
+                setSelectedRole("ARTIST");
+                if (error) setError("");
+              }}
+            >
+              <View style={[styles.radio, selectedRole === "ARTIST" && styles.selectedRadio]}>
+                {selectedRole === "ARTIST" && <Text style={styles.radioDot}>✓</Text>}
+              </View>
+              <Text style={[styles.roleText, selectedRole === "ARTIST" && styles.selectedRoleText]}>
+                Artist
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+          <TouchableOpacity
+            style={[styles.registerButton, loading && styles.disabledButton]}
+            onPress={handleRegister}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color={Colors.white} size="small" />
+            ) : (
+              <Text style={styles.registerText}>Sign Up & Send OTP</Text>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            disabled={loading}
+            style={{ marginTop: 16, marginBottom: 20 }}
+            onPress={() => {
+              setError("");
+              navigation.navigate("Login");
+            }}
+          >
+            <Text style={styles.linkText}>Already have an account? Log In</Text>
+          </TouchableOpacity>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -279,25 +276,15 @@ export default function RegisterScreen({ navigation, route }) {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: Colors.white },
-  container: { flex: 1, backgroundColor: Colors.white, paddingHorizontal: 24, justifyContent: "center" },
+  scrollContent: {
+    flexGrow: 1,
+    backgroundColor: Colors.white,
+    paddingHorizontal: 24,
+    justifyContent: "center",
+    paddingVertical: 20,
+  },
   title: { fontSize: 28, fontWeight: "700", color: Colors.text, textAlign: "center" },
   subtitle: { fontSize: 13, color: Colors.textSecondary, marginTop: 4, marginBottom: 14, textAlign: "center" },
-  referralBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FFF0F5",
-    borderColor: Colors.primary,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    marginBottom: 12,
-  },
-  referralBadgeText: {
-    fontSize: 13,
-    color: Colors.primary,
-    fontWeight: "600",
-  },
   inputContainer: { height: 50, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, flexDirection: "row", alignItems: "center", paddingHorizontal: 15, marginBottom: 4, backgroundColor: Colors.inputBackground },
   input: { flex: 1, fontSize: 15, color: Colors.text },
   disabledInput: { opacity: 0.6, color: Colors.textSecondary },
@@ -315,4 +302,6 @@ const styles = StyleSheet.create({
   disabledButton: { opacity: 0.7 },
   registerText: { color: Colors.white, fontWeight: "700", fontSize: 16 },
   linkText: { color: Colors.primary, textAlign: "center", fontWeight: "600", marginBottom: 8, marginTop: 4 },
+  referralBadge: { flexDirection: "row", alignItems: "center", backgroundColor: "#FFF0F5", borderWidth: 1, borderColor: "#F8BBD0", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 12, alignSelf: "stretch" },
+  referralBadgeText: { fontSize: 13, color: "#E91E63", fontWeight: "600", flex: 1, flexWrap: "wrap" },
 });

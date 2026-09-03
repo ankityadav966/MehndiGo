@@ -57,6 +57,16 @@ module.exports = (
           as: "reviews",
         }
       );
+
+      if (models.CustomDesignRequest) {
+        ArtistProfile.hasMany(
+          models.CustomDesignRequest,
+          {
+            foreignKey: "artist_id",
+            as: "custom_design_requests",
+          }
+        );
+      }
     }
   }
 
@@ -118,6 +128,12 @@ module.exports = (
         type: DataTypes.BOOLEAN,
         allowNull: false,
         defaultValue: true,
+      },
+
+      service_radius: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        defaultValue: null,
       },
 
       aadhaar_front: {

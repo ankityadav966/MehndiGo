@@ -17,9 +17,8 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import Colors from "../../constants/Colors";
 import Alert from "../../utils/Alert";
 import { getCustomerWishlist, removeArtistFavorite } from "../../services/customer";
-import CustomButton from "../../components/CustomButton";
-
 import OptimizedImage from "../../components/OptimizedImage";
+import Config from "../../constants/Config";
 
 export default function WishlistScreen({ navigation }) {
   const [wishlist, setWishlist] = useState([]);
@@ -52,11 +51,28 @@ export default function WishlistScreen({ navigation }) {
     fetchWishlist();
   }, [fetchWishlist]);
 
+  // Back handling: If subscreen -> goBack(), If tab -> switch to Home tab
   useEffect(() => {
-    const unsubscribe = navigation.addListener("focus", () => {
+    const { BackHandler } = require("react-native");
+    const unsubscribeFocus = navigation.addListener("focus", () => {
       fetchWishlist();
     });
-    return unsubscribe;
+
+    const onBackPress = () => {
+      if (navigation?.canGoBack && navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        navigation.navigate("CustomerTabs", { screen: "Home" });
+      }
+      return true;
+    };
+
+    const backSub = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+
+    return () => {
+      unsubscribeFocus();
+      backSub.remove();
+    };
   }, [navigation, fetchWishlist]);
 
   const handleRemoveFavorite = async (artistId) => {
@@ -74,7 +90,7 @@ export default function WishlistScreen({ navigation }) {
     if (wishlist.length === 0) return;
     try {
       const names = wishlist.map((a) => a.user?.name || a.name || "Mehndi Specialist").join(", ");
-      const shareUrl = "https://mehendigoo.com";
+      const shareUrl = Config.PRIMARY_DOMAIN;
       await Share.share({
         message: `Check out my favorite MehndiGo artists collection: ${names}\n\nBook top home mehendi specialists on MehndiGo! ${shareUrl}`,
         title: "My Favorite Mehndi Artists Collection",
@@ -125,7 +141,7 @@ export default function WishlistScreen({ navigation }) {
       ? `Starting ₹${artist.starting_price}`
       : artist.services?.[0]?.minimum_price
       ? `Starting ₹${artist.services[0].minimum_price}`
-      : "";
+      : "Price on Request";
     const isApproved = artist.verification_status === "APPROVED" || artist.status === "APPROVED";
 
     const portfolioImages = Array.isArray(artist.portfolio_images) && artist.portfolio_images.length > 0
@@ -142,7 +158,7 @@ export default function WishlistScreen({ navigation }) {
         <TouchableOpacity
           activeOpacity={0.9}
           style={styles.cardHeaderRow}
-          onPress={() => navigation.navigate("ArtistProfile", { artistId: artist.id, artist })}
+          onPress={() => navigation.navigate("ArtistProfile", { artistId: artist.id, artist, from: "Wishlist" })}
         >
           <View style={styles.imageWrap}>
             <OptimizedImage
@@ -253,14 +269,14 @@ export default function WishlistScreen({ navigation }) {
         <View style={styles.cardActionsRow}>
           <TouchableOpacity
             style={styles.outlineBtn}
-            onPress={() => navigation.navigate("ArtistProfile", { artistId: artist.id, artist })}
+            onPress={() => navigation.navigate("ArtistProfile", { artistId: artist.id, artist, from: "Wishlist" })}
           >
             <Text style={styles.outlineBtnText}>View Full Profile</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.primaryBookBtn}
-            onPress={() => navigation.navigate("ArtistProfile", { artistId: artist.id, artist })}
+            onPress={() => navigation.navigate("ArtistProfile", { artistId: artist.id, artist, from: "Wishlist" })}
           >
             <Text style={styles.primaryBookBtnText}>Book Artist Now</Text>
             <Ionicons name="arrow-forward" size={14} color="#FFFFFF" style={{ marginLeft: 4 }} />

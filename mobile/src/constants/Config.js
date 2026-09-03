@@ -14,18 +14,17 @@ export const Config = {
   APP_SCHEME: "mehendigoo",
   SUPPORTED_SCHEMES: ["mehendigoo", "mehndigo", "exp+sonu-yadav"],
 
-  // Primary Web & Deep Link Domain
-  PRIMARY_DOMAIN: "https://mehendigoo.com",
+  // Primary Web & Deep Link Domain (Canonical)
+  PRIMARY_DOMAIN: "https://mehndigo.in",
   SUPPORTED_DOMAINS: [
-    "mehendigoo.com",
-    "www.mehendigoo.com",
-    "mehndigo.com",
-    "www.mehndigo.com",
-    "mehendigo.app",
-    "www.mehendigo.app",
     "mehndigo.in",
-    "www.mehndigo.in"
-  ]
+    "api.mehndigo.in"
+  ],
+
+  // Feature Flag: Set to true when Admin approval is required for artists before dashboard access
+  ARTIST_APPROVAL_REQUIRED: false,
 };
+
+export const ARTIST_APPROVAL_REQUIRED = Config.ARTIST_APPROVAL_REQUIRED;
 
 export default Config;

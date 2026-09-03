@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from "react";
+import React, { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import {
   FlatList,
   StyleSheet,
@@ -12,7 +12,11 @@ import {
   ActivityIndicator,
   Modal,
   Clipboard,
-  Linking
+  Linking,
+  Dimensions,
+  StatusBar,
+  Keyboard,
+  ScrollView
 } from "react-native";
 import Alert from "../../utils/Alert";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -22,9 +26,9 @@ import * as Location from "expo-location";
 import ImageView from "react-native-image-viewing";
 
 import Colors from "../../constants/Colors";
-
 import { useAudioRecorder, createAudioPlayer, AudioModule, RecordingPresets, setAudioModeAsync } from "expo-audio";
 import { useSocket } from "../../context/SocketContext";
+import { useAuth } from "../../context/AuthContext";
 import {
   getChatHistory,
   deleteMessage,
@@ -35,15 +39,128 @@ import {
 } from "../../services/chat";
 import { getBookingDetails } from "../../services/booking";
 
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
+
+// Header Primary Theme Color (Red as requested by user)
+const HEADER_RED = "#D32F2F";
+
+// WhatsApp Style Emoji Tray Data
+const EMOJI_CATEGORIES = [
+  {
+    id: "smileys",
+    title: "Smileys",
+    icon: "happy-outline",
+    emojis: ["😊", "😂", "🤣", "😍", "🥰", "😘", "😋", "😎", "🤩", "🥳", "🥺", "🤗", "😇", "🤫", "😴", "😁", "😃", "😉", "😜", "🤭", "😌", "🙌", "👏", "🤝"]
+  },
+  {
+    id: "gestures",
+    title: "Love & Gestures",
+    icon: "thumbs-up-outline",
+    emojis: ["👍", "👌", "✌️", "🤞", "🙏", "❤️", "💖", "💕", "💞", "💓", "🔥", "✨", "💯", "⭐", "💫", "💐", "🌹", "🎉", "🎊", "🎁", "🎈", "🪄", "🪅", "👑"]
+  },
+  {
+    id: "mehndi",
+    title: "Mehndi & Style",
+    icon: "sparkles-outline",
+    emojis: ["🌺", "🌸", "💍", "👰", "💃", "🪔", "🌿", "🕊️", "💎", "🎀", "🪞", "🥻", "👗", "👠", "🧿", "🪷", "🌼", "🌻", "🪡", "🎨", "💅", "💄", "🪘", "🪩"]
+  }
+];
+
+const QUICK_RESPONSES = [
+  "Namaste! 🙏",
+  "Thank you so much! 😊",
+  "The design looks gorgeous! 🌺",
+  "Please share your live location 📍",
+  "I am on my way 🚗",
+  "Confirmed! Looking forward to it 👍",
+  "How much time will it take? ⏳",
+  "Done! Payment completed 💳"
+];
+
+// Helper: Extract valid media URL from any message payload variation
+export const resolveMediaUrl = (item) => {
+  if (!item) return null;
+  if (item.media_url && typeof item.media_url === "string") return item.media_url;
+  if (item.mediaUrl && typeof item.mediaUrl === "string") return item.mediaUrl;
+  if (typeof item.media === "string" && item.media.length > 5) return item.media;
+  if (item.media?.file_url && typeof item.media.file_url === "string") return item.media.file_url;
+  if (item.media?.fileUrl && typeof item.media.fileUrl === "string") return item.media.fileUrl;
+  if (item.media?.url && typeof item.media.url === "string") return item.media.url;
+  if (item.media?.uri && typeof item.media.uri === "string") return item.media.uri;
+  if (item.file_url && typeof item.file_url === "string") return item.file_url;
+  if (item.fileUrl && typeof item.fileUrl === "string") return item.fileUrl;
+  if (item.url && typeof item.url === "string") return item.url;
+  if (typeof item.message === "string" && (item.message.startsWith("http") || item.message.startsWith("data:image"))) {
+    return item.message;
+  }
+  return null;
+};
+
+// Helper: Determine the exact message type
+export const resolveMessageType = (item) => {
+  if (!item) return "TEXT";
+  let type = String(item.message_type || item.messageType || "TEXT").toUpperCase();
+  const url = resolveMediaUrl(item);
+  if (type === "TEXT" && url) {
+    if (url.match(/\.(jpg|jpeg|png|webp|gif)/i) || url.startsWith("data:image")) return "IMAGE";
+    if (url.match(/\.(mp4|mov|avi|mkv)/i) || url.startsWith("data:video")) return "VIDEO";
+    if (url.match(/\.(mp3|wav|m4a|aac|ogg)/i) || url.startsWith("data:audio") || url.includes("voice")) return "VOICE";
+    if (url.match(/\.(pdf|doc|docx)/i) || url.startsWith("data:application")) return "PDF";
+    if (url.includes("maps.google.com") || url.includes("google.com/maps")) return "LOCATION";
+  }
+  return type;
+};
+
+// WhatsApp Time Format: e.g. "11:42 AM"
+export const formatMessageTime = (dateStr) => {
+  if (!dateStr) return "";
+  try {
+    const d = new Date(dateStr);
+    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true });
+  } catch {
+    return "";
+  }
+};
+
+// WhatsApp Date Separator: "TODAY", "YESTERDAY", or "26 AUG 2026"
+export const formatDateSeparator = (dateStr) => {
+  if (!dateStr) return "";
+  try {
+    const d = new Date(dateStr);
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+
+    if (d.toDateString() === today.toDateString()) return "TODAY";
+    if (d.toDateString() === yesterday.toDateString()) return "YESTERDAY";
+    return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }).toUpperCase();
+  } catch {
+    return "";
+  }
+};
+
 export default function ChatRoomScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
-  const { bookingId, receiverId, receiverName, receiverImage } = route.params || {};
+  const { user } = useAuth();
+  const {
+    bookingId,
+    receiverId,
+    receiverName,
+    receiverImage,
+    artistId,
+    artistName,
+    artistAvatar,
+    initialMessage
+  } = route.params || {};
+
+  const effectiveReceiverId = receiverId || artistId;
+  const effectiveReceiverName = receiverName || artistName;
+  const effectiveReceiverImage = receiverImage || artistAvatar;
 
   const {
     connected,
     typingUsers,
     onlineStatus,
-    lastSeen,
     messages,
     setMessages,
     joinRoom,
@@ -53,20 +170,19 @@ export default function ChatRoomScreen({ route, navigation }) {
   } = useSocket();
 
   const [loading, setLoading] = useState(true);
-  const [inputText, setInputText] = useState("");
+  const [inputText, setInputText] = useState(initialMessage || "");
   const [booking, setBooking] = useState(null);
   const [isVoiceSupported, setIsVoiceSupported] = useState(false);
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
 
+  // Check voice hardware support
   useEffect(() => {
     async function checkVoiceSupport() {
       try {
-        await setAudioModeAsync({
-          playsInSilentMode: true
-        });
+        await setAudioModeAsync({ playsInSilentMode: true });
         setIsVoiceSupported(true);
       } catch (err) {
-        if (__DEV__) console.log("Native Audio recording is not supported in this environment:", err.message);
+        if (__DEV__) console.log("Native Audio recording not supported:", err.message);
         setIsVoiceSupported(false);
       }
     }
@@ -78,6 +194,8 @@ export default function ChatRoomScreen({ route, navigation }) {
   const [editingMessage, setEditingMessage] = useState(null);
   const [attachmentVisible, setAttachmentVisible] = useState(false);
   const [mediaUploading, setMediaUploading] = useState(false);
+  const [emojiPickerVisible, setEmojiPickerVisible] = useState(false);
+  const [activeEmojiCategory, setActiveEmojiCategory] = useState("smileys");
 
   // Voice Message Recording States
   const [recordingDuration, setRecordingDuration] = useState(0);
@@ -100,16 +218,18 @@ export default function ChatRoomScreen({ route, navigation }) {
   const flatListRef = useRef(null);
   const typingTimeoutRef = useRef(null);
 
+  // Load chat history and booking details
   const loadHistoryAndDetails = useCallback(async () => {
     try {
       const history = await getChatHistory(bookingId);
-      if (history) {
+      if (Array.isArray(history)) {
         setMessages(history);
       }
       
-      // Load Booking details for Card
       const bDetails = await getBookingDetails(bookingId);
-      setBooking(bDetails);
+      if (bDetails) {
+        setBooking(bDetails);
+      }
     } catch (e) {
       if (__DEV__) console.log("Error loading history/booking details:", e.message);
     } finally {
@@ -122,7 +242,7 @@ export default function ChatRoomScreen({ route, navigation }) {
       return true;
     }
     if (booking?.booking_status === "COMPLETED") {
-      const completionTime = new Date(booking.updatedAt || booking.createdAt).getTime();
+      const completionTime = new Date(booking.updatedAt || booking.createdAt || booking.created_at).getTime();
       const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
       return Date.now() - completionTime > sevenDaysMs;
     }
@@ -137,25 +257,52 @@ export default function ChatRoomScreen({ route, navigation }) {
     }
 
     joinRoom(bookingId);
-    const timer = setTimeout(() => {
-      loadHistoryAndDetails();
-    }, 0);
+    loadHistoryAndDetails();
+
+    // Fast 1.2-second smart polling backup to guarantee instantaneous sync
+    const interval = setInterval(() => {
+      getChatHistory(bookingId).then((history) => {
+        if (Array.isArray(history) && history.length > 0) {
+          setMessages((prev) => {
+            const pending = prev.filter((m) => m.isOfflinePending);
+            const remainingPending = pending.filter((p) => !history.some((h) => h.message === p.message || String(h.id) === String(p.id)));
+            if (history.length === prev.length && !pending.length) {
+              const lastPrev = prev[prev.length - 1];
+              const lastHist = history[history.length - 1];
+              if (lastPrev && lastHist && String(lastPrev.id) === String(lastHist.id)) {
+                return prev;
+              }
+            }
+            return [...history, ...remainingPending];
+          });
+        }
+      }).catch(() => {});
+    }, 1200);
 
     return () => {
-      clearTimeout(timer);
+      clearInterval(interval);
       leaveRoom(bookingId);
       if (soundRef.current) {
-        soundRef.current.unloadAsync();
+        soundRef.current.unloadAsync ? soundRef.current.unloadAsync() : null;
       }
     };
-  }, [bookingId, joinRoom, leaveRoom, loadHistoryAndDetails]);
+  }, [bookingId, joinRoom, leaveRoom, loadHistoryAndDetails, setMessages]);
+
+  // Auto-scroll on new message arrivals
+  useEffect(() => {
+    if (messages.length > 0) {
+      const timer = setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [messages.length]);
 
   // Handle message send
   const handleSend = () => {
     if (!inputText.trim()) return;
 
     if (editingMessage) {
-      // Edit mode
       editMessage(editingMessage.id, inputText.trim())
         .then(() => {
           setEditingMessage(null);
@@ -163,12 +310,13 @@ export default function ChatRoomScreen({ route, navigation }) {
         })
         .catch((e) => Alert.alert("Error", e.message));
     } else {
-      // Send regular message (or reply)
       sendChatMessage(
         bookingId,
         inputText.trim(),
         "TEXT",
-        replyMessage ? replyMessage.id : null
+        replyMessage ? replyMessage.id : null,
+        null,
+        receiverId
       );
       setReplyMessage(null);
       setInputText("");
@@ -178,8 +326,6 @@ export default function ChatRoomScreen({ route, navigation }) {
   // Keyboard typing indicator helper
   const handleTextChange = (text) => {
     setInputText(text);
-
-    // Socket typing broadcast
     emitTyping(bookingId, true);
 
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
@@ -190,26 +336,27 @@ export default function ChatRoomScreen({ route, navigation }) {
 
   // 1. Camera Capture
   const handleCamera = async () => {
+    setAttachmentVisible(false);
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert("Access Denied", "Camera permission is required.");
+      Alert.alert("Access Denied", "Camera permission is required to take photos.");
       return;
     }
 
     const res = await ImagePicker.launchCameraAsync({
       mediaTypes: ['images'],
       allowsEditing: true,
-      quality: 0.6
+      quality: 0.7
     });
 
     if (!res.canceled && res.assets?.[0]) {
       uploadMediaAttachment(res.assets[0].uri, "image");
     }
-    setAttachmentVisible(false);
   };
 
   // 2. Gallery Pick
   const handleGallery = async () => {
+    setAttachmentVisible(false);
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
       Alert.alert("Access Denied", "Gallery permission is required.");
@@ -219,14 +366,13 @@ export default function ChatRoomScreen({ route, navigation }) {
     const res = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images', 'videos'],
       allowsEditing: true,
-      quality: 0.6
+      quality: 0.7
     });
 
     if (!res.canceled && res.assets?.[0]) {
       const isVideo = res.assets[0].type === "video";
       uploadMediaAttachment(res.assets[0].uri, isVideo ? "video" : "image");
     }
-    setAttachmentVisible(false);
   };
 
   const handleVideoAttachment = async () => {
@@ -239,7 +385,7 @@ export default function ChatRoomScreen({ route, navigation }) {
     const res = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['videos'],
       allowsEditing: true,
-      quality: 0.6
+      quality: 0.7
     });
     if (!res.canceled && res.assets?.[0]) {
       uploadMediaAttachment(res.assets[0].uri, "video");
@@ -258,7 +404,7 @@ export default function ChatRoomScreen({ route, navigation }) {
       }
     } catch (err) {
       if (__DEV__) console.log("Document picker error:", err.message);
-      Alert.alert("Notice", "Documents picker is not available in the current environment.");
+      Alert.alert("Notice", "Documents picker is not available in current environment.");
     }
   };
 
@@ -272,32 +418,15 @@ export default function ChatRoomScreen({ route, navigation }) {
         return;
       }
 
-      // Check if GPS is enabled
       const gpsEnabled = await Location.hasServicesEnabledAsync();
       if (!gpsEnabled) {
-        try {
-          if (Platform.OS === "android") {
-            await Location.enableNetworkProviderAsync();
-          } else {
-            Alert.alert(
-              "GPS Disabled",
-              "Please enable Location Services/GPS in your device settings.",
-              [
-                { text: "Settings", onPress: () => Linking.openURL("app-settings:") },
-                { text: "Cancel" }
-              ]
-            );
-            return;
-          }
-        } catch (gpsError) {
-          Alert.alert(
-            "GPS Required",
-            "Please enable Location Services/GPS in your device settings to continue.",
-            [
-              { text: "Settings", onPress: () => Linking.openURL("app-settings:") },
-              { text: "Cancel" }
-            ]
-          );
+        if (Platform.OS === "android") {
+          await Location.enableNetworkProviderAsync().catch(() => {});
+        } else {
+          Alert.alert("GPS Disabled", "Please enable Location Services in your settings.", [
+            { text: "Settings", onPress: () => Linking.openURL("app-settings:") },
+            { text: "Cancel" }
+          ]);
           return;
         }
       }
@@ -307,14 +436,13 @@ export default function ChatRoomScreen({ route, navigation }) {
         accuracy: Location.Accuracy.Balanced
       });
       
-      // Share location coordinate payload
       sendChatMessage(bookingId, `📍 Shared Location`, "LOCATION", null, {
         file_url: `https://maps.google.com/?q=${loc.coords.latitude},${loc.coords.longitude}`,
         file_type: "location",
         waveform: { latitude: loc.coords.latitude, longitude: loc.coords.longitude }
-      });
+      }, receiverId);
     } catch (e) {
-      Alert.alert("Error", "Could not fetch current coordinates. Please make sure location services are enabled.");
+      Alert.alert("Error", "Could not fetch current coordinates. Please make sure GPS is enabled.");
     } finally {
       setMediaUploading(false);
     }
@@ -325,11 +453,14 @@ export default function ChatRoomScreen({ route, navigation }) {
     setMediaUploading(true);
     try {
       const res = await uploadChatMedia(uri, type);
+      const persistentUrl = res?.file_url || res?.url || uri;
       sendChatMessage(bookingId, `📎 Sent ${type}`, type.toUpperCase(), null, {
-        file_url: res.file_url,
+        file_url: persistentUrl,
+        fileUrl: persistentUrl,
+        url: persistentUrl,
         file_type: type,
-        file_size: res.file_size
-      });
+        file_size: res?.file_size || null
+      }, receiverId);
     } catch (e) {
       Alert.alert("Upload Error", e.message || "Failed to upload file attachment.");
     } finally {
@@ -337,95 +468,124 @@ export default function ChatRoomScreen({ route, navigation }) {
     }
   };
 
-  // 4. Voice Recording Operations
+  // Emoji and Quick Phrase Handlers
+  const handleEmojiSelect = (emoji) => {
+    setInputText((prev) => prev + emoji);
+  };
+
+  const handleQuickResponseSelect = (phrase) => {
+    setInputText(phrase);
+    setEmojiPickerVisible(false);
+  };
+
+  const handleBackspaceEmoji = () => {
+    setInputText((prev) => {
+      if (!prev) return "";
+      const chars = Array.from(prev);
+      chars.pop();
+      return chars.join("");
+    });
+  };
+
+  // 4. Voice Recording Operations (Start, Stop & Send, Cancel)
   const startRecording = async () => {
     if (!isVoiceSupported) {
-      Alert.alert("Notice", "Voice messages aren't available in the current app environment.");
+      Alert.alert("Notice", "Voice messages aren't available in current environment.");
       return;
     }
     try {
       const perm = await AudioModule.requestRecordingPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert("Permission Denied", "Audio recording permission required.");
+        Alert.alert("Permission Denied", "Microphone access is required to record voice notes.");
         return;
       }
-
-      await setAudioModeAsync({
-        playsInSilentMode: true
-      });
-
-      await audioRecorder.prepareToRecordAsync();
-      audioRecorder.record();
-
+      setEmojiPickerVisible(false);
       setIsRecording(true);
       setRecordingDuration(0);
-
+      if (recordingTimer.current) clearInterval(recordingTimer.current);
       recordingTimer.current = setInterval(() => {
         setRecordingDuration((prev) => prev + 1);
       }, 1000);
+
+      await audioRecorder.prepareToRecordAsync();
+      audioRecorder.record();
     } catch (err) {
-      Alert.alert("Error", "Could not start audio recorder.");
+      if (__DEV__) console.log("Audio record error:", err.message);
+      setIsRecording(false);
+      if (recordingTimer.current) clearInterval(recordingTimer.current);
+      Alert.alert("Recording Error", "Could not start audio recorder. Please try again.");
     }
   };
 
   const stopRecordingAndSend = async () => {
-    if (!audioRecorder.isRecording) return;
+    if (!isRecording) return;
 
+    const currentDuration = recordingDuration || 1;
     setIsRecording(false);
-    clearInterval(recordingTimer.current);
+    if (recordingTimer.current) clearInterval(recordingTimer.current);
 
     try {
       await audioRecorder.stop();
       const uri = audioRecorder.uri;
+      if (__DEV__) console.log("[RECORDED AUDIO URI]", uri);
 
       if (uri) {
         setMediaUploading(true);
-        const res = await uploadChatMedia(uri, "voice");
-        sendChatMessage(bookingId, `🎵 Voice Note`, "VOICE", null, {
-          file_url: res.file_url,
+        let persistentUrl = uri;
+        try {
+          const res = await uploadChatMedia(uri, "voice");
+          persistentUrl = res?.file_url || res?.url || uri;
+        } catch (uploadErr) {
+          if (__DEV__) console.log("[VOICE UPLOAD NOTICE, FALLBACK TO DIRECT URI]", uploadErr.message);
+        }
+
+        await sendChatMessage(bookingId, `🎵 Voice Note (${currentDuration}s)`, "VOICE", null, {
+          file_url: persistentUrl,
+          fileUrl: persistentUrl,
+          url: persistentUrl,
           file_type: "voice",
-          duration: recordingDuration
-        });
+          duration: currentDuration
+        }, receiverId);
+      } else {
+        Alert.alert("Notice", "Voice recording was empty. Please try recording again.");
       }
     } catch (e) {
-      Alert.alert("Audio Error", "Failed to process voice note.");
+      if (__DEV__) console.log("[VOICE SEND ERROR]", e.message);
+      Alert.alert("Audio Error", "Failed to process and send voice note.");
     } finally {
       setMediaUploading(false);
     }
   };
 
   const cancelRecording = async () => {
-    if (!audioRecorder.isRecording) return;
     setIsRecording(false);
-    clearInterval(recordingTimer.current);
+    if (recordingTimer.current) clearInterval(recordingTimer.current);
     try {
       await audioRecorder.stop();
     } catch (e) {}
   };
 
   const handleMicPress = () => {
-    if (!isVoiceSupported) {
-      Alert.alert("Notice", "Voice messages aren't available in the current app environment.");
-      return;
+    if (isRecording) {
+      stopRecordingAndSend();
+    } else {
+      startRecording();
     }
-    Alert.alert("How to Record", "Hold (long press) the microphone button to record. Release to send your voice note.");
   };
 
   // Play voice note playback
   const playAudio = async (messageId, url) => {
     try {
       if (playingAudioId === messageId) {
-        // Pause
         if (soundRef.current) {
-          soundRef.current.pause();
+          soundRef.current.pause ? soundRef.current.pause() : null;
           setPlayingAudioId(null);
         }
         return;
       }
 
-      // Release active player
       if (soundRef.current) {
-        soundRef.current.release();
+        soundRef.current.release ? soundRef.current.release() : null;
         soundRef.current = null;
       }
 
@@ -437,86 +597,81 @@ export default function ChatRoomScreen({ route, navigation }) {
         if (status.didJustFinish) {
           setPlayingAudioId(null);
           subscription.remove();
-          player.release();
-          if (soundRef.current === player) {
-            soundRef.current = null;
-          }
         }
       });
-
       player.play();
-    } catch (e) {
-      Alert.alert("Error", "Playback failed.");
+    } catch (err) {
+      Alert.alert("Audio Error", "Could not play voice recording.");
+      setPlayingAudioId(null);
     }
   };
 
-  // Star / Block / Moderation
-  const handleBlockUser = async () => {
+  // Moderation Block User
+  const handleBlockUser = () => {
     setModerationMenuVisible(false);
-    Alert.alert("Block User", "Are you sure you want to block/unblock this user?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Confirm",
-        onPress: async () => {
-          try {
-            await blockUser(receiverId);
-            Alert.alert("Done", "Preference updated successfully.");
-            navigation.goBack();
-          } catch (e) {
-            Alert.alert("Error", e.message);
+    Alert.alert(
+      "Block Contact",
+      `Are you sure you want to block ${receiverName || "this user"}? You won't receive messages from them.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Block",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await blockUser(receiverId);
+              Alert.alert("User Blocked", "User has been blocked.");
+              navigation.goBack();
+            } catch (e) {
+              Alert.alert("Error", e.message);
+            }
           }
         }
-      }
-    ]);
+      ]
+    );
   };
 
+  // Moderation Report User
   const handleReportUserSubmit = async () => {
     if (!reportReason.trim()) {
-      Alert.alert("Error", "Please explain the reason for the moderation report.");
+      Alert.alert("Validation", "Please describe the reason for your report.");
       return;
     }
-
     try {
-      await reportUser(bookingId, receiverId, reportReason.trim());
+      await reportUser(receiverId, reportReason.trim());
       setReportModalVisible(false);
       setReportReason("");
-      Alert.alert("Report Filed", "Our administrators will review this chat session within 24 hours.");
+      Alert.alert("Report Submitted", "Thank you for letting us know. Our team will review this transcript.");
     } catch (e) {
       Alert.alert("Error", e.message);
     }
   };
 
-  // Delete message popup
+  // Trigger Delete Message
   const triggerDeleteMessage = (item) => {
-    const isMe = item.sender_id === useSocket.user?.id; // Check using local storage check
+    const isMe = Boolean(item.isMe || (user?.id && Number(item.sender_id || item.senderId) === Number(user.id)));
     const options = [
       { text: "Delete For Me", onPress: () => deleteMessage(item.id, "me").then(() => loadHistoryAndDetails()) }
     ];
 
-    const messageTime = new Date(item.createdAt).getTime();
-    if (item.sender_id === receiverId) {
-      // Received message
-    } else {
-      // Sent by me, can delete for everyone if under 15m
-      if (getNow() - messageTime < 15 * 60 * 1000) {
-        options.push({
-          text: "Delete For Everyone",
-          style: "destructive",
-          onPress: () => deleteMessage(item.id, "everyone")
-        });
-      }
+    const messageTime = new Date(item.createdAt || item.created_at || item.timestamp).getTime();
+    if (isMe && Date.now() - messageTime < 15 * 60 * 1000) {
+      options.push({
+        text: "Delete For Everyone",
+        style: "destructive",
+        onPress: () => deleteMessage(item.id, "everyone").then(() => loadHistoryAndDetails())
+      });
     }
 
     options.push({ text: "Cancel", style: "cancel" });
-
-    Alert.alert("Delete Message", "Do you want to delete this message?", options);
+    Alert.alert("Delete Message", "Delete message from chat?", options);
   };
 
-  // Open Message Actions options sheet
+  // Bubble Long Press Menu
   const handleBubbleLongPress = (item) => {
-    const isMe = item.sender_id !== receiverId;
-    const messageTime = new Date(item.createdAt).getTime();
-    const canEdit = isMe && (getNow() - messageTime < 15 * 60 * 1000) && item.message_type === "TEXT";
+    const isMe = Boolean(item.isMe || (user?.id && Number(item.sender_id || item.senderId) === Number(user.id)));
+    const messageTime = new Date(item.createdAt || item.created_at || item.timestamp).getTime();
+    const canEdit = isMe && (Date.now() - messageTime < 15 * 60 * 1000) && (item.message_type === "TEXT" || !item.media_url);
 
     Alert.alert(
       "Message Options",
@@ -524,126 +679,92 @@ export default function ChatRoomScreen({ route, navigation }) {
       [
         { text: "Reply", onPress: () => setReplyMessage(item) },
         canEdit ? { text: "Edit", onPress: () => { setEditingMessage(item); setInputText(item.message); } } : null,
-        { text: "Copy Text", onPress: () => { Clipboard.setString(item.message); } },
+        { text: "Copy", onPress: () => { Clipboard.setString(item.message); Alert.alert("Copied", "Message copied to clipboard."); } },
         { text: "Delete", style: "destructive", onPress: () => triggerDeleteMessage(item) },
         { text: "Cancel", style: "cancel" }
       ].filter(Boolean)
     );
   };
 
-  // Renders chat bubble attachments
-  const renderMessageContent = (item) => {
+  // WhatsApp Message Content Renderer
+  const renderMessageContent = (item, isMe) => {
     if (item.is_deleted_everyone) {
       return (
         <View style={styles.deletedWrapper}>
-          <Ionicons name="ban-outline" size={14} color={Colors.textTertiary} />
+          <Ionicons name="ban-outline" size={14} color="#8696A0" />
           <Text style={styles.deletedText}>This message was deleted</Text>
         </View>
       );
     }
 
-    let resolvedType = item.message_type;
-    const isMediaUrl = item.message && (item.message.includes("cloudinary") || item.message.startsWith("http"));
-    if (resolvedType === "TEXT" && isMediaUrl) {
-      if (item.message.match(/\.(jpg|jpeg|png|webp|gif)/i)) {
-        resolvedType = "IMAGE";
-        if (!item.media) {
-          item.media = { file_url: item.message, fileUrl: item.message, file_type: "image", fileType: "image" };
-        }
-      } else if (item.message.match(/\.(mp4|mov|avi|mkv)/i)) {
-        resolvedType = "VIDEO";
-        if (!item.media) {
-          item.media = { file_url: item.message, fileUrl: item.message, file_type: "video", fileType: "video" };
-        }
-      } else if (item.message.match(/\.(mp3|wav|m4a|aac|ogg)/i) || item.message.includes("voice")) {
-        resolvedType = "VOICE";
-        if (!item.media) {
-          item.media = { file_url: item.message, fileUrl: item.message, file_type: "voice", fileType: "voice" };
-        }
-      } else if (item.message.includes("maps.google.com") || item.message.includes("google.com/maps")) {
-        resolvedType = "LOCATION";
-        if (!item.media) {
-          item.media = { file_url: item.message, fileUrl: item.message, file_type: "location", fileType: "location" };
-        }
-      }
-    }
+    const resolvedType = resolveMessageType(item);
+    const mediaUrl = resolveMediaUrl(item);
 
     switch (resolvedType) {
       case "IMAGE":
-        const imageUrl = item.media?.file_url || item.media?.fileUrl;
         return (
           <TouchableOpacity
             onPress={() => {
-              setViewerImages([{ uri: imageUrl }]);
-              setViewerVisible(true);
+              if (mediaUrl) {
+                setViewerImages([{ uri: mediaUrl }]);
+                setViewerVisible(true);
+              }
             }}
             onLongPress={() => handleBubbleLongPress(item)}
             activeOpacity={0.9}
+            style={styles.imageBubbleContainer}
           >
-            <Image source={{ uri: imageUrl }} style={styles.bubbleImage} />
+            <Image
+              source={{ uri: mediaUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400" }}
+              style={styles.bubbleImage}
+            />
+            {item.message && !item.message.startsWith("[Photo") && !item.message.startsWith("http") && (
+              <Text style={styles.imageCaptionText}>{item.message}</Text>
+            )}
           </TouchableOpacity>
         );
 
       case "VIDEO":
-        const videoUrl = item.media?.file_url || item.media?.fileUrl;
         return (
           <TouchableOpacity
             onLongPress={() => handleBubbleLongPress(item)}
             activeOpacity={0.9}
             style={styles.videoPlaceholder}
+            onPress={() => {
+              if (mediaUrl) {
+                navigation.navigate("VideoPlayer", { videoUrl: mediaUrl, title: "Chat Video" });
+              }
+            }}
           >
             <Image
-              source={{ uri: "https://images.unsplash.com/photo-1492691527719-9d1e07e534b4?w=300" }}
+              source={{ uri: mediaUrl || "https://images.unsplash.com/photo-1492691527719-9d1e07e534b4?w=400" }}
               style={styles.bubbleImage}
             />
-            <TouchableOpacity
-              style={styles.videoPlayBtn}
-              onPress={() => {
-                navigation.navigate("VideoPlayer", {
-                  videoUrl,
-                  title: "Chat Video"
-                });
-              }}
-            >
-              <Ionicons name="play-circle" size={48} color={Colors.white} />
-            </TouchableOpacity>
+            <View style={styles.videoPlayOverlay}>
+              <Ionicons name="play-circle" size={48} color="#FFFFFF" />
+            </View>
           </TouchableOpacity>
         );
 
       case "PDF":
-        const pdfUrl = item.media?.file_url || item.media?.fileUrl;
-        const fileSize = item.media?.file_size || item.media?.fileSize;
-        const getFileName = (url) => {
-          if (!url) return "Document";
-          try {
-            const parts = url.split("/");
-            const name = parts[parts.length - 1];
-            return decodeURIComponent(name);
-          } catch {
-            return "Document";
-          }
-        };
-        const fileName = getFileName(pdfUrl);
+        const fileName = mediaUrl ? decodeURIComponent(mediaUrl.split("/").pop()) : "Document.pdf";
         return (
           <TouchableOpacity
             style={styles.pdfCard}
-            onPress={() => Linking.openURL(pdfUrl)}
+            onPress={() => mediaUrl && Linking.openURL(mediaUrl)}
             onLongPress={() => handleBubbleLongPress(item)}
           >
-            <Ionicons name="document-text" size={32} color={Colors.primary} />
+            <View style={styles.pdfIconBox}>
+              <Ionicons name="document-text" size={26} color="#FFFFFF" />
+            </View>
             <View style={styles.pdfDetails}>
-              <Text style={styles.pdfName} numberOfLines={1}>
-                {fileName}
-              </Text>
-              <Text style={styles.pdfSize}>
-                {fileSize ? `${Math.round(fileSize / 1024)} KB` : "Document"}
-              </Text>
+              <Text style={styles.pdfName} numberOfLines={1}>{fileName}</Text>
+              <Text style={styles.pdfSize}>Document • Tap to open</Text>
             </View>
           </TouchableOpacity>
         );
 
       case "VOICE":
-        const voiceUrl = item.media?.file_url || item.media?.fileUrl;
         const isPlaying = playingAudioId === item.id;
         return (
           <TouchableOpacity
@@ -651,113 +772,61 @@ export default function ChatRoomScreen({ route, navigation }) {
             activeOpacity={0.95}
             style={styles.voiceWrapper}
           >
-            <TouchableOpacity onPress={() => playAudio(item.id, voiceUrl)}>
+            <View style={styles.voiceAvatarBox}>
+              <Ionicons name="mic" size={16} color="#00A884" />
+            </View>
+            <TouchableOpacity
+              style={styles.voicePlayBtn}
+              onPress={() => mediaUrl && playAudio(item.id, mediaUrl)}
+            >
               <Ionicons
-                name={isPlaying ? "pause-circle" : "play-circle"}
-                size={36}
-                color={Colors.primary}
+                name={isPlaying ? "pause" : "play"}
+                size={20}
+                color="#FFFFFF"
               />
             </TouchableOpacity>
             <View style={styles.voiceWaveform}>
-              <View style={styles.waveformDummyBar} />
-              <View style={[styles.waveformDummyBar, { height: 18 }]} />
-              <View style={[styles.waveformDummyBar, { height: 24 }]} />
-              <View style={[styles.waveformDummyBar, { height: 12 }]} />
-              <View style={[styles.waveformDummyBar, { height: 16 }]} />
+              <View style={[styles.waveformBar, { height: 10 }]} />
+              <View style={[styles.waveformBar, { height: 16 }]} />
+              <View style={[styles.waveformBar, { height: 22 }]} />
+              <View style={[styles.waveformBar, { height: 14 }]} />
+              <View style={[styles.waveformBar, { height: 18 }]} />
+              <View style={[styles.waveformBar, { height: 10 }]} />
+              <View style={[styles.waveformBar, { height: 20 }]} />
               <Text style={styles.voiceDuration}>
-                {item.media?.duration ? `${item.media.duration}s` : "0:00"}
+                {item.media?.duration ? `${item.media.duration}s` : "0:15"}
               </Text>
             </View>
           </TouchableOpacity>
         );
 
       case "LOCATION":
-        const locationUrl = item.media?.file_url || item.media?.fileUrl;
-        let coords = null;
-        if (item.media?.waveform) {
-          try {
-            if (typeof item.media.waveform === "object") {
-              coords = item.media.waveform;
-            } else {
-              let parsed = JSON.parse(item.media.waveform);
-              if (typeof parsed === "string") {
-                parsed = JSON.parse(parsed);
-              }
-              coords = parsed;
-            }
-          } catch (e) {
-            console.warn("Failed to parse coordinates waveform:", e);
-          }
-        }
-
-        const handleOpenMap = async () => {
-          if (coords && coords.latitude && coords.longitude) {
-            try {
-              const { status } = await Location.requestForegroundPermissionsAsync();
-              if (status !== "granted") {
-                Alert.alert("Permission Required", "GPS permission is required to navigate.");
-                return;
-              }
-
-              const provider = await Location.getProviderStatusAsync();
-              if (!provider.gpsEnabled) {
-                Alert.alert(
-                  "GPS Disabled",
-                  "Please turn on GPS/Location services in your settings to navigate.",
-                  [
-                    { text: "Cancel", style: "cancel" },
-                    {
-                      text: "Settings",
-                      onPress: async () => {
-                        const { Linking, Platform } = require("react-native");
-                        if (Platform.OS === "android") {
-                          await Location.enableNetworkProviderAsync().catch(() => {});
-                        } else {
-                          Linking.openSettings();
-                        }
-                      }
-                    }
-                  ]
-                );
-                return;
-              }
-
-              const url = Platform.select({
-                ios: `maps://app?daddr=${coords.latitude},${coords.longitude}`,
-                android: `google.navigation:q=${coords.latitude},${coords.longitude}`
-              });
-              Linking.openURL(url).catch(() => {
-                Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${coords.latitude},${coords.longitude}`);
-              });
-            } catch (err) {
-              console.warn("Navigation failed:", err.message);
-              Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${coords.latitude},${coords.longitude}`);
-            }
-          } else if (locationUrl) {
-            Linking.openURL(locationUrl);
+        const coords = item.media?.waveform || {};
+        const openMaps = () => {
+          if (coords.latitude && coords.longitude) {
+            Linking.openURL(`https://maps.google.com/?q=${coords.latitude},${coords.longitude}`);
+          } else if (mediaUrl) {
+            Linking.openURL(mediaUrl);
           }
         };
-
         return (
           <TouchableOpacity
             style={styles.locationCard}
-            onPress={handleOpenMap}
+            onPress={openMaps}
             onLongPress={() => handleBubbleLongPress(item)}
             activeOpacity={0.9}
           >
-            <Ionicons name="map-outline" size={24} color={Colors.primary} />
+            <View style={styles.locationIconBox}>
+              <Ionicons name="location" size={24} color="#FFFFFF" />
+            </View>
             <View style={styles.locationDetails}>
-              <Text style={styles.locationTitle}>📍 Shared Location</Text>
-              <Text style={styles.locationSub}>
-                {coords && coords.latitude && coords.longitude
-                  ? `${coords.latitude.toFixed(4)}, ${coords.longitude.toFixed(4)} (Tap to Navigate)`
-                  : "View on Map"}
-              </Text>
+              <Text style={styles.locationTitle}>📍 Live Location</Text>
+              <Text style={styles.locationSub}>Tap to view on Google Maps</Text>
             </View>
           </TouchableOpacity>
         );
 
-      case "BOOKING_CARD":
+      case "TEXT":
       default:
         return (
           <TouchableOpacity
@@ -765,56 +834,78 @@ export default function ChatRoomScreen({ route, navigation }) {
             activeOpacity={0.9}
           >
             <Text style={styles.bubbleText}>
-              {item.message}
+              {item.message || item.text || item.content}
             </Text>
           </TouchableOpacity>
         );
     }
   };
 
+  // Group messages and compute date separators
+  const messagesWithDates = useMemo(() => {
+    const list = [];
+    let lastDate = "";
+    (messages || []).forEach((m) => {
+      const msgDate = formatDateSeparator(m.createdAt || m.created_at || m.timestamp);
+      if (msgDate && msgDate !== lastDate) {
+        list.push({ id: `date_${msgDate}_${m.id}`, isDateSeparator: true, dateText: msgDate });
+        lastDate = msgDate;
+      }
+      list.push(m);
+    });
+    return list;
+  }, [messages]);
+
   const renderItem = ({ item }) => {
-    const isMe = item.sender_id !== receiverId;
+    if (item.isDateSeparator) {
+      return (
+        <View style={styles.dateSeparatorRow}>
+          <View style={styles.dateSeparatorBadge}>
+            <Text style={styles.dateSeparatorText}>{item.dateText}</Text>
+          </View>
+        </View>
+      );
+    }
+
+    const isMe = Boolean(
+      item.isMe ||
+      (user?.id && Number(item.sender_id || item.senderId) === Number(user.id)) ||
+      (receiverId && Number(item.sender_id || item.senderId) !== Number(receiverId))
+    );
+
+    const isRead = Boolean(item.is_read || item.isRead);
+    const timeString = formatMessageTime(item.createdAt || item.created_at || item.timestamp);
 
     return (
       <View style={[styles.messageRow, isMe ? styles.myMessageRow : styles.otherMessageRow]}>
-        {!isMe && (
-          <Image
-            source={{ uri: receiverImage || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=50" }}
-            style={styles.bubbleAvatar}
-          />
-        )}
+        <View style={[styles.bubble, isMe ? styles.myBubble : styles.otherBubble]}>
+          {/* Quoted Message Preview Header */}
+          {item.parentMessage && (
+            <View style={[styles.replyBubbleHeader, isMe ? styles.replyMyHeader : styles.replyOtherHeader]}>
+              <Text style={styles.replyHeaderName}>{isMe ? "You" : receiverName || "Contact"}</Text>
+              <Text style={styles.replyHeaderMsg} numberOfLines={1}>
+                {item.parentMessage.message || "Attachment"}
+              </Text>
+            </View>
+          )}
 
-        <View style={styles.bubbleContainer}>
-          <View
-            style={[styles.bubble, isMe ? styles.myBubble : styles.otherBubble]}
-          >
-            {/* Reply Header indicator inside bubble */}
-            {item.parentMessage && (
-              <View style={styles.replyBubbleHeader}>
-                <Text style={styles.replyHeaderName}>Replying to message</Text>
-                <Text style={styles.replyHeaderMsg} numberOfLines={1}>
-                  {item.parentMessage.message}
-                </Text>
+          {renderMessageContent(item, isMe)}
+
+          {/* WhatsApp Bubble Timestamp & Ticks */}
+          <View style={styles.bubbleFooter}>
+            {item.is_edited && <Text style={styles.editedTextLabel}>edited </Text>}
+            <Text style={styles.timeLabel}>{timeString}</Text>
+            {isMe && (
+              <View style={styles.tickContainer}>
+                {item.isOfflinePending ? (
+                  <Ionicons name="time-outline" size={13} color="#8696A0" />
+                ) : isRead ? (
+                  <Ionicons name="checkmark-done" size={16} color="#53BDEB" />
+                ) : (
+                  <Ionicons name="checkmark-done" size={16} color="#8696A0" />
+                )}
               </View>
             )}
-
-            {renderMessageContent(item)}
-
-            {/* Bubble Footer Details */}
-            <View style={styles.bubbleFooter}>
-              {item.is_edited && <Text style={styles.editedTextLabel}>Edited </Text>}
-              <Text style={styles.timeLabel}>
-                {new Date(item.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-              </Text>
-              {isMe && (
-                <Ionicons
-                  name={item.isOfflinePending ? "time-outline" : "checkmark-done"}
-                  size={14}
-                  color={item.is_read ? Colors.primary : Colors.textTertiary}
-                  style={styles.tickIcon}
-                />
-              )}
-            </View>
           </View>
         </View>
       </View>
@@ -826,165 +917,317 @@ export default function ChatRoomScreen({ route, navigation }) {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      {/* Header */}
+      <StatusBar barStyle="light-content" backgroundColor={HEADER_RED} />
+
+      {/* Top Header in Red as requested */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Ionicons name="chevron-back" size={24} color={Colors.text} />
+          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
         </TouchableOpacity>
 
-        <Image
-          source={{ uri: receiverImage || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100" }}
-          style={styles.headerAvatar}
-        />
+        <TouchableOpacity
+          style={styles.headerProfileContainer}
+          activeOpacity={0.8}
+          onPress={() => {
+            if (booking?.artist?.id || booking?.artist_id) {
+              navigation.navigate("ArtistProfile", { artistId: booking?.artist?.id || booking?.artist_id });
+            }
+          }}
+        >
+          <View style={styles.avatarWrapper}>
+            <Image
+              source={{ uri: receiverImage || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120" }}
+              style={styles.headerAvatar}
+            />
+            {isOnline && <View style={styles.onlineBadge} />}
+          </View>
 
-        <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerName} numberOfLines={1}>
-            {receiverName}
-          </Text>
-          <Text style={styles.headerStatus}>
-            {userTyping ? "typing..." : isOnline ? "Online" : "Offline"}
-          </Text>
-        </View>
+          <View style={styles.headerTitleContainer}>
+            <Text style={styles.headerName} numberOfLines={1}>
+              {receiverName || "MehndiGo User"}
+            </Text>
+            <Text style={styles.headerStatus} numberOfLines={1}>
+              {userTyping ? "typing..." : isOnline ? "Online" : "Booking #" + (booking?.booking_code || bookingId)}
+            </Text>
+          </View>
+        </TouchableOpacity>
 
         <View style={styles.headerActions}>
           <TouchableOpacity
             style={styles.headerActionBtn}
-            onPress={() => Linking.openURL(`tel:${booking?.artist?.user?.phone || booking?.user?.phone || "9999999999"}`)}
+            onPress={() => {
+              const phone = booking?.artist?.user?.phone || booking?.user?.phone || "9999999999";
+              Linking.openURL(`tel:${phone}`);
+            }}
           >
-            <Ionicons name="call-outline" size={20} color={Colors.text} />
+            <Ionicons name="call" size={20} color="#FFFFFF" />
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.headerActionBtn}
             onPress={() => setModerationMenuVisible(true)}
           >
-            <Ionicons name="ellipsis-vertical" size={20} color={Colors.text} />
+            <Ionicons name="ellipsis-vertical" size={20} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* Booking card helper top pin */}
+      {/* Pinned Booking Details Bar */}
       {booking && (
         <View style={styles.bookingPinBar}>
-          <Ionicons name="calendar" size={16} color={Colors.primary} />
+          <Ionicons name="shield-checkmark" size={15} color={HEADER_RED} />
           <Text style={styles.bookingPinText} numberOfLines={1}>
-            Booking #{booking.booking_code} • {booking.service?.specialization_name} • ₹{booking.final_amount}
+            Booking #{booking.booking_code || booking.id} • {booking.service?.specialization_name || "Mehndi Service"} • ₹{booking.final_amount || booking.total_amount}
           </Text>
         </View>
       )}
 
-      {/* Messages Board with KeyboardAvoidingView */}
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 10 : 0}
-      >
-        {loading ? (
-          <View style={styles.centerSpinner}>
-            <ActivityIndicator size="large" color={Colors.primary} />
-          </View>
-        ) : (
-          <FlatList
-            ref={flatListRef}
-            data={messages}
-            keyExtractor={(item) => item.id.toString()}
-            renderItem={renderItem}
-            initialNumToRender={12}
-            maxToRenderPerBatch={10}
-            windowSize={7}
-            removeClippedSubviews={true}
-            contentContainerStyle={styles.listContent}
-            onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-          />
-        )}
-
-        {/* Dynamic Media Attachment Indicator */}
-        {mediaUploading && (
-          <View style={styles.uploadingBar}>
-            <ActivityIndicator size="small" color={Colors.primary} style={{ marginRight: 8 }} />
-            <Text style={styles.uploadingText}>Uploading media files...</Text>
-          </View>
-        )}
-
-        {/* Reply Preview Bar */}
-        {replyMessage && (
-          <View style={styles.replyPreviewBar}>
-            <View style={styles.replyPreviewDetails}>
-              <Text style={styles.replyPreviewTitle}>Replying to message</Text>
-              <Text style={styles.replyPreviewContent} numberOfLines={1}>
-                {replyMessage.message}
-              </Text>
+      {/* Chat Wallpaper Canvas */}
+      <View style={styles.wallpaperContainer}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+        >
+          {loading ? (
+            <View style={styles.centerSpinner}>
+              <ActivityIndicator size="large" color={HEADER_RED} />
             </View>
-            <TouchableOpacity onPress={() => setReplyMessage(null)}>
-              <Ionicons name="close-circle" size={20} color={Colors.textTertiary} />
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Edit Preview Bar */}
-        {editingMessage && (
-          <View style={styles.replyPreviewBar}>
-            <View style={styles.replyPreviewDetails}>
-              <Text style={[styles.replyPreviewTitle, { color: Colors.success }]}>Editing message</Text>
-              <Text style={styles.replyPreviewContent} numberOfLines={1}>
-                {editingMessage.message}
-              </Text>
-            </View>
-            <TouchableOpacity onPress={() => { setEditingMessage(null); setInputText(""); }}>
-              <Ionicons name="close-circle" size={20} color={Colors.textTertiary} />
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Footer Text Inputs panel */}
-        {["CANCELLED", "REJECTED"].includes(booking?.booking_status) || isChatExpired() ? (
-          <View style={styles.closedChatBar}>
-            <Ionicons name="lock-closed-outline" size={18} color={Colors.textSecondary || "#6B7280"} style={{ marginRight: 8 }} />
-            <Text style={styles.closedChatText}>
-              {booking?.detailed_status === "COMPLETED_CLOSED" || booking?.review_skipped
-                ? "This chat is now closed and read-only since the booking review lifecycle is completed."
-                : isChatExpired()
-                  ? "This chat has been archived (active chat is only available for 7 days post completion)."
-                  : "This chat is closed because the booking is cancelled or rejected."}
-            </Text>
-          </View>
-        ) : (
-          <View style={[styles.footerInputBar, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-            <TouchableOpacity
-              style={styles.attachBtn}
-              onPress={() => setAttachmentVisible(true)}
-            >
-              <Ionicons name="add-circle" size={28} color={Colors.primary} />
-            </TouchableOpacity>
-
-            <TextInput
-              placeholder="Type your message here..."
-              placeholderTextColor={Colors.placeholder}
-              style={styles.chatInput}
-              value={inputText}
-              onChangeText={handleTextChange}
-              multiline
+          ) : (
+            <FlatList
+              ref={flatListRef}
+              data={messagesWithDates}
+              keyExtractor={(item) => item.id.toString()}
+              renderItem={renderItem}
+              initialNumToRender={15}
+              maxToRenderPerBatch={12}
+              windowSize={9}
+              removeClippedSubviews={true}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              contentContainerStyle={styles.listContent}
+              onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
             />
+          )}
 
-            {inputText.trim().length > 0 || editingMessage ? (
-              <TouchableOpacity style={styles.sendBtn} onPress={handleSend}>
-                <Ionicons name="send" size={20} color={Colors.white} />
+          {/* Media Upload Progress Bar */}
+          {mediaUploading && (
+            <View style={styles.uploadingBar}>
+              <ActivityIndicator size="small" color={HEADER_RED} style={{ marginRight: 8 }} />
+              <Text style={styles.uploadingText}>Sending attachment...</Text>
+            </View>
+          )}
+
+          {/* Reply Banner */}
+          {replyMessage && (
+            <View style={styles.replyPreviewBar}>
+              <View style={styles.replyLeftBar} />
+              <View style={styles.replyPreviewDetails}>
+                <Text style={styles.replyPreviewTitle}>
+                  Replying to {replyMessage.senderName || "message"}
+                </Text>
+                <Text style={styles.replyPreviewContent} numberOfLines={1}>
+                  {replyMessage.message || "Attachment"}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setReplyMessage(null)} style={{ padding: 4 }}>
+                <Ionicons name="close" size={20} color="#667781" />
               </TouchableOpacity>
-            ) : null}
-          </View>
-        )}
+            </View>
+          )}
 
-        {isRecording && (
-          <View style={[styles.recordingOverlayBar, { paddingBottom: Math.max(insets.bottom, 10), height: 60 + (insets.bottom > 0 ? insets.bottom : 0) }]}>
-            <Ionicons name="radio-button-on" size={16} color={Colors.error} style={styles.blinkDot} />
-            <Text style={styles.recordingText}>Recording voice: {recordingDuration}s</Text>
-            <TouchableOpacity onPress={cancelRecording} style={styles.recordingCancelBtn}>
-              <Text style={styles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      </KeyboardAvoidingView>
+          {/* Edit Banner */}
+          {editingMessage && (
+            <View style={styles.replyPreviewBar}>
+              <View style={[styles.replyLeftBar, { backgroundColor: HEADER_RED }]} />
+              <View style={styles.replyPreviewDetails}>
+                <Text style={[styles.replyPreviewTitle, { color: HEADER_RED }]}>Editing Message</Text>
+                <Text style={styles.replyPreviewContent} numberOfLines={1}>
+                  {editingMessage.message}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => { setEditingMessage(null); setInputText(""); }} style={{ padding: 4 }}>
+                <Ionicons name="close" size={20} color="#667781" />
+              </TouchableOpacity>
+            </View>
+          )}
 
-      {/* Attachment Drawer Modal */}
+          {/* WhatsApp Bottom Input Bar or Active Voice Recording Bar */}
+          {["CANCELLED", "REJECTED"].includes(booking?.booking_status) || isChatExpired() ? (
+            <View style={styles.closedChatBar}>
+              <Ionicons name="lock-closed" size={16} color="#667781" style={{ marginRight: 8 }} />
+              <Text style={styles.closedChatText}>
+                {isChatExpired()
+                  ? "This conversation is closed (active chat is preserved for 7 days post booking)."
+                  : "This conversation is closed because the booking is cancelled."}
+              </Text>
+            </View>
+          ) : isRecording ? (
+            /* Active Voice Recording Controller Bar with Delete / Cancel and Send / Stop Buttons */
+            <View style={[styles.recordingControllerBar, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+              {/* Delete / Cancel Button on Left */}
+              <TouchableOpacity style={styles.recordingDiscardBtn} onPress={cancelRecording}>
+                <Ionicons name="trash-outline" size={22} color="#EA0038" />
+                <Text style={styles.discardLabel}>Cancel</Text>
+              </TouchableOpacity>
+
+              {/* Pulsing Red Dot + Duration Counter in Center */}
+              <View style={styles.recordingIndicator}>
+                <View style={styles.recordingPulsingDot} />
+                <Text style={styles.recordingLiveTimer}>
+                  {Math.floor(recordingDuration / 60)}:{(recordingDuration % 60).toString().padStart(2, "0")}
+                </Text>
+                <View style={styles.recordingWaveBars}>
+                  <View style={[styles.recordingWaveBar, { height: 8 }]} />
+                  <View style={[styles.recordingWaveBar, { height: 16 }]} />
+                  <View style={[styles.recordingWaveBar, { height: 22 }]} />
+                  <View style={[styles.recordingWaveBar, { height: 14 }]} />
+                  <View style={[styles.recordingWaveBar, { height: 18 }]} />
+                </View>
+              </View>
+
+              {/* Green Stop & Send Button on Right */}
+              <TouchableOpacity style={styles.recordingSendBtn} onPress={stopRecordingAndSend}>
+                <Ionicons name="send" size={20} color="#FFFFFF" style={{ marginLeft: 2 }} />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            /* Normal Input Bar */
+            <View>
+              <View style={[styles.footerInputBar, { paddingBottom: emojiPickerVisible ? 4 : Math.max(insets.bottom, 10) }]}>
+                {/* WhatsApp Capsule Box */}
+                <View style={styles.inputCapsule}>
+                  <TouchableOpacity
+                    style={styles.emojiBtn}
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      setEmojiPickerVisible((prev) => !prev);
+                    }}
+                  >
+                    <Ionicons
+                      name={emojiPickerVisible ? "keypad-outline" : "happy-outline"}
+                      size={24}
+                      color={emojiPickerVisible ? HEADER_RED : "#8696A0"}
+                    />
+                  </TouchableOpacity>
+
+                  <TextInput
+                    placeholder="Message"
+                    placeholderTextColor="#8696A0"
+                    style={styles.chatInput}
+                    value={inputText}
+                    onChangeText={handleTextChange}
+                    onFocus={() => setEmojiPickerVisible(false)}
+                    multiline
+                  />
+
+                  <TouchableOpacity
+                    style={styles.capsuleIconBtn}
+                    onPress={() => {
+                      setEmojiPickerVisible(false);
+                      setAttachmentVisible(true);
+                    }}
+                  >
+                    <Ionicons name="attach" size={24} color="#8696A0" style={{ transform: [{ rotate: "-45deg" }] }} />
+                  </TouchableOpacity>
+
+                  {inputText.trim().length === 0 && (
+                    <TouchableOpacity
+                      style={styles.capsuleIconBtn}
+                      onPress={() => {
+                        setEmojiPickerVisible(false);
+                        handleCamera();
+                      }}
+                    >
+                      <Ionicons name="camera" size={22} color="#8696A0" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {/* Floating Action Button: Send if text typed, Mic if empty */}
+                {inputText.trim().length > 0 || editingMessage ? (
+                  <TouchableOpacity style={styles.floatingSendBtn} onPress={handleSend}>
+                    <Ionicons name="send" size={20} color="#FFFFFF" style={{ marginLeft: 2 }} />
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.floatingSendBtn}
+                    onPress={handleMicPress}
+                    onLongPress={startRecording}
+                    onPressOut={stopRecordingAndSend}
+                  >
+                    <Ionicons name="mic" size={22} color="#FFFFFF" />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* WhatsApp Style Emoji & Quick Response Drawer */}
+              {emojiPickerVisible && (
+                <View style={[styles.emojiDrawerContainer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+                  {/* Quick Responses Carousel */}
+                  <View style={styles.quickResponsesBar}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickResponsesScroll}>
+                      {QUICK_RESPONSES.map((phrase, idx) => (
+                        <TouchableOpacity
+                          key={idx}
+                          style={styles.quickResponseChip}
+                          onPress={() => handleQuickResponseSelect(phrase)}
+                        >
+                          <Text style={styles.quickResponseText}>{phrase}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+
+                  {/* Emoji Categories Header Tabs */}
+                  <View style={styles.emojiCategoryTabs}>
+                    {EMOJI_CATEGORIES.map((cat) => (
+                      <TouchableOpacity
+                        key={cat.id}
+                        style={[styles.emojiTabBtn, activeEmojiCategory === cat.id && styles.emojiTabBtnActive]}
+                        onPress={() => setActiveEmojiCategory(cat.id)}
+                      >
+                        <Ionicons
+                          name={cat.icon}
+                          size={18}
+                          color={activeEmojiCategory === cat.id ? HEADER_RED : "#8696A0"}
+                        />
+                        <Text style={[styles.emojiTabText, activeEmojiCategory === cat.id && styles.emojiTabTextActive]}>
+                          {cat.title}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+
+                    {/* Backspace Button */}
+                    <TouchableOpacity style={styles.emojiBackspaceBtn} onPress={handleBackspaceEmoji}>
+                      <Ionicons name="backspace-outline" size={22} color="#8696A0" />
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Emoji Grid */}
+                  <ScrollView
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={styles.emojiGridContent}
+                  >
+                    <View style={styles.emojiGrid}>
+                      {(EMOJI_CATEGORIES.find((c) => c.id === activeEmojiCategory)?.emojis || []).map((em, idx) => (
+                        <TouchableOpacity
+                          key={idx}
+                          style={styles.emojiGridCell}
+                          onPress={() => handleEmojiSelect(em)}
+                        >
+                          <Text style={styles.emojiChar}>{em}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </ScrollView>
+                </View>
+              )}
+            </View>
+          )}
+        </KeyboardAvoidingView>
+      </View>
+
+      {/* WhatsApp Style Attachment Drawer Modal */}
       <Modal
         visible={attachmentVisible}
         transparent
@@ -997,71 +1240,70 @@ export default function ChatRoomScreen({ route, navigation }) {
           onPress={() => setAttachmentVisible(false)}
         >
           <View style={[styles.attachmentModalContent, { paddingBottom: Math.max(insets.bottom, 24) }]}>
-            <Text style={styles.attachmentTitle}>Share Attachments</Text>
-            
             <View style={styles.attachmentGrid}>
+              {/* Document */}
+              <TouchableOpacity style={styles.attachmentGridItem} onPress={handleDocumentAttachment}>
+                <View style={[styles.attachIconContainer, { backgroundColor: "#5F66CD" }]}>
+                  <Ionicons name="document-text" size={24} color="#FFFFFF" />
+                </View>
+                <Text style={styles.attachIconLabel}>Document</Text>
+              </TouchableOpacity>
+
               {/* Camera */}
               <TouchableOpacity style={styles.attachmentGridItem} onPress={handleCamera}>
-                <View style={[styles.attachIconContainer, { backgroundColor: "#FF4D6D" }]}>
-                  <Ionicons name="camera" size={24} color={Colors.white} />
+                <View style={[styles.attachIconContainer, { backgroundColor: "#D3396D" }]}>
+                  <Ionicons name="camera" size={24} color="#FFFFFF" />
                 </View>
                 <Text style={styles.attachIconLabel}>Camera</Text>
               </TouchableOpacity>
 
               {/* Gallery */}
               <TouchableOpacity style={styles.attachmentGridItem} onPress={handleGallery}>
-                <View style={[styles.attachIconContainer, { backgroundColor: "#9F7AEA" }]}>
-                  <Ionicons name="images" size={24} color={Colors.white} />
+                <View style={[styles.attachIconContainer, { backgroundColor: "#AC44CF" }]}>
+                  <Ionicons name="images" size={24} color="#FFFFFF" />
                 </View>
                 <Text style={styles.attachIconLabel}>Gallery</Text>
-              </TouchableOpacity>
-
-              {/* Video */}
-              <TouchableOpacity style={styles.attachmentGridItem} onPress={handleVideoAttachment}>
-                <View style={[styles.attachIconContainer, { backgroundColor: "#ED8936" }]}>
-                  <Ionicons name="videocam" size={24} color={Colors.white} />
-                </View>
-                <Text style={styles.attachIconLabel}>Video</Text>
               </TouchableOpacity>
             </View>
 
             <View style={styles.attachmentGrid}>
+              {/* Audio / Video */}
+              <TouchableOpacity style={styles.attachmentGridItem} onPress={handleVideoAttachment}>
+                <View style={[styles.attachIconContainer, { backgroundColor: "#E07B39" }]}>
+                  <Ionicons name="videocam" size={24} color="#FFFFFF" />
+                </View>
+                <Text style={styles.attachIconLabel}>Video</Text>
+              </TouchableOpacity>
+
               {/* Location */}
               <TouchableOpacity style={styles.attachmentGridItem} onPress={handleLocation}>
-                <View style={[styles.attachIconContainer, { backgroundColor: "#48BB78" }]}>
-                  <Ionicons name="location" size={24} color={Colors.white} />
+                <View style={[styles.attachIconContainer, { backgroundColor: "#1B9A59" }]}>
+                  <Ionicons name="location" size={24} color="#FFFFFF" />
                 </View>
                 <Text style={styles.attachIconLabel}>Location</Text>
               </TouchableOpacity>
 
-              {/* Voice and Document options commented out for now
-              <TouchableOpacity style={styles.attachmentGridItem} onPress={() => { setAttachmentVisible(false); handleMicPress(); }}>
-                <View style={[styles.attachIconContainer, { backgroundColor: "#319795" }]}>
-                  <Ionicons name="mic" size={24} color={Colors.white} />
+              {/* Info / Contact */}
+              <TouchableOpacity
+                style={styles.attachmentGridItem}
+                onPress={() => {
+                  setAttachmentVisible(false);
+                  if (booking?.artist?.id || booking?.artist_id) {
+                    navigation.navigate("ArtistProfile", { artistId: booking?.artist?.id || booking?.artist_id });
+                  }
+                }}
+              >
+                <View style={[styles.attachIconContainer, { backgroundColor: "#009DE2" }]}>
+                  <Ionicons name="person" size={24} color="#FFFFFF" />
                 </View>
-                <Text style={styles.attachIconLabel}>Voice</Text>
+                <Text style={styles.attachIconLabel}>Profile</Text>
               </TouchableOpacity>
-
-              <TouchableOpacity style={styles.attachmentGridItem} onPress={handleDocumentAttachment}>
-                <View style={[styles.attachIconContainer, { backgroundColor: "#D69E2E" }]}>
-                  <Ionicons name="document-text" size={24} color={Colors.white} />
-                </View>
-                <Text style={styles.attachIconLabel}>Document</Text>
-              </TouchableOpacity>
-              */}
             </View>
-
-            <TouchableOpacity
-              style={styles.cancelBtn}
-              onPress={() => setAttachmentVisible(false)}
-            >
-              <Text style={styles.cancelBtnText}>Cancel</Text>
-            </TouchableOpacity>
           </View>
         </TouchableOpacity>
       </Modal>
 
-      {/* Full Screen Image Viewer */}
+      {/* Full Screen Image Viewer Modal */}
       <ImageView
         images={viewerImages}
         imageIndex={0}
@@ -1083,16 +1325,16 @@ export default function ChatRoomScreen({ route, navigation }) {
         >
           <View style={styles.menuContent}>
             <TouchableOpacity style={styles.menuItem} onPress={handleBlockUser}>
-              <Ionicons name="ban-outline" size={18} color={Colors.error} />
-              <Text style={[styles.menuItemText, { color: Colors.error }]}>Block User</Text>
+              <Ionicons name="ban-outline" size={18} color="#EA0038" />
+              <Text style={[styles.menuItemText, { color: "#EA0038" }]}>Block User</Text>
             </TouchableOpacity>
             <View style={styles.menuDivider} />
             <TouchableOpacity
               style={styles.menuItem}
               onPress={() => { setModerationMenuVisible(false); setReportModalVisible(true); }}
             >
-              <Ionicons name="alert-circle-outline" size={18} color={Colors.text} />
-              <Text style={styles.menuItemText}>Report Abuse</Text>
+              <Ionicons name="alert-circle-outline" size={18} color="#111B21" />
+              <Text style={styles.menuItemText}>Report User</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -1107,17 +1349,17 @@ export default function ChatRoomScreen({ route, navigation }) {
       >
         <KeyboardAvoidingView
           style={styles.modalContainer}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
           <View style={styles.reportModalBox}>
-            <Text style={styles.reportTitle}>File Abuse Report</Text>
+            <Text style={styles.reportTitle}>Report User</Text>
             <Text style={styles.reportSubtitle}>
-              Please explain the details of the concern regarding {receiverName}. Our safety agents will review the transcript history logs.
+              Please describe the issue. Our support team will investigate.
             </Text>
             <TextInput
               style={styles.reportInput}
-              placeholder="Provide reason detail here..."
-              placeholderTextColor={Colors.placeholder}
+              placeholder="Reason for report..."
+              placeholderTextColor="#8696A0"
               value={reportReason}
               onChangeText={setReportReason}
               multiline
@@ -1130,7 +1372,7 @@ export default function ChatRoomScreen({ route, navigation }) {
                 <Text style={styles.reportBtnTextSecondary}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.reportBtnPrimary}
+                style={[styles.reportBtnPrimary, { backgroundColor: HEADER_RED }]}
                 onPress={handleReportUserSubmit}
               >
                 <Text style={styles.reportBtnTextPrimary}>Submit</Text>
@@ -1144,221 +1386,735 @@ export default function ChatRoomScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+  container: {
+    flex: 1,
+    backgroundColor: HEADER_RED
+  },
+  wallpaperContainer: {
+    flex: 1,
+    backgroundColor: "#EFEAE2"
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
+    paddingHorizontal: 8,
     paddingVertical: 10,
-    backgroundColor: Colors.white,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border
+    backgroundColor: HEADER_RED
   },
-  backBtn: { width: 36, height: 36, justifyContent: "center" },
-  headerAvatar: { width: 40, height: 40, borderRadius: 20, marginHorizontal: 8 },
-  headerTitleContainer: { flex: 1 },
-  headerName: { fontSize: 16, fontWeight: "700", color: Colors.text },
-  headerStatus: { fontSize: 11, color: Colors.textSecondary },
-  headerActions: { flexDirection: "row", alignItems: "center" },
-  headerActionBtn: { padding: 6, marginLeft: 8 },
+  backBtn: {
+    padding: 6
+  },
+  headerProfileContainer: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    marginLeft: 2
+  },
+  avatarWrapper: {
+    position: "relative"
+  },
+  headerAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#E1F3FB"
+  },
+  onlineBadge: {
+    position: "absolute",
+    bottom: 0,
+    right: 0,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "#25D366",
+    borderWidth: 1.5,
+    borderColor: HEADER_RED
+  },
+  headerTitleContainer: {
+    flex: 1,
+    marginLeft: 10
+  },
+  headerName: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#FFFFFF",
+    letterSpacing: 0.2
+  },
+  headerStatus: {
+    fontSize: 12,
+    color: "#FFEBEE",
+    marginTop: 1
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center"
+  },
+  headerActionBtn: {
+    padding: 8,
+    marginLeft: 4
+  },
   bookingPinBar: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: Colors.primaryLight,
+    backgroundColor: "#FFFFFF",
     paddingHorizontal: 16,
-    paddingVertical: 6
-  },
-  bookingPinText: { fontSize: 11, color: Colors.text, marginLeft: 8, fontWeight: "600" },
-  listContent: { paddingHorizontal: 16, paddingVertical: 12, paddingBottom: 24 },
-  messageRow: { flexDirection: "row", marginBottom: 14, alignItems: "flex-end" },
-  myMessageRow: { justifyContent: "flex-end" },
-  otherMessageRow: { justifyContent: "flex-start" },
-  bubbleAvatar: { width: 28, height: 28, borderRadius: 14, marginRight: 8 },
-  bubbleContainer: { maxWidth: "80%" },
-  bubble: {
-    padding: 12,
-    borderRadius: 18,
-    shadowColor: Colors.shadow,
+    paddingVertical: 7,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(0,0,0,0.06)",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
+    shadowOpacity: 0.04,
+    shadowRadius: 2,
+    elevation: 2
+  },
+  bookingPinText: {
+    fontSize: 12,
+    color: "#111B21",
+    marginLeft: 8,
+    fontWeight: "600"
+  },
+  listContent: {
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    paddingBottom: 20
+  },
+  dateSeparatorRow: {
+    alignItems: "center",
+    marginVertical: 12
+  },
+  dateSeparatorBadge: {
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 1
+  },
+  dateSeparatorText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#667781",
+    letterSpacing: 0.5
+  },
+  messageRow: {
+    flexDirection: "row",
+    marginBottom: 6,
+    width: "100%"
+  },
+  myMessageRow: {
+    justifyContent: "flex-end"
+  },
+  otherMessageRow: {
+    justifyContent: "flex-start"
+  },
+  bubble: {
+    maxWidth: "82%",
+    paddingHorizontal: 10,
+    paddingTop: 7,
+    paddingBottom: 6,
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
     elevation: 1
   },
   myBubble: {
-    backgroundColor: Colors.primaryLight,
-    borderBottomRightRadius: 2
+    backgroundColor: "#D9FDD3",
+    borderTopRightRadius: 2
   },
   otherBubble: {
-    backgroundColor: Colors.white,
-    borderBottomLeftRadius: 2
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 2
   },
-  bubbleText: { fontSize: 14, color: Colors.text, lineHeight: 18 },
+  bubbleText: {
+    fontSize: 15,
+    color: "#111B21",
+    lineHeight: 20
+  },
   bubbleFooter: {
     flexDirection: "row",
     justifyContent: "flex-end",
     alignItems: "center",
-    marginTop: 4
+    marginTop: 3,
+    alignSelf: "flex-end"
   },
-  editedTextLabel: { fontSize: 9, color: Colors.textTertiary, fontStyle: "italic" },
-  timeLabel: { fontSize: 9, color: Colors.textTertiary },
-  tickIcon: { marginLeft: 4 },
+  editedTextLabel: {
+    fontSize: 10,
+    color: "#667781",
+    fontStyle: "italic",
+    marginRight: 4
+  },
+  timeLabel: {
+    fontSize: 10,
+    color: "#667781"
+  },
+  tickContainer: {
+    marginLeft: 3
+  },
   replyBubbleHeader: {
-    borderLeftWidth: 3,
-    borderLeftColor: Colors.primary,
-    paddingLeft: 6,
+    borderLeftWidth: 4,
+    paddingLeft: 8,
     marginBottom: 6,
-    backgroundColor: "rgba(0,0,0,0.03)",
     borderRadius: 4,
-    paddingVertical: 3
+    paddingVertical: 4
   },
-  replyHeaderName: { fontSize: 10, fontWeight: "700", color: Colors.primary },
-  replyHeaderMsg: { fontSize: 11, color: Colors.textSecondary },
-  bubbleImage: { width: 200, height: 200, borderRadius: 12, resizeMode: "cover" },
-  videoPlaceholder: { width: 200, height: 200, position: "relative" },
-  videoPlayBtn: {
+  replyMyHeader: {
+    backgroundColor: "rgba(0,0,0,0.05)",
+    borderLeftColor: "#00A884"
+  },
+  replyOtherHeader: {
+    backgroundColor: "rgba(0,0,0,0.04)",
+    borderLeftColor: "#027EB5"
+  },
+  replyHeaderName: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#00A884"
+  },
+  replyHeaderMsg: {
+    fontSize: 12,
+    color: "#667781"
+  },
+  imageBubbleContainer: {
+    borderRadius: 8,
+    overflow: "hidden"
+  },
+  bubbleImage: {
+    width: SCREEN_WIDTH * 0.65,
+    height: SCREEN_WIDTH * 0.65,
+    borderRadius: 8,
+    resizeMode: "cover"
+  },
+  imageCaptionText: {
+    fontSize: 14,
+    color: "#111B21",
+    marginTop: 6,
+    lineHeight: 18
+  },
+  videoPlaceholder: {
+    width: SCREEN_WIDTH * 0.65,
+    height: SCREEN_WIDTH * 0.65,
+    borderRadius: 8,
+    overflow: "hidden",
+    justifyContent: "center",
+    alignItems: "center"
+  },
+  videoPlayOverlay: {
     position: "absolute",
-    top: "50%",
-    left: "50%",
-    transform: [{ translateX: -24 }, { translateY: -24 }]
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.3)",
+    width: "100%",
+    height: "100%"
   },
   pdfCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.03)",
+    backgroundColor: "rgba(0,0,0,0.04)",
     padding: 10,
-    borderRadius: 12,
-    width: 200
+    borderRadius: 8,
+    width: SCREEN_WIDTH * 0.65
   },
-  pdfDetails: { marginLeft: 10, flex: 1 },
-  pdfName: { fontSize: 13, fontWeight: "600", color: Colors.text },
-  pdfSize: { fontSize: 11, color: Colors.textTertiary },
-  voiceCard: { flexDirection: "row", alignItems: "center", width: 160 },
-  voiceWaveform: { flex: 1, flexDirection: "row", alignItems: "center", marginLeft: 8 },
-  waveformDummyBar: { width: 3, height: 8, backgroundColor: Colors.primary, borderRadius: 2, marginRight: 2 },
-  voiceDuration: { fontSize: 11, color: Colors.textTertiary, marginLeft: 10 },
+  pdfIconBox: {
+    width: 42,
+    height: 42,
+    borderRadius: 8,
+    backgroundColor: "#5F66CD",
+    justifyContent: "center",
+    alignItems: "center"
+  },
+  pdfDetails: {
+    marginLeft: 10,
+    flex: 1
+  },
+  pdfName: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#111B21"
+  },
+  pdfSize: {
+    fontSize: 11,
+    color: "#667781",
+    marginTop: 2
+  },
+  voiceWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    width: SCREEN_WIDTH * 0.65,
+    paddingVertical: 4
+  },
+  voiceAvatarBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(0,168,132,0.15)",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 8
+  },
+  voicePlayBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#00A884",
+    justifyContent: "center",
+    alignItems: "center"
+  },
+  voiceWaveform: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    marginLeft: 10
+  },
+  waveformBar: {
+    width: 3,
+    backgroundColor: "#00A884",
+    borderRadius: 2,
+    marginRight: 3
+  },
+  voiceDuration: {
+    fontSize: 11,
+    color: "#667781",
+    marginLeft: 8
+  },
   locationCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.03)",
+    backgroundColor: "rgba(0,0,0,0.04)",
     padding: 10,
-    borderRadius: 12,
-    width: 200
+    borderRadius: 8,
+    width: SCREEN_WIDTH * 0.65
   },
-  locationDetails: { marginLeft: 10, flex: 1 },
-  locationTitle: { fontSize: 13, fontWeight: "600", color: Colors.text },
-  locationSub: { fontSize: 11, color: Colors.textTertiary },
-  deletedWrapper: { flexDirection: "row", alignItems: "center" },
-  deletedText: { fontSize: 13, fontStyle: "italic", color: Colors.textTertiary, marginLeft: 6 },
-  centerSpinner: { flex: 1, justifyContent: "center", alignItems: "center" },
+  locationIconBox: {
+    width: 42,
+    height: 42,
+    borderRadius: 8,
+    backgroundColor: "#1B9A59",
+    justifyContent: "center",
+    alignItems: "center"
+  },
+  locationDetails: {
+    marginLeft: 10,
+    flex: 1
+  },
+  locationTitle: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#111B21"
+  },
+  locationSub: {
+    fontSize: 11,
+    color: "#667781",
+    marginTop: 2
+  },
+  deletedWrapper: {
+    flexDirection: "row",
+    alignItems: "center"
+  },
+  deletedText: {
+    fontSize: 13,
+    fontStyle: "italic",
+    color: "#8696A0",
+    marginLeft: 6
+  },
+  centerSpinner: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center"
+  },
   uploadingBar: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: Colors.white,
+    backgroundColor: "#FFFFFF",
     padding: 8,
     borderTopWidth: 1,
-    borderTopColor: Colors.border,
+    borderTopColor: "rgba(0,0,0,0.06)",
     justifyContent: "center"
   },
-  uploadingText: { fontSize: 12, color: Colors.textSecondary },
+  uploadingText: {
+    fontSize: 12,
+    color: "#667781"
+  },
   replyPreviewBar: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: Colors.white,
-    padding: 8,
+    backgroundColor: "#F0F2F5",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     borderTopWidth: 1,
-    borderTopColor: Colors.border,
-    paddingHorizontal: 16
+    borderTopColor: "rgba(0,0,0,0.06)"
   },
-  replyPreviewDetails: { flex: 1 },
-  replyPreviewTitle: { fontSize: 11, fontWeight: "700", color: Colors.primary },
-  replyPreviewContent: { fontSize: 12, color: Colors.textSecondary },
+  replyLeftBar: {
+    width: 4,
+    height: "100%",
+    backgroundColor: HEADER_RED,
+    borderRadius: 2,
+    marginRight: 8
+  },
+  replyPreviewDetails: {
+    flex: 1
+  },
+  replyPreviewTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: HEADER_RED
+  },
+  replyPreviewContent: {
+    fontSize: 12,
+    color: "#667781"
+  },
   footerInputBar: {
     flexDirection: "row",
-    alignItems: "center",
-    padding: 10,
-    backgroundColor: Colors.white,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border
+    alignItems: "flex-end",
+    paddingHorizontal: 6,
+    paddingVertical: 6,
+    backgroundColor: "#EFEAE2"
   },
-  attachBtn: { marginRight: 8 },
+  inputCapsule: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    paddingHorizontal: 10,
+    minHeight: 46,
+    maxHeight: 120,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 2
+  },
+  emojiBtn: {
+    padding: 6
+  },
   chatInput: {
     flex: 1,
-    backgroundColor: Colors.inputBackground,
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 8,
-    maxHeight: 100,
-    fontSize: 14,
-    color: Colors.text
+    fontSize: 15,
+    color: "#111B21",
+    paddingHorizontal: 6,
+    paddingVertical: 8
   },
-  sendBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.primary,
+  capsuleIconBtn: {
+    padding: 6
+  },
+  floatingSendBtn: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: HEADER_RED,
     alignItems: "center",
     justifyContent: "center",
-    marginLeft: 8
+    marginLeft: 6,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.12,
+    shadowRadius: 3,
+    elevation: 3
   },
-  recordingActiveBtn: { backgroundColor: Colors.error },
-  recordingOverlayBar: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 60,
-    backgroundColor: Colors.white,
+  recordingControllerBar: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    justifyContent: "space-between"
-  },
-  recordingText: { fontSize: 13, color: Colors.text, marginLeft: 8, flex: 1 },
-  recordingCancelBtn: { padding: 8 },
-  cancelText: { color: Colors.textSecondary, fontWeight: "600" },
-  blinkDot: { width: 16, height: 16 },
-  attachmentModalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
-  attachmentModalContent: { backgroundColor: Colors.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24 },
-  attachmentTitle: { fontSize: 16, fontWeight: "700", color: Colors.text, marginBottom: 16, textAlign: "center" },
-  attachmentGrid: { flexDirection: "row", justifyContent: "space-around", marginVertical: 12 },
-  attachmentGridItem: { alignItems: "center" },
-  attachIconContainer: { width: 54, height: 54, borderRadius: 27, alignItems: "center", justifyContent: "center", marginBottom: 6 },
-  attachIconLabel: { fontSize: 12, color: Colors.textSecondary, fontWeight: "600" },
-  cancelBtn: { marginTop: 10, paddingVertical: 14, alignItems: "center", justifyContent: "center", borderTopWidth: 1, borderTopColor: "#F3F4F6" },
-  cancelBtnText: { fontSize: 15, fontWeight: "700", color: Colors.error },
-  menuOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.1)", justifyContent: "flex-start", alignItems: "flex-end" },
-  menuContent: { marginTop: 54, marginRight: 16, backgroundColor: Colors.white, borderRadius: 12, padding: 8, elevation: 6, width: 160 },
-  menuItem: { flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 12 },
-  menuItemText: { fontSize: 14, color: Colors.text, marginLeft: 10, fontWeight: "600" },
-  menuDivider: { height: 1, backgroundColor: Colors.border, marginVertical: 4 },
-  modalContainer: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center", padding: 24 },
-  reportModalBox: { backgroundColor: Colors.white, borderRadius: 20, padding: 24, width: "100%" },
-  reportTitle: { fontSize: 18, fontWeight: "700", color: Colors.text, marginBottom: 8 },
-  reportSubtitle: { fontSize: 13, color: Colors.textSecondary, marginBottom: 16, lineHeight: 18 },
-  reportInput: { height: 100, backgroundColor: Colors.inputBackground, borderRadius: 12, padding: 12, textAlignVertical: "top", color: Colors.text },
-  reportModalActions: { flexDirection: "row", justifyContent: "flex-end", marginTop: 20 },
-  reportBtnSecondary: { paddingVertical: 10, paddingHorizontal: 16, marginRight: 8 },
-  reportBtnTextSecondary: { color: Colors.textSecondary, fontWeight: "600" },
-  reportBtnPrimary: { backgroundColor: Colors.primary, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 20 },
-  reportBtnTextPrimary: { color: Colors.white, fontWeight: "700" },
-  closedChatBar: {
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    backgroundColor: "#F3F4F6",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: "#FFFFFF",
     borderTopWidth: 1,
-    borderColor: Colors.border,
+    borderTopColor: "rgba(0,0,0,0.08)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 3,
+    elevation: 4
+  },
+  recordingDiscardBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    backgroundColor: "#FEE2E2",
+    borderRadius: 20
+  },
+  discardLabel: {
+    color: "#EA0038",
+    fontSize: 13,
+    fontWeight: "700",
+    marginLeft: 4
+  },
+  recordingIndicator: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    paddingHorizontal: 8
+  },
+  recordingPulsingDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "#EA0038",
+    marginRight: 6
+  },
+  recordingLiveTimer: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#111B21",
+    marginRight: 8
+  },
+  recordingWaveBars: {
+    flexDirection: "row",
+    alignItems: "center"
+  },
+  recordingWaveBar: {
+    width: 3,
+    backgroundColor: "#EA0038",
+    borderRadius: 2,
+    marginRight: 2
+  },
+  recordingSendBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#00A884",
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+    elevation: 3
+  },
+  attachmentModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "flex-end"
+  },
+  attachmentModalContent: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 20,
+    paddingTop: 20
+  },
+  attachmentGrid: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    marginVertical: 10
+  },
+  attachmentGridItem: {
+    alignItems: "center",
+    width: 70
+  },
+  attachIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 6,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 3
+  },
+  attachIconLabel: {
+    fontSize: 12,
+    color: "#667781",
+    fontWeight: "500"
+  },
+  menuOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.1)",
+    justifyContent: "flex-start",
+    alignItems: "flex-end"
+  },
+  menuContent: {
+    marginTop: 54,
+    marginRight: 16,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 10,
+    padding: 6,
+    elevation: 6,
+    width: 150,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4
+  },
+  menuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 10
+  },
+  menuItemText: {
+    fontSize: 14,
+    color: "#111B21",
+    marginLeft: 8,
+    fontWeight: "500"
+  },
+  menuDivider: {
+    height: 1,
+    backgroundColor: "#E9EDEF",
+    marginVertical: 2
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20
+  },
+  reportModalBox: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 20,
+    width: "100%"
+  },
+  reportTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#111B21",
+    marginBottom: 6
+  },
+  reportSubtitle: {
+    fontSize: 13,
+    color: "#667781",
+    marginBottom: 14,
+    lineHeight: 18
+  },
+  reportInput: {
+    height: 90,
+    backgroundColor: "#F0F2F5",
+    borderRadius: 10,
+    padding: 12,
+    textAlignVertical: "top",
+    color: "#111B21"
+  },
+  reportModalActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    marginTop: 16
+  },
+  reportBtnSecondary: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    marginRight: 8
+  },
+  reportBtnTextSecondary: {
+    color: "#667781",
+    fontWeight: "600"
+  },
+  reportBtnPrimary: {
+    backgroundColor: HEADER_RED,
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 18
+  },
+  reportBtnTextPrimary: {
+    color: "#FFFFFF",
+    fontWeight: "700"
+  },
+  closedChatBar: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: "#F0F2F5",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center"
   },
   closedChatText: {
     fontSize: 12,
-    color: "#6B7280",
+    color: "#667781",
     textAlign: "center",
     flex: 1,
-    lineHeight: 18,
+    lineHeight: 16
+  },
+  emojiDrawerContainer: {
+    backgroundColor: "#FFFFFF",
+    borderTopWidth: 1,
+    borderTopColor: "#E9EDEF",
+    height: 250
+  },
+  quickResponsesBar: {
+    borderBottomWidth: 1,
+    borderBottomColor: "#F0F2F5",
+    paddingVertical: 8
+  },
+  quickResponsesScroll: {
+    paddingHorizontal: 12,
+    gap: 8
+  },
+  quickResponseChip: {
+    backgroundColor: "#F0F2F5",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0"
+  },
+  quickResponseText: {
+    fontSize: 12,
+    color: "#111B21",
+    fontWeight: "500"
+  },
+  emojiCategoryTabs: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F0F2F5"
+  },
+  emojiTabBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    marginRight: 6
+  },
+  emojiTabBtnActive: {
+    backgroundColor: "#FFEBEE"
+  },
+  emojiTabText: {
+    fontSize: 12,
+    color: "#8696A0",
+    marginLeft: 4,
+    fontWeight: "600"
+  },
+  emojiTabTextActive: {
+    color: HEADER_RED,
+    fontWeight: "700"
+  },
+  emojiBackspaceBtn: {
+    marginLeft: "auto",
+    padding: 6,
+    borderRadius: 8,
+    backgroundColor: "#F0F2F5"
+  },
+  emojiGridContent: {
+    paddingHorizontal: 10,
+    paddingVertical: 8
+  },
+  emojiGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "flex-start"
+  },
+  emojiGridCell: {
+    width: "12.5%",
+    aspectRatio: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 4
+  },
+  emojiChar: {
+    fontSize: 26
   }
 });
-
-const getNow = () => Date.now();

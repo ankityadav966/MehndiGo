@@ -126,74 +126,112 @@ export function SocketProvider({ children }) {
     });
 
     newSocket.on("typing", ({ bookingId, userId }) => {
+      const bId = String(bookingId || "");
       setTypingUsers((prev) => {
-        const roomTyping = prev[bookingId] ? new Set(prev[bookingId]) : new Set();
+        const roomTyping = prev[bId] ? new Set(prev[bId]) : new Set();
         roomTyping.add(userId);
-        return { ...prev, [bookingId]: roomTyping };
+        return { ...prev, [bId]: roomTyping };
       });
     });
 
     newSocket.on("stop-typing", ({ bookingId, userId }) => {
+      const bId = String(bookingId || "");
       setTypingUsers((prev) => {
-        const roomTyping = prev[bookingId] ? new Set(prev[bookingId]) : new Set();
+        const roomTyping = prev[bId] ? new Set(prev[bId]) : new Set();
         roomTyping.delete(userId);
-        return { ...prev, [bookingId]: roomTyping };
+        return { ...prev, [bId]: roomTyping };
       });
     });
 
     newSocket.on("receive-message", (message) => {
-      // Append if it's the active room
-      if (activeRoomRef.current === message.booking_id) {
+      if (!message) return;
+      const msgBookingId = String(message.booking_id || message.bookingId || "");
+      const currentActiveRoom = String(activeRoomRef.current || "");
+      const isCurrentActiveRoom = currentActiveRoom && msgBookingId && currentActiveRoom === msgBookingId;
+      const isFromSelf = String(message.sender_id || message.senderId || "") === String(user?.id || "");
+
+      // Normalized message object
+      const normalizedMsg = {
+        ...message,
+        id: message.id || `msg_${Date.now()}`,
+        booking_id: msgBookingId,
+        bookingId: msgBookingId,
+        sender_id: message.sender_id || message.senderId,
+        senderId: message.sender_id || message.senderId,
+        receiver_id: message.receiver_id || message.receiverId,
+        receiverId: message.receiver_id || message.receiverId,
+        message: message.message || message.text || message.content || "",
+        content: message.message || message.text || message.content || "",
+        message_type: String(message.message_type || message.messageType || "TEXT").toUpperCase(),
+        messageType: String(message.message_type || message.messageType || "TEXT").toUpperCase(),
+        media_url: message.media_url || message.mediaUrl || message.media?.file_url || message.media?.url || null,
+        mediaUrl: message.media_url || message.mediaUrl || message.media?.file_url || message.media?.url || null,
+        media: message.media || (message.media_url || message.mediaUrl ? {
+          file_url: message.media_url || message.mediaUrl,
+          fileUrl: message.media_url || message.mediaUrl,
+          url: message.media_url || message.mediaUrl,
+          file_type: String(message.message_type || message.messageType || "image").toLowerCase()
+        } : null),
+        is_read: Boolean(message.is_read || message.isRead),
+        isRead: Boolean(message.is_read || message.isRead),
+        isMe: isFromSelf,
+        createdAt: message.createdAt || message.created_at || message.timestamp || new Date().toISOString(),
+        created_at: message.created_at || message.createdAt || message.timestamp || new Date().toISOString()
+      };
+
+      if (isCurrentActiveRoom) {
         setMessages((prev) => {
-          if (prev.some((m) => m.id === message.id)) {
-            return prev.filter((m) => !(m.isOfflinePending && m.message === message.message));
+          // Check if message already exists by id
+          const existsById = prev.some((m) => String(m.id) === String(normalizedMsg.id));
+          if (existsById) {
+            return prev.map((m) => (String(m.id) === String(normalizedMsg.id) ? { ...m, ...normalizedMsg } : m));
           }
-          const clean = prev.filter((m) => !(m.isOfflinePending && m.message === message.message));
-          return [...clean, message];
+          // Remove any offline pending message with matching content
+          const clean = prev.filter((m) => !(m.isOfflinePending && m.message === normalizedMsg.message));
+          return [...clean, normalizedMsg];
         });
 
-        // Trigger read receipt since we are viewing it
+        // Trigger read receipt
         newSocket.emit("message-read", { bookingId: activeRoomRef.current });
-      } else {
-        const isFromSelf = message.sender_id === user?.id;
-        if (!isFromSelf) {
-          scheduleLocalNotification({
-            title: "New Message Received",
-            body: message.message_type === "TEXT" ? message.message : `Sent a ${message.message_type.toLowerCase()}`,
-            data: {
-              type: "chat",
-              event: "new_message",
-              bookingId: message.booking_id
-            }
-          });
-        }
+      } else if (!isFromSelf) {
+        scheduleLocalNotification({
+          title: `New Message from ${message.senderName || message.sender_name || "User"} 💬`,
+          body: normalizedMsg.message_type === "TEXT" ? normalizedMsg.message : `Sent a ${normalizedMsg.message_type.toLowerCase()}`,
+          data: {
+            type: "chat",
+            event: "new_message",
+            bookingId: msgBookingId
+          }
+        });
       }
     });
 
     newSocket.on("message_saved", (message) => {
-      // Replace temporary offline message if exists, or append
-      if (activeRoomRef.current === message.booking_id) {
+      if (!message) return;
+      const msgBookingId = String(message.booking_id || message.bookingId || "");
+      const currentActiveRoom = String(activeRoomRef.current || "");
+      if (currentActiveRoom && msgBookingId && currentActiveRoom === msgBookingId) {
         setMessages((prev) => {
-          const clean = prev.filter((m) => !(m.isOfflinePending && m.message === message.message) && m.id !== message.id);
+          const clean = prev.filter((m) => !(m.isOfflinePending && m.message === message.message) && String(m.id) !== String(message.id));
           return [...clean, message];
         });
       }
     });
 
     newSocket.on("messages_read", ({ bookingId, readerId }) => {
-      if (activeRoomRef.current === bookingId) {
+      if (String(activeRoomRef.current || "") === String(bookingId || "")) {
         setMessages((prev) =>
-          prev.map((m) => (m.sender_id !== readerId ? { ...m, is_read: true } : m))
+          prev.map((m) => (String(m.sender_id || m.senderId) !== String(readerId) ? { ...m, is_read: true, isRead: true } : m))
         );
       }
     });
 
     newSocket.on("message_deleted_everyone", ({ messageId, bookingId }) => {
-      if (activeRoomRef.current === bookingId) {
+      if (String(activeRoomRef.current || "") === String(bookingId || "")) {
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === parseInt(messageId)
-              ? { ...m, is_deleted_everyone: true, message: "This message was deleted", media: null }
+            String(m.id) === String(messageId)
+              ? { ...m, is_deleted_everyone: true, message: "This message was deleted", media: null, media_url: null, mediaUrl: null }
               : m
           )
         );
@@ -201,8 +239,10 @@ export function SocketProvider({ children }) {
     });
 
     newSocket.on("message_edited", (message) => {
-      if (activeRoomRef.current === message.booking_id) {
-        setMessages((prev) => prev.map((m) => (m.id === message.id ? message : m)));
+      if (!message) return;
+      const msgBookingId = String(message.booking_id || message.bookingId || "");
+      if (String(activeRoomRef.current || "") === msgBookingId) {
+        setMessages((prev) => prev.map((m) => (String(m.id) === String(message.id) ? { ...m, ...message } : m)));
       }
     });
 
@@ -235,12 +275,12 @@ export function SocketProvider({ children }) {
   }, [socket, connected]);
 
   // Sending message wrapper with Offline Queue & REST fallback Support
-  const sendChatMessage = useCallback(async (bookingId, messageText, messageType = "TEXT", parentMessageId = null, media = null) => {
+  const sendChatMessage = useCallback(async (bookingId, messageText, messageType = "TEXT", parentMessageId = null, media = null, receiverId = null) => {
     const localId = `offline_${Date.now()}`;
     const pendingMsg = {
       id: localId,
       sender_id: user?.id,
-      receiver_id: null,
+      receiver_id: receiverId,
       booking_id: bookingId,
       message: messageText,
       content: messageText,
@@ -261,7 +301,11 @@ export function SocketProvider({ children }) {
     try {
       const sentMsg = await apiRequest("POST", "/chat/send", {
         bookingId,
+        booking_id: bookingId,
+        receiverId,
+        receiver_id: receiverId,
         message: messageText,
+        text: messageText,
         content: messageText,
         messageType,
         message_type: messageType,
@@ -274,7 +318,7 @@ export function SocketProvider({ children }) {
 
       if (sentMsg) {
         const payload = sentMsg?.data || sentMsg;
-        const msgContent = sentMsg?.data?.content || sentMsg?.data?.message || messageText;
+        const msgContent = payload?.content || payload?.message || messageText;
         setMessages((prev) =>
           prev.map((m) =>
             m.id === localId
@@ -294,13 +338,14 @@ export function SocketProvider({ children }) {
       }
     } catch (err) {
       if (__DEV__) {
-        if (__DEV__) console.log("[CHAT] REST send fallback notice:", err.message);
+        console.log("[CHAT] REST send fallback notice:", err.message);
       }
     }
 
     if (connected && socket) {
       socket.emit("send-message", {
         bookingId,
+        receiverId,
         message: messageText,
         messageType,
         message_type: messageType,

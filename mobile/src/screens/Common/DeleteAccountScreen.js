@@ -7,7 +7,9 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  ActivityIndicator
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Alert from "../../utils/Alert";
@@ -60,10 +62,15 @@ export default function DeleteAccountScreen({ navigation }) {
         <View style={{ width: 24 }} />
       </View>
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContainer}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1 }}
       >
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContainer}
+          keyboardShouldPersistTaps="handled"
+        >
         <View style={styles.iconContainer}>
           <Ionicons name="warning-outline" size={40} color="#E53030" />
         </View>
@@ -123,6 +130,7 @@ export default function DeleteAccountScreen({ navigation }) {
           <Text style={styles.keepButtonText}>Keep My Account</Text>
         </TouchableOpacity>
       </ScrollView>
+    </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

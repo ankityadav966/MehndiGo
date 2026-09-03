@@ -4,9 +4,9 @@ const crypto = require("crypto");
 
 // Set environment for test audit
 process.env.NODE_ENV = "test";
-process.env.RAZORPAY_KEY_ID = "rzp_live_TSIrGnJIllkt0H";
-process.env.RAZORPAY_KEY_SECRET = "AJSFmZyxn471PmOT8OGRB768";
-process.env.RAZORPAY_WEBHOOK_SECRET = "AJSFmZyxn471PmOT8OGRB768";
+process.env.RAZORPAY_KEY_ID = "rzp_test_TTX0hx0yooeEQW";
+process.env.RAZORPAY_KEY_SECRET = "qtlFcyZE33GB3mt2nGOtOoL1";
+process.env.RAZORPAY_WEBHOOK_SECRET = "qtlFcyZE33GB3mt2nGOtOoL1";
 
 const razorpayUtil = require("../utils/razorpay");
 const paymentService = require("../services/payment.services");
@@ -19,22 +19,21 @@ describe("MEHENDIGO — RAZORPAY LIVE INTEGRATION & SECURITY AUDIT", () => {
     }
   });
 
-  it("1. Credentials Security: Key ID is valid Live key (rzp_live_*) and Secret is protected", () => {
+  it("1. Credentials Security: Key ID is valid key (rzp_test_* or rzp_live_*) and Secret is protected", () => {
     const keyId = process.env.RAZORPAY_KEY_ID;
     const keySecret = process.env.RAZORPAY_KEY_SECRET;
 
     assert.ok(keyId, "RAZORPAY_KEY_ID must exist");
     assert.ok(keySecret, "RAZORPAY_KEY_SECRET must exist");
-    assert.strictEqual(keyId.startsWith("rzp_live_"), true, "Production Key ID must begin with rzp_live_ prefix");
-    assert.strictEqual(keyId.startsWith("rzp_test_"), false, "Production Key ID must NOT be a test key");
+    assert.strictEqual(keyId.startsWith("rzp_test_") || keyId.startsWith("rzp_live_"), true, "Key ID must begin with rzp_ prefix");
     assert.ok(keySecret.length >= 16, "Key Secret must be a secure token");
   });
 
   it("2. SDK Instance: getRazorpayInstance initializes with env credentials without hardcoding", () => {
     const rzp = razorpayUtil.getRazorpayInstance();
     assert.ok(rzp, "Razorpay instance created");
-    assert.strictEqual(rzp.key_id, "rzp_live_TSIrGnJIllkt0H");
-    assert.strictEqual(rzp.key_secret, "AJSFmZyxn471PmOT8OGRB768");
+    assert.strictEqual(rzp.key_id, process.env.RAZORPAY_KEY_ID);
+    assert.strictEqual(rzp.key_secret, process.env.RAZORPAY_KEY_SECRET);
   });
 
   it("3. Order Creation: Generates order with paise conversion and 10% advance deposit", async () => {

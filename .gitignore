@@ -41,7 +41,6 @@ example
 
 # generated native folders
 /ios
-/android
 =======
 # Environment files
 .env

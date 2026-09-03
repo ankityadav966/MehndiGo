@@ -1,6 +1,7 @@
 import apiRequest from "./api";
 
 export async function getPriceDetails(serviceId, couponCode = null, slotCount = 1, customArtPrice = null, groupSize = 1, serviceCoverage = "BOTH_HANDS") {
+  if (!serviceId || serviceId === "undefined" || serviceId === "null") return null;
   let endpoint = `/booking/price-details?serviceId=${serviceId}&slotCount=${slotCount}`;
   if (couponCode) {
     endpoint += `&couponCode=${encodeURIComponent(couponCode)}`;
@@ -38,12 +39,20 @@ export async function applyCoupon(couponCode, serviceId) {
   return res?.data || res;
 }
 
-export async function createPaymentSession(bookingId) {
-  const res = await apiRequest("POST", "/booking/create-session", { bookingId }, true);
+export async function createPaymentSession(payload, paymentMethodType) {
+  const body = typeof payload === "object" && payload !== null
+    ? { ...payload, paymentMethodType: paymentMethodType || payload.paymentMethodType }
+    : { bookingId: payload, paymentMethodType };
+  const res = await apiRequest("POST", "/booking/create-session", body, true);
   return res?.data || res;
 }
 
 export async function verifyPayment(paymentDetails) {
+  const res = await apiRequest("POST", "/booking/verify-payment", paymentDetails, true);
+  return res?.data || res;
+}
+
+export async function verifyPaymentSignature(paymentDetails) {
   const res = await apiRequest("POST", "/booking/verify-payment", paymentDetails, true);
   return res?.data || res;
 }
@@ -57,8 +66,9 @@ export async function checkRestrictedBooking() {
   }
 }
 
-export async function selectCashPayment(bookingId) {
-  const res = await apiRequest("PUT", "/booking/select-cash", { bookingId }, true);
+export async function selectCashPayment(payload) {
+  const body = typeof payload === "object" && payload !== null ? payload : { bookingId: payload };
+  const res = await apiRequest("POST", "/booking/select-cash", body, true);
   return res?.data || res;
 }
 

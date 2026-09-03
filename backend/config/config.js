@@ -6,9 +6,11 @@ const getDbConfig = () => {
     return {
       use_env_variable: "DATABASE_URL",
       dialect: "postgres",
+      timezone: '+00:00',
       dialectOptions: {
         ssl: isSslRequired ? { require: true, rejectUnauthorized: false } : false,
-        connectTimeout: 5000
+        connectTimeout: 5000,
+        useUTC: true
       },
       pool: { max: 10, min: 0, acquire: 5000, idle: 10000 },
       logging: false,
@@ -36,8 +38,10 @@ const getDbConfig = () => {
     host,
     port,
     dialect: "postgres",
+    timezone: '+00:00',
     dialectOptions: {
-      connectTimeout: 5000
+      connectTimeout: 5000,
+      useUTC: true
     },
     pool: { max: 10, min: 0, acquire: 5000, idle: 10000 },
     logging: false,

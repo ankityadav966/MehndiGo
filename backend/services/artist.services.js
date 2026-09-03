@@ -46,10 +46,12 @@ class ArtistService {
 
     // Aadhaar number validation and collision check if provided
     if (data.aadhaar_number) {
-      const cleanAadhaar = String(data.aadhaar_number).replace(/\s/g, "");
-      if (!/^\d{12}$/.test(cleanAadhaar)) {
-        throw new AppError("Aadhaar number must be exactly 12 numeric digits", 400);
+      const { validateAadhaarNumber } = require("../utils/aadhaar.validator");
+      const aadhaarValidation = validateAadhaarNumber(data.aadhaar_number);
+      if (!aadhaarValidation.valid) {
+        throw new AppError(aadhaarValidation.message, 400);
       }
+      const cleanAadhaar = aadhaarValidation.cleanNumber;
       const existingAadhaar = await db.ArtistProfile.findOne({
         where: {
           aadhaar_number: cleanAadhaar,
@@ -60,6 +62,17 @@ class ArtistService {
         throw new AppError("This Aadhaar number is already registered with another artist account.", 400);
       }
       data.aadhaar_number = cleanAadhaar;
+    }
+
+    // Aadhaar front & back distinct photos validation
+    if (data.aadhaar_front || data.aadhaar_back) {
+      const { validateAadhaarPhotos } = require("../utils/aadhaar.validator");
+      if (data.aadhaar_front && data.aadhaar_back) {
+        const photoValidation = validateAadhaarPhotos(data.aadhaar_front, data.aadhaar_back);
+        if (!photoValidation.valid) {
+          throw new AppError(photoValidation.message, 400);
+        }
+      }
     }
 
     // PAN number validation and collision check if provided
@@ -107,7 +120,7 @@ class ArtistService {
       const updatePayload = {
         bio: data.bio !== undefined ? data.bio : existingProfile.bio,
         experience_years: data.experience_years !== undefined ? Number(data.experience_years) : existingProfile.experience_years,
-        starting_price: data.starting_price !== undefined ? Number(data.starting_price) : (existingProfile.starting_price || 1500),
+        starting_price: data.starting_price !== undefined ? Number(data.starting_price) : (existingProfile.starting_price || 0),
         home_service: data.home_service !== undefined ? Boolean(data.home_service) : existingProfile.home_service,
         salon_service: data.salon_service !== undefined ? Boolean(data.salon_service) : existingProfile.salon_service,
         location: data.location !== undefined ? data.location : existingProfile.location,
@@ -137,8 +150,8 @@ class ArtistService {
             specialization_name: "Bridal & Party Mehndi",
             category: "Bridal Mehndi",
             description: data.bio || "Custom handcrafted mehndi design service",
-            minimum_price: Number(data.starting_price) || 1500,
-            maximum_price: (Number(data.starting_price) || 1500) * 3,
+            minimum_price: Number(data.starting_price) || 0,
+            maximum_price: (Number(data.starting_price) || 0) * 3,
             duration_minutes: 120,
             is_home_service: Boolean(data.home_service !== false),
             is_salon_service: Boolean(data.salon_service),
@@ -154,7 +167,7 @@ class ArtistService {
 
     const profile = await ArtistProfileRepositor.createProfile({
       ...data,
-      starting_price: Number(data.starting_price) || 1500,
+      starting_price: Number(data.starting_price) || 0,
       verification_status: "PENDING",
       is_available: false,
       rejection_reason: null,
@@ -168,8 +181,8 @@ class ArtistService {
         specialization_name: "Bridal & Party Mehndi",
         category: "Bridal Mehndi",
         description: data.bio || "Custom handcrafted mehndi design service",
-        minimum_price: Number(data.starting_price) || 1500,
-        maximum_price: (Number(data.starting_price) || 1500) * 3,
+        minimum_price: Number(data.starting_price) || 0,
+        maximum_price: (Number(data.starting_price) || 0) * 3,
         duration_minutes: 120,
         is_home_service: Boolean(data.home_service !== false),
         is_salon_service: Boolean(data.salon_service),
@@ -227,6 +240,7 @@ class ArtistService {
       home_service: data.home_service !== undefined ? Boolean(data.home_service) : (data.homeService !== undefined ? Boolean(data.homeService) : artist.home_service),
       salon_service: data.salon_service !== undefined ? Boolean(data.salon_service) : (data.salonService !== undefined ? Boolean(data.salonService) : artist.salon_service),
       is_available: data.is_available !== undefined ? Boolean(data.is_available) : (data.isAvailable !== undefined ? Boolean(data.isAvailable) : artist.is_available),
+      service_radius: data.service_radius !== undefined ? (data.service_radius === null ? null : Number(data.service_radius)) : (data.serviceRadius !== undefined ? (data.serviceRadius === null ? null : Number(data.serviceRadius)) : artist.service_radius),
       selfie_image: data.selfie_image !== undefined ? data.selfie_image : (data.profile_image !== undefined ? data.profile_image : (data.profileImage !== undefined ? data.profileImage : artist.selfie_image)),
       location: data.location !== undefined ? data.location : artist.location,
       city: data.city !== undefined ? data.city : artist.city,
@@ -257,11 +271,24 @@ class ArtistService {
     if (data.aadhaar_front || data.aadhaar_back || data.aadhaar_number || data.pan_number) {
       if (data.aadhaar_front) allowedUpdates.aadhaar_front = data.aadhaar_front;
       if (data.aadhaar_back) allowedUpdates.aadhaar_back = data.aadhaar_back;
-      if (data.aadhaar_number) {
-        const cleanAadhaar = String(data.aadhaar_number).replace(/\s/g, "");
-        if (!/^\d{12}$/.test(cleanAadhaar)) {
-          throw new AppError("Aadhaar number must be exactly 12 numeric digits", 400);
+      
+      const frontToCheck = data.aadhaar_front || artist.aadhaar_front;
+      const backToCheck = data.aadhaar_back || artist.aadhaar_back;
+      if (frontToCheck && backToCheck) {
+        const { validateAadhaarPhotos } = require("../utils/aadhaar.validator");
+        const photoValidation = validateAadhaarPhotos(frontToCheck, backToCheck);
+        if (!photoValidation.valid) {
+          throw new AppError(photoValidation.message, 400);
         }
+      }
+
+      if (data.aadhaar_number) {
+        const { validateAadhaarNumber } = require("../utils/aadhaar.validator");
+        const aadhaarValidation = validateAadhaarNumber(data.aadhaar_number);
+        if (!aadhaarValidation.valid) {
+          throw new AppError(aadhaarValidation.message, 400);
+        }
+        const cleanAadhaar = aadhaarValidation.cleanNumber;
         const existingAadhaar = await db.ArtistProfile.findOne({
           where: {
             aadhaar_number: cleanAadhaar,
@@ -1892,6 +1919,7 @@ async createReview(data) {
     await artist.update({
       bio: data.bio !== undefined ? data.bio : artist.bio,
       experience_years: data.experience_years !== undefined ? Number(data.experience_years) : (data.experience !== undefined ? Number(data.experience) : artist.experience_years),
+      service_radius: data.service_radius !== undefined ? (data.service_radius === null ? null : Number(data.service_radius)) : (data.serviceRadius !== undefined ? (data.serviceRadius === null ? null : Number(data.serviceRadius)) : artist.service_radius),
       location: data.location !== undefined ? data.location : artist.location,
       city: data.city !== undefined ? data.city : artist.city,
       state: data.state !== undefined ? data.state : artist.state,
@@ -1964,30 +1992,81 @@ async createReview(data) {
     return service;
   }
 
-  async validateCategory(categoryName) {
-    if (!categoryName || typeof categoryName !== "string") {
-      throw new AppError("Category name is required", 400);
+  async validateCategory(categoryInput) {
+    if (!categoryInput) {
+      throw new AppError("Category is required", 400);
     }
-    const trimmed = categoryName.trim();
+    
+    const categories = Array.isArray(categoryInput) ? categoryInput : [categoryInput];
+    
+    if (categories.length === 0) {
+      throw new AppError("At least one category is required", 400);
+    }
+
     const isPostgres = db.sequelize.getDialect() === "postgres";
     const likeOp = isPostgres ? Op.iLike : Op.like;
 
-    const cat = await db.Category.findOne({
-      where: {
-        [Op.or]: [
-          { name: { [likeOp]: trimmed } },
-          { slug: { [likeOp]: trimmed.toLowerCase().replace(/[^a-z0-9]+/g, "-") } }
-        ]
-      }
-    });
+    const validCategories = [];
 
-    if (cat) {
-      if (cat.status === "INACTIVE") {
-        throw new AppError(`Selected category '${cat.name}' is currently inactive`, 400);
+    for (const catName of categories) {
+      if (typeof catName !== "string") continue;
+      const trimmed = catName.trim();
+      if (!trimmed) continue;
+
+      const cat = await db.Category.findOne({
+        where: {
+          [Op.or]: [
+            { name: { [likeOp]: trimmed } },
+            { slug: { [likeOp]: trimmed.toLowerCase().replace(/[^a-z0-9]+/g, "-") } }
+          ]
+        }
+      });
+  
+      if (cat) {
+        if (cat.status === "INACTIVE") {
+          throw new AppError(`Selected category '${cat.name}' is currently inactive`, 400);
+        }
+        validCategories.push(cat.name);
+      } else {
+        validCategories.push(trimmed);
       }
-      return cat.name;
     }
-    return trimmed;
+
+    if (validCategories.length === 0) {
+      throw new AppError("Valid category name is required", 400);
+    }
+
+    return validCategories;
+  }
+
+  /**
+   * Checks whether the Services.category column has been migrated to JSONB.
+   * If the column is still VARCHAR, storing an array will cause a Postgres
+   * type error (500). Throws a clear AppError so the cause is obvious in logs.
+   * Run migration: npx sequelize-cli db:migrate
+   */
+  async _assertCategoryColumnIsJson() {
+    try {
+      const [rows] = await db.sequelize.query(
+        `SELECT data_type, udt_name FROM information_schema.columns
+         WHERE table_name = 'Services' AND column_name = 'category' LIMIT 1`
+      );
+      if (rows && rows.length > 0) {
+        const { data_type, udt_name } = rows[0];
+        // Acceptable types: jsonb, json, text (SQLite stores as text)
+        const isJson = ["jsonb", "json", "text"].includes((data_type || "").toLowerCase())
+          || ["jsonb", "json"].includes((udt_name || "").toLowerCase());
+        if (!isJson) {
+          throw new AppError(
+            "Database migration required: Services.category column must be JSONB. Run: npx sequelize-cli db:migrate",
+            500
+          );
+        }
+      }
+    } catch (err) {
+      // Re-throw our own AppErrors; swallow introspection failures on non-postgres dialects
+      if (err instanceof AppError) throw err;
+    }
   }
 
   validatePricingAndDuration(data) {
@@ -2041,6 +2120,10 @@ async createReview(data) {
       throw new AppError("Specialization name is required", 400);
     }
 
+    // Guard: ensures the DB column is JSONB before attempting to store an array.
+    // If still VARCHAR, this throws a clear 500 with migration instructions.
+    await this._assertCategoryColumnIsJson();
+
     const canonicalCategory = await this.validateCategory(data.category);
     this.validatePricingAndDuration(data);
 
@@ -2069,6 +2152,7 @@ async createReview(data) {
         service_image: data.service_image || null,
         is_home_service: data.is_home_service !== undefined ? Boolean(data.is_home_service) : true,
         is_salon_service: data.is_salon_service !== undefined ? Boolean(data.is_salon_service) : false,
+        service_tier: data.service_tier || 'STANDARD',
         is_active: true,
         offer_price: data.offer_price ? Number(data.offer_price) : null,
         travel_charges: data.travel_charges ? Number(data.travel_charges) : 0,
@@ -2533,31 +2617,27 @@ async createReview(data) {
   }
 
   async getLeads(userId, query = {}) {
-    const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
-    if (!artist) throw new AppError("Artist profile not found", 404);
+    const artist = await db.ArtistProfile.findOne({
+      where: {
+        [db.Sequelize.Op.or]: [
+          { user_id: userId },
+          { id: userId }
+        ]
+      }
+    });
 
-    if (artist.verification_status !== "APPROVED") {
-      return {
-        leads: [],
-        stats: {
-          todayLeads: 0,
-          pendingLeads: 0,
-          acceptedLeads: 0,
-          rejectedLeads: 0,
-          completedLeads: 0,
-          expiredLeads: 0,
-          totalEarnings: 0,
-          conversionRate: 0,
-          responseTime: "N/A"
-        },
-        totalCount: 0
-      };
-    }
-
-    const { status, dateRange, city, category, minPrice, maxPrice, search, sort, page = 1, limit = 10 } = query;
+    const artistId = artist ? artist.id : userId;
+    const { status, dateRange, city, category, minPrice, maxPrice, search, sort, page = 1, limit = 50 } = query;
     const offset = (page - 1) * limit;
 
-    const where = { artist_id: artist.id };
+    const where = {
+      [db.Sequelize.Op.or]: [
+        { artist_id: artistId },
+        { artist_id: userId },
+        { artist_id: null },
+        { artist_id: 0 }
+      ]
+    };
 
     // 1. Search filter
     if (search) {
@@ -2588,7 +2668,7 @@ async createReview(data) {
       } else if (status === "Cancelled") {
         where.booking_status = "CANCELLED";
         where.detailed_status = { [db.Sequelize.Op.ne]: "REJECTED" };
-      } else if (status === "Pending") {
+      } else if (status === "Pending" || status === "New Lead") {
         where.booking_status = "PENDING";
         where.detailed_status = { [db.Sequelize.Op.ne]: "VIEWED" };
       } else if (status === "Viewed") {
@@ -2687,7 +2767,7 @@ async createReview(data) {
     // Format leads list
     const leadsList = bookings.map((b) => {
       let distance = "0.5 km";
-      if (b.latitude && b.longitude && artist.latitude && artist.longitude) {
+      if (b.latitude && b.longitude && artist?.latitude && artist?.longitude) {
         const lat1 = Number(artist.latitude);
         const lon1 = Number(artist.longitude);
         const lat2 = Number(b.latitude);
@@ -2704,16 +2784,16 @@ async createReview(data) {
 
       return {
         id: b.id,
-        booking_code: b.booking_code,
+        booking_code: b.booking_code || `BK-${b.id}`,
         customer_name: b.user?.name || "Customer",
         customer_image: b.user?.profile_image || null,
         service_name: b.service?.specialization_name || "Mehndi Service",
         category: b.service?.category || "Regular Mehndi",
-        city: b.city || artist.city || "Goa",
+        city: b.city || artist?.city || "Jaipur",
         address: b.address,
-        booking_date: b.reschedule_date || b.createdAt,
-        booking_time: b.reschedule_time || "10:00 AM",
-        price: b.total_price,
+        booking_date: b.reschedule_date || b.booking_date || b.createdAt,
+        booking_time: b.reschedule_time || b.booking_time || "10:00 AM",
+        price: b.total_price || b.total_amount || 0,
         distance,
         status: getLeadStatus(b),
         detailed_status: b.detailed_status,
@@ -2729,7 +2809,14 @@ async createReview(data) {
     }
 
     const allLeadsForStats = await db.Booking.findAll({
-      where: { artist_id: artist.id },
+      where: {
+        [db.Sequelize.Op.or]: [
+          { artist_id: artistId },
+          { artist_id: userId },
+          { artist_id: null },
+          { artist_id: 0 }
+        ]
+      },
       include: [
         { model: db.AvailabilitySlot, as: "slot", required: false }
       ]
@@ -2763,7 +2850,6 @@ async createReview(data) {
       if (leadStatus === "Rejected") stats.rejectedLeads++;
       if (leadStatus === "Completed") stats.completedLeads++;
       if (leadStatus === "Expired") stats.expiredLeads++;
-
     });
 
     const wallet = await db.Wallet.findOne({ where: { user_id: userId } });
@@ -2779,10 +2865,15 @@ async createReview(data) {
       include: [{
         model: db.Booking,
         as: "booking",
-        where: { artist_id: artist.id },
+        where: {
+          [db.Sequelize.Op.or]: [
+            { artist_id: artistId },
+            { artist_id: userId }
+          ]
+        },
         required: true
       }]
-    });
+    }).catch(() => []);
 
     activities.forEach((act) => {
       const created = new Date(act.booking.createdAt);
@@ -2806,8 +2897,16 @@ async createReview(data) {
   }
 
   async getLeadById(id, userId) {
-    const artist = await db.ArtistProfile.findOne({ where: { user_id: userId } });
-    if (!artist) throw new AppError("Artist profile not found", 404);
+    const artist = await db.ArtistProfile.findOne({
+      where: {
+        [db.Sequelize.Op.or]: [
+          { user_id: userId },
+          { id: userId }
+        ]
+      }
+    });
+
+    const artistId = artist ? artist.id : userId;
 
     const booking = await db.Booking.findByPk(id, {
       include: [
@@ -2818,7 +2917,9 @@ async createReview(data) {
     });
 
     if (!booking) throw new AppError("Lead booking not found", 404);
-    if (booking.artist_id !== artist.id) throw new AppError("Unauthorized access to lead", 403);
+    if (booking.artist_id && booking.artist_id !== artistId && booking.artist_id !== userId) {
+      throw new AppError("Unauthorized access to lead", 403);
+    }
 
     let distance = "0.5 km";
     if (booking.latitude && booking.longitude && artist.latitude && artist.longitude) {

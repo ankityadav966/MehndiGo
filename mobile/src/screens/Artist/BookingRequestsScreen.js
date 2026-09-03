@@ -1,5 +1,5 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   FlatList,
   Image,
@@ -8,41 +8,108 @@ import {
   TouchableOpacity,
   View,
   ActivityIndicator,
-  RefreshControl
+  RefreshControl,
+  AppState
 } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import { acceptBooking, rejectBooking } from "../../services/booking";
 import { getArtistBookingsData } from "../../services/artist";
+import { useSocket } from "../../context/SocketContext";
 
 export default function BookingRequestsScreen({ route, navigation }) {
   const [activeTab, setActiveTab] = useState(route.params?.initialTab || "Pending");
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const socketContext = useSocket?.();
+  const socket = socketContext?.socket;
 
-  const fetchHistory = async () => {
+  const fetchHistory = useCallback(async (isSilent = false) => {
     try {
+      if (!isSilent) setLoading(true);
       const data = await getArtistBookingsData();
-      setBookings(data || []);
+      // Show an alert to help debug
+      console.log(`[DEBUG_BOOKINGS] Fetched ${Array.isArray(data) ? data.length : "NOT_ARRAY"} bookings from API. Data:`, JSON.stringify(data).substring(0, 200));
+      setBookings(Array.isArray(data) ? data : []);
     } catch (e) {
       if (__DEV__) console.log("Failed to fetch artist bookings:", e.message);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    const unsubscribe = navigation.addListener("focus", () => {
-      if (bookings.length === 0) {
-        setLoading(true);
+    if (route.params?.initialTab) {
+      setActiveTab(route.params.initialTab);
+    }
+  }, [route.params?.initialTab]);
+
+  // 1. Screen Focus Lifecycle Refresh
+  useFocusEffect(
+    useCallback(() => {
+      fetchHistory(true);
+    }, [fetchHistory])
+  );
+
+  // 2. App Foreground Resume Refresh
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (nextAppState) => {
+      if (nextAppState === "active") {
+        fetchHistory(true);
       }
-      fetchHistory();
     });
-    return unsubscribe;
-  }, [navigation, bookings]);
+    return () => sub.remove();
+  }, [fetchHistory]);
+
+  // 3. Real-Time WebSocket Events for Instant Live Updates without Back Navigation
+  useEffect(() => {
+    if (!socket) return;
+    const handleRealtimeUpdate = () => {
+      if (__DEV__) console.log("[BookingRequests] Real-time booking event received -> refreshing");
+      fetchHistory(true);
+    };
+
+    socket.on("BOOKING_CREATED", handleRealtimeUpdate);
+    socket.on("NEW_BOOKING_REQUEST", handleRealtimeUpdate);
+    socket.on("BOOKING_UPDATED", handleRealtimeUpdate);
+    socket.on("PAYMENT_RECEIVED", handleRealtimeUpdate);
+    socket.on("BOOKING_ACCEPTED", handleRealtimeUpdate);
+    socket.on("BOOKING_CANCELLED", handleRealtimeUpdate);
+
+    return () => {
+      socket.off("BOOKING_CREATED", handleRealtimeUpdate);
+      socket.off("NEW_BOOKING_REQUEST", handleRealtimeUpdate);
+      socket.off("BOOKING_UPDATED", handleRealtimeUpdate);
+      socket.off("PAYMENT_RECEIVED", handleRealtimeUpdate);
+      socket.off("BOOKING_ACCEPTED", handleRealtimeUpdate);
+      socket.off("BOOKING_CANCELLED", handleRealtimeUpdate);
+    };
+  }, [socket, fetchHistory]);
+
+  // 4. Initial Mount & Hardware Back
+  useEffect(() => {
+    fetchHistory();
+    const { BackHandler } = require("react-native");
+
+    const onBackPress = () => {
+      if (navigation?.canGoBack && navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        navigation.navigate("ArtistTabs", { screen: "Dashboard" });
+      }
+      return true;
+    };
+
+    const backSub = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+
+    return () => {
+      backSub.remove();
+    };
+  }, [navigation, fetchHistory]);
 
   const handleRefresh = () => {
     setRefreshing(true);
@@ -211,18 +278,26 @@ export default function BookingRequestsScreen({ route, navigation }) {
       const rawDetailed = String(item.detailed_status || item.detailedStatus || "").toUpperCase();
 
       let status = "PENDING";
-      if (rawStatus === "ACCEPTED" || rawDetailed === "ARTIST_ACCEPTED" || rawDetailed === "ACCEPTED") {
+      if (
+        rawStatus === "ACCEPTED" ||
+        rawStatus === "CONFIRMED" ||
+        rawStatus === "ARTIST_ACCEPTED" ||
+        rawDetailed === "ARTIST_ACCEPTED" ||
+        rawDetailed === "ACCEPTED" ||
+        rawDetailed === "CONFIRMED"
+      ) {
         status = "ARTIST_ACCEPTED";
-      } else if (rawStatus === "ON_THE_WAY" || rawDetailed === "ARTIST_ON_THE_WAY") {
+      } else if (rawStatus === "ON_THE_WAY" || rawDetailed === "ARTIST_ON_THE_WAY" || rawDetailed === "ON_THE_WAY") {
         status = "ARTIST_ON_THE_WAY";
-      } else if (rawStatus === "ARRIVED" || rawDetailed === "ARTIST_ARRIVED") {
+      } else if (rawStatus === "ARRIVED" || rawDetailed === "ARTIST_ARRIVED" || rawDetailed === "ARRIVED") {
         status = "ARTIST_ARRIVED";
       } else if (
         rawStatus === "IN_PROGRESS" ||
         rawDetailed === "SERVICE_IN_PROGRESS" ||
         rawDetailed === "SERVICE_STARTED" ||
         rawDetailed === "IN_PROGRESS" ||
-        rawDetailed === "PROCESSING"
+        rawDetailed === "PROCESSING" ||
+        rawDetailed === "CHECKOUT"
       ) {
         status = "SERVICE_IN_PROGRESS";
       } else if (
@@ -242,26 +317,33 @@ export default function BookingRequestsScreen({ route, navigation }) {
         rawDetailed === "COMPLETED_CLOSED"
       ) {
         status = "COMPLETED";
-      } else if (rawDetailed && rawDetailed !== "PENDING" && rawDetailed !== "CONFIRMED" && rawDetailed !== "VIEWED" && rawDetailed !== "REQUESTED") {
+      } else if (rawDetailed && !["PENDING", "REQUESTED", "CREATED", "PENDING_PAYMENT", "VIEWED"].includes(rawDetailed)) {
         status = rawDetailed;
       } else {
         status = "PENDING";
       }
 
       if (activeTab === "Pending") {
-        return (
-          status === "PENDING" ||
-          rawStatus === "PENDING" ||
-          rawDetailed === "PENDING" ||
-          rawDetailed === "REQUESTED" ||
-          (!["ARTIST_ACCEPTED", "ACCEPTED", "CANCELLED", "REJECTED", "DECLINED", "COMPLETED"].includes(rawDetailed) && !["ACCEPTED", "CANCELLED", "REJECTED", "COMPLETED"].includes(rawStatus))
-        );
+        const pStatus = String(item.payment_status || "").toUpperCase();
+        const pMode = String(item.payment_mode || "").toUpperCase();
+        const advance = Number(item.advance_paid || 0);
+        const isCash = pMode === "CASH";
+
+        const isUnpaidOnlineDraft = rawDetailed === "PENDING_PAYMENT" || (!isCash && pStatus === "PENDING" && advance <= 0);
+        // if (isUnpaidOnlineDraft) return false;
+
+        const isAccepted = rawStatus === "ACCEPTED" || rawStatus === "CONFIRMED" || rawDetailed === "ARTIST_ACCEPTED" || rawDetailed === "ACCEPTED" || rawDetailed === "CONFIRMED" || rawDetailed === "ARTIST_ON_THE_WAY" || rawDetailed === "ON_THE_WAY" || rawDetailed === "ARTIST_ARRIVED" || rawDetailed === "ARRIVED" || rawDetailed === "SERVICE_IN_PROGRESS" || rawDetailed === "SERVICE_STARTED" || rawDetailed === "IN_PROGRESS";
+        const isCancelled = rawStatus === "CANCELLED" || rawStatus === "REJECTED" || rawStatus === "DECLINED" || rawDetailed === "CANCELLED" || rawDetailed === "REJECTED" || rawDetailed === "DECLINED" || rawDetailed === "REFUNDED";
+        const isCompleted = rawStatus === "COMPLETED" || rawDetailed === "COMPLETED" || rawDetailed === "AWAITING_CASH_CONFIRMATION" || rawDetailed === "COMPLETED_CLOSED";
+
+        return !isAccepted && !isCancelled && !isCompleted;
       }
 
       if (activeTab === "Accepted") {
         return [
           "ARTIST_ACCEPTED",
           "ACCEPTED",
+          "CONFIRMED",
           "ARTIST_ON_THE_WAY",
           "ON_THE_WAY",
           "ARTIST_ARRIVED",
@@ -334,21 +416,79 @@ export default function BookingRequestsScreen({ route, navigation }) {
   };
 
   const renderItem = ({ item }) => {
-    const moment = require("moment");
     let dateStr = "Today";
-    if (item.slot?.date) {
-      dateStr = moment(item.slot.date).format("YYYY/MM/DD");
-    } else if (item.slot?.start_time) {
-      dateStr = moment(item.slot.start_time).format("YYYY/MM/DD");
-    } else if (item.reschedule_date) {
-      dateStr = moment(item.reschedule_date).format("YYYY/MM/DD");
+    const rawDate =
+      item.booking_date ||
+      item.date ||
+      item.bookingDate ||
+      item.event_date ||
+      item.slot?.date ||
+      item.reschedule_date ||
+      item.created_at ||
+      item.createdAt;
+
+    if (rawDate) {
+      const rawStr = String(rawDate).trim();
+      if (/^\d{1,2}\s+[A-Za-z]{3}\s+\d{4}$/.test(rawStr)) {
+        dateStr = rawStr;
+      } else {
+        try {
+          const d = new Date(rawDate);
+          if (!isNaN(d.getTime())) {
+            dateStr = d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+          } else {
+            const parts = rawStr.split(/[-/]/);
+            if (parts.length === 3) {
+              const parsed = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+              if (!isNaN(parsed.getTime())) {
+                dateStr = parsed.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+              } else {
+                dateStr = rawStr;
+              }
+            } else {
+              dateStr = rawStr;
+            }
+          }
+        } catch {
+          dateStr = rawStr;
+        }
+      }
     }
 
-    const timeStr = item.slot
-      ? `${formatTime(item.slot.start_time)} - ${formatTime(item.slot.end_time)}`
-      : item.reschedule_time
-      ? formatTime(item.reschedule_time)
-      : "TBD";
+    if (!dateStr || dateStr.toLowerCase().includes("invalid")) {
+      if (item.created_at || item.createdAt) {
+        try {
+          const cd = new Date(item.created_at || item.createdAt);
+          if (!isNaN(cd.getTime())) {
+            dateStr = cd.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+          }
+        } catch (_) {}
+      }
+      if (!dateStr || dateStr.toLowerCase().includes("invalid")) {
+        dateStr = "Today";
+      }
+    }
+
+    let timeStr =
+      item.booking_time ||
+      item.time ||
+      item.bookingTime ||
+      item.slot_time ||
+      item.reschedule_time ||
+      item.slot?.slot_window ||
+      "";
+
+    if (!timeStr && item.slot) {
+      if (typeof item.slot.start_time === "string") {
+        const st = item.slot.start_time;
+        const et = item.slot.end_time;
+        timeStr = et ? `${st} - ${et}` : st;
+      }
+    }
+
+    if (!timeStr || timeStr.toLowerCase().includes("invalid")) {
+      timeStr = "Flexible";
+    }
 
     const customerName =
       item.user?.name || item.customer_name || item.client_name || item.customer?.name || "Client";

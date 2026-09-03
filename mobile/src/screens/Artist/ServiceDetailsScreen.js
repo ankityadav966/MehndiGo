@@ -23,6 +23,17 @@ export default function ServiceDetailsScreen({ route, navigation }) {
   const fetchServiceDetail = React.useCallback(async () => {
     try {
       const data = await getArtistServiceById(id);
+      if (data) {
+        if (typeof data.packages === 'string') {
+          try { data.packages = JSON.parse(data.packages); } catch (e) { data.packages = []; }
+        }
+        if (!Array.isArray(data.packages)) data.packages = [];
+
+        if (typeof data.addons === 'string') {
+          try { data.addons = JSON.parse(data.addons); } catch (e) { data.addons = []; }
+        }
+        if (!Array.isArray(data.addons)) data.addons = [];
+      }
       setService(data);
     } catch (err) {
       Alert.alert("Error", "Failed to retrieve service details.");
@@ -32,16 +43,33 @@ export default function ServiceDetailsScreen({ route, navigation }) {
     }
   }, [id, navigation]);
 
+  /** Safely parse category which may be JSON string, plain string, or array */
+  const parseCategory = (raw) => {
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    if (typeof raw === "string") {
+      try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [raw];
+      } catch {
+        return [raw];
+      }
+    }
+    return [];
+  };
+
   useEffect(() => {
     if (!id) {
       Alert.alert("Error", "Missing service parameter ID.");
       navigation.goBack();
       return;
     }
-    const timer = setTimeout(() => {
+    fetchServiceDetail();
+    
+    const unsubscribe = navigation.addListener("focus", () => {
       fetchServiceDetail();
-    }, 0);
-    return () => clearTimeout(timer);
+    });
+    return unsubscribe;
   }, [id, fetchServiceDetail, navigation]);
 
   const handleEdit = () => {
@@ -79,7 +107,22 @@ export default function ServiceDetailsScreen({ route, navigation }) {
     );
   }
 
-  const imageUri = service.service_image || "https://images.unsplash.com/photo-1605559424843-9e4c228bf1c2?w=500";
+  const parseImages = (raw) => {
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    if (typeof raw === "string") {
+      try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [raw];
+      } catch {
+        return [raw];
+      }
+    }
+    return [];
+  };
+
+  const imagesList = parseImages(service.service_image);
+  const imageUri = imagesList.length > 0 ? imagesList[0] : "https://images.unsplash.com/photo-1605559424843-9e4c228bf1c2?w=500";
 
   return (
     <SafeAreaView style={styles.container}>
@@ -98,8 +141,13 @@ export default function ServiceDetailsScreen({ route, navigation }) {
           <View style={styles.titleRow}>
             <View style={styles.titleInfo}>
               <Text style={styles.serviceName}>{service.specialization_name}</Text>
-              <View style={styles.categoryBadge}>
-                <Text style={styles.categoryText}>{service.category}</Text>
+              {/* Multi-category badges */}
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                {parseCategory(service.category).map((cat, i) => (
+                  <View key={i} style={styles.categoryBadge}>
+                    <Text style={styles.categoryText}>{cat}</Text>
+                  </View>
+                ))}
               </View>
             </View>
             <Text style={styles.price}>Min ₹{service.minimum_price}</Text>
@@ -109,7 +157,7 @@ export default function ServiceDetailsScreen({ route, navigation }) {
 
           <Text style={styles.sectionTitle}>Short Description</Text>
           <Text style={styles.description}>
-            {service.description || "Beautiful custom mehndi styling for all events and occasions."}
+            {service.description ? service.description : "No description provided."}
           </Text>
 
           <View style={styles.divider} />
@@ -120,10 +168,15 @@ export default function ServiceDetailsScreen({ route, navigation }) {
             <View key={pkg.id} style={styles.itemRow}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.itemTitle}>{pkg.package_name}</Text>
-                <Text style={styles.itemSub}>{pkg.included_designs || "Custom designs"}</Text>
-                <Text style={styles.itemSub}>
-                  Hands: {pkg.number_of_hands} • Feet: {pkg.number_of_feet} • ⏱️ {pkg.duration} mins
-                </Text>
+                {pkg.included_designs ? <Text style={styles.itemSub}>{pkg.included_designs}</Text> : null}
+                {(pkg.number_of_hands > 0 || pkg.number_of_feet > 0) && (
+                  <Text style={styles.itemSub}>
+                    {pkg.number_of_hands > 0 ? `Hands: ${pkg.number_of_hands} ` : ""}
+                    {pkg.number_of_hands > 0 && pkg.number_of_feet > 0 ? "• " : ""}
+                    {pkg.number_of_feet > 0 ? `Feet: ${pkg.number_of_feet} ` : ""}
+                    • ⏱️ {pkg.duration} mins
+                  </Text>
+                )}
               </View>
               <Text style={styles.itemVal}>₹{pkg.package_price}</Text>
             </View>
@@ -140,7 +193,7 @@ export default function ServiceDetailsScreen({ route, navigation }) {
             <View key={addon.id} style={styles.itemRow}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.itemTitle}>{addon.addon_name}</Text>
-                <Text style={styles.itemSub}>{addon.description || "Styling extra option"}</Text>
+                {addon.description ? <Text style={styles.itemSub}>{addon.description}</Text> : null}
               </View>
               <Text style={styles.itemVal}>+₹{addon.addon_price}</Text>
             </View>
