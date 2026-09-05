@@ -76,6 +76,11 @@ async function apiRequest(method, endpoint, body = null, auth = false, customTim
     const token = await secureStorage.getAccessToken();
     if (token) {
       headers.Authorization = `Bearer ${token}`;
+    } else {
+      if (__DEV__) console.log(`[API REQUEST] Skipped ${method} ${endpoint}: No access token available`);
+      const err = new Error("No authentication token available");
+      err.response = { data: { message: "No authentication token available" }, status: 401, statusText: "Unauthorized" };
+      throw err;
     }
   }
 
@@ -107,9 +112,11 @@ async function apiRequest(method, endpoint, body = null, auth = false, customTim
     }
 
     if (response.status === 401) {
-      await secureStorage.clearAll();
-      if (global.logoutHandler) {
-        global.logoutHandler();
+      if (headers.Authorization) {
+        await secureStorage.clearAll();
+        if (global.logoutHandler) {
+          global.logoutHandler();
+        }
       }
     }
 

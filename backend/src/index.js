@@ -2363,7 +2363,9 @@ const handleSaveBankAccount = async (c) => {
 // Single Configuration Source of Truth: Platform Commission
 const PLATFORM_COMMISSION_RATE = 0.10; // 10% Platform Commission
 
+let walletTablesEnsured = false;
 const ensureWalletTables = async (db) => {
+  if (walletTablesEnsured) return;
   await db.run(`
     CREATE TABLE IF NOT EXISTS wallets (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2486,58 +2488,33 @@ const ensureWalletTables = async (db) => {
   await db.run("INSERT OR IGNORE INTO marketplace_settings (key, value, description) VALUES ('tcs_rate', '0.0', 'E-commerce TCS rate percentage')").catch(() => { });
   await db.run("INSERT OR IGNORE INTO marketplace_settings (key, value, description) VALUES ('min_withdrawal_amount', '100.0', 'Minimum withdrawal amount in INR')").catch(() => { });
 
-  // Master Financial Ledger Table
+  // Master Financial Ledger for all movements
   await db.run(`
     CREATE TABLE IF NOT EXISTS master_financial_ledger (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      transaction_id TEXT UNIQUE,
+      source TEXT,
+      entry_type TEXT,
       booking_id INTEGER,
-      customer_id INTEGER,
-      artist_id INTEGER,
-      payment_id INTEGER,
-      gateway_order_id TEXT,
-      gateway_payment_id TEXT,
-      base_service_amount REAL DEFAULT 0.0,
-      distance_km REAL DEFAULT 0.0,
-      free_distance_km REAL DEFAULT 10.0,
-      chargeable_distance_km REAL DEFAULT 0.0,
-      travel_rate_per_km REAL DEFAULT 5.0,
-      travel_charge REAL DEFAULT 0.0,
-      travel_charge_status TEXT DEFAULT 'NONE',
-      commission_rate_snapshot REAL DEFAULT 0.10,
-      commission_amount REAL DEFAULT 0.0,
-      artist_service_earning REAL DEFAULT 0.0,
-      artist_travel_earning REAL DEFAULT 0.0,
-      artist_total_payable REAL DEFAULT 0.0,
-      customer_total_amount REAL DEFAULT 0.0,
-      taxable_amount REAL DEFAULT 0.0,
-      gst_rate REAL DEFAULT 0.0,
-      cgst_amount REAL DEFAULT 0.0,
-      sgst_amount REAL DEFAULT 0.0,
-      igst_amount REAL DEFAULT 0.0,
-      gst_total REAL DEFAULT 0.0,
-      tcs_rate REAL DEFAULT 0.0,
-      tcs_amount REAL DEFAULT 0.0,
-      platform_net_revenue REAL DEFAULT 0.0,
-      payment_status TEXT DEFAULT 'PENDING',
-      settlement_status TEXT DEFAULT 'PENDING',
-      refund_status TEXT DEFAULT 'NONE',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      user_id INTEGER,
+      amount REAL,
+      status TEXT,
+      notes TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `).catch(() => { });
 
-  // Seed essential users & services if missing
-  await db.run("INSERT OR IGNORE INTO users (id, full_name, email, phone, role, is_verified) VALUES (1, 'Customer One', 'customer1@mehndigo.in', '9829011000', 'customer', 1)").catch(() => { });
-  await db.run("INSERT OR IGNORE INTO users (id, full_name, email, phone, role, is_verified) VALUES (231, 'Sonu Yadav', 'artist_31_sonuyadavmasterartist@mehndigo.in', '9829011031', 'artist', 1)").catch(() => { });
-  await db.run("INSERT OR IGNORE INTO services (id, title, price) VALUES (1, 'Bridal Mehndi Service', 378.0)").catch(() => { });
-
+  // Indexes for high performance
+  await db.run("CREATE INDEX IF NOT EXISTS idx_bookings_artist_status ON bookings(artist_id, status)").catch(() => { });
   await db.run("CREATE INDEX IF NOT EXISTS idx_wallet_tx_wallet_id ON wallet_transactions(wallet_id)").catch(() => { });
   await db.run("DROP INDEX IF EXISTS idx_wallet_tx_booking_type").catch(() => { });
   await db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_wallet_tx_reference_id ON wallet_transactions(reference_id) WHERE reference_id IS NOT NULL").catch(() => { });
+
+  walletTablesEnsured = true;
 };
 
+let paymentColumnsEnsured = false;
 const ensurePaymentColumns = async (db) => {
+  if (paymentColumnsEnsured) return;
   try {
     await db.run("CREATE TABLE IF NOT EXISTS payments (id INTEGER PRIMARY KEY AUTOINCREMENT, booking_id INTEGER, razorpay_order_id TEXT, razorpay_payment_id TEXT, amount REAL, currency TEXT DEFAULT 'INR', status TEXT, payment_method TEXT, payment_type TEXT DEFAULT 'ADVANCE', checkout_payload TEXT, collected_by INTEGER, collected_at TEXT, paid_at TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
   } catch (_) { }
@@ -2559,6 +2536,8 @@ const ensurePaymentColumns = async (db) => {
   try { await db.run("ALTER TABLE bookings ADD COLUMN payment_mode TEXT"); } catch (_) { }
   try { await db.run("ALTER TABLE bookings ADD COLUMN cash_collected_by INTEGER"); } catch (_) { }
   try { await db.run("ALTER TABLE bookings ADD COLUMN cash_collected_at TEXT"); } catch (_) { }
+
+  paymentColumnsEnsured = true;
 };
 
 // Helper: Fetch central marketplace configuration with fallbacks
@@ -3938,10 +3917,10 @@ const handleAddWalletMoney = async (c) => {
 
 // Admin Wallet & Payout Management Routes
 [
-  "/admin/wallet", "/admin/wallet/*",
-  "/api/admin/wallet", "/api/admin/wallet/*",
-  "/api/v1/admin/wallet", "/api/v1/admin/wallet/*",
-  "/api/v1/mehndigo/admin/wallet", "/api/v1/mehndigo/admin/wallet/*"
+  "/admin/wallet",
+  "/api/admin/wallet",
+  "/api/v1/admin/wallet",
+  "/api/v1/mehndigo/admin/wallet"
 ].forEach(p => {
   app.get(p, handleGetAdminWallet);
 });
@@ -9542,7 +9521,76 @@ const handleAdminStats = async (c) => {
   const totalArtists = await db.first("SELECT COUNT(*) as count FROM users WHERE LOWER(role) = 'artist'").catch(() => ({ count: 0 }));
   const totalBookings = await db.first("SELECT COUNT(*) as count FROM bookings").catch(() => ({ count: 0 }));
   const totalRevenue = await db.first("SELECT SUM(total_amount) as total FROM bookings WHERE LOWER(status) = 'completed'").catch(() => ({ total: 0 }));
-  const pendingArtists = await db.first("SELECT COUNT(*) as count FROM artist_profiles WHERE LOWER(status) = 'pending'").catch(() => ({ count: 0 }));
+  const pendingArtists = await db.first("SELECT COUNT(*) as count FROM users u LEFT JOIN artist_profiles ap ON (u.id = ap.user_id OR CAST(u.id AS TEXT) = CAST(ap.user_id AS TEXT)) WHERE LOWER(u.role) = 'artist' AND (u.is_verified = 0 OR LOWER(COALESCE(ap.status, 'pending')) != 'approved' OR UPPER(COALESCE(ap.verification_status, 'PENDING')) != 'APPROVED')").catch(() => ({ count: 0 }));
+
+  // Real Commissions from bookings and completed transactions
+  const commLifetimeRow = await db.first("SELECT SUM(admin_commission) as total FROM bookings WHERE LOWER(status) = 'completed'").catch(() => ({ total: 0 }));
+  const commTodayRow = await db.first("SELECT SUM(admin_commission) as total FROM bookings WHERE LOWER(status) = 'completed' AND DATE(created_at) = DATE('now')").catch(() => ({ total: 0 }));
+  const commThisMonthRow = await db.first("SELECT SUM(admin_commission) as total FROM bookings WHERE LOWER(status) = 'completed' AND strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')").catch(() => ({ total: 0 }));
+  const commThisYearRow = await db.first("SELECT SUM(admin_commission) as total FROM bookings WHERE LOWER(status) = 'completed' AND strftime('%Y', created_at) = strftime('%Y', 'now')").catch(() => ({ total: 0 }));
+
+  // Pending & Remaining Amounts from bookings
+  const pendingAmountRow = await db.first("SELECT SUM(remaining_amount) as total FROM bookings WHERE LOWER(status) != 'completed' AND LOWER(status) != 'cancelled'").catch(() => ({ total: 0 }));
+  const advanceAmountRow = await db.first("SELECT SUM(advance_paid) as total FROM bookings").catch(() => ({ total: 0 }));
+
+  // Top Earning Artists (authentic from bookings)
+  const topEarningArtists = await db.all(`
+    SELECT u.full_name as name, SUM(COALESCE(b.artist_total_payable, b.total_amount * 0.9, 0)) as earnings
+    FROM bookings b
+    JOIN users u ON (b.artist_id = u.id OR CAST(b.artist_id AS TEXT) = CAST(u.id AS TEXT))
+    WHERE LOWER(b.status) = 'completed'
+    GROUP BY b.artist_id
+    ORDER BY earnings DESC
+    LIMIT 5
+  `).catch(() => []);
+
+  // Recent Bookings (with normalized customer details and booking codes)
+  const recentBookingsRaw = await db.all(`
+    SELECT b.id, b.booking_number, b.total_amount, b.status, b.created_at,
+           c.full_name as customer_name
+    FROM bookings b
+    LEFT JOIN users c ON (b.customer_id = c.id OR CAST(b.customer_id AS TEXT) = CAST(c.id AS TEXT))
+    ORDER BY b.id DESC
+    LIMIT 5
+  `).catch(() => []);
+
+  const recentBookings = (recentBookingsRaw || []).map(b => ({
+    id: b.id,
+    booking_code: b.booking_number || ("MG-" + String(b.id).padStart(6, "0")),
+    total_price: Number(b.total_amount || 0),
+    booking_status: (b.status || "PENDING").toUpperCase(),
+    user: { name: b.customer_name || "Valued Customer" },
+    customer_name: b.customer_name || "Valued Customer",
+    created_at: b.created_at
+  }));
+
+  // Latest Commission Transactions
+  const latestCommRaw = await db.all(`
+    SELECT b.id, b.booking_number, b.admin_commission, b.created_at,
+           c.full_name as customer_name, a.full_name as artist_name
+    FROM bookings b
+    LEFT JOIN users c ON (b.customer_id = c.id OR CAST(b.customer_id AS TEXT) = CAST(c.id AS TEXT))
+    LEFT JOIN users a ON (b.artist_id = a.id OR CAST(b.artist_id AS TEXT) = CAST(a.id AS TEXT))
+    WHERE b.admin_commission > 0 OR LOWER(b.status) = 'completed'
+    ORDER BY b.id DESC
+    LIMIT 5
+  `).catch(() => []);
+
+  const latestCommissionTransactions = (latestCommRaw || []).map(b => ({
+    id: b.id,
+    amount: Number(b.admin_commission || 0),
+    created_at: b.created_at,
+    booking: {
+      booking_code: b.booking_number || ("MG-" + String(b.id).padStart(6, "0")),
+      user: { name: b.customer_name || "Customer" },
+      artist: { user: { name: b.artist_name || "Artist" } }
+    }
+  }));
+
+  const commLifetime = Math.round(Number(commLifetimeRow?.total || 0) * 100) / 100;
+  const commToday = Math.round(Number(commTodayRow?.total || 0) * 100) / 100;
+  const commThisMonth = Math.round(Number(commThisMonthRow?.total || 0) * 100) / 100;
+  const commThisYear = Math.round(Number(commThisYearRow?.total || 0) * 100) / 100;
 
   return jsonRes(c, true, {
     total_users: totalUsers?.count || 0,
@@ -9555,8 +9603,16 @@ const handleAdminStats = async (c) => {
     totalRevenue: totalRevenue?.total || 0,
     pending_artist_approvals: pendingArtists?.count || 0,
     pendingArtistsCount: pendingArtists?.count || 0,
-    pendingAmount: 0,
-    remainingAmount: 0
+    pendingAmount: pendingAmountRow?.total || 0,
+    remainingAmount: pendingAmountRow?.total || 0,
+    advanceAmount: advanceAmountRow?.total || 0,
+    commissionToday: commToday,
+    commissionThisMonth: commThisMonth,
+    commissionThisYear: commThisYear,
+    commissionLifetime: commLifetime,
+    topEarningArtists: topEarningArtists || [],
+    recentBookings: recentBookings || [],
+    latestCommissionTransactions: latestCommissionTransactions || []
   });
 };
 
@@ -9582,11 +9638,15 @@ const handleAdminArtists = async (c) => {
 const handleAdminPendingArtists = async (c) => {
   const db = getDb(c.env);
   const pending = await db.all(`
-    SELECT u.id, u.id as user_id, u.full_name, u.email, u.phone, u.role,
-           ap.bio, ap.experience_years, ap.starting_price, ap.city, ap.locality, ap.rating, ap.total_reviews, ap.status, ap.profile_image
+    SELECT u.id, u.id as user_id, u.full_name, u.email, u.phone, u.role, u.is_verified, u.created_at,
+           ap.bio, ap.experience_years, ap.starting_price, ap.city, ap.locality, ap.rating, ap.total_reviews,
+           COALESCE(ap.status, 'pending') as status,
+           COALESCE(ap.verification_status, 'PENDING') as verification_status,
+           ap.profile_image, ap.aadhaar_front, ap.aadhaar_back, ap.selfie_image
     FROM users u
-    JOIN artist_profiles ap ON (u.id = ap.user_id OR CAST(u.id AS TEXT) = CAST(ap.user_id AS TEXT))
-    WHERE LOWER(ap.status) = 'pending'
+    LEFT JOIN artist_profiles ap ON (u.id = ap.user_id OR CAST(u.id AS TEXT) = CAST(ap.user_id AS TEXT))
+    WHERE LOWER(u.role) = 'artist'
+      AND (u.is_verified = 0 OR u.is_verified IS NULL OR LOWER(COALESCE(ap.status, 'pending')) != 'approved')
     ORDER BY u.id DESC
   `).catch(() => []);
   return jsonRes(c, true, pending || []);
@@ -9702,26 +9762,70 @@ const handleAdminBookings = async (c) => {
     LEFT JOIN services s ON (b.service_id = s.id OR CAST(b.service_id AS TEXT) = CAST(s.id AS TEXT))
     ORDER BY b.id DESC
   `).catch(() => []);
-  return jsonRes(c, true, bookings || []);
+
+  const formatted = (bookings || []).map(b => {
+    const code = b.booking_number || ("MG-" + String(b.id).padStart(6, "0"));
+    const custName = b.customer_name || "Valued Customer";
+    const artName = b.artist_name || ("Artist #" + b.artist_id);
+    const total = Number(b.total_amount || b.total_price || 0);
+    return {
+      ...b,
+      booking_code: code,
+      booking_number: code,
+      total_price: total,
+      total_amount: total,
+      customer_name: custName,
+      artist_name: artName,
+      booking_status: (b.status || "CONFIRMED").toUpperCase(),
+      payment_status: (b.payment_status || (Number(b.advance_paid) > 0 ? "PAID" : "PENDING")).toUpperCase(),
+      user: {
+        id: b.customer_id,
+        name: custName,
+        email: b.customer_email || "",
+        phone: b.customer_phone || ""
+      },
+      customer: {
+        id: b.customer_id,
+        name: custName,
+        email: b.customer_email || "",
+        phone: b.customer_phone || ""
+      },
+      artist: {
+        id: b.artist_id,
+        name: artName,
+        user: {
+          name: artName,
+          phone: b.artist_phone || ""
+        }
+      }
+    };
+  });
+
+  return jsonRes(c, true, formatted);
 };
 
 const handleAdminPayments = async (c) => {
   const db = getDb(c.env);
   try {
     await ensurePaymentColumns(db);
-    const paymentsList = (await db.all("SELECT * FROM payments ORDER BY id DESC").catch(() => [])) || [];
-    const bookingsList = (await db.all("SELECT id, booking_number, total_amount, advance_paid, remaining_amount, status, user_id, customer_id, artist_id FROM bookings").catch(() => [])) || [];
-    const usersList = (await db.all("SELECT id, full_name, email, phone FROM users").catch(() => [])) || [];
+    const rows = await db.all(`
+      SELECT p.*,
+             b.booking_number, b.total_amount as booking_total, b.advance_paid as booking_advance_paid,
+             b.remaining_amount as booking_remaining_amount, b.status as b_status,
+             c.full_name as cust_name, c.email as cust_email, c.phone as cust_phone,
+             a.full_name as art_name, a.email as art_email
+      FROM payments p
+      LEFT JOIN bookings b ON (p.booking_id = b.id OR CAST(p.booking_id AS TEXT) = CAST(b.id AS TEXT))
+      LEFT JOIN users c ON (b.customer_id = c.id OR CAST(b.customer_id AS TEXT) = CAST(c.id AS TEXT))
+      LEFT JOIN users a ON (b.artist_id = a.id OR CAST(b.artist_id AS TEXT) = CAST(a.id AS TEXT))
+      ORDER BY p.id DESC
+      LIMIT 100
+    `).catch(() => []);
 
-    const bookingsMap = new Map((bookingsList || []).map(b => [String(b.id), b]));
-    const usersMap = new Map((usersList || []).map(u => [String(u.id), u]));
-
-    const enriched = (paymentsList || []).map(p => {
-      const b = bookingsMap.get(String(p.booking_id)) || {};
-      const custId = b.customer_id || b.user_id;
-      const cust = usersMap.get(String(custId)) || {};
-      const art = usersMap.get(String(b.artist_id)) || {};
-
+    const enriched = (rows || []).map(p => {
+      const code = p.booking_number || ("MG-" + String(p.booking_id || 0).padStart(6, "0"));
+      const custName = p.cust_name || "Valued Customer";
+      const artName = p.art_name || "Mehndi Specialist";
       return {
         id: p.id,
         booking_id: p.booking_id,
@@ -9729,23 +9833,29 @@ const handleAdminPayments = async (c) => {
         razorpay_payment_id: p.razorpay_payment_id || null,
         amount: Number(p.amount || 0),
         currency: p.currency || "INR",
-        status: p.status || "completed",
+        status: (p.status || "SUCCESS").toUpperCase(),
         payment_method: (p.payment_method || "ONLINE").toUpperCase(),
         payment_type: (p.payment_type || "ADVANCE").toUpperCase(),
         collected_by: p.collected_by || null,
         collected_at: p.collected_at || null,
         paid_at: p.paid_at || p.created_at || new Date().toISOString(),
         created_at: p.created_at || new Date().toISOString(),
-        booking_code: b.booking_number || ("MG-" + String(p.booking_id || 0).padStart(6, "0")),
-        booking_total: Number(b.total_amount || 0),
-        booking_advance_paid: Number(b.advance_paid || 0),
-        booking_remaining_amount: Number(b.remaining_amount || 0),
-        booking_status: b.status || "CONFIRMED",
-        customer_name: cust.full_name || "Valued Customer",
-        customer_email: cust.email || "",
-        customer_phone: cust.phone || "",
-        artist_name: art.full_name || "Mehndi Specialist",
-        artist_email: art.email || ""
+        booking_code: code,
+        booking_total: Number(p.booking_total || 0),
+        booking_advance_paid: Number(p.booking_advance_paid || 0),
+        booking_remaining_amount: Number(p.booking_remaining_amount || 0),
+        booking_status: p.b_status || "CONFIRMED",
+        customer_name: custName,
+        customer_email: p.cust_email || "",
+        customer_phone: p.cust_phone || "",
+        artist_name: artName,
+        artist_email: p.art_email || "",
+        booking: {
+          booking_code: code,
+          user: { name: custName, email: p.cust_email || "", phone: p.cust_phone || "" },
+          customer: { name: custName, email: p.cust_email || "", phone: p.cust_phone || "" },
+          artist: { name: artName, user: { name: artName } }
+        }
       };
     });
 
@@ -9759,7 +9869,19 @@ const handleAdminGetCoupons = async (c) => {
   const db = getDb(c.env);
   await db.run("CREATE TABLE IF NOT EXISTS coupons (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE, discount_type TEXT, discount_value REAL, min_order_amount REAL, max_discount REAL, is_active INTEGER DEFAULT 1, expires_at DATETIME)").catch(() => { });
   const coupons = await db.all("SELECT * FROM coupons ORDER BY id DESC").catch(() => []);
-  return jsonRes(c, true, coupons || []);
+  const formatted = (coupons || []).map(cp => ({
+    ...cp,
+    code: cp.code,
+    discount_type: (cp.discount_type || "PERCENTAGE").toUpperCase(),
+    discount_value: Number(cp.discount_value || 0),
+    discount_percentage: Number(cp.discount_value || 0),
+    min_order_amount: Number(cp.min_order_amount ?? cp.min_booking_value ?? 0),
+    min_booking_value: Number(cp.min_order_amount ?? cp.min_booking_value ?? 0),
+    max_discount: Number(cp.max_discount || 0),
+    used_count: Number(cp.used_count || 0),
+    is_active: cp.is_active !== undefined ? Boolean(cp.is_active) : true
+  }));
+  return jsonRes(c, true, formatted);
 };
 
 const handleAdminCreateCoupon = async (c) => {
@@ -10012,13 +10134,41 @@ const handleAdminWalletSummary = async (c) => {
 
 const handleAdminCommissionHistory = async (c) => {
   const db = getDb(c.env);
+  const page = parseInt(c.req.query("page") || "1", 10);
+  const limit = parseInt(c.req.query("limit") || "50", 10);
+  const offset = (page - 1) * limit;
+
+  const countRow = await db.first("SELECT COUNT(*) as count FROM wallet_transactions").catch(() => ({ count: 0 }));
+  const total = countRow?.count || 0;
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+
   const list = await db.all(`
-    SELECT wt.*, u.full_name as user_name, u.role as user_role
+    SELECT wt.*, 
+           u.full_name as user_name, u.role as user_role, u.phone as user_phone,
+           b.booking_number, b.total_amount as booking_total
     FROM wallet_transactions wt
     LEFT JOIN users u ON wt.user_id = u.id
+    LEFT JOIN bookings b ON wt.booking_id = b.id
     ORDER BY wt.id DESC
-  `).catch(() => []);
-  return jsonRes(c, true, list || []);
+    LIMIT ? OFFSET ?
+  `, [limit, offset]).catch(() => []);
+
+  const formatted = (list || []).map(t => ({
+    ...t,
+    booking_code: t.booking_number || (t.booking_id ? `MG-${String(t.booking_id).padStart(6, '0')}` : 'N/A'),
+    booking: {
+      booking_code: t.booking_number || (t.booking_id ? `MG-${String(t.booking_id).padStart(6, '0')}` : 'N/A'),
+      user: { name: t.user_name || 'User' },
+      artist: { user: { name: t.user_role === 'artist' ? t.user_name : 'Artist' } }
+    }
+  }));
+
+  return jsonRes(c, true, {
+    transactions: formatted,
+    totalPages,
+    total,
+    page
+  });
 };
 
 const handleAdminReconcileLegacyCashWallets = async (c) => {
@@ -10124,47 +10274,45 @@ const handleAdminWalletDashboardSummary = async (c) => {
   const db = getDb(c.env);
 
   const todayRow = await db.first(`
-    SELECT SUM(amount) as total FROM wallet_transactions 
-    WHERE (user_id = 0 OR type = 'PLATFORM_COMMISSION' OR description LIKE '%Platform Revenue%')
-      AND (status = 'completed' OR status IS NULL)
+    SELECT SUM(COALESCE(admin_commission, total_amount * 0.10, 0)) as total 
+    FROM bookings 
+    WHERE LOWER(status) IN ('completed', 'confirmed', 'accepted')
       AND DATE(created_at) = DATE('now')
   `).catch(() => ({ total: 0 }));
 
   const weeklyRow = await db.first(`
-    SELECT SUM(amount) as total FROM wallet_transactions 
-    WHERE (user_id = 0 OR type = 'PLATFORM_COMMISSION' OR description LIKE '%Platform Revenue%')
-      AND (status = 'completed' OR status IS NULL)
+    SELECT SUM(COALESCE(admin_commission, total_amount * 0.10, 0)) as total 
+    FROM bookings 
+    WHERE LOWER(status) IN ('completed', 'confirmed', 'accepted')
       AND created_at >= datetime('now', '-7 days')
   `).catch(() => ({ total: 0 }));
 
   const monthlyRow = await db.first(`
-    SELECT SUM(amount) as total FROM wallet_transactions 
-    WHERE (user_id = 0 OR type = 'PLATFORM_COMMISSION' OR description LIKE '%Platform Revenue%')
-      AND (status = 'completed' OR status IS NULL)
+    SELECT SUM(COALESCE(admin_commission, total_amount * 0.10, 0)) as total 
+    FROM bookings 
+    WHERE LOWER(status) IN ('completed', 'confirmed', 'accepted')
       AND strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')
   `).catch(() => ({ total: 0 }));
 
   const yearlyRow = await db.first(`
-    SELECT SUM(amount) as total FROM wallet_transactions 
-    WHERE (user_id = 0 OR type = 'PLATFORM_COMMISSION' OR description LIKE '%Platform Revenue%')
-      AND (status = 'completed' OR status IS NULL)
+    SELECT SUM(COALESCE(admin_commission, total_amount * 0.10, 0)) as total 
+    FROM bookings 
+    WHERE LOWER(status) IN ('completed', 'confirmed', 'accepted')
       AND strftime('%Y', created_at) = strftime('%Y', 'now')
   `).catch(() => ({ total: 0 }));
 
   const lifetimeRow = await db.first(`
-    SELECT SUM(amount) as total FROM wallet_transactions 
-    WHERE (user_id = 0 OR type = 'PLATFORM_COMMISSION' OR description LIKE '%Platform Revenue%')
-      AND (status = 'completed' OR status IS NULL)
+    SELECT SUM(COALESCE(admin_commission, total_amount * 0.10, 0)) as total 
+    FROM bookings 
+    WHERE LOWER(status) IN ('completed', 'confirmed', 'accepted')
   `).catch(() => ({ total: 0 }));
-
-  const lifetime = Math.round(Number(lifetimeRow?.total || 0) * 100) / 100;
 
   return jsonRes(c, true, {
     today: Math.round(Number(todayRow?.total || 0) * 100) / 100,
     weekly: Math.round(Number(weeklyRow?.total || 0) * 100) / 100,
     monthly: Math.round(Number(monthlyRow?.total || 0) * 100) / 100,
     yearly: Math.round(Number(yearlyRow?.total || 0) * 100) / 100,
-    lifetime: lifetime
+    lifetime: Math.round(Number(lifetimeRow?.total || 0) * 100) / 100
   });
 };
 
@@ -10194,7 +10342,9 @@ const handleAdminAnalyticsDashboard = async (c) => {
 // CHAT & CUSTOMER SUPPORT SYSTEM (REAL-TIME)
 // ==========================================
 
+let chatTablesEnsured = false;
 const ensureChatTables = async (db) => {
+  if (chatTablesEnsured) return;
   await db.run(`
     CREATE TABLE IF NOT EXISTS messages (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -10226,6 +10376,8 @@ const ensureChatTables = async (db) => {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `).catch(() => { });
+
+  chatTablesEnsured = true;
 };
 
 // 1. Get List of Active Conversations for Current User
@@ -10613,8 +10765,8 @@ const handleAdminChats = async (c) => {
 
   const rows = await db.all(`
     SELECT m.*, 
-      u_sender.full_name as sender_name, u_sender.role as sender_role, u_sender.profile_image as sender_avatar,
-      u_recv.full_name as receiver_name, u_recv.role as receiver_role, u_recv.profile_image as receiver_avatar
+      u_sender.full_name as sender_name, u_sender.role as sender_role, u_sender.avatar as sender_avatar,
+      u_recv.full_name as receiver_name, u_recv.role as receiver_role, u_recv.avatar as receiver_avatar
     FROM messages m
     LEFT JOIN users u_sender ON m.sender_id = u_sender.id
     LEFT JOIN users u_recv ON m.receiver_id = u_recv.id
@@ -11466,7 +11618,9 @@ addRoute("get", "/wallet/bank-account", handleGetBankAccount);
 // REVIEW MODERATION & APPROVAL ENGINE
 // ==========================================
 
+let reviewTablesEnsured = false;
 const ensureReviewTables = async (db) => {
+  if (reviewTablesEnsured) return;
   await db.run(`
     CREATE TABLE IF NOT EXISTS reviews (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -11505,6 +11659,7 @@ const ensureReviewTables = async (db) => {
   await db.run("ALTER TABLE reviews ADD COLUMN is_approved INTEGER DEFAULT 1").catch(() => { });
   await db.run("ALTER TABLE reviews ADD COLUMN updated_at TEXT").catch(() => { });
   await db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_booking_unique ON reviews(booking_id)").catch(() => { });
+  reviewTablesEnsured = true;
 };
 
 // 1. Customer Submits Review

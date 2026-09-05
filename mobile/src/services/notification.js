@@ -155,7 +155,9 @@ export async function registerForPushNotificationsAsync() {
     if (token) {
       const maskedToken = String(token).length > 20 ? `${String(token).substring(0, 18)}...${String(token).slice(-6)}` : String(token);
       if (__DEV__) console.log(`[PushNotification] Token generated: ${maskedToken}`);
-      // Register with backend automatically
+      // Save locally first
+      await secureStorage.setNotificationToken(token);
+      // Register with backend if logged in
       await sendNotificationTokenToServer(token);
     } else {
       if (__DEV__) console.log("[PushNotification] Push token generation failed or unavailable on device.");
@@ -171,6 +173,15 @@ export async function registerForPushNotificationsAsync() {
 export async function sendNotificationTokenToServer(token) {
   if (!token) return;
   try {
+    // Always store token locally first so it can be registered on login
+    await secureStorage.setNotificationToken(token);
+
+    const authToken = await secureStorage.getAccessToken();
+    if (!authToken) {
+      if (__DEV__) console.log("[PushNotification] User not authenticated yet; push token stored locally for post-login registration.");
+      return;
+    }
+
     const maskedToken = String(token).length > 20 ? `${String(token).substring(0, 18)}...${String(token).slice(-6)}` : String(token);
     if (__DEV__) console.log(`[PushNotification] Registering token for user: ${maskedToken}`);
     
@@ -180,7 +191,6 @@ export async function sendNotificationTokenToServer(token) {
     }, true);
 
     if (__DEV__) console.log("[PushNotification] Register token API response:", response?.message || "200 OK");
-    await secureStorage.setNotificationToken(token);
     if (__DEV__) console.log("[PushNotification] Token registration successful: true");
   } catch (err) {
     if (__DEV__) console.log("[PushNotification] Error registering push token on server:", err.message);

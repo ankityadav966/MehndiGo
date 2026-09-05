@@ -147,7 +147,7 @@ function App() {
             />
 
             <Route
-              path="/admin"
+              path="/admin/*"
               element={
                 isAuthenticated && String(user?.role).toUpperCase() === "ADMIN" ? (
                   <AdminDashboard showToast={showToast} />

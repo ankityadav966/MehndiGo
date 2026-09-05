@@ -102,9 +102,7 @@ export function NotificationProvider({ children, navigationRef }) {
     const setupNotifications = async () => {
       try {
         const token = await registerForPushNotificationsAsync();
-        if (token) {
-          await sendNotificationTokenToServer(token);
-        }
+        if (__DEV__) console.log("[NotificationContext] Push notification setup complete. Token registered:", !!token);
       } catch (err) {
         if (__DEV__) console.log("[NotificationContext] Push registration notice:", err.message);
       }

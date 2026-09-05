@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { adminService } from "../services/api";
 import { Check, X, ShieldAlert, Users, Award, ShieldCheck, Eye, Calendar, DollarSign, MessageSquare, Bell, Send, Tag, Gift, TrendingUp, Plus, Trash, Grid, Star, LifeBuoy, HelpCircle, UserCheck, MessageCircle, AlertCircle, Clock, CheckCircle2, RefreshCw, Filter, Search, Phone, Mail, Sparkles, Image as ImageIcon } from "lucide-react";
 import {
@@ -12,6 +13,69 @@ import {
 } from "../utils/dateFormatter";
 
 const AdminDashboard = ({ showToast }) => {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const getTabFromPath = (pathname) => {
+    const segment = pathname.replace(/^\/admin\/?/, "").split("/")[0]?.toLowerCase();
+    if (!segment || segment === "overview") return "overview";
+    if (segment === "verification" || segment === "pending") return "pending";
+    if (segment === "users" || segment === "customers") return "users";
+    if (segment === "artists") return "artists";
+    if (segment === "bookings") return "bookings";
+    if (segment === "financial" || segment === "ledger") return "ledger";
+    if (segment === "wallet") return "wallet";
+    if (segment === "chats" || segment === "chat") return "chats";
+    if (segment === "reviews") return "reviews";
+    if (segment === "notifications" || segment === "broadcast") return "notifications";
+    if (segment === "coupons") return "coupons";
+    if (segment === "festivals") return "festivals";
+    if (segment === "categories") return "categories";
+    if (segment === "referrals") return "referrals";
+    if (segment === "tickets") return "tickets";
+    if (segment === "analytics") return "analytics";
+    return "overview";
+  };
+
+  const getPathFromTab = (tab) => {
+    switch (tab) {
+      case "overview": return "/admin/overview";
+      case "pending": return "/admin/verification";
+      case "users": return "/admin/users";
+      case "artists": return "/admin/artists";
+      case "bookings": return "/admin/bookings";
+      case "ledger": return "/admin/financial";
+      case "wallet": return "/admin/wallet";
+      case "chats": return "/admin/chats";
+      case "reviews": return "/admin/reviews";
+      case "notifications": return "/admin/broadcast";
+      case "coupons": return "/admin/coupons";
+      case "festivals": return "/admin/festivals";
+      case "categories": return "/admin/categories";
+      case "referrals": return "/admin/referrals";
+      case "tickets": return "/admin/tickets";
+      case "analytics": return "/admin/analytics";
+      default: return "/admin/overview";
+    }
+  };
+
+  const [activeTab, setActiveTabState] = useState(getTabFromPath(location.pathname));
+
+  useEffect(() => {
+    const tabFromUrl = getTabFromPath(location.pathname);
+    if (tabFromUrl !== activeTab) {
+      setActiveTabState(tabFromUrl);
+    }
+  }, [location.pathname]);
+
+  const setActiveTab = (newTab) => {
+    setActiveTabState(newTab);
+    const targetPath = getPathFromTab(newTab);
+    if (location.pathname !== targetPath) {
+      navigate(targetPath);
+    }
+  };
+
   const [users, setUsers] = useState([]);
   const [artists, setArtists] = useState([]);
   const [bookings, setBookings] = useState([]);
@@ -20,9 +84,8 @@ const AdminDashboard = ({ showToast }) => {
   const [chats, setChats] = useState([]);
   const [pendingArtists, setPendingArtists] = useState([]);
   const [adminReviews, setAdminReviews] = useState([]);
-  const [reviewFilter, setReviewFilter] = useState("PENDING");
+  const [reviewFilter, setReviewFilter] = useState("ALL");
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("overview");
   const [rejectId, setRejectId] = useState(null);
   const [rejectReason, setRejectReason] = useState("");
 
@@ -313,8 +376,14 @@ const AdminDashboard = ({ showToast }) => {
           adminService.getReferralCampaigns(),
           adminService.getReferralAnalytics()
         ]);
-        setCampaigns(campRes.data || []);
-        setReferralAnalytics(analyRes.data || { totalSignups: 0, completedInvites: 0, payoutAmount: 0, conversionRate: 0 });
+        const campList = Array.isArray(campRes?.data)
+          ? campRes.data
+          : (Array.isArray(campRes?.data?.campaigns) ? campRes.data.campaigns : (campRes?.data?.rows || []));
+        setCampaigns(campList);
+        const analyticsObj = (analyRes?.data && typeof analyRes.data === "object" && analyRes.data.totalSignups !== undefined)
+          ? analyRes.data
+          : (campRes?.data?.totalSignups !== undefined ? campRes.data : { totalSignups: 0, completedInvites: 0, payoutAmount: 0, conversionRate: 0 });
+        setReferralAnalytics(analyticsObj);
       } else if (activeTab === "analytics") {
         const params = {
           startDate: analyticsFilters.startDate || undefined,
@@ -349,7 +418,8 @@ const AdminDashboard = ({ showToast }) => {
         ]);
         if (summaryRes?.data) setWalletSummary(summaryRes.data);
         if (historyRes?.data) {
-          setCommissionHistory(historyRes.data.transactions || []);
+          const list = Array.isArray(historyRes.data) ? historyRes.data : (historyRes.data.transactions || []);
+          setCommissionHistory(list);
           setWalletTotalPages(historyRes.data.totalPages || 1);
         }
         if (dashRes?.data) setWalletDashboardSummary(dashRes.data);
@@ -933,9 +1003,15 @@ const AdminDashboard = ({ showToast }) => {
         is_active: true
       });
       const campRes = await adminService.getReferralCampaigns();
-      setCampaigns(campRes.data || []);
+      const campList = Array.isArray(campRes?.data)
+        ? campRes.data
+        : (Array.isArray(campRes?.data?.campaigns) ? campRes.data.campaigns : (campRes?.data?.rows || []));
+      setCampaigns(campList);
       const analyRes = await adminService.getReferralAnalytics();
-      setReferralAnalytics(analyRes.data || { totalSignups: 0, completedInvites: 0, payoutAmount: 0, conversionRate: 0 });
+      const analyticsObj = (analyRes?.data && typeof analyRes.data === "object" && analyRes.data.totalSignups !== undefined)
+        ? analyRes.data
+        : (campRes?.data?.totalSignups !== undefined ? campRes.data : { totalSignups: 0, completedInvites: 0, payoutAmount: 0, conversionRate: 0 });
+      setReferralAnalytics(analyticsObj);
     } catch (err) {
       showToast(err.message, "danger");
     }
@@ -1504,13 +1580,13 @@ const AdminDashboard = ({ showToast }) => {
                     <tbody>
                       {(bookings || []).map((b) => (
                         <tr key={b.id} style={{ borderBottom: "1px solid var(--border-color)" }}>
-                          <td style={{ padding: "1rem", fontWeight: 600 }}>{b.booking_code}</td>
-                          <td style={{ padding: "1rem" }}>{b.user?.name}</td>
-                          <td style={{ padding: "1rem" }}>{b.artist?.user?.name || `Artist #${b.artist_id}`}</td>
-                          <td style={{ padding: "1rem", color: "var(--accent-color)", fontWeight: 700 }}>₹{b.total_price}</td>
+                          <td style={{ padding: "1rem", fontWeight: 600 }}>{b.booking_code || b.booking_number || `MG-${b.id}`}</td>
+                          <td style={{ padding: "1rem" }}>{b.user?.name || b.customer_name || b.customer?.name || "Client"}</td>
+                          <td style={{ padding: "1rem" }}>{b.artist?.user?.name || b.artist_name || `Artist #${b.artist_id}`}</td>
+                          <td style={{ padding: "1rem", color: "var(--accent-color)", fontWeight: 700 }}>₹{b.total_price || b.total_amount || 0}</td>
                           <td style={{ padding: "1rem" }}>
-                            <span className={`badge badge-${(b.booking_status || "PENDING").toLowerCase()}`}>
-                              {b.booking_status || "PENDING"}
+                            <span className={`badge badge-${(b.booking_status || b.status || "PENDING").toLowerCase()}`}>
+                              {b.booking_status || b.status || "PENDING"}
                             </span>
                           </td>
                           <td style={{ padding: "1rem" }}>
@@ -1564,9 +1640,9 @@ const AdminDashboard = ({ showToast }) => {
                       {payments.map((p) => (
                         <tr key={p.id} style={{ borderBottom: "1px solid var(--border-color)" }}>
                           <td style={{ padding: "1rem", fontSize: "0.85rem", color: "var(--text-secondary)" }}>{p.razorpay_payment_id || p.transaction_id || `TXN-${p.id}`}</td>
-                          <td style={{ padding: "1rem", fontWeight: 600 }}>{p.booking?.booking_code}</td>
-                          <td style={{ padding: "1rem" }}>{p.booking?.user?.name || "Client"}</td>
-                          <td style={{ padding: "1rem" }}>{p.booking?.artist?.user?.name || "Artist"}</td>
+                          <td style={{ padding: "1rem", fontWeight: 600 }}>{p.booking?.booking_code || p.booking_code || `MG-${p.booking_id}`}</td>
+                          <td style={{ padding: "1rem" }}>{p.booking?.user?.name || p.customer_name || "Client"}</td>
+                          <td style={{ padding: "1rem" }}>{p.booking?.artist?.user?.name || p.artist_name || "Artist"}</td>
                           <td style={{ padding: "1rem", color: "var(--success-color)", fontWeight: 700 }}>₹{p.amount}</td>
                           <td style={{ padding: "1rem" }}>{p.payment_method}</td>
                           <td style={{ padding: "1rem" }}>
@@ -1904,8 +1980,8 @@ const AdminDashboard = ({ showToast }) => {
                   </div>
                 )}
 
-                <div className="glass-panel" style={{ overflowX: "auto" }}>
-                  <table className="table">
+                <div className="glass-panel" style={{ overflowX: "auto", width: "100%" }}>
+                  <table className="table" style={{ width: "100%", minWidth: "750px" }}>
                     <thead>
                       <tr>
                         <th>Code</th>
@@ -1929,9 +2005,9 @@ const AdminDashboard = ({ showToast }) => {
                         coupons.map((coupon) => (
                           <tr key={coupon.id}>
                             <td style={{ fontWeight: 800 }}>{coupon.code}</td>
-                            <td>{coupon.discount_type}</td>
-                            <td>{coupon.discount_type === "PERCENTAGE" ? `${coupon.discount_percentage || coupon.discount_value}%` : `₹${coupon.discount_value}`}</td>
-                            <td>₹{coupon.min_booking_value}</td>
+                            <td>{(coupon.discount_type || "PERCENTAGE").toUpperCase()}</td>
+                            <td>{String(coupon.discount_type).toUpperCase() === "PERCENTAGE" ? `${coupon.discount_percentage || coupon.discount_value}%` : `₹${coupon.discount_value}`}</td>
+                            <td>₹{coupon.min_booking_value ?? coupon.min_order_amount ?? 0}</td>
                             <td>{coupon.used_count || 0}</td>
                             <td>{formatAdminDate(coupon.expires_at || coupon.expiresAt)}</td>
                             <td>
@@ -2837,14 +2913,14 @@ const AdminDashboard = ({ showToast }) => {
                         </tr>
                       </thead>
                       <tbody>
-                        {campaigns.length === 0 ? (
+                        {!Array.isArray(campaigns) || campaigns.length === 0 ? (
                           <tr>
                             <td colSpan="4" style={{ textAlign: "center", padding: "1.5rem", color: "var(--text-secondary)" }}>
                               No campaigns logged yet.
                             </td>
                           </tr>
                         ) : (
-                          campaigns.map((camp) => (
+                          (Array.isArray(campaigns) ? campaigns : []).map((camp) => (
                             <tr key={camp.id}>
                               <td style={{ fontWeight: 600 }}>{camp.title}</td>
                               <td>₹{camp.referrer_reward}</td>

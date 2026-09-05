@@ -374,10 +374,13 @@ export default function HomeScreen({ navigation }) {
           setActiveAddressState(cached);
         }
 
-        // 2. Fetch customer's saved addresses in the background
-        const addresses = await getCustomerAddresses().catch(() => []);
-        const list = Array.isArray(addresses) ? addresses : [];
-        setSavedAddressesList(list);
+        // 2. Fetch customer's saved addresses in the background if logged in
+        let list = [];
+        if (user && (user.id || user._id)) {
+          const addresses = await getCustomerAddresses().catch(() => []);
+          list = Array.isArray(addresses) ? addresses : [];
+          setSavedAddressesList(list);
+        }
 
         const primary = list.find((a) => a.is_default) || list[0];
 
@@ -703,10 +706,12 @@ export default function HomeScreen({ navigation }) {
         }
       }
 
-      if (user && (!user?.profile_image || !user?.city)) {
-        syncUserProfile();
+      if (user && (user.id || user._id)) {
+        if (!user?.profile_image || !user?.city) {
+          syncUserProfile();
+        }
+        syncFavorites();
       }
-      syncFavorites();
 
       return () => {
         isSubscribed = false;
