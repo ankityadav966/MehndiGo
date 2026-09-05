@@ -128,7 +128,7 @@ export async function dispatchNotification(db, {
   entityId = null,
   entityType = null,
   deepLink = null,
-  channelId = "default",
+  channelId = "bookings",
   additionalData = {},
 }) {
   if (!db || !userId) {
@@ -139,12 +139,48 @@ export async function dispatchNotification(db, {
   const cleanUserId = Number(userId) || userId;
   const strUserId = String(userId);
 
-  // 1. Persist notification in database
+  // 1. Resolve all linked candidate user IDs (e.g. artist profile ID <-> user account ID)
+  const candidateIds = new Set([cleanUserId, strUserId]);
+  try {
+    const apById = await db.first(
+      "SELECT id, user_id FROM artist_profiles WHERE id = ? OR CAST(id AS TEXT) = ?",
+      [cleanUserId, strUserId]
+    ).catch(() => null);
+    if (apById) {
+      if (apById.user_id) {
+        candidateIds.add(Number(apById.user_id));
+        candidateIds.add(String(apById.user_id));
+      }
+      if (apById.id) {
+        candidateIds.add(Number(apById.id));
+        candidateIds.add(String(apById.id));
+      }
+    }
+
+    const apByUid = await db.first(
+      "SELECT id, user_id FROM artist_profiles WHERE user_id = ? OR CAST(user_id AS TEXT) = ?",
+      [cleanUserId, strUserId]
+    ).catch(() => null);
+    if (apByUid) {
+      if (apByUid.id) {
+        candidateIds.add(Number(apByUid.id));
+        candidateIds.add(String(apByUid.id));
+      }
+      if (apByUid.user_id) {
+        candidateIds.add(Number(apByUid.user_id));
+        candidateIds.add(String(apByUid.user_id));
+      }
+    }
+  } catch (idErr) {
+    console.warn("[NotificationService] ID resolution notice:", idErr.message);
+  }
+
+  // 2. Persist notification in database for canonical user ID(s)
   let notifId = null;
   try {
     const insertResult = await db.run(
-      `INSERT INTO notifications (user_id, title, message, type, entity_id, entity_type, deep_link, is_read) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+      `INSERT INTO notifications (user_id, title, message, type, entity_id, entity_type, deep_link, is_read, created_at) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP)`,
       [
         cleanUserId,
         title || "MehndiGo Notification",
@@ -160,36 +196,53 @@ export async function dispatchNotification(db, {
     });
 
     notifId = insertResult?.lastInsertRowid || insertResult?.meta?.last_row_id || null;
+
+    // If an artist profile ID was provided, also save to artist_profiles.user_id if different
+    for (const cid of candidateIds) {
+      if (typeof cid === "number" && cid !== cleanUserId && !isNaN(cid)) {
+        await db.run(
+          `INSERT INTO notifications (user_id, title, message, type, entity_id, entity_type, deep_link, is_read, created_at) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP)`,
+          [
+            cid,
+            title || "MehndiGo Notification",
+            body || "",
+            type,
+            entityId ? String(entityId) : null,
+            entityType || null,
+            deepLink || null,
+          ]
+        ).catch(() => null);
+      }
+    }
   } catch (dbErr) {
     console.error("[NotificationService] In-App Notification save exception:", dbErr.message);
   }
 
-  // 2. Fetch user's registered active push tokens
+  // 3. Fetch user's registered active push tokens across candidate IDs
   const tokens = [];
   try {
-    // From push_tokens table
-    const tokenRows = await db.all(
-      "SELECT token FROM push_tokens WHERE (user_id = ? OR CAST(user_id AS TEXT) = ?) AND (is_active = 1 OR is_active IS NULL)",
-      [cleanUserId, strUserId]
-    ).catch((e) => {
-      console.error("[NotificationService] DB push_tokens query error:", e.message);
-      return [];
-    });
+    const idArray = Array.from(candidateIds);
+    for (const testId of idArray) {
+      const tokenRows = await db.all(
+        "SELECT token FROM push_tokens WHERE (user_id = ? OR CAST(user_id AS TEXT) = ?) AND (is_active = 1 OR is_active IS NULL)",
+        [testId, String(testId)]
+      ).catch(() => []);
 
-    if (tokenRows && tokenRows.length > 0) {
-      tokenRows.forEach((r) => {
-        if (r.token) tokens.push(r.token);
-      });
-    }
+      if (tokenRows && tokenRows.length > 0) {
+        tokenRows.forEach((r) => {
+          if (r.token) tokens.push(r.token);
+        });
+      }
 
-    // From users table fallback
-    const userRow = await db.first(
-      "SELECT push_token FROM users WHERE id = ? OR CAST(id AS TEXT) = ?",
-      [cleanUserId, strUserId]
-    ).catch(() => null);
+      const userRow = await db.first(
+        "SELECT push_token FROM users WHERE id = ? OR CAST(id AS TEXT) = ?",
+        [testId, String(testId)]
+      ).catch(() => null);
 
-    if (userRow?.push_token) {
-      tokens.push(userRow.push_token);
+      if (userRow?.push_token) {
+        tokens.push(userRow.push_token);
+      }
     }
   } catch (tokErr) {
     console.error("[NotificationService] Token retrieval error:", tokErr.message);
@@ -197,21 +250,21 @@ export async function dispatchNotification(db, {
 
   const uniqueTokens = Array.from(new Set(tokens.filter(Boolean)));
 
-  // 3. Construct standard push payload
+  // 4. Construct standard push payload
   const pushData = {
     type,
     entityId: entityId ? String(entityId) : undefined,
     entityType: entityType || undefined,
-    bookingId: entityType === "booking" || type.startsWith("BOOKING_") ? String(entityId) : undefined,
+    bookingId: entityType === "booking" || type.startsWith("BOOKING_") || type.startsWith("ARTIST_") || type.startsWith("SERVICE_") ? String(entityId) : undefined,
     ticketId: entityType === "ticket" || type.startsWith("SUPPORT_") ? String(entityId) : undefined,
     deepLink: deepLink || undefined,
-    channelId,
+    channelId: channelId || "bookings",
     notificationId: notifId,
     userId: cleanUserId,
     ...additionalData,
   };
 
-  // 4. Dispatch push asynchronously (does not block caller)
+  // 5. Dispatch push synchronously with timeout protection so Cloudflare Worker does not abort
   if (uniqueTokens.length > 0) {
     const fcmTokens = [];
     const expoTokens = [];
@@ -224,23 +277,40 @@ export async function dispatchNotification(db, {
       }
     }
 
+    const pushPromises = [];
+
     // Direct Firebase Cloud Messaging (FCM HTTP v1) for native Android APK / standalone builds
     if (fcmTokens.length > 0) {
-      sendBatchFcmNotifications(fcmTokens, {
-        title,
-        body,
-        data: pushData,
-        channelId: channelId || "default",
-      }).catch((err) => {
-        console.error("[NotificationService] Async FCM v1 push dispatch failed:", err.message);
-      });
+      pushPromises.push(
+        sendBatchFcmNotifications(fcmTokens, {
+          title,
+          body,
+          data: pushData,
+          channelId: channelId || "bookings",
+        }).catch((err) => {
+          console.error("[NotificationService] Async FCM v1 push dispatch failed:", err.message);
+        })
+      );
     }
 
     // Expo Push Service for Expo Go or dev client builds
     if (expoTokens.length > 0) {
-      sendExpoPushNotification(expoTokens, title, body, pushData).catch((err) => {
-        console.error("[NotificationService] Async Expo push dispatch failed:", err.message);
-      });
+      pushPromises.push(
+        sendExpoPushNotification(expoTokens, title, body, pushData).catch((err) => {
+          console.error("[NotificationService] Async Expo push dispatch failed:", err.message);
+        })
+      );
+    }
+
+    // Await with 5s timeout to ensure push packets leave before isolate shutdown
+    try {
+      await Promise.race([
+        Promise.allSettled(pushPromises),
+        new Promise((resolve) => setTimeout(resolve, 5000)),
+      ]);
+      console.log(`[NotificationService] Dispatched push to ${uniqueTokens.length} tokens for user ${userId} [${title}]`);
+    } catch (pushWaitErr) {
+      console.warn("[NotificationService] Push wait error:", pushWaitErr.message);
     }
   } else {
     console.log(`[NotificationService] No push tokens found for user ${userId}. In-app notification saved.`);

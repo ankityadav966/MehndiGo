@@ -5292,9 +5292,9 @@ const finalizePaidBooking = async (db, { paymentId, orderId, paidAmount, checkou
   // 9. Dispatch notification to artist & customer
   if (artistId) {
     console.log("[ARTIST_NOTIFICATION_SENT]", JSON.stringify({ artistId, bookingNumber, type: "BOOKING_CREATED" }));
-    dispatchNotification(db, {
+    await dispatchNotification(db, {
       userId: artistId,
-      title: "New Booking Confirmed 🌸",
+      title: "🌸 New Booking Confirmed!",
       body: `New booking #${bookingNumber} confirmed! Advance payment of ₹${advancePaid} received.`,
       type: "BOOKING_CREATED",
       entityId: newBookingId,
@@ -5305,10 +5305,10 @@ const finalizePaidBooking = async (db, { paymentId, orderId, paidAmount, checkou
   }
 
   if (customerId) {
-    dispatchNotification(db, {
+    await dispatchNotification(db, {
       userId: customerId,
-      title: "Booking Confirmed ✨",
-      body: `Your booking #${bookingNumber} is confirmed! Check-In OTP: ${checkinOtp}`,
+      title: "Booking Confirmed! ✨",
+      body: `Your booking #${bookingNumber} is confirmed! Check-In PIN: ${checkinOtp}`,
       type: "PAYMENT_SUCCESS",
       entityId: newBookingId,
       entityType: "booking",
@@ -13981,7 +13981,7 @@ const handleAcceptBooking = async (c) => {
   }
 
   if (customerIdAccept) {
-    dispatchNotification(db, {
+    await dispatchNotification(db, {
       userId: customerIdAccept,
       title: "Booking Confirmed! 🎉",
       body: "Your mehndi artist has accepted your booking request. Your Check-In PIN has been sent to your email.",
@@ -13990,6 +13990,19 @@ const handleAcceptBooking = async (c) => {
       entityType: "booking",
       channelId: "bookings",
       deepLink: `mehendigoo://booking/${bookingId}`
+    }).catch(() => null);
+  }
+
+  if (assignedArtistId) {
+    await dispatchNotification(db, {
+      userId: assignedArtistId,
+      title: "Booking Confirmed! 📅",
+      body: `You accepted booking #${booking.booking_number || bookingId}. Check schedule & get ready!`,
+      type: "BOOKING_CONFIRMED",
+      entityId: bookingId,
+      entityType: "booking",
+      channelId: "bookings",
+      deepLink: `mehendigoo://artist/booking/${bookingId}`
     }).catch(() => null);
   }
 
@@ -14066,7 +14079,7 @@ const handleOnTheWayBooking = async (c) => {
   ).catch(() => { });
 
   if (booking.customer_id) {
-    dispatchNotification(db, {
+    await dispatchNotification(db, {
       userId: booking.customer_id,
       title: "Artist On The Way 🚗",
       body: "Your mehndi artist is traveling to your location.",
@@ -14075,6 +14088,19 @@ const handleOnTheWayBooking = async (c) => {
       entityType: "booking",
       channelId: "bookings",
       deepLink: `mehendigoo://tracking/${bookingId}`
+    }).catch(() => null);
+  }
+
+  if (booking.artist_id) {
+    await dispatchNotification(db, {
+      userId: booking.artist_id,
+      title: "On The Way 🚗",
+      body: `Travel status updated for booking #${booking.booking_number || bookingId}. Drive safely!`,
+      type: "ARTIST_ON_THE_WAY",
+      entityId: bookingId,
+      entityType: "booking",
+      channelId: "bookings",
+      deepLink: `mehendigoo://artist/booking/${bookingId}`
     }).catch(() => null);
   }
 
@@ -14136,6 +14162,32 @@ const handleStartService = async (c) => {
     [bookingId, String(bookingId)]
   ).catch(() => { });
 
+  if (booking.customer_id) {
+    await dispatchNotification(db, {
+      userId: booking.customer_id,
+      title: "Service Started 🌸",
+      body: "Your mehndi specialist has started your service!",
+      type: "SERVICE_STARTED",
+      entityId: bookingId,
+      entityType: "booking",
+      channelId: "bookings",
+      deepLink: `mehendigoo://tracking/${bookingId}`
+    }).catch(() => null);
+  }
+
+  if (booking.artist_id) {
+    await dispatchNotification(db, {
+      userId: booking.artist_id,
+      title: "Service In Progress 🎨",
+      body: `Service started for booking #${booking.booking_number || bookingId}. Make it beautiful!`,
+      type: "SERVICE_STARTED",
+      entityId: bookingId,
+      entityType: "booking",
+      channelId: "bookings",
+      deepLink: `mehendigoo://artist/booking/${bookingId}`
+    }).catch(() => null);
+  }
+
   const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
   return jsonRes(c, true, {
     ...updated,
@@ -14176,15 +14228,28 @@ const handleRejectBooking = async (c) => {
   await processBookingRefund(db, bookingId, `Artist Declined: ${reason}`);
 
   if (booking.customer_id) {
-    dispatchNotification(db, {
+    await dispatchNotification(db, {
       userId: booking.customer_id,
-      title: "Booking Request Update",
+      title: "Booking Declined ℹ️",
       body: `Booking #${booking.booking_number || bookingId} could not be accepted by the specialist. Any advance payment has been refunded to your wallet.`,
       type: "BOOKING_REJECTED",
       entityId: bookingId,
       entityType: "booking",
       channelId: "bookings",
       deepLink: `mehendigoo://booking/${bookingId}`
+    }).catch(() => null);
+  }
+
+  if (booking.artist_id) {
+    await dispatchNotification(db, {
+      userId: booking.artist_id,
+      title: "Booking Declined",
+      body: `You declined booking #${booking.booking_number || bookingId}.`,
+      type: "BOOKING_REJECTED",
+      entityId: bookingId,
+      entityType: "booking",
+      channelId: "bookings",
+      deepLink: `mehendigoo://artist/booking/${bookingId}`
     }).catch(() => null);
   }
 
@@ -14683,7 +14748,7 @@ const handleValidateArrival = async (c) => {
 
     const customerId = booking.customer_id || booking.user_id;
     if (customerId) {
-      dispatchNotification(db, {
+      await dispatchNotification(db, {
         userId: customerId,
         title: "Artist Arrived 📍",
         body: "Your mehndi artist has arrived at your location. Please check your email for the Check-In PIN.",
@@ -14708,6 +14773,19 @@ const handleValidateArrival = async (c) => {
       } else {
         console.warn(`[handleValidateArrival Warning] No customer email found for Booking ID: ${bookingId}, Customer ID: ${customerId}`);
       }
+    }
+
+    if (booking.artist_id) {
+      await dispatchNotification(db, {
+        userId: booking.artist_id,
+        title: "Arrival Confirmed 📍",
+        body: `You arrived at customer location for #${booking.booking_number || bookingId}. Request Check-In PIN to begin.`,
+        type: "ARTIST_ARRIVED",
+        entityId: bookingId,
+        entityType: "booking",
+        channelId: "bookings",
+        deepLink: `mehendigoo://artist/booking/${bookingId}`
+      }).catch(() => null);
     }
 
     return jsonRes(c, true, {
@@ -14930,7 +15008,7 @@ const handleVerifyCheckInOtp = async (c) => {
   const customerNameVerify = customerUserVerify?.full_name || customerUserVerify?.name || booking.customer_name || booking.user_name || "Valued Customer";
 
   if (customerIdVerify) {
-    dispatchNotification(db, {
+    await dispatchNotification(db, {
       userId: customerIdVerify,
       title: "Service Started 🌸",
       body: "Check-In verified. Your mehndi service is now in progress. Your Completion PIN has been sent to your email.",
@@ -14939,6 +15017,19 @@ const handleVerifyCheckInOtp = async (c) => {
       entityType: "booking",
       channelId: "bookings",
       deepLink: `mehendigoo://tracking/${bookingId}`
+    }).catch(() => null);
+  }
+
+  if (booking.artist_id) {
+    await dispatchNotification(db, {
+      userId: booking.artist_id,
+      title: "Service In Progress 🎨",
+      body: `Check-In verified for #${booking.booking_number || bookingId}. Service is now in progress!`,
+      type: "SERVICE_STARTED",
+      entityId: bookingId,
+      entityType: "booking",
+      channelId: "bookings",
+      deepLink: `mehendigoo://artist/booking/${bookingId}`
     }).catch(() => null);
   }
 
@@ -15179,7 +15270,7 @@ const handleVerifyCheckOutOtp = async (c) => {
 
   // Dispatch checkout notifications to Customer and Artist
   if (booking.customer_id) {
-    dispatchNotification(db, {
+    await dispatchNotification(db, {
       userId: booking.customer_id,
       title: isAlreadyFullyPaid ? "Booking Completed ✨" : "Service Completed ✨",
       body: isAlreadyFullyPaid
@@ -15194,7 +15285,7 @@ const handleVerifyCheckOutOtp = async (c) => {
   }
 
   if (booking.artist_id) {
-    dispatchNotification(db, {
+    await dispatchNotification(db, {
       userId: booking.artist_id,
       title: isAlreadyFullyPaid ? "Booking Completed 🎉" : "Check-Out Verified ✨",
       body: isAlreadyFullyPaid
@@ -15832,15 +15923,28 @@ const handleSelectCashPayment = async (c) => {
 
       if (artistId) {
         console.log("[ARTIST_NOTIFICATION_SENT]", JSON.stringify({ artistId, bNumber, type: "NEW_BOOKING_REQUEST" }));
-        dispatchNotification(db, {
+        await dispatchNotification(db, {
           userId: artistId,
-          title: "New Cash Booking Request 💵",
-          body: `Customer requested cash booking #${bNumber} for ₹${totalAmount}. Please review and confirm.`,
+          title: "🌸 New Booking Request!",
+          body: `New booking request #${bNumber} for ₹${totalAmount}. Please review and accept.`,
           type: "NEW_BOOKING_REQUEST",
           entityId: createdId,
           entityType: "booking",
           channelId: "bookings",
           deepLink: `mehendigoo://artist/booking/${createdId}`
+        }).catch(() => null);
+      }
+
+      if (customerId) {
+        await dispatchNotification(db, {
+          userId: customerId,
+          title: "Booking Request Sent! 🌸",
+          body: `Your cash booking request #${bNumber} has been sent to the specialist. Pay on arrival.`,
+          type: "BOOKING_REQUESTED",
+          entityId: createdId,
+          entityType: "booking",
+          channelId: "bookings",
+          deepLink: `mehendigoo://booking/${createdId}`
         }).catch(() => null);
       }
 
@@ -15881,14 +15985,14 @@ const handleSelectCashPayment = async (c) => {
       [targetStatus, targetBookingStatus, targetDetailedStatus, booking.id]
     ).catch(() => { });
 
-    // Dispatch real-time notification to the artist
+    // Dispatch real-time notification to the artist and customer
     if (booking.artist_id) {
-      const notifTitle = isInitialDraft ? "New Cash Booking Request 💵" : "Cash Collection Request 💵";
+      const notifTitle = isInitialDraft ? "🌸 New Booking Request!" : "Cash Collection Request 💵";
       const notifBody = isInitialDraft 
-        ? `Customer requested cash booking #${booking.booking_number || booking.booking_code || booking.id}. Please review and confirm.`
+        ? `New booking request #${booking.booking_number || booking.booking_code || booking.id}. Please review and accept.`
         : `Customer selected Cash payment of ₹${booking.remaining_amount || 0} for booking #${booking.booking_number || booking.booking_code || booking.id}. Please collect cash and tap Confirm Cash Received.`;
 
-      dispatchNotification(db, {
+      await dispatchNotification(db, {
         userId: booking.artist_id,
         title: notifTitle,
         body: notifBody,
@@ -15897,6 +16001,21 @@ const handleSelectCashPayment = async (c) => {
         entityType: "booking",
         channelId: "bookings",
         deepLink: `mehendigoo://artist/booking/${booking.id}`
+      }).catch(() => null);
+    }
+
+    if (booking.customer_id) {
+      await dispatchNotification(db, {
+        userId: booking.customer_id,
+        title: isInitialDraft ? "Booking Request Sent! 🌸" : "Cash Payment Selected 💵",
+        body: isInitialDraft 
+          ? `Your cash booking request #${booking.booking_number || booking.booking_code || booking.id} has been sent to the specialist.`
+          : `You selected Cash payment of ₹${booking.remaining_amount || 0} for booking #${booking.booking_number || booking.booking_code || booking.id}. Please pay your specialist upon service completion.`,
+        type: "BOOKING_UPDATED",
+        entityId: booking.id,
+        entityType: "booking",
+        channelId: "bookings",
+        deepLink: `mehendigoo://booking/${booking.id}`
       }).catch(() => null);
     }
 
@@ -16028,7 +16147,7 @@ const handleConfirmCashPayment = async (c) => {
   // Dispatch push notifications & socket updates
   const customerTargetId = b.customer_id || b.user_id;
   if (customerTargetId) {
-    dispatchNotification(db, {
+    await dispatchNotification(db, {
       userId: customerTargetId,
       title: "Booking Completed ✨",
       body: "Cash payment confirmed and booking completed. Please rate your artist!",
@@ -16041,7 +16160,7 @@ const handleConfirmCashPayment = async (c) => {
   }
 
   if (b.artist_id) {
-    dispatchNotification(db, {
+    await dispatchNotification(db, {
       userId: b.artist_id,
       title: "Cash Payment Confirmed 💰",
       body: `Booking #${b.booking_number || bookingId} completed. ₹${cashAmount} cash recorded.`,
