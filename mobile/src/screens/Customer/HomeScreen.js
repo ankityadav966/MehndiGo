@@ -1174,7 +1174,7 @@ export default function HomeScreen({ navigation }) {
       {featuredArtists.length > 0 && (
         <View>
           <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: currentTextColor }]}>Featured Artists</Text>
+            <Text style={[styles.sectionTitle, { color: currentTextColor }]}>Nearby Artists</Text>
             <TouchableOpacity onPress={() => navigation.navigate("ArtistListing", { filter: "featured", from: "Home" })}>
               <Text style={styles.viewAllText}>View All ({featuredArtists.length})</Text>
             </TouchableOpacity>
@@ -1347,8 +1347,9 @@ export default function HomeScreen({ navigation }) {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
-      <FlatList
+    <>
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <FlatList
         data={homePreviewNearbyArtists}
         keyExtractor={(item, index) => String(item.id || item.user_id || item.artist_id || index)}
         renderItem={renderNearbyArtistItem}
@@ -1543,7 +1544,8 @@ export default function HomeScreen({ navigation }) {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+      </SafeAreaView>
+    </>
   );
 }
 

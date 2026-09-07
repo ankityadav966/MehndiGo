@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, KeyboardAvoidingView, Platform } from "react-native";
+import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, KeyboardAvoidingView, Platform, Modal, Alert } from "react-native";
+import MapView, { Marker } from "react-native-maps";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Location from "expo-location";
 import Colors from "../../constants/Colors";
@@ -23,6 +24,19 @@ export default function PersonalDetailsScreen({ navigation, route }) {
   const [pincode, setPincode] = useState(artistDetails.pincode || "");
   const [phone, setPhone] = useState(artistDetails.phone || user?.phone || "");
 
+  const [mapModalVisible, setMapModalVisible] = useState(false);
+  const [mapRegion, setMapRegion] = useState({
+    latitude: Number(artistDetails.latitude) || 26.912434,
+    longitude: Number(artistDetails.longitude) || 75.787270,
+    latitudeDelta: 0.05,
+    longitudeDelta: 0.05,
+  });
+  const [selectedCoord, setSelectedCoord] = useState({
+    latitude: Number(artistDetails.latitude) || 26.912434,
+    longitude: Number(artistDetails.longitude) || 75.787270,
+  });
+  const [isFetchingLocation, setIsFetchingLocation] = useState(false);
+
   const [errors, setErrors] = useState({});
 
   useEffect(() => {
@@ -39,31 +53,83 @@ export default function PersonalDetailsScreen({ navigation, route }) {
     }
   }, [artistDetails, user]);
 
+  const applyReverseGeocoding = async (coord, forceOverwrite = false) => {
+    try {
+      const [address] = await Location.reverseGeocodeAsync(coord);
+      if (address) {
+        setCity(prev => (forceOverwrite ? (address.city || address.subregion || "") : (prev || address.city || address.subregion || "")));
+        setState(prev => (forceOverwrite ? (address.region || "") : (prev || address.region || "")));
+        setPincode(prev => (forceOverwrite ? (address.postalCode || "") : (prev || address.postalCode || "")));
+        const loc = [address.name, address.street, address.subregion].filter(Boolean).join(", ");
+        if (loc) setLocation(prev => (forceOverwrite ? loc : (prev || loc)));
+      }
+    } catch (err) {
+      console.warn("Failed to reverse geocode:", err.message);
+    }
+  };
+
   useEffect(() => {
     (async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status === "granted") {
           const pos = await Location.getCurrentPositionAsync({});
+          const newCoord = {
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+          };
+          setSelectedCoord(newCoord);
+          setMapRegion((prev) => ({ ...prev, ...newCoord }));
           updateArtistDetails({
-            latitude: String(pos.coords.latitude),
-            longitude: String(pos.coords.longitude),
+            latitude: String(newCoord.latitude),
+            longitude: String(newCoord.longitude),
           });
-        } else {
-          updateArtistDetails({
-            latitude: "26.912434",
-            longitude: "75.787270",
-          });
+          await applyReverseGeocoding(newCoord);
         }
       } catch (err) {
         console.warn("Failed to retrieve live location during onboarding, using default:", err.message);
-        updateArtistDetails({
-          latitude: "26.912434",
-          longitude: "75.787270",
-        });
       }
     })();
   }, []);
+
+
+
+  const fetchLiveLocation = async () => {
+    setIsFetchingLocation(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === "granted") {
+        const pos = await Location.getCurrentPositionAsync({});
+        const newCoord = {
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+        };
+        setSelectedCoord(newCoord);
+        setMapRegion((prev) => ({ ...prev, ...newCoord }));
+        updateArtistDetails({
+          latitude: String(newCoord.latitude),
+          longitude: String(newCoord.longitude),
+        });
+        await applyReverseGeocoding(newCoord, true);
+        Alert.alert("Success", "Live location and details updated successfully!");
+      } else {
+        Alert.alert("Permission Denied", "Location permission is required to fetch live location.");
+      }
+    } catch (err) {
+      Alert.alert("Error", "Failed to get live location.");
+    } finally {
+      setIsFetchingLocation(false);
+    }
+  };
+
+  const handleConfirmMapLocation = async () => {
+    updateArtistDetails({
+      latitude: String(selectedCoord.latitude),
+      longitude: String(selectedCoord.longitude),
+    });
+    setMapModalVisible(false);
+    await applyReverseGeocoding(selectedCoord, true);
+  };
 
   const validate = () => {
     const errs = {};
@@ -194,7 +260,7 @@ export default function PersonalDetailsScreen({ navigation, route }) {
         </View>
 
         <View style={styles.formGroup}>
-          <Text style={styles.label}>Location</Text>
+          <Text style={styles.label}>Location / Address</Text>
           <TextInput
             style={[styles.input, errors.location ? styles.inputError : null]}
             value={location}
@@ -203,6 +269,32 @@ export default function PersonalDetailsScreen({ navigation, route }) {
             onChangeText={(t) => { setLocation(t); setErrors((p) => ({ ...p, location: "" })); }}
           />
           {errors.location ? <Text style={styles.errorText}>{errors.location}</Text> : null}
+        </View>
+
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Coordinates (GPS)</Text>
+          <View style={styles.toggleRow}>
+            <TouchableOpacity
+              style={styles.toggleBtn}
+              onPress={fetchLiveLocation}
+              disabled={isFetchingLocation}
+            >
+              <Text style={styles.toggleText}>
+                {isFetchingLocation ? "Fetching..." : "Pick Live Location"}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.toggleBtn}
+              onPress={() => setMapModalVisible(true)}
+            >
+              <Text style={styles.toggleText}>
+                Pick on Map
+              </Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={{ fontSize: 12, color: Colors.textSecondary, marginTop: 8, marginLeft: 5 }}>
+            Selected: {Number(selectedCoord.latitude).toFixed(4)}, {Number(selectedCoord.longitude).toFixed(4)}
+          </Text>
         </View>
 
         <View style={styles.formGroup}>
@@ -251,6 +343,42 @@ export default function PersonalDetailsScreen({ navigation, route }) {
         </TouchableOpacity>
       </View>
       </KeyboardAvoidingView>
+
+      <Modal
+        visible={mapModalVisible}
+        animationType="slide"
+        onRequestClose={() => setMapModalVisible(false)}
+      >
+        <SafeAreaView style={{ flex: 1, backgroundColor: Colors.white }}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setMapModalVisible(false)} style={{ padding: 10 }}>
+              <Text style={{ color: Colors.primary, fontSize: 16, fontWeight: "600" }}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={{ fontSize: 18, fontWeight: "600", color: Colors.text }}>Pick Location</Text>
+            <TouchableOpacity onPress={handleConfirmMapLocation} style={{ padding: 10 }}>
+              <Text style={{ color: Colors.primary, fontSize: 16, fontWeight: "600" }}>Done</Text>
+            </TouchableOpacity>
+          </View>
+          <MapView
+            style={{ flex: 1 }}
+            region={mapRegion}
+            onRegionChangeComplete={(region) => {
+              setMapRegion(region);
+              setSelectedCoord({ latitude: region.latitude, longitude: region.longitude });
+            }}
+          >
+            <Marker coordinate={selectedCoord} />
+          </MapView>
+          <View style={styles.mapFooter}>
+            <Text style={{ textAlign: 'center', fontSize: 14, color: Colors.text, marginBottom: 10 }}>
+              Drag the map to pinpoint your exact location.
+            </Text>
+            <TouchableOpacity style={styles.button} onPress={handleConfirmMapLocation}>
+              <Text style={styles.buttonText}>Confirm Location</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -279,4 +407,6 @@ const styles = StyleSheet.create({
   footer: { backgroundColor: Colors.white, paddingHorizontal: 20, paddingBottom: 20, paddingTop: 10, borderTopWidth: 1, borderTopColor: Colors.border },
   button: { height: 56, borderRadius: 16, backgroundColor: Colors.primary, justifyContent: "center", alignItems: "center" },
   buttonText: { color: Colors.white, fontSize: 16, fontWeight: "700" },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: Colors.border, backgroundColor: Colors.white },
+  mapFooter: { position: 'absolute', bottom: 30, left: 20, right: 20, backgroundColor: 'white', padding: 15, borderRadius: 12, elevation: 5, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 10, shadowOffset: { width: 0, height: 2 } },
 });

@@ -51,10 +51,10 @@ router.patch(
 
 // Coupons Management
 const CouponController = require("../../controllers/coupon/coupon.controller");
-router.get("/coupons", authenticate, authorize("ADMIN"), CouponController.adminGetCoupons);
-router.post("/coupon", authenticate, authorize("ADMIN"), CouponController.adminCreate);
-router.put("/coupon/:id", authenticate, authorize("ADMIN"), CouponController.adminUpdate);
-router.delete("/coupon/:id", authenticate, authorize("ADMIN"), CouponController.adminDelete);
+router.get(["/coupons", "/coupon"], authenticate, authorize("ADMIN"), CouponController.adminGetCoupons);
+router.post(["/coupon", "/coupons"], authenticate, authorize("ADMIN"), CouponController.adminCreate);
+router.put(["/coupon/:id", "/coupons/:id"], authenticate, authorize("ADMIN"), CouponController.adminUpdate);
+router.delete(["/coupon/:id", "/coupons/:id"], authenticate, authorize("ADMIN"), CouponController.adminDelete);
 
 // Referral Campaign & Analytics Management
 const ReferralController = require("../../controllers/referral/referral.controller");

@@ -183,7 +183,7 @@ const handleLogin = async (c) => {
 
   // Construct fake token for Cloudflare Workers demo / secret auth
   const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-  const payload = btoa(JSON.stringify({ id: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1000) + 86400 }));
+  const payload = btoa(JSON.stringify({ id: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1000) + 1296000 }));
   const token = `${header}.${payload}.sig`;
 
   return jsonRes(c, true, {
@@ -1035,7 +1035,7 @@ const handleRegisterVerifyOtp = async (c) => {
     const user = { id: newUserId, full_name: targetName, email: targetEmail, phone: targetPhone, role: targetRole, is_verified: initialVerified };
 
     const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-    const payload = btoa(JSON.stringify({ id: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1000) + 86400 }));
+    const payload = btoa(JSON.stringify({ id: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1000) + 1296000 }));
     const token = `${header}.${payload}.sig`;
 
     return jsonRes(c, true, {
@@ -1205,7 +1205,7 @@ const handleVerifyOtp = async (c) => {
     }
 
     const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-    const payload = btoa(JSON.stringify({ id: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1000) + 86400 }));
+    const payload = btoa(JSON.stringify({ id: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1000) + 1296000 }));
     const token = `${header}.${payload}.sig`;
 
     return jsonRes(c, true, {
@@ -1234,7 +1234,7 @@ const handleAdminSendOtp = async (c) => {
 
 const handleAdminVerifyOtp = async (c) => {
   const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-  const payload = btoa(JSON.stringify({ id: 1, email: "admin@mehndigo.com", role: "admin", exp: Math.floor(Date.now() / 1000) + 86400 }));
+  const payload = btoa(JSON.stringify({ id: 1, email: "admin@mehndigo.com", role: "admin", exp: Math.floor(Date.now() / 1000) + 1296000 }));
   const token = `${header}.${payload}.sig`;
 
   return jsonRes(c, true, {
@@ -1370,6 +1370,9 @@ const addRoute = (method, path, handler) => {
     "/api/v1/mehndigo",
     "/api/v1/mehndigo/customer",
     "/api/v1/mehndigo/artist",
+    "/api/v1/mehndigo/admin",
+    "/mehndigo/admin",
+    "/api/mehndigo/admin",
     "/customer",
     "/artist",
     "/mehndigo",
@@ -4461,7 +4464,11 @@ const handleHomeDashboard = async (c) => {
   const { dateStr: istDateStr } = getNowIST();
   const dynamicFestivalBanners = await getActiveFestivalBannersList(db, istDateStr);
 
-  const [rawCategories, featuredArtists, popularArtists, artists, totalArtistsCountRow] = await Promise.all([
+  const userLat = Number(c.req.query("latitude") || c.req.query("lat") || 0);
+  const userLng = Number(c.req.query("longitude") || c.req.query("lng") || 0);
+  const hasUserLocation = userLat && userLng && !isNaN(userLat) && !isNaN(userLng);
+
+  let [rawCategories, featuredArtists, popularArtists, artists, totalArtistsCountRow] = await Promise.all([
     db.all("SELECT id, name, slug, description, image_url, is_active FROM categories WHERE is_active = 1 ORDER BY id ASC").catch(() => []),
     db.all(`
       SELECT u.id as id, u.id as user_id,
@@ -4469,12 +4476,13 @@ const handleHomeDashboard = async (c) => {
              COALESCE(NULLIF(u.full_name, ''), 'Mehndi Specialist') as full_name,
              u.email, u.phone,
              ap.id as profile_id, ap.bio, ap.experience_years, ap.starting_price, ap.city, ap.locality, ap.rating, ap.total_reviews, ap.status, ap.is_featured,
+             ap.latitude, ap.longitude,
              COALESCE(NULLIF(ap.profile_image, ''), NULLIF(u.avatar, '')) as profile_image
       FROM users u
       LEFT JOIN artist_profiles ap ON (u.id = ap.user_id OR CAST(u.id AS TEXT) = CAST(ap.user_id AS TEXT))
       WHERE LOWER(u.role) = 'artist' AND (ap.status = 'approved' OR ap.status = 'APPROVED' OR ap.status IS NULL)
       ORDER BY ap.is_featured DESC, COALESCE(ap.rating, 0) DESC, u.id DESC
-      LIMIT 8
+      LIMIT 100
     `).catch(() => []),
     db.all(`
       SELECT u.id as id, u.id as user_id,
@@ -4511,6 +4519,24 @@ const handleHomeDashboard = async (c) => {
   ]);
 
   const totalArtistsCount = Number(totalArtistsCountRow?.count || 0);
+
+  if (hasUserLocation) {
+    const toRad = (v) => (v * Math.PI) / 180;
+    const R = 6371;
+    featuredArtists = featuredArtists.map(art => {
+      const artLat = Number(art.latitude) || 26.9124;
+      const artLng = Number(art.longitude) || 75.7873;
+      const dLat = toRad(artLat - userLat);
+      const dLon = toRad(artLng - userLng);
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(toRad(userLat)) * Math.cos(toRad(artLat)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      const cVal = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return { ...art, distance_km: Math.round(R * cVal * 10) / 10 };
+    }).filter(art => art.distance_km <= 50).slice(0, 8);
+  } else {
+    featuredArtists = featuredArtists.slice(0, 8);
+  }
 
   const categories = (rawCategories && rawCategories.length > 0)
     ? rawCategories.map(cat => ({
@@ -11142,11 +11168,35 @@ const handleAdminNotifications = async (c) => {
   const method = c.req.method.toUpperCase();
   if (method === "POST") {
     const body = await c.req.json().catch(() => ({}));
-    const { userId, title, message } = body;
-    await db.run(
-      "INSERT INTO notifications (user_id, title, message, is_read) VALUES (?, ?, ?, 0)",
-      [userId || 1, title || "Admin Notification", message || "Message from Admin"]
-    ).catch(() => { });
+    const recipient = body.user_id || body.userId || body.target || "ALL";
+    const title = body.title || "Admin Notification";
+    const message = body.message || "Message from Admin";
+
+    let targetUserIds = [];
+    if (recipient === "ALL_USERS" || recipient === "CUSTOMERS") {
+      const users = await db.all("SELECT id FROM users WHERE role = 'USER' OR role = 'CUSTOMER'").catch(() => []);
+      targetUserIds = users.map(u => u.id);
+    } else if (recipient === "ALL_ARTISTS" || recipient === "ARTISTS") {
+      const artists = await db.all("SELECT id FROM users WHERE role = 'ARTIST'").catch(() => []);
+      targetUserIds = artists.map(u => u.id);
+    } else if (recipient === "ALL") {
+      const users = await db.all("SELECT id FROM users").catch(() => []);
+      targetUserIds = users.map(u => u.id);
+    } else if (recipient) {
+      targetUserIds = [recipient];
+    }
+
+    if (targetUserIds.length === 0) {
+      targetUserIds = [1];
+    }
+
+    for (const uid of targetUserIds) {
+      await db.run(
+        "INSERT INTO notifications (user_id, title, message, is_read, type) VALUES (?, ?, ?, 0, 'SYSTEM')",
+        [uid, title, message]
+      ).catch(() => { });
+    }
+
     return jsonRes(c, true, null, "Notification sent successfully");
   }
   const list = await db.all("SELECT n.*, u.full_name as user_name FROM notifications n LEFT JOIN users u ON n.user_id = u.id ORDER BY n.id DESC LIMIT 50").catch(() => []);
@@ -11434,6 +11484,134 @@ const handleAdminMarketplaceSettings = async (c) => {
   return jsonRes(c, false, null, "Method not allowed", 405);
 };
 
+const handleAdminCoupons = async (c) => {
+  const db = getDb(c.env);
+  const method = c.req.method.toUpperCase();
+  const path = c.req.path.toLowerCase();
+
+  // Helper table creation if missing in D1
+  await db.run(`
+    CREATE TABLE IF NOT EXISTS coupons (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT UNIQUE NOT NULL,
+      discount_type TEXT DEFAULT 'PERCENTAGE',
+      discount_value REAL DEFAULT 0,
+      discount_percentage INTEGER DEFAULT 0,
+      max_discount REAL DEFAULT 0,
+      min_booking_value REAL DEFAULT 0,
+      expires_at DATETIME,
+      is_active INTEGER DEFAULT 1,
+      first_booking_only INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).catch(() => {});
+
+  const couponId = c.req.param("id") || path.split("/").pop();
+
+  // 1. GET /admin/coupons (List all)
+  if (method === "GET") {
+    const list = await db.all("SELECT * FROM coupons ORDER BY id DESC").catch(() => []);
+    const formatted = (list || []).map(cp => ({
+      ...cp,
+      is_active: Boolean(cp.is_active),
+      first_booking_only: Boolean(cp.first_booking_only)
+    }));
+    return jsonRes(c, true, formatted, "Coupons list retrieved");
+  }
+
+  // 2. POST /admin/coupon (Create coupon)
+  if (method === "POST") {
+    const body = await c.req.json().catch(() => ({}));
+    const code = String(body.code || "").trim().toUpperCase();
+    if (!code) {
+      return jsonRes(c, false, null, "Coupon code is required", 400);
+    }
+
+    const discountType = body.discount_type || "PERCENTAGE";
+    const discountValue = Number(body.discount_value) || 0;
+    const discountPercentage = discountType === "PERCENTAGE" ? (Number(body.discount_percentage) || discountValue) : 0;
+    const maxDiscount = Number(body.max_discount) || 0;
+    const minBookingValue = Number(body.min_booking_value) || 0;
+    const expiresAt = body.expires_at || new Date(Date.now() + 30 * 86400000).toISOString();
+    const isActive = body.is_active !== undefined ? (body.is_active ? 1 : 0) : 1;
+    const firstBookingOnly = body.first_booking_only ? 1 : 0;
+
+    const existing = await db.first("SELECT id FROM coupons WHERE UPPER(code) = ?", [code]).catch(() => null);
+    if (existing) {
+      return jsonRes(c, false, null, `Coupon code '${code}' already exists`, 400);
+    }
+
+    const res = await db.run(`
+      INSERT INTO coupons (code, discount_type, discount_value, discount_percentage, max_discount, min_booking_value, expires_at, is_active, first_booking_only, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `, [code, discountType, discountValue, discountPercentage, maxDiscount, minBookingValue, expiresAt, isActive, firstBookingOnly]).catch(e => ({ error: e.message }));
+
+    if (res?.error) {
+      return jsonRes(c, false, null, res.error, 400);
+    }
+
+    const newId = res?.lastInsertRowid || res?.meta?.last_row_id || Date.now();
+    return jsonRes(c, true, { id: newId, code, is_active: Boolean(isActive) }, "Coupon created successfully");
+  }
+
+  // 3. PUT /admin/coupon/:id (Update coupon)
+  if (method === "PUT" || method === "PATCH") {
+    const body = await c.req.json().catch(() => ({}));
+    const id = Number(couponId || body.id || 0);
+
+    if (!id) {
+      return jsonRes(c, false, null, "Valid coupon ID is required", 400);
+    }
+
+    const coupon = await db.first("SELECT * FROM coupons WHERE id = ?", [id]).catch(() => null);
+    if (!coupon) {
+      return jsonRes(c, false, null, "Coupon not found", 404);
+    }
+
+    const code = body.code ? String(body.code).trim().toUpperCase() : coupon.code;
+    const discountType = body.discount_type || coupon.discount_type || "PERCENTAGE";
+    const discountValue = body.discount_value !== undefined ? Number(body.discount_value) : coupon.discount_value;
+    const discountPercentage = discountType === "PERCENTAGE" ? (body.discount_percentage !== undefined ? Number(body.discount_percentage) : discountValue) : 0;
+    const maxDiscount = body.max_discount !== undefined ? Number(body.max_discount) : coupon.max_discount;
+    const minBookingValue = body.min_booking_value !== undefined ? Number(body.min_booking_value) : coupon.min_booking_value;
+    const expiresAt = body.expires_at || coupon.expires_at;
+    const isActive = body.is_active !== undefined ? (body.is_active ? 1 : 0) : coupon.is_active;
+    const firstBookingOnly = body.first_booking_only !== undefined ? (body.first_booking_only ? 1 : 0) : coupon.first_booking_only;
+
+    if (code !== coupon.code) {
+      const existing = await db.first("SELECT id FROM coupons WHERE UPPER(code) = ? AND id != ?", [code, id]).catch(() => null);
+      if (existing) {
+        return jsonRes(c, false, null, `Coupon code '${code}' is already used by another coupon`, 400);
+      }
+    }
+
+    await db.run(`
+      UPDATE coupons SET code = ?, discount_type = ?, discount_value = ?, discount_percentage = ?, max_discount = ?, min_booking_value = ?, expires_at = ?, is_active = ?, first_booking_only = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `, [code, discountType, discountValue, discountPercentage, maxDiscount, minBookingValue, expiresAt, isActive, firstBookingOnly, id]).catch(() => {});
+
+    return jsonRes(c, true, { id, code, is_active: Boolean(isActive) }, "Coupon updated successfully");
+  }
+
+  // 4. DELETE /admin/coupon/:id (Delete coupon)
+  if (method === "DELETE") {
+    const id = Number(couponId || 0);
+
+    if (!id) {
+      return jsonRes(c, false, null, "Valid coupon ID is required for deletion", 400);
+    }
+
+    await db.run("DELETE FROM coupons WHERE id = ?", [id]).catch(async () => {
+      await db.run("UPDATE coupons SET is_active = 0 WHERE id = ?", [id]).catch(() => {});
+    });
+
+    return jsonRes(c, true, { id, deleted: true }, "Coupon deleted successfully");
+  }
+
+  return jsonRes(c, false, null, "Method not allowed", 405);
+};
+
 const handleAdminFinancialLedger = async (c) => {
   const db = getDb(c.env);
   await ensureWalletTables(db);
@@ -11455,8 +11633,16 @@ const handleAdminFinancialLedger = async (c) => {
   ["patch", "/admin/artist/:id/reject", handleAdminRejectArtist],
   ["get", "/admin/bookings", handleAdminBookings],
   ["get", "/admin/payments", handleAdminPayments],
-  ["get", "/admin/coupons", handleAdminGetCoupons],
-  ["post", "/admin/coupon", handleAdminCreateCoupon],
+  ["get", "/admin/coupons", handleAdminCoupons],
+  ["get", "/admin/coupon", handleAdminCoupons],
+  ["post", "/admin/coupon", handleAdminCoupons],
+  ["post", "/admin/coupons", handleAdminCoupons],
+  ["put", "/admin/coupon/:id", handleAdminCoupons],
+  ["put", "/admin/coupons/:id", handleAdminCoupons],
+  ["delete", "/admin/coupon/:id", handleAdminCoupons],
+  ["delete", "/admin/coupons/:id", handleAdminCoupons],
+  ["put", "/coupon/admin/:id", handleAdminCoupons],
+  ["delete", "/coupon/admin/:id", handleAdminCoupons],
   ["get", "/admin/wallet/summary", handleAdminWalletSummary],
   ["get", "/admin/wallet/commission-history", handleAdminCommissionHistory],
   ["get", "/admin/wallet/dashboard-summary", handleAdminWalletDashboardSummary],
@@ -13547,6 +13733,35 @@ const handleCreateBookingExplicit = async (c) => {
   const maxFutureDateStr = maxFutureDate.toISOString().split('T')[0];
   if (bookingDate > maxFutureDateStr) {
     return jsonRes(c, false, null, "Bookings can only be scheduled up to 90 days in advance.", 400);
+  }
+
+  // 0. Max 2 Bridal Mehndi per day limit for artist
+  if (artistId && bookingDate && serviceId) {
+    const service = await db.first("SELECT * FROM services WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [serviceId, serviceId]).catch(() => null);
+    const isBridal = service && (
+      (service.category && service.category.toLowerCase().includes('bridal')) ||
+      (service.name && service.name.toLowerCase().includes('bridal'))
+    );
+    
+    if (isBridal) {
+      const bridalBookings = await db.first(`
+        SELECT COUNT(b.id) as count 
+        FROM bookings b
+        JOIN services s ON CAST(b.service_id AS TEXT) = CAST(s.id AS TEXT)
+        WHERE (b.artist_id = ? OR CAST(b.artist_id AS TEXT) = CAST(? AS TEXT))
+          AND b.booking_date = ?
+          AND LOWER(b.status) NOT IN ('cancelled', 'rejected')
+          AND (
+            LOWER(b.status) IN ('confirmed', 'accepted', 'completed', 'in_progress', 'on_the_way', 'arrived')
+            OR LOWER(b.detailed_status) IN ('confirmed', 'artist_accepted', 'accepted', 'completed', 'in_progress', 'pending_artist_confirmation')
+          )
+          AND (LOWER(s.category) LIKE '%bridal%' OR LOWER(s.name) LIKE '%bridal%')
+      `, [artistId, String(artistId), bookingDate]).catch((err) => { console.log(err); return { count: 0 }; });
+      
+      if (bridalBookings && bridalBookings.count >= 2) {
+        return jsonRes(c, false, null, "Artist has reached the maximum limit of 2 Bridal Mehndi bookings for this date.", 409);
+      }
+    }
   }
 
   // Double Booking Protection & Draft Re-use
@@ -16976,6 +17191,88 @@ app.notFound((c) => {
     }));
   }
   return c.json({ success: false, message: "Route Not Found on Cloudflare Worker Backend" }, 404);
+});
+
+
+app.post("/api/admin/broadcast-promo-now", async (c) => {
+  try {
+    const db = getDb(c.env);
+    const users = await db.all("SELECT id FROM users WHERE role = 'artist' OR role = 'ARTIST'");
+    const title = "Collab with MehndiGo & Grow! 🚀";
+    const body = `Hello Artist 👋✨
+
+हम चाहते हैं कि आप हमारे "MehndiGo Instagram Page" (https://www.instagram.com/mehndigoo?utm_source=chatgpt.com) के साथ Collab करें 🤝
+
+अगर आप हमारे साथ अपनी Mehndi Reels/Posts पर collaboration करते हैं, तो इससे आपकी Instagram Profile और आपके काम को भी ज्यादा लोगों तक पहुँच और promotion मिलेगा 📈✨
+
+साथ ही, अगर आपका MehndiGo Platform के साथ अच्छा experience रहा है, तो आप हमारे बारे में एक genuine review/video review भी शेयर कर सकते हैं ❤️
+
+इससे आपकी profile की visibility बढ़ेगी, लोग आपके काम को देखेंगे और आपको future में ज्यादा booking opportunities मिलने में मदद हो सकती है 🚀
+
+Let's grow together! 🤝✨
+MehndiGo – Grow Your Mehndi Business with Us ❤️`;
+
+    let successCount = 0;
+    for (const user of users) {
+      await dispatchNotification(db, {
+        userId: user.id,
+        title,
+        body,
+        type: "PROMOTION",
+      });
+      successCount++;
+    }
+    return c.json({ success: true, count: successCount });
+  } catch (err) {
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
+
+app.post("/api/leads", async (c) => {
+  try {
+    const db = getDb(c.env);
+    const body = await c.req.json();
+    const id = generateId();
+    await db.run(
+      "INSERT INTO leads (id, name, email, phone, style, message, status) VALUES (?, ?, ?, ?, ?, ?, 'PENDING')",
+      [id, body.name, body.email || "", body.phone, body.style || "", body.message || ""]
+    );
+    return c.json({ success: true, id });
+  } catch (err) {
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
+
+app.get("/api/admin/leads", async (c) => {
+  try {
+    const db = getDb(c.env);
+    const leads = await db.all("SELECT * FROM leads ORDER BY created_at DESC");
+    return c.json({ success: true, leads });
+  } catch (err) {
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
+
+app.put("/api/admin/leads/:id/status", async (c) => {
+  try {
+    const db = getDb(c.env);
+    const { id } = c.req.param();
+    const body = await c.req.json();
+    await db.run("UPDATE leads SET status = ? WHERE id = ?", [body.status, id]);
+    return c.json({ success: true });
+  } catch (err) {
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
+
+app.get('/api/app-settings', async (c) => {
+  try {
+    const db = getDb(c.env);
+    const settings = await db.prepare("SELECT * FROM app_settings WHERE id = 1").first();
+    return c.json({ success: true, data: settings });
+  } catch (err) {
+    return c.json({ success: false, error: err.message }, 500);
+  }
 });
 
 export default app;

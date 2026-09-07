@@ -217,8 +217,8 @@ export default function ServicesScreen({ navigation }) {
         onPress={() => navigation.navigate("ServiceDetails", { id: item.id })}
       >
         {/* Image (Left) */}
-        <View style={{ width: 64, height: 64, borderRadius: 10, backgroundColor: '#f1f5f9', overflow: 'hidden' }}>
-          <Image source={{ uri: coverUri }} style={{ width: '100%', height: '100%', resizeMode: 'cover' }} />
+        <View style={{ width: 64, height: 80, borderRadius: 10, backgroundColor: '#0f172a', overflow: 'hidden' }}>
+          <Image source={{ uri: coverUri }} style={{ width: '100%', height: '100%', resizeMode: 'contain' }} />
           {!item.is_active && (
             <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }]}>
               <Ionicons name="eye-off" size={24} color="#fff" />

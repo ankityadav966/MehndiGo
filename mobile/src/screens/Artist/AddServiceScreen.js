@@ -26,7 +26,8 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  Image
+  Image,
+  Modal
 } from "react-native";
 import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -67,6 +68,7 @@ export default function AddServiceScreen({ navigation }) {
   const [categoriesList, setCategoriesList] = useState([]);
   const [fetchingCategories, setFetchingCategories] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [selectedPreviewImage, setSelectedPreviewImage] = useState(null);
   const isSaving = useRef(false); // guard against double-tap
 
   // ─── Load categories from Admin API ────────────────────────────────────────
@@ -199,7 +201,12 @@ export default function AddServiceScreen({ navigation }) {
   const renderImages = () => (
     <View style={styles.imageGrid}>
       {images.map((uri, index) => (
-        <View key={index} style={styles.imageTile}>
+        <TouchableOpacity
+          key={index}
+          style={styles.imageTile}
+          activeOpacity={0.88}
+          onPress={() => setSelectedPreviewImage(uri)}
+        >
           <Image source={{ uri }} style={styles.imageTileImg} />
           {index === 0 && (
             <View style={styles.coverBadge}>
@@ -208,12 +215,15 @@ export default function AddServiceScreen({ navigation }) {
           )}
           <TouchableOpacity
             style={styles.removeImageBtn}
-            onPress={() => removeImage(index)}
+            onPress={(e) => {
+              e.stopPropagation();
+              removeImage(index);
+            }}
             hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
           >
             <Ionicons name="close-circle" size={20} color="#EF4444" />
           </TouchableOpacity>
-        </View>
+        </TouchableOpacity>
       ))}
 
       {images.length < MAX_IMAGES && (
@@ -436,6 +446,30 @@ export default function AddServiceScreen({ navigation }) {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      {/* Full Length Photo Preview Modal */}
+      <Modal
+        visible={!!selectedPreviewImage}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setSelectedPreviewImage(null)}
+      >
+        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.92)", justifyContent: "center", alignItems: "center" }}>
+          <TouchableOpacity
+            style={{ position: "absolute", top: 50, right: 20, zIndex: 10, padding: 10 }}
+            onPress={() => setSelectedPreviewImage(null)}
+          >
+            <Ionicons name="close" size={30} color="#FFFFFF" />
+          </TouchableOpacity>
+          {selectedPreviewImage && (
+            <Image
+              source={{ uri: selectedPreviewImage }}
+              style={{ width: "92%", height: "82%" }}
+              resizeMode="contain"
+            />
+          )}
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -485,19 +519,20 @@ const styles = StyleSheet.create({
     gap: 10
   },
   imageTile: {
-    width: 90,
-    height: 90,
+    width: 95,
+    height: 130,
     borderRadius: 12,
     overflow: "hidden",
-    position: "relative"
+    position: "relative",
+    backgroundColor: "#0f172a"
   },
-  imageTileImg: { width: "100%", height: "100%", resizeMode: "cover" },
+  imageTileImg: { width: "100%", height: "100%", resizeMode: "contain" },
   coverBadge: {
     position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: "rgba(233,30,99,0.78)",
+    backgroundColor: "rgba(233,30,99,0.85)",
     paddingVertical: 2,
     alignItems: "center"
   },
@@ -510,8 +545,8 @@ const styles = StyleSheet.create({
     borderRadius: 10
   },
   addImageTile: {
-    width: 90,
-    height: 90,
+    width: 95,
+    height: 130,
     borderRadius: 12,
     borderWidth: 1.5,
     borderColor: Colors.border,

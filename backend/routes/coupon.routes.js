@@ -12,8 +12,8 @@ router.post("/apply", authenticate, CouponController.applyCoupon);
 router.post("/remove", authenticate, CouponController.removeCoupon);
 
 // Admin-facing coupons management
-router.post("/admin", authenticate, authorize("ADMIN"), CouponController.adminCreate);
-router.put("/admin/:id", authenticate, authorize("ADMIN"), CouponController.adminUpdate);
-router.delete("/admin/:id", authenticate, authorize("ADMIN"), CouponController.adminDelete);
+router.post(["/admin", "/admin/create"], authenticate, authorize("ADMIN"), CouponController.adminCreate);
+router.put(["/admin/:id", "/:id"], authenticate, authorize("ADMIN"), CouponController.adminUpdate);
+router.delete(["/admin/:id", "/:id"], authenticate, authorize("ADMIN"), CouponController.adminDelete);
 
 module.exports = router;

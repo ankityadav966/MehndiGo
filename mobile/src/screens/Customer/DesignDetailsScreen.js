@@ -164,7 +164,7 @@ export default function DesignDetailsScreen({ route, navigation }) {
             <Image
               source={{ uri: resolveImage(item.image_url || item.url) }}
               style={styles.fullImage}
-              resizeMode="cover"
+              resizeMode="contain"
             />
             {/* Top overlay shadow for contrast */}
             <View style={styles.topShadowOverlay} />

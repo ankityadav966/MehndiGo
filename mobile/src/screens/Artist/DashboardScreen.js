@@ -9,15 +9,18 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  View
+  View,
+  Modal,
+  TouchableOpacity
 } from "react-native";
+import * as Location from "expo-location";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import Colors from "../../constants/Colors";
 import { useAuth } from "../../context/AuthContext";
 import { useSocket } from "../../context/SocketContext";
 import { useNotifications } from "../../context/NotificationContext";
-import { getArtistDashboardData } from "../../services/artist";
+import { getArtistDashboardData, updateArtistProfileDetails } from "../../services/artist";
 import { confirmCashPayment, rejectCashPayment, acceptBooking, rejectBooking } from "../../services/booking";
 import Alert from "../../utils/Alert";
 import OptimizedImage from "../../components/OptimizedImage";
@@ -279,6 +282,8 @@ export default function ArtistDashboardScreen({ navigation }) {
   const [dashboard, setDashboard] = useState(() => isCacheForCurrentUser ? memoryCachedArtistDashboard.data : null);
   const [loading, setLoading] = useState(() => !isCacheForCurrentUser);
   const [refreshing, setRefreshing] = useState(false);
+  const [showLocationPrompt, setShowLocationPrompt] = useState(false);
+  const [fetchingLocation, setFetchingLocation] = useState(false);
 
   // Reset state whenever user ID changes (account switch / new login)
   useEffect(() => {
@@ -313,6 +318,19 @@ export default function ArtistDashboardScreen({ navigation }) {
       if (data && user?.id) {
         memoryCachedArtistDashboard = { userId: user.id, data };
         setDashboard(data);
+        
+        const art = data.artist || {};
+        const hasLocation = Boolean(
+          (art.latitude && art.longitude) ||
+          (art.location && String(art.location).trim().length > 0) ||
+          (art.city && String(art.city).trim().length > 0)
+        );
+
+        if (!hasLocation) {
+          setShowLocationPrompt(true);
+        } else {
+          setShowLocationPrompt(false);
+        }
       }
     } catch (err) {
       console.log("Failed to load artist dashboard details:", err.message);
@@ -401,9 +419,71 @@ export default function ArtistDashboardScreen({ navigation }) {
     { icon: "notifications-outline", label: "Alerts", screen: "Notifications" }
   ];
 
+  const handleUpdateLocation = async () => {
+    try {
+      setFetchingLocation(true);
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission Denied", "Location permission is required to receive local bookings.");
+        setFetchingLocation(false);
+        return;
+      }
+      const pos = await Location.getCurrentPositionAsync({});
+      let locationName = `${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)}`;
+      let city = "";
+      let state = "";
+      let pincode = "";
+
+      try {
+        const [address] = await Location.reverseGeocodeAsync({
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude
+        });
+        if (address) {
+          city = address.city || address.subregion || "";
+          state = address.region || "";
+          pincode = address.postalCode || "";
+          locationName = [address.street, address.subregion, address.city, address.region].filter(Boolean).join(", ");
+        }
+      } catch (err) {
+        console.warn("Reverse geocode failed", err);
+      }
+
+      await updateArtistProfileDetails({
+        latitude: String(pos.coords.latitude),
+        longitude: String(pos.coords.longitude),
+        location: locationName,
+        city: city,
+        state: state,
+        pincode: pincode
+      });
+
+      setDashboard(prev => prev ? {
+        ...prev,
+        artist: {
+          ...(prev.artist || {}),
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          location: locationName,
+          city: city,
+          state: state,
+          pincode: pincode
+        }
+      } : prev);
+      setShowLocationPrompt(false);
+
+      Alert.alert("Success", "Location updated successfully!");
+      fetchDashboardDetails();
+    } catch (err) {
+      Alert.alert("Error", err.message || "Failed to fetch live location.");
+    } finally {
+      setFetchingLocation(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
-      {/* 1. Greeting Header Component */}
+        {/* 1. Greeting Header Component */}
       <GreetingHeader
         artist={{
           ...artist,
@@ -739,6 +819,41 @@ export default function ArtistDashboardScreen({ navigation }) {
           <Text style={styles.emptyText}>No booking details mapped.</Text>
         )}
       </ScrollView>
+
+      <Modal visible={showLocationPrompt} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalIconWrapper}>
+              <Ionicons name="location" size={40} color={Colors.primary} />
+            </View>
+            <Text style={styles.modalTitle}>Location Required</Text>
+            <Text style={styles.modalDescription}>
+              Your profile is missing location details. Please update your location to start receiving booking requests from nearby customers.
+            </Text>
+            
+            <TouchableOpacity 
+              style={[styles.modalButton, fetchingLocation && { opacity: 0.7 }]} 
+              onPress={handleUpdateLocation}
+              disabled={fetchingLocation}
+            >
+              {fetchingLocation ? (
+                <ActivityIndicator size="small" color={Colors.white} />
+              ) : (
+                <Text style={styles.modalButtonText}>Update Live Location</Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.modalSecondaryButton} 
+              onPress={() => navigation.navigate("EditProfile")}
+              disabled={fetchingLocation}
+            >
+              <Text style={styles.modalSecondaryButtonText}>Enter Manually in Profile</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -883,5 +998,16 @@ const styles = StyleSheet.create({
   metaValue: { fontSize: 12, color: "#111827", fontWeight: "700" },
   cashActionsRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 12, gap: 8 },
   cashBtn: { flex: 1, height: 38, borderRadius: 10, justifyContent: "center", alignItems: "center" },
-  cashBtnText: { color: Colors.white, fontWeight: "800", fontSize: 13 }
+  cashBtnText: { color: Colors.white, fontWeight: "800", fontSize: 13 },
+  
+  // Modal Styles
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center", padding: 20 },
+  modalContent: { backgroundColor: Colors.white, borderRadius: 20, padding: 24, width: "100%", alignItems: "center", elevation: 10, shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 20, shadowOffset: { width: 0, height: 10 } },
+  modalIconWrapper: { width: 80, height: 80, borderRadius: 40, backgroundColor: Colors.primaryLight + "30", justifyContent: "center", alignItems: "center", marginBottom: 16 },
+  modalTitle: { fontSize: 20, fontWeight: "800", color: "#111827", marginBottom: 10, textAlign: "center" },
+  modalDescription: { fontSize: 14, color: "#4B5563", textAlign: "center", marginBottom: 24, lineHeight: 20 },
+  modalButton: { backgroundColor: Colors.primary, width: "100%", height: 50, borderRadius: 12, justifyContent: "center", alignItems: "center", marginBottom: 12 },
+  modalButtonText: { color: Colors.white, fontSize: 16, fontWeight: "700" },
+  modalSecondaryButton: { width: "100%", height: 50, borderRadius: 12, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: Colors.border },
+  modalSecondaryButtonText: { color: Colors.text, fontSize: 16, fontWeight: "600" }
 });
