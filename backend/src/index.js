@@ -183,7 +183,7 @@ const handleLogin = async (c) => {
 
   // Construct fake token for Cloudflare Workers demo / secret auth
   const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-  const payload = btoa(JSON.stringify({ id: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1000) + 86400 }));
+  const payload = btoa(JSON.stringify({ id: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1000) + 1296000 }));
   const token = `${header}.${payload}.sig`;
 
   return jsonRes(c, true, {
@@ -1035,7 +1035,7 @@ const handleRegisterVerifyOtp = async (c) => {
     const user = { id: newUserId, full_name: targetName, email: targetEmail, phone: targetPhone, role: targetRole, is_verified: initialVerified };
 
     const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-    const payload = btoa(JSON.stringify({ id: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1000) + 86400 }));
+    const payload = btoa(JSON.stringify({ id: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1000) + 1296000 }));
     const token = `${header}.${payload}.sig`;
 
     return jsonRes(c, true, {
@@ -1205,7 +1205,7 @@ const handleVerifyOtp = async (c) => {
     }
 
     const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-    const payload = btoa(JSON.stringify({ id: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1000) + 86400 }));
+    const payload = btoa(JSON.stringify({ id: user.id, email: user.email, role: user.role, exp: Math.floor(Date.now() / 1000) + 1296000 }));
     const token = `${header}.${payload}.sig`;
 
     return jsonRes(c, true, {
@@ -1234,7 +1234,7 @@ const handleAdminSendOtp = async (c) => {
 
 const handleAdminVerifyOtp = async (c) => {
   const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-  const payload = btoa(JSON.stringify({ id: 1, email: "admin@mehndigo.com", role: "admin", exp: Math.floor(Date.now() / 1000) + 86400 }));
+  const payload = btoa(JSON.stringify({ id: 1, email: "admin@mehndigo.com", role: "admin", exp: Math.floor(Date.now() / 1000) + 1296000 }));
   const token = `${header}.${payload}.sig`;
 
   return jsonRes(c, true, {
@@ -1370,6 +1370,9 @@ const addRoute = (method, path, handler) => {
     "/api/v1/mehndigo",
     "/api/v1/mehndigo/customer",
     "/api/v1/mehndigo/artist",
+    "/api/v1/mehndigo/admin",
+    "/mehndigo/admin",
+    "/api/mehndigo/admin",
     "/customer",
     "/artist",
     "/mehndigo",
@@ -2363,7 +2366,9 @@ const handleSaveBankAccount = async (c) => {
 // Single Configuration Source of Truth: Platform Commission
 const PLATFORM_COMMISSION_RATE = 0.10; // 10% Platform Commission
 
+let walletTablesEnsured = false;
 const ensureWalletTables = async (db) => {
+  if (walletTablesEnsured) return;
   await db.run(`
     CREATE TABLE IF NOT EXISTS wallets (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2486,58 +2491,33 @@ const ensureWalletTables = async (db) => {
   await db.run("INSERT OR IGNORE INTO marketplace_settings (key, value, description) VALUES ('tcs_rate', '0.0', 'E-commerce TCS rate percentage')").catch(() => { });
   await db.run("INSERT OR IGNORE INTO marketplace_settings (key, value, description) VALUES ('min_withdrawal_amount', '100.0', 'Minimum withdrawal amount in INR')").catch(() => { });
 
-  // Master Financial Ledger Table
+  // Master Financial Ledger for all movements
   await db.run(`
     CREATE TABLE IF NOT EXISTS master_financial_ledger (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      transaction_id TEXT UNIQUE,
+      source TEXT,
+      entry_type TEXT,
       booking_id INTEGER,
-      customer_id INTEGER,
-      artist_id INTEGER,
-      payment_id INTEGER,
-      gateway_order_id TEXT,
-      gateway_payment_id TEXT,
-      base_service_amount REAL DEFAULT 0.0,
-      distance_km REAL DEFAULT 0.0,
-      free_distance_km REAL DEFAULT 10.0,
-      chargeable_distance_km REAL DEFAULT 0.0,
-      travel_rate_per_km REAL DEFAULT 5.0,
-      travel_charge REAL DEFAULT 0.0,
-      travel_charge_status TEXT DEFAULT 'NONE',
-      commission_rate_snapshot REAL DEFAULT 0.10,
-      commission_amount REAL DEFAULT 0.0,
-      artist_service_earning REAL DEFAULT 0.0,
-      artist_travel_earning REAL DEFAULT 0.0,
-      artist_total_payable REAL DEFAULT 0.0,
-      customer_total_amount REAL DEFAULT 0.0,
-      taxable_amount REAL DEFAULT 0.0,
-      gst_rate REAL DEFAULT 0.0,
-      cgst_amount REAL DEFAULT 0.0,
-      sgst_amount REAL DEFAULT 0.0,
-      igst_amount REAL DEFAULT 0.0,
-      gst_total REAL DEFAULT 0.0,
-      tcs_rate REAL DEFAULT 0.0,
-      tcs_amount REAL DEFAULT 0.0,
-      platform_net_revenue REAL DEFAULT 0.0,
-      payment_status TEXT DEFAULT 'PENDING',
-      settlement_status TEXT DEFAULT 'PENDING',
-      refund_status TEXT DEFAULT 'NONE',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      user_id INTEGER,
+      amount REAL,
+      status TEXT,
+      notes TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `).catch(() => { });
 
-  // Seed essential users & services if missing
-  await db.run("INSERT OR IGNORE INTO users (id, full_name, email, phone, role, is_verified) VALUES (1, 'Customer One', 'customer1@mehndigo.in', '9829011000', 'customer', 1)").catch(() => { });
-  await db.run("INSERT OR IGNORE INTO users (id, full_name, email, phone, role, is_verified) VALUES (231, 'Sonu Yadav', 'artist_31_sonuyadavmasterartist@mehndigo.in', '9829011031', 'artist', 1)").catch(() => { });
-  await db.run("INSERT OR IGNORE INTO services (id, title, price) VALUES (1, 'Bridal Mehndi Service', 378.0)").catch(() => { });
-
+  // Indexes for high performance
+  await db.run("CREATE INDEX IF NOT EXISTS idx_bookings_artist_status ON bookings(artist_id, status)").catch(() => { });
   await db.run("CREATE INDEX IF NOT EXISTS idx_wallet_tx_wallet_id ON wallet_transactions(wallet_id)").catch(() => { });
   await db.run("DROP INDEX IF EXISTS idx_wallet_tx_booking_type").catch(() => { });
   await db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_wallet_tx_reference_id ON wallet_transactions(reference_id) WHERE reference_id IS NOT NULL").catch(() => { });
+
+  walletTablesEnsured = true;
 };
 
+let paymentColumnsEnsured = false;
 const ensurePaymentColumns = async (db) => {
+  if (paymentColumnsEnsured) return;
   try {
     await db.run("CREATE TABLE IF NOT EXISTS payments (id INTEGER PRIMARY KEY AUTOINCREMENT, booking_id INTEGER, razorpay_order_id TEXT, razorpay_payment_id TEXT, amount REAL, currency TEXT DEFAULT 'INR', status TEXT, payment_method TEXT, payment_type TEXT DEFAULT 'ADVANCE', checkout_payload TEXT, collected_by INTEGER, collected_at TEXT, paid_at TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
   } catch (_) { }
@@ -2559,6 +2539,8 @@ const ensurePaymentColumns = async (db) => {
   try { await db.run("ALTER TABLE bookings ADD COLUMN payment_mode TEXT"); } catch (_) { }
   try { await db.run("ALTER TABLE bookings ADD COLUMN cash_collected_by INTEGER"); } catch (_) { }
   try { await db.run("ALTER TABLE bookings ADD COLUMN cash_collected_at TEXT"); } catch (_) { }
+
+  paymentColumnsEnsured = true;
 };
 
 // Helper: Fetch central marketplace configuration with fallbacks
@@ -3938,10 +3920,10 @@ const handleAddWalletMoney = async (c) => {
 
 // Admin Wallet & Payout Management Routes
 [
-  "/admin/wallet", "/admin/wallet/*",
-  "/api/admin/wallet", "/api/admin/wallet/*",
-  "/api/v1/admin/wallet", "/api/v1/admin/wallet/*",
-  "/api/v1/mehndigo/admin/wallet", "/api/v1/mehndigo/admin/wallet/*"
+  "/admin/wallet",
+  "/api/admin/wallet",
+  "/api/v1/admin/wallet",
+  "/api/v1/mehndigo/admin/wallet"
 ].forEach(p => {
   app.get(p, handleGetAdminWallet);
 });
@@ -4482,7 +4464,11 @@ const handleHomeDashboard = async (c) => {
   const { dateStr: istDateStr } = getNowIST();
   const dynamicFestivalBanners = await getActiveFestivalBannersList(db, istDateStr);
 
-  const [rawCategories, featuredArtists, popularArtists, artists, totalArtistsCountRow] = await Promise.all([
+  const userLat = Number(c.req.query("latitude") || c.req.query("lat") || 0);
+  const userLng = Number(c.req.query("longitude") || c.req.query("lng") || 0);
+  const hasUserLocation = userLat && userLng && !isNaN(userLat) && !isNaN(userLng);
+
+  let [rawCategories, featuredArtists, popularArtists, artists, totalArtistsCountRow] = await Promise.all([
     db.all("SELECT id, name, slug, description, image_url, is_active FROM categories WHERE is_active = 1 ORDER BY id ASC").catch(() => []),
     db.all(`
       SELECT u.id as id, u.id as user_id,
@@ -4490,12 +4476,13 @@ const handleHomeDashboard = async (c) => {
              COALESCE(NULLIF(u.full_name, ''), 'Mehndi Specialist') as full_name,
              u.email, u.phone,
              ap.id as profile_id, ap.bio, ap.experience_years, ap.starting_price, ap.city, ap.locality, ap.rating, ap.total_reviews, ap.status, ap.is_featured,
+             ap.latitude, ap.longitude,
              COALESCE(NULLIF(ap.profile_image, ''), NULLIF(u.avatar, '')) as profile_image
       FROM users u
       LEFT JOIN artist_profiles ap ON (u.id = ap.user_id OR CAST(u.id AS TEXT) = CAST(ap.user_id AS TEXT))
       WHERE LOWER(u.role) = 'artist' AND (ap.status = 'approved' OR ap.status = 'APPROVED' OR ap.status IS NULL)
       ORDER BY ap.is_featured DESC, COALESCE(ap.rating, 0) DESC, u.id DESC
-      LIMIT 8
+      LIMIT 100
     `).catch(() => []),
     db.all(`
       SELECT u.id as id, u.id as user_id,
@@ -4532,6 +4519,24 @@ const handleHomeDashboard = async (c) => {
   ]);
 
   const totalArtistsCount = Number(totalArtistsCountRow?.count || 0);
+
+  if (hasUserLocation) {
+    const toRad = (v) => (v * Math.PI) / 180;
+    const R = 6371;
+    featuredArtists = featuredArtists.map(art => {
+      const artLat = Number(art.latitude) || 26.9124;
+      const artLng = Number(art.longitude) || 75.7873;
+      const dLat = toRad(artLat - userLat);
+      const dLon = toRad(artLng - userLng);
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(toRad(userLat)) * Math.cos(toRad(artLat)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      const cVal = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return { ...art, distance_km: Math.round(R * cVal * 10) / 10 };
+    }).filter(art => art.distance_km <= 50).slice(0, 8);
+  } else {
+    featuredArtists = featuredArtists.slice(0, 8);
+  }
 
   const categories = (rawCategories && rawCategories.length > 0)
     ? rawCategories.map(cat => ({
@@ -5292,9 +5297,9 @@ const finalizePaidBooking = async (db, { paymentId, orderId, paidAmount, checkou
   // 9. Dispatch notification to artist & customer
   if (artistId) {
     console.log("[ARTIST_NOTIFICATION_SENT]", JSON.stringify({ artistId, bookingNumber, type: "BOOKING_CREATED" }));
-    dispatchNotification(db, {
+    await dispatchNotification(db, {
       userId: artistId,
-      title: "New Booking Confirmed 🌸",
+      title: "🌸 New Booking Confirmed!",
       body: `New booking #${bookingNumber} confirmed! Advance payment of ₹${advancePaid} received.`,
       type: "BOOKING_CREATED",
       entityId: newBookingId,
@@ -5305,10 +5310,10 @@ const finalizePaidBooking = async (db, { paymentId, orderId, paidAmount, checkou
   }
 
   if (customerId) {
-    dispatchNotification(db, {
+    await dispatchNotification(db, {
       userId: customerId,
-      title: "Booking Confirmed ✨",
-      body: `Your booking #${bookingNumber} is confirmed! Check-In OTP: ${checkinOtp}`,
+      title: "Booking Confirmed! ✨",
+      body: `Your booking #${bookingNumber} is confirmed! Check-In PIN: ${checkinOtp}`,
       type: "PAYMENT_SUCCESS",
       entityId: newBookingId,
       entityType: "booking",
@@ -9542,7 +9547,76 @@ const handleAdminStats = async (c) => {
   const totalArtists = await db.first("SELECT COUNT(*) as count FROM users WHERE LOWER(role) = 'artist'").catch(() => ({ count: 0 }));
   const totalBookings = await db.first("SELECT COUNT(*) as count FROM bookings").catch(() => ({ count: 0 }));
   const totalRevenue = await db.first("SELECT SUM(total_amount) as total FROM bookings WHERE LOWER(status) = 'completed'").catch(() => ({ total: 0 }));
-  const pendingArtists = await db.first("SELECT COUNT(*) as count FROM artist_profiles WHERE LOWER(status) = 'pending'").catch(() => ({ count: 0 }));
+  const pendingArtists = await db.first("SELECT COUNT(*) as count FROM users u LEFT JOIN artist_profiles ap ON (u.id = ap.user_id OR CAST(u.id AS TEXT) = CAST(ap.user_id AS TEXT)) WHERE LOWER(u.role) = 'artist' AND (u.is_verified = 0 OR LOWER(COALESCE(ap.status, 'pending')) != 'approved' OR UPPER(COALESCE(ap.verification_status, 'PENDING')) != 'APPROVED')").catch(() => ({ count: 0 }));
+
+  // Real Commissions from bookings and completed transactions
+  const commLifetimeRow = await db.first("SELECT SUM(admin_commission) as total FROM bookings WHERE LOWER(status) = 'completed'").catch(() => ({ total: 0 }));
+  const commTodayRow = await db.first("SELECT SUM(admin_commission) as total FROM bookings WHERE LOWER(status) = 'completed' AND DATE(created_at) = DATE('now')").catch(() => ({ total: 0 }));
+  const commThisMonthRow = await db.first("SELECT SUM(admin_commission) as total FROM bookings WHERE LOWER(status) = 'completed' AND strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')").catch(() => ({ total: 0 }));
+  const commThisYearRow = await db.first("SELECT SUM(admin_commission) as total FROM bookings WHERE LOWER(status) = 'completed' AND strftime('%Y', created_at) = strftime('%Y', 'now')").catch(() => ({ total: 0 }));
+
+  // Pending & Remaining Amounts from bookings
+  const pendingAmountRow = await db.first("SELECT SUM(remaining_amount) as total FROM bookings WHERE LOWER(status) != 'completed' AND LOWER(status) != 'cancelled'").catch(() => ({ total: 0 }));
+  const advanceAmountRow = await db.first("SELECT SUM(advance_paid) as total FROM bookings").catch(() => ({ total: 0 }));
+
+  // Top Earning Artists (authentic from bookings)
+  const topEarningArtists = await db.all(`
+    SELECT u.full_name as name, SUM(COALESCE(b.artist_total_payable, b.total_amount * 0.9, 0)) as earnings
+    FROM bookings b
+    JOIN users u ON (b.artist_id = u.id OR CAST(b.artist_id AS TEXT) = CAST(u.id AS TEXT))
+    WHERE LOWER(b.status) = 'completed'
+    GROUP BY b.artist_id
+    ORDER BY earnings DESC
+    LIMIT 5
+  `).catch(() => []);
+
+  // Recent Bookings (with normalized customer details and booking codes)
+  const recentBookingsRaw = await db.all(`
+    SELECT b.id, b.booking_number, b.total_amount, b.status, b.created_at,
+           c.full_name as customer_name
+    FROM bookings b
+    LEFT JOIN users c ON (b.customer_id = c.id OR CAST(b.customer_id AS TEXT) = CAST(c.id AS TEXT))
+    ORDER BY b.id DESC
+    LIMIT 5
+  `).catch(() => []);
+
+  const recentBookings = (recentBookingsRaw || []).map(b => ({
+    id: b.id,
+    booking_code: b.booking_number || ("MG-" + String(b.id).padStart(6, "0")),
+    total_price: Number(b.total_amount || 0),
+    booking_status: (b.status || "PENDING").toUpperCase(),
+    user: { name: b.customer_name || "Valued Customer" },
+    customer_name: b.customer_name || "Valued Customer",
+    created_at: b.created_at
+  }));
+
+  // Latest Commission Transactions
+  const latestCommRaw = await db.all(`
+    SELECT b.id, b.booking_number, b.admin_commission, b.created_at,
+           c.full_name as customer_name, a.full_name as artist_name
+    FROM bookings b
+    LEFT JOIN users c ON (b.customer_id = c.id OR CAST(b.customer_id AS TEXT) = CAST(c.id AS TEXT))
+    LEFT JOIN users a ON (b.artist_id = a.id OR CAST(b.artist_id AS TEXT) = CAST(a.id AS TEXT))
+    WHERE b.admin_commission > 0 OR LOWER(b.status) = 'completed'
+    ORDER BY b.id DESC
+    LIMIT 5
+  `).catch(() => []);
+
+  const latestCommissionTransactions = (latestCommRaw || []).map(b => ({
+    id: b.id,
+    amount: Number(b.admin_commission || 0),
+    created_at: b.created_at,
+    booking: {
+      booking_code: b.booking_number || ("MG-" + String(b.id).padStart(6, "0")),
+      user: { name: b.customer_name || "Customer" },
+      artist: { user: { name: b.artist_name || "Artist" } }
+    }
+  }));
+
+  const commLifetime = Math.round(Number(commLifetimeRow?.total || 0) * 100) / 100;
+  const commToday = Math.round(Number(commTodayRow?.total || 0) * 100) / 100;
+  const commThisMonth = Math.round(Number(commThisMonthRow?.total || 0) * 100) / 100;
+  const commThisYear = Math.round(Number(commThisYearRow?.total || 0) * 100) / 100;
 
   return jsonRes(c, true, {
     total_users: totalUsers?.count || 0,
@@ -9555,8 +9629,16 @@ const handleAdminStats = async (c) => {
     totalRevenue: totalRevenue?.total || 0,
     pending_artist_approvals: pendingArtists?.count || 0,
     pendingArtistsCount: pendingArtists?.count || 0,
-    pendingAmount: 0,
-    remainingAmount: 0
+    pendingAmount: pendingAmountRow?.total || 0,
+    remainingAmount: pendingAmountRow?.total || 0,
+    advanceAmount: advanceAmountRow?.total || 0,
+    commissionToday: commToday,
+    commissionThisMonth: commThisMonth,
+    commissionThisYear: commThisYear,
+    commissionLifetime: commLifetime,
+    topEarningArtists: topEarningArtists || [],
+    recentBookings: recentBookings || [],
+    latestCommissionTransactions: latestCommissionTransactions || []
   });
 };
 
@@ -9582,11 +9664,15 @@ const handleAdminArtists = async (c) => {
 const handleAdminPendingArtists = async (c) => {
   const db = getDb(c.env);
   const pending = await db.all(`
-    SELECT u.id, u.id as user_id, u.full_name, u.email, u.phone, u.role,
-           ap.bio, ap.experience_years, ap.starting_price, ap.city, ap.locality, ap.rating, ap.total_reviews, ap.status, ap.profile_image
+    SELECT u.id, u.id as user_id, u.full_name, u.email, u.phone, u.role, u.is_verified, u.created_at,
+           ap.bio, ap.experience_years, ap.starting_price, ap.city, ap.locality, ap.rating, ap.total_reviews,
+           COALESCE(ap.status, 'pending') as status,
+           COALESCE(ap.verification_status, 'PENDING') as verification_status,
+           ap.profile_image, ap.aadhaar_front, ap.aadhaar_back, ap.selfie_image
     FROM users u
-    JOIN artist_profiles ap ON (u.id = ap.user_id OR CAST(u.id AS TEXT) = CAST(ap.user_id AS TEXT))
-    WHERE LOWER(ap.status) = 'pending'
+    LEFT JOIN artist_profiles ap ON (u.id = ap.user_id OR CAST(u.id AS TEXT) = CAST(ap.user_id AS TEXT))
+    WHERE LOWER(u.role) = 'artist'
+      AND (u.is_verified = 0 OR u.is_verified IS NULL OR LOWER(COALESCE(ap.status, 'pending')) != 'approved')
     ORDER BY u.id DESC
   `).catch(() => []);
   return jsonRes(c, true, pending || []);
@@ -9702,26 +9788,70 @@ const handleAdminBookings = async (c) => {
     LEFT JOIN services s ON (b.service_id = s.id OR CAST(b.service_id AS TEXT) = CAST(s.id AS TEXT))
     ORDER BY b.id DESC
   `).catch(() => []);
-  return jsonRes(c, true, bookings || []);
+
+  const formatted = (bookings || []).map(b => {
+    const code = b.booking_number || ("MG-" + String(b.id).padStart(6, "0"));
+    const custName = b.customer_name || "Valued Customer";
+    const artName = b.artist_name || ("Artist #" + b.artist_id);
+    const total = Number(b.total_amount || b.total_price || 0);
+    return {
+      ...b,
+      booking_code: code,
+      booking_number: code,
+      total_price: total,
+      total_amount: total,
+      customer_name: custName,
+      artist_name: artName,
+      booking_status: (b.status || "CONFIRMED").toUpperCase(),
+      payment_status: (b.payment_status || (Number(b.advance_paid) > 0 ? "PAID" : "PENDING")).toUpperCase(),
+      user: {
+        id: b.customer_id,
+        name: custName,
+        email: b.customer_email || "",
+        phone: b.customer_phone || ""
+      },
+      customer: {
+        id: b.customer_id,
+        name: custName,
+        email: b.customer_email || "",
+        phone: b.customer_phone || ""
+      },
+      artist: {
+        id: b.artist_id,
+        name: artName,
+        user: {
+          name: artName,
+          phone: b.artist_phone || ""
+        }
+      }
+    };
+  });
+
+  return jsonRes(c, true, formatted);
 };
 
 const handleAdminPayments = async (c) => {
   const db = getDb(c.env);
   try {
     await ensurePaymentColumns(db);
-    const paymentsList = (await db.all("SELECT * FROM payments ORDER BY id DESC").catch(() => [])) || [];
-    const bookingsList = (await db.all("SELECT id, booking_number, total_amount, advance_paid, remaining_amount, status, user_id, customer_id, artist_id FROM bookings").catch(() => [])) || [];
-    const usersList = (await db.all("SELECT id, full_name, email, phone FROM users").catch(() => [])) || [];
+    const rows = await db.all(`
+      SELECT p.*,
+             b.booking_number, b.total_amount as booking_total, b.advance_paid as booking_advance_paid,
+             b.remaining_amount as booking_remaining_amount, b.status as b_status,
+             c.full_name as cust_name, c.email as cust_email, c.phone as cust_phone,
+             a.full_name as art_name, a.email as art_email
+      FROM payments p
+      LEFT JOIN bookings b ON (p.booking_id = b.id OR CAST(p.booking_id AS TEXT) = CAST(b.id AS TEXT))
+      LEFT JOIN users c ON (b.customer_id = c.id OR CAST(b.customer_id AS TEXT) = CAST(c.id AS TEXT))
+      LEFT JOIN users a ON (b.artist_id = a.id OR CAST(b.artist_id AS TEXT) = CAST(a.id AS TEXT))
+      ORDER BY p.id DESC
+      LIMIT 100
+    `).catch(() => []);
 
-    const bookingsMap = new Map((bookingsList || []).map(b => [String(b.id), b]));
-    const usersMap = new Map((usersList || []).map(u => [String(u.id), u]));
-
-    const enriched = (paymentsList || []).map(p => {
-      const b = bookingsMap.get(String(p.booking_id)) || {};
-      const custId = b.customer_id || b.user_id;
-      const cust = usersMap.get(String(custId)) || {};
-      const art = usersMap.get(String(b.artist_id)) || {};
-
+    const enriched = (rows || []).map(p => {
+      const code = p.booking_number || ("MG-" + String(p.booking_id || 0).padStart(6, "0"));
+      const custName = p.cust_name || "Valued Customer";
+      const artName = p.art_name || "Mehndi Specialist";
       return {
         id: p.id,
         booking_id: p.booking_id,
@@ -9729,23 +9859,29 @@ const handleAdminPayments = async (c) => {
         razorpay_payment_id: p.razorpay_payment_id || null,
         amount: Number(p.amount || 0),
         currency: p.currency || "INR",
-        status: p.status || "completed",
+        status: (p.status || "SUCCESS").toUpperCase(),
         payment_method: (p.payment_method || "ONLINE").toUpperCase(),
         payment_type: (p.payment_type || "ADVANCE").toUpperCase(),
         collected_by: p.collected_by || null,
         collected_at: p.collected_at || null,
         paid_at: p.paid_at || p.created_at || new Date().toISOString(),
         created_at: p.created_at || new Date().toISOString(),
-        booking_code: b.booking_number || ("MG-" + String(p.booking_id || 0).padStart(6, "0")),
-        booking_total: Number(b.total_amount || 0),
-        booking_advance_paid: Number(b.advance_paid || 0),
-        booking_remaining_amount: Number(b.remaining_amount || 0),
-        booking_status: b.status || "CONFIRMED",
-        customer_name: cust.full_name || "Valued Customer",
-        customer_email: cust.email || "",
-        customer_phone: cust.phone || "",
-        artist_name: art.full_name || "Mehndi Specialist",
-        artist_email: art.email || ""
+        booking_code: code,
+        booking_total: Number(p.booking_total || 0),
+        booking_advance_paid: Number(p.booking_advance_paid || 0),
+        booking_remaining_amount: Number(p.booking_remaining_amount || 0),
+        booking_status: p.b_status || "CONFIRMED",
+        customer_name: custName,
+        customer_email: p.cust_email || "",
+        customer_phone: p.cust_phone || "",
+        artist_name: artName,
+        artist_email: p.art_email || "",
+        booking: {
+          booking_code: code,
+          user: { name: custName, email: p.cust_email || "", phone: p.cust_phone || "" },
+          customer: { name: custName, email: p.cust_email || "", phone: p.cust_phone || "" },
+          artist: { name: artName, user: { name: artName } }
+        }
       };
     });
 
@@ -9759,7 +9895,19 @@ const handleAdminGetCoupons = async (c) => {
   const db = getDb(c.env);
   await db.run("CREATE TABLE IF NOT EXISTS coupons (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE, discount_type TEXT, discount_value REAL, min_order_amount REAL, max_discount REAL, is_active INTEGER DEFAULT 1, expires_at DATETIME)").catch(() => { });
   const coupons = await db.all("SELECT * FROM coupons ORDER BY id DESC").catch(() => []);
-  return jsonRes(c, true, coupons || []);
+  const formatted = (coupons || []).map(cp => ({
+    ...cp,
+    code: cp.code,
+    discount_type: (cp.discount_type || "PERCENTAGE").toUpperCase(),
+    discount_value: Number(cp.discount_value || 0),
+    discount_percentage: Number(cp.discount_value || 0),
+    min_order_amount: Number(cp.min_order_amount ?? cp.min_booking_value ?? 0),
+    min_booking_value: Number(cp.min_order_amount ?? cp.min_booking_value ?? 0),
+    max_discount: Number(cp.max_discount || 0),
+    used_count: Number(cp.used_count || 0),
+    is_active: cp.is_active !== undefined ? Boolean(cp.is_active) : true
+  }));
+  return jsonRes(c, true, formatted);
 };
 
 const handleAdminCreateCoupon = async (c) => {
@@ -10012,13 +10160,41 @@ const handleAdminWalletSummary = async (c) => {
 
 const handleAdminCommissionHistory = async (c) => {
   const db = getDb(c.env);
+  const page = parseInt(c.req.query("page") || "1", 10);
+  const limit = parseInt(c.req.query("limit") || "50", 10);
+  const offset = (page - 1) * limit;
+
+  const countRow = await db.first("SELECT COUNT(*) as count FROM wallet_transactions").catch(() => ({ count: 0 }));
+  const total = countRow?.count || 0;
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+
   const list = await db.all(`
-    SELECT wt.*, u.full_name as user_name, u.role as user_role
+    SELECT wt.*, 
+           u.full_name as user_name, u.role as user_role, u.phone as user_phone,
+           b.booking_number, b.total_amount as booking_total
     FROM wallet_transactions wt
     LEFT JOIN users u ON wt.user_id = u.id
+    LEFT JOIN bookings b ON wt.booking_id = b.id
     ORDER BY wt.id DESC
-  `).catch(() => []);
-  return jsonRes(c, true, list || []);
+    LIMIT ? OFFSET ?
+  `, [limit, offset]).catch(() => []);
+
+  const formatted = (list || []).map(t => ({
+    ...t,
+    booking_code: t.booking_number || (t.booking_id ? `MG-${String(t.booking_id).padStart(6, '0')}` : 'N/A'),
+    booking: {
+      booking_code: t.booking_number || (t.booking_id ? `MG-${String(t.booking_id).padStart(6, '0')}` : 'N/A'),
+      user: { name: t.user_name || 'User' },
+      artist: { user: { name: t.user_role === 'artist' ? t.user_name : 'Artist' } }
+    }
+  }));
+
+  return jsonRes(c, true, {
+    transactions: formatted,
+    totalPages,
+    total,
+    page
+  });
 };
 
 const handleAdminReconcileLegacyCashWallets = async (c) => {
@@ -10124,47 +10300,45 @@ const handleAdminWalletDashboardSummary = async (c) => {
   const db = getDb(c.env);
 
   const todayRow = await db.first(`
-    SELECT SUM(amount) as total FROM wallet_transactions 
-    WHERE (user_id = 0 OR type = 'PLATFORM_COMMISSION' OR description LIKE '%Platform Revenue%')
-      AND (status = 'completed' OR status IS NULL)
+    SELECT SUM(COALESCE(admin_commission, total_amount * 0.10, 0)) as total 
+    FROM bookings 
+    WHERE LOWER(status) IN ('completed', 'confirmed', 'accepted')
       AND DATE(created_at) = DATE('now')
   `).catch(() => ({ total: 0 }));
 
   const weeklyRow = await db.first(`
-    SELECT SUM(amount) as total FROM wallet_transactions 
-    WHERE (user_id = 0 OR type = 'PLATFORM_COMMISSION' OR description LIKE '%Platform Revenue%')
-      AND (status = 'completed' OR status IS NULL)
+    SELECT SUM(COALESCE(admin_commission, total_amount * 0.10, 0)) as total 
+    FROM bookings 
+    WHERE LOWER(status) IN ('completed', 'confirmed', 'accepted')
       AND created_at >= datetime('now', '-7 days')
   `).catch(() => ({ total: 0 }));
 
   const monthlyRow = await db.first(`
-    SELECT SUM(amount) as total FROM wallet_transactions 
-    WHERE (user_id = 0 OR type = 'PLATFORM_COMMISSION' OR description LIKE '%Platform Revenue%')
-      AND (status = 'completed' OR status IS NULL)
+    SELECT SUM(COALESCE(admin_commission, total_amount * 0.10, 0)) as total 
+    FROM bookings 
+    WHERE LOWER(status) IN ('completed', 'confirmed', 'accepted')
       AND strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')
   `).catch(() => ({ total: 0 }));
 
   const yearlyRow = await db.first(`
-    SELECT SUM(amount) as total FROM wallet_transactions 
-    WHERE (user_id = 0 OR type = 'PLATFORM_COMMISSION' OR description LIKE '%Platform Revenue%')
-      AND (status = 'completed' OR status IS NULL)
+    SELECT SUM(COALESCE(admin_commission, total_amount * 0.10, 0)) as total 
+    FROM bookings 
+    WHERE LOWER(status) IN ('completed', 'confirmed', 'accepted')
       AND strftime('%Y', created_at) = strftime('%Y', 'now')
   `).catch(() => ({ total: 0 }));
 
   const lifetimeRow = await db.first(`
-    SELECT SUM(amount) as total FROM wallet_transactions 
-    WHERE (user_id = 0 OR type = 'PLATFORM_COMMISSION' OR description LIKE '%Platform Revenue%')
-      AND (status = 'completed' OR status IS NULL)
+    SELECT SUM(COALESCE(admin_commission, total_amount * 0.10, 0)) as total 
+    FROM bookings 
+    WHERE LOWER(status) IN ('completed', 'confirmed', 'accepted')
   `).catch(() => ({ total: 0 }));
-
-  const lifetime = Math.round(Number(lifetimeRow?.total || 0) * 100) / 100;
 
   return jsonRes(c, true, {
     today: Math.round(Number(todayRow?.total || 0) * 100) / 100,
     weekly: Math.round(Number(weeklyRow?.total || 0) * 100) / 100,
     monthly: Math.round(Number(monthlyRow?.total || 0) * 100) / 100,
     yearly: Math.round(Number(yearlyRow?.total || 0) * 100) / 100,
-    lifetime: lifetime
+    lifetime: Math.round(Number(lifetimeRow?.total || 0) * 100) / 100
   });
 };
 
@@ -10194,7 +10368,9 @@ const handleAdminAnalyticsDashboard = async (c) => {
 // CHAT & CUSTOMER SUPPORT SYSTEM (REAL-TIME)
 // ==========================================
 
+let chatTablesEnsured = false;
 const ensureChatTables = async (db) => {
+  if (chatTablesEnsured) return;
   await db.run(`
     CREATE TABLE IF NOT EXISTS messages (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -10226,6 +10402,8 @@ const ensureChatTables = async (db) => {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `).catch(() => { });
+
+  chatTablesEnsured = true;
 };
 
 // 1. Get List of Active Conversations for Current User
@@ -10613,8 +10791,8 @@ const handleAdminChats = async (c) => {
 
   const rows = await db.all(`
     SELECT m.*, 
-      u_sender.full_name as sender_name, u_sender.role as sender_role, u_sender.profile_image as sender_avatar,
-      u_recv.full_name as receiver_name, u_recv.role as receiver_role, u_recv.profile_image as receiver_avatar
+      u_sender.full_name as sender_name, u_sender.role as sender_role, u_sender.avatar as sender_avatar,
+      u_recv.full_name as receiver_name, u_recv.role as receiver_role, u_recv.avatar as receiver_avatar
     FROM messages m
     LEFT JOIN users u_sender ON m.sender_id = u_sender.id
     LEFT JOIN users u_recv ON m.receiver_id = u_recv.id
@@ -10990,11 +11168,35 @@ const handleAdminNotifications = async (c) => {
   const method = c.req.method.toUpperCase();
   if (method === "POST") {
     const body = await c.req.json().catch(() => ({}));
-    const { userId, title, message } = body;
-    await db.run(
-      "INSERT INTO notifications (user_id, title, message, is_read) VALUES (?, ?, ?, 0)",
-      [userId || 1, title || "Admin Notification", message || "Message from Admin"]
-    ).catch(() => { });
+    const recipient = body.user_id || body.userId || body.target || "ALL";
+    const title = body.title || "Admin Notification";
+    const message = body.message || "Message from Admin";
+
+    let targetUserIds = [];
+    if (recipient === "ALL_USERS" || recipient === "CUSTOMERS") {
+      const users = await db.all("SELECT id FROM users WHERE role = 'USER' OR role = 'CUSTOMER'").catch(() => []);
+      targetUserIds = users.map(u => u.id);
+    } else if (recipient === "ALL_ARTISTS" || recipient === "ARTISTS") {
+      const artists = await db.all("SELECT id FROM users WHERE role = 'ARTIST'").catch(() => []);
+      targetUserIds = artists.map(u => u.id);
+    } else if (recipient === "ALL") {
+      const users = await db.all("SELECT id FROM users").catch(() => []);
+      targetUserIds = users.map(u => u.id);
+    } else if (recipient) {
+      targetUserIds = [recipient];
+    }
+
+    if (targetUserIds.length === 0) {
+      targetUserIds = [1];
+    }
+
+    for (const uid of targetUserIds) {
+      await db.run(
+        "INSERT INTO notifications (user_id, title, message, is_read, type) VALUES (?, ?, ?, 0, 'SYSTEM')",
+        [uid, title, message]
+      ).catch(() => { });
+    }
+
     return jsonRes(c, true, null, "Notification sent successfully");
   }
   const list = await db.all("SELECT n.*, u.full_name as user_name FROM notifications n LEFT JOIN users u ON n.user_id = u.id ORDER BY n.id DESC LIMIT 50").catch(() => []);
@@ -11282,6 +11484,134 @@ const handleAdminMarketplaceSettings = async (c) => {
   return jsonRes(c, false, null, "Method not allowed", 405);
 };
 
+const handleAdminCoupons = async (c) => {
+  const db = getDb(c.env);
+  const method = c.req.method.toUpperCase();
+  const path = c.req.path.toLowerCase();
+
+  // Helper table creation if missing in D1
+  await db.run(`
+    CREATE TABLE IF NOT EXISTS coupons (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT UNIQUE NOT NULL,
+      discount_type TEXT DEFAULT 'PERCENTAGE',
+      discount_value REAL DEFAULT 0,
+      discount_percentage INTEGER DEFAULT 0,
+      max_discount REAL DEFAULT 0,
+      min_booking_value REAL DEFAULT 0,
+      expires_at DATETIME,
+      is_active INTEGER DEFAULT 1,
+      first_booking_only INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `).catch(() => {});
+
+  const couponId = c.req.param("id") || path.split("/").pop();
+
+  // 1. GET /admin/coupons (List all)
+  if (method === "GET") {
+    const list = await db.all("SELECT * FROM coupons ORDER BY id DESC").catch(() => []);
+    const formatted = (list || []).map(cp => ({
+      ...cp,
+      is_active: Boolean(cp.is_active),
+      first_booking_only: Boolean(cp.first_booking_only)
+    }));
+    return jsonRes(c, true, formatted, "Coupons list retrieved");
+  }
+
+  // 2. POST /admin/coupon (Create coupon)
+  if (method === "POST") {
+    const body = await c.req.json().catch(() => ({}));
+    const code = String(body.code || "").trim().toUpperCase();
+    if (!code) {
+      return jsonRes(c, false, null, "Coupon code is required", 400);
+    }
+
+    const discountType = body.discount_type || "PERCENTAGE";
+    const discountValue = Number(body.discount_value) || 0;
+    const discountPercentage = discountType === "PERCENTAGE" ? (Number(body.discount_percentage) || discountValue) : 0;
+    const maxDiscount = Number(body.max_discount) || 0;
+    const minBookingValue = Number(body.min_booking_value) || 0;
+    const expiresAt = body.expires_at || new Date(Date.now() + 30 * 86400000).toISOString();
+    const isActive = body.is_active !== undefined ? (body.is_active ? 1 : 0) : 1;
+    const firstBookingOnly = body.first_booking_only ? 1 : 0;
+
+    const existing = await db.first("SELECT id FROM coupons WHERE UPPER(code) = ?", [code]).catch(() => null);
+    if (existing) {
+      return jsonRes(c, false, null, `Coupon code '${code}' already exists`, 400);
+    }
+
+    const res = await db.run(`
+      INSERT INTO coupons (code, discount_type, discount_value, discount_percentage, max_discount, min_booking_value, expires_at, is_active, first_booking_only, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `, [code, discountType, discountValue, discountPercentage, maxDiscount, minBookingValue, expiresAt, isActive, firstBookingOnly]).catch(e => ({ error: e.message }));
+
+    if (res?.error) {
+      return jsonRes(c, false, null, res.error, 400);
+    }
+
+    const newId = res?.lastInsertRowid || res?.meta?.last_row_id || Date.now();
+    return jsonRes(c, true, { id: newId, code, is_active: Boolean(isActive) }, "Coupon created successfully");
+  }
+
+  // 3. PUT /admin/coupon/:id (Update coupon)
+  if (method === "PUT" || method === "PATCH") {
+    const body = await c.req.json().catch(() => ({}));
+    const id = Number(couponId || body.id || 0);
+
+    if (!id) {
+      return jsonRes(c, false, null, "Valid coupon ID is required", 400);
+    }
+
+    const coupon = await db.first("SELECT * FROM coupons WHERE id = ?", [id]).catch(() => null);
+    if (!coupon) {
+      return jsonRes(c, false, null, "Coupon not found", 404);
+    }
+
+    const code = body.code ? String(body.code).trim().toUpperCase() : coupon.code;
+    const discountType = body.discount_type || coupon.discount_type || "PERCENTAGE";
+    const discountValue = body.discount_value !== undefined ? Number(body.discount_value) : coupon.discount_value;
+    const discountPercentage = discountType === "PERCENTAGE" ? (body.discount_percentage !== undefined ? Number(body.discount_percentage) : discountValue) : 0;
+    const maxDiscount = body.max_discount !== undefined ? Number(body.max_discount) : coupon.max_discount;
+    const minBookingValue = body.min_booking_value !== undefined ? Number(body.min_booking_value) : coupon.min_booking_value;
+    const expiresAt = body.expires_at || coupon.expires_at;
+    const isActive = body.is_active !== undefined ? (body.is_active ? 1 : 0) : coupon.is_active;
+    const firstBookingOnly = body.first_booking_only !== undefined ? (body.first_booking_only ? 1 : 0) : coupon.first_booking_only;
+
+    if (code !== coupon.code) {
+      const existing = await db.first("SELECT id FROM coupons WHERE UPPER(code) = ? AND id != ?", [code, id]).catch(() => null);
+      if (existing) {
+        return jsonRes(c, false, null, `Coupon code '${code}' is already used by another coupon`, 400);
+      }
+    }
+
+    await db.run(`
+      UPDATE coupons SET code = ?, discount_type = ?, discount_value = ?, discount_percentage = ?, max_discount = ?, min_booking_value = ?, expires_at = ?, is_active = ?, first_booking_only = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `, [code, discountType, discountValue, discountPercentage, maxDiscount, minBookingValue, expiresAt, isActive, firstBookingOnly, id]).catch(() => {});
+
+    return jsonRes(c, true, { id, code, is_active: Boolean(isActive) }, "Coupon updated successfully");
+  }
+
+  // 4. DELETE /admin/coupon/:id (Delete coupon)
+  if (method === "DELETE") {
+    const id = Number(couponId || 0);
+
+    if (!id) {
+      return jsonRes(c, false, null, "Valid coupon ID is required for deletion", 400);
+    }
+
+    await db.run("DELETE FROM coupons WHERE id = ?", [id]).catch(async () => {
+      await db.run("UPDATE coupons SET is_active = 0 WHERE id = ?", [id]).catch(() => {});
+    });
+
+    return jsonRes(c, true, { id, deleted: true }, "Coupon deleted successfully");
+  }
+
+  return jsonRes(c, false, null, "Method not allowed", 405);
+};
+
 const handleAdminFinancialLedger = async (c) => {
   const db = getDb(c.env);
   await ensureWalletTables(db);
@@ -11303,8 +11633,16 @@ const handleAdminFinancialLedger = async (c) => {
   ["patch", "/admin/artist/:id/reject", handleAdminRejectArtist],
   ["get", "/admin/bookings", handleAdminBookings],
   ["get", "/admin/payments", handleAdminPayments],
-  ["get", "/admin/coupons", handleAdminGetCoupons],
-  ["post", "/admin/coupon", handleAdminCreateCoupon],
+  ["get", "/admin/coupons", handleAdminCoupons],
+  ["get", "/admin/coupon", handleAdminCoupons],
+  ["post", "/admin/coupon", handleAdminCoupons],
+  ["post", "/admin/coupons", handleAdminCoupons],
+  ["put", "/admin/coupon/:id", handleAdminCoupons],
+  ["put", "/admin/coupons/:id", handleAdminCoupons],
+  ["delete", "/admin/coupon/:id", handleAdminCoupons],
+  ["delete", "/admin/coupons/:id", handleAdminCoupons],
+  ["put", "/coupon/admin/:id", handleAdminCoupons],
+  ["delete", "/coupon/admin/:id", handleAdminCoupons],
   ["get", "/admin/wallet/summary", handleAdminWalletSummary],
   ["get", "/admin/wallet/commission-history", handleAdminCommissionHistory],
   ["get", "/admin/wallet/dashboard-summary", handleAdminWalletDashboardSummary],
@@ -11466,7 +11804,9 @@ addRoute("get", "/wallet/bank-account", handleGetBankAccount);
 // REVIEW MODERATION & APPROVAL ENGINE
 // ==========================================
 
+let reviewTablesEnsured = false;
 const ensureReviewTables = async (db) => {
+  if (reviewTablesEnsured) return;
   await db.run(`
     CREATE TABLE IF NOT EXISTS reviews (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -11505,6 +11845,7 @@ const ensureReviewTables = async (db) => {
   await db.run("ALTER TABLE reviews ADD COLUMN is_approved INTEGER DEFAULT 1").catch(() => { });
   await db.run("ALTER TABLE reviews ADD COLUMN updated_at TEXT").catch(() => { });
   await db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_booking_unique ON reviews(booking_id)").catch(() => { });
+  reviewTablesEnsured = true;
 };
 
 // 1. Customer Submits Review
@@ -13394,6 +13735,35 @@ const handleCreateBookingExplicit = async (c) => {
     return jsonRes(c, false, null, "Bookings can only be scheduled up to 90 days in advance.", 400);
   }
 
+  // 0. Max 2 Bridal Mehndi per day limit for artist
+  if (artistId && bookingDate && serviceId) {
+    const service = await db.first("SELECT * FROM services WHERE id = ? OR CAST(id AS TEXT) = CAST(? AS TEXT)", [serviceId, serviceId]).catch(() => null);
+    const isBridal = service && (
+      (service.category && service.category.toLowerCase().includes('bridal')) ||
+      (service.name && service.name.toLowerCase().includes('bridal'))
+    );
+    
+    if (isBridal) {
+      const bridalBookings = await db.first(`
+        SELECT COUNT(b.id) as count 
+        FROM bookings b
+        JOIN services s ON CAST(b.service_id AS TEXT) = CAST(s.id AS TEXT)
+        WHERE (b.artist_id = ? OR CAST(b.artist_id AS TEXT) = CAST(? AS TEXT))
+          AND b.booking_date = ?
+          AND LOWER(b.status) NOT IN ('cancelled', 'rejected')
+          AND (
+            LOWER(b.status) IN ('confirmed', 'accepted', 'completed', 'in_progress', 'on_the_way', 'arrived')
+            OR LOWER(b.detailed_status) IN ('confirmed', 'artist_accepted', 'accepted', 'completed', 'in_progress', 'pending_artist_confirmation')
+          )
+          AND (LOWER(s.category) LIKE '%bridal%' OR LOWER(s.name) LIKE '%bridal%')
+      `, [artistId, String(artistId), bookingDate]).catch((err) => { console.log(err); return { count: 0 }; });
+      
+      if (bridalBookings && bridalBookings.count >= 2) {
+        return jsonRes(c, false, null, "Artist has reached the maximum limit of 2 Bridal Mehndi bookings for this date.", 409);
+      }
+    }
+  }
+
   // Double Booking Protection & Draft Re-use
   let existingUserDraft = null;
   if (artistId && bookingDate && bookingTime) {
@@ -13981,7 +14351,7 @@ const handleAcceptBooking = async (c) => {
   }
 
   if (customerIdAccept) {
-    dispatchNotification(db, {
+    await dispatchNotification(db, {
       userId: customerIdAccept,
       title: "Booking Confirmed! 🎉",
       body: "Your mehndi artist has accepted your booking request. Your Check-In PIN has been sent to your email.",
@@ -13990,6 +14360,19 @@ const handleAcceptBooking = async (c) => {
       entityType: "booking",
       channelId: "bookings",
       deepLink: `mehendigoo://booking/${bookingId}`
+    }).catch(() => null);
+  }
+
+  if (assignedArtistId) {
+    await dispatchNotification(db, {
+      userId: assignedArtistId,
+      title: "Booking Confirmed! 📅",
+      body: `You accepted booking #${booking.booking_number || bookingId}. Check schedule & get ready!`,
+      type: "BOOKING_CONFIRMED",
+      entityId: bookingId,
+      entityType: "booking",
+      channelId: "bookings",
+      deepLink: `mehendigoo://artist/booking/${bookingId}`
     }).catch(() => null);
   }
 
@@ -14066,7 +14449,7 @@ const handleOnTheWayBooking = async (c) => {
   ).catch(() => { });
 
   if (booking.customer_id) {
-    dispatchNotification(db, {
+    await dispatchNotification(db, {
       userId: booking.customer_id,
       title: "Artist On The Way 🚗",
       body: "Your mehndi artist is traveling to your location.",
@@ -14075,6 +14458,19 @@ const handleOnTheWayBooking = async (c) => {
       entityType: "booking",
       channelId: "bookings",
       deepLink: `mehendigoo://tracking/${bookingId}`
+    }).catch(() => null);
+  }
+
+  if (booking.artist_id) {
+    await dispatchNotification(db, {
+      userId: booking.artist_id,
+      title: "On The Way 🚗",
+      body: `Travel status updated for booking #${booking.booking_number || bookingId}. Drive safely!`,
+      type: "ARTIST_ON_THE_WAY",
+      entityId: bookingId,
+      entityType: "booking",
+      channelId: "bookings",
+      deepLink: `mehendigoo://artist/booking/${bookingId}`
     }).catch(() => null);
   }
 
@@ -14136,6 +14532,32 @@ const handleStartService = async (c) => {
     [bookingId, String(bookingId)]
   ).catch(() => { });
 
+  if (booking.customer_id) {
+    await dispatchNotification(db, {
+      userId: booking.customer_id,
+      title: "Service Started 🌸",
+      body: "Your mehndi specialist has started your service!",
+      type: "SERVICE_STARTED",
+      entityId: bookingId,
+      entityType: "booking",
+      channelId: "bookings",
+      deepLink: `mehendigoo://tracking/${bookingId}`
+    }).catch(() => null);
+  }
+
+  if (booking.artist_id) {
+    await dispatchNotification(db, {
+      userId: booking.artist_id,
+      title: "Service In Progress 🎨",
+      body: `Service started for booking #${booking.booking_number || bookingId}. Make it beautiful!`,
+      type: "SERVICE_STARTED",
+      entityId: bookingId,
+      entityType: "booking",
+      channelId: "bookings",
+      deepLink: `mehendigoo://artist/booking/${bookingId}`
+    }).catch(() => null);
+  }
+
   const updated = await db.first("SELECT * FROM bookings WHERE id = ?", [bookingId]).catch(() => null);
   return jsonRes(c, true, {
     ...updated,
@@ -14176,15 +14598,28 @@ const handleRejectBooking = async (c) => {
   await processBookingRefund(db, bookingId, `Artist Declined: ${reason}`);
 
   if (booking.customer_id) {
-    dispatchNotification(db, {
+    await dispatchNotification(db, {
       userId: booking.customer_id,
-      title: "Booking Request Update",
+      title: "Booking Declined ℹ️",
       body: `Booking #${booking.booking_number || bookingId} could not be accepted by the specialist. Any advance payment has been refunded to your wallet.`,
       type: "BOOKING_REJECTED",
       entityId: bookingId,
       entityType: "booking",
       channelId: "bookings",
       deepLink: `mehendigoo://booking/${bookingId}`
+    }).catch(() => null);
+  }
+
+  if (booking.artist_id) {
+    await dispatchNotification(db, {
+      userId: booking.artist_id,
+      title: "Booking Declined",
+      body: `You declined booking #${booking.booking_number || bookingId}.`,
+      type: "BOOKING_REJECTED",
+      entityId: bookingId,
+      entityType: "booking",
+      channelId: "bookings",
+      deepLink: `mehendigoo://artist/booking/${bookingId}`
     }).catch(() => null);
   }
 
@@ -14683,7 +15118,7 @@ const handleValidateArrival = async (c) => {
 
     const customerId = booking.customer_id || booking.user_id;
     if (customerId) {
-      dispatchNotification(db, {
+      await dispatchNotification(db, {
         userId: customerId,
         title: "Artist Arrived 📍",
         body: "Your mehndi artist has arrived at your location. Please check your email for the Check-In PIN.",
@@ -14708,6 +15143,19 @@ const handleValidateArrival = async (c) => {
       } else {
         console.warn(`[handleValidateArrival Warning] No customer email found for Booking ID: ${bookingId}, Customer ID: ${customerId}`);
       }
+    }
+
+    if (booking.artist_id) {
+      await dispatchNotification(db, {
+        userId: booking.artist_id,
+        title: "Arrival Confirmed 📍",
+        body: `You arrived at customer location for #${booking.booking_number || bookingId}. Request Check-In PIN to begin.`,
+        type: "ARTIST_ARRIVED",
+        entityId: bookingId,
+        entityType: "booking",
+        channelId: "bookings",
+        deepLink: `mehendigoo://artist/booking/${bookingId}`
+      }).catch(() => null);
     }
 
     return jsonRes(c, true, {
@@ -14930,7 +15378,7 @@ const handleVerifyCheckInOtp = async (c) => {
   const customerNameVerify = customerUserVerify?.full_name || customerUserVerify?.name || booking.customer_name || booking.user_name || "Valued Customer";
 
   if (customerIdVerify) {
-    dispatchNotification(db, {
+    await dispatchNotification(db, {
       userId: customerIdVerify,
       title: "Service Started 🌸",
       body: "Check-In verified. Your mehndi service is now in progress. Your Completion PIN has been sent to your email.",
@@ -14939,6 +15387,19 @@ const handleVerifyCheckInOtp = async (c) => {
       entityType: "booking",
       channelId: "bookings",
       deepLink: `mehendigoo://tracking/${bookingId}`
+    }).catch(() => null);
+  }
+
+  if (booking.artist_id) {
+    await dispatchNotification(db, {
+      userId: booking.artist_id,
+      title: "Service In Progress 🎨",
+      body: `Check-In verified for #${booking.booking_number || bookingId}. Service is now in progress!`,
+      type: "SERVICE_STARTED",
+      entityId: bookingId,
+      entityType: "booking",
+      channelId: "bookings",
+      deepLink: `mehendigoo://artist/booking/${bookingId}`
     }).catch(() => null);
   }
 
@@ -15179,7 +15640,7 @@ const handleVerifyCheckOutOtp = async (c) => {
 
   // Dispatch checkout notifications to Customer and Artist
   if (booking.customer_id) {
-    dispatchNotification(db, {
+    await dispatchNotification(db, {
       userId: booking.customer_id,
       title: isAlreadyFullyPaid ? "Booking Completed ✨" : "Service Completed ✨",
       body: isAlreadyFullyPaid
@@ -15194,7 +15655,7 @@ const handleVerifyCheckOutOtp = async (c) => {
   }
 
   if (booking.artist_id) {
-    dispatchNotification(db, {
+    await dispatchNotification(db, {
       userId: booking.artist_id,
       title: isAlreadyFullyPaid ? "Booking Completed 🎉" : "Check-Out Verified ✨",
       body: isAlreadyFullyPaid
@@ -15832,15 +16293,28 @@ const handleSelectCashPayment = async (c) => {
 
       if (artistId) {
         console.log("[ARTIST_NOTIFICATION_SENT]", JSON.stringify({ artistId, bNumber, type: "NEW_BOOKING_REQUEST" }));
-        dispatchNotification(db, {
+        await dispatchNotification(db, {
           userId: artistId,
-          title: "New Cash Booking Request 💵",
-          body: `Customer requested cash booking #${bNumber} for ₹${totalAmount}. Please review and confirm.`,
+          title: "🌸 New Booking Request!",
+          body: `New booking request #${bNumber} for ₹${totalAmount}. Please review and accept.`,
           type: "NEW_BOOKING_REQUEST",
           entityId: createdId,
           entityType: "booking",
           channelId: "bookings",
           deepLink: `mehendigoo://artist/booking/${createdId}`
+        }).catch(() => null);
+      }
+
+      if (customerId) {
+        await dispatchNotification(db, {
+          userId: customerId,
+          title: "Booking Request Sent! 🌸",
+          body: `Your cash booking request #${bNumber} has been sent to the specialist. Pay on arrival.`,
+          type: "BOOKING_REQUESTED",
+          entityId: createdId,
+          entityType: "booking",
+          channelId: "bookings",
+          deepLink: `mehendigoo://booking/${createdId}`
         }).catch(() => null);
       }
 
@@ -15881,14 +16355,14 @@ const handleSelectCashPayment = async (c) => {
       [targetStatus, targetBookingStatus, targetDetailedStatus, booking.id]
     ).catch(() => { });
 
-    // Dispatch real-time notification to the artist
+    // Dispatch real-time notification to the artist and customer
     if (booking.artist_id) {
-      const notifTitle = isInitialDraft ? "New Cash Booking Request 💵" : "Cash Collection Request 💵";
+      const notifTitle = isInitialDraft ? "🌸 New Booking Request!" : "Cash Collection Request 💵";
       const notifBody = isInitialDraft 
-        ? `Customer requested cash booking #${booking.booking_number || booking.booking_code || booking.id}. Please review and confirm.`
+        ? `New booking request #${booking.booking_number || booking.booking_code || booking.id}. Please review and accept.`
         : `Customer selected Cash payment of ₹${booking.remaining_amount || 0} for booking #${booking.booking_number || booking.booking_code || booking.id}. Please collect cash and tap Confirm Cash Received.`;
 
-      dispatchNotification(db, {
+      await dispatchNotification(db, {
         userId: booking.artist_id,
         title: notifTitle,
         body: notifBody,
@@ -15897,6 +16371,21 @@ const handleSelectCashPayment = async (c) => {
         entityType: "booking",
         channelId: "bookings",
         deepLink: `mehendigoo://artist/booking/${booking.id}`
+      }).catch(() => null);
+    }
+
+    if (booking.customer_id) {
+      await dispatchNotification(db, {
+        userId: booking.customer_id,
+        title: isInitialDraft ? "Booking Request Sent! 🌸" : "Cash Payment Selected 💵",
+        body: isInitialDraft 
+          ? `Your cash booking request #${booking.booking_number || booking.booking_code || booking.id} has been sent to the specialist.`
+          : `You selected Cash payment of ₹${booking.remaining_amount || 0} for booking #${booking.booking_number || booking.booking_code || booking.id}. Please pay your specialist upon service completion.`,
+        type: "BOOKING_UPDATED",
+        entityId: booking.id,
+        entityType: "booking",
+        channelId: "bookings",
+        deepLink: `mehendigoo://booking/${booking.id}`
       }).catch(() => null);
     }
 
@@ -16028,7 +16517,7 @@ const handleConfirmCashPayment = async (c) => {
   // Dispatch push notifications & socket updates
   const customerTargetId = b.customer_id || b.user_id;
   if (customerTargetId) {
-    dispatchNotification(db, {
+    await dispatchNotification(db, {
       userId: customerTargetId,
       title: "Booking Completed ✨",
       body: "Cash payment confirmed and booking completed. Please rate your artist!",
@@ -16041,7 +16530,7 @@ const handleConfirmCashPayment = async (c) => {
   }
 
   if (b.artist_id) {
-    dispatchNotification(db, {
+    await dispatchNotification(db, {
       userId: b.artist_id,
       title: "Cash Payment Confirmed 💰",
       body: `Booking #${b.booking_number || bookingId} completed. ₹${cashAmount} cash recorded.`,
@@ -16702,6 +17191,88 @@ app.notFound((c) => {
     }));
   }
   return c.json({ success: false, message: "Route Not Found on Cloudflare Worker Backend" }, 404);
+});
+
+
+app.post("/api/admin/broadcast-promo-now", async (c) => {
+  try {
+    const db = getDb(c.env);
+    const users = await db.all("SELECT id FROM users WHERE role = 'artist' OR role = 'ARTIST'");
+    const title = "Collab with MehndiGo & Grow! 🚀";
+    const body = `Hello Artist 👋✨
+
+हम चाहते हैं कि आप हमारे "MehndiGo Instagram Page" (https://www.instagram.com/mehndigoo?utm_source=chatgpt.com) के साथ Collab करें 🤝
+
+अगर आप हमारे साथ अपनी Mehndi Reels/Posts पर collaboration करते हैं, तो इससे आपकी Instagram Profile और आपके काम को भी ज्यादा लोगों तक पहुँच और promotion मिलेगा 📈✨
+
+साथ ही, अगर आपका MehndiGo Platform के साथ अच्छा experience रहा है, तो आप हमारे बारे में एक genuine review/video review भी शेयर कर सकते हैं ❤️
+
+इससे आपकी profile की visibility बढ़ेगी, लोग आपके काम को देखेंगे और आपको future में ज्यादा booking opportunities मिलने में मदद हो सकती है 🚀
+
+Let's grow together! 🤝✨
+MehndiGo – Grow Your Mehndi Business with Us ❤️`;
+
+    let successCount = 0;
+    for (const user of users) {
+      await dispatchNotification(db, {
+        userId: user.id,
+        title,
+        body,
+        type: "PROMOTION",
+      });
+      successCount++;
+    }
+    return c.json({ success: true, count: successCount });
+  } catch (err) {
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
+
+app.post("/api/leads", async (c) => {
+  try {
+    const db = getDb(c.env);
+    const body = await c.req.json();
+    const id = generateId();
+    await db.run(
+      "INSERT INTO leads (id, name, email, phone, style, message, status) VALUES (?, ?, ?, ?, ?, ?, 'PENDING')",
+      [id, body.name, body.email || "", body.phone, body.style || "", body.message || ""]
+    );
+    return c.json({ success: true, id });
+  } catch (err) {
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
+
+app.get("/api/admin/leads", async (c) => {
+  try {
+    const db = getDb(c.env);
+    const leads = await db.all("SELECT * FROM leads ORDER BY created_at DESC");
+    return c.json({ success: true, leads });
+  } catch (err) {
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
+
+app.put("/api/admin/leads/:id/status", async (c) => {
+  try {
+    const db = getDb(c.env);
+    const { id } = c.req.param();
+    const body = await c.req.json();
+    await db.run("UPDATE leads SET status = ? WHERE id = ?", [body.status, id]);
+    return c.json({ success: true });
+  } catch (err) {
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
+
+app.get('/api/app-settings', async (c) => {
+  try {
+    const db = getDb(c.env);
+    const settings = await db.prepare("SELECT * FROM app_settings WHERE id = 1").first();
+    return c.json({ success: true, data: settings });
+  } catch (err) {
+    return c.json({ success: false, error: err.message }, 500);
+  }
 });
 
 export default app;

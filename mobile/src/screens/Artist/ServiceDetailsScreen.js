@@ -135,7 +135,9 @@ export default function ServiceDetailsScreen({ route, navigation }) {
           <View style={{ width: 40 }} />
         </View>
 
-        <Image source={{ uri: imageUri }} style={styles.image} />
+        <View style={styles.imageContainer}>
+          <Image source={{ uri: imageUri }} style={styles.image} />
+        </View>
 
         <View style={styles.body}>
           <View style={styles.titleRow}>
@@ -223,8 +225,8 @@ const styles = StyleSheet.create({
   centerContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12, backgroundColor: Colors.white, borderBottomWidth: 1, borderBottomColor: Colors.border },
   backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.background, justifyContent: "center", alignItems: "center" },
-  headerTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },
-  image: { width: "100%", height: 200, resizeMode: "cover" },
+  imageContainer: { width: "100%", height: 320, backgroundColor: "#0f172a", justifyContent: "center", alignItems: "center" },
+  image: { width: "100%", height: "100%", resizeMode: "contain" },
   body: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 40 },
   titleRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
   titleInfo: { flex: 1, marginRight: 12 },

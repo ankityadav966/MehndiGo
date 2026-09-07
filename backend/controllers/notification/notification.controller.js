@@ -197,21 +197,21 @@ async function clearAll(req, res) {
 // 11. GET /debug/push/:userId (Admin debug endpoint)
 async function sendSystemNotification(req, res) {
   try {
-    const { user_id, title, message } = req.body;
+    const { user_id, userId, title, message, target } = req.body;
+    const recipient = user_id || userId || target;
 
-    if (!user_id || !title || !message) {
-      return res.status(400).json(ErrorResponse("user_id, title, and message are required"));
+    if (!recipient || !title || !message) {
+      return res.status(400).json(ErrorResponse("Recipient (user_id/userId/target), title, and message are required"));
     }
 
-    const notif = await db.Notification.create({
-      user_id,
+    const AdminService = require("../../services/admin.services");
+    const notifications = await AdminService.sendSystemNotification({
+      user_id: recipient,
       title,
-      message,
-      type: "SYSTEM",
-      is_read: false
+      message
     });
 
-    return res.status(201).json(SuccessResponse("Notification sent successfully", notif));
+    return res.status(201).json(SuccessResponse("Notification sent successfully", notifications));
   } catch (error) {
     return res.status(500).json(ErrorResponse(error.message, error));
   }

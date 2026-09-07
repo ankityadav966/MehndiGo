@@ -66,20 +66,30 @@ const reviewRoutes = require("./routes/review.routes");
 const walletRoutes = require("./routes/wallet.routes");
 const referralRoutes = require("./routes/v1/referral.routes");
 
-app.use(["/auth", "/api/auth", "/api/v1/auth"], authRoutes);
-app.use(["/admin", "/api/admin", "/api/v1/admin"], adminRoutes);
-app.use(["/analytics", "/api/analytics", "/api/v1/analytics"], analyticsRoutes);
-app.use(["/security", "/api/security", "/api/v1/security"], securityRoutes);
-app.use(["/customer", "/api/customer", "/api/v1/customer"], customerRoutes);
-app.use(["/artist", "/api/artist", "/api/v1/artist"], artistRoutes);
-app.use(["/booking", "/api/booking", "/api/v1/booking"], bookingRoutes);
-app.use(["/chat", "/api/chat", "/api/v1/chat"], chatRoutes);
-app.use(["/coupon", "/api/coupon", "/api/v1/coupon"], couponRoutes);
-app.use(["/notification", "/api/notification", "/api/v1/notification"], notificationRoutes);
-app.use(["/payment", "/api/payment", "/api/v1/payment"], paymentRoutes);
-app.use(["/category", "/api/category", "/api/v1/category"], categoryRoutes);
-app.use(["/reviews", "/api/reviews", "/api/v1/reviews"], reviewRoutes);
-app.use(["/wallet", "/api/wallet", "/api/v1/wallet"], walletRoutes);
+app.use((req, res, next) => {
+  if (req.url.includes("/mehndigo/admin/")) {
+    req.url = req.url.replace("/mehndigo/admin/", "/admin/");
+  }
+  if (req.url.includes("/mehndigo/coupon/")) {
+    req.url = req.url.replace("/mehndigo/coupon/", "/coupon/");
+  }
+  next();
+});
+
+app.use(["/auth", "/api/auth", "/api/v1/auth", "/mehndigo/auth", "/api/mehndigo/auth", "/api/v1/mehndigo/auth"], authRoutes);
+app.use(["/admin", "/api/admin", "/api/v1/admin", "/mehndigo/admin", "/api/mehndigo/admin", "/api/v1/mehndigo/admin"], adminRoutes);
+app.use(["/analytics", "/api/analytics", "/api/v1/analytics", "/mehndigo/analytics", "/api/mehndigo/analytics", "/api/v1/mehndigo/analytics"], analyticsRoutes);
+app.use(["/security", "/api/security", "/api/v1/security", "/mehndigo/security", "/api/mehndigo/security", "/api/v1/mehndigo/security"], securityRoutes);
+app.use(["/customer", "/api/customer", "/api/v1/customer", "/mehndigo/customer", "/api/mehndigo/customer", "/api/v1/mehndigo/customer"], customerRoutes);
+app.use(["/artist", "/api/artist", "/api/v1/artist", "/mehndigo/artist", "/api/mehndigo/artist", "/api/v1/mehndigo/artist"], artistRoutes);
+app.use(["/booking", "/api/booking", "/api/v1/booking", "/mehndigo/booking", "/api/mehndigo/booking", "/api/v1/mehndigo/booking"], bookingRoutes);
+app.use(["/chat", "/api/chat", "/api/v1/chat", "/mehndigo/chat", "/api/mehndigo/chat", "/api/v1/mehndigo/chat"], chatRoutes);
+app.use(["/coupon", "/api/coupon", "/api/v1/coupon", "/mehndigo/coupon", "/api/mehndigo/coupon", "/api/v1/mehndigo/coupon"], couponRoutes);
+app.use(["/notification", "/api/notification", "/api/v1/notification", "/mehndigo/notification", "/api/mehndigo/notification", "/api/v1/mehndigo/notification"], notificationRoutes);
+app.use(["/payment", "/api/payment", "/api/v1/payment", "/mehndigo/payment", "/api/mehndigo/payment", "/api/v1/mehndigo/payment"], paymentRoutes);
+app.use(["/category", "/api/category", "/api/v1/category", "/mehndigo/category", "/api/mehndigo/category", "/api/v1/mehndigo/category"], categoryRoutes);
+app.use(["/reviews", "/api/reviews", "/api/v1/reviews", "/mehndigo/reviews", "/api/mehndigo/reviews", "/api/v1/mehndigo/reviews"], reviewRoutes);
+app.use(["/wallet", "/api/wallet", "/api/v1/wallet", "/mehndigo/wallet", "/api/mehndigo/wallet", "/api/v1/mehndigo/wallet"], walletRoutes);
 app.use(["/transactions", "/api/transactions", "/api/v1/transactions"], walletRoutes);
 app.use(["/settlements", "/api/settlements", "/api/v1/settlements"], walletRoutes);
 app.use(["/bank-account", "/api/bank-account", "/api/v1/bank-account"], walletRoutes);

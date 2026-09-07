@@ -11,7 +11,8 @@ import {
   View,
   ActivityIndicator,
   KeyboardAvoidingView,
-  Platform
+  Platform,
+  Modal
 } from "react-native";
 import Alert from "../../utils/Alert";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -33,6 +34,7 @@ export default function EditServiceScreen({ route, navigation }) {
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [selectedPreviewImage, setSelectedPreviewImage] = useState(null); // array of local URIs or server URIs
   const [images, setImages] = useState([]); // array of local URIs or server URIs
 
   // Packages list array state
@@ -288,7 +290,12 @@ export default function EditServiceScreen({ route, navigation }) {
           <Text style={styles.label}>Service Images (Up to 5)</Text>
           <View style={styles.imageGrid}>
             {images.map((uri, index) => (
-              <View key={index} style={styles.imageTile}>
+              <TouchableOpacity
+                key={index}
+                style={styles.imageTile}
+                activeOpacity={0.88}
+                onPress={() => setSelectedPreviewImage(uri)}
+              >
                 <Image source={{ uri }} style={styles.imageTileImg} />
                 {index === 0 && (
                   <View style={styles.coverBadge}>
@@ -297,12 +304,15 @@ export default function EditServiceScreen({ route, navigation }) {
                 )}
                 <TouchableOpacity
                   style={styles.removeImageBtn}
-                  onPress={() => removeImage(index)}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    removeImage(index);
+                  }}
                   hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
                 >
                   <Ionicons name="close-circle" size={20} color="#EF4444" />
                 </TouchableOpacity>
-              </View>
+              </TouchableOpacity>
             ))}
 
             {images.length < MAX_IMAGES && (
@@ -473,6 +483,30 @@ export default function EditServiceScreen({ route, navigation }) {
         )}
       </View>
       </KeyboardAvoidingView>
+
+      {/* Full Length Photo Preview Modal */}
+      <Modal
+        visible={!!selectedPreviewImage}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setSelectedPreviewImage(null)}
+      >
+        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.92)", justifyContent: "center", alignItems: "center" }}>
+          <TouchableOpacity
+            style={{ position: "absolute", top: 50, right: 20, zIndex: 10, padding: 10 }}
+            onPress={() => setSelectedPreviewImage(null)}
+          >
+            <Ionicons name="close" size={30} color="#FFFFFF" />
+          </TouchableOpacity>
+          {selectedPreviewImage && (
+            <Image
+              source={{ uri: selectedPreviewImage }}
+              style={{ width: "92%", height: "82%" }}
+              resizeMode="contain"
+            />
+          )}
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -512,19 +546,20 @@ const styles = StyleSheet.create({
     gap: 10
   },
   imageTile: {
-    width: 90,
-    height: 90,
+    width: 95,
+    height: 130,
     borderRadius: 12,
     overflow: "hidden",
-    position: "relative"
+    position: "relative",
+    backgroundColor: "#0f172a"
   },
-  imageTileImg: { width: "100%", height: "100%", resizeMode: "cover" },
+  imageTileImg: { width: "100%", height: "100%", resizeMode: "contain" },
   coverBadge: {
     position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: "rgba(233,30,99,0.78)",
+    backgroundColor: "rgba(233,30,99,0.85)",
     paddingVertical: 2,
     alignItems: "center"
   },
@@ -538,8 +573,8 @@ const styles = StyleSheet.create({
     padding: 2
   },
   addImageTile: {
-    width: 90,
-    height: 90,
+    width: 95,
+    height: 130,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: Colors.border,

@@ -146,7 +146,40 @@ async function getCouponHistory(req, res) {
 // 6. POST /admin/coupon (Admin create)
 async function adminCreate(req, res) {
   try {
-    const coupon = await db.Coupon.create(req.body);
+    const {
+      code,
+      discount_type,
+      discount_value,
+      discount_percentage,
+      max_discount,
+      min_booking_value,
+      expires_at,
+      is_active,
+      first_booking_only
+    } = req.body;
+
+    if (!code || !expires_at) {
+      return res.status(400).json(ErrorResponse("Coupon code and expiry date are required."));
+    }
+
+    const cleanCode = String(code).trim().toUpperCase();
+    const existing = await db.Coupon.findOne({ where: { code: cleanCode } });
+    if (existing) {
+      return res.status(400).json(ErrorResponse(`Coupon code '${cleanCode}' already exists.`));
+    }
+
+    const coupon = await db.Coupon.create({
+      code: cleanCode,
+      discount_type: discount_type || "PERCENTAGE",
+      discount_value: Number(discount_value) || 0,
+      discount_percentage: Number(discount_percentage) || Number(discount_value) || 0,
+      max_discount: Number(max_discount) || 0,
+      min_booking_value: Number(min_booking_value) || 0,
+      expires_at: new Date(expires_at),
+      is_active: is_active !== undefined ? Boolean(is_active) : true,
+      first_booking_only: first_booking_only !== undefined ? Boolean(first_booking_only) : false
+    });
+
     return res.status(201).json(SuccessResponse("Coupon created successfully", coupon));
   } catch (error) {
     return res.status(500).json(ErrorResponse(error.message, error));
@@ -163,7 +196,47 @@ async function adminUpdate(req, res) {
       return res.status(404).json(ErrorResponse("Coupon not found"));
     }
 
-    await coupon.update(req.body);
+    const {
+      code,
+      discount_type,
+      discount_value,
+      discount_percentage,
+      max_discount,
+      min_booking_value,
+      expires_at,
+      is_active,
+      first_booking_only,
+      per_user_limit,
+      usage_limit
+    } = req.body;
+
+    const updateData = {};
+    if (code !== undefined) updateData.code = String(code).trim().toUpperCase();
+    if (discount_type !== undefined) updateData.discount_type = discount_type;
+    if (discount_value !== undefined) updateData.discount_value = Number(discount_value) || 0;
+    if (discount_percentage !== undefined) updateData.discount_percentage = Number(discount_percentage) || Number(discount_value) || 0;
+    if (max_discount !== undefined) updateData.max_discount = Number(max_discount) || 0;
+    if (min_booking_value !== undefined) updateData.min_booking_value = Number(min_booking_value) || 0;
+    if (expires_at !== undefined && expires_at) updateData.expires_at = new Date(expires_at);
+    if (is_active !== undefined) updateData.is_active = Boolean(is_active);
+    if (first_booking_only !== undefined) updateData.first_booking_only = Boolean(first_booking_only);
+    if (per_user_limit !== undefined) updateData.per_user_limit = Number(per_user_limit) || 1;
+    if (usage_limit !== undefined) updateData.usage_limit = usage_limit ? Number(usage_limit) : null;
+
+    // Check code uniqueness if code is changing
+    if (updateData.code && updateData.code !== coupon.code) {
+      const existing = await db.Coupon.findOne({
+        where: {
+          code: updateData.code,
+          id: { [Op.ne]: id }
+        }
+      });
+      if (existing) {
+        return res.status(400).json(ErrorResponse(`Coupon code '${updateData.code}' is already in use.`));
+      }
+    }
+
+    await coupon.update(updateData);
     return res.status(200).json(SuccessResponse("Coupon updated successfully", coupon));
   } catch (error) {
     return res.status(500).json(ErrorResponse(error.message, error));
@@ -180,7 +253,13 @@ async function adminDelete(req, res) {
       return res.status(404).json(ErrorResponse("Coupon not found"));
     }
 
-    await coupon.destroy();
+    try {
+      await coupon.destroy();
+    } catch (destroyErr) {
+      // If foreign key constraint prevents hard deletion (e.g. coupon has usage records), deactivate it instead
+      await coupon.update({ is_active: false });
+    }
+
     return res.status(200).json(SuccessResponse("Coupon deleted successfully"));
   } catch (error) {
     return res.status(500).json(ErrorResponse(error.message, error));

@@ -244,6 +244,7 @@ export default function HomeScreen({ navigation }) {
   const notifContext = useNotifications();
   const unreadCount = notifContext?.unreadCount || 0;
   const setUnreadCount = notifContext?.setUnreadCount || null;
+  const refreshUnreadCount = notifContext?.refreshUnreadCount || null;
 
   const currentBgColor = isDarkMode ? "#000000" : Colors.background;
   const currentCardBg = isDarkMode ? "#121212" : Colors.white;
@@ -299,6 +300,9 @@ export default function HomeScreen({ navigation }) {
   // Root level back handler with double-back-to-exit prevention
   useFocusEffect(
     useCallback(() => {
+      if (refreshUnreadCount) {
+        refreshUnreadCount();
+      }
       const { BackHandler } = require("react-native");
       const { handleRootDoubleBackExit } = require("../../utils/navigationHelper");
 
@@ -320,7 +324,7 @@ export default function HomeScreen({ navigation }) {
 
       const sub = BackHandler.addEventListener("hardwareBackPress", onBackPress);
       return () => sub.remove();
-    }, [paymentModalVisible, locationModalVisible, smartAlertVisible])
+    }, [paymentModalVisible, locationModalVisible, smartAlertVisible, refreshUnreadCount])
   );
 
   // Smart Location Management States
@@ -374,10 +378,13 @@ export default function HomeScreen({ navigation }) {
           setActiveAddressState(cached);
         }
 
-        // 2. Fetch customer's saved addresses in the background
-        const addresses = await getCustomerAddresses().catch(() => []);
-        const list = Array.isArray(addresses) ? addresses : [];
-        setSavedAddressesList(list);
+        // 2. Fetch customer's saved addresses in the background if logged in
+        let list = [];
+        if (user && (user.id || user._id)) {
+          const addresses = await getCustomerAddresses().catch(() => []);
+          list = Array.isArray(addresses) ? addresses : [];
+          setSavedAddressesList(list);
+        }
 
         const primary = list.find((a) => a.is_default) || list[0];
 
@@ -703,10 +710,12 @@ export default function HomeScreen({ navigation }) {
         }
       }
 
-      if (user && (!user?.profile_image || !user?.city)) {
-        syncUserProfile();
+      if (user && (user.id || user._id)) {
+        if (!user?.profile_image || !user?.city) {
+          syncUserProfile();
+        }
+        syncFavorites();
       }
-      syncFavorites();
 
       return () => {
         isSubscribed = false;
@@ -1165,7 +1174,7 @@ export default function HomeScreen({ navigation }) {
       {featuredArtists.length > 0 && (
         <View>
           <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: currentTextColor }]}>Featured Artists</Text>
+            <Text style={[styles.sectionTitle, { color: currentTextColor }]}>Nearby Artists</Text>
             <TouchableOpacity onPress={() => navigation.navigate("ArtistListing", { filter: "featured", from: "Home" })}>
               <Text style={styles.viewAllText}>View All ({featuredArtists.length})</Text>
             </TouchableOpacity>
@@ -1338,8 +1347,9 @@ export default function HomeScreen({ navigation }) {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
-      <FlatList
+    <>
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <FlatList
         data={homePreviewNearbyArtists}
         keyExtractor={(item, index) => String(item.id || item.user_id || item.artist_id || index)}
         renderItem={renderNearbyArtistItem}
@@ -1534,7 +1544,8 @@ export default function HomeScreen({ navigation }) {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+      </SafeAreaView>
+    </>
   );
 }
 

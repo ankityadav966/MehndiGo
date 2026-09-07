@@ -476,42 +476,38 @@ class AdminService {
   }
 
   async sendSystemNotification(data) {
-    const { user_id, title, message } = data;
-    
+    const { user_id, userId, title, message, target } = data;
+    const recipient = user_id || userId || target || "ALL";
+
     let targetUsers = [];
-    if (user_id === "ALL_USERS") {
+    if (recipient === "ALL_USERS" || recipient === "CUSTOMERS") {
       targetUsers = await db.User.findAll({ where: { role: "USER" } });
-    } else if (user_id === "ALL_ARTISTS") {
+    } else if (recipient === "ALL_ARTISTS" || recipient === "ARTISTS") {
       targetUsers = await db.User.findAll({ where: { role: "ARTIST" } });
-    } else if (user_id === "ALL") {
+    } else if (recipient === "ALL") {
       targetUsers = await db.User.findAll();
     } else {
-      targetUsers = [{ id: user_id }];
+      const user = await db.User.findByPk(recipient);
+      if (user) {
+        targetUsers = [user];
+      } else {
+        targetUsers = [{ id: recipient }];
+      }
     }
 
     const notifications = await Promise.all(targetUsers.map(async (u) => {
+      if (!u || !u.id) return null;
       const notif = await db.Notification.create({
         user_id: u.id,
-        title,
-        message,
+        title: title || "Admin Notification",
+        message: message || "",
         type: "SYSTEM",
         is_read: false
       });
       return notif;
     }));
 
-    try {
-      const io = getIO();
-      targetUsers.forEach((u) => {
-        io.to(u.id.toString()).emit("new_notification", {
-          title,
-          message,
-          type: "SYSTEM"
-        });
-      });
-    } catch (e) {}
-
-    return notifications;
+    return notifications.filter(Boolean);
   }
 
   async getAllMessages() {

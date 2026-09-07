@@ -1,0 +1,10 @@
+CREATE TABLE IF NOT EXISTS leads (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  email TEXT,
+  phone TEXT NOT NULL,
+  style TEXT,
+  message TEXT,
+  status TEXT DEFAULT 'PENDING',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);

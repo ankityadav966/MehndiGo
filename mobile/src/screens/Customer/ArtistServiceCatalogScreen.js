@@ -346,7 +346,7 @@ export default function ArtistServiceCatalogScreen({ route, navigation }) {
                     >
                       <Image
                         source={{ uri: resolveImage(img) }}
-                        style={{ width: '100%', height: '100%', resizeMode: 'cover' }}
+                        style={{ width: '100%', height: '100%', resizeMode: 'contain' }}
                       />
                     </TouchableOpacity>
                   ))}
@@ -1129,7 +1129,7 @@ const styles = StyleSheet.create({
   designImage: {
     width: "100%",
     height: "100%",
-    resizeMode: "cover"
+    resizeMode: "contain"
   },
   tierBadge: {
     position: "absolute",

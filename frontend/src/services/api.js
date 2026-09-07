@@ -1,11 +1,11 @@
 import axios from "axios";
 
 const getBaseUrl = () => {
-  const envUrl = import.meta.env.VITE_API_URL;
-  if (envUrl) {
-    return envUrl;
+  let envUrl = import.meta.env.VITE_API_URL || "https://api.mehndigo.in/api/v1";
+  if (envUrl.endsWith("/mehndigo")) {
+    envUrl = envUrl.slice(0, -9);
   }
-  return "https://api.mehndigo.in/api/v1/mehndigo";
+  return envUrl;
 };
 
 const API_BASE_URL = getBaseUrl();
@@ -172,6 +172,10 @@ export const adminService = {
   createFestivalOffer: (data) => apiClient.post("/admin/festival-offers", data),
   updateFestivalOffer: (id, data) => apiClient.put(`/admin/festival-offers/${id}`, data),
   deleteFestivalOffer: (id) => apiClient.delete(`/admin/festival-offers/${id}`),
+
+  // Leads
+  getLeads: () => apiClient.get("/admin/leads"),
+  updateLeadStatus: (id, status) => apiClient.put(`/admin/leads/${id}/status`, { status }),
 };
 
 export const chatService = {
