@@ -270,7 +270,7 @@ export function clearArtistDashboardMemoryCache() {
 export default function ArtistDashboardScreen({ navigation }) {
   const { user } = useAuth();
   const { socket } = useSocket();
-  const { unreadCount } = useNotifications();
+  const { unreadCount, refreshUnreadCount } = useNotifications();
 
   if (__DEV__) console.log(`[ARTIST_APPROVAL_DEBUG] CURRENT_ROUTE: ArtistDashboardScreen | USER_ID: ${user?.id} | ROLE: ${user?.role}`);
 
@@ -292,6 +292,9 @@ export default function ArtistDashboardScreen({ navigation }) {
   // Root level back handler with double-back-to-exit prevention
   useFocusEffect(
     React.useCallback(() => {
+      if (refreshUnreadCount) {
+        refreshUnreadCount();
+      }
       const { BackHandler } = require("react-native");
       const { handleRootDoubleBackExit } = require("../../utils/navigationHelper");
 
@@ -301,7 +304,7 @@ export default function ArtistDashboardScreen({ navigation }) {
 
       const sub = BackHandler.addEventListener("hardwareBackPress", onBackPress);
       return () => sub.remove();
-    }, [])
+    }, [refreshUnreadCount])
   );
 
   const fetchDashboardDetails = React.useCallback(async () => {

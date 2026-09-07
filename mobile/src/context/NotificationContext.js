@@ -13,6 +13,7 @@ import {
   scheduleLocalNotification,
 } from "../services/notification";
 import { handleNotificationNavigation } from "../services/deepLink";
+import { getNotificationHistory } from "../services/notificationApi";
 
 const NotificationContext = createContext(null);
 
@@ -96,6 +97,18 @@ export function NotificationProvider({ children, navigationRef }) {
     }
   }, [isAuthenticated, role, navigationRef]);
 
+  const refreshUnreadCount = useCallback(async () => {
+    if (!isAuthenticated) return;
+    try {
+      const res = await getNotificationHistory(1, 1);
+      const count = Number(res?.unreadCount ?? res?.unread_count ?? 0);
+      setUnreadCount(count);
+      if (__DEV__) console.log("[NotificationContext] Unread notification count synced:", count);
+    } catch (e) {
+      if (__DEV__) console.log("[NotificationContext] Could not fetch unread count:", e.message);
+    }
+  }, [isAuthenticated]);
+
   useEffect(() => {
     if (!isAuthenticated) return;
 
@@ -106,6 +119,7 @@ export function NotificationProvider({ children, navigationRef }) {
       } catch (err) {
         if (__DEV__) console.log("[NotificationContext] Push registration notice:", err.message);
       }
+      refreshUnreadCount();
     };
 
     setupNotifications();
@@ -117,6 +131,7 @@ export function NotificationProvider({ children, navigationRef }) {
           handleNotificationResponse(pendingResponse);
         }
         await clearBadge();
+        refreshUnreadCount();
       }
       appState.current = nextAppState;
     };
@@ -146,7 +161,7 @@ export function NotificationProvider({ children, navigationRef }) {
         responseListener.current.remove();
       }
     };
-  }, [isAuthenticated, handleNotificationResponse]);
+  }, [isAuthenticated, handleNotificationResponse, refreshUnreadCount]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -167,8 +182,9 @@ export function NotificationProvider({ children, navigationRef }) {
       lastNotification,
       markAllRead,
       setUnreadCount,
+      refreshUnreadCount,
     }),
-    [unreadCount, lastNotification, markAllRead],
+    [unreadCount, lastNotification, markAllRead, refreshUnreadCount],
   );
 
   return <NotificationContext.Provider value={value}>{children}</NotificationContext.Provider>;

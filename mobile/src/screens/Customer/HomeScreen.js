@@ -244,6 +244,7 @@ export default function HomeScreen({ navigation }) {
   const notifContext = useNotifications();
   const unreadCount = notifContext?.unreadCount || 0;
   const setUnreadCount = notifContext?.setUnreadCount || null;
+  const refreshUnreadCount = notifContext?.refreshUnreadCount || null;
 
   const currentBgColor = isDarkMode ? "#000000" : Colors.background;
   const currentCardBg = isDarkMode ? "#121212" : Colors.white;
@@ -299,6 +300,9 @@ export default function HomeScreen({ navigation }) {
   // Root level back handler with double-back-to-exit prevention
   useFocusEffect(
     useCallback(() => {
+      if (refreshUnreadCount) {
+        refreshUnreadCount();
+      }
       const { BackHandler } = require("react-native");
       const { handleRootDoubleBackExit } = require("../../utils/navigationHelper");
 
@@ -320,7 +324,7 @@ export default function HomeScreen({ navigation }) {
 
       const sub = BackHandler.addEventListener("hardwareBackPress", onBackPress);
       return () => sub.remove();
-    }, [paymentModalVisible, locationModalVisible, smartAlertVisible])
+    }, [paymentModalVisible, locationModalVisible, smartAlertVisible, refreshUnreadCount])
   );
 
   // Smart Location Management States
