@@ -1,14 +1,13 @@
 import React, { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { Bell } from "lucide-react";
 import { io } from "socket.io-client";
 import { useAuth } from "../context/AuthContext";
 import { formatRelativeTime } from "../utils/dateFormatter";
-// For simplicity, using authService for notifications or a unified notification endpoint
-// But since the API requires role-based endpoints, we might just rely on socket.io events
-// and store them in state for this dropdown.
 
 const NotificationDropdown = ({ showToast }) => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const dropdownRef = useRef(null);
@@ -62,7 +61,7 @@ const NotificationDropdown = ({ showToast }) => {
     <div className="notification-dropdown-container" ref={dropdownRef} style={{ position: "relative" }}>
       <button
         className="btn btn-secondary"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => navigate("/notifications")}
         style={{
           padding: "0.4rem",
           borderRadius: "50%",

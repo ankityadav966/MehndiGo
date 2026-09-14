@@ -19,7 +19,8 @@ export const Alert = {
           (b) =>
             b.style === "cancel" ||
             String(b.text || "").trim().toLowerCase() === "cancel" ||
-            String(b.text || "").trim().toLowerCase() === "no"
+            String(b.text || "").trim().toLowerCase() === "no" ||
+            String(b.text || "").trim().toLowerCase() === "later"
         );
 
         if (cancelIndex !== -1) {
@@ -55,6 +56,11 @@ export const Alert = {
         lowerTitle.includes("gallery")
       ) {
         type = "warning";
+      } else if (
+        lowerTitle.includes("update") ||
+        lowerMsg.includes("update")
+      ) {
+        type = "update";
       } else if (
         lowerTitle.includes("success") ||
         lowerTitle.includes("complete") ||

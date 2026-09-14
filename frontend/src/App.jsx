@@ -8,7 +8,8 @@ import ArtistDashboard from "./pages/ArtistDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
 import ChatPage from "./pages/ChatPage";
 import SecretAdminLogin from "./pages/SecretAdminLogin";
-import { Moon, Sun, MessageSquare, ShieldAlert, Award, User, LogIn, Sparkles } from "lucide-react";
+import NotificationsPage from "./pages/NotificationsPage";
+import { Moon, Sun, MessageSquare, ShieldAlert, Award, User, LogIn, Sparkles, Bell } from "lucide-react";
 
 // Protected Route wrapper component
 const ProtectedRoute = ({ children }) => {
@@ -56,6 +57,10 @@ function App() {
                 
                 <Link to="/chat" className="nav-link" style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
                   <MessageSquare style={{ width: "16px" }} /> Messages
+                </Link>
+
+                <Link to="/notifications" className="nav-link" style={{ display: "flex", alignItems: "center", gap: "0.25rem" }} title="Notifications">
+                  <Bell style={{ width: "16px" }} /> Notifications
                 </Link>
               </>
             )}
@@ -162,6 +167,15 @@ function App() {
               element={
                 <ProtectedRoute>
                   <ChatPage showToast={showToast} />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/notifications"
+              element={
+                <ProtectedRoute>
+                  <NotificationsPage showToast={showToast} />
                 </ProtectedRoute>
               }
             />

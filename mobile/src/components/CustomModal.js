@@ -99,6 +99,10 @@ export default function CustomModal({
     iconName = "checkmark-circle";
     iconColor = Colors.success;
     iconBg = Colors.success + "15";
+  } else if (type === "update") {
+    iconName = "cloud-download";
+    iconColor = Colors.primary;
+    iconBg = Colors.primary + "15";
   }
 
   return (

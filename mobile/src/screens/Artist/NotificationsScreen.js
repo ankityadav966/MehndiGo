@@ -18,11 +18,13 @@ import {
   markAllNotificationsAsRead
 } from "../../services/notificationApi";
 import { handleNotificationNavigation } from "../../services/deepLink";
+import { useNotifications } from "../../context/NotificationContext";
 
 export default function NotificationsScreen({ navigation }) {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const notifContext = useNotifications();
 
   const fetchNotificationsList = React.useCallback(async () => {
     try {
@@ -52,24 +54,36 @@ export default function NotificationsScreen({ navigation }) {
     try {
       await markAllNotificationsAsRead();
       setNotifications((prev) => prev.map((item) => ({ ...item, is_read: true })));
+      notifContext?.markAllRead?.();
       Alert.alert("Success", "All notifications marked as read");
     } catch (err) {
       Alert.alert("Error", "Failed to mark all as read");
     }
   };
 
-  const handleNotificationPress = async (item) => {
+  const handleNotificationPress = (item) => {
+    console.warn("[NotificationsScreen] handleNotificationPress clicked:", item?.id, item?.title);
     try {
+      // 1. Mark as read optimistically in local state and context
       if (!item.is_read) {
-        await markNotificationAsRead(item.id);
         setNotifications((prev) =>
           prev.map((n) => (n.id === item.id ? { ...n, is_read: true } : n))
         );
+        if (notifContext?.setUnreadCount) {
+          notifContext.setUnreadCount((prev) => Math.max(0, prev - 1));
+        }
+        // Fire API request asynchronously in background
+        markNotificationAsRead(item.id).catch((err) => {
+          if (__DEV__) console.log("Failed to mark notification as read:", err?.message);
+        });
       }
-      
+
+      // 2. Navigate artist to relevant destination
       handleNotificationNavigation(item, navigation, "artist");
     } catch (err) {
-      navigation.navigate("NotificationDetails", { id: item.id, notification: item });
+      if (__DEV__) console.warn("Artist notification click navigation error:", err?.message);
+      // Safe fallback: never crash, open NotificationDetails
+      navigation.navigate("NotificationDetails", { id: item?.id, notification: item });
     }
   };
 

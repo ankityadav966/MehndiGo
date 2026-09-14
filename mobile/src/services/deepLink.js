@@ -786,7 +786,292 @@ const NOTIFICATION_ROUTES = {
   },
 };
 
+export function extractNotificationMetadata(notification) {
+  let data = notification?.data || notification?.request?.content?.data || {};
+
+  if (typeof data === "string") {
+    try {
+      data = JSON.parse(data);
+    } catch (e) {
+      data = {};
+    }
+  }
+  if (!data || typeof data !== "object") {
+    data = {};
+  }
+
+  const title = String(notification?.title || "").trim();
+  const message = String(notification?.message || notification?.body || "").trim();
+  const combinedText = `${title} ${message}`;
+  const rawType = String(data?.type || notification?.type || "").toUpperCase();
+
+  // Booking ID extraction
+  let bookingId =
+    data?.bookingId ||
+    data?.booking_id ||
+    notification?.bookingId ||
+    notification?.booking_id ||
+    null;
+
+  if (!bookingId && data?.id && (rawType.includes("BOOKING") || rawType.includes("ORDER"))) {
+    bookingId = data.id;
+  }
+
+  if (!bookingId) {
+    const bkCodeMatch = combinedText.match(/(?:MG|BK)-[0-9A-Za-z]+/i);
+    if (bkCodeMatch) {
+      bookingId = bkCodeMatch[0];
+    } else {
+      const numMatch = combinedText.match(/(?:booking|request|order|job)\s*(?:#|id|no\.?|code)?\s*[:#-]?\s*([0-9A-Za-z_-]+)/i);
+      if (numMatch) {
+        bookingId = numMatch[1];
+      } else {
+        const hashMatch = combinedText.match(/#([0-9A-Za-z_-]+)/);
+        if (hashMatch) {
+          bookingId = hashMatch[1];
+        }
+      }
+    }
+  }
+
+  let leadId = data?.leadId || data?.lead_id || null;
+  if (!leadId) {
+    const leadMatch = combinedText.match(/lead\s*(?:#|id|no\.?|code)?\s*[:#-]?\s*([0-9]+)/i);
+    if (leadMatch) leadId = leadMatch[1];
+  }
+
+  let ticketId = data?.ticketId || data?.ticket_id || null;
+  if (!ticketId) {
+    const ticketMatch = combinedText.match(/(?:ticket|support)\s*(?:#|id|no\.?|code)?\s*[:#-]?\s*([0-9]+)/i);
+    if (ticketMatch) ticketId = ticketMatch[1];
+  }
+
+  let transactionId = data?.transactionId || data?.transaction_id || data?.paymentId || data?.payment_id || null;
+  if (!transactionId) {
+    const txMatch = combinedText.match(/(?:transaction|payment|txn|pay)\s*(?:#|id|no\.?|code)?\s*[:#-]?\s*([0-9A-Za-z_-]+)/i);
+    if (txMatch) transactionId = txMatch[1];
+  }
+
+  let serviceId = data?.serviceId || data?.service_id || null;
+  let portfolioId = data?.portfolioId || data?.portfolio_id || null;
+
+  return {
+    data,
+    title,
+    message,
+    combinedText,
+    rawType,
+    bookingId,
+    leadId,
+    ticketId,
+    transactionId,
+    serviceId,
+    portfolioId,
+  };
+}
+
+export function resolveArtistNotificationDestination(notification) {
+  if (!notification) return null;
+
+  const {
+    data,
+    combinedText,
+    rawType,
+    bookingId,
+    leadId,
+    ticketId,
+    serviceId,
+    portfolioId,
+  } = extractNotificationMetadata(notification);
+
+  const lower = combinedText.toLowerCase();
+
+  // 1. Support Tickets
+  if (
+    rawType.startsWith("SUPPORT") ||
+    rawType.includes("TICKET") ||
+    lower.includes("support ticket") ||
+    lower.includes("ticket #")
+  ) {
+    if (ticketId) {
+      return { screen: "SupportTicketDetails", params: { ticketId: Number(ticketId) || ticketId } };
+    }
+    return { screen: "Support" };
+  }
+
+  // 2. Chat & Messages
+  if (
+    rawType.includes("CHAT") ||
+    rawType.includes("MESSAGE") ||
+    lower.includes("sent you a message") ||
+    lower.includes("new chat message")
+  ) {
+    if (bookingId) {
+      return { screen: "ChatRoom", params: { bookingId } };
+    }
+    return { screen: "ChatList" };
+  }
+
+  // 3. Reviews & Ratings
+  if (
+    rawType.includes("REVIEW") ||
+    rawType.includes("RATING") ||
+    lower.includes("rated you") ||
+    lower.includes("new review") ||
+    lower.includes("customer review")
+  ) {
+    return { screen: "Reviews" };
+  }
+
+  // 4. KYC / Verification / Profile
+  if (
+    rawType.includes("KYC") ||
+    rawType.includes("VERIFICATION") ||
+    rawType.includes("DOCUMENT") ||
+    lower.includes("kyc") ||
+    lower.includes("aadhaar") ||
+    lower.includes("pan card") ||
+    lower.includes("bank account rejected") ||
+    lower.includes("verification rejected") ||
+    lower.includes("documents rejected") ||
+    lower.includes("reupload")
+  ) {
+    if (
+      lower.includes("reject") ||
+      lower.includes("reupload") ||
+      lower.includes("failed") ||
+      lower.includes("action required")
+    ) {
+      return { screen: "Kyc" };
+    }
+    return { screen: "ArtistProfile" };
+  }
+
+  // 5. Availability & Calendar
+  if (
+    rawType.includes("CALENDAR") ||
+    rawType.includes("SLOT") ||
+    rawType.includes("AVAILABILITY") ||
+    lower.includes("availability calendar") ||
+    lower.includes("slot booked") ||
+    lower.includes("schedule updated")
+  ) {
+    return { screen: "AvailabilityCalendar" };
+  }
+
+  // 6. Services & Portfolio
+  if (rawType.includes("SERVICE") || lower.includes("service package") || lower.includes("service added")) {
+    if (serviceId) {
+      return { screen: "ServiceDetails", params: { id: serviceId } };
+    }
+    return { screen: "Services" };
+  }
+  if (rawType.includes("PORTFOLIO") || lower.includes("portfolio approved") || lower.includes("work sample")) {
+    if (portfolioId) {
+      return { screen: "PortfolioDetail", params: { id: portfolioId } };
+    }
+    return { screen: "Portfolio" };
+  }
+
+  // 7. Referral & Rewards
+  if (rawType.includes("REFERRAL") || rawType.includes("REWARD") || lower.includes("referral reward") || lower.includes("referral bonus")) {
+    return { screen: "ArtistReferral" };
+  }
+
+  // 8. Payments, Wallet & Transactions
+  if (
+    rawType.includes("PAYMENT") ||
+    rawType.includes("WALLET") ||
+    rawType.includes("TRANSACTION") ||
+    rawType.includes("WITHDRAW") ||
+    rawType.includes("SETTLEMENT") ||
+    rawType.includes("EARNING") ||
+    lower.includes("payment received") ||
+    lower.includes("wallet credited") ||
+    lower.includes("wallet debited") ||
+    lower.includes("withdrawal approved") ||
+    lower.includes("withdrawal rejected") ||
+    lower.includes("payout") ||
+    lower.includes("settlement") ||
+    lower.includes("cash collected") ||
+    lower.includes("advance payment") ||
+    lower.includes("remaining payment")
+  ) {
+    if (rawType.includes("WITHDRAW") || lower.includes("withdrawal")) {
+      if (lower.includes("request") || lower.includes("withdraw now")) {
+        return { screen: "WithdrawEarnings" };
+      }
+      return { screen: "Wallet", params: { initialTab: "Withdrawals" } };
+    }
+    if (rawType.includes("TRANSACTION") || lower.includes("transaction history") || lower.includes("statement")) {
+      return { screen: "Transactions" };
+    }
+    return { screen: "Wallet", params: { initialTab: "Transactions" } };
+  }
+
+  // 9. Booking Notifications & New Booking Requests
+  if (
+    rawType.includes("BOOKING") ||
+    rawType.includes("LEAD") ||
+    rawType.includes("ORDER") ||
+    lower.includes("booking") ||
+    lower.includes("appointment") ||
+    lower.includes("customer request") ||
+    lower.includes("new request") ||
+    lower.includes("job")
+  ) {
+    const isNewRequest =
+      rawType.includes("CREATED") ||
+      rawType.includes("NEW") ||
+      lower.includes("new booking request") ||
+      lower.includes("new booking") ||
+      lower.includes("new request") ||
+      lower.includes("new lead") ||
+      lower.includes("tap to review and accept") ||
+      lower.includes("awaiting your response") ||
+      lower.includes("pending approval");
+
+    if (bookingId) {
+      return { screen: "BookingDetails", params: { id: bookingId, bookingId } };
+    }
+
+    if (leadId) {
+      return { screen: "LeadDetails", params: { id: leadId, leadId } };
+    }
+
+    if (isNewRequest) {
+      return { screen: "BookingRequests", params: { initialTab: "Pending" } };
+    }
+
+    if (lower.includes("cancel")) {
+      return { screen: "BookingRequests", params: { initialTab: "Cancelled" } };
+    }
+    if (lower.includes("complete")) {
+      return { screen: "BookingRequests", params: { initialTab: "Completed" } };
+    }
+
+    return { screen: "BookingRequests", params: { initialTab: "Accepted" } };
+  }
+
+  if (bookingId) {
+    return { screen: "BookingDetails", params: { id: bookingId, bookingId } };
+  }
+
+  // Safe fallback to NotificationDetails
+  return { screen: "NotificationDetails", params: { id: notification.id, notification } };
+}
+
 export function resolveNotificationRoute(notification, role) {
+  const normalizedRole = String(role || "").toLowerCase();
+
+  // Optimized artist notification destination resolution
+  if (normalizedRole === "artist") {
+    const artistRoute = resolveArtistNotificationDestination(notification);
+    if (artistRoute) {
+      return artistRoute;
+    }
+  }
+
   let data = notification?.data || notification?.request?.content?.data || {};
   
   if (typeof data === "string") {
@@ -800,8 +1085,7 @@ export function resolveNotificationRoute(notification, role) {
   if (!type && data.type) type = data.type;
   if (type) type = type.toLowerCase();
 
-  const normalizedRole = String(role || "").toLowerCase();
-  const fallbackScreen = normalizedRole === "artist" ? "Notifications" : "NotificationCenter";
+  const fallbackScreen = normalizedRole === "artist" ? "NotificationDetails" : "NotificationCenter";
 
   if (type && !event) {
     if (type === "booking" || type.startsWith("booking_")) {
@@ -890,8 +1174,8 @@ export function resolveNotificationRoute(notification, role) {
       event = "system_notification";
     }
 
-    const bkMatch = msgText.match(/(BK-[0-9]+)/i) || titleText.match(/(BK-[0-9]+)/i);
-    const numberMatch = msgText.match(/(?:booking|lead|refund|id|#)\s*:?\s*#?\s*([0-9]+)/i);
+    const bkMatch = msgText.match(/((?:MG|BK)-[0-9A-Za-z]+)/i) || titleText.match(/((?:MG|BK)-[0-9A-Za-z]+)/i);
+    const numberMatch = msgText.match(/(?:booking|lead|refund|id|#)\s*:?\s*#?\s*([0-9A-Za-z_-]+)/i);
 
     if (bkMatch) {
       bookingId = bkMatch[1];
@@ -904,17 +1188,17 @@ export function resolveNotificationRoute(notification, role) {
   }
 
   if (!type || !event) {
-    return { screen: fallbackScreen };
+    return { screen: fallbackScreen, params: { id: notification?.id, notification } };
   }
 
   const typeRoutes = NOTIFICATION_ROUTES[type];
-  if (!typeRoutes) return { screen: fallbackScreen };
+  if (!typeRoutes) return { screen: fallbackScreen, params: { id: notification?.id, notification } };
 
   const roleRoutes = typeRoutes[normalizedRole];
-  if (!roleRoutes) return { screen: fallbackScreen };
+  if (!roleRoutes) return { screen: fallbackScreen, params: { id: notification?.id, notification } };
 
   const route = roleRoutes[event];
-  if (!route) return { screen: fallbackScreen };
+  if (!route) return { screen: fallbackScreen, params: { id: notification?.id, notification } };
 
   const resolvedParams = { ...route.params };
   
@@ -923,7 +1207,7 @@ export function resolveNotificationRoute(notification, role) {
     const lid = leadId || data.leadId || data.id || "";
     const rid = refundId || data.refundId || data.id || "";
     if (!bid && !lid && !rid) {
-      return { screen: normalizedRole === "artist" ? "Bookings" : "MyBookings" };
+      return { screen: normalizedRole === "artist" ? "BookingRequests" : "MyBookings" };
     }
     resolvedParams.id = resolvedParams.id.replace(":bookingId", bid);
     resolvedParams.id = resolvedParams.id.replace(":leadId", lid);
@@ -932,7 +1216,7 @@ export function resolveNotificationRoute(notification, role) {
   if (resolvedParams.bookingId) {
     const bid = bookingId || data.bookingId || data.id || data.booking_id || "";
     if (!bid) {
-      return { screen: normalizedRole === "artist" ? "Bookings" : "MyBookings" };
+      return { screen: normalizedRole === "artist" ? "BookingRequests" : "MyBookings" };
     }
     resolvedParams.bookingId = resolvedParams.bookingId.replace(":bookingId", bid);
   }
@@ -943,22 +1227,35 @@ export function resolveNotificationRoute(notification, role) {
 export function handleNotificationNavigation(notification, navigation, role) {
   if (!notification || !navigation) return;
 
+  const normalizedRole = String(role || "").toLowerCase();
+
   try {
     const route = resolveNotificationRoute(notification, role);
-    if (route && route.screen) {
+    console.warn("[handleNotificationNavigation] role:", role, "route:", JSON.stringify(route));
+    if (route && route.screen && route.screen !== "Notifications") {
       if (route.params) {
         navigation.navigate(route.screen, route.params);
       } else {
         navigation.navigate(route.screen);
       }
+      return;
+    }
+
+    // If destination cannot be navigated or matches current screen, open NotificationDetails safely
+    if (normalizedRole === "artist") {
+      navigation.navigate("NotificationDetails", { id: notification.id, notification });
     } else {
-      const normalizedRole = String(role || "").toLowerCase();
-      navigation.navigate(normalizedRole === "artist" ? "Notifications" : "NotificationCenter");
+      navigation.navigate("NotificationCenter");
     }
   } catch (err) {
-    console.error("Centralized notification navigation failed:", err.message);
-    const normalizedRole = String(role || "").toLowerCase();
-    navigation.navigate(normalizedRole === "artist" ? "Notifications" : "NotificationCenter");
+    if (__DEV__) console.warn("Centralized notification navigation failed:", err.message);
+    try {
+      if (normalizedRole === "artist") {
+        navigation.navigate("NotificationDetails", { id: notification.id, notification });
+      } else {
+        navigation.navigate("NotificationCenter");
+      }
+    } catch (e) {}
   }
 }
 
@@ -1077,6 +1374,7 @@ export default {
   consumePendingDeepLink,
   handleDeepLinkNavigation,
   resolveNotificationRoute,
+  resolveArtistNotificationDestination,
   handleNotificationNavigation,
   linkingConfig
 };

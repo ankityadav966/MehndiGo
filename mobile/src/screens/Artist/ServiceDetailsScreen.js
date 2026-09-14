@@ -1,8 +1,10 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   ActivityIndicator,
+  Dimensions,
   Image,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -14,11 +16,16 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import { getArtistServiceById, deleteArtistService } from "../../services/artist";
 
+const { width: screenWidth } = Dimensions.get("window");
+
 export default function ServiceDetailsScreen({ route, navigation }) {
   const { id } = route.params || {};
 
   const [service, setService] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [fullscreenImage, setFullscreenImage] = useState(null);
+  const carouselRef = useRef(null);
 
   const fetchServiceDetail = React.useCallback(async () => {
     try {
@@ -51,6 +58,22 @@ export default function ServiceDetailsScreen({ route, navigation }) {
       try {
         const parsed = JSON.parse(raw);
         return Array.isArray(parsed) ? parsed : [raw];
+      } catch {
+        return [raw];
+      }
+    }
+    return [];
+  };
+
+  /** Safely parse service images array from JSON or string */
+  const parseImages = (raw) => {
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw.filter(Boolean);
+    if (typeof raw === "string") {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed.filter(Boolean);
+        return [raw];
       } catch {
         return [raw];
       }
@@ -99,6 +122,21 @@ export default function ServiceDetailsScreen({ route, navigation }) {
     );
   };
 
+  const handleScroll = (event) => {
+    const contentOffsetX = event.nativeEvent.contentOffset.x;
+    const currentIndex = Math.round(contentOffsetX / screenWidth);
+    if (currentIndex >= 0 && currentIndex < imagesList.length) {
+      setActiveImageIndex(currentIndex);
+    }
+  };
+
+  const scrollToImage = (index) => {
+    if (index >= 0 && index < imagesList.length) {
+      carouselRef.current?.scrollTo({ x: index * screenWidth, animated: true });
+      setActiveImageIndex(index);
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.centerContainer}>
@@ -107,22 +145,10 @@ export default function ServiceDetailsScreen({ route, navigation }) {
     );
   }
 
-  const parseImages = (raw) => {
-    if (!raw) return [];
-    if (Array.isArray(raw)) return raw;
-    if (typeof raw === "string") {
-      try {
-        const parsed = JSON.parse(raw);
-        return Array.isArray(parsed) ? parsed : [raw];
-      } catch {
-        return [raw];
-      }
-    }
-    return [];
-  };
-
-  const imagesList = parseImages(service.service_image);
-  const imageUri = imagesList.length > 0 ? imagesList[0] : "https://images.unsplash.com/photo-1605559424843-9e4c228bf1c2?w=500";
+  const rawImages = service ? parseImages(service.service_image) : [];
+  const imagesList = rawImages.length > 0
+    ? rawImages
+    : ["https://images.unsplash.com/photo-1605559424843-9e4c228bf1c2?w=500"];
 
   return (
     <SafeAreaView style={styles.container}>
@@ -135,38 +161,100 @@ export default function ServiceDetailsScreen({ route, navigation }) {
           <View style={{ width: 40 }} />
         </View>
 
+        {/* Swipeable Image Carousel Container */}
         <View style={styles.imageContainer}>
-          <Image source={{ uri: imageUri }} style={styles.image} />
+          <ScrollView
+            ref={carouselRef}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
+          >
+            {imagesList.map((imgUri, index) => (
+              <TouchableOpacity
+                key={index}
+                activeOpacity={0.9}
+                onPress={() => setFullscreenImage(imgUri)}
+                style={{ width: screenWidth, height: 320 }}
+              >
+                <Image source={{ uri: imgUri }} style={styles.image} />
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* Photo Counter Badge */}
+          <View style={styles.counterBadge}>
+            <Ionicons name="images-outline" size={12} color="#fff" style={{ marginRight: 4 }} />
+            <Text style={styles.counterText}>
+              {activeImageIndex + 1} / {imagesList.length}
+            </Text>
+          </View>
+
+          {/* Left Swipe Button */}
+          {imagesList.length > 1 && activeImageIndex > 0 && (
+            <TouchableOpacity
+              style={[styles.arrowBtn, styles.leftArrow]}
+              onPress={() => scrollToImage(activeImageIndex - 1)}
+            >
+              <Ionicons name="chevron-back" size={20} color="#fff" />
+            </TouchableOpacity>
+          )}
+
+          {/* Right Swipe Button */}
+          {imagesList.length > 1 && activeImageIndex < imagesList.length - 1 && (
+            <TouchableOpacity
+              style={[styles.arrowBtn, styles.rightArrow]}
+              onPress={() => scrollToImage(activeImageIndex + 1)}
+            >
+              <Ionicons name="chevron-forward" size={20} color="#fff" />
+            </TouchableOpacity>
+          )}
+
+          {/* Pagination Indicators (Dots) */}
+          {imagesList.length > 1 && (
+            <View style={styles.paginationDotsContainer}>
+              {imagesList.map((_, i) => (
+                <View
+                  key={i}
+                  style={[
+                    styles.dot,
+                    i === activeImageIndex ? styles.activeDot : styles.inactiveDot
+                  ]}
+                />
+              ))}
+            </View>
+          )}
         </View>
 
         <View style={styles.body}>
           <View style={styles.titleRow}>
             <View style={styles.titleInfo}>
-              <Text style={styles.serviceName}>{service.specialization_name}</Text>
+              <Text style={styles.serviceName}>{service?.specialization_name}</Text>
               {/* Multi-category badges */}
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-                {parseCategory(service.category).map((cat, i) => (
+                {parseCategory(service?.category).map((cat, i) => (
                   <View key={i} style={styles.categoryBadge}>
                     <Text style={styles.categoryText}>{cat}</Text>
                   </View>
                 ))}
               </View>
             </View>
-            <Text style={styles.price}>Min ₹{service.minimum_price}</Text>
+            <Text style={styles.price}>Min ₹{service?.minimum_price}</Text>
           </View>
 
           <View style={styles.divider} />
 
           <Text style={styles.sectionTitle}>Short Description</Text>
           <Text style={styles.description}>
-            {service.description ? service.description : "No description provided."}
+            {service?.description ? service.description : "No description provided."}
           </Text>
 
           <View style={styles.divider} />
 
           {/* Service Packages display list */}
           <Text style={styles.sectionTitle}>Packages Offered</Text>
-          {service.packages?.map((pkg) => (
+          {service?.packages?.map((pkg) => (
             <View key={pkg.id} style={styles.itemRow}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.itemTitle}>{pkg.package_name}</Text>
@@ -183,7 +271,7 @@ export default function ServiceDetailsScreen({ route, navigation }) {
               <Text style={styles.itemVal}>₹{pkg.package_price}</Text>
             </View>
           ))}
-          {(!service.packages || service.packages.length === 0) && (
+          {(!service?.packages || service.packages.length === 0) && (
             <Text style={styles.emptyNote}>No packages declared.</Text>
           )}
 
@@ -191,7 +279,7 @@ export default function ServiceDetailsScreen({ route, navigation }) {
 
           {/* Service Add-ons display list */}
           <Text style={styles.sectionTitle}>Add-ons & Extras</Text>
-          {service.addons?.map((addon) => (
+          {service?.addons?.map((addon) => (
             <View key={addon.id} style={styles.itemRow}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.itemTitle}>{addon.addon_name}</Text>
@@ -200,7 +288,7 @@ export default function ServiceDetailsScreen({ route, navigation }) {
               <Text style={styles.itemVal}>+₹{addon.addon_price}</Text>
             </View>
           ))}
-          {(!service.addons || service.addons.length === 0) && (
+          {(!service?.addons || service.addons.length === 0) && (
             <Text style={styles.emptyNote}>No optional add-ons registered.</Text>
           )}
         </View>
@@ -216,6 +304,18 @@ export default function ServiceDetailsScreen({ route, navigation }) {
           <Text style={styles.deleteButtonText}>Delete Catalog</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Fullscreen Image Preview Modal */}
+      <Modal visible={!!fullscreenImage} transparent animationType="fade">
+        <View style={styles.modalBg}>
+          <TouchableOpacity style={styles.closeModalBtn} onPress={() => setFullscreenImage(null)}>
+            <Ionicons name="close" size={28} color="#fff" />
+          </TouchableOpacity>
+          {fullscreenImage && (
+            <Image source={{ uri: fullscreenImage }} style={styles.fullscreenImage} />
+          )}
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -225,8 +325,18 @@ const styles = StyleSheet.create({
   centerContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12, backgroundColor: Colors.white, borderBottomWidth: 1, borderBottomColor: Colors.border },
   backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.background, justifyContent: "center", alignItems: "center" },
-  imageContainer: { width: "100%", height: 320, backgroundColor: "#0f172a", justifyContent: "center", alignItems: "center" },
-  image: { width: "100%", height: "100%", resizeMode: "contain" },
+  headerTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },
+  imageContainer: { width: "100%", height: 320, backgroundColor: "#0f172a", position: "relative" },
+  image: { width: screenWidth, height: 320, resizeMode: "contain" },
+  counterBadge: { position: "absolute", top: 12, right: 12, backgroundColor: "rgba(0, 0, 0, 0.65)", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 14, flexDirection: "row", alignItems: "center" },
+  counterText: { color: "#fff", fontSize: 11, fontWeight: "700" },
+  arrowBtn: { position: "absolute", top: "50%", marginTop: -18, width: 36, height: 36, borderRadius: 18, backgroundColor: "rgba(0, 0, 0, 0.55)", justifyContent: "center", alignItems: "center", zIndex: 10 },
+  leftArrow: { left: 12 },
+  rightArrow: { right: 12 },
+  paginationDotsContainer: { position: "absolute", bottom: 12, left: 0, right: 0, flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 6 },
+  dot: { width: 7, height: 7, borderRadius: 3.5 },
+  activeDot: { backgroundColor: Colors.primary, width: 18 },
+  inactiveDot: { backgroundColor: "rgba(255, 255, 255, 0.5)" },
   body: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 40 },
   titleRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
   titleInfo: { flex: 1, marginRight: 12 },
@@ -246,5 +356,8 @@ const styles = StyleSheet.create({
   editButton: { height: 48, backgroundColor: Colors.primary, borderRadius: 10, flexDirection: "row", justifyContent: "center", alignItems: "center" },
   editButtonText: { color: Colors.white, fontSize: 14, fontWeight: "700", marginLeft: 8 },
   deleteButton: { height: 48, backgroundColor: Colors.white, borderRadius: 10, borderWidth: 1, borderColor: "#EF4444", flexDirection: "row", justifyContent: "center", alignItems: "center" },
-  deleteButtonText: { color: "#EF4444", fontSize: 14, fontWeight: "700", marginLeft: 8 }
+  deleteButtonText: { color: "#EF4444", fontSize: 14, fontWeight: "700", marginLeft: 8 },
+  modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.9)", justifyContent: "center", alignItems: "center" },
+  closeModalBtn: { position: "absolute", top: 44, right: 20, zIndex: 100, padding: 8 },
+  fullscreenImage: { width: "100%", height: "80%", resizeMode: "contain" }
 });

@@ -103,6 +103,17 @@ app.get("/health", (req, res) => {
   });
 });
 
+app.get(["/app/version", "/api/app/version", "/api/v1/app/version", "/mehndigo/app/version", "/api/v1/mehndigo/app/version"], (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  return res.status(200).json({
+    success: true,
+    latestVersion: process.env.LATEST_APP_VERSION || "1.1.3",
+    minVersion: process.env.MIN_APP_VERSION || "1.0.0",
+    packageName: "com.sonuy123.mehendigoo",
+    playStoreUrl: "https://play.google.com/store/apps/details?id=com.sonuy123.mehendigoo"
+  });
+});
+
 app.get(["/.well-known/assetlinks.json", "/assetlinks.json"], (req, res) => {
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.setHeader("Access-Control-Allow-Origin", "*");

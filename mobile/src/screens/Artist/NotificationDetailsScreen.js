@@ -4,7 +4,7 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View, ActivityIndicator
 import { SafeAreaView } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
 import { getNotificationHistory, markNotificationAsRead } from "../../services/notificationApi";
-import { handleNotificationNavigation } from "../../services/deepLink";
+import { handleNotificationNavigation, resolveArtistNotificationDestination } from "../../services/deepLink";
 
 export default function NotificationDetailsScreen({ route, navigation }) {
   const { id, notification: paramNotification } = route.params || {};
@@ -48,6 +48,48 @@ export default function NotificationDetailsScreen({ route, navigation }) {
       case "reminder": return "alarm-outline";
       case "promo": return "pricetag-outline";
       default: return "notifications-outline";
+    }
+  };
+
+  const destination = notification ? resolveArtistNotificationDestination(notification) : null;
+  const hasActionDestination = Boolean(destination?.screen && destination.screen !== "NotificationDetails");
+
+  const getActionTitle = () => {
+    if (!destination?.screen) return "View Details";
+    switch (destination.screen) {
+      case "BookingDetails":
+        return "View Booking Details";
+      case "BookingRequests":
+        return "View Booking Requests";
+      case "Wallet":
+        return "Open Wallet";
+      case "Transactions":
+        return "View Transactions";
+      case "WithdrawEarnings":
+        return "Withdraw Earnings";
+      case "ChatRoom":
+      case "ChatList":
+        return "Open Chat";
+      case "Reviews":
+        return "View Reviews";
+      case "Kyc":
+      case "ArtistProfile":
+        return "View KYC / Profile";
+      case "Services":
+      case "ServiceDetails":
+        return "View Services";
+      case "Portfolio":
+      case "PortfolioDetail":
+        return "View Portfolio";
+      case "AvailabilityCalendar":
+        return "View Calendar";
+      case "SupportTicketDetails":
+      case "Support":
+        return "View Support Ticket";
+      case "ArtistReferral":
+        return "View Referral Program";
+      default:
+        return "View Details";
     }
   };
 
@@ -106,7 +148,15 @@ export default function NotificationDetailsScreen({ route, navigation }) {
           <Text style={styles.message}>{notification.message}</Text>
         </View>
 
-
+        {hasActionDestination && (
+          <TouchableOpacity
+            style={styles.actionBtn}
+            onPress={handleAction}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.actionText}>{getActionTitle()}</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
     </SafeAreaView>
   );

@@ -17,6 +17,7 @@ import GlobalToast from "./src/components/GlobalToast";
 import GlobalModal from "./src/components/GlobalModal";
 import AlertMock from "./src/utils/Alert";
 import { linkingConfig } from "./src/services/deepLink";
+import { checkForAppUpdate } from "./src/services/appUpdateService";
 
 // Global Alert Override
 try {
@@ -86,6 +87,11 @@ export default function App() {
     try {
       SplashScreen.hideAsync().catch(() => {});
     } catch (e) {}
+  }, []);
+
+  useEffect(() => {
+    // Check for newer app version on Google Play Store when app opens
+    checkForAppUpdate();
   }, []);
 
   useEffect(() => {

@@ -562,9 +562,13 @@ const ArtistDashboard = ({ showToast }) => {
                 </div>
               </div>
 
-              <div className="glass-panel" style={{ padding: "1.5rem" }}>
-                <h3 style={{ marginBottom: "1rem" }}>Unread Notifications</h3>
+              <div className="glass-panel" style={{ padding: "1.5rem", cursor: "pointer", transition: "transform 0.2s ease" }} onClick={() => setActiveTab("notifications")}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                  <h3 style={{ margin: 0 }}>Unread Notifications</h3>
+                  <Bell style={{ width: "22px", height: "22px", color: "var(--accent-color)" }} />
+                </div>
                 <div style={{ fontSize: "2.5rem", fontWeight: 800 }}>{notifications.filter(n => !n.is_read).length}</div>
+                <div style={{ fontSize: "0.8rem", color: "var(--accent-color)", marginTop: "0.5rem", fontWeight: 600 }}>Click to open notifications page →</div>
               </div>
             </div>
           </div>
@@ -715,24 +719,65 @@ const ArtistDashboard = ({ showToast }) => {
                   <p style={{ color: "var(--text-secondary)" }}>Your service catalog is currently empty.</p>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-                    {services.map((svc) => (
-                      <div key={svc.id} className="glass-panel" style={{ padding: "1rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <div>
-                          <div style={{ fontWeight: 700 }}>{svc.specialization_name}</div>
-                          <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>{svc.category} • {svc.duration_minutes} Mins</div>
-                          <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>{svc.description}</div>
+                    {services.map((svc) => {
+                      const svcImages = (() => {
+                        const raw = svc.service_image;
+                        if (!raw) return [];
+                        if (Array.isArray(raw)) return raw.filter(Boolean);
+                        if (typeof raw === "string") {
+                          try {
+                            const p = JSON.parse(raw);
+                            if (Array.isArray(p)) return p.filter(Boolean);
+                            return [raw];
+                          } catch { return [raw]; }
+                        }
+                        return [];
+                      })();
+
+                      return (
+                        <div key={svc.id} className="glass-panel" style={{ padding: "1.25rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                            <div>
+                              <div style={{ fontWeight: 700, fontSize: "1.1rem" }}>{svc.specialization_name}</div>
+                              <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "2px" }}>{svc.category} • ⏱️ {svc.duration_minutes} Mins</div>
+                              <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "4px" }}>{svc.description}</div>
+                            </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                              <span style={{ fontWeight: 800, fontSize: "1.1rem", color: "var(--accent-color)" }}>₹{svc.minimum_price}</span>
+                              <button className="btn btn-secondary" onClick={() => handleEditService(svc)} style={{ padding: "0.4rem 0.8rem", fontSize: "0.85rem" }}>
+                                Edit
+                              </button>
+                              <button className="btn btn-danger" onClick={() => handleDeleteService(svc.id)} style={{ padding: "0.4rem", display: "flex" }}>
+                                <Trash2 style={{ width: "16px" }} />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Swiping Image Gallery Carousel */}
+                          {svcImages.length > 0 && (
+                            <div style={{ display: "flex", gap: "0.5rem", overflowX: "auto", paddingBottom: "0.5rem", scrollSnapType: "x mandatory" }}>
+                              {svcImages.map((imgUrl, i) => (
+                                <img
+                                  key={i}
+                                  src={imgUrl}
+                                  alt={`Service ${i + 1}`}
+                                  style={{
+                                    width: "120px",
+                                    height: "90px",
+                                    borderRadius: "8px",
+                                    objectFit: "cover",
+                                    flexShrink: 0,
+                                    scrollSnapAlign: "start",
+                                    border: "1px solid var(--border-color)",
+                                    boxShadow: "0 2px 6px rgba(0,0,0,0.1)"
+                                  }}
+                                />
+                              ))}
+                            </div>
+                          )}
                         </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-                          <span style={{ fontWeight: 700, color: "var(--accent-color)" }}>₹{svc.minimum_price}</span>
-                          <button className="btn btn-secondary" onClick={() => handleEditService(svc)} style={{ padding: "0.4rem" }}>
-                            Edit
-                          </button>
-                          <button className="btn btn-danger" onClick={() => handleDeleteService(svc.id)} style={{ padding: "0.4rem" }}>
-                            <Trash2 style={{ width: "16px" }} />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
