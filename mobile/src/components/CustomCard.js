@@ -1,38 +1,58 @@
-import { StyleSheet, Text, View } from "react-native";
+import React from "react";
+import { StyleSheet, Text, View, TouchableOpacity } from "react-native";
 import Colors from "../constants/Colors";
 
-export default function CustomCard({ title, description, children, style }) {
+export default function CustomCard({
+  title,
+  description,
+  children,
+  style,
+  onPress,
+  activeOpacity = 0.85,
+}) {
+  const CardContainer = onPress ? TouchableOpacity : View;
+
   return (
-    <View style={[styles.card, style]}>
+    <CardContainer
+      style={[styles.card, style]}
+      onPress={onPress}
+      activeOpacity={activeOpacity}
+    >
       {title ? <Text style={styles.title}>{title}</Text> : null}
       {description ? (
         <Text style={styles.description}>{description}</Text>
       ) : null}
       {children}
-    </View>
+    </CardContainer>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: Colors.cardBackground,
+    backgroundColor: Colors.cardBackground || "#FFFFFF",
     borderRadius: 16,
-    padding: 18,
-    shadowColor: Colors.shadow,
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "rgba(0, 0, 0, 0.04)",
+    shadowColor: Colors.shadow || "#000000",
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+    marginBottom: 12,
   },
   title: {
-    fontSize: 18,
-    fontWeight: "700",
+    fontSize: 16.5,
+    fontWeight: "600",
     color: Colors.text,
-    marginBottom: 8,
+    fontFamily: "Poppins",
+    marginBottom: 4,
   },
   description: {
-    fontSize: 14,
+    fontSize: 13,
     color: Colors.textSecondary,
-    marginBottom: 12,
+    fontFamily: "Poppins",
+    lineHeight: 18,
+    marginBottom: 10,
   },
 });

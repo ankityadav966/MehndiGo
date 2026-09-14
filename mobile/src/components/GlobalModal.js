@@ -22,6 +22,7 @@ export default function GlobalModal() {
         description: opts.description || "",
         confirmText: opts.confirmText || "Confirm",
         cancelText: opts.cancelText || "Cancel",
+        buttons: opts.buttons || null,
         type: opts.type || "info",
         loading: false,
         dismissible: opts.dismissible !== false,
@@ -80,6 +81,7 @@ export default function GlobalModal() {
       confirmText={options.confirmText}
       cancelText={options.cancelText}
       type={options.type}
+      buttons={options.buttons}
       loading={options.loading}
       dismissible={options.dismissible}
     />

@@ -1,8 +1,14 @@
-import React, { useState, useEffect } from "react";
-import { StyleSheet, Text, Animated, View, Platform } from "react-native";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import {
+  StyleSheet,
+  Text,
+  Animated,
+  View,
+  Platform,
+  TouchableOpacity,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import Colors from "../constants/Colors";
 
 export default function GlobalToast() {
   const insets = useSafeAreaInsets();
@@ -11,113 +17,155 @@ export default function GlobalToast() {
   const [type, setType] = useState("info"); // success, error, warning, info
 
   const [fadeAnim] = useState(() => new Animated.Value(0));
-  const [slideAnim] = useState(() => new Animated.Value(-150));
+  const [slideAnim] = useState(() => new Animated.Value(-120));
+  const [scaleAnim] = useState(() => new Animated.Value(0.92));
+  const hideTimerRef = useRef(null);
 
-  const targetTop = (insets.top > 0 ? insets.top : (Platform.OS === "android" ? 28 : 44)) + 12;
+  const targetTop =
+    (insets.top > 0 ? insets.top : Platform.OS === "android" ? 28 : 44) + 10;
+
+  const dismissToast = useCallback(() => {
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: -120,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(scaleAnim, {
+        toValue: 0.92,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start(() => setVisible(false));
+  }, [fadeAnim, slideAnim, scaleAnim]);
+
+  const showToastAnimation = useCallback(() => {
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current);
+    }
+
+    // Spring into place with subtle scale pop
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+      Animated.spring(slideAnim, {
+        toValue: targetTop,
+        friction: 8,
+        tension: 50,
+        useNativeDriver: true,
+      }),
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        friction: 7,
+        tension: 60,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    // Auto-hide after 3.2s
+    hideTimerRef.current = setTimeout(() => {
+      dismissToast();
+    }, 3200);
+  }, [targetTop, dismissToast, fadeAnim, slideAnim, scaleAnim]);
 
   useEffect(() => {
     global.showToast = (msg, toastType = "info") => {
-      setMessage(msg);
-      setType(toastType);
+      setMessage(String(msg || ""));
+      setType(toastType || "info");
       setVisible(true);
+      requestAnimationFrame(() => {
+        showToastAnimation();
+      });
     };
 
     return () => {
       global.showToast = null;
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
     };
-  }, []);
-
-  useEffect(() => {
-    if (visible) {
-      // Spring layout animation below status bar
-      Animated.parallel([
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 250,
-          useNativeDriver: true,
-        }),
-        Animated.spring(slideAnim, {
-          toValue: targetTop,
-          friction: 7,
-          tension: 50,
-          useNativeDriver: true,
-        }),
-      ]).start();
-
-      // Auto-hide after 3.2 seconds
-      const timer = setTimeout(() => {
-        Animated.parallel([
-          Animated.timing(fadeAnim, {
-            toValue: 0,
-            duration: 220,
-            useNativeDriver: true,
-          }),
-          Animated.timing(slideAnim, {
-            toValue: -150,
-            duration: 220,
-            useNativeDriver: true,
-          }),
-        ]).start(() => setVisible(false));
-      }, 3200);
-
-      return () => clearTimeout(timer);
-    }
-  }, [visible, insets.top]);
+  }, [showToastAnimation]);
 
   if (!visible) return null;
 
-  // Type theme mapping with high-contrast sleek styling
-  let bg = "#1E293B"; // Dark slate
-  let border = "#334155";
+  // Refined palette: subtle luxury obsidian with luminous status accents
+  let bg = "#18181B";
+  let border = "rgba(255, 255, 255, 0.12)";
   let icon = "information-circle";
-  let iconColor = "#38BDF8";
-  let textColor = "#FFFFFF";
+  let iconColor = "#9C1344"; // Royal Burgundy accent
+  let iconBg = "rgba(156, 19, 68, 0.18)";
+  let textColor = "#F4F4F5";
 
   if (type === "success") {
-    bg = "#064E3B"; // Dark emerald
-    border = "#059669";
+    bg = "#092E20"; // Subtle deep emerald
+    border = "rgba(52, 211, 153, 0.28)";
     icon = "checkmark-circle";
     iconColor = "#34D399";
-    textColor = "#FFFFFF";
+    iconBg = "rgba(52, 211, 153, 0.16)";
   } else if (type === "error") {
-    bg = "#7F1D1D"; // Dark red
-    border = "#DC2626";
+    bg = "#3B0715"; // Deep velvet ruby
+    border = "rgba(244, 63, 94, 0.32)";
     icon = "alert-circle";
-    iconColor = "#F87171";
-    textColor = "#FFFFFF";
+    iconColor = "#FB7185";
+    iconBg = "rgba(244, 63, 94, 0.16)";
   } else if (type === "warning") {
-    bg = "#78350F"; // Dark amber
-    border = "#D97706";
+    bg = "#361B04"; // Warm amber espresso
+    border = "rgba(245, 158, 11, 0.3)";
     icon = "warning";
     iconColor = "#FBBF24";
-    textColor = "#FFFFFF";
+    iconBg = "rgba(245, 158, 11, 0.16)";
   } else if (type === "info") {
-    bg = "#0F172A"; // Sleek dark slate
-    border = "#38BDF8";
-    icon = "information-circle";
-    iconColor = "#38BDF8";
-    textColor = "#FFFFFF";
+    bg = "#18181B";
+    border = "rgba(212, 175, 55, 0.25)"; // Subtle heritage gold border
+    icon = "sparkles";
+    iconColor = "#D4AF37";
+    iconBg = "rgba(212, 175, 55, 0.14)";
   }
 
   return (
     <Animated.View
-      pointerEvents="none"
       style={[
         styles.container,
         {
           opacity: fadeAnim,
-          transform: [{ translateY: slideAnim }],
+          transform: [{ translateY: slideAnim }, { scale: scaleAnim }],
         },
       ]}
     >
-      <View style={[styles.toastCard, { backgroundColor: bg, borderColor: border }]}>
-        <View style={styles.iconCircle}>
-          <Ionicons name={icon} size={18} color={iconColor} />
+      <TouchableOpacity
+        activeOpacity={0.92}
+        onPress={dismissToast}
+        style={[
+          styles.toastCard,
+          {
+            backgroundColor: bg,
+            borderColor: border,
+          },
+        ]}
+      >
+        <View style={[styles.iconCircle, { backgroundColor: iconBg }]}>
+          <Ionicons name={icon} size={17} color={iconColor} />
         </View>
-        <Text style={[styles.text, { color: textColor }]}>
+        <Text style={[styles.text, { color: textColor }]} numberOfLines={3}>
           {message}
         </Text>
-      </View>
+        <Ionicons
+          name="close"
+          size={14}
+          color="rgba(255, 255, 255, 0.4)"
+          style={styles.closeHint}
+        />
+      </TouchableOpacity>
     </Animated.View>
   );
 }
@@ -126,8 +174,8 @@ const styles = StyleSheet.create({
   container: {
     position: "absolute",
     top: 0,
-    left: 20,
-    right: 20,
+    left: 16,
+    right: 16,
     zIndex: 99999,
     elevation: 99999,
     alignItems: "center",
@@ -135,27 +183,36 @@ const styles = StyleSheet.create({
   toastCard: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 18,
-    borderRadius: 24,
+    paddingVertical: 10,
+    paddingLeft: 12,
+    paddingRight: 14,
+    borderRadius: 22,
     borderWidth: 1,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    elevation: 12,
-    maxWidth: "92%",
+    shadowOpacity: 0.28,
+    shadowRadius: 14,
+    elevation: 10,
+    maxWidth: "94%",
   },
   iconCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     marginRight: 10,
     justifyContent: "center",
     alignItems: "center",
   },
   text: {
-    fontSize: 13.5,
-    fontWeight: "600",
+    fontSize: 13,
+    fontWeight: "500",
     lineHeight: 18,
     textAlign: "left",
     flexShrink: 1,
+    fontFamily: "Poppins",
+  },
+  closeHint: {
+    marginLeft: 8,
+    opacity: 0.7,
   },
 });
