@@ -181,19 +181,33 @@ class ArtistProfileRepository extends CrudRepository {
       const lat = Number(latitude);
       const lng = Number(longitude);
 
-      const distanceSql = `(6371 * acos(LEAST(1.0, GREATEST(-1.0, cos(radians(${lat})) * cos(radians(COALESCE(latitude::double precision, ${lat}))) * cos(radians(COALESCE(longitude::double precision, ${lng})) - radians(${lng})) + sin(radians(${lat})) * sin(radians(COALESCE(latitude::double precision, ${lat})))))))`;
+      const distanceSql = `(6371 * acos(LEAST(1.0, GREATEST(-1.0, cos(radians(${lat})) * cos(radians(latitude::double precision)) * cos(radians(longitude::double precision) - radians(${lng})) + sin(radians(${lat})) * sin(radians(latitude::double precision))))))`;
       
       attributes.include.push([db.sequelize.literal(distanceSql), "distance"]);
       
+      // Enforce MAXIMUM 35 KM platform radius rule
+      const MAX_ARTIST_DISCOVERY_RADIUS_KM = 35;
+      
+      // Effective radius = MIN(MAX_ARTIST_DISCOVERY_RADIUS_KM, Artist.service_radius)
+      // If service_radius is NULL, it falls back to MAX_ARTIST_DISCOVERY_RADIUS_KM
+      const effectiveRadiusSql = `LEAST(${MAX_ARTIST_DISCOVERY_RADIUS_KM}, COALESCE("ArtistProfile"."service_radius", ${MAX_ARTIST_DISCOVERY_RADIUS_KM}))`;
+
+      let andConditions = [
+        { latitude: { [Op.not]: null } },
+        { longitude: { [Op.not]: null } }
+      ];
+
       if (radius) {
-        where[Op.and] = [
-          db.sequelize.where(db.sequelize.literal(distanceSql), "<=", db.sequelize.literal(`LEAST(${Number(radius)}, COALESCE("ArtistProfile"."service_radius", 9999))`))
-        ];
+        andConditions.push(
+          db.sequelize.where(db.sequelize.literal(distanceSql), "<=", db.sequelize.literal(`LEAST(${Number(radius)}, ${effectiveRadiusSql})`))
+        );
       } else {
-        where[Op.and] = [
-          db.sequelize.where(db.sequelize.literal(distanceSql), "<=", db.sequelize.literal(`COALESCE("ArtistProfile"."service_radius", 9999)`))
-        ];
+        andConditions.push(
+          db.sequelize.where(db.sequelize.literal(distanceSql), "<=", db.sequelize.literal(effectiveRadiusSql))
+        );
       }
+      
+      where[Op.and] = andConditions;
 
       if (sort === "distance" || sort === "nearest") {
         order = [
