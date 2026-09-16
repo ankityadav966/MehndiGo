@@ -1,6 +1,7 @@
 import React, { useCallback, useState, useEffect } from "react";
-import { StatusBar, Alert, View, Platform } from "react-native";
+import { StatusBar, Alert, View, Platform, LogBox } from "react-native";
 import { NavigationContainer, createNavigationContainerRef } from "@react-navigation/native";
+
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useFonts, Poppins_400Regular } from "@expo-google-fonts/poppins";
 import * as SplashScreen from "expo-splash-screen";
@@ -18,6 +19,11 @@ import GlobalModal from "./src/components/GlobalModal";
 import AlertMock from "./src/utils/Alert";
 import { linkingConfig } from "./src/services/deepLink";
 import { checkForAppUpdate } from "./src/services/appUpdateService";
+
+LogBox.ignoreLogs([
+  "[expo-notifications] Error thrown while updating the device push token with the server",
+  "Fetch request has been canceled",
+]);
 
 // Global Alert Override
 try {

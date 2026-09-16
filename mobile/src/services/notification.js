@@ -25,6 +25,11 @@ try {
       }),
     });
   }
+  if (Notifications && typeof Notifications.setAutoServerRegistrationEnabledAsync === "function") {
+    // Disable Expo's built-in push relay server auto-registration.
+    // MehndiGo uses direct Firebase Cloud Messaging (FCM v1).
+    Notifications.setAutoServerRegistrationEnabledAsync(false).catch(() => {});
+  }
 } catch (err) {
   if (__DEV__) console.log("[PushNotification] Skipped notification handler set:", err.message);
 }

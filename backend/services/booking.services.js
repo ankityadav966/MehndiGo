@@ -320,9 +320,12 @@ class BookingService {
       const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
       const distance = R * c;
 
-      const maxRadius = artist.service_radius !== null && artist.service_radius !== undefined ? Number(artist.service_radius) : 25;
-      if (distance > maxRadius) {
-        throw new AppError(`The selected service location is out of the artist's service area (${maxRadius} KM).`, 400);
+      const MAX_ARTIST_DISCOVERY_RADIUS_KM = 35;
+      const artistConfiguredRadius = artist.service_radius !== null && artist.service_radius !== undefined ? Number(artist.service_radius) : MAX_ARTIST_DISCOVERY_RADIUS_KM;
+      const effectiveRadius = Math.min(MAX_ARTIST_DISCOVERY_RADIUS_KM, artistConfiguredRadius);
+
+      if (distance > effectiveRadius) {
+        throw new AppError(`The selected service location is out of the artist's service area (${effectiveRadius} KM).`, 400);
       }
     }
 

@@ -30,9 +30,9 @@ export async function getActiveFestivalBanners() {
 
 export async function getNearbyArtists(latitude = null, longitude = null, radius = null, page = 1, limit = 15, filter = null) {
   let endpoint = `/customer/nearby-artists?page=${page}&limit=${limit}`;
-  if (radius) {
-    endpoint += `&radius=${radius}`;
-  }
+  const effectiveRadius = radius || 35;
+  endpoint += `&radius=${effectiveRadius}`;
+  
   if (latitude && longitude) {
     endpoint += `&latitude=${latitude}&longitude=${longitude}`;
   }

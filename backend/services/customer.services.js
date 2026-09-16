@@ -111,11 +111,14 @@ class CustomerService {
   }
 
   async getNearbyArtists(lat, lng, radius, page, limit, filter) {
+    const MAX_ARTIST_DISCOVERY_RADIUS_KM = 35;
+    let safeRadius = radius ? Math.min(Number(radius), MAX_ARTIST_DISCOVERY_RADIUS_KM) : MAX_ARTIST_DISCOVERY_RADIUS_KM;
+
     if (!filter || filter === "All" || filter === "Nearest") {
       const response = await repo.getArtists({
         latitude: lat,
         longitude: lng,
-        radius: radius || null,
+        radius: safeRadius,
         sort: "distance",
         page: page || 1,
         limit: limit || 15
@@ -123,7 +126,7 @@ class CustomerService {
       return response;
     }
 
-    let searchFilters = {};
+    let searchFilters = { radius: safeRadius };
     let sort = "nearest";
 
     if (filter === "Top Rated") {
@@ -294,10 +297,13 @@ class CustomerService {
       
       const serviceRadiusSql = `${isPostgres ? '"ArtistProfile"' : 'ArtistProfile'}.service_radius`;
 
-      // Always enforce the artist's configured service radius (or default 25km)
+      // Always enforce the artist's configured service radius up to a maximum platform radius
+      const MAX_ARTIST_DISCOVERY_RADIUS_KM = 35;
+      const effectiveRadiusSql = `LEAST(${MAX_ARTIST_DISCOVERY_RADIUS_KM}, COALESCE(${serviceRadiusSql}, ${MAX_ARTIST_DISCOVERY_RADIUS_KM}))`;
+
       where[Op.and] = where[Op.and] || [];
       where[Op.and].push(
-        db.sequelize.where(db.sequelize.literal(distanceSql), "<=", db.sequelize.literal(`COALESCE(${serviceRadiusSql}, 25)`))
+        db.sequelize.where(db.sequelize.literal(distanceSql), "<=", db.sequelize.literal(effectiveRadiusSql))
       );
 
       // If customer specifies an additional radius filter, apply that too

@@ -227,7 +227,6 @@ export default function ArtistServiceCatalogScreen({ route, navigation }) {
   const packages = catalogData?.packages || [];
 
   const complexityOptions = [
-    { label: "All Designs", value: "ALL" },
     { label: "✨ Simple", value: "SIMPLE" },
     { label: "🌸 Medium", value: "MEDIUM" },
     { label: "💫 Intricate", value: "INTRICATE" },
@@ -235,7 +234,6 @@ export default function ArtistServiceCatalogScreen({ route, navigation }) {
   ];
 
   const sortOptions = [
-    { label: "🔥 Popular", value: "popular" },
     { label: "⚡ Newest", value: "newest" },
     { label: "💰 Low to High", value: "price_asc" },
     { label: "💎 High to Low", value: "price_desc" }
@@ -464,42 +462,6 @@ export default function ArtistServiceCatalogScreen({ route, navigation }) {
           {/* Filter & Sort Controls */}
           <View style={styles.filterSection}>
             <Text style={styles.catalogHeading}>Catalog Designs ({designs.length})</Text>
-
-            {/* Complexity Filter Horizontal Bar */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 8, marginVertical: 8 }}>
-              {complexityOptions.map((opt) => {
-                const isSelected = selectedComplexity === opt.value;
-                return (
-                  <TouchableOpacity
-                    key={`comp-${opt.value}`}
-                    style={[styles.filterChip, isSelected && styles.filterChipActive]}
-                    onPress={() => setSelectedComplexity(opt.value)}
-                  >
-                    <Text style={[styles.filterChipText, isSelected && styles.filterChipTextActive]}>
-                      {opt.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-
-            {/* Sort Bar */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 8, marginBottom: 12 }}>
-              {sortOptions.map((opt) => {
-                const isSelected = sortBy === opt.value;
-                return (
-                  <TouchableOpacity
-                    key={`sort-${opt.value}`}
-                    style={[styles.sortChip, isSelected && styles.sortChipActive]}
-                    onPress={() => setSortBy(opt.value)}
-                  >
-                    <Text style={[styles.sortChipText, isSelected && styles.sortChipTextActive]}>
-                      {opt.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
           </View>
 
           {/* Designs Grid */}

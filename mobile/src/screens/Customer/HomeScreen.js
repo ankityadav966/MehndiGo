@@ -1253,12 +1253,9 @@ export default function HomeScreen({ navigation }) {
       <View style={styles.sectionHeader}>
         <View style={{ flexDirection: "row", alignItems: "center" }}>
           <Text style={[styles.sectionTitle, { color: currentTextColor }]}>All Mehndi Artists</Text>
-          <View style={{ backgroundColor: Colors.primary + "18", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, marginLeft: 8 }}>
-            <Text style={{ color: Colors.primary, fontSize: 11, fontWeight: "700" }}>{totalArtistsCount > 0 ? `${totalArtistsCount}` : (nearbyArtists.length > 0 ? `${nearbyArtists.length}+` : "All")}</Text>
-          </View>
         </View>
         <TouchableOpacity onPress={() => navigation.navigate("ArtistListing", { filter: "all" })}>
-          <Text style={styles.viewAllText}>View All ({totalArtistsCount > 0 ? totalArtistsCount : nearbyArtists.length})</Text>
+          <Text style={styles.viewAllText}>View All</Text>
         </TouchableOpacity>
       </View>
       <FlatList
